@@ -35,3 +35,4 @@ docker/data/
 
 # Local config
 .kiro/
+observal-web/tsconfig.tsbuildinfo
