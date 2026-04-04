@@ -89,6 +89,32 @@ services:
     networks:
       - observal-net
 
+  observal-web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://observal-api:8000
+    depends_on:
+      - observal-api
+    networks:
+      - observal-net
+
+  observal-otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ../otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    depends_on:
+      - observal-clickhouse
+    networks:
+      - observal-net
+
 volumes:
   pgdata:
   chdata:
