@@ -1,32 +1,67 @@
 # Observal
 
-A self-hosted MCP server and AI agent registry platform for enterprises. Observal gives engineering teams a centralized place to manage, validate, distribute, and observe internal MCP servers and AI agents across agentic IDEs and CLIs.
+A self-hosted evaluation and observability platform for agentic coding workflows. Observal acts as a fitness coach for your human-in-the-loop development — it traces every tool call, skill activation, hook execution, sandbox run, and RAG query across your team's AI-assisted coding sessions, then tells you exactly what's helping and what isn't.
 
-## Why Observal?
+## The Problem
 
-Teams building AI tooling with Cursor, Kiro, Claude Code, Gemini CLI, and VS Code face common challenges:
+Engineering teams using Cursor, Kiro, Claude Code, Gemini CLI, and similar agentic IDEs have no visibility into what actually happens during AI-assisted development. Agents call tools, activate skills, execute code in sandboxes, query knowledge graphs, and fire lifecycle hooks — but none of this is measured. Teams can't answer basic questions:
 
-- No central marketplace for internal MCP servers and agents
-- No way to enforce uniform quality and documentation across submissions
-- No visibility into how tools perform in real developer workflows
-- No data-driven way to identify bottlenecks (prompt quality, RAG relevance, tool call efficiency)
-- No portal for users to report issues or request improvements
+- Which tools speed up development and which ones waste time?
+- Are prompts producing good results or causing rework?
+- Do skills actually improve code quality when they activate?
+- Which hooks are blocking legitimate actions vs catching real issues?
+- Is the RAG system returning relevant context or noise?
+- How do two versions of an agent compare on real developer workflows?
 
-Observal solves all of these as a single, self-hosted platform.
+Without answers, teams can't improve their tooling. They guess, ship changes, and hope for the better.
 
-## Features
+## What Observal Does
 
-- MCP Server Registry: Submit, validate, review, and distribute MCP servers via CLI
-- Agent Registry: Create, manage, and distribute AI agents with bundled MCP configs
-- Automated Validation: 2-stage pipeline (clone and inspect + manifest validation)
-- Admin Review Workflow: Approve or reject submissions with role-based access control
-- Multi-IDE Config Generation: One-click install configs for Cursor, VS Code, Kiro, Claude Code, Windsurf, and Gemini CLI
-- Telemetry Ingestion: Collect tool call and agent interaction events into ClickHouse
-- Dashboards and Metrics: Track downloads, latency, error rates, and acceptance rates
-- Feedback Portal: Rate and review MCP servers and agents
-- SLM Evaluation Engine: LLM-as-judge scoring with scorecards, version comparison, and bottleneck detection
-- CLI-First Design: Full-featured CLI for every operation
-- Role-Based Access: Admin, Developer, and User roles with API key authentication
+Observal collects telemetry from every layer of the agentic coding stack, evaluates it with an LLM-as-judge engine, and surfaces actionable metrics. It manages 8 registry types that cover the full surface area of modern AI-assisted development:
+
+| Registry Type | What It Is | What Observal Measures |
+|--------------|-----------|----------------------|
+| MCP Servers | Model Context Protocol servers that expose tools to agents | Call volume, latency percentiles, error rates, schema compliance |
+| Agents | AI agent configurations with system prompts, model settings, and linked tools | Interaction count, acceptance rate, tool call efficiency, version-over-version comparison |
+| Tool Calls | Standalone tools (non-MCP) exposed directly to agents | Invocation count, success rate, retry rate, schema validation |
+| Skills | Portable instruction packages (SKILL.md) that agents load on demand | Activation frequency (auto vs manual), error rate correlation, session duration impact |
+| Hooks | Lifecycle callbacks that fire at specific points during agent sessions | Execution count per event type, block rate, latency overhead |
+| Prompts | Managed prompt templates with variable substitution | Render count, token expansion ratio, downstream LLM success rate |
+| Sandbox Exec | Docker/LXC execution environments for code running and testing | CPU/memory/disk/network usage, exit codes, OOM rate, timeout rate |
+| GraphRAGs | Knowledge graph and RAG system endpoints | Entities retrieved, relationships traversed, relevance scores, embedding latency |
+
+Every type goes through a unified admin review workflow before it's available to developers. Every type emits telemetry into ClickHouse. Every type gets metrics, feedback, and eval scores.
+
+## How It Works
+
+Observal sits between your IDE and your tools. A transparent shim (`observal-shim` for stdio, `observal-proxy` for HTTP) intercepts traffic without modifying it, pairs requests with responses into spans, and streams them to ClickHouse. The shim is injected automatically when you install a tool through Observal — no code changes required.
+
+```
+IDE  <-->  observal-shim  <-->  MCP Server / Tool / Sandbox / GraphRAG
+                |
+                v (fire-and-forget)
+          Observal API  -->  ClickHouse (traces, spans, scores)
+                |
+                v
+          Eval Engine (LLM-as-judge)  -->  Scorecards
+```
+
+The eval engine runs on traces after the fact. It scores agent sessions across dimensions like tool selection quality, prompt effectiveness, RAG relevance, and code correctness. Scorecards let you compare versions, identify bottlenecks, and track improvements over time.
+
+## IDE Support
+
+Config generation and telemetry collection work across all major agentic IDEs:
+
+| IDE | MCP | Agents | Skills | Hooks |
+|-----|:---:|:------:|:------:|:-----:|
+| Cursor | Yes | Yes | Yes | Yes |
+| Kiro IDE | Yes | Yes | Yes | Yes |
+| Kiro CLI | Yes | Yes | Yes | Yes |
+| Claude Code | Yes | Yes | Yes | Yes |
+| GitHub Copilot | — | — | Yes | — |
+| Gemini CLI | Yes | Yes | Yes | — |
+| VS Code | Yes | Yes | — | — |
+| Windsurf | Yes | Yes | — | — |
 
 ## Tech Stack
 
@@ -35,9 +70,10 @@ Observal solves all of these as a single, self-hosted platform.
 | Backend API | Python, FastAPI, Uvicorn |
 | Database | PostgreSQL 16 (primary), ClickHouse (telemetry) |
 | ORM | SQLAlchemy (async) + AsyncPG |
-| Web UI | Vite, React, TypeScript, urql (GraphQL) |
 | CLI | Python, Typer, Rich |
 | Eval Engine | AWS Bedrock / OpenAI-compatible LLMs |
+| Background Jobs | arq + Redis |
+| Real-time | GraphQL subscriptions (Strawberry + WebSocket) |
 | Dependency Management | uv |
 | Deployment | Docker Compose |
 
@@ -46,7 +82,6 @@ Observal solves all of these as a single, self-hosted platform.
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - Python 3.11+
-- Node.js 20+ (for local web UI development)
 - Git
 
 ## Getting Started
@@ -65,15 +100,15 @@ uv tool install --editable .
 observal init
 ```
 
-This starts the API (http://localhost:8000), web UI (http://localhost:3000), PostgreSQL, and ClickHouse. The CLI is installed via `uv tool install` and `observal init` creates your admin account.
+This starts the API at http://localhost:8000 along with PostgreSQL, ClickHouse, Redis, and the background worker. The CLI is installed via `uv tool install` and `observal init` creates your admin account.
 
-For detailed setup instructions, local development, eval engine configuration, and troubleshooting, see [SETUP.md](SETUP.md).
+For detailed setup, eval engine configuration, and troubleshooting, see [SETUP.md](SETUP.md).
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | | PostgreSQL connection string using asyncpg |
+| `DATABASE_URL` | Yes | | PostgreSQL connection string (asyncpg) |
 | `CLICKHOUSE_URL` | Yes | | ClickHouse connection string |
 | `POSTGRES_USER` | Yes | `postgres` | PostgreSQL user |
 | `POSTGRES_PASSWORD` | Yes | | PostgreSQL password |
@@ -81,203 +116,121 @@ For detailed setup instructions, local development, eval engine configuration, a
 | `CLICKHOUSE_USER` | No | `default` | ClickHouse user |
 | `CLICKHOUSE_PASSWORD` | No | `clickhouse` | ClickHouse password |
 | `EVAL_MODEL_URL` | No | | OpenAI-compatible endpoint for the eval engine |
-| `EVAL_MODEL_API_KEY` | No | | API key for the eval model (empty for AWS credential chain) |
+| `EVAL_MODEL_API_KEY` | No | | API key for the eval model |
 | `EVAL_MODEL_NAME` | No | | Model name (e.g. `us.anthropic.claude-3-5-haiku-20241022-v1:0`) |
 | `EVAL_MODEL_PROVIDER` | No | | `bedrock`, `openai`, or empty for auto-detect |
-| `AWS_ACCESS_KEY_ID` | No | | AWS credentials for Bedrock eval engine |
-| `AWS_SECRET_ACCESS_KEY` | No | | AWS credentials for Bedrock eval engine |
-| `AWS_SESSION_TOKEN` | No | | AWS session token (if using temporary credentials) |
+| `AWS_ACCESS_KEY_ID` | No | | AWS credentials for Bedrock |
+| `AWS_SECRET_ACCESS_KEY` | No | | AWS credentials for Bedrock |
+| `AWS_SESSION_TOKEN` | No | | AWS session token (temporary credentials) |
 | `AWS_REGION` | No | `us-east-1` | AWS region for Bedrock |
 
-## Usage
+## CLI Usage
 
 ### Authentication
 
 ```bash
-# First-time setup (creates admin account)
-observal init
-
-# Login with an existing API key
-observal login
-
-# Check current user
-observal whoami
+observal init          # first-time admin setup
+observal login         # login with API key
+observal whoami        # check current user
 ```
 
-### MCP Servers
+### Registry Operations
 
-#### Submitting
-
-```bash
-# Submit a Git repository for review
-observal submit https://github.com/your-org/your-mcp-server.git
-```
-
-The CLI analyzes the repository and prompts you for metadata (name, version, category, supported IDEs, etc.).
-
-#### Discovering
+All registry types follow the same pattern: submit, list, show, install, delete.
 
 ```bash
-# List all approved MCP servers
-observal list
+# MCP Servers
+observal submit <git-url>
+observal list [--category <cat>] [--search <term>]
+observal show <id>
+observal install <id> --ide <ide>
 
-# Filter by category
-observal list --category "code-generation"
-
-# Search by name or description
-observal list --search "database"
-
-# Show full details
-observal show <mcp-id>
-```
-
-#### Installing
-
-```bash
-# Get the config snippet for your IDE
-observal install <mcp-id> --ide cursor
-observal install <mcp-id> --ide vscode
-observal install <mcp-id> --ide claude_code
-observal install <mcp-id> --ide kiro
-observal install <mcp-id> --ide windsurf
-observal install <mcp-id> --ide gemini_cli
-```
-
-### Agents
-
-#### Creating
-
-```bash
-# Interactive agent creation
+# Agents
 observal agent create
-```
+observal agent list [--search <term>]
+observal agent show <id>
+observal agent install <id> --ide <ide>
 
-The CLI walks you through setting the agent name, version, description, system prompt, model config, supported IDEs, linked MCP servers, and goal template sections.
+# Skills
+observal skill submit <git-url-or-path>
+observal skill list [--task-type <type>] [--target-agent <agent>]
+observal skill install <id> --ide <ide>
 
-#### Discovering
+# Hooks
+observal hook submit
+observal hook list [--event <event>] [--scope <scope>]
+observal hook install <id> --ide <ide>
 
-```bash
-# List all active agents
-observal agent list
+# Tools
+observal tool submit
+observal tool list [--category <cat>]
+observal tool install <id> --ide <ide>
 
-# Search agents
-observal agent list --search "code review"
+# Prompts
+observal prompt submit [--from-file <path>]
+observal prompt list [--category <cat>]
+observal prompt render <id> --var key=value
 
-# Show full agent details
-observal agent show <agent-id>
-```
+# Sandboxes
+observal sandbox submit
+observal sandbox list [--runtime docker|lxc]
+observal sandbox install <id> --ide <ide>
 
-#### Installing
-
-```bash
-# Get bundled config (rules file + MCP configs) for your IDE
-observal agent install <agent-id> --ide cursor
-observal agent install <agent-id> --ide kiro
-observal agent install <agent-id> --ide claude-code
-observal agent install <agent-id> --ide gemini-cli
+# GraphRAGs
+observal graphrag submit
+observal graphrag list [--query-interface graphql|rest|cypher|sparql]
+observal graphrag install <id> --ide <ide>
 ```
 
 ### Admin Review
 
+All registry types go through a single review workflow:
+
 ```bash
-# List pending submissions
-observal review list
-
-# View submission details
-observal review show <review-id>
-
-# Approve or reject
-observal review approve <review-id>
-observal review reject <review-id> --reason "Missing documentation"
+observal review list [--type mcp|agent|skill|hook|tool|prompt|sandbox|graphrag]
+observal review show <id>
+observal review approve <id>
+observal review reject <id> --reason "Missing documentation"
 ```
 
-### Telemetry
+### Observability
 
 ```bash
-# Check telemetry data flow status
+# Telemetry status
 observal telemetry status
 
-# Send a test telemetry event
-observal telemetry test
+# Metrics for any registry type
+observal metrics <id> --type mcp
+observal metrics <id> --type agent
+observal metrics <id> --type tool
+
+# Enterprise overview
+observal overview
 ```
 
-### Dashboards and Metrics
+### Evaluation
 
 ```bash
-# Enterprise overview stats
-observal overview
+# Run eval on agent traces
+observal eval run <agent-id>
 
-# MCP server metrics (downloads, calls, error rate, latency percentiles)
-observal metrics <mcp-id> --type mcp
+# List and inspect scorecards
+observal eval scorecards <agent-id> [--version "1.0.0"]
+observal eval show <scorecard-id>
 
-# Agent metrics (interactions, downloads, acceptance rate, latency)
-observal metrics <agent-id> --type agent
+# Compare versions
+observal eval compare <agent-id> --a "1.0.0" --b "2.0.0"
 ```
 
 ### Feedback
 
 ```bash
-# Rate an MCP server (1-5 stars)
-observal rate <mcp-id> --stars 5 --type mcp --comment "Works great"
+# Rate any registry item (1-5 stars)
+observal rate <id> --stars 5 --type mcp --comment "Works great"
 
-# Rate an agent
-observal rate <agent-id> --stars 4 --type agent
-
-# View feedback for an MCP server or agent
-observal feedback <listing-id> --type mcp
-observal feedback <listing-id> --type agent
+# View feedback
+observal feedback <id> --type mcp
 ```
-
-### Evaluation Engine
-
-The eval engine uses an LLM-as-judge approach to score agent traces across multiple dimensions.
-
-```bash
-# Run evaluation on an agent's traces
-observal eval run <agent-id>
-
-# Run evaluation on a specific trace
-observal eval run <agent-id> --trace <trace-id>
-
-# List scorecards for an agent
-observal eval scorecards <agent-id>
-
-# Filter scorecards by version
-observal eval scorecards <agent-id> --version "1.0.0"
-
-# Show scorecard details (dimensions, grades, recommendations)
-observal eval show <scorecard-id>
-
-# Compare two agent versions
-observal eval compare <agent-id> --a "1.0.0" --b "2.0.0"
-```
-
-### Admin Settings
-
-```bash
-# List enterprise settings
-observal admin settings
-
-# Set a setting
-observal admin set <key> <value>
-
-# List all users
-observal admin users
-```
-
-## Web UI
-
-The web UI is available at http://localhost:3000 after starting the Docker stack. It provides:
-
-- Overview dashboard with stats, top MCPs, and top agents
-- MCP server browsing, search, submission, and detail views with IDE config generation
-- Agent browsing, creation, detail views, and evaluation dashboards
-- Admin pages for review management, enterprise settings, and user management
-- Feedback and ratings on MCP servers and agents
-
-The frontend proxies all `/api/*` requests to the backend through Vite rewrites, so no separate API URL configuration is needed in the browser.
-
-Login with your API key at `/login`.
 
 ## API Endpoints
 
@@ -289,86 +242,66 @@ Login with your API key at `/login`.
 | `POST` | `/api/v1/auth/login` | Login with API key |
 | `GET` | `/api/v1/auth/whoami` | Current user info |
 
-### MCP Servers
+### Registry (per type: mcps, agents, tools, skills, hooks, prompts, sandboxes, graphrags)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/mcps/analyze` | Analyze a Git repo for metadata pre-fill |
-| `POST` | `/api/v1/mcps/submit` | Submit an MCP server for review |
-| `GET` | `/api/v1/mcps` | List approved MCP servers (supports `search`, `category` params) |
-| `GET` | `/api/v1/mcps/{id}` | Get MCP server details |
-| `POST` | `/api/v1/mcps/{id}/install` | Get IDE config snippet and record download |
-| `DELETE` | `/api/v1/mcps/{id}` | Delete an MCP server |
+| `POST` | `/api/v1/{type}` | Submit / create |
+| `GET` | `/api/v1/{type}` | List approved items |
+| `GET` | `/api/v1/{type}/{id}` | Get details |
+| `POST` | `/api/v1/{type}/{id}/install` | Get IDE config snippet |
+| `DELETE` | `/api/v1/{type}/{id}` | Delete |
+| `GET` | `/api/v1/{type}/{id}/metrics` | Metrics |
 
-### Agents
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/agents` | Create an agent |
-| `GET` | `/api/v1/agents` | List active agents (supports `search` param) |
-| `GET` | `/api/v1/agents/{id}` | Get agent details |
-| `PUT` | `/api/v1/agents/{id}` | Update an agent |
-| `POST` | `/api/v1/agents/{id}/install` | Get IDE config snippet for agent |
-| `DELETE` | `/api/v1/agents/{id}` | Delete an agent |
-
-### Review (Admin)
+### Review
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/review` | List pending submissions |
-| `GET` | `/api/v1/review/{id}` | Get submission details |
-| `POST` | `/api/v1/review/{id}/approve` | Approve a submission |
-| `POST` | `/api/v1/review/{id}/reject` | Reject a submission |
+| `GET` | `/api/v1/review/{id}` | Submission details |
+| `POST` | `/api/v1/review/{id}/approve` | Approve |
+| `POST` | `/api/v1/review/{id}/reject` | Reject |
 
 ### Telemetry
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/telemetry/events` | Ingest tool call and agent interaction events |
-| `GET` | `/api/v1/telemetry/status` | Check telemetry data flow status |
-
-### Dashboards
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/mcps/{id}/metrics` | MCP server metrics (downloads, calls, latency, error rate) |
-| `GET` | `/api/v1/agents/{id}/metrics` | Agent metrics (interactions, downloads, acceptance rate) |
-| `GET` | `/api/v1/overview/stats` | Enterprise overview stats |
-| `GET` | `/api/v1/overview/top-mcps` | Top MCP servers by downloads |
-| `GET` | `/api/v1/overview/top-agents` | Top agents by interactions |
-| `GET` | `/api/v1/overview/trends` | Usage trends over time |
-
-### Feedback
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/feedback` | Submit a rating and optional comment |
-| `GET` | `/api/v1/feedback/mcp/{id}` | Get feedback for an MCP server |
-| `GET` | `/api/v1/feedback/agent/{id}` | Get feedback for an agent |
-| `GET` | `/api/v1/feedback/me` | Get feedback on your own submissions |
-| `GET` | `/api/v1/feedback/summary/{id}` | Get rating summary (average, count) |
+| `POST` | `/api/v1/telemetry/ingest` | Batch ingest traces, spans, scores |
+| `POST` | `/api/v1/telemetry/events` | Legacy event ingestion |
+| `GET` | `/api/v1/telemetry/status` | Data flow status |
 
 ### Evaluation
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/eval/agents/{id}` | Run evaluation on agent traces |
-| `GET` | `/api/v1/eval/agents/{id}/runs` | List eval runs for an agent |
-| `GET` | `/api/v1/eval/agents/{id}/scorecards` | List scorecards (supports `version` param) |
-| `GET` | `/api/v1/eval/scorecards/{id}` | Get scorecard details with dimensions |
-| `GET` | `/api/v1/eval/agents/{id}/compare` | Compare two agent versions |
+| `POST` | `/api/v1/eval/agents/{id}` | Run evaluation |
+| `GET` | `/api/v1/eval/agents/{id}/scorecards` | List scorecards |
+| `GET` | `/api/v1/eval/scorecards/{id}` | Scorecard details |
+| `GET` | `/api/v1/eval/agents/{id}/compare` | Compare versions |
+
+### Feedback
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/feedback` | Submit rating |
+| `GET` | `/api/v1/feedback/{type}/{id}` | Get feedback |
+| `GET` | `/api/v1/feedback/summary/{id}` | Rating summary |
 
 ### Admin
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/admin/settings` | List enterprise settings |
-| `GET` | `/api/v1/admin/settings/{key}` | Get a specific setting |
-| `PUT` | `/api/v1/admin/settings/{key}` | Set a setting value |
-| `DELETE` | `/api/v1/admin/settings/{key}` | Delete a setting |
-| `GET` | `/api/v1/admin/users` | List all users |
-| `POST` | `/api/v1/admin/users` | Create a new user |
-| `PUT` | `/api/v1/admin/users/{id}/role` | Change a user's role |
+| `GET` | `/api/v1/admin/settings` | List settings |
+| `PUT` | `/api/v1/admin/settings/{key}` | Set a value |
+| `GET` | `/api/v1/admin/users` | List users |
+| `POST` | `/api/v1/admin/users` | Create user |
+| `PUT` | `/api/v1/admin/users/{id}/role` | Change role |
+
+### GraphQL
+
+| Endpoint | Description |
+|----------|-------------|
+| `/api/v1/graphql` | Traces, spans, scores, metrics (query + subscription) |
 
 ### Health
 
@@ -383,81 +316,60 @@ Observal/
 ├── observal-server/          # FastAPI backend
 │   ├── api/
 │   │   ├── deps.py           # Auth and dependency injection
-│   │   ├── graphql.py        # Strawberry GraphQL schema, DataLoaders, subscriptions
-│   │   └── routes/           # REST API route handlers
-│   ├── models/               # SQLAlchemy database models
+│   │   ├── graphql.py        # Strawberry GraphQL schema
+│   │   └── routes/           # REST route handlers
+│   ├── models/               # SQLAlchemy models
 │   ├── schemas/              # Pydantic request/response schemas
-│   ├── services/             # Business logic
-│   │   ├── clickhouse.py     # ClickHouse client, DDL, insert/query helpers
-│   │   ├── redis.py          # Redis pub/sub and job queue
-│   │   ├── config_generator.py       # MCP IDE config generation
-│   │   ├── agent_config_generator.py # Agent IDE config generation
-│   │   ├── mcp_validator.py  # 2-stage MCP repo validation
-│   │   └── eval_engine.py    # LLM-as-judge evaluation
+│   ├── services/             # Business logic, validators, config generators
 │   ├── main.py               # App entrypoint
 │   ├── config.py             # Settings (pydantic-settings)
 │   └── worker.py             # arq background worker
-├── observal-web/             # Vite + React + urql SPA
-│   └── src/
-│       ├── components/       # TraceExplorer, TraceDetail, Overview, McpMetrics
-│       └── lib/              # urql client, GraphQL queries
-├── observal_cli/             # Typer CLI application
+├── observal_cli/             # Typer CLI
 │   ├── main.py               # App wiring
-│   ├── cmd_auth.py           # Auth and config commands
+│   ├── cmd_auth.py           # Auth commands
 │   ├── cmd_mcp.py            # MCP server commands
 │   ├── cmd_agent.py          # Agent commands
-│   ├── cmd_ops.py            # Review, telemetry, dashboard, eval, admin, traces
+│   ├── cmd_ops.py            # Review, telemetry, eval, admin, traces
 │   ├── client.py             # HTTP client wrapper
 │   ├── config.py             # CLI config and alias management
-│   ├── render.py             # Shared Rich rendering helpers
-│   ├── shim.py               # observal-shim: transparent stdio MCP wrapper
-│   └── proxy.py              # observal-proxy: HTTP reverse proxy for MCPs
+│   ├── render.py             # Rich rendering helpers
+│   ├── shim.py               # observal-shim: stdio telemetry proxy
+│   └── proxy.py              # observal-proxy: HTTP telemetry proxy
 ├── docker/
-│   ├── docker-compose.yml    # 6 services: api, web, db, clickhouse, redis, worker
-│   ├── Dockerfile.api        # API container (uv)
-│   └── Dockerfile.web        # Web UI container (Vite)
-├── tests/                    # 181 unit tests (pytest, all mocked)
-├── demo/                     # Mock MCP servers and IDE config examples
+│   ├── docker-compose.yml    # 5 services: api, db, clickhouse, redis, worker
+│   └── Dockerfile.api        # API container
+├── tests/                    # Unit tests (pytest, all mocked)
 ├── docs/                     # Design documents
-├── AGENTS.md                 # Internal context for contributors and AI agents
-├── SETUP.md                  # Detailed setup and development guide
-├── Makefile                  # Dev shortcuts: lint, format, test, docker
-├── .pre-commit-config.yaml   # Pre-commit hooks: ruff, eslint, hadolint
+├── AGENTS.md                 # Internal context for AI agents
+├── SETUP.md                  # Setup and development guide
+├── CONTRIBUTING.md           # Contribution guide
+├── Makefile                  # Dev shortcuts
 ├── .env.example              # Environment variable template
-├── pyproject.toml            # CLI package config + ruff/pytest settings
+├── pyproject.toml            # Package config
 └── LICENSE                   # GNU Affero General Public License v3.0
 ```
 
 ## Running Tests
 
-The test suite is 181 unit tests that mock all external services — no Docker needed:
-
 ```bash
-# Quick run
-make test
-
-# Verbose
-make test-v
-
-# Manual
-cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/ -q
+make test      # quick
+make test-v    # verbose
 ```
+
+All tests mock external services. No Docker needed.
 
 ## Contributing
 
-Contributions are welcome!
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. The short version:
 
-1. Fork the repository
-2. Install pre-commit hooks: `make hooks`
-3. Create a feature branch: `git checkout -b feature/your-feature`
-4. Make your changes
-5. Run linting: `make lint`
-6. Run tests: `make test`
-7. Commit and push
-8. Open a Pull Request
+1. Fork and clone
+2. `make hooks` to install pre-commit hooks
+3. Create a feature branch
+4. Make changes, run `make lint` and `make test`
+5. Open a PR
 
-See [AGENTS.md](AGENTS.md) for internal codebase context.
+See [AGENTS.md](AGENTS.md) for internal codebase context useful when working with AI coding agents.
 
 ## License
 
-Licensed under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE) for details.
+GNU Affero General Public License v3.0. See [LICENSE](LICENSE).

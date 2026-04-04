@@ -1,185 +1,111 @@
-# Welcome to Observal 🎉
+# Contributing to Observal
 
-Thank you for considering contributing to **Observal**. Contributions of all kinds are welcome—bug fixes, new features, or documentation improvements.
+Contributions of all kinds are welcome — bug fixes, new features, documentation improvements.
 
-This guide outlines the workflow to help you contribute effectively.
+## Fork and Clone
 
----
-
-## 🛠️ 1. Fork and Clone the Repository
-
-1. **Fork** the repository using the GitHub "Fork" button.
-2. **Clone** your fork locally:
+1. Fork the repository on GitHub.
+2. Clone your fork:
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/Observal.git
 cd Observal
 ```
 
-3. Add the upstream repository:
+3. Add the upstream remote:
 
 ```bash
 git remote add upstream https://github.com/BlazeUp-AI/Observal.git
 ```
 
----
+## Development Environment
 
-## 📦 2. Development Environment Setup
+Requirements:
 
-Ensure the following tools are installed:
+- Docker and Docker Compose
+- [uv](https://docs.astral.sh/uv/) (Python 3.11+)
+- Git
 
-* **Docker & Docker Compose** – for PostgreSQL, ClickHouse, Redis
-* **uv** – Python dependency management (Python 3.11+)
-* **Node.js (20+)** – frontend (Vite, React)
-* **Git**
-
----
-
-## 🚀 3. Run the Project Locally
-
-1. Create your environment file:
+## Running Locally
 
 ```bash
 cp .env.example .env
-```
+# edit .env with your values
 
-2. Start backend services:
-
-```bash
 cd docker
 docker compose up --build -d
 cd ..
-```
 
-3. Install CLI and start the app:
-
-```bash
 uv tool install --editable .
 observal init
 ```
 
-Services will start at:
+The API starts at http://localhost:8000.
 
-* API → [http://localhost:8000](http://localhost:8000)
-* Web UI → [http://localhost:3000](http://localhost:3000)
+See [SETUP.md](SETUP.md) for detailed configuration and troubleshooting.
 
----
+## Code Style
 
-## 💅 4. Code Style & Linters
-
-We enforce code quality using:
-
-* **Python** → `ruff`
-* **TypeScript/React** → `ESLint`
-* **Docker** → `hadolint`
-
-Commands:
+Python is linted and formatted with `ruff`. Docker files are linted with `hadolint`. Pre-commit hooks enforce both.
 
 ```bash
-make format   # Auto-format code
-make lint     # Run linters
+make format   # auto-format
+make lint     # run linters
+make hooks    # install pre-commit hooks
 ```
 
-### Pre-commit Hooks
+## Running Tests
 
 ```bash
-make hooks
+make test     # quick
+make test-v   # verbose
 ```
 
----
+All tests must pass before submitting a PR. Tests mock all external services — no Docker needed.
 
-## 🧪 5. Running Tests
+## Branch Naming
 
-Run all tests:
+Do not commit directly to `main`. Use prefixes:
 
-```bash
-make test
+- `feature/` for new features
+- `fix/` for bug fixes
+- `docs/` for documentation
+
+```
+feature/skill-registry
+fix/clickhouse-insert-timeout
+docs/update-setup-guide
 ```
 
-Verbose mode:
+## Commit Messages
 
-```bash
-make test-v
+Follow conventional commits:
+
 ```
-
-All tests must pass before submitting a PR.
-
----
-
-## 🌿 6. Branch Naming Convention
-
-Do not commit directly to `main`.
-
-Use prefixes:
-
-* `feature/` → new features
-* `fix/` → bug fixes
-* `docs/` → documentation
-
-Examples:
-
-```bash
-feature/agent-eval
-fix/docker-compose-typo
-docs/update-readme
-```
-
----
-
-## 💬 7. Commit Message Convention
-
-Follow **Conventional Commits**:
-
-```bash
 <type>(<scope>): <description>
 ```
 
-Examples:
-
-```bash
-feat(cli): add telemetry ingestion command
-fix(ui): resolve overflow issue on trace explorer
-docs: add contributing guide
+```
+feat(cli): add skill submit command
+fix(telemetry): handle null span timestamps
+docs: update contributing guide
 ```
 
----
+## Pull Request Process
 
-## 🤝 8. Pull Request Process
+1. Push your branch to your fork.
+2. Open a PR against `main`.
+3. Ensure linters and tests pass.
+4. Respond to review feedback and update your code if requested.
 
-1. Push your branch to your fork
-2. Open a PR against `main`
-3. Ensure:
+## Issues
 
-   * All tests pass
-   * Linters pass
+Check existing issues before starting work. For bug reports, include reproduction steps and environment details. For feature requests, describe the use case clearly. Discuss major features in an issue before implementing.
 
-### Review Process
+## Codebase Context
 
-* Maintainers will review your PR
-* Be responsive to feedback
-* Update your code if requested
+See [AGENTS.md](AGENTS.md) for internal architecture notes, file layout, and conventions. This is especially useful when working with AI coding agents.
 
----
+## License
 
-## 🐛 9. Issues
-
-Before coding, check existing issues.
-
-* **Bug reports** → include reproduction steps and environment details
-* **Feature requests** → describe the idea clearly
-
-Discuss major features before implementing them.
-
----
-
-## ❓ 10. Support
-
-If you need help:
-
-* Use **GitHub Discussions**
-* Comment on issues
-* Join future community channels (Discord/Slack)
-
----
-
-Happy coding 🚀
+By contributing, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0.
