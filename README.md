@@ -317,7 +317,7 @@ Observal/
 │   ├── api/
 │   │   ├── deps.py           # Auth and dependency injection
 │   │   ├── graphql.py        # Strawberry GraphQL schema
-│   │   └── routes/           # REST route handlers
+│   │   └── routes/           # REST route handlers (all 8 registry types)
 │   ├── models/               # SQLAlchemy models
 │   ├── schemas/              # Pydantic request/response schemas
 │   ├── services/             # Business logic, validators, config generators
@@ -329,16 +329,25 @@ Observal/
 │   ├── cmd_auth.py           # Auth commands
 │   ├── cmd_mcp.py            # MCP server commands
 │   ├── cmd_agent.py          # Agent commands
+│   ├── cmd_tool.py           # Tool commands
+│   ├── cmd_skill.py          # Skill commands
+│   ├── cmd_hook.py           # Hook commands
+│   ├── cmd_prompt.py         # Prompt commands
+│   ├── cmd_sandbox.py        # Sandbox commands
+│   ├── cmd_graphrag.py       # GraphRAG commands
 │   ├── cmd_ops.py            # Review, telemetry, eval, admin, traces
 │   ├── client.py             # HTTP client wrapper
 │   ├── config.py             # CLI config and alias management
 │   ├── render.py             # Rich rendering helpers
 │   ├── shim.py               # observal-shim: stdio telemetry proxy
-│   └── proxy.py              # observal-proxy: HTTP telemetry proxy
+│   ├── proxy.py              # observal-proxy: HTTP telemetry proxy
+│   ├── sandbox_runner.py     # observal-sandbox-run: Docker executor with log capture
+│   └── graphrag_proxy.py     # observal-graphrag-proxy: HTTP proxy for GraphRAG
 ├── docker/
 │   ├── docker-compose.yml    # 5 services: api, db, clickhouse, redis, worker
 │   └── Dockerfile.api        # API container
 ├── tests/                    # Unit tests (pytest, all mocked)
+├── demo/                     # E2E test scripts and mock MCP servers
 ├── docs/                     # Design documents
 ├── AGENTS.md                 # Internal context for AI agents
 ├── SETUP.md                  # Setup and development guide

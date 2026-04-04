@@ -36,7 +36,7 @@ def register_auth(app: typer.Typer):
             rprint(f"\n[green]✓ Initialized![/green] Config saved to [dim]{config.CONFIG_FILE}[/dim]")
             rprint("\n[bold]Your API key:[/bold]")
             rprint(f"  {data['api_key']}")
-            rprint("\n[dim]Keep this safe — you'll need it to log in on other machines.[/dim]")
+            rprint("\n[dim]Keep this safe: you'll need it to log in on other machines.[/dim]")
         except httpx.ConnectError:
             rprint(f"[red]✗ Connection failed.[/red] Is the server running at {server_url}?")
             raise typer.Exit(1)

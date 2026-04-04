@@ -166,8 +166,8 @@ def build_fallback_scorecard(trace: dict) -> dict:
         "dimensions": {
             "task_completion": {"score": accepted * 10, "notes": f"User action: {action}"},
             "tool_usage_efficiency": {"score": round(tool_score, 1), "notes": f"{tool_calls} tool calls"},
-            "response_quality": {"score": 5.0, "notes": "Heuristic default — no LLM evaluation available"},
-            "factual_grounding": {"score": 5.0, "notes": "Heuristic default — no LLM evaluation available"},
+            "response_quality": {"score": 5.0, "notes": "Heuristic default: no LLM evaluation available"},
+            "factual_grounding": {"score": 5.0, "notes": "Heuristic default: no LLM evaluation available"},
             "user_satisfaction": {"score": round(latency_score, 1), "notes": f"Latency: {latency}ms"},
         },
         "recommendations": "Enable LLM evaluation for detailed analysis.",

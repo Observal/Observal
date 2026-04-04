@@ -1,4 +1,4 @@
-"""Unit tests for POST /api/v1/telemetry/ingest — Phase 2."""
+"""Unit tests for POST /api/v1/telemetry/ingest: Phase 2."""
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch

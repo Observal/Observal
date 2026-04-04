@@ -1,8 +1,8 @@
-# Telemetry Overhaul — Design Document
+# Telemetry Overhaul: Design Document
 
 ## Vision
 
-Observal is a universal observability layer for the entire AI agent stack. It captures traces, spans, and metrics from MCP servers, multi-agent frameworks, memory systems, sandbox execution, knowledge graphs, and individual agent reasoning — all without requiring code changes to any of these systems.
+Observal is a universal observability layer for the entire AI agent stack. It captures traces, spans, and metrics from MCP servers, multi-agent frameworks, memory systems, sandbox execution, knowledge graphs, and individual agent reasoning: all without requiring code changes to any of these systems.
 
 When a user installs any tool via Observal, a lightweight shim wraps the process and silently captures all traffic. For HTTP-based services, an HTTP proxy does the same. Neither the IDE, the agent, nor the tool knows Observal is there.
 
@@ -82,7 +82,7 @@ Behavior:
 ### Resilience (both)
 
 - All telemetry sending is fire-and-forget with 5s timeout
-- Failed sends silently dropped — never retry, never block
+- Failed sends silently dropped: never retry, never block
 - If `OBSERVAL_SERVER` not set, passes through without capturing
 - Child process stderr forwarded to own stderr
 - MCP works identically whether Observal server is up or down
@@ -108,7 +108,7 @@ Behavior:
 }
 ```
 
-### After — Stdio MCP
+### After: Stdio MCP
 
 ```json
 {
@@ -125,7 +125,7 @@ Behavior:
 }
 ```
 
-### After — HTTP MCP
+### After: HTTP MCP
 
 ```json
 {
@@ -141,7 +141,7 @@ Behavior:
 }
 ```
 
-### After — Agent (bundles multiple MCPs)
+### After: Agent (bundles multiple MCPs)
 
 Each linked MCP gets its own shim. All share a common `OBSERVAL_AGENT_ID`:
 
@@ -189,17 +189,17 @@ CREATE TABLE traces (
     ide             LowCardinality(String),
     environment     LowCardinality(String) DEFAULT 'default',
 
-    -- Timing
+   -- Timing
     start_time      DateTime64(3),
     end_time        Nullable(DateTime64(3)),
 
-    -- Classification
+   -- Classification
     trace_type      LowCardinality(String) DEFAULT 'mcp',  -- 'mcp', 'agent', 'memory', 'sandbox', 'graph', 'framework'
     name            String DEFAULT '',
     metadata        Map(LowCardinality(String), String),
     tags            Array(String),
 
-    -- Input/output summary (optional, for top-level trace context)
+   -- Input/output summary (optional, for top-level trace context)
     input           Nullable(String) CODEC(ZSTD(3)),
     output          Nullable(String) CODEC(ZSTD(3)),
 
@@ -223,7 +223,7 @@ ORDER BY (user_id, toDate(start_time), trace_id);
 
 ### `spans`
 
-One row per operation within a trace. Covers tool calls, memory retrievals, graph traversals, sandbox executions, agent handoffs — everything.
+One row per operation within a trace. Covers tool calls, memory retrievals, graph traversals, sandbox executions, agent handoffs: everything.
 
 ```sql
 CREATE TABLE spans (
@@ -234,34 +234,34 @@ CREATE TABLE spans (
     agent_id                Nullable(String),
     user_id                 String,
 
-    -- Classification
+   -- Classification
     type                    LowCardinality(String),
-    -- MCP:       'tool_call', 'resource_read', 'prompt_get', 'initialize', 'tool_list', 'ping'
-    -- Agent:     'agent_turn', 'agent_handoff', 'reasoning_step', 'fallback'
-    -- Memory:    'memory_store', 'memory_retrieve', 'memory_consolidate'
-    -- Sandbox:   'sandbox_exec', 'sandbox_retry'
-    -- Graph:     'graph_traverse', 'graph_query'
-    -- Framework: 'orchestration', 'delegation'
-    -- Generic:   'other'
+   -- MCP:       'tool_call', 'resource_read', 'prompt_get', 'initialize', 'tool_list', 'ping'
+   -- Agent:     'agent_turn', 'agent_handoff', 'reasoning_step', 'fallback'
+   -- Memory:    'memory_store', 'memory_retrieve', 'memory_consolidate'
+   -- Sandbox:   'sandbox_exec', 'sandbox_retry'
+   -- Graph:     'graph_traverse', 'graph_query'
+   -- Framework: 'orchestration', 'delegation'
+   -- Generic:   'other'
 
-    name                    String,             -- tool name, agent name, memory key, etc.
-    method                  String DEFAULT '',  -- raw protocol method (e.g. 'tools/call')
+    name                    String,            -- tool name, agent name, memory key, etc.
+    method                  String DEFAULT '', -- raw protocol method (e.g. 'tools/call')
 
-    -- Full payloads
+   -- Full payloads
     input                   Nullable(String) CODEC(ZSTD(3)),
     output                  Nullable(String) CODEC(ZSTD(3)),
     error                   Nullable(String) CODEC(ZSTD(3)),
 
-    -- Timing
+   -- Timing
     start_time              DateTime64(3),
     end_time                Nullable(DateTime64(3)),
     latency_ms              Nullable(UInt32),
 
-    -- Status
-    status                  LowCardinality(String) DEFAULT 'success',  -- 'success', 'error', 'timeout', 'cancelled'
+   -- Status
+    status                  LowCardinality(String) DEFAULT 'success', -- 'success', 'error', 'timeout', 'cancelled'
     level                   LowCardinality(String) DEFAULT 'DEFAULT',
 
-    -- Resource usage (for sandbox, LLM calls)
+   -- Resource usage (for sandbox, LLM calls)
     token_count_input       Nullable(UInt32),
     token_count_output      Nullable(UInt32),
     token_count_total       Nullable(UInt32),
@@ -269,17 +269,17 @@ CREATE TABLE spans (
     cpu_ms                  Nullable(UInt32),
     memory_mb               Nullable(Float32),
 
-    -- Graph-specific
+   -- Graph-specific
     hop_count               Nullable(UInt8),
     entities_retrieved      Nullable(UInt16),
     relationships_used      Nullable(UInt16),
 
-    -- Agent-specific
+   -- Agent-specific
     retry_count             Nullable(UInt8),
-    tools_available         Nullable(UInt16),    -- how many tools were available at decision time
-    tool_schema_valid       Nullable(UInt8),     -- 1 = args matched schema, 0 = hallucinated params
+    tools_available         Nullable(UInt16),   -- how many tools were available at decision time
+    tool_schema_valid       Nullable(UInt8),    -- 1 = args matched schema, 0 = hallucinated params
 
-    -- Context
+   -- Context
     ide                     LowCardinality(String) DEFAULT '',
     environment             LowCardinality(String) DEFAULT 'default',
     metadata                Map(LowCardinality(String), String),
@@ -313,22 +313,22 @@ CREATE TABLE scores (
     agent_id        Nullable(String),
     user_id         String,
 
-    -- Score identity
+   -- Score identity
     name            String,
-    source          LowCardinality(String),     -- 'api', 'eval', 'annotation', 'computed'
-    data_type       LowCardinality(String),     -- 'numeric', 'boolean', 'categorical'
+    source          LowCardinality(String),    -- 'api', 'eval', 'annotation', 'computed'
+    data_type       LowCardinality(String),    -- 'numeric', 'boolean', 'categorical'
 
-    -- Score value
+   -- Score value
     value           Float64,
     string_value    Nullable(String),
     comment         Nullable(String) CODEC(ZSTD(1)),
 
-    -- Eval linkage
+   -- Eval linkage
     eval_template_id Nullable(String),
     eval_config_id  Nullable(String),
     eval_run_id     Nullable(String),
 
-    -- Context
+   -- Context
     environment     LowCardinality(String) DEFAULT 'default',
     metadata        Map(LowCardinality(String), String),
 
@@ -357,7 +357,7 @@ No automatic TTL. Data is retained indefinitely. Only an admin can trigger delet
 
 ## Metrics Catalog
 
-Everything below is derived from the traces, spans, and scores tables. No additional storage needed — these are computed at query time or via materialized views.
+Everything below is derived from the traces, spans, and scores tables. No additional storage needed: these are computed at query time or via materialized views.
 
 ### 1. MCP (Model Context Protocol)
 
@@ -628,7 +628,7 @@ This gives you Parameter Hallucination Rate and Selection Accuracy data for free
 - Managed eval templates (no custom authoring)
 - Background eval jobs via arq worker
 - Scores write to unified ClickHouse `scores` table with `source = 'eval'`
-- Designed as pluggable backend — swap to ITJ later without changing the interface
+- Designed as pluggable backend: swap to ITJ later without changing the interface
 
 ### Phase 9: Score Unification
 - Migrate existing `feedback` data to ClickHouse `scores` table
@@ -654,7 +654,7 @@ This gives you Parameter Hallucination Rate and Selection Accuracy data for free
 - **Keycloak** as identity gateway (Docker container in the stack)
 - Keycloak handles all upstream protocols: OIDC, SAML 2.0, LDAP, Kerberos, social login
 - Observal only speaks OIDC to Keycloak via **Authlib**
-- Enterprise admin configures their IdP in Keycloak admin UI — Observal code never changes
+- Enterprise admin configures their IdP in Keycloak admin UI: Observal code never changes
 - Web sessions: short-lived JWT (15min) + refresh token rotation in httpOnly cookie
 - CLI auth: device code flow (`observal login`) + API key fallback for CI/automation
 - Shim auth: reads from CLI config, env var override, ingestion-scoped
@@ -664,7 +664,7 @@ This gives you Parameter Hallucination Rate and Selection Accuracy data for free
 
 ### Phase 13: TUI Overhaul
 - Replace current Typer + Rich CLI with a full interactive TUI (Textual)
-- Claude Code / Kiro level polish — not a CLI that prints tables, a real terminal application
+- Claude Code / Kiro level polish: not a CLI that prints tables, a real terminal application
 - Live trace viewer: watch spans stream in real-time (WebSocket → terminal)
 - Interactive dashboards: metrics, charts, sparklines rendered in terminal
 - MCP/agent browser: search, filter, install with keyboard navigation
@@ -700,17 +700,17 @@ This gives you Parameter Hallucination Rate and Selection Accuracy data for free
 | Dashboard / Web UI queries | GraphQL (Strawberry) | Flexible nested queries on traces→spans→scores, exact field selection, real-time subscriptions |
 | Telemetry ingestion (shim → server) | REST | Simple fire-and-forget POST, no query flexibility needed |
 | CLI operations (submit, install, review, admin) | REST | CRUD, straightforward request/response |
-| Auth / SSO | **TBD — deferred to auth/SSO review** | |
+| Auth / SSO | **TBD: deferred to auth/SSO review** | |
 
 ### GraphQL Endpoint
 
-`POST /api/v1/graphql` — single endpoint, Strawberry + FastAPI integration.
+`POST /api/v1/graphql`: single endpoint, Strawberry + FastAPI integration.
 
 ### Stack
 
-- **Strawberry GraphQL** — async, native FastAPI mount, type-safe Python schema
-- **DataLoaders** — batch ClickHouse queries to avoid N+1 (e.g., loading scores for 50 spans in one query)
-- **Subscriptions** — WebSocket-based, for live trace/span streaming in the dashboard
+- **Strawberry GraphQL**: async, native FastAPI mount, type-safe Python schema
+- **DataLoaders**: batch ClickHouse queries to avoid N+1 (e.g., loading scores for 50 spans in one query)
+- **Subscriptions**: WebSocket-based, for live trace/span streaming in the dashboard
 
 ### Schema
 
@@ -955,16 +955,16 @@ Each nested field uses a DataLoader to batch ClickHouse queries:
 
 All existing REST endpoints remain for CLI and non-dashboard operations:
 
-- `POST /api/v1/telemetry/ingest` — shim/proxy ingestion
-- `POST /api/v1/telemetry/events` — backward compat
-- `/api/v1/auth/*` — **TBD pending SSO review**
-- `/api/v1/mcps/*` — registry CRUD
-- `/api/v1/agents/*` — agent CRUD
-- `/api/v1/review/*` — admin review workflow
-- `/api/v1/admin/*` — settings, user management
-- `/api/v1/feedback/*` — migrates to scores eventually
-- `/api/v1/eval/*` — eval engine operations
-- `/health` — health check
+- `POST /api/v1/telemetry/ingest`: shim/proxy ingestion
+- `POST /api/v1/telemetry/events`: backward compat
+- `/api/v1/auth/*`: **TBD pending SSO review**
+- `/api/v1/mcps/*`: registry CRUD
+- `/api/v1/agents/*`: agent CRUD
+- `/api/v1/review/*`: admin review workflow
+- `/api/v1/admin/*`: settings, user management
+- `/api/v1/feedback/*`: migrates to scores eventually
+- `/api/v1/eval/*`: eval engine operations
+- `/health`: health check
 
 The existing REST dashboard endpoints (`/api/v1/mcps/{id}/metrics`, `/api/v1/overview/*`, etc.) get deprecated once the GraphQL layer is live. The web UI switches to GraphQL queries.
 
@@ -978,10 +978,10 @@ Current auth is API-key-only (SHA-256 hashed, stored in PostgreSQL `users` table
 
 Full auth/SSO design (OIDC, SAML, session management, RBAC overhaul, token refresh, etc.) is pending review with the auth/SSO specialist. The design should cover:
 
-- Web UI session auth (currently API key in localStorage — not ideal)
+- Web UI session auth (currently API key in localStorage: not ideal)
 - SSO provider integration (Okta, Azure AD, Google Workspace, etc.)
 - CLI auth flow (device code flow? browser redirect?)
-- Shim auth (needs to be lightweight — env var based, no interactive login)
+- Shim auth (needs to be lightweight: env var based, no interactive login)
 - API key scoping (read-only keys, ingestion-only keys, admin keys)
 - RBAC model (current admin/developer/user may need refinement)
 - Multi-tenancy / org isolation
@@ -1008,7 +1008,7 @@ Full auth/SSO design (OIDC, SAML, session management, RBAC overhaul, token refre
 | 10 | Repo structure | **Monorepo with `just`** as task runner. Scoped CI via path filters in GitHub Actions. | Atomic cross-component changes. `just` is simple, CI path filters handle scoped builds. |
 | 11 | Testing | **pytest** (server unit/integration/E2E) + **Playwright** (dashboard UI). Kill bash scripts. | pytest covers the full backend pipeline including shim E2E. Playwright for critical UI flows only. |
 | 12 | CLI UX | **Full TUI with Textual** (Phase 13). Claude Code / Kiro level polish. Non-interactive mode preserved. | The CLI is the primary interface for developers. It should be beautiful, not just functional. |
-| 13 | Auth / SSO | **Keycloak** as identity gateway container. Observal only speaks OIDC (via Authlib). Keycloak brokers SAML, LDAP, Kerberos, OIDC — whatever the enterprise has. | Enterprise customers use different IdPs. One gateway, infinite protocols. Observal code never changes. |
+| 13 | Auth / SSO | **Keycloak** as identity gateway container. Observal only speaks OIDC (via Authlib). Keycloak brokers SAML, LDAP, Kerberos, OIDC: whatever the enterprise has. | Enterprise customers use different IdPs. One gateway, infinite protocols. Observal code never changes. |
 | 14 | Web sessions | **Short-lived JWT (15min) + refresh token rotation in httpOnly cookie**. Kill localStorage auth. | Secure, standard, works with Keycloak OIDC flow. |
 | 15 | CLI auth | **Device code flow + API key fallback**. Scoped keys: `ingestion`, `read`, `write`, `admin`. | Device code for humans, API keys for CI/automation. Least privilege via scopes. |
 | 16 | Project access | **Per-project RBAC** (user ↔ project ↔ role in PostgreSQL). | Fine-grained: admin of project A, viewer of project B. |
@@ -1019,7 +1019,7 @@ Full auth/SSO design (OIDC, SAML, session management, RBAC overhaul, token refre
 |----------|----------|
 | HTTP transport | HTTP proxy (`observal-proxy`), same fire-and-forget pattern |
 | Agent-level tracing | Parent trace groups all MCP traces via `OBSERVAL_AGENT_ID` + `parent_trace_id` |
-| Rate limiting | Not in scope — not our concern |
+| Rate limiting | Not in scope: not our concern |
 | Data retention | Indefinite. No TTL. Admin-only deletion via API |
 | Shim updates | `observal upgrade` command updates CLI + shim + proxy |
 | Schema compliance | Shim caches `tools/list` response and validates `tools/call` args against it |

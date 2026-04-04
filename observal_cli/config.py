@@ -108,7 +108,7 @@ def resolve_alias(name: str) -> str:
     if resolved:
         return resolved
 
-    # Partial name match — if exactly one result
+    # Partial name match: if exactly one result
     matches = [(n, uid) for n, uid in names.items() if name.lower() in n]
     if len(matches) == 1:
         return matches[0][1]

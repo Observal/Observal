@@ -314,7 +314,7 @@ def eval_run(
         grade = sc.get("overall_grade", "?")
         score = sc.get("overall_score", 0)
         color = "green" if score >= 7 else "yellow" if score >= 4 else "red"
-        rprint(f"  [{color}]{grade}[/{color}] {score:.1f}/10 — {sc['id'][:8]}…")
+        rprint(f"  [{color}]{grade}[/{color}] {score:.1f}/10: {sc['id'][:8]}…")
 
 
 @eval_app.command(name="scorecards")
@@ -353,7 +353,7 @@ def eval_scorecards(
             sc.get("version", ""),
             f"[{color}]{score:.1f}[/{color}]",
             sc.get("overall_grade", ""),
-            sc.get("bottleneck", "—"),
+            sc.get("bottleneck", "--"),
             relative_time(sc.get("evaluated_at")),
             str(sc["id"])[:8] + "…",
         )
@@ -377,7 +377,7 @@ def eval_show(
     color = "green" if score >= 7 else "yellow" if score >= 4 else "red"
     console.print(
         kv_panel(
-            f"Scorecard — {sc.get('overall_grade', '?')} ({score:.1f}/10)",
+            f"Scorecard: {sc.get('overall_grade', '?')} ({score:.1f}/10)",
             [
                 ("Bottleneck", sc.get("bottleneck", "N/A")),
                 ("Recommendations", sc.get("recommendations", "N/A")),
@@ -562,16 +562,16 @@ def register_traces(app: typer.Typer):
         table.add_column("When")
         for i, t in enumerate(items, 1):
             m = t.get("metrics", {})
-            ref = t.get("mcpId") or t.get("agentId") or "—"
+            ref = t.get("mcpId") or t.get("agentId") or "--"
             errs = m.get("errorCount", 0)
             err_style = "red" if errs > 0 else ""
             table.add_row(
                 str(i),
                 t["traceId"][:12] + "…",
                 t.get("traceType", ""),
-                t.get("name", "") or "—",
+                t.get("name", "") or "--",
                 ref[:16],
-                t.get("ide", "") or "—",
+                t.get("ide", "") or "--",
                 str(m.get("totalSpans", 0)),
                 f"[{err_style}]{errs}[/{err_style}]" if err_style else str(errs),
                 str(m.get("toolCallCount", 0)),
@@ -618,7 +618,7 @@ def register_traces(app: typer.Typer):
             output_json(trace_data)
             return
 
-        rprint(f"\n[bold]Trace:[/bold] {trace_data['traceId']} — {trace_data.get('name', '')}\n")
+        rprint(f"\n[bold]Trace:[/bold] {trace_data['traceId']}: {trace_data.get('name', '')}\n")
 
         spans_data = trace_data.get("spans", [])
         if not spans_data:
@@ -638,9 +638,9 @@ def register_traces(app: typer.Typer):
             schema = (
                 "[green]✓[/green]"
                 if s.get("toolSchemaValid") is True
-                else ("[red]✗[/red]" if s.get("toolSchemaValid") is False else "[dim]—[/dim]")
+                else ("[red]✗[/red]" if s.get("toolSchemaValid") is False else "[dim]--[/dim]")
             )
-            latency = f"{s['latencyMs']}ms" if s.get("latencyMs") else "—"
+            latency = f"{s['latencyMs']}ms" if s.get("latencyMs") else "--"
             st = s.get("status", "")
             st_display = f"[red]{st}[/red]" if st == "error" else f"[green]{st}[/green]" if st == "success" else st
             table.add_row(
@@ -648,7 +648,7 @@ def register_traces(app: typer.Typer):
                 s["spanId"][:12] + "…",
                 s.get("type", ""),
                 s.get("name", ""),
-                s.get("method", "") or "—",
+                s.get("method", "") or "--",
                 latency,
                 st_display,
                 schema,
@@ -684,5 +684,5 @@ def register_lifecycle(app: typer.Typer):
     @app.command()
     def downgrade():
         """Downgrade observal CLI to a previous version."""
-        rprint("[yellow]WIP — not yet implemented.[/yellow]")
+        rprint("[yellow]WIP: not yet implemented.[/yellow]")
         rprint("[dim]Track: https://github.com/BlazeUp-AI/Observal/issues/19[/dim]")

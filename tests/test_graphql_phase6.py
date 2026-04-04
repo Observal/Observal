@@ -1,4 +1,4 @@
-"""Unit tests for GraphQL layer — Phase 6."""
+"""Unit tests for GraphQL layer: Phase 6."""
 
 from unittest.mock import AsyncMock, patch
 

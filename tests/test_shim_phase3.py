@@ -1,4 +1,4 @@
-"""Unit tests for observal-shim — Phase 3."""
+"""Unit tests for observal-shim: Phase 3."""
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch

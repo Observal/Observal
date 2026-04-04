@@ -1,6 +1,6 @@
 {
   "name": "observal-demo",
-  "description": "Demo agent with Observal telemetry — bundles 3 mock MCP servers with shim wrapping for full trace capture",
+  "description": "Demo agent with Observal telemetry: bundles 3 mock MCP servers with shim wrapping for full trace capture",
   "prompt": "You are a demo agent instrumented with Observal telemetry. You have access to general tools (echo, add, read_file, write_file, search), a knowledge graph (graph_query, graph_traverse, entity_lookup), and multi-agent coordination tools (delegate_task, reasoning_step, memory_store, memory_retrieve). Use these tools to demonstrate Observal's telemetry capture capabilities.",
   "mcpServers": {
     "mock-mcp": {

@@ -9,7 +9,7 @@ def generate_tool_config(tool_listing, ide: str, server_url: str = "http://local
     endpoint_url = getattr(tool_listing, "endpoint_url", None)
 
     if endpoint_url:
-        # HTTP tool — use observal-proxy
+        # HTTP tool: use observal-proxy
         return {
             "tool": {
                 "proxy_url": "http://localhost:0",
@@ -21,7 +21,7 @@ def generate_tool_config(tool_listing, ide: str, server_url: str = "http://local
             "listing_id": tool_id,
         }
 
-    # Non-HTTP tool — emit PostToolUse hook
+    # Non-HTTP tool: emit PostToolUse hook
     hook_entry = {
         "type": "http",
         "url": f"{server_url}/api/v1/telemetry/hooks",

@@ -1,6 +1,6 @@
 # Telemetry Log Collection Spec
 
-How Observal captures real logs/output for every registry type. This is the implementation spec — not aspirational, but what we build.
+How Observal captures real logs/output for every registry type. This is the implementation spec: not aspirational, but what we build.
 
 ## Core Principle
 
@@ -30,7 +30,7 @@ Every registry type must produce a span with real `input` and `output` fields co
   - `oom_killed`: from container state
   - `container_id`: short container ID
   - `latency_ms`: wall-clock time from run to wait completion
-- **Why `container.logs()` not `container.stats()`**: Stats give cgroup metrics (CPU/memory numbers). Logs give you what actually happened — the commands, their output, errors, stack traces. That's what developers need to debug.
+- **Why `container.logs()` not `container.stats()`**: Stats give cgroup metrics (CPU/memory numbers). Logs give you what actually happened: the commands, their output, errors, stack traces. That's what developers need to debug.
 
 ### 3. GraphRAG
 - **Mechanism**: `observal-graphrag-proxy` HTTP reverse proxy

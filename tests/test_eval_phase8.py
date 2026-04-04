@@ -1,4 +1,4 @@
-"""Unit tests for eval engine v2 — Phase 8."""
+"""Unit tests for eval engine v2: Phase 8."""
 
 from unittest.mock import AsyncMock, patch
 

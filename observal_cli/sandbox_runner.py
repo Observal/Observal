@@ -188,7 +188,7 @@ def main():
             env[k] = v
             i += 2
         elif args[i] == "--":
-            # Everything after -- is the command
+            # Everything after: is the command
             command = " ".join(args[i + 1:])
             break
         else:

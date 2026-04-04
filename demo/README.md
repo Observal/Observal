@@ -20,19 +20,19 @@ The script checks the Docker stack, authenticates, runs all 3 mock MCPs through 
 
 ## Mock MCP Servers
 
-### mock_mcp.py — General Purpose
+### mock_mcp.py: General Purpose
 
 Tools: `echo`, `add`, `read_file`, `write_file`, `search`
 
 Also responds to `resources/read`, `prompts/get`, and `ping`. Generates diverse span types: `tool_call`, `resource_read`, `prompt_get`, `initialize`, `tool_list`, `ping`.
 
-### mock_graphrag_mcp.py — Knowledge Graph
+### mock_graphrag_mcp.py: Knowledge Graph
 
 Tools: `graph_query`, `graph_traverse`, `entity_lookup`
 
 Returns fake knowledge graph data with entities (AuthService, UserDB, APIGateway, etc.) and relationships (reads_from, routes_to, caches_in). Exercises graph-specific span columns: `hop_count`, `entities_retrieved`, `relationships_used`.
 
-### mock_agent_mcp.py — Multi-Agent
+### mock_agent_mcp.py: Multi-Agent
 
 Tools: `delegate_task`, `reasoning_step`, `memory_store`, `memory_retrieve`
 

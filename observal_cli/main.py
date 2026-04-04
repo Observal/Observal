@@ -1,10 +1,10 @@
-"""Observal CLI — MCP Server & Agent Registry."""
+"""Observal CLI: MCP Server & Agent Registry."""
 
 import typer
 
 app = typer.Typer(
     name="observal",
-    help="Observal — MCP Server & Agent Registry CLI",
+    help="Observal: MCP Server & Agent Registry CLI",
     no_args_is_help=True,
     rich_markup_mode="rich",
     pretty_exceptions_enable=False,

@@ -55,7 +55,7 @@ def generate_agent_config(agent: Agent, ide: str) -> dict:
     mcp_configs = _build_mcp_configs(agent, ide)
 
     if ide == "kiro":
-        # Kiro agent JSON — drop into ~/.kiro/agents/<name>.json
+        # Kiro agent JSON: drop into ~/.kiro/agents/<name>.json
         return {
             "agent_file": {
                 "path": f"~/.kiro/agents/{safe_name}.json",
@@ -93,7 +93,7 @@ def generate_agent_config(agent: Agent, ide: str) -> dict:
             "mcp_config": {"mcpServers": mcp_configs},
         }
 
-    # cursor, vscode, windsurf — rules file + mcp.json
+    # cursor, vscode, windsurf: rules file + mcp.json
     ide_paths = {
         "cursor": (".cursor/rules/{name}.md", ".cursor/mcp.json"),
         "vscode": (".vscode/rules/{name}.md", ".vscode/mcp.json"),

@@ -1,4 +1,4 @@
-"""Strawberry GraphQL schema — types, resolvers, DataLoaders, subscriptions."""
+"""Strawberry GraphQL schema: types, resolvers, DataLoaders, subscriptions."""
 
 import json
 import logging

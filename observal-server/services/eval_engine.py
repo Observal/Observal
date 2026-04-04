@@ -1,4 +1,4 @@
-"""Eval engine v2 — managed LLM-as-judge with pluggable backend.
+"""Eval engine v2: managed LLM-as-judge with pluggable backend.
 
 Reads traces/spans from ClickHouse, runs eval templates, writes scores back.
 Designed as a pluggable interface so ITJ can replace LLM-as-judge later.

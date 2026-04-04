@@ -1,4 +1,4 @@
-"""Unit tests for observal-proxy — Phase 4."""
+"""Unit tests for observal-proxy: Phase 4."""
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch

@@ -7,12 +7,12 @@
 
 Expand Observal from 2 registry types (MCP Servers, Agents) to 8 by adding:
 
-1. **Tool Calls** — standalone tools exposed to agents
-2. **Sandbox Exec** — Docker/LXC execution environments
-3. **GraphRAGs** — knowledge graph + RAG system endpoints
-4. **Hooks** — lifecycle callbacks for agent sessions
-5. **Skills** — reusable instruction/script bundles for coding agents
-6. **Prompts** — managed prompt templates
+1. **Tool Calls**: standalone tools exposed to agents
+2. **Sandbox Exec**: Docker/LXC execution environments
+3. **GraphRAGs**: knowledge graph + RAG system endpoints
+4. **Hooks**: lifecycle callbacks for agent sessions
+5. **Skills**: reusable instruction/script bundles for coding agents
+6. **Prompts**: managed prompt templates
 
 All 6 new types go through the existing admin review workflow. Feedback and metrics extend to all types.
 
@@ -195,19 +195,19 @@ Lifecycle callbacks that execute at predefined points during an agent session.
 Union of Claude Code, Cursor, and Kiro hook systems:
 
 | Event | Claude Code | Cursor | Kiro | Description |
-|-------|:-----------:|:------:|:----:|-------------|
+|-------| ------------:| -------:| -----:|-------------|
 | `prompt_submit` | ✓ | ✓ | ✓ | User submits a prompt |
 | `pre_tool_use` | ✓ (PreToolUse) | ✓ | ✓ | Before any tool call |
 | `post_tool_use` | ✓ (PostToolUse) | ✓ | ✓ | After any tool call completes |
-| `session_start` | ✓ (SessionStart) | ✓ | — | Agent session begins |
+| `session_start` | ✓ (SessionStart) | ✓ | - | Agent session begins |
 | `agent_stop` | ✓ (Stop) | ✓ | ✓ (Agent Stop) | Agent finishes its turn |
-| `file_create` | — | — | ✓ | New file created in workspace |
-| `file_save` | — | — | ✓ | File saved (matches glob pattern) |
-| `file_delete` | — | — | ✓ | File deleted |
-| `pre_task_exec` | — | — | ✓ | Before a spec task begins (Kiro-specific) |
-| `post_task_exec` | — | — | ✓ | After a spec task completes (Kiro-specific) |
-| `manual` | — | — | ✓ | On-demand manual trigger |
-| `error` | ✓ | — | — | When an error occurs |
+| `file_create` | - | - | ✓ | New file created in workspace |
+| `file_save` | - | - | ✓ | File saved (matches glob pattern) |
+| `file_delete` | - | - | ✓ | File deleted |
+| `pre_task_exec` | - | - | ✓ | Before a spec task begins (Kiro-specific) |
+| `post_task_exec` | - | - | ✓ | After a spec task completes (Kiro-specific) |
+| `manual` | - | - | ✓ | On-demand manual trigger |
+| `error` | ✓ | - | - | When an error occurs |
 
 Kiro hooks additionally support tool name filtering with categories (`read`, `write`, `shell`, `web`, `spec`, `*`) and prefix filters (`@mcp`, `@powers`, `@builtin`) with regex matching (e.g. `@mcp.*sql.*`).
 
@@ -306,9 +306,9 @@ Reusable instruction/script bundles that coding agents load for specialized task
 | Cursor | `.cursor/skills/<name>/` | `~/.cursor/skills/<name>/` | Auto + `/skill-name` | ✓ |
 | Gemini CLI | `.gemini/skills/<name>/` | `~/.agents/skills/<name>/` | Auto + `/skill-name` | ✓ |
 | Kiro IDE | `.kiro/skills/<name>/` | `~/.kiro/skills/<name>/` | Auto (description match) + `/` menu | ✓ |
-| Kiro CLI | `.kiro/skills/<name>/` | `~/.kiro/skills/<name>/` | Auto (description match) | — |
+| Kiro CLI | `.kiro/skills/<name>/` | `~/.kiro/skills/<name>/` | Auto (description match) | - |
 
-Kiro additionally has **Powers** — bundles of MCP server config + POWER.md steering + optional hooks that activate dynamically based on conversation keywords. Powers are a superset of skills for MCP-backed workflows. Observal should support Powers as a variant of skills (see Powers section below).
+Kiro additionally has **Powers**: bundles of MCP server config + POWER.md steering + optional hooks that activate dynamically based on conversation keywords. Powers are a superset of skills for MCP-backed workflows. Observal should support Powers as a variant of skills (see Powers section below).
 
 ### Skill Structure (what gets submitted)
 
@@ -668,14 +668,14 @@ Existing tables modified:
 
 Observal has a 3-layer telemetry stack:
 
-1. **Collection**: The `observal-shim` (stdio) and `observal-proxy` (HTTP) sit between IDE and MCP server, transparently observing JSON-RPC messages. They pair requests/responses into spans and batch-POST them to the ingest endpoint. Fire-and-forget — if the server is down, spans are silently dropped.
+1. **Collection**: The `observal-shim` (stdio) and `observal-proxy` (HTTP) sit between IDE and MCP server, transparently observing JSON-RPC messages. They pair requests/responses into spans and batch-POST them to the ingest endpoint. Fire-and-forget: if the server is down, spans are silently dropped.
 
 2. **Storage**: ClickHouse with 5 tables:
-   - `mcp_tool_calls` (legacy) — flat tool call events
-   - `agent_interactions` (legacy) — flat agent interaction events
-   - `traces` — ReplacingMergeTree, bloom filter indexes, parent/child trace linking
-   - `spans` — ReplacingMergeTree, typed spans with latency, tokens, cost, error, schema compliance fields
-   - `scores` — ReplacingMergeTree, quality metrics attached to traces/spans (from eval engine or feedback dual-write)
+   - `mcp_tool_calls` (legacy): flat tool call events
+   - `agent_interactions` (legacy): flat agent interaction events
+   - `traces`: ReplacingMergeTree, bloom filter indexes, parent/child trace linking
+   - `spans`: ReplacingMergeTree, typed spans with latency, tokens, cost, error, schema compliance fields
+   - `scores`: ReplacingMergeTree, quality metrics attached to traces/spans (from eval engine or feedback dual-write)
 
 3. **Query**: GraphQL API with DataLoaders for batch ClickHouse queries. REST dashboard endpoints for aggregate metrics. WebSocket subscriptions for live trace/span events via Redis pub/sub.
 
@@ -705,11 +705,11 @@ Extend the `type` LowCardinality column with new values. Aligned with [OpenTelem
 |-----------|------------------------------|--------|-------------|
 | `tool_call` | `execute_tool` | Shim/proxy (existing) | MCP tool invocation |
 | `tool_invoke` | `execute_tool` | Tool shim (new) | Standalone tool invocation (non-MCP) |
-| `sandbox_exec` | — (custom) | Sandbox wrapper | Code execution in Docker/LXC |
+| `sandbox_exec` | - (custom) | Sandbox wrapper | Code execution in Docker/LXC |
 | `retrieval` | `retrieval` | GraphRAG proxy | Knowledge graph query |
-| `hook_exec` | — (custom) | Hook runner | Lifecycle hook execution |
-| `skill_activate` | — (custom) | IDE telemetry | Skill activation event |
-| `prompt_render` | — (custom) | API/CLI | Prompt template rendering |
+| `hook_exec` | - (custom) | Hook runner | Lifecycle hook execution |
+| `skill_activate` | - (custom) | IDE telemetry | Skill activation event |
+| `prompt_render` | - (custom) | API/CLI | Prompt template rendering |
 | `inference` | `chat` / `generate_content` | Shim (existing, from LLM calls) | LLM inference call |
 | `embeddings` | `embeddings` | GraphRAG proxy | Embedding generation for RAG |
 
@@ -777,7 +777,7 @@ With bloom filter indexes on each.
 
 #### Tool Calls (standalone)
 
-Collection mechanism: **Tool shim** — a new variant of `observal-shim` for non-MCP tools.
+Collection mechanism: **Tool shim**: a new variant of `observal-shim` for non-MCP tools.
 
 For HTTP tools, the config generator wraps the `endpoint_url` with `observal-proxy`, which intercepts the HTTP request/response and emits a `tool_invoke` span. For function-schema tools invoked by the IDE natively, telemetry comes from the IDE's hook system (pre_tool_use / post_tool_use hooks that POST to the ingest endpoint).
 
@@ -792,7 +792,7 @@ Span attributes captured:
 
 #### Sandbox Exec
 
-Collection mechanism: **Sandbox wrapper** — a lightweight sidecar or wrapper script that runs inside or alongside the container.
+Collection mechanism: **Sandbox wrapper**: a lightweight sidecar or wrapper script that runs inside or alongside the container.
 
 Two approaches depending on runtime:
 1. **Docker**: Use `docker stats` API streaming + container events API. The wrapper script captures resource metrics and exit status, then POSTs a `sandbox_exec` span to the ingest endpoint.
@@ -817,11 +817,11 @@ Dashboard metrics:
 
 #### GraphRAGs
 
-Collection mechanism: **GraphRAG proxy** — an HTTP reverse proxy (like `observal-proxy`) that sits between the agent and the GraphRAG endpoint.
+Collection mechanism: **GraphRAG proxy**: an HTTP reverse proxy (like `observal-proxy`) that sits between the agent and the GraphRAG endpoint.
 
 The proxy intercepts queries and responses, emitting two span types:
-1. `embeddings` span — if the query involves embedding generation (captures embedding latency, token count)
-2. `retrieval` span — the actual knowledge graph query (captures entities, relationships, relevance)
+1. `embeddings` span: if the query involves embedding generation (captures embedding latency, token count)
+2. `retrieval` span: the actual knowledge graph query (captures entities, relationships, relevance)
 
 This aligns with the [OTel GenAI retrieval span](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/#retrievals) convention which defines `gen_ai.operation.name = "retrieval"` with `gen_ai.data_source.id`.
 
@@ -847,7 +847,7 @@ Dashboard metrics (aligned with industry RAG observability patterns):
 
 #### Hooks
 
-Collection mechanism: **Hook runner telemetry** — the hook execution runtime (whether shell, HTTP, script, or agent_prompt) emits a `hook_exec` span.
+Collection mechanism: **Hook runner telemetry**: the hook execution runtime (whether shell, HTTP, script, or agent_prompt) emits a `hook_exec` span.
 
 For hooks installed via Observal, the config generator wraps the hook handler with a telemetry wrapper that:
 1. Records the hook event trigger (pre_tool_use, file_save, etc.)
@@ -873,7 +873,7 @@ Dashboard metrics:
 
 #### Skills
 
-Collection mechanism: **IDE telemetry events** — skills don't have a runtime proxy. Telemetry comes from the IDE reporting skill activation events.
+Collection mechanism: **IDE telemetry events**: skills don't have a runtime proxy. Telemetry comes from the IDE reporting skill activation events.
 
 The shim/proxy already captures `OBSERVAL_AGENT_ID` from env vars. Extend this to capture `OBSERVAL_SKILL_ID` when a skill is active. The IDE (or the skill's scripts, if they call external tools) can POST `skill_activate` spans.
 
@@ -891,7 +891,7 @@ Dashboard metrics:
 
 #### Prompts
 
-Collection mechanism: **API-level telemetry** — the `/render` endpoint emits a `prompt_render` span directly.
+Collection mechanism: **API-level telemetry**: the `/render` endpoint emits a `prompt_render` span directly.
 
 When a prompt is rendered (via API or CLI), the server creates a span with:
 - `variables_provided`: number of variables filled
@@ -952,7 +952,7 @@ class SpanIngest(BaseModel):
     rendered_tokens: int | None = None
 ```
 
-All new fields are nullable and optional — existing shim/proxy clients continue working without changes.
+All new fields are nullable and optional: existing shim/proxy clients continue working without changes.
 
 ### GraphQL Schema Extensions
 
@@ -1077,13 +1077,13 @@ This alignment means Observal telemetry can be exported to any OTel-compatible b
 
 ## Implementation Order
 
-1. **Submissions table + review refactor** — unblock everything else
-2. **Prompts** — simplest new type, no validation pipeline, good to prove the pattern
-3. **Telemetry schema extensions** — ALTER TABLE for new span/trace columns, extend ingest schemas
-4. **Tool Calls** — schema validation only, no git clone; includes tool shim for telemetry
-5. **Hooks** — introduces agent linking pattern; includes hook runner telemetry wrapper
-6. **Skills** — git clone + SKILL.md parsing, reuses MCP validator patterns; includes Powers variant
-7. **GraphRAGs** — endpoint validation; includes GraphRAG proxy for retrieval/embedding telemetry
-8. **Sandbox Exec** — most complex validation (image pull + security scan); includes container metrics collection
-9. **Feedback + metrics extension** — wire up all types
-10. **GraphQL + dashboard extension** — new metrics types, subscription filters, web UI pages
+1. **Submissions table + review refactor**: unblock everything else
+2. **Prompts**: simplest new type, no validation pipeline, good to prove the pattern
+3. **Telemetry schema extensions**: ALTER TABLE for new span/trace columns, extend ingest schemas
+4. **Tool Calls**: schema validation only, no git clone; includes tool shim for telemetry
+5. **Hooks**: introduces agent linking pattern; includes hook runner telemetry wrapper
+6. **Skills**: git clone + SKILL.md parsing, reuses MCP validator patterns; includes Powers variant
+7. **GraphRAGs**: endpoint validation; includes GraphRAG proxy for retrieval/embedding telemetry
+8. **Sandbox Exec**: most complex validation (image pull + security scan); includes container metrics collection
+9. **Feedback + metrics extension**: wire up all types
+10. **GraphQL + dashboard extension**: new metrics types, subscription filters, web UI pages

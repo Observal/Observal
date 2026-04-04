@@ -1,6 +1,6 @@
 # Contributing to Observal
 
-Contributions of all kinds are welcome — bug fixes, new features, documentation improvements.
+Contributions of all kinds are welcome: bug fixes, new features, documentation improvements.
 
 ## Fork and Clone
 
@@ -61,7 +61,7 @@ make test     # quick
 make test-v   # verbose
 ```
 
-All tests must pass before submitting a PR. Tests mock all external services — no Docker needed.
+All tests must pass before submitting a PR. Tests mock all external services: no Docker needed.
 
 ## Branch Naming
 

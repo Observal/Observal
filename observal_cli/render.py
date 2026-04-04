@@ -36,7 +36,7 @@ def status_badge(status: str) -> str:
 
 def relative_time(iso: str | None) -> str:
     if not iso:
-        return "—"
+        return "--"
     try:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         now = datetime.now(UTC)
@@ -53,7 +53,7 @@ def relative_time(iso: str | None) -> str:
         d = secs // 86400
         return f"{d}d ago"
     except Exception:
-        return iso[:19] if iso else "—"
+        return iso[:19] if iso else "--"
 
 
 # ── Stars ────────────────────────────────────────────────

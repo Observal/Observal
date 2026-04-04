@@ -1,4 +1,4 @@
-# Observal — MCP Server & Agent Submission Guide
+# Observal: MCP Server & Agent Submission Guide
 
 ---
 
@@ -128,7 +128,7 @@ your-project/
 **Claude Code:**
 Run the shell command:
 ```bash
-claude mcp add your-mcp-server -- python -m your-mcp-server
+claude mcp add your-mcp-server: python -m your-mcp-server
 ```
 
 **Gemini CLI:**
@@ -160,7 +160,7 @@ Then restart your IDE. The MCP server will be available to your AI assistant.
 
 ## Part 3: Creating an Agent
 
-An agent in Observal is **not a Git repo** — it's a configuration object you assemble:
+An agent in Observal is **not a Git repo**: it's a configuration object you assemble:
 
 ```
 Agent = System Prompt + MCP Servers + Model Config + Goal Template
@@ -183,14 +183,14 @@ Agent = System Prompt + MCP Servers + Model Config + Goal Template
 2. Fill in basic info (name, version, owner, model)
 3. Write the system prompt (50+ chars)
 4. Write the description (100+ chars)
-5. **Select IDEs** — check which IDEs this agent supports
-6. **Link Registry MCPs** — check any approved MCPs from the registry
-7. **Add External MCPs** — click "+ Add External MCP" for any MCP not in the registry:
+5. **Select IDEs**: check which IDEs this agent supports
+6. **Link Registry MCPs**: check any approved MCPs from the registry
+7. **Add External MCPs**: click "+ Add External MCP" for any MCP not in the registry:
    - **Name**: `github` 
    - **Command**: `npx`
    - **Args**: `-y @modelcontextprotocol/server-github`
    - **Source URL**: `https://github.com/modelcontextprotocol/servers`
-8. **Define Goal Template** — what the agent should produce:
+8. **Define Goal Template**: what the agent should produce:
    - Add sections (e.g., "Root Cause", "Recommendations")
    - Check "Grounding" if the section must cite sources
 9. Click **"Create Agent"**
@@ -233,8 +233,8 @@ For Python MCPs:
 2. In the **Install** section, click your IDE
 3. Click **"Generate Config"**
 4. You get two downloadable files:
-   - **Rules file** (`.md`) — the system prompt, goes in your IDE's rules directory
-   - **MCP config** (`.json`) — all MCP servers bundled, goes in your IDE's MCP config
+   - **Rules file** (`.md`): the system prompt, goes in your IDE's rules directory
+   - **MCP config** (`.json`): all MCP servers bundled, goes in your IDE's MCP config
 
 ### Via CLI
 
@@ -268,8 +268,8 @@ your-project/
 cp incident-analyzer.md .claude/rules/
 
 # Run the MCP setup commands (shown in the install output)
-claude mcp add jira-mcp -- python -m jira_connector
-claude mcp add github -- npx -y @modelcontextprotocol/server-github
+claude mcp add jira-mcp: python -m jira_connector
+claude mcp add github: npx -y @modelcontextprotocol/server-github
 ```
 
 **Gemini CLI:**
@@ -288,7 +288,7 @@ After placing the config files, install the actual MCP server packages:
 # For Python MCPs from the registry
 pip install jira-mcp knowledge-graph-mcp
 
-# For npm-based external MCPs — no install needed
+# For npm-based external MCPs: no install needed
 # npx downloads them automatically on first use
 
 # For Python MCPs from git

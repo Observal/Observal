@@ -326,7 +326,7 @@ async def run_shim(mcp_id: str, command: list[str]):
         server_url = server_url or cfg.get("server_url", "")
 
     if not server_url or not api_key:
-        # No config — pass through without capturing
+        # No config: pass through without capturing
         proc = await asyncio.create_subprocess_exec(
             *command,
             stdin=sys.stdin,

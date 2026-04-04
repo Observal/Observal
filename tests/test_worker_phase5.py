@@ -1,4 +1,4 @@
-"""Unit tests for Redis service and arq worker — Phase 5."""
+"""Unit tests for Redis service and arq worker: Phase 5."""
 
 import json
 from pathlib import Path

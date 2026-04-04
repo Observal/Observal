@@ -230,7 +230,7 @@ def agent_install(
 
     rprint(f"\n[bold]Config for {ide}:[/bold]\n")
 
-    # Kiro agent file — single JSON to drop in
+    # Kiro agent file: single JSON to drop in
     agent_file = snippet.get("agent_file")
     if agent_file:
         rprint(f"[bold]Save to:[/bold] {agent_file['path']}")

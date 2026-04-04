@@ -1,4 +1,4 @@
-"""Unit tests for ClickHouse service — Phase 1 (traces, spans, scores)."""
+"""Unit tests for ClickHouse service: Phase 1 (traces, spans, scores)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 

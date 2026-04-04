@@ -32,13 +32,13 @@ def register_mcp(app: typer.Typer):
             try:
                 prefill = client.post("/api/v1/mcps/analyze", {"git_url": git_url})
             except (Exception, SystemExit):
-                rprint("[yellow]Could not analyze repo — fill in details manually.[/yellow]")
+                rprint("[yellow]Could not analyze repo: fill in details manually.[/yellow]")
                 prefill = {}
 
         if prefill.get("tools"):
             rprint(f"\n[bold]Detected {len(prefill['tools'])} tools:[/bold]")
             for t in prefill["tools"][:10]:
-                rprint(f"  [cyan]•[/cyan] {t.get('name', '?')} — {t.get('description', '')[:60]}")
+                rprint(f"  [cyan]•[/cyan] {t.get('name', '?')}: {t.get('description', '')[:60]}")
             if len(prefill["tools"]) > 10:
                 rprint(f"  [dim]...and {len(prefill['tools']) - 10} more[/dim]")
             rprint()

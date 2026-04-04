@@ -33,8 +33,8 @@ check_cmd() {
 send_jsonrpc() {
     # Usage: send_jsonrpc <mcp_id> <script> <messages_json_array>
     local mcp_id="$1" script="$2" messages="$3"
-    info "Running observal-shim --mcp-id $mcp_id -- python3 $script"
-    echo "$messages" | jq -c '.[]' | observal-shim --mcp-id "$mcp_id" -- python3 "$script" > /dev/null 2>&1 || true
+    info "Running observal-shim --mcp-id $mcp_id: python3 $script"
+    echo "$messages" | jq -c '.[]' | observal-shim --mcp-id "$mcp_id": python3 "$script" > /dev/null 2>&1 || true
     sleep 1
 }
 

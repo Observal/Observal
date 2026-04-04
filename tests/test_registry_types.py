@@ -130,7 +130,7 @@ class TestModels:
         assert AgentHookLink.__tablename__ == "agent_hook_links"
 
     def test_listing_status_reused_not_redefined(self):
-        """All 6 models import ListingStatus from models.mcp — not their own copy."""
+        """All 6 models import ListingStatus from models.mcp: not their own copy."""
         from models.graphrag import GraphRagListing
         from models.hook import HookListing
         from models.mcp import ListingStatus as Canonical

@@ -38,7 +38,7 @@ MCP_ID=$(post "${API}/api/v1/mcps/submit" '{
   "name": "filesystem-mcp",
   "version": "1.0.0",
   "category": "filesystem",
-  "description": "MCP server for filesystem operations — read, write, search, and manage files and directories. Provides tools for listing directory contents, reading file content, writing files, and searching with glob patterns.",
+  "description": "MCP server for filesystem operations: read, write, search, and manage files and directories. Provides tools for listing directory contents, reading file content, writing files, and searching with glob patterns.",
   "owner": "modelcontextprotocol"
 }' | jid)
 ok "Submitted MCP: $MCP_ID"
@@ -180,7 +180,7 @@ echo "$SKILL_INST" | python3 -m json.tool 2>/dev/null || echo "$SKILL_INST"
 ok "Skill install config (SessionStart/End hooks)"
 
 ###############################################################################
-hdr "6. SANDBOX — REAL DOCKER EXECUTION"
+hdr "6. SANDBOX: REAL DOCKER EXECUTION"
 ###############################################################################
 info "Submitting Python sandbox..."
 SANDBOX_ID=$(post "${API}/api/v1/sandboxes/submit" '{
@@ -218,7 +218,7 @@ print(\"Sandbox execution successful!\")
 "' \
   --timeout 30
 echo "--- end container output ---"
-ok "Sandbox execution completed — logs captured via container.logs()"
+ok "Sandbox execution completed: logs captured via container.logs()"
 
 info "Running Alpine container with shell commands..."
 echo "--- container stdout/stderr ---"
@@ -414,12 +414,12 @@ hdr "RESULTS"
 ###############################################################################
 echo ""
 ok "MCP Server:  $MCP_ID (filesystem-mcp)"
-ok "Prompt:      $PROMPT_ID (code-review-prompt) — rendered + span emitted"
-ok "Tool:        $TOOL_ID (github-code-search) — HTTP proxy config"
-ok "Hook:        $HOOK_ID (post-tool-use-logger) — hook fired + span ingested"
-ok "Skill:       $SKILL_ID (python-expert) — SessionStart/End hooks"
-ok "Sandbox:     $SANDBOX_ID (python-sandbox) — REAL Docker execution with logs"
-ok "GraphRAG:    $GRAPHRAG_ID (codebase-knowledge-graph) — proxy config"
+ok "Prompt:      $PROMPT_ID (code-review-prompt): rendered + span emitted"
+ok "Tool:        $TOOL_ID (github-code-search): HTTP proxy config"
+ok "Hook:        $HOOK_ID (post-tool-use-logger): hook fired + span ingested"
+ok "Skill:       $SKILL_ID (python-expert): SessionStart/End hooks"
+ok "Sandbox:     $SANDBOX_ID (python-sandbox): REAL Docker execution with logs"
+ok "GraphRAG:    $GRAPHRAG_ID (codebase-knowledge-graph): proxy config"
 echo ""
 ok "All 7 registry types: submitted → approved → installed → tested"
 ok "Real Docker containers executed, logs captured via container.logs()"
