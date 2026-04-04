@@ -93,7 +93,10 @@ async def install_graphrag(
     db.add(GraphRagDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     await db.commit()
 
-    return GraphRagInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet={"name": listing.name})
+    from services.graphrag_config_generator import generate_graphrag_config
+
+    config = generate_graphrag_config(listing, req.ide)
+    return GraphRagInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
 @router.delete("/{listing_id}")

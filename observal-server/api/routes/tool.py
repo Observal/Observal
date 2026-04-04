@@ -87,7 +87,10 @@ async def install_tool(
     db.add(ToolDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     await db.commit()
 
-    return ToolInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet={"name": listing.name})
+    from services.tool_config_generator import generate_tool_config
+
+    config = generate_tool_config(listing, req.ide)
+    return ToolInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
 @router.delete("/{listing_id}")

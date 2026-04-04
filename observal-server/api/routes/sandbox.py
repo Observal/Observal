@@ -91,7 +91,10 @@ async def install_sandbox(
     db.add(SandboxDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     await db.commit()
 
-    return SandboxInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet={"name": listing.name})
+    from services.sandbox_config_generator import generate_sandbox_config
+
+    config = generate_sandbox_config(listing, req.ide)
+    return SandboxInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
 @router.delete("/{listing_id}")

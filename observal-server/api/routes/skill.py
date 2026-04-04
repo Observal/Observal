@@ -96,7 +96,10 @@ async def install_skill(
     db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     await db.commit()
 
-    return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet={"name": listing.name})
+    from services.skill_config_generator import generate_skill_config
+
+    config = generate_skill_config(listing, req.ide)
+    return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
 @router.delete("/{listing_id}")

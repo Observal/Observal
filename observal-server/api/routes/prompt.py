@@ -86,7 +86,17 @@ async def install_prompt(
     db.add(PromptDownload(listing_id=listing.id, user_id=current_user.id, ide="api"))
     await db.commit()
 
-    return {"listing_id": str(listing.id), "config_snippet": {"name": listing.name}}
+    return {
+        "listing_id": str(listing.id),
+        "config_snippet": {
+            "prompt": {
+                "id": str(listing.id),
+                "name": listing.name,
+                "render_url": f"/api/v1/prompts/{listing.id}/render",
+                "template_preview": listing.template[:200] if listing.template else "",
+            },
+        },
+    }
 
 
 @router.post("/{listing_id}/render", response_model=PromptRenderResponse)
@@ -107,7 +117,7 @@ async def render_prompt(
     for key, value in req.variables.items():
         rendered = re.sub(r"\{\{\s*" + re.escape(key) + r"\s*\}\}", value, rendered)
 
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     from services.clickhouse import insert_spans
 
