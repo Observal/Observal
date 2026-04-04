@@ -52,16 +52,19 @@ The eval engine runs on traces after the fact. It scores agent sessions across d
 
 Config generation and telemetry collection work across all major agentic IDEs:
 
-| IDE | MCP | Agents | Skills | Hooks | Sandbox Exec | GraphRAGs | Prompts |
-|-----|:---:|:------:|:------:|:-----:|:------------:|:---------:|:-------:|
-| Cursor | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Kiro IDE | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Kiro CLI | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Claude Code | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| GitHub Copilot | - | - | Yes | - | - | - | Yes |
-| Gemini CLI | Yes | Yes | Yes | - | Yes | Yes | Yes |
-| VS Code | Yes | Yes | - | - | Yes | Yes | Yes |
-| Windsurf | Yes | Yes | - | - | Yes | Yes | Yes |
+| IDE | MCP | Agents | Skills | Hooks | Sandbox Exec | GraphRAGs | Prompts | Native OTel |
+|-----|:---:|:------:|:------:|:-----:|:------------:|:---------:|:-------:|:-----------:|
+| Claude Code | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Codex CLI | Yes | Yes | Yes | - | Yes | Yes | Yes | Yes |
+| Gemini CLI | Yes | Yes | Yes | - | Yes | Yes | Yes | Yes |
+| GitHub Copilot | - | - | Yes | - | - | - | Yes | Yes |
+| Kiro IDE | Yes | Yes | Yes | Yes | Yes | Yes | Yes | - |
+| Kiro CLI | Yes | Yes | Yes | Yes | Yes | Yes | Yes | - |
+| Cursor | Yes | Yes | Yes | Yes | Yes | Yes | Yes | - |
+| VS Code | Yes | Yes | - | - | Yes | Yes | Yes | - |
+| Windsurf | Yes | Yes | - | - | Yes | Yes | Yes | - |
+
+IDEs with **Native OTel** support send full distributed traces, user prompts, LLM token usage, and tool execution telemetry directly to Observal via OpenTelemetry. This is configured automatically when you run `observal install`. IDEs without native OTel support use the `observal-shim` transparent proxy for MCP tool call telemetry.
 
 ## Tech Stack
 
