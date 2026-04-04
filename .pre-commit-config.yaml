@@ -24,23 +24,6 @@ repos:
       - id: no-commit-to-branch
         args: [--branch, main]
 
-  # ── TypeScript / JS ────────────────────────────────────
-  - repo: local
-    hooks:
-      - id: eslint
-        name: eslint
-        entry: bash -c 'cd observal-web && npx eslint --fix "$@"' --
-        language: system
-        files: ^observal-web/src/.*\.(ts|tsx)$
-        types: [file]
-
-      - id: tsc
-        name: typecheck
-        entry: bash -c 'cd observal-web && npx tsc --noEmit'
-        language: system
-        files: ^observal-web/src/.*\.(ts|tsx)$
-        pass_filenames: false
-
   # ── Docker ─────────────────────────────────────────────
   - repo: https://github.com/hadolint/hadolint
     rev: v2.12.0

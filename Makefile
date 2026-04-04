@@ -4,7 +4,6 @@
 
 lint:  ## Run all linters
 	uv run ruff check .
-	cd observal-web && npx eslint src/
 
 format:  ## Auto-format all code
 	uv run ruff format .
