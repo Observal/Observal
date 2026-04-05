@@ -194,6 +194,84 @@ If `EVAL_MODEL_PROVIDER` is empty, the system checks if the model name contains 
 
 If `EVAL_MODEL_NAME` is not set, the eval engine falls back to heuristic scoring based on trace metadata (tool call counts, latency, etc.). You can still run `observal eval run <agent-id>`, but scores will be less accurate.
 
+## RAGAS Evaluation for GraphRAGs
+
+Observal implements the four core [RAGAS](https://docs.ragas.io/) metrics for evaluating GraphRAG retrieval quality. Unlike the agent eval engine which scores full traces, RAGAS evaluation targets individual retrieval spans captured by the `observal-graphrag-proxy`.
+
+### What it measures
+
+| Metric | What It Does |
+|--------|-------------|
+| Faithfulness | Extracts claims from the answer and verifies each against the retrieved context. Score = supported claims / total claims. |
+| Answer Relevancy | Evaluates whether the generated answer directly addresses the original query. |
+| Context Precision | Checks each retrieved chunk's relevance to the question. Score = relevant chunks / total chunks. |
+| Context Recall | Extracts statements from ground truth and checks if each is attributable to the context. Requires ground truth data. |
+
+All four metrics use LLM-as-judge under the hood — the same eval model configured via `EVAL_MODEL_NAME` / `EVAL_MODEL_URL`. No additional dependencies are needed.
+
+### Running a RAGAS evaluation
+
+Trigger an evaluation via the API:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/dashboard/graphrag-ragas-eval \
+  -H "X-API-Key: $OBSERVAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "graphrag_id": "<your-graphrag-id>",
+    "limit": 20
+  }'
+```
+
+This evaluates the most recent 20 retrieval spans for that GraphRAG. Each span gets scored on all four dimensions, and scores are written to ClickHouse for the dashboard.
+
+To include ground truth data (required for context recall):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/dashboard/graphrag-ragas-eval \
+  -H "X-API-Key: $OBSERVAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "graphrag_id": "<your-graphrag-id>",
+    "limit": 10,
+    "ground_truths": {
+      "<span-id-1>": "Expected answer for this query",
+      "<span-id-2>": "Expected answer for this query"
+    }
+  }'
+```
+
+### Viewing RAGAS scores
+
+Retrieve previously computed scores:
+
+```bash
+# Scores for a specific GraphRAG
+curl "http://localhost:8000/api/v1/dashboard/graphrag-ragas-scores?graphrag_id=<id>" \
+  -H "X-API-Key: $OBSERVAL_KEY"
+
+# Aggregate scores across all GraphRAGs
+curl "http://localhost:8000/api/v1/dashboard/graphrag-ragas-scores" \
+  -H "X-API-Key: $OBSERVAL_KEY"
+```
+
+The response contains average scores and evaluation counts per dimension:
+
+```json
+{
+  "faithfulness": { "avg": 0.87, "count": 40 },
+  "answer_relevancy": { "avg": 0.82, "count": 40 },
+  "context_precision": { "avg": 0.79, "count": 40 },
+  "context_recall": { "avg": null, "count": 0 }
+}
+```
+
+A `null` average means no evaluations have been run for that dimension (context recall will be null if no ground truths were provided).
+
+### Dashboard
+
+The web UI at `/graphrag-metrics` displays RAGAS scores alongside the standard GraphRAG telemetry (query volume, entity counts, relevance distribution). Scores appear automatically once you run at least one RAGAS evaluation.
+
 ## Database Details
 
 ### PostgreSQL
