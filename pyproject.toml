@@ -8,7 +8,7 @@ dependencies = [
     "typer",
     "httpx",
     "rich",
-    "docker",
+    
 ]
 
 [project.scripts]

@@ -42,8 +42,10 @@ def run_sandbox(sandbox_id: str, image: str, command: str | None = None, timeout
     try:
         import docker
     except ImportError:
-        print("Error: docker package not installed. Run: pip install docker", file=sys.stderr)
-        sys.exit(1)
+        import typer
+        from rich import print as rprint
+        rprint("[red]Docker SDK not found.[/red] Please install via: pip install observal-cli[sandbox]")
+        raise typer.Exit(1)
 
     client = docker.from_env()
     start_time = _now_iso()

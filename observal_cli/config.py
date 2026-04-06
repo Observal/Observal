@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".observal"
@@ -13,19 +14,31 @@ DEFAULTS = {
     "api_key": "",
 }
 
-
 def load() -> dict:
+    """Load config from disk and apply environment variable overrides."""
+    cfg = dict(DEFAULTS)
     if CONFIG_FILE.exists():
-        return {**DEFAULTS, **json.loads(CONFIG_FILE.read_text())}
-    return dict(DEFAULTS)
-
+        cfg.update(json.loads(CONFIG_FILE.read_text()))
+        
+    # Environment variable overrides (No login required if these are set)
+    if env_url := os.environ.get("OBSERVAL_SERVER_URL"):
+        cfg["server_url"] = env_url
+    if env_key := os.environ.get("OBSERVAL_API_KEY"):
+        cfg["api_key"] = env_key
+        
+    return cfg
 
 def save(data: dict):
+    """Save config to disk (safely ignoring environment variables)."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    existing = load()
+    
+    # Read strictly from disk so we don't accidentally save env vars
+    existing = {}
+    if CONFIG_FILE.exists():
+        existing = json.loads(CONFIG_FILE.read_text())
+        
     existing.update(data)
     CONFIG_FILE.write_text(json.dumps(existing, indent=2))
-
 
 def get_or_exit() -> dict:
     cfg = load()
@@ -33,7 +46,7 @@ def get_or_exit() -> dict:
         import typer
         from rich import print as rprint
 
-        rprint("[red]Not configured.[/red] Run [bold]observal init[/bold] or [bold]observal login[/bold] first.")
+        rprint("[red]Not configured.[/red] Run [bold]observal init[/bold], [bold]observal login[/bold], or set the [bold]OBSERVAL_API_KEY[/bold] environment variable.")
         raise typer.Exit(1)
     return cfg
 

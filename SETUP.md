@@ -27,6 +27,8 @@ cd docker
 docker compose up --build -d
 ```
 
+?/
+
 This starts four services:
 
 | Service | URL | Description |

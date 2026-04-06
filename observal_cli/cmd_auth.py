@@ -18,37 +18,64 @@ def register_auth(app: typer.Typer):
     """Register auth commands on the root app."""
 
     @app.command()
-    def init():
-        """First-run setup: configure server and create admin account."""
-        server_url = typer.prompt("Server URL", default="http://localhost:8000")
-        admin_email = typer.prompt("Admin email")
-        admin_name = typer.prompt("Admin name")
+    def init(server: str = typer.Option(None, "--server", "-s", help="Server URL")):
+        """First-run setup: connect to a team server or initialize a new local server."""
+        server_url = server or typer.prompt("Server URL", default="http://localhost:8000")
+        
+        # 1. Verify Connectivity First
         try:
-            with spinner("Creating admin account..."):
-                r = httpx.post(
-                    f"{server_url.rstrip('/')}/api/v1/auth/init",
-                    json={"email": admin_email, "name": admin_name},
-                    timeout=30,
-                )
+            with spinner("Checking server..."):
+                r = httpx.get(f"{server_url.rstrip('/')}/health", timeout=10)
                 r.raise_for_status()
-                data = r.json()
-            config.save({"server_url": server_url, "api_key": data["api_key"]})
-            rprint(f"\n[green]✓ Initialized![/green] Config saved to [dim]{config.CONFIG_FILE}[/dim]")
-            rprint("\n[bold]Your API key:[/bold]")
-            rprint(f"  {data['api_key']}")
-            rprint("\n[dim]Keep this safe: you'll need it to log in on other machines.[/dim]")
         except httpx.ConnectError:
             rprint(f"[red]✗ Connection failed.[/red] Is the server running at {server_url}?")
             raise typer.Exit(1)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 400 and "already initialized" in e.response.text.lower():
-                rprint("[yellow]System already initialized.[/yellow]")
-                rprint("Run [bold]observal login[/bold] to authenticate with an existing API key.")
-                if typer.confirm("\nLogin now?", default=True):
-                    _do_login(server_url)
-            else:
-                rprint(f"[red]Error {e.response.status_code}: {e.response.text}[/red]")
-                raise typer.Exit(1)
+        except Exception as e:
+            rprint(f"[red]✗ Server error:[/red] {str(e)}")
+            raise typer.Exit(1)
+
+        rprint("[green]✓ Connected to server[/green]\n")
+
+        # 2. Smart Detection: Determine if we are a Developer (Connect) or Admin (Setup)
+        setup_choice = typer.prompt(
+            "Are you connecting to an existing team (C) or setting up a brand new server (N)?", 
+            default="C"
+        )
+
+        if setup_choice.lower().startswith("c"):
+            # --- DEVELOPER PATH (No Docker, just API Key) ---
+            api_key = typer.prompt("Your API Key", hide_input=True)
+            _do_login(server_url, api_key)
+            
+        else:
+            # --- ADMIN PATH (Provisioning the first account) ---
+            admin_email = typer.prompt("Admin email")
+            admin_name = typer.prompt("Admin name")
+            try:
+                with spinner("Creating admin account..."):
+                    r = httpx.post(
+                        f"{server_url.rstrip('/')}/api/v1/auth/init",
+                        json={"email": admin_email, "name": admin_name},
+                        timeout=30,
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                    
+                config.save({"server_url": server_url, "api_key": data["api_key"]})
+                rprint(f"\n[green]✓ Platform Initialized![/green] Config saved to [dim]{config.CONFIG_FILE}[/dim]")
+                rprint("\n[bold]Your Admin API key:[/bold]")
+                rprint(f"  {data['api_key']}")
+                rprint("\n[dim]Keep this safe. You can now invite developers via the Web UI.[/dim]")
+                
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400 and "already initialized" in e.response.text.lower():
+                    rprint("\n[yellow]System is already initialized.[/yellow]")
+                    rprint("Switching to login flow...")
+                    api_key = typer.prompt("API Key", hide_input=True)
+                    _do_login(server_url, api_key)
+                else:
+                    rprint(f"[red]Error {e.response.status_code}: {e.response.text}[/red]")
+                    raise typer.Exit(1)
 
     @app.command()
     def login(
@@ -63,10 +90,16 @@ def register_auth(app: typer.Typer):
     def logout():
         """Clear saved credentials."""
         if config.CONFIG_FILE.exists():
-            cfg = config.load()
-            cfg.pop("api_key", None)
-            config.save(cfg)
-            rprint("[green]✓ Logged out.[/green]")
+            # Read strictly from disk to avoid mixing with env variables
+            import json
+            raw_cfg = json.loads(config.CONFIG_FILE.read_text())
+            
+            # Remove the key and save directly
+            if "api_key" in raw_cfg:
+                del raw_cfg["api_key"]
+                config.CONFIG_FILE.write_text(json.dumps(raw_cfg, indent=2))
+                
+            rprint("[green]✓ Logged out (removed from disk).[/green]")
         else:
             rprint("[dim]No config to clear.[/dim]")
 
