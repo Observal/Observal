@@ -37,7 +37,7 @@ export function DimensionRadar({ dimensionScores }: DimensionRadarProps) {
         <PolarGrid />
         <PolarAngleAxis dataKey="dimension" tick={{ fontSize: 12 }} />
         <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 10 }} />
-        <Tooltip formatter={(value: number) => [`${value.toFixed(0)}/100`, "Score"]} />
+        <Tooltip formatter={(value) => [typeof value === "number" ? `${value.toFixed(0)}/100` : "—", "Score"]} />
         <Radar
           name="Score"
           dataKey="score"
