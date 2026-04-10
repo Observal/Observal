@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class FeedbackCreateRequest(BaseModel):
     listing_id: uuid.UUID
-    listing_type: str = Field(pattern="^(mcp|agent|tool|skill|hook|prompt|sandbox|graphrag)$")
+    listing_type: str = Field(pattern="^(mcp|agent|skill|hook|prompt|sandbox)$")
     rating: int = Field(ge=1, le=5)
     comment: str | None = Field(None, max_length=5000)
 

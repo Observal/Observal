@@ -131,11 +131,6 @@ class TestSchemas:
 
     # ── SubmitRequest valid ──
 
-    def test_tool_submit_valid(self):
-        from schemas.tool import ToolSubmitRequest
-        r = ToolSubmitRequest(name="t", version="1.0", description="desc", owner="o", category="c")
-        assert r.auth_type == "none"
-
     def test_skill_submit_valid(self):
         from schemas.skill import SkillSubmitRequest
         r = SkillSubmitRequest(name="s", version="1.0", description="desc", owner="o", task_type="code-review")
@@ -157,17 +152,7 @@ class TestSchemas:
         r = SandboxSubmitRequest(name="sb", version="1.0", description="desc", owner="o", runtime_type="docker", image="python:3.11")
         assert r.network_policy == "none"
 
-    def test_graphrag_submit_valid(self):
-        from schemas.graphrag import GraphRagSubmitRequest
-        r = GraphRagSubmitRequest(name="gr", version="1.0", description="desc", owner="o", endpoint_url="http://x", query_interface="graphql")
-        assert r.auth_type == "none"
-
     # ── SubmitRequest missing required fields ──
-
-    def test_tool_submit_missing_name(self):
-        from schemas.tool import ToolSubmitRequest
-        with pytest.raises(ValueError):
-            ToolSubmitRequest(version="1.0", description="d", owner="o", category="c")
 
     def test_hook_submit_missing_event(self):
         from schemas.hook import HookSubmitRequest
@@ -179,28 +164,12 @@ class TestSchemas:
         with pytest.raises(ValueError):
             SandboxSubmitRequest(name="sb", version="1.0", description="d", owner="o", runtime_type="docker")
 
-    def test_graphrag_submit_missing_endpoint(self):
-        from schemas.graphrag import GraphRagSubmitRequest
-        with pytest.raises(ValueError):
-            GraphRagSubmitRequest(name="gr", version="1.0", description="d", owner="o", query_interface="graphql")
-
     # ── ListingResponse from_attributes ──
 
     def _ns(self, **kw):
         """SimpleNamespace works with pydantic from_attributes (MagicMock.name conflicts)."""
         from types import SimpleNamespace
         return SimpleNamespace(**kw)
-
-    def test_tool_response_from_attrs(self):
-        from schemas.tool import ToolListingResponse
-        obj = self._ns(
-            id=uuid.uuid4(), name="t", version="1.0", description="d", owner="o",
-            category="c", function_schema={}, auth_type="none", endpoint_url=None,
-            supported_ides=[], status=ListingStatus.pending, rejection_reason=None,
-            submitted_by=uuid.uuid4(), created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
-        )
-        r = ToolListingResponse.model_validate(obj, from_attributes=True)
-        assert r.name == "t"
 
     def test_prompt_response_from_attrs(self):
         from schemas.prompt import PromptListingResponse
@@ -212,17 +181,6 @@ class TestSchemas:
         )
         r = PromptListingResponse.model_validate(obj, from_attributes=True)
         assert r.status == ListingStatus.approved
-
-    def test_graphrag_response_from_attrs(self):
-        from schemas.graphrag import GraphRagListingResponse
-        obj = self._ns(
-            id=uuid.uuid4(), name="gr", version="1.0", description="d", owner="o",
-            endpoint_url="http://x", auth_type="none", query_interface="graphql",
-            supported_ides=[], status=ListingStatus.pending, rejection_reason=None,
-            submitted_by=uuid.uuid4(), created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
-        )
-        r = GraphRagListingResponse.model_validate(obj, from_attributes=True)
-        assert r.query_interface == "graphql"
 
     # ── Prompt render schemas ──
 
@@ -558,7 +516,7 @@ class TestUnifiedReview:
 class TestFeedbackExtension:
     """Verify the feedback schema accepts all 6 new listing types."""
 
-    @pytest.mark.parametrize("lt", ["tool", "skill", "hook", "prompt", "sandbox", "graphrag"])
+    @pytest.mark.parametrize("lt", ["mcp", "agent", "skill", "hook", "prompt", "sandbox"])
     def test_feedback_schema_accepts_new_types(self, lt):
         from schemas.feedback import FeedbackCreateRequest
         req = FeedbackCreateRequest(listing_id=uuid.uuid4(), listing_type=lt, rating=4)
