@@ -62,6 +62,9 @@ class ResolvedAgent(BaseModel):
     agent_id: uuid.UUID
     agent_name: str
     agent_version: str
+    agent_prompt: str = ""
+    agent_description: str = ""
+    model_name: str = ""
     components: list[ResolvedComponent] = Field(default_factory=list)
     errors: list[ResolutionError] = Field(default_factory=list)
 
@@ -180,6 +183,9 @@ async def resolve_agent(
         agent_id=agent.id,
         agent_name=agent.name,
         agent_version=agent.version,
+        agent_prompt=agent.prompt or "",
+        agent_description=agent.description or "",
+        model_name=agent.model_name or "",
         components=components,
         errors=errors,
     )

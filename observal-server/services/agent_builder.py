@@ -11,9 +11,10 @@ Generates IDE-specific agent files from a ResolvedAgent:
 """
 
 import logging
+import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 
 from services.agent_resolver import ResolvedAgent, ResolvedComponent
 
@@ -86,6 +87,9 @@ class AgentManifest(BaseModel):
     """Portable agent manifest — the canonical representation of a composed agent."""
     name: str
     version: str
+    prompt: str = ""
+    description: str = ""
+    model_name: str = ""
     components: ManifestComponents = Field(default_factory=ManifestComponents)
     errors: list[ManifestError] = Field(default_factory=list)
 
@@ -96,6 +100,12 @@ class AgentManifest(BaseModel):
             "version": self.version,
             "components": self.components.model_dump_compact(),
         }
+        if self.prompt:
+            result["prompt"] = self.prompt
+        if self.description:
+            result["description"] = self.description
+        if self.model_name:
+            result["model_name"] = self.model_name
         if self.errors:
             result["errors"] = [e.model_dump() for e in self.errors]
         return result
@@ -199,6 +209,9 @@ def build_agent_manifest(resolved: ResolvedAgent) -> dict:
     manifest = AgentManifest(
         name=resolved.agent_name,
         version=resolved.agent_version,
+        prompt=resolved.agent_prompt,
+        description=resolved.agent_description,
+        model_name=resolved.model_name,
         components=ManifestComponents(**grouped),
         errors=[
             ManifestError(
@@ -251,3 +264,277 @@ def build_composition_summary(resolved: ResolvedAgent) -> dict:
         ],
     )
     return summary.model_dump(exclude_none=True)
+
+
+# ── IDE Agent File Generation ──────────────────────────────────────
+
+_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _sanitize_name(name: str) -> str:
+    if _SAFE_NAME_RE.match(name):
+        return name
+    return re.sub(r"[^a-zA-Z0-9_-]", "-", name)
+
+
+def _build_mcp_entries(manifest: AgentManifest) -> dict:
+    """Build MCP server config entries from manifest components."""
+    entries = {}
+    for mcp in manifest.components.mcps:
+        shim_args = ["--mcp-id", mcp.name, "--", "python", "-m", mcp.name]
+        entries[mcp.name] = {
+            "command": "observal-shim",
+            "args": shim_args,
+            "env": {},
+        }
+    return entries
+
+
+def _build_rules_markdown(manifest: AgentManifest) -> str:
+    """Build markdown rules content from the agent manifest."""
+    sections = []
+
+    if manifest.prompt:
+        sections.append(manifest.prompt)
+
+    # Component summary sections
+    if manifest.components.mcps:
+        lines = ["## MCP Servers", ""]
+        for mcp in manifest.components.mcps:
+            desc = f" — {mcp.description}" if mcp.description else ""
+            lines.append(f"- **{mcp.name}** v{mcp.version}{desc}")
+        sections.append("\n".join(lines))
+
+    if manifest.components.skills:
+        lines = ["## Skills", ""]
+        for skill in manifest.components.skills:
+            cmd = f" (`/{skill.slash_command}`)" if skill.slash_command else ""
+            lines.append(f"- **{skill.name}** v{skill.version}{cmd}")
+        sections.append("\n".join(lines))
+
+    if manifest.components.hooks:
+        lines = ["## Hooks", ""]
+        for hook in manifest.components.hooks:
+            lines.append(f"- **{hook.name}** on `{hook.event}` ({hook.execution_mode})")
+        sections.append("\n".join(lines))
+
+    if manifest.components.prompts:
+        lines = ["## Prompts", ""]
+        for prompt in manifest.components.prompts:
+            lines.append(f"- **{prompt.name}** v{prompt.version}")
+        sections.append("\n".join(lines))
+
+    return "\n\n".join(sections)
+
+
+def _generate_claude_code(manifest: AgentManifest) -> IdeAgentConfig:
+    """Generate Claude Code agent config (.claude/rules/<name>.md + MCP commands)."""
+    safe_name = _sanitize_name(manifest.name)
+    mcp_entries = _build_mcp_entries(manifest)
+    rules_content = _build_rules_markdown(manifest)
+
+    setup_commands = []
+    for name, cfg in mcp_entries.items():
+        cmd = cfg.get("command", "observal-shim")
+        args = cfg.get("args", [])
+        setup_commands.append(["claude", "mcp", "add", name, "--", cmd, *args])
+
+    return IdeAgentConfig(
+        ide="claude-code",
+        files=[
+            AgentFile(
+                path=f".claude/rules/{safe_name}.md",
+                content=rules_content,
+                format="markdown",
+            ),
+        ],
+        mcp_servers=mcp_entries,
+        env={
+            "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+            "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+        },
+        setup_commands=setup_commands,
+    )
+
+
+def _generate_cursor(manifest: AgentManifest) -> IdeAgentConfig:
+    """Generate Cursor agent config (.cursor/rules/<name>.md + .cursor/mcp.json)."""
+    safe_name = _sanitize_name(manifest.name)
+    mcp_entries = _build_mcp_entries(manifest)
+    rules_content = _build_rules_markdown(manifest)
+
+    return IdeAgentConfig(
+        ide="cursor",
+        files=[
+            AgentFile(
+                path=f".cursor/rules/{safe_name}.md",
+                content=rules_content,
+                format="markdown",
+            ),
+            AgentFile(
+                path=".cursor/mcp.json",
+                content={"mcpServers": mcp_entries},
+                format="json",
+            ),
+        ],
+        mcp_servers=mcp_entries,
+    )
+
+
+def _generate_vscode(manifest: AgentManifest) -> IdeAgentConfig:
+    """Generate VS Code agent config (.vscode/rules/<name>.md + .vscode/mcp.json)."""
+    safe_name = _sanitize_name(manifest.name)
+    mcp_entries = _build_mcp_entries(manifest)
+    rules_content = _build_rules_markdown(manifest)
+
+    return IdeAgentConfig(
+        ide="vscode",
+        files=[
+            AgentFile(
+                path=f".vscode/rules/{safe_name}.md",
+                content=rules_content,
+                format="markdown",
+            ),
+            AgentFile(
+                path=".vscode/mcp.json",
+                content={"mcpServers": mcp_entries},
+                format="json",
+            ),
+        ],
+        mcp_servers=mcp_entries,
+    )
+
+
+def _generate_gemini_cli(manifest: AgentManifest) -> IdeAgentConfig:
+    """Generate Gemini CLI agent config (GEMINI.md + MCP JSON)."""
+    mcp_entries = _build_mcp_entries(manifest)
+    rules_content = _build_rules_markdown(manifest)
+
+    return IdeAgentConfig(
+        ide="gemini-cli",
+        files=[
+            AgentFile(
+                path="GEMINI.md",
+                content=rules_content,
+                format="markdown",
+            ),
+        ],
+        mcp_servers=mcp_entries,
+        env={
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+            "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+        },
+    )
+
+
+def _generate_kiro(manifest: AgentManifest) -> IdeAgentConfig:
+    """Generate Kiro agent config (~/.kiro/agents/<name>.json)."""
+    safe_name = _sanitize_name(manifest.name)
+    mcp_entries = _build_mcp_entries(manifest)
+
+    kiro_agent = {
+        "name": safe_name,
+        "description": manifest.description[:200] if manifest.description else "",
+        "prompt": manifest.prompt,
+        "mcpServers": mcp_entries,
+        "tools": [f"@{n}" for n in mcp_entries] + ["read", "write", "shell"],
+        "hooks": {},
+        "includeMcpJson": True,
+        "model": manifest.model_name or "default",
+    }
+
+    return IdeAgentConfig(
+        ide="kiro",
+        files=[
+            AgentFile(
+                path=f"~/.kiro/agents/{safe_name}.json",
+                content=kiro_agent,
+                format="json",
+            ),
+        ],
+        mcp_servers=mcp_entries,
+    )
+
+
+def _generate_codex(manifest: AgentManifest) -> IdeAgentConfig:
+    """Generate Codex agent config (AGENTS.md + ~/.codex/config.toml)."""
+    rules_content = _build_rules_markdown(manifest)
+
+    toml_snippet = (
+        "[otel]\n"
+        'environment = "production"\n'
+        "log_user_prompt = true\n"
+        "\n"
+        "[otel.exporter.otlp-http]\n"
+        'endpoint = "http://localhost:4318/v1/logs"\n'
+        'protocol = "http"\n'
+        "\n"
+        "[otel.trace_exporter.otlp-http]\n"
+        'endpoint = "http://localhost:4318/v1/traces"\n'
+        'protocol = "http"\n'
+    )
+
+    return IdeAgentConfig(
+        ide="codex",
+        files=[
+            AgentFile(
+                path="AGENTS.md",
+                content=rules_content,
+                format="markdown",
+            ),
+            AgentFile(
+                path="~/.codex/config.toml",
+                content=toml_snippet,
+                format="toml",
+            ),
+        ],
+    )
+
+
+def _generate_copilot(manifest: AgentManifest) -> IdeAgentConfig:
+    """Generate GitHub Copilot agent config (.github/copilot-instructions.md)."""
+    rules_content = _build_rules_markdown(manifest)
+
+    return IdeAgentConfig(
+        ide="copilot",
+        files=[
+            AgentFile(
+                path=".github/copilot-instructions.md",
+                content=rules_content,
+                format="markdown",
+            ),
+        ],
+    )
+
+
+_IDE_GENERATORS = {
+    "claude-code": _generate_claude_code,
+    "claude_code": _generate_claude_code,
+    "cursor": _generate_cursor,
+    "vscode": _generate_vscode,
+    "gemini-cli": _generate_gemini_cli,
+    "gemini_cli": _generate_gemini_cli,
+    "kiro": _generate_kiro,
+    "codex": _generate_codex,
+    "copilot": _generate_copilot,
+}
+
+SUPPORTED_IDES = list({
+    "claude-code", "cursor", "vscode", "gemini-cli",
+    "kiro", "codex", "copilot",
+})
+
+
+def generate_ide_agent_files(manifest: AgentManifest, ide: str) -> IdeAgentConfig:
+    """Generate IDE-specific agent files from a portable agent manifest.
+
+    This is the universal entry point — takes a Pydantic AgentManifest
+    and produces the correct file layout for any supported IDE.
+    """
+    generator = _IDE_GENERATORS.get(ide)
+    if generator is None:
+        raise ValueError(
+            f"Unsupported IDE: {ide!r}. Supported: {', '.join(SUPPORTED_IDES)}"
+        )
+    return generator(manifest)
