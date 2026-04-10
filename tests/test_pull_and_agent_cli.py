@@ -443,3 +443,246 @@ class TestPullHelp:
         assert "--ide" in result.output
         assert "--dir" in result.output
         assert "--dry-run" in result.output
+
+
+# ═══════════════════════════════════════════════════════════════
+# Agent authoring CLI tests
+# ═══════════════════════════════════════════════════════════════
+
+import yaml
+
+
+def _make_agent_yaml(tmp_path: Path, **overrides) -> Path:
+    """Write a minimal observal-agent.yaml and return its path."""
+    data = {
+        "name": "test-agent",
+        "version": "1.0.0",
+        "description": "A test agent",
+        "owner": "test-team",
+        "model_name": "claude-sonnet-4",
+        "prompt": "You are helpful.",
+        "components": [],
+        "goal_template": {
+            "description": "Goals for test-agent",
+            "sections": [{"name": "default", "description": "Default goal section"}],
+        },
+    }
+    data.update(overrides)
+    yaml_path = tmp_path / "observal-agent.yaml"
+    yaml_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    return yaml_path
+
+
+def _patch_get(return_value):
+    return patch("observal_cli.client.get", return_value=return_value)
+
+
+def _patch_put(return_value):
+    return patch("observal_cli.client.put", return_value=return_value)
+
+
+class TestAgentInit:
+    def test_creates_yaml_with_correct_fields(self, tmp_path: Path):
+        """Interactive prompts produce a valid YAML file."""
+        inputs = "my-agent\n1.0.0\nA cool agent\nmy-team\nclaude-sonnet-4\nDo helpful things\n"
+        result = runner.invoke(
+            cli_app,
+            ["agent", "init", "--dir", str(tmp_path)],
+            input=inputs,
+        )
+        assert result.exit_code == 0, result.output
+        assert "Created" in result.output
+
+        yaml_path = tmp_path / "observal-agent.yaml"
+        assert yaml_path.exists()
+
+        data = yaml.safe_load(yaml_path.read_text())
+        assert data["name"] == "my-agent"
+        assert data["version"] == "1.0.0"
+        assert data["description"] == "A cool agent"
+        assert data["owner"] == "my-team"
+        assert data["model_name"] == "claude-sonnet-4"
+        assert data["prompt"] == "Do helpful things"
+        assert data["components"] == []
+        assert data["goal_template"]["description"] == "Goals for my-agent"
+        assert data["goal_template"]["sections"][0]["name"] == "default"
+
+    def test_aborts_if_file_exists_and_user_declines(self, tmp_path: Path):
+        """If YAML already exists and user says no, exit code != 0."""
+        _make_agent_yaml(tmp_path)
+        # "n" to decline overwrite
+        result = runner.invoke(
+            cli_app,
+            ["agent", "init", "--dir", str(tmp_path)],
+            input="n\n",
+        )
+        assert result.exit_code != 0
+        assert "Aborted" in result.output
+
+    def test_overwrites_if_user_confirms(self, tmp_path: Path):
+        """If YAML exists and user says yes, proceed with new data."""
+        _make_agent_yaml(tmp_path)
+        inputs = "y\nnew-agent\n2.0.0\nNew desc\nnew-team\nclaude-sonnet-4\nNew prompt\n"
+        result = runner.invoke(
+            cli_app,
+            ["agent", "init", "--dir", str(tmp_path)],
+            input=inputs,
+        )
+        assert result.exit_code == 0, result.output
+        data = yaml.safe_load((tmp_path / "observal-agent.yaml").read_text())
+        assert data["name"] == "new-agent"
+
+
+class TestAgentAdd:
+    def test_adds_component_to_yaml(self, tmp_path: Path):
+        """A valid component is appended to the components list."""
+        _make_agent_yaml(tmp_path)
+        result = runner.invoke(
+            cli_app,
+            ["agent", "add", "mcp", "aaaa-bbbb-cccc", "--dir", str(tmp_path)],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Added" in result.output
+
+        data = yaml.safe_load((tmp_path / "observal-agent.yaml").read_text())
+        assert len(data["components"]) == 1
+        assert data["components"][0]["component_type"] == "mcp"
+        assert data["components"][0]["component_id"] == "aaaa-bbbb-cccc"
+
+    def test_rejects_invalid_component_type(self, tmp_path: Path):
+        """Invalid component_type exits non-zero."""
+        _make_agent_yaml(tmp_path)
+        result = runner.invoke(
+            cli_app,
+            ["agent", "add", "widget", "some-id", "--dir", str(tmp_path)],
+        )
+        assert result.exit_code != 0
+        assert "Invalid component type" in result.output
+
+    def test_prevents_duplicate_component(self, tmp_path: Path):
+        """Adding the same component twice exits non-zero."""
+        _make_agent_yaml(tmp_path, components=[
+            {"component_type": "skill", "component_id": "abc-123"},
+        ])
+        result = runner.invoke(
+            cli_app,
+            ["agent", "add", "skill", "abc-123", "--dir", str(tmp_path)],
+        )
+        assert result.exit_code != 0
+        assert "already exists" in result.output
+
+    def test_fails_if_no_yaml(self, tmp_path: Path):
+        """Fails if observal-agent.yaml does not exist."""
+        result = runner.invoke(
+            cli_app,
+            ["agent", "add", "mcp", "some-id", "--dir", str(tmp_path)],
+        )
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+
+class TestAgentBuild:
+    def test_validates_components_against_server(self, tmp_path: Path):
+        """Components are validated via GET calls; output shows results."""
+        _make_agent_yaml(tmp_path, components=[
+            {"component_type": "mcp", "component_id": "id-1"},
+            {"component_type": "skill", "component_id": "id-2"},
+        ])
+
+        def mock_get(path, **kwargs):
+            return {"id": "id-1", "name": "test"}
+
+        with _patch_config(), patch("observal_cli.client.get", side_effect=mock_get):
+            result = runner.invoke(
+                cli_app,
+                ["agent", "build", "--dir", str(tmp_path)],
+            )
+        assert result.exit_code == 0, result.output
+        assert "All components valid" in result.output
+
+    def test_reports_invalid_components(self, tmp_path: Path):
+        """Components that fail GET show as errors."""
+        _make_agent_yaml(tmp_path, components=[
+            {"component_type": "mcp", "component_id": "bad-id"},
+        ])
+
+        def mock_get(path, **kwargs):
+            raise typer.Exit(code=1)
+
+        with _patch_config(), patch("observal_cli.client.get", side_effect=mock_get):
+            result = runner.invoke(
+                cli_app,
+                ["agent", "build", "--dir", str(tmp_path)],
+            )
+        assert result.exit_code != 0
+        assert "failed validation" in result.output
+
+    def test_fails_if_no_yaml(self, tmp_path: Path):
+        """Fails if observal-agent.yaml does not exist."""
+        result = runner.invoke(
+            cli_app,
+            ["agent", "build", "--dir", str(tmp_path)],
+        )
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+
+class TestAgentPublish:
+    def test_creates_agent_via_post(self, tmp_path: Path):
+        """publish sends correct payload via POST."""
+        _make_agent_yaml(tmp_path)
+        mock_result = {"id": "new-agent-uuid", "name": "test-agent"}
+
+        with _patch_config(), _patch_post(mock_result) as mock_post_fn:
+            result = runner.invoke(
+                cli_app,
+                ["agent", "publish", "--dir", str(tmp_path)],
+            )
+        assert result.exit_code == 0, result.output
+        assert "Agent created" in result.output
+        assert "new-agent-uuid" in result.output
+
+        # Verify the POST payload
+        call_args = mock_post_fn.call_args
+        payload = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("json_data")
+        assert payload["name"] == "test-agent"
+        assert payload["version"] == "1.0.0"
+        assert payload["model_name"] == "claude-sonnet-4"
+
+    def test_updates_existing_agent_with_update_flag(self, tmp_path: Path):
+        """--update finds agent by name then PUTs."""
+        _make_agent_yaml(tmp_path)
+        search_results = [{"id": "existing-uuid", "name": "test-agent"}]
+        put_result = {"id": "existing-uuid", "name": "test-agent"}
+
+        with _patch_config(), \
+             _patch_get(search_results) as mock_get_fn, \
+             _patch_put(put_result) as mock_put_fn:
+            result = runner.invoke(
+                cli_app,
+                ["agent", "publish", "--dir", str(tmp_path), "--update"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Agent updated" in result.output
+        assert "existing-uuid" in result.output
+
+        # Verify GET was called with search param
+        mock_get_fn.assert_called_once()
+        get_call = mock_get_fn.call_args
+        assert get_call[1].get("params", {}).get("search") == "test-agent"
+
+        # Verify PUT was called with correct endpoint
+        mock_put_fn.assert_called_once()
+        put_call = mock_put_fn.call_args
+        assert "existing-uuid" in put_call[0][0]
+
+    def test_fails_if_no_yaml(self, tmp_path: Path):
+        """Fails if observal-agent.yaml does not exist."""
+        with _patch_config():
+            result = runner.invoke(
+                cli_app,
+                ["agent", "publish", "--dir", str(tmp_path)],
+            )
+        assert result.exit_code != 0
+        assert "not found" in result.output

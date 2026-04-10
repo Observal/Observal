@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json as _json
+from pathlib import Path
 
 import typer
+import yaml
 from rich import print as rprint
 from rich.table import Table
 from rich.tree import Tree
@@ -19,6 +21,29 @@ from observal_cli.render import (
     spinner,
     status_badge,
 )
+
+# ── Agent authoring constants ──────────────────────────────
+YAML_FILE = "observal-agent.yaml"
+VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
+
+
+# ── Agent authoring helpers ────────────────────────────────
+def _load_agent_yaml(directory: Path) -> dict:
+    """Load and return the agent YAML from *directory*. Exits if missing."""
+    path = directory / YAML_FILE
+    if not path.exists():
+        rprint(f"[red]Error:[/red] {YAML_FILE} not found in {directory}")
+        raise typer.Exit(code=1)
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def _save_agent_yaml(directory: Path, data: dict) -> None:
+    """Write *data* as YAML to *directory*/observal-agent.yaml."""
+    path = directory / YAML_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 agent_app = typer.Typer(help="Agent registry commands")
 
@@ -277,3 +302,161 @@ def agent_delete(
     with spinner("Deleting..."):
         client.delete(f"/api/v1/agents/{resolved}")
     rprint(f"[green]✓ Deleted {resolved}[/green]")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Agent authoring commands (local YAML workflow)
+# ═══════════════════════════════════════════════════════════════
+
+
+@agent_app.command(name="init")
+def agent_init(
+    directory: str = typer.Option(".", "--dir", "-d", help="Directory to scaffold in"),
+):
+    """Scaffold an observal-agent.yaml definition file."""
+    dir_path = Path(directory)
+    yaml_path = dir_path / YAML_FILE
+
+    if yaml_path.exists():
+        if not typer.confirm(f"{YAML_FILE} already exists in {dir_path}. Overwrite?"):
+            rprint("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(code=1)
+
+    name = typer.prompt("Agent name")
+    version = typer.prompt("Version", default="1.0.0")
+    description = typer.prompt("Description")
+    owner = typer.prompt("Owner / Team")
+    model_name = typer.prompt("Model name", default="claude-sonnet-4")
+    prompt_text = typer.prompt("System prompt")
+
+    data = {
+        "name": name,
+        "version": version,
+        "description": description,
+        "owner": owner,
+        "model_name": model_name,
+        "prompt": prompt_text,
+        "components": [],
+        "goal_template": {
+            "description": f"Goals for {name}",
+            "sections": [
+                {"name": "default", "description": "Default goal section"},
+            ],
+        },
+    }
+
+    _save_agent_yaml(dir_path, data)
+    rprint(f"[green]✓ Created {yaml_path}[/green]")
+
+
+@agent_app.command(name="add")
+def agent_add(
+    component_type: str = typer.Argument(..., help="Component type: mcp, skill, hook, prompt, sandbox"),
+    component_id: str = typer.Argument(..., help="Component ID (UUID)"),
+    directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+):
+    """Add a component reference to observal-agent.yaml."""
+    if component_type not in VALID_COMPONENT_TYPES:
+        rprint(
+            f"[red]Error:[/red] Invalid component type '{component_type}'. "
+            f"Must be one of: {', '.join(sorted(VALID_COMPONENT_TYPES))}"
+        )
+        raise typer.Exit(code=1)
+
+    dir_path = Path(directory)
+    data = _load_agent_yaml(dir_path)
+
+    components = data.get("components", [])
+    for comp in components:
+        if comp.get("component_type") == component_type and comp.get("component_id") == component_id:
+            rprint(f"[yellow]Component {component_type}:{component_id} already exists.[/yellow]")
+            raise typer.Exit(code=1)
+
+    components.append({"component_type": component_type, "component_id": component_id})
+    data["components"] = components
+    _save_agent_yaml(dir_path, data)
+    rprint(f"[green]✓ Added {component_type}:{component_id}[/green]")
+
+
+@agent_app.command(name="build")
+def agent_build(
+    directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+):
+    """Validate agent definition against the server (dry-run)."""
+    dir_path = Path(directory)
+    data = _load_agent_yaml(dir_path)
+
+    rprint(f"[bold]Agent:[/bold] {data.get('name', 'unnamed')} v{data.get('version', '?')}")
+    rprint(f"[bold]Model:[/bold] {data.get('model_name', 'N/A')}")
+    rprint()
+
+    components = data.get("components", [])
+    if not components:
+        rprint("[dim]No components to validate.[/dim]")
+        return
+
+    table = Table(title="Component Validation", show_lines=False)
+    table.add_column("Type", style="bold")
+    table.add_column("ID", style="dim")
+    table.add_column("Status")
+
+    errors: list[str] = []
+    for comp in components:
+        ctype = comp["component_type"]
+        cid = comp["component_id"]
+        # API convention: plural resource name
+        endpoint = f"/api/v1/{ctype}s/{cid}"
+        try:
+            with spinner(f"Checking {ctype} {cid[:8]}..."):
+                client.get(endpoint)
+            table.add_row(ctype, cid, "[green]✓ valid[/green]")
+        except (Exception, SystemExit):
+            table.add_row(ctype, cid, "[red]✗ not found[/red]")
+            errors.append(f"{ctype}:{cid}")
+
+    console.print(table)
+
+    if errors:
+        rprint(f"\n[red]{len(errors)} component(s) failed validation:[/red]")
+        for e in errors:
+            rprint(f"  [red]•[/red] {e}")
+        raise typer.Exit(code=1)
+    else:
+        rprint("\n[green]✓ All components valid.[/green]")
+
+
+@agent_app.command(name="publish")
+def agent_publish(
+    directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+    update: bool = typer.Option(False, "--update", "-u", help="Update existing agent instead of creating"),
+):
+    """Publish the agent definition to the server."""
+    dir_path = Path(directory)
+    data = _load_agent_yaml(dir_path)
+
+    payload = {
+        "name": data["name"],
+        "version": data.get("version", "1.0.0"),
+        "description": data.get("description", ""),
+        "owner": data.get("owner", ""),
+        "model_name": data.get("model_name", "claude-sonnet-4"),
+        "prompt": data.get("prompt", ""),
+        "components": data.get("components", []),
+        "goal_template": data.get("goal_template", {}),
+    }
+
+    if update:
+        # Find existing agent by name
+        with spinner("Looking up existing agent..."):
+            results = client.get("/api/v1/agents", params={"search": data["name"]})
+        if not results:
+            rprint(f"[red]Error:[/red] No existing agent found with name '{data['name']}'")
+            raise typer.Exit(code=1)
+        agent_id = results[0]["id"]
+        with spinner("Updating agent..."):
+            result = client.put(f"/api/v1/agents/{agent_id}", payload)
+        rprint(f"[green]✓ Agent updated![/green] ID: [bold]{result['id']}[/bold]")
+    else:
+        with spinner("Creating agent..."):
+            result = client.post("/api/v1/agents", payload)
+        rprint(f"[green]✓ Agent created![/green] ID: [bold]{result['id']}[/bold]")
