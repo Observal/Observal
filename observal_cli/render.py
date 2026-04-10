@@ -99,6 +99,8 @@ _IDE_COLORS = {
     "claude-code": "yellow",
     "gemini_cli": "red",
     "gemini-cli": "red",
+    "codex": "bright_blue",
+    "copilot": "bright_magenta",
 }
 
 

@@ -74,7 +74,7 @@ def agent_create(
     temperature = typer.prompt("Temperature", default="0.2")
     model_cfg = {"max_tokens": int(max_tokens), "temperature": float(temperature)}
 
-    ide_choices = ["cursor", "kiro", "claude-code", "gemini-cli"]
+    ide_choices = ["cursor", "kiro", "claude-code", "gemini-cli", "codex", "copilot"]
     rprint(f"[dim]IDEs: {', '.join(ide_choices)}[/dim]")
     ides_input = typer.prompt("Supported IDEs (comma-separated)", default=",".join(ide_choices))
     supported_ides = [i.strip() for i in ides_input.split(",") if i.strip()]
@@ -405,7 +405,8 @@ def agent_build(
         ctype = comp["component_type"]
         cid = comp["component_id"]
         # API convention: plural resource name
-        endpoint = f"/api/v1/{ctype}s/{cid}"
+        _PLURAL = {"mcp": "mcps", "skill": "skills", "hook": "hooks", "prompt": "prompts", "sandbox": "sandboxes"}
+        endpoint = f"/api/v1/{_PLURAL[ctype]}/{cid}"
         try:
             with spinner(f"Checking {ctype} {cid[:8]}..."):
                 client.get(endpoint)
@@ -449,10 +450,11 @@ def agent_publish(
         # Find existing agent by name
         with spinner("Looking up existing agent..."):
             results = client.get("/api/v1/agents", params={"search": data["name"]})
-        if not results:
+        match = next((a for a in results if a["name"] == data["name"]), None)
+        if not match:
             rprint(f"[red]Error:[/red] No existing agent found with name '{data['name']}'")
             raise typer.Exit(code=1)
-        agent_id = results[0]["id"]
+        agent_id = match["id"]
         with spinner("Updating agent..."):
             result = client.put(f"/api/v1/agents/{agent_id}", payload)
         rprint(f"[green]✓ Agent updated![/green] ID: [bold]{result['id']}[/bold]")

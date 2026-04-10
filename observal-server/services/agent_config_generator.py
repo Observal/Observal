@@ -116,7 +116,7 @@ def generate_agent_config(
     if ide in ("gemini-cli", "gemini_cli"):
         return {
             "rules_file": {"path": "GEMINI.md", "content": agent.prompt},
-            "mcp_config": {"mcpServers": mcp_configs},
+            "mcp_config": {"path": ".gemini/mcp.json", "content": {"mcpServers": mcp_configs}},
             "otlp_env": _gemini_otlp_env(observal_url),
             "gemini_settings_snippet": _gemini_settings(observal_url),
         }

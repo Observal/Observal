@@ -24,7 +24,7 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
     existed = path.exists()
 
     if isinstance(content, dict):
-        if merge_mcp and existed:
+        if merge_mcp and existed and isinstance(content, dict):
             try:
                 existing = json.loads(path.read_text())
             except (json.JSONDecodeError, OSError):
@@ -45,10 +45,18 @@ def _resolve_path(raw_path: str, target_dir: Path) -> Path:
 
     Handles ``~/`` prefixes by mapping them under *target_dir* (not the real
     home directory) so that the pull command always writes inside the project.
+    Raises typer.Exit if the resolved path escapes *target_dir*.
     """
     if raw_path.startswith("~/") or raw_path.startswith("~\\"):
-        return target_dir / raw_path[2:]
-    return target_dir / raw_path
+        resolved = (target_dir / raw_path[2:]).resolve()
+    else:
+        resolved = (target_dir / raw_path).resolve()
+
+    if not resolved.is_relative_to(target_dir):
+        rprint(f"[red]Error:[/red] path '{raw_path}' escapes target directory")
+        raise typer.Exit(1)
+
+    return resolved
 
 
 def register_pull(app: typer.Typer):
