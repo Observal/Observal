@@ -5,13 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db
-from models.graphrag import GraphRagListing
 from models.hook import HookListing
 from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
 from models.sandbox import SandboxListing
 from models.skill import SkillListing
-from models.tool import ToolListing
 from models.user import User, UserRole
 from schemas.mcp import ReviewActionRequest
 
@@ -19,12 +17,10 @@ router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
 LISTING_MODELS = {
     "mcp": McpListing,
-    "tool": ToolListing,
     "skill": SkillListing,
     "hook": HookListing,
     "prompt": PromptListing,
     "sandbox": SandboxListing,
-    "graphrag": GraphRagListing,
 }
 
 

@@ -73,10 +73,6 @@ def _scalar_result(val):
 class TestModels:
     """Test that all 6 listing + download + link models have correct table names and reuse ListingStatus."""
 
-    def test_tool_listing_tablename(self):
-        from models.tool import ToolListing
-        assert ToolListing.__tablename__ == "tool_listings"
-
     def test_skill_listing_tablename(self):
         from models.skill import SkillListing
         assert SkillListing.__tablename__ == "skill_listings"
@@ -92,14 +88,6 @@ class TestModels:
     def test_sandbox_listing_tablename(self):
         from models.sandbox import SandboxListing
         assert SandboxListing.__tablename__ == "sandbox_listings"
-
-    def test_graphrag_listing_tablename(self):
-        from models.graphrag import GraphRagListing
-        assert GraphRagListing.__tablename__ == "graphrag_listings"
-
-    def test_tool_download_tablename(self):
-        from models.tool import ToolDownload
-        assert ToolDownload.__tablename__ == "tool_downloads"
 
     def test_skill_download_tablename(self):
         from models.skill import SkillDownload
@@ -117,29 +105,15 @@ class TestModels:
         from models.sandbox import SandboxDownload
         assert SandboxDownload.__tablename__ == "sandbox_downloads"
 
-    def test_graphrag_download_tablename(self):
-        from models.graphrag import GraphRagDownload
-        assert GraphRagDownload.__tablename__ == "graphrag_downloads"
-
-    def test_agent_skill_link_tablename(self):
-        from models.skill import AgentSkillLink
-        assert AgentSkillLink.__tablename__ == "agent_skill_links"
-
-    def test_agent_hook_link_tablename(self):
-        from models.hook import AgentHookLink
-        assert AgentHookLink.__tablename__ == "agent_hook_links"
-
     def test_listing_status_reused_not_redefined(self):
-        """All 6 models import ListingStatus from models.mcp: not their own copy."""
-        from models.graphrag import GraphRagListing
+        """All remaining listing models import ListingStatus from models.mcp: not their own copy."""
         from models.hook import HookListing
         from models.mcp import ListingStatus as Canonical
         from models.prompt import PromptListing
         from models.sandbox import SandboxListing
         from models.skill import SkillListing
-        from models.tool import ToolListing
 
-        for model in (ToolListing, SkillListing, HookListing, PromptListing, SandboxListing, GraphRagListing):
+        for model in (SkillListing, HookListing, PromptListing, SandboxListing):
             col = model.__table__.columns["status"]
             assert col.type.enum_class is Canonical
 
@@ -266,78 +240,6 @@ class TestSchemas:
 # ═══════════════════════════════════════════════════════════
 # 3. TestRoutes
 # ═══════════════════════════════════════════════════════════
-
-class TestToolRoutes:
-    @pytest.mark.asyncio
-    async def test_submit_calls_db_add_and_commit(self):
-        from api.routes.tool import router
-        app, db, user = _app_with(router)
-
-        def _refresh(obj):
-            obj.id = uuid.uuid4()
-            obj.created_at = datetime.now(UTC)
-            obj.updated_at = datetime.now(UTC)
-        db.refresh = AsyncMock(side_effect=_refresh)
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.post("/api/v1/tools/submit", json={
-                "name": "t", "version": "1.0", "description": "d", "owner": "o", "category": "c"
-            })
-        assert r.status_code == 200
-        db.add.assert_called_once()
-        db.commit.assert_awaited_once()
-        assert r.json()["status"] == "pending"
-
-    @pytest.mark.asyncio
-    async def test_get_missing_returns_404(self):
-        from api.routes.tool import router
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.get(f"/api/v1/tools/{uuid.uuid4()}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_delete_missing_returns_404(self):
-        from api.routes.tool import router
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.delete(f"/api/v1/tools/{uuid.uuid4()}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_install_missing_returns_404(self):
-        from api.routes.tool import router
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.post(f"/api/v1/tools/{uuid.uuid4()}/install", json={"ide": "cursor"})
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_install_approved_returns_config(self):
-        from api.routes.tool import router
-        app, db, user = _app_with(router)
-        listing = _listing_mock(None, status=ListingStatus.approved, category="c")
-        db.execute = AsyncMock(return_value=_scalar_result(listing))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.post(f"/api/v1/tools/{listing.id}/install", json={"ide": "cursor"})
-        assert r.status_code == 200
-        assert "config_snippet" in r.json()
-
-    @pytest.mark.asyncio
-    async def test_list_queries_approved_only(self):
-        from api.routes.tool import router
-        app, db, _ = _app_with(router)
-        result_mock = MagicMock()
-        result_mock.scalars.return_value.all.return_value = []
-        db.execute = AsyncMock(return_value=result_mock)
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.get("/api/v1/tools")
-        assert r.status_code == 200
-        assert r.json() == []
-
 
 class TestSkillRoutes:
     @pytest.mark.asyncio
@@ -575,69 +477,6 @@ class TestSandboxRoutes:
         assert "config_snippet" in r.json()
 
 
-class TestGraphRagRoutes:
-    @pytest.mark.asyncio
-    async def test_submit_calls_db_add_and_commit(self):
-        from api.routes.graphrag import router
-        app, db, user = _app_with(router)
-
-        def _refresh(obj):
-            obj.id = uuid.uuid4()
-            obj.created_at = datetime.now(UTC)
-            obj.updated_at = datetime.now(UTC)
-        db.refresh = AsyncMock(side_effect=_refresh)
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.post("/api/v1/graphrags/submit", json={
-                "name": "gr", "version": "1.0", "description": "d", "owner": "o",
-                "endpoint_url": "http://x", "query_interface": "graphql",
-            })
-        assert r.status_code == 200
-        db.add.assert_called_once()
-        assert r.json()["status"] == "pending"
-
-    @pytest.mark.asyncio
-    async def test_get_missing_returns_404(self):
-        from api.routes.graphrag import router
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.get(f"/api/v1/graphrags/{uuid.uuid4()}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_delete_missing_returns_404(self):
-        from api.routes.graphrag import router
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.delete(f"/api/v1/graphrags/{uuid.uuid4()}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_install_approved_returns_config(self):
-        from api.routes.graphrag import router
-        app, db, user = _app_with(router)
-        listing = _listing_mock(None, status=ListingStatus.approved)
-        db.execute = AsyncMock(return_value=_scalar_result(listing))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.post(f"/api/v1/graphrags/{listing.id}/install", json={"ide": "cursor"})
-        assert r.status_code == 200
-        assert "config_snippet" in r.json()
-
-    @pytest.mark.asyncio
-    async def test_list_queries_approved_only(self):
-        from api.routes.graphrag import router
-        app, db, _ = _app_with(router)
-        result_mock = MagicMock()
-        result_mock.scalars.return_value.all.return_value = []
-        db.execute = AsyncMock(return_value=result_mock)
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.get("/api/v1/graphrags")
-        assert r.status_code == 200
-        assert r.json() == []
-
-
 # ═══════════════════════════════════════════════════════════
 # 4. TestUnifiedReview
 # ═══════════════════════════════════════════════════════════
@@ -708,7 +547,7 @@ class TestUnifiedReview:
 
     def test_listing_models_dict_has_all_types(self):
         from api.routes.review import LISTING_MODELS
-        for t in ("mcp", "tool", "skill", "hook", "prompt", "sandbox", "graphrag"):
+        for t in ("mcp", "skill", "hook", "prompt", "sandbox"):
             assert t in LISTING_MODELS
 
 

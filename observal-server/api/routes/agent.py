@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.deps import get_current_user, get_db
-from models.agent import Agent, AgentDownload, AgentGoalSection, AgentGoalTemplate, AgentMcpLink, AgentStatus
+from models.agent import Agent, AgentGoalSection, AgentGoalTemplate, AgentStatus
+from models.agent_component import AgentComponent
+from models.download import AgentDownloadRecord
 from models.mcp import ListingStatus, McpListing
 from models.user import User
 from schemas.agent import (
@@ -27,7 +29,7 @@ router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
 # Eager-load options for Agent queries to avoid MissingGreenlet in async
 _agent_load_options = [
-    selectinload(Agent.mcp_links).selectinload(AgentMcpLink.mcp_listing),
+    selectinload(Agent.components),
     selectinload(Agent.goal_template).selectinload(AgentGoalTemplate.sections),
 ]
 
@@ -49,13 +51,15 @@ async def _load_agent(db: AsyncSession, *where_clauses) -> Agent | None:
 
 
 def _agent_to_response(agent: Agent) -> AgentResponse:
+    # Build mcp_links from components with component_type='mcp'
+    mcp_components = [c for c in agent.components if c.component_type == "mcp"]
     mcp_links = [
         McpLinkResponse(
-            mcp_listing_id=link.mcp_listing_id,
-            mcp_name=link.mcp_listing.name if link.mcp_listing else "(deleted)",
-            order=link.order,
+            mcp_listing_id=comp.component_id,
+            mcp_name="(component)",
+            order=comp.order_index,
         )
-        for link in agent.mcp_links
+        for comp in mcp_components
     ]
     goal_template = None
     if agent.goal_template:
@@ -92,7 +96,7 @@ async def create_agent(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _validate_mcp_ids(req.mcp_server_ids, db)
+    mcp_listings = await _validate_mcp_ids(req.mcp_server_ids, db)
 
     agent = Agent(
         name=req.name,
@@ -109,8 +113,14 @@ async def create_agent(
     db.add(agent)
     await db.flush()
 
-    for i, mid in enumerate(req.mcp_server_ids):
-        db.add(AgentMcpLink(agent_id=agent.id, mcp_listing_id=mid, order=i))
+    for i, (mid, listing) in enumerate(zip(req.mcp_server_ids, mcp_listings)):
+        db.add(AgentComponent(
+            agent_id=agent.id,
+            component_type="mcp",
+            component_id=mid,
+            version_ref=listing.version,
+            order_index=i,
+        ))
 
     goal = AgentGoalTemplate(agent_id=agent.id, description=req.goal_template.description)
     db.add(goal)
@@ -183,12 +193,26 @@ async def update_agent(
         agent.external_mcps = [m.model_dump() for m in req.external_mcps]
 
     if req.mcp_server_ids is not None:
-        await _validate_mcp_ids(req.mcp_server_ids, db)
-        old_links = (await db.execute(select(AgentMcpLink).where(AgentMcpLink.agent_id == agent_id))).scalars().all()
-        for link in old_links:
-            await db.delete(link)
-        for i, mid in enumerate(req.mcp_server_ids):
-            db.add(AgentMcpLink(agent_id=agent.id, mcp_listing_id=mid, order=i))
+        mcp_listings = await _validate_mcp_ids(req.mcp_server_ids, db)
+        # Remove old MCP components
+        old_comps = (
+            await db.execute(
+                select(AgentComponent).where(
+                    AgentComponent.agent_id == agent.id,
+                    AgentComponent.component_type == "mcp",
+                )
+            )
+        ).scalars().all()
+        for comp in old_comps:
+            await db.delete(comp)
+        for i, (mid, listing) in enumerate(zip(req.mcp_server_ids, mcp_listings)):
+            db.add(AgentComponent(
+                agent_id=agent.id,
+                component_type="mcp",
+                component_id=mid,
+                version_ref=listing.version,
+                order_index=i,
+            ))
 
     if req.goal_template is not None:
         if agent.goal_template:
@@ -238,7 +262,12 @@ async def install_agent(
             raise HTTPException(status_code=404, detail="Agent not found or not active")
 
     snippet = generate_agent_config(agent, req.ide)
-    db.add(AgentDownload(agent_id=agent.id, user_id=current_user.id, ide=req.ide))
+    db.add(AgentDownloadRecord(
+        agent_id=agent.id,
+        user_id=current_user.id,
+        ide=req.ide,
+        source="api",
+    ))
     await db.commit()
 
     return AgentInstallResponse(agent_id=agent.id, ide=req.ide, config_snippet=snippet)
@@ -270,9 +299,9 @@ async def delete_agent(
         await db.delete(r)
     for r in (await db.execute(select(EvalRun).where(EvalRun.agent_id == agent.id))).scalars().all():
         await db.delete(r)
-    for r in (await db.execute(select(AgentDownload).where(AgentDownload.agent_id == agent.id))).scalars().all():
+    for r in (await db.execute(select(AgentDownloadRecord).where(AgentDownloadRecord.agent_id == agent.id))).scalars().all():
         await db.delete(r)
-    # AgentMcpLink, AgentGoalTemplate, AgentGoalSection handled by cascade="all, delete-orphan"
+    # AgentComponent, AgentGoalTemplate, AgentGoalSection handled by cascade="all, delete-orphan"
 
     await db.delete(agent)
     await db.commit()

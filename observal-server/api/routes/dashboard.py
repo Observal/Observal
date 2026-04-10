@@ -8,7 +8,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db
-from models.agent import Agent, AgentDownload, AgentStatus
+from models.agent import Agent, AgentStatus
+from models.download import AgentDownloadRecord
 from models.mcp import ListingStatus, McpDownload, McpListing
 from models.user import User
 from schemas.dashboard import (
@@ -104,7 +105,7 @@ async def agent_metrics(
     from models.eval import Scorecard
     from services.score_aggregator import ScoreAggregator
 
-    dl_count = await db.scalar(select(func.count(AgentDownload.id)).where(AgentDownload.agent_id == agent_id)) or 0
+    dl_count = await db.scalar(select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)) or 0
 
     rows = await _ch_json(
         "SELECT "
@@ -201,10 +202,10 @@ async def top_mcps(db: AsyncSession = Depends(get_db), current_user: User = Depe
 @router.get("/overview/top-agents", response_model=list[TopItem])
 async def top_agents(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(
-        select(AgentDownload.agent_id, func.count(AgentDownload.id).label("cnt"), Agent.name)
-        .join(Agent, AgentDownload.agent_id == Agent.id)
-        .group_by(AgentDownload.agent_id, Agent.name)
-        .order_by(func.count(AgentDownload.id).desc())
+        select(AgentDownloadRecord.agent_id, func.count(AgentDownloadRecord.id).label("cnt"), Agent.name)
+        .join(Agent, AgentDownloadRecord.agent_id == Agent.id)
+        .group_by(AgentDownloadRecord.agent_id, Agent.name)
+        .order_by(func.count(AgentDownloadRecord.id).desc())
         .limit(5)
     )
     return [TopItem(id=row.agent_id, name=row.name, value=row.cnt) for row in result.all()]

@@ -363,62 +363,6 @@ class TestInstallRouteWiring:
         assert config["sandbox"]["command"] == "observal-sandbox-run"
 
     @pytest.mark.asyncio
-    async def test_graphrag_install_uses_config_generator(self):
-        from unittest.mock import AsyncMock
-
-        from api.routes.graphrag import install_graphrag
-        from schemas.graphrag import GraphRagInstallRequest
-
-        listing = _MockListing(
-            id=uuid.uuid4(),
-            name="test-graphrag",
-            endpoint_url="http://example.com/graphql",
-            status=MagicMock(value="approved"),
-        )
-
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = listing
-        mock_db.execute.return_value = mock_result
-
-        mock_user = MagicMock()
-        mock_user.id = uuid.uuid4()
-
-        req = GraphRagInstallRequest(ide="kiro")
-        resp = await install_graphrag(listing.id, req, mock_db, mock_user)
-        config = resp.config_snippet
-        assert "graphrag" in config
-        assert "observal-graphrag-proxy" in config["graphrag"]["start_command"]
-
-    @pytest.mark.asyncio
-    async def test_tool_install_uses_config_generator(self):
-        from unittest.mock import AsyncMock
-
-        from api.routes.tool import install_tool
-        from schemas.tool import ToolInstallRequest
-
-        listing = _MockListing(
-            id=uuid.uuid4(),
-            name="test-tool",
-            endpoint_url="http://example.com/api",
-            status=MagicMock(value="approved"),
-        )
-
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = listing
-        mock_db.execute.return_value = mock_result
-
-        mock_user = MagicMock()
-        mock_user.id = uuid.uuid4()
-
-        req = ToolInstallRequest(ide="cursor")
-        resp = await install_tool(listing.id, req, mock_db, mock_user)
-        config = resp.config_snippet
-        assert "tool" in config
-        assert "observal-proxy" in config["tool"]["start_command"]
-
-    @pytest.mark.asyncio
     async def test_skill_install_uses_config_generator(self):
         from unittest.mock import AsyncMock
 

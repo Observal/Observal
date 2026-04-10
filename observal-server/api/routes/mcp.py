@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db, resolve_listing
-from models.mcp import ListingStatus, McpCustomField, McpDownload, McpListing
+from models.mcp import ListingStatus, McpDownload, McpListing
 from models.user import User
 from schemas.mcp import (
     McpAnalyzeRequest,
@@ -51,11 +51,6 @@ async def submit_mcp(
         submitted_by=current_user.id,
     )
     db.add(listing)
-    await db.flush()
-
-    for fname, fval in req.custom_fields.items():
-        db.add(McpCustomField(listing_id=listing.id, field_name=fname, field_value=fval))
-
     await db.commit()
     await db.refresh(listing)
 
