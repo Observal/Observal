@@ -25,12 +25,21 @@ def _inject_agent_id(mcp_config: dict, agent_id: str):
             cfg["env"]["OBSERVAL_AGENT_ID"] = agent_id
 
 
-def _build_mcp_configs(agent: Agent, ide: str, observal_url: str) -> dict:
-    """Build MCP server configs from registry links + external MCPs."""
-    mcp_configs = {}
+def _build_mcp_configs(agent: Agent, ide: str, observal_url: str, mcp_listings: dict | None = None) -> dict:
+    """Build MCP server configs from registry components + external MCPs.
 
-    for link in agent.mcp_links:
-        listing = link.mcp_listing
+    Args:
+        mcp_listings: optional {component_id: McpListing} map. When provided,
+            used to look up MCP listings for each component. The install route
+            pre-loads these to avoid N+1 queries in a sync context.
+    """
+    mcp_configs = {}
+    mcp_listings = mcp_listings or {}
+
+    for comp in agent.components:
+        if comp.component_type != "mcp":
+            continue
+        listing = mcp_listings.get(comp.component_id)
         if not listing:
             continue
         cfg = generate_config(listing, ide, observal_url=observal_url)
@@ -54,10 +63,19 @@ def _build_mcp_configs(agent: Agent, ide: str, observal_url: str) -> dict:
     return mcp_configs
 
 
-def generate_agent_config(agent: Agent, ide: str, observal_url: str = "http://localhost:8000") -> dict:
-    """Generate IDE-specific config for an agent."""
+def generate_agent_config(
+    agent: Agent,
+    ide: str,
+    observal_url: str = "http://localhost:8000",
+    mcp_listings: dict | None = None,
+) -> dict:
+    """Generate IDE-specific config for an agent.
+
+    Args:
+        mcp_listings: optional {component_id: McpListing} map pre-loaded by caller.
+    """
     safe_name = _sanitize_name(agent.name)
-    mcp_configs = _build_mcp_configs(agent, ide, observal_url)
+    mcp_configs = _build_mcp_configs(agent, ide, observal_url, mcp_listings=mcp_listings)
 
     if ide == "kiro":
         # Kiro agent JSON: drop into ~/.kiro/agents/<name>.json

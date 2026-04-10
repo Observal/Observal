@@ -8,7 +8,8 @@ dependencies = [
     "typer",
     "httpx",
     "rich",
-    
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
 ]
 
 [project.scripts]
@@ -70,3 +71,11 @@ indent-style = "space"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "fastapi>=0.135.3",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
+    "sqlalchemy>=2.0.49",
+]

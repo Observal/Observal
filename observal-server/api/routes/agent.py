@@ -19,6 +19,7 @@ from schemas.agent import (
     AgentResponse,
     AgentSummary,
     AgentUpdateRequest,
+    ComponentLinkResponse,
     GoalSectionResponse,
     GoalTemplateResponse,
     McpLinkResponse,
@@ -51,7 +52,7 @@ async def _load_agent(db: AsyncSession, *where_clauses) -> Agent | None:
 
 
 def _agent_to_response(agent: Agent) -> AgentResponse:
-    # Build mcp_links from components with component_type='mcp'
+    # Build mcp_links from components with component_type='mcp' (backwards compat)
     mcp_components = [c for c in agent.components if c.component_type == "mcp"]
     mcp_links = [
         McpLinkResponse(
@@ -60,6 +61,17 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
             order=comp.order_index,
         )
         for comp in mcp_components
+    ]
+    # Build full component_links for all types
+    component_links = [
+        ComponentLinkResponse(
+            component_type=comp.component_type,
+            component_id=comp.component_id,
+            version_ref=comp.version_ref,
+            order=comp.order_index,
+            config_override=comp.config_override,
+        )
+        for comp in agent.components
     ]
     goal_template = None
     if agent.goal_template:
@@ -73,6 +85,7 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
 
     agent_dict = {c.key: getattr(agent, c.key) for c in Agent.__table__.columns}
     agent_dict["mcp_links"] = mcp_links
+    agent_dict["component_links"] = component_links
     agent_dict["goal_template"] = goal_template
     return AgentResponse(**agent_dict)
 
@@ -96,7 +109,25 @@ async def create_agent(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # If `components` is provided, it supersedes legacy `mcp_server_ids`
+    if req.components:
+        req.mcp_server_ids = []
+
+    # Validate legacy mcp_server_ids
     mcp_listings = await _validate_mcp_ids(req.mcp_server_ids, db)
+
+    # Validate new components field (component_type already validated by Pydantic Literal)
+    if req.components:
+        from services.agent_resolver import validate_component_ids
+        errors = await validate_component_ids(
+            [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
+            db,
+        )
+        if errors:
+            raise HTTPException(status_code=400, detail=[
+                {"component_type": e.component_type, "component_id": str(e.component_id), "reason": e.reason}
+                for e in errors
+            ])
 
     agent = Agent(
         name=req.name,
@@ -113,14 +144,29 @@ async def create_agent(
     db.add(agent)
     await db.flush()
 
-    for i, (mid, listing) in enumerate(zip(req.mcp_server_ids, mcp_listings)):
+    # Legacy: mcp_server_ids → AgentComponent(type=mcp)
+    order = 0
+    for mid, listing in zip(req.mcp_server_ids, mcp_listings):
         db.add(AgentComponent(
             agent_id=agent.id,
             component_type="mcp",
             component_id=mid,
             version_ref=listing.version,
-            order_index=i,
+            order_index=order,
         ))
+        order += 1
+
+    # New: components list with all types
+    for cref in req.components:
+        db.add(AgentComponent(
+            agent_id=agent.id,
+            component_type=cref.component_type,
+            component_id=cref.component_id,
+            version_ref="latest",
+            order_index=order,
+            config_override=cref.config_override,
+        ))
+        order += 1
 
     goal = AgentGoalTemplate(agent_id=agent.id, description=req.goal_template.description)
     db.add(goal)
@@ -192,9 +238,38 @@ async def update_agent(
     if req.external_mcps is not None:
         agent.external_mcps = [m.model_dump() for m in req.external_mcps]
 
-    if req.mcp_server_ids is not None:
+    if req.components is not None:
+        # New components field replaces ALL components (type validated by Pydantic Literal)
+        from services.agent_resolver import validate_component_ids
+        errors = await validate_component_ids(
+            [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
+            db,
+        )
+        if errors:
+            raise HTTPException(status_code=400, detail=[
+                {"component_type": e.component_type, "component_id": str(e.component_id), "reason": e.reason}
+                for e in errors
+            ])
+        # Remove ALL old components
+        old_comps = (
+            await db.execute(
+                select(AgentComponent).where(AgentComponent.agent_id == agent.id)
+            )
+        ).scalars().all()
+        for comp in old_comps:
+            await db.delete(comp)
+        for i, cref in enumerate(req.components):
+            db.add(AgentComponent(
+                agent_id=agent.id,
+                component_type=cref.component_type,
+                component_id=cref.component_id,
+                version_ref="latest",
+                order_index=i,
+                config_override=cref.config_override,
+            ))
+    elif req.mcp_server_ids is not None:
+        # Legacy: only update MCP components
         mcp_listings = await _validate_mcp_ids(req.mcp_server_ids, db)
-        # Remove old MCP components
         old_comps = (
             await db.execute(
                 select(AgentComponent).where(
@@ -262,7 +337,16 @@ async def install_agent(
         if not agent or agent.created_by != current_user.id:
             raise HTTPException(status_code=404, detail="Agent not found or not active")
 
-    snippet = generate_agent_config(agent, req.ide)
+    # Pre-load MCP listings for config generation
+    mcp_comp_ids = [c.component_id for c in agent.components if c.component_type == "mcp"]
+    mcp_listings_map = {}
+    if mcp_comp_ids:
+        mcp_rows = (await db.execute(
+            select(McpListing).where(McpListing.id.in_(mcp_comp_ids))
+        )).scalars().all()
+        mcp_listings_map = {l.id: l for l in mcp_rows}
+
+    snippet = generate_agent_config(agent, req.ide, mcp_listings=mcp_listings_map)
     from services.download_tracker import record_agent_download
     await record_agent_download(
         agent_id=agent.id,
@@ -289,6 +373,46 @@ async def agent_download_stats(
     from services.download_tracker import get_download_stats
     stats = await get_download_stats(agent.id, db)
     return stats
+
+
+@router.get("/{agent_id}/resolve")
+async def resolve_agent_components(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resolve all components for an agent — validates they exist and are approved."""
+    agent = await _load_agent(db, _agent_id_clause(agent_id))
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    from services.agent_resolver import resolve_agent
+    resolved = await resolve_agent(agent, db)
+    from services.agent_builder import build_composition_summary
+    return build_composition_summary(resolved)
+
+
+@router.get("/{agent_id}/manifest")
+async def get_agent_manifest(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a portable agent manifest with all resolved components."""
+    agent = await _load_agent(db, _agent_id_clause(agent_id))
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    from services.agent_resolver import resolve_agent
+    resolved = await resolve_agent(agent, db)
+    if not resolved.ok:
+        raise HTTPException(status_code=422, detail={
+            "message": "Agent has unresolvable components",
+            "errors": [
+                {"component_type": e.component_type, "component_id": str(e.component_id), "reason": e.reason}
+                for e in resolved.errors
+            ],
+        })
+    from services.agent_builder import build_agent_manifest
+    return build_agent_manifest(resolved)
 
 
 @router.delete("/{agent_id}")
