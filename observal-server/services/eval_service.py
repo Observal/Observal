@@ -8,8 +8,12 @@ from config import settings
 from models.agent import Agent
 from models.eval import Scorecard, ScorecardDimension
 from models.scoring import DEFAULT_PENALTIES
+from services.adversarial_scorer import AdversarialScorer
+from services.canary import CanaryConfig, CanaryDetector
 from services.clickhouse import _query
 from services.eval_engine import FallbackBackend, get_backend
+from services.eval_watchdog import EvalWatchdog
+from services.sanitizer import TraceSanitizer
 from services.score_aggregator import ScoreAggregator
 from services.slm_scorer import SLMScorer
 from services.structural_scorer import StructuralScorer
@@ -243,60 +247,146 @@ async def run_structured_eval(
     trace: dict,
     spans: list[dict],
     eval_run_id: uuid.UUID,
+    canary_config: CanaryConfig | None = None,
 ) -> Scorecard:
-    """Run the new 5-dimension structured eval on a trace.
+    """Run the BenchJack-hardened 6-dimension eval pipeline on a trace.
 
-    1. Run StructuralScorer on spans -> structural penalties
-    2. Run SLMScorer on trace -> slm penalties (skip if no LLM backend)
-    3. Run ScoreAggregator to produce Scorecard
+    Pipeline order:
+    1. Adversarial detection FIRST (before any other scoring)
+    2. Sanitize trace for SLM judge
+    3. Structural scoring on original trace
+    4. SLM scoring on sanitized trace
+    5. Canary detection (if configured)
+    6. Aggregate all penalties into scorecard
+    7. Run EvalWatchdog on scorecard
     """
+    sanitizer = TraceSanitizer()
+    adversarial_scorer = AdversarialScorer(sanitizer)
+    canary_detector = CanaryDetector()
     structural_scorer = StructuralScorer()
     aggregator = ScoreAggregator()
+    watchdog = EvalWatchdog()
 
-    # Phase 1: Structural scoring (always runs)
-    structural_penalties = structural_scorer.score_tool_efficiency(spans, str(agent.id))
-    structural_penalties += structural_scorer.score_tool_failures(spans)
+    trace_id = trace.get("trace_id", trace.get("event_id", str(uuid.uuid4())))
+
+    # --- Step 1: Adversarial detection (before any other scoring) ---
+    injection_attempts = sanitizer.detect_injection_attempts(trace)
+    adversarial_penalties = adversarial_scorer.score(trace, canary_config)
 
     # Attach penalty amounts from catalog
-    for p in structural_penalties:
-        p["amount"] = _PENALTY_AMOUNTS.get(p["event_name"], 0)
+    for p in adversarial_penalties:
+        if "amount" not in p:
+            p["amount"] = _PENALTY_AMOUNTS.get(p["event_name"], 0)
 
-    # Phase 2: SLM scoring (only if LLM backend available)
+    logger.info(
+        "Adversarial scan: %d injection attempts, %d penalties for trace %s",
+        len(injection_attempts), len(adversarial_penalties), trace_id,
+    )
+
+    # --- Step 2: Sanitize trace for SLM judge ---
+    sanitized_trace = sanitizer.sanitize_for_judge(trace)
+
+    # --- Step 3: Structural scoring on ORIGINAL trace ---
+    structural_penalties = structural_scorer.score_tool_efficiency(
+        spans, str(agent.id)
+    )
+    structural_penalties += structural_scorer.score_tool_failures(spans)
+
+    for p in structural_penalties:
+        if "amount" not in p:
+            p["amount"] = _PENALTY_AMOUNTS.get(p["event_name"], 0)
+
+    # --- Step 4: SLM scoring on SANITIZED trace ---
     slm_penalties: list[dict] = []
+    skipped_dimensions: list[str] = []
     backend = get_backend()
     if not isinstance(backend, FallbackBackend):
         slm_scorer = SLMScorer(backend)
         try:
-            # Goal completion
             goal_desc = ""
             required_sections: list[dict] = []
             if agent.goal_template:
                 goal_desc = agent.goal_template.description
                 required_sections = [
-                    {"name": s.name, "grounding_required": s.grounding_required} for s in agent.goal_template.sections
+                    {"name": s.name, "grounding_required": s.grounding_required}
+                    for s in agent.goal_template.sections
                 ]
             if required_sections:
-                slm_penalties += await slm_scorer.score_goal_completion(trace, spans, goal_desc, required_sections)
+                slm_penalties += await slm_scorer.score_goal_completion(
+                    sanitized_trace, spans, goal_desc, required_sections
+                )
 
-            # Factual grounding
-            slm_penalties += await slm_scorer.score_factual_grounding(trace, spans)
-
-            # Thought process
+            slm_penalties += await slm_scorer.score_factual_grounding(sanitized_trace, spans)
             slm_penalties += await slm_scorer.score_thought_process(spans)
         except Exception as e:
-            logger.error(f"SLM scoring failed: {e}")
+            logger.error(f"SLM scoring failed, skipping SLM dimensions: {e}")
+            slm_penalties = []
+            skipped_dimensions = ["goal_completion", "factual_grounding", "thought_process"]
 
         for p in slm_penalties:
-            p["amount"] = _PENALTY_AMOUNTS.get(p["event_name"], 0)
+            if "amount" not in p:
+                p["amount"] = _PENALTY_AMOUNTS.get(p["event_name"], 0)
+    else:
+        skipped_dimensions = ["goal_completion", "factual_grounding", "thought_process"]
 
-    # Phase 3: Aggregate into scorecard
+    # --- Step 5: Canary detection (if configured) ---
+    canary_report = None
+    canary_penalty = None
+    if canary_config and canary_config.enabled:
+        canary_penalty = canary_detector.check_for_parroted_canary(trace, canary_config)
+        if canary_penalty:
+            if "amount" not in canary_penalty:
+                canary_penalty["amount"] = _PENALTY_AMOUNTS.get(canary_penalty["event_name"], 0)
+            adversarial_penalties.append(canary_penalty)
+
+        canary_report = canary_detector.generate_canary_report(
+            trace_id, canary_config, canary_penalty
+        )
+        logger.info(
+            "Canary check: behavior=%s, penalty=%s for trace %s",
+            canary_report.agent_behavior, canary_report.penalty_applied, trace_id,
+        )
+
+    # --- Step 6: Aggregate all penalties ---
     scorecard = aggregator.compute_scorecard(
-        structural_penalties=structural_penalties,
+        structural_penalties=structural_penalties + adversarial_penalties,
         slm_penalties=slm_penalties,
         agent_id=agent.id,
         eval_run_id=eval_run_id,
-        trace_id=trace.get("trace_id", trace.get("event_id", str(uuid.uuid4()))),
+        trace_id=trace_id,
         version=agent.version,
+        skipped_dimensions=skipped_dimensions if skipped_dimensions else None,
     )
+
+    # --- Step 7: Run EvalWatchdog ---
+    all_penalties = structural_penalties + adversarial_penalties + slm_penalties
+    warnings = watchdog.validate_scorecard(
+        composite_score=scorecard.composite_score,
+        dimension_scores=scorecard.dimension_scores,
+        penalty_count=scorecard.penalty_count,
+        penalties=all_penalties,
+        span_count=len(spans),
+    )
+    scorecard.warnings = warnings
+    if warnings:
+        logger.warning("EvalWatchdog warnings for trace %s: %s", trace_id, warnings)
+
+    # Store adversarial metadata in raw_output for API response
+    scorecard.raw_output = {
+        "adversarial_findings": {
+            "injection_attempts_detected": len(injection_attempts),
+            "injection_attempts": [
+                {
+                    "pattern_matched": a.pattern_matched,
+                    "location": a.location,
+                    "severity": a.severity,
+                }
+                for a in injection_attempts
+            ],
+            "items_sanitized": len(injection_attempts),
+            "adversarial_score": scorecard.dimension_scores.get("adversarial_robustness", 100),
+        },
+        "canary_report": canary_report.model_dump() if canary_report else None,
+    }
 
     return scorecard
