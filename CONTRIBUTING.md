@@ -102,12 +102,36 @@ fix(telemetry): handle null span timestamps
 docs: update contributing guide
 ```
 
+## Changelog
+
+We maintain a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. When submitting a PR that adds a feature, fixes a bug, or makes any user-facing change, add an entry under the `[Unreleased]` section in the appropriate category:
+
+- **Added** for new features
+- **Changed** for changes in existing functionality
+- **Deprecated** for soon-to-be removed features
+- **Removed** for now removed features
+- **Fixed** for bug fixes
+- **Security** for vulnerability fixes
+
+Example:
+
+```markdown
+## [Unreleased]
+
+### Fixed
+
+- Resolve null span timestamp crash in telemetry ingestion
+```
+
+At release time, a maintainer will move unreleased entries into a versioned section.
+
 ## Pull Request Process
 
 1. Push your branch to your fork.
 2. Open a PR against `main`.
 3. Ensure linters and tests pass.
-4. Respond to review feedback and update your code if requested.
+4. Add a changelog entry if your change is user-facing.
+5. Respond to review feedback and update your code if requested.
 
 ## Issues
 
