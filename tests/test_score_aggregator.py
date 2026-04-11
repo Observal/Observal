@@ -136,10 +136,11 @@ class TestComputeScorecard:
             trace_id="t1",
             version="1.0",
         )
-        assert len(sc.dimensions) == 5
+        assert len(sc.dimensions) == 6
         dim_names = {d.dimension for d in sc.dimensions}
         assert "goal_completion" in dim_names
         assert "tool_efficiency" in dim_names
+        assert "adversarial_robustness" in dim_names
 
     def test_recommendations_generated(self):
         penalties = [
