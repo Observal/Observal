@@ -22,11 +22,17 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layouts/page-header";
-import { useRegistryList, useAgentValidation } from "@/hooks/use-api";
+import { useRegistryList, useAgentValidation, useWhoami } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
 import type { ValidationResult } from "@/lib/types";
+
+const MODEL_OPTIONS = [
+  { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
+  { value: "claude-opus-4-20250514", label: "Claude Opus 4" },
+  { value: "claude-haiku-3-5-20241022", label: "Claude Haiku 3.5" },
+];
 import { SortableComponentList } from "@/components/builder/sortable-component-list";
 import { ValidationPanel } from "@/components/builder/validation-panel";
 import { PreviewPanel } from "@/components/builder/preview-panel";
@@ -146,8 +152,11 @@ export default function AgentBuilderPage() {
   const { ready } = useAuthGuard();
 
   const router = useRouter();
+  const { data: whoami } = useWhoami();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [version, setVersion] = useState("1.0.0");
+  const [modelName, setModelName] = useState("claude-sonnet-4-20250514");
   const [publishing, setPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
 
@@ -280,28 +289,36 @@ export default function AgentBuilderPage() {
 
     setPublishing(true);
     try {
-      const componentLinks: string[] = [];
-      Object.values(selectedComponents).forEach((items) =>
-        items.forEach((item) => componentLinks.push(item.id)),
-      );
+      // Build components array with proper {component_type, component_id} format
+      const components: { component_type: string; component_id: string }[] = [];
+      for (const [type, items] of Object.entries(selectedComponents)) {
+        const singularType = TYPE_MAP[type] ?? type;
+        for (const item of items) {
+          components.push({ component_type: singularType, component_id: item.id });
+        }
+      }
 
-      const goal = goalSections
-        .filter((s) => s.title || s.content)
-        .reduce(
-          (acc, section) => {
-            if (section.title) {
-              acc[section.title] = section.content;
-            }
-            return acc;
-          },
-          {} as Record<string, string>,
-        );
+      // Build goal_template with sections
+      const sections = goalSections
+        .filter((s) => s.title.trim())
+        .map((s) => ({
+          name: s.title.trim(),
+          description: s.content.trim() || null,
+        }));
+
+      const goalDescription = description.trim() || name.trim();
 
       const body = {
         name: name.trim(),
-        description: description.trim() || undefined,
-        component_links: componentLinks.length > 0 ? componentLinks : undefined,
-        goal: Object.keys(goal).length > 0 ? goal : undefined,
+        version: version.trim() || "1.0.0",
+        description: description.trim(),
+        owner: whoami?.name || whoami?.email || "unknown",
+        model_name: modelName,
+        components: components.length > 0 ? components : [],
+        goal_template: {
+          description: goalDescription,
+          sections: sections.length > 0 ? sections : [{ name: "Default", description: goalDescription }],
+        },
       };
 
       const created = await registry.create("agents", body);
@@ -362,6 +379,36 @@ export default function AgentBuilderPage() {
                   rows={3}
                   className="max-w-lg resize-y"
                 />
+              </div>
+              <div className="flex gap-4">
+                <div className="space-y-2 flex-1 max-w-[200px]">
+                  <Label htmlFor="agent-version" className="text-sm font-medium">
+                    Version
+                  </Label>
+                  <Input
+                    id="agent-version"
+                    placeholder="1.0.0"
+                    value={version}
+                    onChange={(e) => setVersion(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2 flex-1 max-w-xs">
+                  <Label htmlFor="agent-model" className="text-sm font-medium">
+                    Model
+                  </Label>
+                  <select
+                    id="agent-model"
+                    value={modelName}
+                    onChange={(e) => setModelName(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    {MODEL_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </section>
 

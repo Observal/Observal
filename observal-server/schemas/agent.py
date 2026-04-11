@@ -95,6 +95,7 @@ class ComponentLinkResponse(BaseModel):
 
     component_type: str
     component_id: uuid.UUID
+    component_name: str = ""
     version_ref: str
     order: int
     config_override: dict | None = None

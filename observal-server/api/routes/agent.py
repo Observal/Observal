@@ -54,13 +54,14 @@ async def _load_agent(db: AsyncSession, *where_clauses) -> Agent | None:
     return result.scalar_one_or_none()
 
 
-def _agent_to_response(agent: Agent) -> AgentResponse:
+def _agent_to_response(agent: Agent, name_map: dict[str, str] | None = None) -> AgentResponse:
+    name_map = name_map or {}
     # Build mcp_links from components with component_type='mcp' (backwards compat)
     mcp_components = [c for c in agent.components if c.component_type == "mcp"]
     mcp_links = [
         McpLinkResponse(
             mcp_listing_id=comp.component_id,
-            mcp_name="(component)",
+            mcp_name=name_map.get(str(comp.component_id), "(component)"),
             order=comp.order_index,
         )
         for comp in mcp_components
@@ -70,6 +71,7 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
         ComponentLinkResponse(
             component_type=comp.component_type,
             component_id=comp.component_id,
+            component_name=name_map.get(str(comp.component_id), ""),
             version_ref=comp.version_ref,
             order=comp.order_index,
             config_override=comp.config_override,
@@ -91,6 +93,28 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
     agent_dict["component_links"] = component_links
     agent_dict["goal_template"] = goal_template
     return AgentResponse(**agent_dict)
+
+
+async def _resolve_component_names(components: list, db: AsyncSession) -> dict[str, str]:
+    """Batch-resolve component_id → name for all component types."""
+    if not components:
+        return {}
+    from services.agent_resolver import _LISTING_MODELS
+
+    # Group component_ids by type
+    by_type: dict[str, list[uuid.UUID]] = {}
+    for comp in components:
+        by_type.setdefault(comp.component_type, []).append(comp.component_id)
+
+    name_map: dict[str, str] = {}
+    for comp_type, ids in by_type.items():
+        model = _LISTING_MODELS.get(comp_type)
+        if not model:
+            continue
+        rows = (await db.execute(select(model.id, model.name).where(model.id.in_(ids)))).all()
+        for row in rows:
+            name_map[str(row[0])] = row[1]
+    return name_map
 
 
 async def _validate_mcp_ids(mcp_ids: list[uuid.UUID], db: AsyncSession) -> list[McpListing]:
@@ -196,7 +220,8 @@ async def create_agent(
 
     await db.commit()
     agent = await _load_agent(db, Agent.id == agent.id)
-    return _agent_to_response(agent)
+    name_map = await _resolve_component_names(agent.components, db)
+    return _agent_to_response(agent, name_map)
 
 
 @router.get("", response_model=list[AgentSummary])
@@ -248,7 +273,8 @@ async def get_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
     agent = await _load_agent(db, _agent_id_clause(agent_id))
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return _agent_to_response(agent)
+    name_map = await _resolve_component_names(agent.components, db)
+    return _agent_to_response(agent, name_map)
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)
@@ -373,7 +399,8 @@ async def update_agent(
 
     await db.commit()
     agent = await _load_agent(db, Agent.id == agent.id)
-    return _agent_to_response(agent)
+    name_map = await _resolve_component_names(agent.components, db)
+    return _agent_to_response(agent, name_map)
 
 
 @router.post("/{agent_id}/install", response_model=AgentInstallResponse)
