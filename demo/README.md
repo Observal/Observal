@@ -1,13 +1,13 @@
-# Observal Demo Framework
+# Observal E2E Demo
 
-End-to-end demos showing Observal's telemetry capture across different MCP server types and IDE configurations.
+End-to-end integration tests that run against your **real local setup** — your actual `~/.claude` config, real MCP servers, real plugins, real agents. No mocks.
 
 ## Prerequisites
 
 - Docker stack running (`cd docker && docker compose up -d`)
-- `observal-shim` installed (`uv tool install --editable .`)
+- CLI installed (`uv tool install --editable .`)
 - `jq` and `curl` available
-- An Observal API key (via `observal init` or `OBSERVAL_KEY` env var)
+- Your `~/.claude/` directory has MCP plugins and agents configured
 
 ## Quick Start
 
@@ -16,77 +16,55 @@ cd demo
 ./run_demo.sh
 ```
 
-The script checks the Docker stack, authenticates, runs all 3 mock MCPs through `observal-shim`, then queries ClickHouse and GraphQL to show captured telemetry.
+The script:
 
-## Mock MCP Servers
+1. Checks Docker services are healthy
+2. Authenticates (auto-bootstraps admin on fresh server)
+3. Reads your real `~/.claude/settings.json` to discover enabled plugins
+4. Reads your real `~/.claude/agents/` to discover agent definitions
+5. Registers discovered MCP servers and skills with Observal
+6. Approves all pending submissions
+7. Composes an agent from your real components
+8. Pulls the agent back and verifies IDE config generation
+9. Tests scan against your real IDE config
+10. Queries ClickHouse and the API to verify everything landed
 
-### mock_mcp.py: General Purpose
+## What It Tests
 
-Tools: `echo`, `add`, `read_file`, `write_file`, `search`
+| Phase | What |
+|-------|------|
+| Auth | `observal auth login` auto-bootstrap on fresh server |
+| Discovery | Reads `~/.claude/settings.json` `enabledPlugins` and `~/.claude/plugins/cache/` |
+| Registration | Submits each discovered MCP server / skill to the registry |
+| Approval | Admin approves all pending items |
+| Agent Compose | Creates an agent bundling all discovered components |
+| Pull | Pulls agent as cursor, vscode, and claude-code IDE configs |
+| Scan | Runs `observal scan` against real IDE config directory |
+| Telemetry | Queries API endpoints to verify stats flow |
 
-Also responds to `resources/read`, `prompts/get`, and `ping`. Generates diverse span types: `tool_call`, `resource_read`, `prompt_get`, `initialize`, `tool_list`, `ping`.
+## Your Setup
 
-### mock_graphrag_mcp.py: Knowledge Graph
+The demo reads whatever is currently in your `~/.claude/`. A typical setup includes:
 
-Tools: `graph_query`, `graph_traverse`, `entity_lookup`
+**MCP Servers:** context7, playwright, github, telegram
+**Skills/Plugins:** frontend-design, superpowers, skill-creator, typescript-lsp, impeccable
+**Agents:** 12 agent definitions in `~/.claude/agents/`
 
-Returns fake knowledge graph data with entities (AuthService, UserDB, APIGateway, etc.) and relationships (reads_from, routes_to, caches_in). Exercises graph-specific span columns: `hop_count`, `entities_retrieved`, `relationships_used`.
-
-### mock_agent_mcp.py: Multi-Agent
-
-Tools: `delegate_task`, `reasoning_step`, `memory_store`, `memory_retrieve`
-
-Simulates multi-agent coordination with task delegation, chain-of-thought reasoning, and key-value memory. Tests agent-specific span types.
-
-## IDE Configs
-
-| File | IDE | Description |
-|------|-----|-------------|
-| `kiro_agent.json` | Kiro | Agent config with hooks (PreToolUse, PostToolUse, Stop) |
-| `claude_code_hooks.json` | Claude Code | Settings with hooks and MCP configs |
-| `cursor_mcp.json` | Cursor / VS Code | MCP server config |
-| `gemini_cli_mcp.json` | Gemini CLI | MCP server config |
-
-### Using with Kiro
-
-```bash
-mkdir -p .kiro/agents
-cp demo/kiro_agent.json .kiro/agents/observal-demo.json
-```
-
-### Using with Claude Code
-
-```bash
-cp demo/claude_code_hooks.json .claude/settings.json
-```
-
-### Using with Cursor / VS Code
-
-Copy `demo/cursor_mcp.json` to `.cursor/mcp.json` or `.vscode/mcp.json`.
-
-### Using with Gemini CLI
-
-Copy `demo/gemini_cli_mcp.json` to `.gemini/settings.json`.
+The script adapts dynamically — if you add or remove plugins, the demo picks it up.
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OBSERVAL_SERVER` | `http://localhost:8000` | API server URL |
-| `OBSERVAL_KEY` | from `~/.observal/config.json` | API key |
-| `OBSERVAL_IDE` | `demo` | IDE identifier for telemetry |
+| `OBSERVAL_KEY` | from `~/.observal/config.json` | API key (auto-created if missing) |
 
-## What Gets Captured
+## Full Test Suite
 
-After running the demo, you can verify telemetry in ClickHouse:
+For a comprehensive multi-phase test (registration of all types, install flows, feedback, scan), use the all-types test:
 
-```sql
--- Span counts by type
-SELECT type, count() FROM spans FINAL WHERE is_deleted=0 GROUP BY type ORDER BY count() DESC;
-
--- Spans by MCP server
-SELECT t.mcp_id, count() FROM traces t FINAL JOIN spans s FINAL ON t.trace_id = s.trace_id WHERE t.is_deleted=0 AND s.is_deleted=0 GROUP BY t.mcp_id;
-
--- Graph-specific columns
-SELECT name, hop_count, entities_retrieved, relationships_used FROM spans FINAL WHERE hop_count IS NOT NULL;
+```bash
+./test_all_types.sh
 ```
+
+This requires the Docker stack and a logged-in CLI.

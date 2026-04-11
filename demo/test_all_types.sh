@@ -204,7 +204,7 @@ ok "Sandbox install config (observal-sandbox-run)"
 
 info "Running REAL Docker container (python:3.12-slim)..."
 echo "--- container stdout/stderr ---"
-cd /home/haz3/code/blazeup/Observal
+cd "$(dirname "$0")/.."
 uv run observal-sandbox-run \
   --sandbox-id "$SANDBOX_ID" \
   --image python:3.12-slim \
