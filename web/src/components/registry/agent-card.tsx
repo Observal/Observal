@@ -1,5 +1,9 @@
+"use client";
+
 import Link from "next/link";
-import { Bot } from "lucide-react";
+import { ArrowDownToLine, Puzzle, Star } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { compactNumber } from "@/lib/utils";
 
 interface AgentCardProps {
   id: string;
@@ -9,32 +13,76 @@ interface AgentCardProps {
   owner?: string;
   downloads?: number;
   score?: number;
+  version?: string;
+  component_count?: number;
+  status?: string;
+  className?: string;
 }
 
-export function AgentCard({ id, name, description, model_name, owner, downloads, score }: AgentCardProps) {
+export function AgentCard({
+  id,
+  name,
+  description,
+  owner,
+  downloads,
+  score,
+  version,
+  component_count,
+  className,
+}: AgentCardProps) {
   return (
     <Link
       href={`/agents/${id}`}
-      className="block border border-border rounded-sm p-4 hover:bg-accent/50 transition-colors"
+      className={[
+        "group block border border-border bg-card p-4 rounded-md",
+        "transition-all duration-200 ease-out",
+        "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        className ?? "",
+      ].join(" ")}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Bot className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="font-medium text-sm">{name}</span>
-        </div>
+        <h3 className="font-display text-sm font-semibold leading-tight truncate">
+          {name}
+        </h3>
+        {version && (
+          <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
+            {version}
+          </Badge>
+        )}
+      </div>
+
+      {description && (
+        <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed line-clamp-2">
+          {description}
+        </p>
+      )}
+
+      {owner && (
+        <p className="mt-2 text-[11px] text-muted-foreground/70 truncate">
+          {owner}
+        </p>
+      )}
+
+      <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+        {downloads != null && (
+          <span className="inline-flex items-center gap-1">
+            <ArrowDownToLine className="h-3 w-3" />
+            {compactNumber(downloads)}
+          </span>
+        )}
         {score != null && (
-          <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded-sm">
+          <span className="inline-flex items-center gap-1">
+            <Star className="h-3 w-3" />
             {score.toFixed(1)}
           </span>
         )}
-      </div>
-      {description && (
-        <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2">{description}</p>
-      )}
-      <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
-        {model_name && <span>{model_name}</span>}
-        {owner && <span>{owner}</span>}
-        {downloads != null && <span>{downloads} pulls</span>}
+        {component_count != null && component_count > 0 && (
+          <span className="inline-flex items-center gap-1">
+            <Puzzle className="h-3 w-3" />
+            {component_count}
+          </span>
+        )}
       </div>
     </Link>
   );

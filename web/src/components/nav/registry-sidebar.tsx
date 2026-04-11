@@ -17,20 +17,32 @@ import {
 } from "@/components/ui/sidebar";
 import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import { NavUser } from "@/components/nav/nav-user";
-import { Telescope, Home, Bot, Blocks, LayoutDashboard, Activity, FlaskConical, ShieldCheck, Users, Settings } from "lucide-react";
+import {
+  Home,
+  Bot,
+  Blocks,
+  Hammer,
+  LayoutDashboard,
+  Activity,
+  FlaskConical,
+  ShieldCheck,
+  Users,
+  Settings,
+} from "lucide-react";
 import { getUserRole } from "@/lib/api";
 
 const registryNav = [
   { title: "Home", href: "/", icon: Home },
   { title: "Agents", href: "/agents", icon: Bot },
   { title: "Components", href: "/components", icon: Blocks },
+  { title: "Builder", href: "/agents/builder", icon: Hammer },
 ];
 
 const adminNav = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { title: "Traces", href: "/traces", icon: Activity },
-  { title: "Eval", href: "/eval", icon: FlaskConical },
-  { title: "Review Queue", href: "/review", icon: ShieldCheck },
+  { title: "Evals", href: "/eval", icon: FlaskConical },
+  { title: "Review", href: "/review", icon: ShieldCheck },
   { title: "Users", href: "/users", icon: Users },
   { title: "Settings", href: "/settings", icon: Settings },
 ];
@@ -53,16 +65,17 @@ export function RegistrySidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1">
-          <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-primary text-primary-foreground">
-            <Telescope className="h-4 w-4" />
-          </div>
-          <span className="text-sm font-semibold">Observal</span>
+        <div className="flex items-center gap-2.5 px-2 py-1.5">
+          <span className="text-base font-semibold tracking-tight font-[family-name:var(--font-display)]">
+            Observal
+          </span>
         </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Registry</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            Registry
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {registryNav.map((item) => (
@@ -81,7 +94,9 @@ export function RegistrySidebar() {
 
         {isAdmin && (
           <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupLabel className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              Admin
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {adminNav.map((item) => (

@@ -2,9 +2,6 @@
 
 import { Settings } from "lucide-react";
 import { useAdminSettings } from "@/hooks/use-api";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
@@ -13,7 +10,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 export default function SettingsPage() {
   const { data: settings, isLoading, isError, error, refetch } = useAdminSettings();
 
-  const entries = Array.isArray(settings)
+  const entries: [string, unknown][] = Array.isArray(settings)
     ? settings.map((s: any) => [s.key, s.value])
     : Object.entries(settings ?? {});
 
@@ -38,23 +35,22 @@ export default function SettingsPage() {
             description="System settings will appear here once they are configured."
           />
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Value</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {entries.map(([key, value]: any) => (
-                  <TableRow key={key}>
-                    <TableCell className="font-mono text-sm">{key}</TableCell>
-                    <TableCell className="text-muted-foreground">{String(value)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="animate-in space-y-0">
+            {entries.map(([key, value], i) => (
+              <div
+                key={key}
+                className={`flex items-start gap-6 py-3 ${
+                  i < entries.length - 1 ? "border-b border-border" : ""
+                }`}
+              >
+                <span className="text-xs font-[family-name:var(--font-mono)] text-muted-foreground shrink-0 min-w-[180px] pt-0.5 select-all">
+                  {key}
+                </span>
+                <span className="text-sm text-foreground break-all">
+                  {String(value)}
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>

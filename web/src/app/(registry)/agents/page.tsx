@@ -1,10 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, Bot } from "lucide-react";
+import {
+  Search,
+  Bot,
+  LayoutGrid,
+  TableProperties,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useRegistryList } from "@/hooks/use-api";
 import {
   Table,
@@ -14,19 +24,181 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layouts/page-header";
-import { TableSkeleton } from "@/components/shared/skeleton-layouts";
+import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
+import { StatusBadge } from "@/components/registry/status-badge";
+import { AgentCard } from "@/components/registry/agent-card";
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getFilteredRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+
+type ViewMode = "table" | "grid";
+
+function SortIcon({ column }: { column: any }) {
+  const sorted = column.getIsSorted();
+  if (sorted === "asc") return <ArrowUp className="h-3 w-3" />;
+  if (sorted === "desc") return <ArrowDown className="h-3 w-3" />;
+  return <ArrowUpDown className="h-3 w-3 opacity-40" />;
+}
+
+const columns: ColumnDef<any>[] = [
+  {
+    accessorKey: "name",
+    header: ({ column }) => (
+      <button
+        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      >
+        Name
+        <SortIcon column={column} />
+      </button>
+    ),
+    cell: ({ row }) => (
+      <div className="min-w-[160px]">
+        <Link
+          href={`/agents/${row.original.id}`}
+          className="font-medium text-sm hover:underline underline-offset-4"
+        >
+          {row.original.name}
+        </Link>
+        {row.original.description && (
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-xs">
+            {row.original.description}
+          </p>
+        )}
+      </div>
+    ),
+  },
+  {
+    accessorKey: "downloads",
+    header: ({ column }) => (
+      <button
+        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      >
+        Downloads
+        <SortIcon column={column} />
+      </button>
+    ),
+    cell: ({ row }) => (
+      <span className="text-muted-foreground text-sm">
+        {row.original.downloads ?? "-"}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "score",
+    header: ({ column }) => (
+      <button
+        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      >
+        Rating
+        <SortIcon column={column} />
+      </button>
+    ),
+    cell: ({ row }) => (
+      <span className="text-muted-foreground text-sm">
+        {row.original.score != null ? row.original.score.toFixed(1) : "-"}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "version",
+    header: "Version",
+    cell: ({ row }) => (
+      <span className="text-muted-foreground text-sm font-mono">
+        {row.original.version ?? "-"}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "status",
+    header: "Status",
+    cell: ({ row }) =>
+      row.original.status ? (
+        <StatusBadge status={row.original.status} />
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      ),
+  },
+  {
+    accessorKey: "updated_at",
+    header: ({ column }) => (
+      <button
+        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      >
+        Updated
+        <SortIcon column={column} />
+      </button>
+    ),
+    cell: ({ row }) => (
+      <span className="text-muted-foreground text-sm">
+        {row.original.updated_at
+          ? new Date(row.original.updated_at).toLocaleDateString()
+          : "-"}
+      </span>
+    ),
+  },
+];
 
 export default function AgentListPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialSearch = searchParams.get("search") ?? "";
   const [search, setSearch] = useState(initialSearch);
-  const { data: agents, isLoading, isError, error, refetch } = useRegistryList("agents", search ? { search } : undefined);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
+  const [view, setView] = useState<ViewMode>("table");
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const filtered = agents ?? [];
+  // Debounce search
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [search]);
+
+  const {
+    data: agents,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useRegistryList(
+    "agents",
+    debouncedSearch ? { search: debouncedSearch } : undefined,
+  );
+
+  const filtered = useMemo(() => agents ?? [], [agents]);
+
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const handleRowClick = useCallback(
+    (id: string) => {
+      router.push(`/agents/${id}`);
+    },
+    [router],
+  );
 
   return (
     <>
@@ -37,59 +209,126 @@ export default function AgentListPage() {
           { label: "Agents" },
         ]}
       />
-      <div className="p-6 max-w-6xl mx-auto space-y-4">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Filter agents..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+
+      <div className="p-6 lg:p-8 max-w-[1200px] space-y-5">
+        {/* Toolbar */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative max-w-sm flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search agents..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 h-9"
+            />
+          </div>
+          <div className="flex items-center border border-border rounded-md overflow-hidden ml-auto">
+            <Button
+              variant={view === "table" ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none h-8 px-2.5"
+              onClick={() => setView("table")}
+              aria-label="Table view"
+            >
+              <TableProperties className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={view === "grid" ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none h-8 px-2.5"
+              onClick={() => setView("grid")}
+              aria-label="Grid view"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
+        {/* Content */}
         {isLoading ? (
-          <TableSkeleton rows={8} cols={5} />
+          view === "table" ? (
+            <TableSkeleton rows={8} cols={6} />
+          ) : (
+            <CardSkeleton count={6} columns={3} />
+          )
         ) : isError ? (
           <ErrorState message={error?.message} onRetry={() => refetch()} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={Bot}
-            title="No agents found"
-            description={search ? `No agents match "${search}". Try a different search term.` : "No agents have been submitted yet. Be the first to submit one."}
-            actionLabel="Submit Your First Agent"
-            actionHref="/agents"
+            title="No agents published yet"
+            description={
+              debouncedSearch
+                ? `No agents match "${debouncedSearch}". Try a different search term.`
+                : "No agents have been submitted yet. Be the first to publish one."
+            }
+            actionLabel="Back to Registry"
+            actionHref="/"
           />
-        ) : (
-          <div className="overflow-x-auto">
+        ) : view === "table" ? (
+          <div className="overflow-x-auto animate-in">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Model</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => (
+                      <TableHead key={header.id} className="text-xs">
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                ))}
               </TableHeader>
               <TableBody>
-                {filtered.map((agent: any) => (
-                  <TableRow key={agent.id}>
-                    <TableCell>
-                      <Link href={`/agents/${agent.id}`} className="font-medium hover:underline">{agent.name}</Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{agent.model_name ?? "-"}</TableCell>
-                    <TableCell className="text-muted-foreground">{agent.owner ?? "-"}</TableCell>
-                    <TableCell className="text-muted-foreground">{agent.version ?? "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={agent.status === "approved" ? "default" : "secondary"}>
-                        {agent.status}
-                      </Badge>
-                    </TableCell>
+                {table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    className="cursor-pointer hover:bg-accent/40 transition-colors"
+                    onClick={() => handleRowClick(row.original.id)}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+          </div>
+        ) : (
+          <div
+            className="grid gap-4 animate-in"
+            style={{
+              gridTemplateColumns:
+                "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
+            }}
+          >
+            {filtered.map((agent: any, i: number) => (
+              <AgentCard
+                key={agent.id}
+                id={agent.id}
+                name={agent.name}
+                description={agent.description}
+                owner={agent.owner}
+                version={agent.version}
+                downloads={agent.downloads}
+                score={agent.score}
+                status={agent.status}
+                component_count={
+                  agent.component_links?.length ?? agent.mcp_links?.length
+                }
+                className={`animate-in stagger-${Math.min(i + 1, 5)}`}
+              />
+            ))}
           </div>
         )}
       </div>
