@@ -1,11 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Ask a Question
-    url: https://github.com/BlazeUp-AI/Observal/discussions/categories/q-a
-    about: Please use Q&A Discussions for questions instead of opening an issue.
-  - name: Suggest an Idea
-    url: https://github.com/BlazeUp-AI/Observal/discussions/categories/ideas
-    about: Share feature ideas and suggestions in Discussions.
-  - name: Show & Tell
-    url: https://github.com/BlazeUp-AI/Observal/discussions/categories/show-and-tell
-    about: Show off what you've built with Observal.
+  - name: Github Discussions
+    url: https://github.com/BlazeUp-AI/Observal/discussions
+    about: Post on the forums for questions, support and feature requests!
