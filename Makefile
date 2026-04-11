@@ -1,4 +1,4 @@
-.PHONY: lint format check test hooks clean
+.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean
 
 # ── Linting ──────────────────────────────────────────────
 
@@ -19,6 +19,14 @@ test:  ## Run Python tests
 
 test-v:  ## Run Python tests (verbose)
 	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/ -v
+
+test-adversarial:  ## Run BenchJack self-test suite
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/test_adversarial_self.py -v --tb=short
+
+test-eval-completeness:  ## Run eval completeness tests
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/test_eval_completeness.py -v --tb=short
+
+test-all: test test-eval-completeness test-adversarial  ## Run all tests including adversarial and completeness
 
 # ── Setup ────────────────────────────────────────────────
 
