@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# observal-stop-hook.sh — Claude Code Stop hook that captures ALL assistant
+# observal-stop-hook.sh — Claude Code Stop hook that captures assistant
 # text responses from the current turn and sends them to Observal.
 #
 # The hook receives JSON on stdin with session_id, transcript_path, etc.
-# It reads the transcript JSONL backwards, collecting text from every
-# assistant message until it hits a user/system message (marking the
-# start of the turn), then POSTs the concatenated text to the hooks endpoint.
+# It reads the transcript JSONL backwards, collecting each assistant
+# message as a separate event with sequence metadata, then POSTs them
+# individually to the hooks endpoint. This allows the UI to interleave
+# assistant "thinking" text between tool calls.
 
 set -eu
 # NOTE: no pipefail — tac|while causes SIGPIPE when while breaks early
@@ -22,26 +23,21 @@ if [ -z "$SESSION_ID" ] || [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH
   exit 0
 fi
 
-# Collect ALL assistant text from the current turn (bottom-up until user msg).
-TMPFILE=$(mktemp)
-trap 'rm -f "$TMPFILE"' EXIT
+# Collect assistant messages from the current turn (bottom-up until user msg).
+# Each assistant message becomes a separate event with a sequence number.
+TMPDIR_WORK=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_WORK"' EXIT
 
-# tac reads bottom-up. We collect every assistant message's text content
-# and stop when we hit a non-assistant message (user prompt = turn boundary).
+MSG_COUNT=0
+
 (tac "$TRANSCRIPT_PATH" || true) | while IFS= read -r line; do
-  # Detect message type
   case "$line" in
     *'"type":"assistant"'*)
       TEXT=$(echo "$line" | jq -r \
         '[.message.content[]? | select(.type == "text") | .text] | join("\n")' 2>/dev/null)
       if [ -n "$TEXT" ]; then
-        # Prepend to tmpfile (since we're reading backwards)
-        if [ -s "$TMPFILE" ]; then
-          EXISTING=$(cat "$TMPFILE")
-          printf '%s\n\n%s' "$TEXT" "$EXISTING" > "$TMPFILE"
-        else
-          printf '%s' "$TEXT" > "$TMPFILE"
-        fi
+        MSG_COUNT=$((MSG_COUNT + 1))
+        printf '%s' "$TEXT" > "$TMPDIR_WORK/msg_$MSG_COUNT"
       fi
       ;;
     *'"type":"user"'*|*'"type":"human"'*)
@@ -55,26 +51,39 @@ trap 'rm -f "$TMPFILE"' EXIT
   esac
 done
 
-LAST_RESPONSE=$(cat "$TMPFILE" 2>/dev/null || true)
-
-if [ -z "$LAST_RESPONSE" ]; then
+# Check if we collected anything
+MSG_FILES=$(ls "$TMPDIR_WORK"/msg_* 2>/dev/null | sort -t_ -k2 -n -r || true)
+if [ -z "$MSG_FILES" ]; then
   exit 0
 fi
 
-# Truncate to 64KB
-LAST_RESPONSE=$(echo "$LAST_RESPONSE" | head -c 65536)
+# Count total messages
+TOTAL=$(echo "$MSG_FILES" | wc -l | tr -d ' ')
 
-# POST to Observal
-jq -n \
-  --arg session_id "$SESSION_ID" \
-  --arg response "$LAST_RESPONSE" \
-  '{
-    hook_event_name: "Stop",
-    session_id: $session_id,
-    tool_name: "assistant_response",
-    tool_response: $response
-  }' | curl -s --max-time 5 -X POST "$OBSERVAL_HOOKS_URL" \
-    -H "Content-Type: application/json" \
-    -d @- >/dev/null 2>&1
+# Send each message as a separate event (in chronological order — reverse of collection)
+SEQ=0
+for f in $MSG_FILES; do
+  SEQ=$((SEQ + 1))
+  MSG_TEXT=$(cat "$f")
+
+  # Truncate to 64KB
+  MSG_TEXT=$(echo "$MSG_TEXT" | head -c 65536)
+
+  jq -n \
+    --arg session_id "$SESSION_ID" \
+    --arg response "$MSG_TEXT" \
+    --arg seq "$SEQ" \
+    --arg total "$TOTAL" \
+    '{
+      hook_event_name: "Stop",
+      session_id: $session_id,
+      tool_name: "assistant_response",
+      tool_response: $response,
+      message_sequence: ($seq | tonumber),
+      message_total: ($total | tonumber)
+    }' | curl -s --max-time 5 -X POST "$OBSERVAL_HOOKS_URL" \
+      -H "Content-Type: application/json" \
+      -d @- >/dev/null 2>&1
+done
 
 exit 0

@@ -261,6 +261,11 @@ async def ingest_hook(request: Request):
         # If the stop hook captured Claude's response, mark it clearly
         if tool_name == "assistant_response" and tool_response_raw:
             attrs["event.name"] = "hook_assistant_response"
+            # Sequence metadata for interleaving with tool calls
+            if body.get("message_sequence") is not None:
+                attrs["message_sequence"] = str(body["message_sequence"])
+            if body.get("message_total") is not None:
+                attrs["message_total"] = str(body["message_total"])
 
     # StopFailure — API error on turn end
     if hook_event == "StopFailure":
@@ -328,8 +333,11 @@ async def ingest_hook(request: Request):
     elif hook_event in ("Elicitation", "ElicitationResult"):
         body_text = f"{hook_event}: {body.get('mcp_server_name', 'unknown')}"
     elif hook_event == "Stop" and tool_name == "assistant_response":
+        seq = attrs.get("message_sequence", "")
+        total = attrs.get("message_total", "")
+        seq_label = f" [{seq}/{total}]" if seq and total else ""
         preview = (attrs.get("tool_response") or "")[:100]
-        body_text = f"Response: {preview}"
+        body_text = f"Response{seq_label}: {preview}"
     elif hook_event == "Stop":
         body_text = f"Stop: {body.get('stop_reason', 'end_turn')}"
     elif hook_event == "StopFailure":
