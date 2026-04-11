@@ -38,3 +38,42 @@ export function useAuthGuard() {
 
   return { ready, role };
 }
+
+/**
+ * Optional auth — resolves immediately for unauthenticated users.
+ * Authenticated users get their role resolved via whoami.
+ * Does NOT redirect to login.
+ */
+export function useOptionalAuth() {
+  const [ready, setReady] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    const key = localStorage.getItem("observal_api_key");
+    if (!key) {
+      setReady(true);
+      return;
+    }
+
+    const cached = getUserRole();
+    if (cached) {
+      setRole(cached);
+      setIsAuthenticated(true);
+      setReady(true);
+      return;
+    }
+
+    auth.whoami().then((user) => {
+      setUserRole(user.role);
+      setRole(user.role);
+      setIsAuthenticated(true);
+      setReady(true);
+    }).catch(() => {
+      // API key invalid — treat as unauthenticated
+      setReady(true);
+    });
+  }, []);
+
+  return { ready, role, isAuthenticated };
+}

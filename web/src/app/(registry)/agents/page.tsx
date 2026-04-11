@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useRegistryList } from "@/hooks/use-api";
 import {
   Table,
@@ -30,11 +29,11 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { AgentCard } from "@/components/registry/agent-card";
+import { compactNumber } from "@/lib/utils";
 import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
-  getFilteredRowModel,
   flexRender,
   type ColumnDef,
   type SortingState,
@@ -78,7 +77,7 @@ const columns: ColumnDef<any>[] = [
     ),
   },
   {
-    accessorKey: "downloads",
+    accessorKey: "download_count",
     header: ({ column }) => (
       <button
         className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
@@ -89,13 +88,15 @@ const columns: ColumnDef<any>[] = [
       </button>
     ),
     cell: ({ row }) => (
-      <span className="text-muted-foreground text-sm">
-        {row.original.downloads ?? "-"}
+      <span className="text-muted-foreground text-sm font-mono">
+        {row.original.download_count != null
+          ? compactNumber(row.original.download_count)
+          : "-"}
       </span>
     ),
   },
   {
-    accessorKey: "score",
+    accessorKey: "average_rating",
     header: ({ column }) => (
       <button
         className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
@@ -107,7 +108,9 @@ const columns: ColumnDef<any>[] = [
     ),
     cell: ({ row }) => (
       <span className="text-muted-foreground text-sm">
-        {row.original.score != null ? row.original.score.toFixed(1) : "-"}
+        {row.original.average_rating != null
+          ? row.original.average_rating.toFixed(1)
+          : "-"}
       </span>
     ),
   },
@@ -161,7 +164,6 @@ export default function AgentListPage() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Debounce search
   useEffect(() => {
     timerRef.current = setTimeout(() => {
       setDebouncedSearch(search);
@@ -320,12 +322,10 @@ export default function AgentListPage() {
                 description={agent.description}
                 owner={agent.owner}
                 version={agent.version}
-                downloads={agent.downloads}
-                score={agent.score}
+                downloads={agent.download_count}
+                score={agent.average_rating ?? undefined}
                 status={agent.status}
-                component_count={
-                  agent.component_links?.length ?? agent.mcp_links?.length
-                }
+                component_count={agent.component_count}
                 className={`animate-in stagger-${Math.min(i + 1, 5)}`}
               />
             ))}

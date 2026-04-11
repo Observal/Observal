@@ -22,6 +22,7 @@ import {
   Bot,
   Blocks,
   Hammer,
+  Trophy,
   LayoutDashboard,
   Activity,
   FlaskConical,
@@ -31,11 +32,12 @@ import {
 } from "lucide-react";
 import { getUserRole } from "@/lib/api";
 
-const registryNav = [
+const registryNav: { title: string; href: string; icon: typeof Home; requiresAuth?: boolean }[] = [
   { title: "Home", href: "/", icon: Home },
   { title: "Agents", href: "/agents", icon: Bot },
+  { title: "Leaderboard", href: "/agents/leaderboard", icon: Trophy },
   { title: "Components", href: "/components", icon: Blocks },
-  { title: "Builder", href: "/agents/builder", icon: Hammer },
+  { title: "Builder", href: "/agents/builder", icon: Hammer, requiresAuth: true },
 ];
 
 const adminNav = [
@@ -56,11 +58,16 @@ export function RegistrySidebar() {
   const pathname = usePathname();
   const role = getUserRole();
   const isAdmin = role === "admin";
+  const isAuthenticated = typeof window !== "undefined" && !!localStorage.getItem("observal_api_key");
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   }
+
+  const visibleRegistryNav = registryNav.filter(
+    (item) => !item.requiresAuth || isAuthenticated,
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -78,7 +85,7 @@ export function RegistrySidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {registryNav.map((item) => (
+              {visibleRegistryNav.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton asChild isActive={isActive(item.href)}>
                     <Link href={item.href}>
@@ -92,7 +99,7 @@ export function RegistrySidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isAdmin && (
+        {isAuthenticated && isAdmin && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Admin

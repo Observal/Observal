@@ -90,6 +90,39 @@ export interface RegistryItem {
   [key: string]: unknown;
 }
 
+// ── Agent enriched types ────────────────────────────────────────────
+
+export interface TopAgentItem {
+  id: string;
+  name: string;
+  description: string;
+  owner: string;
+  version: string;
+  download_count: number;
+  average_rating: number | null;
+}
+
+export type LeaderboardItem = TopAgentItem;
+export type LeaderboardWindow = "24h" | "7d" | "30d" | "all";
+
+export interface FeedbackSummary {
+  listing_id: string;
+  average_rating: number;
+  total_reviews: number;
+}
+
+export interface ValidationIssue {
+  severity: "error" | "warning";
+  component_type?: string;
+  component_id?: string;
+  message: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  issues: ValidationIssue[];
+}
+
 // ── Review ──────────────────────────────────────────────────────────
 
 export interface ReviewItem {

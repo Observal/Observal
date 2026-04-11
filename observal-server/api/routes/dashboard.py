@@ -20,6 +20,7 @@ from schemas.dashboard import (
     IdeBreakdown,
     IdeUsage,
     LatencyCell,
+    LeaderboardItem,
     McpMetrics,
     OverviewStats,
     RagasDimensionScore,
@@ -33,6 +34,7 @@ from schemas.dashboard import (
     TokenByEntity,
     TokenStats,
     TokenTimePoint,
+    TopAgentItem,
     TopItem,
     TrendPoint,
     UnannotatedTrace,
@@ -162,7 +164,6 @@ async def agent_metrics(
 async def overview_stats(
     range_: str | None = Query(None, alias="range"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     total_mcps = (
         await db.scalar(select(func.count(McpListing.id)).where(McpListing.status == ListingStatus.approved)) or 0
@@ -188,7 +189,7 @@ async def overview_stats(
 
 
 @router.get("/overview/top-mcps", response_model=list[TopItem])
-async def top_mcps(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def top_mcps(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(McpDownload.listing_id, func.count(McpDownload.id).label("cnt"), McpListing.name)
         .join(McpListing, McpDownload.listing_id == McpListing.id)
@@ -199,16 +200,138 @@ async def top_mcps(db: AsyncSession = Depends(get_db), current_user: User = Depe
     return [TopItem(id=row.listing_id, name=row.name, value=row.cnt) for row in result.all()]
 
 
-@router.get("/overview/top-agents", response_model=list[TopItem])
-async def top_agents(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.get("/overview/top-agents", response_model=list[TopAgentItem])
+async def top_agents(
+    limit: int = Query(6, le=50),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
-        select(AgentDownloadRecord.agent_id, func.count(AgentDownloadRecord.id).label("cnt"), Agent.name)
+        select(
+            AgentDownloadRecord.agent_id,
+            func.count(AgentDownloadRecord.id).label("cnt"),
+            Agent.name,
+            Agent.description,
+            Agent.owner,
+            Agent.version,
+        )
         .join(Agent, AgentDownloadRecord.agent_id == Agent.id)
-        .group_by(AgentDownloadRecord.agent_id, Agent.name)
+        .where(Agent.status == AgentStatus.active)
+        .group_by(AgentDownloadRecord.agent_id, Agent.name, Agent.description, Agent.owner, Agent.version)
         .order_by(func.count(AgentDownloadRecord.id).desc())
-        .limit(5)
+        .limit(limit)
     )
-    return [TopItem(id=row.agent_id, name=row.name, value=row.cnt) for row in result.all()]
+    rows = result.all()
+
+    # Batch-fetch average ratings
+    agent_ids = [r.agent_id for r in rows]
+    rating_map: dict[uuid.UUID, float] = {}
+    if agent_ids:
+        from models.feedback import Feedback
+
+        rating_rows = await db.execute(
+            select(Feedback.listing_id, func.avg(Feedback.rating))
+            .where(Feedback.listing_id.in_(agent_ids), Feedback.listing_type == "agent")
+            .group_by(Feedback.listing_id)
+        )
+        rating_map = {r[0]: round(float(r[1]), 2) for r in rating_rows.all()}
+
+    return [
+        TopAgentItem(
+            id=row.agent_id,
+            name=row.name,
+            description=row.description or "",
+            owner=row.owner or "",
+            version=row.version or "",
+            download_count=row.cnt,
+            average_rating=rating_map.get(row.agent_id),
+        )
+        for row in rows
+    ]
+
+
+@router.get("/overview/leaderboard", response_model=list[LeaderboardItem])
+async def agent_leaderboard(
+    window: str = Query("7d", pattern="^(24h|7d|30d|all)$"),
+    limit: int = Query(20, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """Public leaderboard of agents ranked by downloads within a time window."""
+    from models.feedback import Feedback
+
+    stmt = (
+        select(
+            AgentDownloadRecord.agent_id,
+            func.count(AgentDownloadRecord.id).label("cnt"),
+            Agent.name,
+            Agent.description,
+            Agent.owner,
+            Agent.version,
+        )
+        .join(Agent, AgentDownloadRecord.agent_id == Agent.id)
+        .where(Agent.status == AgentStatus.active)
+    )
+    if window != "all":
+        days = _RANGE_MAP.get(window, 7)
+        stmt = stmt.where(
+            AgentDownloadRecord.installed_at >= dt.now(UTC) - timedelta(days=days)
+        )
+    stmt = (
+        stmt
+        .group_by(AgentDownloadRecord.agent_id, Agent.name, Agent.description, Agent.owner, Agent.version)
+        .order_by(func.count(AgentDownloadRecord.id).desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    # Batch-fetch average ratings
+    agent_ids = [r.agent_id for r in rows]
+    rating_map: dict[uuid.UUID, float] = {}
+    if agent_ids:
+        rating_rows = await db.execute(
+            select(Feedback.listing_id, func.avg(Feedback.rating))
+            .where(Feedback.listing_id.in_(agent_ids), Feedback.listing_type == "agent")
+            .group_by(Feedback.listing_id)
+        )
+        rating_map = {r[0]: round(float(r[1]), 2) for r in rating_rows.all()}
+
+    # Also include agents with no downloads if window=all and we have fewer than limit
+    if window == "all" and len(rows) < limit:
+        existing_ids = {r.agent_id for r in rows}
+        extra_stmt = (
+            select(Agent)
+            .where(Agent.status == AgentStatus.active, Agent.id.notin_(existing_ids))
+            .order_by(Agent.created_at.desc())
+            .limit(limit - len(rows))
+        )
+        extra = (await db.execute(extra_stmt)).scalars().all()
+        extra_items = [
+            LeaderboardItem(
+                id=a.id,
+                name=a.name,
+                description=a.description or "",
+                owner=a.owner or "",
+                version=a.version or "",
+                download_count=0,
+                average_rating=rating_map.get(a.id),
+            )
+            for a in extra
+        ]
+    else:
+        extra_items = []
+
+    return [
+        LeaderboardItem(
+            id=row.agent_id,
+            name=row.name,
+            description=row.description or "",
+            owner=row.owner or "",
+            version=row.version or "",
+            download_count=row.cnt,
+            average_rating=rating_map.get(row.agent_id),
+        )
+        for row in rows
+    ] + extra_items
 
 
 @router.get("/overview/trends", response_model=list[TrendPoint])

@@ -47,6 +47,21 @@ class TopItem(BaseModel):
     value: float
 
 
+class TopAgentItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str = ""
+    owner: str = ""
+    version: str = ""
+    download_count: int = 0
+    average_rating: float | None = None
+
+
+class LeaderboardItem(TopAgentItem):
+    """Same as TopAgentItem — used by the leaderboard endpoint."""
+    pass
+
+
 class TrendPoint(BaseModel):
     date: str
     submissions: int

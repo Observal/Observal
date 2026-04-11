@@ -2,12 +2,25 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { ArrowDownToLine, Puzzle, Star, Check, Copy, Terminal } from "lucide-react";
+import {
+  ArrowDownToLine,
+  Puzzle,
+  Star,
+  Check,
+  Copy,
+  Users,
+} from "lucide-react";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
-import { useRegistryItem, useAgentDownloads } from "@/hooks/use-api";
+import {
+  useRegistryItem,
+  useAgentDownloads,
+  useFeedback,
+  useFeedbackSummary,
+} from "@/hooks/use-api";
 import { PullCommand } from "@/components/registry/pull-command";
 import { StatusBadge } from "@/components/registry/status-badge";
+import { ReviewForm } from "@/components/registry/review-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -32,12 +45,25 @@ export default function AgentDetailPage({
     refetch,
   } = useRegistryItem("agents", id);
   const { data: downloadData } = useAgentDownloads(id);
+  const { data: feedbackItems, refetch: refetchFeedback } = useFeedback(
+    "agent",
+    id,
+  );
+  const { data: feedbackSummary, refetch: refetchSummary } =
+    useFeedbackSummary(id);
+
+  const isAuthenticated =
+    typeof window !== "undefined" &&
+    !!localStorage.getItem("observal_api_key");
 
   const a = agent as any;
   const components = a?.component_links ?? a?.mcp_links ?? [];
   const goalTemplate = a?.goal_template;
   const agentName = a?.name ?? id.slice(0, 8);
-  const totalDownloads = downloadData?.total ?? a?.downloads;
+  const totalDownloads = downloadData?.total ?? a?.download_count;
+  const uniqueUsers = downloadData?.unique_users;
+  const avgRating = feedbackSummary?.average_rating;
+  const totalReviews = feedbackSummary?.total_reviews ?? 0;
 
   return (
     <>
@@ -86,7 +112,7 @@ export default function AgentDetailPage({
                 )}
               </div>
 
-              {/* Stats row (mobile only -- desktop shows in sidebar) */}
+              {/* Stats row (mobile only) */}
               <div className="flex items-center gap-6 text-sm text-muted-foreground lg:hidden">
                 {totalDownloads != null && (
                   <span className="inline-flex items-center gap-1.5">
@@ -98,6 +124,12 @@ export default function AgentDetailPage({
                   <Puzzle className="h-4 w-4" />
                   {components.length} components
                 </span>
+                {avgRating != null && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Star className="h-4 w-4" />
+                    {avgRating.toFixed(1)}
+                  </span>
+                )}
               </div>
 
               {/* Pull command (mobile only) */}
@@ -114,6 +146,14 @@ export default function AgentDetailPage({
                     {components.length > 0 && (
                       <span className="ml-1.5 text-[10px] bg-muted px-1.5 py-0.5 rounded-full">
                         {components.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="reviews">
+                    Reviews
+                    {totalReviews > 0 && (
+                      <span className="ml-1.5 text-[10px] bg-muted px-1.5 py-0.5 rounded-full">
+                        {totalReviews}
                       </span>
                     )}
                   </TabsTrigger>
@@ -192,10 +232,8 @@ export default function AgentDetailPage({
                           comp.component_name ??
                           comp.name ??
                           "-";
-                        const compType =
-                          comp.component_type ?? "mcp";
-                        const compId =
-                          comp.component_id ?? comp.mcp_id;
+                        const compType = comp.component_type ?? "mcp";
+                        const compId = comp.component_id ?? comp.mcp_id;
                         const content = (
                           <div
                             className={[
@@ -234,6 +272,68 @@ export default function AgentDetailPage({
                           <div key={i}>{content}</div>
                         );
                       })}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="reviews" className="mt-6 space-y-6">
+                  {isAuthenticated && (
+                    <>
+                      <ReviewForm
+                        listingId={id}
+                        listingType="agent"
+                        onSuccess={() => {
+                          refetchFeedback();
+                          refetchSummary();
+                        }}
+                      />
+                      <Separator />
+                    </>
+                  )}
+
+                  {!feedbackItems || feedbackItems.length === 0 ? (
+                    <EmptyState
+                      icon={Star}
+                      title="No reviews yet"
+                      description={
+                        isAuthenticated
+                          ? "Be the first to review this agent."
+                          : "Log in to leave a review."
+                      }
+                    />
+                  ) : (
+                    <div className="space-y-4">
+                      {feedbackItems.map((fb: any) => (
+                        <div
+                          key={fb.id}
+                          className="rounded-md border border-border p-4 space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`h-3.5 w-3.5 ${
+                                    i < fb.stars
+                                      ? "fill-current text-amber-500"
+                                      : "text-muted-foreground/30"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {fb.username ?? fb.user ?? "Anonymous"}
+                              {fb.created_at &&
+                                ` · ${new Date(fb.created_at).toLocaleDateString()}`}
+                            </span>
+                          </div>
+                          {fb.comment && (
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {fb.comment}
+                            </p>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </TabsContent>
@@ -282,6 +382,31 @@ export default function AgentDetailPage({
                       </span>
                       <span className="font-mono font-medium">
                         {compactNumber(totalDownloads)}
+                      </span>
+                    </div>
+                  )}
+                  {uniqueUsers != null && uniqueUsers > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="inline-flex items-center gap-2 text-muted-foreground">
+                        <Users className="h-3.5 w-3.5" />
+                        Unique users
+                      </span>
+                      <span className="font-mono font-medium">
+                        {compactNumber(uniqueUsers)}
+                      </span>
+                    </div>
+                  )}
+                  {avgRating != null && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="inline-flex items-center gap-2 text-muted-foreground">
+                        <Star className="h-3.5 w-3.5" />
+                        Rating
+                      </span>
+                      <span className="font-mono font-medium">
+                        {avgRating.toFixed(1)}{" "}
+                        <span className="text-xs text-muted-foreground font-normal">
+                          ({totalReviews})
+                        </span>
                       </span>
                     </div>
                   )}

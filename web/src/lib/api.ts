@@ -1,12 +1,14 @@
 import type {
   OverviewStats,
   TopItem,
+  TopAgentItem,
   TrendPoint,
   OtelStats,
   OtelTrace,
   OtelSessionData,
   TokenStats,
   FeedbackItem,
+  FeedbackSummary,
   Scorecard,
   TracePenalty,
   AgentAggregate,
@@ -17,6 +19,9 @@ import type {
   TelemetryStatus,
   ReviewItem,
   RegistryItem,
+  LeaderboardItem,
+  LeaderboardWindow,
+  ValidationResult,
 } from "./types";
 
 const API = "/api/v1";
@@ -131,7 +136,9 @@ export const registry = {
     get<unknown>(`/${type}/${id}/metrics`),
   resolve: (id: string) => get<unknown>(`/agents/${id}/resolve`),
   downloads: (id: string) =>
-    get<{ total: number; recent_7d: number }>(`/agents/${id}/downloads`),
+    get<{ total: number; unique_users: number; recent_7d: number }>(`/agents/${id}/downloads`),
+  validate: (body: { components: { component_type: string; component_id: string }[] }) =>
+    post<ValidationResult>("/agents/validate", body),
 };
 
 // ── Review ──────────────────────────────────────────────────────────
@@ -156,7 +163,14 @@ export const telemetry = {
 export const dashboard = {
   stats: (range?: string) => get<OverviewStats>(`/overview/stats${range ? `?range=${range}` : ''}`),
   topMcps: () => get<TopItem[]>("/overview/top-mcps"),
-  topAgents: () => get<TopItem[]>("/overview/top-agents"),
+  topAgents: (limit?: number) => get<TopAgentItem[]>(`/overview/top-agents${limit ? `?limit=${limit}` : ''}`),
+  leaderboard: (window?: LeaderboardWindow, limit?: number) => {
+    const params = new URLSearchParams();
+    if (window) params.set("window", window);
+    if (limit) params.set("limit", String(limit));
+    const qs = params.toString();
+    return get<LeaderboardItem[]>(`/overview/leaderboard${qs ? `?${qs}` : ''}`);
+  },
   trends: (range?: string) => get<TrendPoint[]>(`/overview/trends${range ? `?range=${range}` : ''}`),
   mcpMetrics: (id: string) => get<unknown>(`/mcps/${id}/metrics`),
   agentMetrics: (id: string) => get<unknown>(`/agents/${id}/metrics`),
@@ -178,7 +192,7 @@ export const feedback = {
     comment?: string;
   }) => post<FeedbackItem>("/feedback", body),
   get: (type: string, id: string) => get<FeedbackItem[]>(`/feedback/${type}/${id}`),
-  summary: (id: string) => get<unknown>(`/feedback/summary/${id}`),
+  summary: (id: string) => get<FeedbackSummary>(`/feedback/summary/${id}`),
 };
 
 // ── Eval ────────────────────────────────────────────────────────────

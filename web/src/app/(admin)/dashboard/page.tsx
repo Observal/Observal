@@ -67,7 +67,7 @@ export default function DashboardPage() {
   const { data: sessions, isLoading: sessionsLoading } = useOtelSessions();
 
   const recentSessions = (sessions ?? []).slice(0, 8);
-  const totalDownloads = topAgents?.reduce((s: number, a: { name: string; value: number }) => s + a.value, 0) ?? 0;
+  const totalDownloads = topAgents?.reduce((s: number, a: { download_count: number }) => s + a.download_count, 0) ?? 0;
 
   return (
     <>
@@ -222,7 +222,7 @@ export default function DashboardPage() {
                 />
               ) : (
                 <div className="rounded-md border border-border p-3">
-                  <TopDownloadsBar items={topAgents.slice(0, 8)} />
+                  <TopDownloadsBar items={topAgents.slice(0, 8).map((a: any) => ({ name: a.name, value: a.download_count ?? a.value ?? 0 }))} />
                 </div>
               )}
             </section>

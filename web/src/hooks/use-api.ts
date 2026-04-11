@@ -19,6 +19,7 @@ import {
   graphql,
   type RegistryType,
 } from "@/lib/api";
+import type { LeaderboardWindow } from "@/lib/types";
 
 // ── Dashboard ───────────────────────────────────────────────────────
 
@@ -30,8 +31,8 @@ export function useTopMcps() {
   return useQuery({ queryKey: ["overview", "top-mcps"], queryFn: dashboard.topMcps });
 }
 
-export function useTopAgents() {
-  return useQuery({ queryKey: ["overview", "top-agents"], queryFn: dashboard.topAgents });
+export function useTopAgents(limit?: number) {
+  return useQuery({ queryKey: ["overview", "top-agents", limit], queryFn: () => dashboard.topAgents(limit) });
 }
 
 export function useTrends(range?: string) {
@@ -269,6 +270,27 @@ export function useEvalAggregate(agentId: string) {
     queryKey: ["eval-aggregate", agentId],
     queryFn: () => eval_.aggregate(agentId),
     enabled: !!agentId,
+  });
+}
+
+export function useLeaderboard(window?: LeaderboardWindow, limit?: number) {
+  return useQuery({
+    queryKey: ["leaderboard", window, limit],
+    queryFn: () => dashboard.leaderboard(window, limit),
+  });
+}
+
+export function useAgentValidation() {
+  return useMutation({
+    mutationFn: registry.validate,
+  });
+}
+
+export function useFeedbackSummary(listingId: string | undefined) {
+  return useQuery({
+    queryKey: ["feedback", "summary", listingId],
+    enabled: !!listingId,
+    queryFn: () => feedback.summary(listingId!),
   });
 }
 

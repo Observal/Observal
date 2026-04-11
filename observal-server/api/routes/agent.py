@@ -2,7 +2,7 @@ import uuid
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,10 +19,13 @@ from schemas.agent import (
     AgentResponse,
     AgentSummary,
     AgentUpdateRequest,
+    AgentValidateRequest,
     ComponentLinkResponse,
     GoalSectionResponse,
     GoalTemplateResponse,
     McpLinkResponse,
+    ValidationIssue,
+    ValidationResult,
 )
 from services.agent_config_generator import generate_agent_config
 
@@ -193,11 +196,47 @@ async def list_agents(
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Agent).where(Agent.status == AgentStatus.active)
+    from models.feedback import Feedback
+
+    stmt = (
+        select(Agent)
+        .where(Agent.status == AgentStatus.active)
+        .options(selectinload(Agent.components))
+    )
     if search:
         stmt = stmt.where(Agent.name.ilike(f"%{search}%") | Agent.description.ilike(f"%{search}%"))
     result = await db.execute(stmt.order_by(Agent.created_at.desc()))
-    return [AgentSummary.model_validate(a) for a in result.scalars().all()]
+    agents = result.scalars().all()
+
+    # Batch-fetch average ratings
+    agent_ids = [a.id for a in agents]
+    rating_map: dict[uuid.UUID, float] = {}
+    if agent_ids:
+        rows = await db.execute(
+            select(Feedback.listing_id, func.avg(Feedback.rating))
+            .where(Feedback.listing_id.in_(agent_ids), Feedback.listing_type == "agent")
+            .group_by(Feedback.listing_id)
+        )
+        rating_map = {r[0]: round(float(r[1]), 2) for r in rows.all()}
+
+    return [
+        AgentSummary(
+            id=a.id,
+            name=a.name,
+            version=a.version,
+            description=a.description,
+            owner=a.owner,
+            model_name=a.model_name,
+            supported_ides=a.supported_ides,
+            status=a.status,
+            download_count=a.download_count,
+            average_rating=rating_map.get(a.id),
+            component_count=len(a.components),
+            created_at=a.created_at,
+            updated_at=a.updated_at,
+        )
+        for a in agents
+    ]
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
@@ -365,7 +404,6 @@ async def install_agent(
 async def agent_download_stats(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     agent = await _load_agent(db, _agent_id_clause(agent_id))
     if not agent:
@@ -413,6 +451,34 @@ async def get_agent_manifest(
         })
     from services.agent_builder import build_agent_manifest
     return build_agent_manifest(resolved)
+
+
+@router.post("/validate", response_model=ValidationResult)
+async def validate_agent_composition(
+    req: AgentValidateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Validate a set of components for compatibility before publishing an agent."""
+    if not req.components:
+        return ValidationResult(valid=True, issues=[])
+
+    from services.agent_resolver import validate_component_ids
+
+    errors = await validate_component_ids(
+        [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
+        db,
+    )
+    issues = [
+        ValidationIssue(
+            severity="error",
+            component_type=e.component_type,
+            component_id=e.component_id,
+            message=e.reason,
+        )
+        for e in errors
+    ]
+    return ValidationResult(valid=len(issues) == 0, issues=issues)
 
 
 @router.delete("/{agent_id}")

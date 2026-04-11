@@ -130,7 +130,28 @@ class AgentSummary(BaseModel):
     model_name: str
     supported_ides: list[str]
     status: AgentStatus
+    download_count: int = 0
+    average_rating: float | None = None
+    component_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     model_config = {"from_attributes": True}
+
+
+class AgentValidateRequest(BaseModel):
+    components: list[ComponentRef] = []
+
+
+class ValidationIssue(BaseModel):
+    severity: Literal["error", "warning"]
+    component_type: str | None = None
+    component_id: uuid.UUID | None = None
+    message: str
+
+
+class ValidationResult(BaseModel):
+    valid: bool
+    issues: list[ValidationIssue] = []
 
 
 class AgentInstallRequest(BaseModel):

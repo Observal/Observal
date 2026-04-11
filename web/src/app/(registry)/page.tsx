@@ -1,21 +1,44 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { Search, TrendingUp, Clock, Check, Copy, Terminal } from "lucide-react";
+import { useState, useCallback } from "react";
+import Link from "next/link";
+import {
+  Search,
+  TrendingUp,
+  Clock,
+  Check,
+  Copy,
+  Terminal,
+  Trophy,
+  ArrowRight,
+  ArrowDownToLine,
+  Star,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AgentCard } from "@/components/registry/agent-card";
-import { useRegistryList, useTopAgents } from "@/hooks/use-api";
+import {
+  useRegistryList,
+  useTopAgents,
+  useOverviewStats,
+  useLeaderboard,
+} from "@/hooks/use-api";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layouts/page-header";
-import { CardSkeleton } from "@/components/shared/skeleton-layouts";
+import { CardSkeleton, TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
+import { compactNumber } from "@/lib/utils";
+import type { LeaderboardWindow, TopAgentItem } from "@/lib/types";
 
 export default function RegistryHome() {
   const [search, setSearch] = useState("");
   const [heroCopied, setHeroCopied] = useState(false);
+  const [leaderboardWindow, setLeaderboardWindow] =
+    useState<LeaderboardWindow>("7d");
   const router = useRouter();
   const {
     data: agents,
@@ -25,6 +48,9 @@ export default function RegistryHome() {
     refetch: refetchAgents,
   } = useRegistryList("agents");
   const { data: topAgents, isLoading: topLoading } = useTopAgents();
+  const { data: stats } = useOverviewStats();
+  const { data: leaderboard, isLoading: leaderboardLoading } =
+    useLeaderboard(leaderboardWindow, 10);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -40,9 +66,8 @@ export default function RegistryHome() {
     setTimeout(() => setHeroCopied(false), 2000);
   }, []);
 
-  const trending = topAgents?.slice(0, 6) ?? [];
+  const trending = (topAgents ?? []).slice(0, 6);
   const recentlyAdded = (agents ?? [])
-    .filter((a: any) => a.status === "approved")
     .sort((a: any, b: any) => {
       const da = a.created_at ? new Date(a.created_at).getTime() : 0;
       const db = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -69,6 +94,26 @@ export default function RegistryHome() {
               agents across your team.
             </p>
           </div>
+
+          {/* Stats bar */}
+          {stats && (
+            <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <span className="font-mono font-medium text-foreground">
+                {stats.total_agents}
+              </span>{" "}
+              agents
+              <span className="text-border">·</span>
+              <span className="font-mono font-medium text-foreground">
+                {stats.total_mcps}
+              </span>{" "}
+              components
+              <span className="text-border">·</span>
+              <span className="font-mono font-medium text-foreground">
+                {stats.total_users}
+              </span>{" "}
+              engineers
+            </div>
+          )}
 
           {/* Search bar */}
           <form onSubmit={handleSearch} className="relative max-w-lg">
@@ -131,12 +176,13 @@ export default function RegistryHome() {
                   "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
               }}
             >
-              {trending.map((item: any, i: number) => (
+              {trending.map((item: TopAgentItem, i: number) => (
                 <AgentCard
                   key={item.id}
                   id={item.id}
                   name={item.name}
-                  downloads={item.value}
+                  downloads={item.download_count}
+                  score={item.average_rating ?? undefined}
                   description={item.description}
                   owner={item.owner}
                   version={item.version}
@@ -147,8 +193,94 @@ export default function RegistryHome() {
           )}
         </section>
 
-        {/* Recently Added */}
+        {/* Leaderboard */}
         <section className="animate-in stagger-2 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                Leaderboard
+              </h2>
+            </div>
+            <Link
+              href="/agents/leaderboard"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              View all <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+
+          <Tabs
+            value={leaderboardWindow}
+            onValueChange={(v) =>
+              setLeaderboardWindow(v as LeaderboardWindow)
+            }
+          >
+            <TabsList>
+              <TabsTrigger value="24h">24h</TabsTrigger>
+              <TabsTrigger value="7d">7d</TabsTrigger>
+              <TabsTrigger value="30d">30d</TabsTrigger>
+              <TabsTrigger value="all">All time</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {leaderboardLoading ? (
+            <TableSkeleton rows={5} cols={4} />
+          ) : !leaderboard || leaderboard.length === 0 ? (
+            <EmptyState
+              icon={Trophy}
+              title="No leaderboard data"
+              description="Install agents to see rankings appear here."
+            />
+          ) : (
+            <div className="space-y-1">
+              {leaderboard.map((item, i) => (
+                <Link
+                  key={item.id}
+                  href={`/agents/${item.id}`}
+                  className="flex items-center gap-4 rounded-md px-3 py-2.5 transition-colors hover:bg-accent/40"
+                >
+                  <span className="w-6 text-right text-sm font-mono font-medium text-muted-foreground">
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium truncate block">
+                      {item.name}
+                    </span>
+                    {item.owner && (
+                      <span className="text-xs text-muted-foreground/70">
+                        {item.owner}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <ArrowDownToLine className="h-3 w-3" />
+                      {compactNumber(item.download_count)}
+                    </span>
+                    {item.average_rating != null && (
+                      <span className="inline-flex items-center gap-1">
+                        <Star className="h-3 w-3" />
+                        {item.average_rating.toFixed(1)}
+                      </span>
+                    )}
+                    {item.version && (
+                      <Badge
+                        variant="secondary"
+                        className="text-[10px] px-1.5 py-0"
+                      >
+                        {item.version}
+                      </Badge>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Recently Added */}
+        <section className="animate-in stagger-3 space-y-4">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold font-display uppercase tracking-wider text-muted-foreground">
@@ -166,7 +298,7 @@ export default function RegistryHome() {
             <EmptyState
               icon={Clock}
               title="No agents yet"
-              description="Approved agents will appear here. Submit your first agent to get started."
+              description="Agents will appear here once published. Submit your first agent to get started."
               actionLabel="Browse Agents"
               actionHref="/agents"
             />
@@ -186,11 +318,9 @@ export default function RegistryHome() {
                   description={agent.description}
                   owner={agent.owner}
                   version={agent.version}
-                  score={agent.score}
-                  component_count={
-                    agent.component_links?.length ??
-                    agent.mcp_links?.length
-                  }
+                  downloads={agent.download_count}
+                  score={agent.average_rating ?? undefined}
+                  component_count={agent.component_count}
                   className={`animate-in stagger-${Math.min(i + 1, 5)}`}
                 />
               ))}

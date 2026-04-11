@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -9,6 +9,7 @@ import {
   Trash2,
   Loader2,
   ArrowRight,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -25,9 +26,14 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layouts/page-header";
-import { useRegistryList } from "@/hooks/use-api";
+import { useRegistryList, useAgentValidation } from "@/hooks/use-api";
+import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
+import type { ValidationResult } from "@/lib/types";
+import { SortableComponentList } from "@/components/builder/sortable-component-list";
+import { ValidationPanel } from "@/components/builder/validation-panel";
+import { PreviewPanel } from "@/components/builder/preview-panel";
 
 const COMPONENT_TYPES: { value: RegistryType; label: string }[] = [
   { value: "mcps", label: "MCPs" },
@@ -131,60 +137,18 @@ function ComponentPicker({
   );
 }
 
-function PreviewPanel({
-  name,
-  description,
-  selectedComponents,
-  goalSections,
-}: {
-  name: string;
-  description: string;
-  selectedComponents: Record<string, RegistryItem[]>;
-  goalSections: GoalSection[];
-}) {
-  const lines: string[] = [];
-
-  lines.push(`name: ${name || "(untitled)"}`);
-  if (description) {
-    lines.push(`description: |`);
-    description.split("\n").forEach((l) => lines.push(`  ${l}`));
-  }
-
-  const hasComponents = Object.values(selectedComponents).some(
-    (arr) => arr.length > 0,
-  );
-  if (hasComponents) {
-    lines.push("");
-    lines.push("components:");
-    for (const [type, items] of Object.entries(selectedComponents)) {
-      if (items.length === 0) continue;
-      lines.push(`  ${type}:`);
-      items.forEach((item) => lines.push(`    - ${item.name}`));
-    }
-  }
-
-  const nonEmptyGoals = goalSections.filter((s) => s.title || s.content);
-  if (nonEmptyGoals.length > 0) {
-    lines.push("");
-    lines.push("goal:");
-    nonEmptyGoals.forEach((section) => {
-      lines.push(`  ${section.title || "(section)"}:`);
-      if (section.content) {
-        section.content
-          .split("\n")
-          .forEach((l) => lines.push(`    ${l}`));
-      }
-    });
-  }
-
-  return (
-    <pre className="min-h-[200px] whitespace-pre-wrap rounded-md border bg-muted/30 p-4 text-sm leading-relaxed font-[family-name:var(--font-mono)] text-foreground/80">
-      {lines.join("\n")}
-    </pre>
-  );
-}
+const TYPE_MAP: Record<string, string> = {
+  mcps: "mcp",
+  skills: "skill",
+  hooks: "hook",
+  prompts: "prompt",
+  sandboxes: "sandbox",
+};
 
 export default function AgentBuilderPage() {
+  // Require auth for builder
+  const { ready } = useAuthGuard();
+
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -207,6 +171,12 @@ export default function AgentBuilderPage() {
     { id: generateId(), title: "", content: "" },
   ]);
 
+  // Validation
+  const validation = useAgentValidation();
+  const [validationResult, setValidationResult] =
+    useState<ValidationResult | null>(null);
+  const validateTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
   // Compute selected IDs for quick lookup
   const selectedIds = useMemo(() => {
     const ids = new Set<string>();
@@ -215,6 +185,39 @@ export default function AgentBuilderPage() {
     );
     return ids;
   }, [selectedComponents]);
+
+  // Debounced validation on component changes
+  useEffect(() => {
+    if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
+
+    const allComponents = Object.entries(selectedComponents).flatMap(
+      ([type, items]) =>
+        items.map((item) => ({
+          component_type: TYPE_MAP[type] ?? type,
+          component_id: item.id,
+        })),
+    );
+
+    if (allComponents.length === 0) {
+      setValidationResult(null);
+      return;
+    }
+
+    validateTimerRef.current = setTimeout(() => {
+      validation.mutate(
+        { components: allComponents },
+        {
+          onSuccess: (result) => setValidationResult(result),
+          onError: () =>
+            setValidationResult({ valid: false, issues: [{ severity: "error", message: "Validation request failed" }] }),
+        },
+      );
+    }, 500);
+
+    return () => {
+      if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
+    };
+  }, [selectedComponents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggle = useCallback(
     (type: string) => (item: RegistryItem) => {
@@ -238,6 +241,20 @@ export default function AgentBuilderPage() {
       [type]: (prev[type] ?? []).filter((c) => c.id !== id),
     }));
   }, []);
+
+  const handleReorder = useCallback(
+    (type: string) => (items: { id: string; name: string }[]) => {
+      setSelectedComponents((prev) => {
+        // Preserve the full RegistryItem objects, just reorder
+        const current = prev[type] ?? [];
+        const ordered = items
+          .map((item) => current.find((c) => c.id === item.id))
+          .filter(Boolean) as RegistryItem[];
+        return { ...prev, [type]: ordered };
+      });
+    },
+    [],
+  );
 
   const addGoalSection = useCallback(() => {
     setGoalSections((prev) => [
@@ -302,6 +319,8 @@ export default function AgentBuilderPage() {
     }
   }
 
+  if (!ready) return null;
+
   return (
     <>
       <PageHeader
@@ -360,7 +379,7 @@ export default function AgentBuilderPage() {
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Select the MCPs, skills, hooks, prompts, and sandboxes for
-                  this agent.
+                  this agent. Drag to reorder.
                 </p>
               </div>
 
@@ -392,32 +411,27 @@ export default function AgentBuilderPage() {
                       onToggle={handleToggle(ct.value)}
                     />
 
-                    {/* Selected badges */}
+                    {/* Sortable selected list */}
                     {(selectedComponents[ct.value] ?? []).length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {(selectedComponents[ct.value] ?? []).map((item) => (
-                          <Badge
-                            key={item.id}
-                            variant="secondary"
-                            className="gap-1 pr-1"
-                          >
-                            {item.name}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeComponent(ct.value, item.id)
-                              }
-                              className="ml-0.5 rounded-sm p-0.5 transition-colors hover:bg-foreground/10"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
+                      <div className="mt-3">
+                        <SortableComponentList
+                          items={(selectedComponents[ct.value] ?? []).map(
+                            (item) => ({ id: item.id, name: item.name }),
+                          )}
+                          onReorder={handleReorder(ct.value)}
+                          onRemove={(id) => removeComponent(ct.value, id)}
+                        />
                       </div>
                     )}
                   </TabsContent>
                 ))}
               </Tabs>
+
+              {/* Validation */}
+              <ValidationPanel
+                result={validationResult}
+                isValidating={validation.isPending}
+              />
             </section>
 
             <Separator />
@@ -446,7 +460,7 @@ export default function AgentBuilderPage() {
               </div>
 
               <div className="space-y-3">
-                {goalSections.map((section, i) => (
+                {goalSections.map((section) => (
                   <div
                     key={section.id}
                     className="rounded-md border bg-muted/20 p-4 space-y-3"
@@ -497,7 +511,7 @@ export default function AgentBuilderPage() {
             <Separator />
 
             {/* Publish */}
-            <div className="animate-in stagger-3">
+            <div className="flex items-center gap-3 animate-in stagger-3">
               <Button
                 onClick={handlePublish}
                 disabled={publishing || !name.trim()}
@@ -516,19 +530,17 @@ export default function AgentBuilderPage() {
           {/* Right column: Preview */}
           <aside className="w-full lg:w-1/3 animate-in stagger-1">
             <div className="sticky top-28 space-y-3">
-              <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                Preview
-              </h3>
-              <Card>
-                <CardContent className="p-0">
-                  <PreviewPanel
-                    name={name}
-                    description={description}
-                    selectedComponents={selectedComponents}
-                    goalSections={goalSections}
-                  />
-                </CardContent>
-              </Card>
+              <PreviewPanel
+                name={name}
+                description={description}
+                selectedComponents={Object.fromEntries(
+                  Object.entries(selectedComponents).map(([k, v]) =>
+                    [k, v.map((item) => ({ id: item.id, name: item.name }))]
+                  ),
+                )}
+                goalSections={goalSections}
+                validationResult={validationResult}
+              />
             </div>
           </aside>
         </div>

@@ -89,6 +89,8 @@ async def _update_agent_counts(agent_id: uuid.UUID, db: AsyncSession) -> None:
 
 async def get_download_stats(agent_id: uuid.UUID, db: AsyncSession) -> dict:
     """Get download statistics for an agent."""
+    from datetime import timedelta
+
     total = await db.scalar(
         select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)
     ) or 0
@@ -96,6 +98,15 @@ async def get_download_stats(agent_id: uuid.UUID, db: AsyncSession) -> dict:
         select(func.count(func.distinct(AgentDownloadRecord.user_id))).where(
             AgentDownloadRecord.agent_id == agent_id,
             AgentDownloadRecord.user_id.isnot(None),
+        )
+    ) or 0
+
+    # Recent 7-day downloads
+    cutoff = datetime.now(UTC) - timedelta(days=7)
+    recent_7d = await db.scalar(
+        select(func.count(AgentDownloadRecord.id)).where(
+            AgentDownloadRecord.agent_id == agent_id,
+            AgentDownloadRecord.installed_at >= cutoff,
         )
     ) or 0
 
@@ -108,7 +119,9 @@ async def get_download_stats(agent_id: uuid.UUID, db: AsyncSession) -> dict:
     sources = {r.source: r.cnt for r in source_rows.all()}
 
     return {
+        "total": total,
         "total_downloads": total,
         "unique_users": unique,
+        "recent_7d": recent_7d,
         "sources": sources,
     }
