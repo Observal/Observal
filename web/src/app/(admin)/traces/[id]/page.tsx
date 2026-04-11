@@ -721,6 +721,48 @@ function HookMetaGrid({ attrs }: { attrs: Record<string, string> }) {
   );
 }
 
+/* ── Assistant response block ──────────────────────────────── */
+
+function AssistantResponseBlock({ event }: { event: RawOtelEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const attrs = event.attributes ?? {};
+  const fullResponse = attrs.tool_response || "";
+  const seq = attrs.message_sequence;
+  const total = attrs.message_total;
+  const seqLabel = seq && total ? ` (${seq}/${total})` : "";
+  const lines = fullResponse.split("\n");
+  const isLong = lines.length > 15;
+  const shown = isLong && !expanded ? lines.slice(0, 15).join("\n") + "\n…" : fullResponse;
+
+  if (!fullResponse) return null;
+
+  return (
+    <div className="mx-3 mt-2 mb-3 rounded-md border border-violet-500/20 bg-violet-500/5 overflow-hidden">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-violet-500/10">
+        <Bot className="h-3 w-3 text-violet-500" />
+        <span className="text-[11px] font-medium text-violet-600 dark:text-violet-400">Assistant Response{seqLabel}</span>
+        {event.timestamp && (
+          <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+            {new Date(event.timestamp).toLocaleTimeString()}
+          </span>
+        )}
+      </div>
+      <div className="px-3 py-2.5 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed max-h-[400px] overflow-auto">
+        {shown}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="w-full text-center py-1 text-[11px] text-violet-500 hover:underline border-t border-violet-500/10"
+        >
+          {expanded ? "Show less" : `Show all ${lines.length} lines`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ── Friendly event label ────────────────────────────────── */
 
 function eventLabel(evt: RawOtelEvent): string {
@@ -800,7 +842,23 @@ function AgentNode({ agent, expandedSet, onToggleEvent, activeFilters, searchQue
   const nodeKey = `agent-${agent.agentId}`;
   const isOpen = expandedSet.has(nodeKey);
   const filtered = filterTurnEvents(agent.events, activeFilters, searchQuery);
-  const totalInAgent = agent.events.length;
+
+  // Compute agent-level token stats
+  const agentTokens = useMemo(() => {
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let toolCount = 0;
+    for (const evt of agent.events) {
+      const en = getEventName(evt);
+      const a = evt.attributes ?? {};
+      if (en === "api_request") {
+        inputTokens += parseInt(a.input_tokens || "0", 10);
+        outputTokens += parseInt(a.output_tokens || "0", 10);
+      }
+      if (en === "hook_posttooluse" || en === "tool_result") toolCount++;
+    }
+    return { inputTokens, outputTokens, toolCount };
+  }, [agent.events]);
 
   if (filtered.length === 0 && activeFilters.size > 0) return null;
 
@@ -817,7 +875,11 @@ function AgentNode({ agent, expandedSet, onToggleEvent, activeFilters, searchQue
           : <ChevronRight className="h-3.5 w-3.5 text-indigo-500 shrink-0" />}
         <Users className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
         <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">{agent.agentType}</span>
-        <Badge variant="muted">{filtered.length} event{filtered.length !== 1 ? "s" : ""}</Badge>
+        <div className="flex items-center gap-1.5">
+          {agentTokens.toolCount > 0 && <Badge variant="muted"><Wrench className="h-2.5 w-2.5 mr-0.5 inline" />{agentTokens.toolCount}</Badge>}
+          {agentTokens.inputTokens > 0 && <Badge variant="muted">{formatTokens(agentTokens.inputTokens)} in</Badge>}
+          {agentTokens.outputTokens > 0 && <Badge variant="muted">{formatTokens(agentTokens.outputTokens)} out</Badge>}
+        </div>
         {agent.startEvent?.timestamp && (
           <span className="ml-auto text-[10px] text-muted-foreground tabular-nums shrink-0">
             {new Date(agent.startEvent.timestamp).toLocaleTimeString()}
@@ -845,9 +907,9 @@ function AgentNode({ agent, expandedSet, onToggleEvent, activeFilters, searchQue
               );
             })
           )}
-          {totalInAgent > filtered.length && activeFilters.size > 0 && (
+          {agent.events.length > filtered.length && activeFilters.size > 0 && (
             <p className="text-[10px] text-muted-foreground pl-4 py-1">
-              {totalInAgent - filtered.length} event{totalInAgent - filtered.length !== 1 ? "s" : ""} hidden by filters
+              {agent.events.length - filtered.length} event{agent.events.length - filtered.length !== 1 ? "s" : ""} hidden by filters
             </p>
           )}
         </div>
@@ -970,34 +1032,8 @@ function TurnNode({ turn, index, expandedSet, onToggleEvent, activeFilters, sear
             />
           ))}
 
-          {/* Response at the bottom of the turn */}
-          {turn.responseEvent && (() => {
-            const key = `turn-${index}-response`;
-            const respAttrs = turn.responseEvent.attributes ?? {};
-            const preview = (respAttrs.tool_response || "").slice(0, 200);
-            return (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => onToggleEvent(key)}
-                  className="flex items-center gap-2 w-full text-left py-1.5 px-3 hover:bg-violet-500/5 transition-colors"
-                  style={{ paddingLeft: "32px" }}
-                >
-                  {expandedSet.has(key)
-                    ? <ChevronDown className="h-3 w-3 text-violet-500 shrink-0" />
-                    : <ChevronRight className="h-3 w-3 text-violet-500 shrink-0" />}
-                  <Bot className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                  <span className="text-xs font-medium text-violet-600 dark:text-violet-400 w-20 shrink-0">response</span>
-                  <span className="text-xs text-muted-foreground truncate flex-1">{preview}{preview.length >= 200 ? "..." : ""}</span>
-                </button>
-                {expandedSet.has(key) && turn.responseEvent && (
-                  <div style={{ paddingLeft: "20px" }}>
-                    <EventDetail event={turn.responseEvent} />
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          {/* Assistant response */}
+          {turn.responseEvent && <AssistantResponseBlock event={turn.responseEvent} />}
 
           {/* Turn end marker */}
           {turn.stopEvent && (
