@@ -382,10 +382,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. The short version:
 
 See [AGENTS.md](AGENTS.md) for internal codebase context useful when working with AI coding agents.
 
-## License
-
-GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
-
 ## Star History
 
 If you find Observal useful, please star the repo. It helps others discover the project and motivates continued development.
@@ -397,3 +393,7 @@ If you find Observal useful, please star the repo. It helps others discover the 
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=BlazeUp-AI/Observal&type=date&legend=top-left" />
  </picture>
 </a>
+
+## License
+
+GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
