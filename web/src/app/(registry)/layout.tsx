@@ -1,10 +1,10 @@
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/nav/app-sidebar";
+import { RegistrySidebar } from "@/components/nav/registry-sidebar";
 import { CommandMenu } from "@/components/nav/command-menu";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthGuard } from "@/components/layouts/auth-guard";
 
-export default function DashboardLayout({
+export default function RegistryLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -12,10 +12,8 @@ export default function DashboardLayout({
   return (
     <AuthGuard>
       <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          {children}
-        </SidebarInset>
+        <RegistrySidebar />
+        <SidebarInset>{children}</SidebarInset>
         <CommandMenu />
         <Toaster visibleToasts={1} />
       </SidebarProvider>

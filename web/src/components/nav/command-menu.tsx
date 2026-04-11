@@ -10,7 +10,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { allNavItems } from "./app-sidebar";
+import { allNavItems } from "./registry-sidebar";
 
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
