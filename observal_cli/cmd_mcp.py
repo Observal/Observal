@@ -18,8 +18,7 @@ from observal_cli.render import (
 )
 
 _DEPRECATION_TPL = (
-    "[yellow]Warning:[/yellow] [dim]`observal {old}` is deprecated. "
-    "Use `observal {new}` instead.[/dim]\n"
+    "[yellow]Warning:[/yellow] [dim]`observal {old}` is deprecated. Use `observal {new}` instead.[/dim]\n"
 )
 
 mcp_app = typer.Typer(help="MCP server registry commands")
@@ -50,9 +49,7 @@ def _submit_impl(git_url, name, category, yes):
     )
     _category = category or ("general" if yes else typer.prompt("Category"))
     _desc = (
-        prefill.get("description", "")
-        if yes
-        else typer.prompt("Description", default=prefill.get("description", ""))
+        prefill.get("description", "") if yes else typer.prompt("Description", default=prefill.get("description", ""))
     )
     _owner = typer.prompt("Owner / Team") if not yes else "default"
 

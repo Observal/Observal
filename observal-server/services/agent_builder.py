@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 class ManifestComponent(BaseModel):
     """A single component entry in the agent manifest."""
+
     name: str
     version: str
     git_url: str
@@ -58,6 +59,7 @@ class ManifestComponent(BaseModel):
 
 class ManifestComponents(BaseModel):
     """All components grouped by type."""
+
     mcps: list[ManifestComponent] = Field(default_factory=list)
     skills: list[ManifestComponent] = Field(default_factory=list)
     hooks: list[ManifestComponent] = Field(default_factory=list)
@@ -68,8 +70,10 @@ class ManifestComponents(BaseModel):
         """Only include non-empty component lists."""
         result = {}
         for key, items in [
-            ("mcps", self.mcps), ("skills", self.skills),
-            ("hooks", self.hooks), ("prompts", self.prompts),
+            ("mcps", self.mcps),
+            ("skills", self.skills),
+            ("hooks", self.hooks),
+            ("prompts", self.prompts),
             ("sandboxes", self.sandboxes),
         ]:
             if items:
@@ -85,6 +89,7 @@ class ManifestError(BaseModel):
 
 class AgentManifest(BaseModel):
     """Portable agent manifest — the canonical representation of a composed agent."""
+
     name: str
     version: str
     prompt: str = ""
@@ -113,6 +118,7 @@ class AgentManifest(BaseModel):
 
 class CompositionSummary(BaseModel):
     """Lightweight summary of agent composition for API responses."""
+
     agent_id: str
     agent_name: str
     agent_version: str
@@ -127,6 +133,7 @@ class CompositionSummary(BaseModel):
 
 class AgentFile(BaseModel):
     """A single file to write for IDE agent installation."""
+
     path: str
     content: str | dict
     format: Literal["markdown", "json", "toml"] = "json"
@@ -134,6 +141,7 @@ class AgentFile(BaseModel):
 
 class IdeAgentConfig(BaseModel):
     """Complete IDE-specific agent configuration output."""
+
     ide: str
     files: list[AgentFile] = Field(default_factory=list)
     mcp_servers: dict = Field(default_factory=dict)
@@ -242,10 +250,7 @@ def build_composition_summary(resolved: ResolvedAgent) -> dict:
         typed = resolved.components_by_type(ctype)
         if typed:
             component_counts[ctype] = len(typed)
-            components_by_key[key] = [
-                {"name": c.name, "version": c.version, "order": c.order_index}
-                for c in typed
-            ]
+            components_by_key[key] = [{"name": c.name, "version": c.version, "order": c.order_index} for c in typed]
 
     summary = CompositionSummary(
         agent_id=str(resolved.agent_id),
@@ -520,10 +525,17 @@ _IDE_GENERATORS = {
     "copilot": _generate_copilot,
 }
 
-SUPPORTED_IDES = list({
-    "claude-code", "cursor", "vscode", "gemini-cli",
-    "kiro", "codex", "copilot",
-})
+SUPPORTED_IDES = list(
+    {
+        "claude-code",
+        "cursor",
+        "vscode",
+        "gemini-cli",
+        "kiro",
+        "codex",
+        "copilot",
+    }
+)
 
 
 def generate_ide_agent_files(manifest: AgentManifest, ide: str) -> IdeAgentConfig:
@@ -534,7 +546,5 @@ def generate_ide_agent_files(manifest: AgentManifest, ide: str) -> IdeAgentConfi
     """
     generator = _IDE_GENERATORS.get(ide)
     if generator is None:
-        raise ValueError(
-            f"Unsupported IDE: {ide!r}. Supported: {', '.join(SUPPORTED_IDES)}"
-        )
+        raise ValueError(f"Unsupported IDE: {ide!r}. Supported: {', '.join(SUPPORTED_IDES)}")
     return generator(manifest)

@@ -45,8 +45,7 @@ class Agent(Base):
     )
 
     components: Mapped[list["AgentComponent"]] = relationship(
-        back_populates="agent", lazy="selectin", order_by="AgentComponent.order_index",
-        cascade="all, delete-orphan"
+        back_populates="agent", lazy="selectin", order_by="AgentComponent.order_index", cascade="all, delete-orphan"
     )
     goal_template: Mapped["AgentGoalTemplate | None"] = relationship(
         back_populates="agent", lazy="selectin", uselist=False, cascade="all, delete-orphan"

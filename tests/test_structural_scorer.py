@@ -1,10 +1,11 @@
 """Unit tests for the structural scorer (rule-based, no LLM)."""
 
-
 from services.structural_scorer import StructuralScorer, _span_dedup_key
 
 
-def _tool_span(name="tool_a", input_data="input1", output="result", status="success", latency_ms=100, span_id="s1", error=None):
+def _tool_span(
+    name="tool_a", input_data="input1", output="result", status="success", latency_ms=100, span_id="s1", error=None
+):
     """Helper to create a mock tool call span."""
     return {
         "type": "tool_call",

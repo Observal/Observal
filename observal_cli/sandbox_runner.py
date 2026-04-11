@@ -44,6 +44,7 @@ def run_sandbox(sandbox_id: str, image: str, command: str | None = None, timeout
     except ImportError:
         import typer
         from rich import print as rprint
+
         rprint("[red]Docker SDK not found.[/red] Please install via: pip install observal-cli[sandbox]")
         raise typer.Exit(1)
 
@@ -133,26 +134,30 @@ def run_sandbox(sandbox_id: str, image: str, command: str | None = None, timeout
             api_key = api_key or cfg.get("api_key", "")
             server_url = server_url or cfg.get("server_url", "")
 
-        _send_span(server_url, api_key, {
-            "span_id": str(uuid.uuid4()),
-            "trace_id": str(uuid.uuid4()),
-            "parent_span_id": None,
-            "type": "sandbox_exec",
-            "name": f"sandbox:{image}",
-            "method": "",
-            "input": json.dumps({"image": image, "command": command, "sandbox_id": sandbox_id}),
-            "output": None,
-            "error": str(e),
-            "start_time": start_time,
-            "end_time": _now_iso(),
-            "latency_ms": wall_ms,
-            "status": "error",
-            "ide": "",
-            "metadata": {},
-            "container_id": None,
-            "exit_code": -1,
-            "oom_killed": False,
-        })
+        _send_span(
+            server_url,
+            api_key,
+            {
+                "span_id": str(uuid.uuid4()),
+                "trace_id": str(uuid.uuid4()),
+                "parent_span_id": None,
+                "type": "sandbox_exec",
+                "name": f"sandbox:{image}",
+                "method": "",
+                "input": json.dumps({"image": image, "command": command, "sandbox_id": sandbox_id}),
+                "output": None,
+                "error": str(e),
+                "start_time": start_time,
+                "end_time": _now_iso(),
+                "latency_ms": wall_ms,
+                "status": "error",
+                "ide": "",
+                "metadata": {},
+                "container_id": None,
+                "exit_code": -1,
+                "oom_killed": False,
+            },
+        )
         sys.exit(1)
     finally:
         if container:
@@ -191,13 +196,16 @@ def main():
             i += 2
         elif args[i] == "--":
             # Everything after: is the command
-            command = " ".join(args[i + 1:])
+            command = " ".join(args[i + 1 :])
             break
         else:
             i += 1
 
     if not image:
-        print("Usage: observal-sandbox-run --sandbox-id <id> --image <image> [--command <cmd>] [--timeout <s>]", file=sys.stderr)
+        print(
+            "Usage: observal-sandbox-run --sandbox-id <id> --image <image> [--command <cmd>] [--timeout <s>]",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     run_sandbox(sandbox_id, image, command, timeout, env)

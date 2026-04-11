@@ -117,20 +117,24 @@ async def get_trace(trace_id: str):
         timestamps = r.get("event_timestamps") or []
         attrs = r.get("event_attributes") or []
         for i in range(len(names)):
-            events.append({
-                "name": names[i],
-                "timestamp": timestamps[i] if i < len(timestamps) else None,
-                "attributes": attrs[i] if i < len(attrs) else {},
-            })
-        spans.append({
-            "span_id": r["span_id"],
-            "parent_span_id": r["parent_span_id"],
-            "span_name": r["span_name"],
-            "duration_ns": r["duration_ns"],
-            "status_code": r["status_code"],
-            "span_attributes": r["span_attributes"],
-            "events": events,
-        })
+            events.append(
+                {
+                    "name": names[i],
+                    "timestamp": timestamps[i] if i < len(timestamps) else None,
+                    "attributes": attrs[i] if i < len(attrs) else {},
+                }
+            )
+        spans.append(
+            {
+                "span_id": r["span_id"],
+                "parent_span_id": r["parent_span_id"],
+                "span_name": r["span_name"],
+                "duration_ns": r["duration_ns"],
+                "status_code": r["status_code"],
+                "span_attributes": r["span_attributes"],
+                "events": events,
+            }
+        )
     return spans
 
 
@@ -147,10 +151,7 @@ async def otel_stats():
         "FROM otel_logs"
     )
     trace_rows = await _ch_json(
-        "SELECT "
-        "count(DISTINCT TraceId) AS total_traces, "
-        "count() AS total_spans "
-        "FROM otel_traces"
+        "SELECT count(DISTINCT TraceId) AS total_traces, count() AS total_spans FROM otel_traces"
     )
     log = log_rows[0] if log_rows else {}
     tr = trace_rows[0] if trace_rows else {}

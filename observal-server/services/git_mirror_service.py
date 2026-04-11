@@ -66,10 +66,18 @@ def clone_or_update(git_url: str, branch: str = "main", base: Path = DEFAULT_MIR
         # Fresh shallow clone
         if mirror_dir.exists():
             shutil.rmtree(mirror_dir)
-        result = _run_git([
-            "clone", "--depth", "1", "--single-branch", "--branch", branch,
-            git_url, str(mirror_dir),
-        ])
+        result = _run_git(
+            [
+                "clone",
+                "--depth",
+                "1",
+                "--single-branch",
+                "--branch",
+                branch,
+                git_url,
+                str(mirror_dir),
+            ]
+        )
         if result.returncode != 0:
             raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
 
@@ -110,7 +118,9 @@ def _safe_path(base: Path, rel: str) -> bool:
         return False
 
 
-def _parse_manifest(manifest: dict, component_type: str | None = None, mirror_dir: Path | None = None) -> list[DiscoveredComponent]:
+def _parse_manifest(
+    manifest: dict, component_type: str | None = None, mirror_dir: Path | None = None
+) -> list[DiscoveredComponent]:
     """Parse .observal.json manifest."""
     components = []
     type_keys = {
@@ -122,9 +132,7 @@ def _parse_manifest(manifest: dict, component_type: str | None = None, mirror_di
     }
 
     types_to_scan = (
-        {component_type: type_keys[component_type]}
-        if component_type and component_type in type_keys
-        else type_keys
+        {component_type: type_keys[component_type]} if component_type and component_type in type_keys else type_keys
     )
 
     for ctype, key in types_to_scan.items():
@@ -134,12 +142,14 @@ def _parse_manifest(manifest: dict, component_type: str | None = None, mirror_di
             if mirror_dir and not _safe_path(mirror_dir, comp_path):
                 logger.warning("Skipping component with unsafe path: %s", comp_path)
                 continue
-            components.append(DiscoveredComponent(
-                name=entry.get("name", comp_path.split("/")[-1]),
-                path=comp_path,
-                component_type=ctype,
-                description=entry.get("description", ""),
-            ))
+            components.append(
+                DiscoveredComponent(
+                    name=entry.get("name", comp_path.split("/")[-1]),
+                    path=comp_path,
+                    component_type=ctype,
+                    description=entry.get("description", ""),
+                )
+            )
 
     return components
 
@@ -184,18 +194,18 @@ def _scan_by_convention(mirror_dir: Path, component_type: str | None = None) -> 
                 if not _safe_path(mirror_dir, str(item.relative_to(mirror_dir))):
                     continue
                 if marker(item):
-                    components.append(DiscoveredComponent(
-                        name=item.name,
-                        path=str(item.relative_to(mirror_dir)),
-                        component_type=ctype,
-                    ))
+                    components.append(
+                        DiscoveredComponent(
+                            name=item.name,
+                            path=str(item.relative_to(mirror_dir)),
+                            component_type=ctype,
+                        )
+                    )
 
     return components
 
 
-_FASTMCP_PATTERN = re.compile(
-    r"FastMCP\(|from\s+mcp\.server\.fastmcp\s+import|from\s+fastmcp\s+import"
-)
+_FASTMCP_PATTERN = re.compile(r"FastMCP\(|from\s+mcp\.server\.fastmcp\s+import|from\s+fastmcp\s+import")
 
 
 def validate_mcp_component(component_path: Path) -> tuple[bool, str]:
@@ -212,7 +222,9 @@ def validate_mcp_component(component_path: Path) -> tuple[bool, str]:
     return False, "No FastMCP usage found. MCP servers must use FastMCP."
 
 
-def sync_source(git_url: str, component_type: str, branch: str = "main", base: Path = DEFAULT_MIRROR_BASE) -> SyncResult:
+def sync_source(
+    git_url: str, component_type: str, branch: str = "main", base: Path = DEFAULT_MIRROR_BASE
+) -> SyncResult:
     """Full sync pipeline: clone -> discover -> validate. Returns SyncResult."""
     try:
         mirror_dir = clone_or_update(git_url, branch=branch, base=base)

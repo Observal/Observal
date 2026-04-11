@@ -79,8 +79,12 @@ def skill_list(
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
-            str(i), item["name"], item.get("version", ""), item.get("owner", ""),
-            status_badge(item.get("status", "")), str(item["id"])[:8] + "…",
+            str(i),
+            item["name"],
+            item.get("version", ""),
+            item.get("owner", ""),
+            status_badge(item.get("status", "")),
+            str(item["id"])[:8] + "…",
         )
     console.print(table)
 
@@ -97,20 +101,22 @@ def skill_show(
     if output == "json":
         output_json(item)
         return
-    console.print(kv_panel(
-        f"{item['name']} v{item.get('version', '?')}",
-        [
-            ("Status", status_badge(item.get("status", ""))),
-            ("Task Type", item.get("task_type", "N/A")),
-            ("Owner", item.get("owner", "N/A")),
-            ("Git URL", item.get("git_url", "N/A")),
-            ("Description", item.get("description", "")),
-            ("Target Agents", ", ".join(item.get("target_agents", [])) or "N/A"),
-            ("Created", relative_time(item.get("created_at"))),
-            ("ID", f"[dim]{item['id']}[/dim]"),
-        ],
-        border_style="green",
-    ))
+    console.print(
+        kv_panel(
+            f"{item['name']} v{item.get('version', '?')}",
+            [
+                ("Status", status_badge(item.get("status", ""))),
+                ("Task Type", item.get("task_type", "N/A")),
+                ("Owner", item.get("owner", "N/A")),
+                ("Git URL", item.get("git_url", "N/A")),
+                ("Description", item.get("description", "")),
+                ("Target Agents", ", ".join(item.get("target_agents", [])) or "N/A"),
+                ("Created", relative_time(item.get("created_at"))),
+                ("ID", f"[dim]{item['id']}[/dim]"),
+            ],
+            border_style="green",
+        )
+    )
 
 
 @skill_app.command(name="install")

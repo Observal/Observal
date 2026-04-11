@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,17 +30,22 @@ def _require_admin(user: User):
 async def _find_listing(listing_id: str, db: AsyncSession):
     """Try each listing model to find the listing by id or name."""
     import uuid as _uuid
+
     if isinstance(listing_id, _uuid.UUID):
+
         def clause_fn(model):
             return model.id == listing_id
     else:
         try:
             uid = _uuid.UUID(listing_id)
+
             def clause_fn(model):
                 return model.id == uid
         except ValueError:
+
             def clause_fn(model):
                 return model.name == listing_id
+
     for listing_type, model in LISTING_MODELS.items():
         result = await db.execute(select(model).where(clause_fn(model)))
         listing = result.scalar_one_or_none()
@@ -65,7 +69,16 @@ async def list_pending(
             select(model).where(model.status == ListingStatus.pending).order_by(model.created_at.desc())
         )
         for r in result.scalars().all():
-            items.append({"type": listing_type, "id": str(r.id), "name": r.name, "status": r.status.value, "submitted_by": str(r.submitted_by), "created_at": r.created_at.isoformat()})
+            items.append(
+                {
+                    "type": listing_type,
+                    "id": str(r.id),
+                    "name": r.name,
+                    "status": r.status.value,
+                    "submitted_by": str(r.submitted_by),
+                    "created_at": r.created_at.isoformat(),
+                }
+            )
     return items
 
 
@@ -79,7 +92,14 @@ async def get_review(
     listing_type, listing = await _find_listing(listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    return {"type": listing_type, "id": str(listing.id), "name": listing.name, "status": listing.status.value, "submitted_by": str(listing.submitted_by), "created_at": listing.created_at.isoformat()}
+    return {
+        "type": listing_type,
+        "id": str(listing.id),
+        "name": listing.name,
+        "status": listing.status.value,
+        "submitted_by": str(listing.submitted_by),
+        "created_at": listing.created_at.isoformat(),
+    }
 
 
 @router.post("/{listing_id}/approve")

@@ -48,8 +48,7 @@ def init(server: str = typer.Option(None, "--server", "-s", help="Server URL")):
 
     # 2. Smart Detection: Determine if we are a Developer (Connect) or Admin (Setup)
     setup_choice = typer.prompt(
-        "Are you connecting to an existing team (C) or setting up a brand new server (N)?",
-        default="C"
+        "Are you connecting to an existing team (C) or setting up a brand new server (N)?", default="C"
     )
 
     if setup_choice.lower().startswith("c"):
@@ -106,6 +105,7 @@ def logout():
     if config.CONFIG_FILE.exists():
         # Read strictly from disk to avoid mixing with env variables
         import json
+
         raw_cfg = json.loads(config.CONFIG_FILE.read_text())
 
         # Remove the key and save directly
@@ -227,6 +227,7 @@ def register_deprecated_auth(app: typer.Typer):
 
 # ── Helper functions ────────────────────────────────────────
 
+
 def _do_login(server_url: str, api_key: str | None = None):
     api_key = api_key or typer.prompt("API Key", hide_input=True)
     try:
@@ -319,7 +320,9 @@ def _configure_claude_code(server_url: str, api_key: str):
         if not claude_exists:
             return
 
-        if not typer.confirm("\nDetected Claude Code installation.\nConfigure Claude Code telemetry -> Observal?", default=True):
+        if not typer.confirm(
+            "\nDetected Claude Code installation.\nConfigure Claude Code telemetry -> Observal?", default=True
+        ):
             return
 
         settings = {}
@@ -328,7 +331,9 @@ def _configure_claude_code(server_url: str, api_key: str):
                 try:
                     settings = _json.load(f)
                 except _json.JSONDecodeError:
-                    rprint(f"[yellow]Warning: Could not parse {claude_settings_file}. A new file will be created.[/yellow]")
+                    rprint(
+                        f"[yellow]Warning: Could not parse {claude_settings_file}. A new file will be created.[/yellow]"
+                    )
                     pass  # Will create a new file
 
         # Prepare OTEL config

@@ -141,7 +141,12 @@ def _convert_resource_spans(body: dict) -> tuple[list[dict], list[dict]]:
                     status = _STATUS_MAP.get(status_code, "success")
                     error_msg = span.get("status", {}).get("message") if status == "error" else None
 
-                    user_id = all_attrs.get("user.id") or all_attrs.get("user.email") or all_attrs.get("user.account_uuid") or "otlp"
+                    user_id = (
+                        all_attrs.get("user.id")
+                        or all_attrs.get("user.email")
+                        or all_attrs.get("user.account_uuid")
+                        or "otlp"
+                    )
                     session_id = all_attrs.get("session.id")
 
                     # GenAI semantic conventions
@@ -245,41 +250,45 @@ def _process_span_events(
 
             if event_name in ("claude_code.user_prompt", "user_prompt"):
                 # Captured as trace input via log handler; also emit a span
-                spans_out.append({
-                    "span_id": uuid.uuid4().hex,
-                    "trace_id": trace_id,
-                    "parent_span_id": parent_span_id,
-                    "project_id": DEFAULT_PROJECT,
-                    "user_id": user_id,
-                    "type": "user_prompt",
-                    "name": "user_prompt",
-                    "input": event_attrs.get("prompt") or event_attrs.get("content"),
-                    "start_time": dt,
-                    "end_time": dt,
-                    "status": "success",
-                    "ide": ide,
-                    "environment": "default",
-                    "metadata": {},
-                })
+                spans_out.append(
+                    {
+                        "span_id": uuid.uuid4().hex,
+                        "trace_id": trace_id,
+                        "parent_span_id": parent_span_id,
+                        "project_id": DEFAULT_PROJECT,
+                        "user_id": user_id,
+                        "type": "user_prompt",
+                        "name": "user_prompt",
+                        "input": event_attrs.get("prompt") or event_attrs.get("content"),
+                        "start_time": dt,
+                        "end_time": dt,
+                        "status": "success",
+                        "ide": ide,
+                        "environment": "default",
+                        "metadata": {},
+                    }
+                )
             elif event_name in ("claude_code.tool_result", "tool_result"):
                 dur = _safe_int(event_attrs.get("duration_ms"))
-                spans_out.append({
-                    "span_id": uuid.uuid4().hex,
-                    "trace_id": trace_id,
-                    "parent_span_id": parent_span_id,
-                    "project_id": DEFAULT_PROJECT,
-                    "user_id": user_id,
-                    "type": "tool_result",
-                    "name": event_attrs.get("tool_name", "tool"),
-                    "output": event_attrs.get("result"),
-                    "start_time": dt,
-                    "end_time": dt,
-                    "latency_ms": dur,
-                    "status": "success" if event_attrs.get("success", "true") == "true" else "error",
-                    "ide": ide,
-                    "environment": "default",
-                    "metadata": {},
-                })
+                spans_out.append(
+                    {
+                        "span_id": uuid.uuid4().hex,
+                        "trace_id": trace_id,
+                        "parent_span_id": parent_span_id,
+                        "project_id": DEFAULT_PROJECT,
+                        "user_id": user_id,
+                        "type": "tool_result",
+                        "name": event_attrs.get("tool_name", "tool"),
+                        "output": event_attrs.get("result"),
+                        "start_time": dt,
+                        "end_time": dt,
+                        "latency_ms": dur,
+                        "status": "success" if event_attrs.get("success", "true") == "true" else "error",
+                        "ide": ide,
+                        "environment": "default",
+                        "metadata": {},
+                    }
+                )
             elif event_name in ("claude_code.api_request", "api_request"):
                 tok_in = _safe_int(event_attrs.get("input_tokens"))
                 tok_out = _safe_int(event_attrs.get("output_tokens"))
@@ -287,26 +296,28 @@ def _process_span_events(
                 meta: dict[str, str] = {}
                 if event_attrs.get("model"):
                     meta["model"] = event_attrs["model"]
-                spans_out.append({
-                    "span_id": uuid.uuid4().hex,
-                    "trace_id": trace_id,
-                    "parent_span_id": parent_span_id,
-                    "project_id": DEFAULT_PROJECT,
-                    "user_id": user_id,
-                    "type": "llm",
-                    "name": event_attrs.get("model", "api_request"),
-                    "start_time": dt,
-                    "end_time": dt,
-                    "latency_ms": _safe_int(event_attrs.get("duration_ms")),
-                    "status": "success",
-                    "ide": ide,
-                    "environment": "default",
-                    "metadata": meta,
-                    "token_count_input": tok_in,
-                    "token_count_output": tok_out,
-                    "token_count_total": tok_total,
-                    "cost": _safe_float(event_attrs.get("cost")),
-                })
+                spans_out.append(
+                    {
+                        "span_id": uuid.uuid4().hex,
+                        "trace_id": trace_id,
+                        "parent_span_id": parent_span_id,
+                        "project_id": DEFAULT_PROJECT,
+                        "user_id": user_id,
+                        "type": "llm",
+                        "name": event_attrs.get("model", "api_request"),
+                        "start_time": dt,
+                        "end_time": dt,
+                        "latency_ms": _safe_int(event_attrs.get("duration_ms")),
+                        "status": "success",
+                        "ide": ide,
+                        "environment": "default",
+                        "metadata": meta,
+                        "token_count_input": tok_in,
+                        "token_count_output": tok_out,
+                        "token_count_total": tok_total,
+                        "cost": _safe_float(event_attrs.get("cost")),
+                    }
+                )
         except Exception:
             logger.warning("Failed to process span event %s", event.get("name"), exc_info=True)
 
@@ -333,11 +344,18 @@ def _convert_resource_logs(body: dict) -> tuple[list[dict], list[dict]]:
                     log_attrs = _extract_attrs(rec.get("attributes", []))
                     all_attrs = {**res_attrs, **log_attrs}
                     event_name = all_attrs.get("event.name", "")
-                    print(f"OTLP log: event_name={event_name!r}, all_attr_keys={list(all_attrs.keys())[:15]}", flush=True)
+                    print(
+                        f"OTLP log: event_name={event_name!r}, all_attr_keys={list(all_attrs.keys())[:15]}", flush=True
+                    )
                     time_nano = rec.get("timeUnixNano", "0")
                     dt = _nanos_to_dt(time_nano) if int(time_nano) > 0 else _now_ms()
 
-                    user_id = all_attrs.get("user.id") or all_attrs.get("user.email") or all_attrs.get("user.account_uuid") or "otlp"
+                    user_id = (
+                        all_attrs.get("user.id")
+                        or all_attrs.get("user.email")
+                        or all_attrs.get("user.account_uuid")
+                        or "otlp"
+                    )
                     session_id = all_attrs.get("session.id")
                     prompt_id = all_attrs.get("prompt.id")
                     # Use prompt_id as trace grouping key, fall back to a new UUID
@@ -347,8 +365,22 @@ def _convert_resource_logs(body: dict) -> tuple[list[dict], list[dict]]:
                     body_text = body_val.get("stringValue", "") if isinstance(body_val, dict) else str(body_val)
 
                     if event_name in ("claude_code.user_prompt", "user_prompt"):
-                        prompt_text = all_attrs.get("prompt") or body_text or all_attrs.get("content") or all_attrs.get("prompt_length")
-                        logger.info("OTLP user_prompt: prompt_text=%s, body_text=%s, attrs=%s", repr(prompt_text)[:200], repr(body_text)[:200], {k: repr(v)[:80] for k, v in all_attrs.items() if k.startswith("prompt") or k == "event.name"})
+                        prompt_text = (
+                            all_attrs.get("prompt")
+                            or body_text
+                            or all_attrs.get("content")
+                            or all_attrs.get("prompt_length")
+                        )
+                        logger.info(
+                            "OTLP user_prompt: prompt_text=%s, body_text=%s, attrs=%s",
+                            repr(prompt_text)[:200],
+                            repr(body_text)[:200],
+                            {
+                                k: repr(v)[:80]
+                                for k, v in all_attrs.items()
+                                if k.startswith("prompt") or k == "event.name"
+                            },
+                        )
                         # Create or update trace with user prompt as input
                         if trace_id not in prompt_traces:
                             prompt_traces[trace_id] = {
@@ -385,22 +417,24 @@ def _convert_resource_logs(body: dict) -> tuple[list[dict], list[dict]]:
                                 "tags": [],
                             }
                         dur = _safe_int(all_attrs.get("duration_ms"))
-                        spans.append({
-                            "span_id": uuid.uuid4().hex,
-                            "trace_id": trace_id,
-                            "project_id": DEFAULT_PROJECT,
-                            "user_id": user_id,
-                            "type": "tool_result",
-                            "name": all_attrs.get("tool_name", "tool"),
-                            "output": body_text or all_attrs.get("result"),
-                            "start_time": dt,
-                            "end_time": dt,
-                            "latency_ms": dur,
-                            "status": "success" if all_attrs.get("success", "true") == "true" else "error",
-                            "ide": ide,
-                            "environment": "default",
-                            "metadata": {},
-                        })
+                        spans.append(
+                            {
+                                "span_id": uuid.uuid4().hex,
+                                "trace_id": trace_id,
+                                "project_id": DEFAULT_PROJECT,
+                                "user_id": user_id,
+                                "type": "tool_result",
+                                "name": all_attrs.get("tool_name", "tool"),
+                                "output": body_text or all_attrs.get("result"),
+                                "start_time": dt,
+                                "end_time": dt,
+                                "latency_ms": dur,
+                                "status": "success" if all_attrs.get("success", "true") == "true" else "error",
+                                "ide": ide,
+                                "environment": "default",
+                                "metadata": {},
+                            }
+                        )
 
                     elif event_name in ("claude_code.api_request", "api_request"):
                         if trace_id not in prompt_traces:
@@ -419,53 +453,67 @@ def _convert_resource_logs(body: dict) -> tuple[list[dict], list[dict]]:
                             }
                         tok_in = _safe_int(all_attrs.get("input_tokens"))
                         tok_out = _safe_int(all_attrs.get("output_tokens"))
-                        tok_total = (tok_in or 0) + (tok_out or 0) if (tok_in is not None or tok_out is not None) else None
+                        tok_total = (
+                            (tok_in or 0) + (tok_out or 0) if (tok_in is not None or tok_out is not None) else None
+                        )
                         meta: dict[str, str] = {}
                         if all_attrs.get("model"):
                             meta["model"] = all_attrs["model"]
-                        spans.append({
-                            "span_id": uuid.uuid4().hex,
-                            "trace_id": trace_id,
-                            "project_id": DEFAULT_PROJECT,
-                            "user_id": user_id,
-                            "type": "llm",
-                            "name": all_attrs.get("model", "api_request"),
-                            "start_time": dt,
-                            "end_time": dt,
-                            "latency_ms": _safe_int(all_attrs.get("duration_ms")),
-                            "status": "success",
-                            "ide": ide,
-                            "environment": "default",
-                            "metadata": meta,
-                            "token_count_input": tok_in,
-                            "token_count_output": tok_out,
-                            "token_count_total": tok_total,
-                            "cost": _safe_float(all_attrs.get("cost")),
-                        })
+                        spans.append(
+                            {
+                                "span_id": uuid.uuid4().hex,
+                                "trace_id": trace_id,
+                                "project_id": DEFAULT_PROJECT,
+                                "user_id": user_id,
+                                "type": "llm",
+                                "name": all_attrs.get("model", "api_request"),
+                                "start_time": dt,
+                                "end_time": dt,
+                                "latency_ms": _safe_int(all_attrs.get("duration_ms")),
+                                "status": "success",
+                                "ide": ide,
+                                "environment": "default",
+                                "metadata": meta,
+                                "token_count_input": tok_in,
+                                "token_count_output": tok_out,
+                                "token_count_total": tok_total,
+                                "cost": _safe_float(all_attrs.get("cost")),
+                            }
+                        )
                     else:
                         # Generic log record → span
-                        spans.append({
-                            "span_id": uuid.uuid4().hex,
-                            "trace_id": trace_id,
-                            "project_id": DEFAULT_PROJECT,
-                            "user_id": user_id,
-                            "type": "log",
-                            "name": event_name or "log",
-                            "input": body_text or None,
-                            "start_time": dt,
-                            "end_time": dt,
-                            "status": "success",
-                            "ide": ide,
-                            "environment": "default",
-                            "metadata": {"severity": str(rec.get("severityNumber", ""))} if rec.get("severityNumber") else {},
-                        })
+                        spans.append(
+                            {
+                                "span_id": uuid.uuid4().hex,
+                                "trace_id": trace_id,
+                                "project_id": DEFAULT_PROJECT,
+                                "user_id": user_id,
+                                "type": "log",
+                                "name": event_name or "log",
+                                "input": body_text or None,
+                                "start_time": dt,
+                                "end_time": dt,
+                                "status": "success",
+                                "ide": ide,
+                                "environment": "default",
+                                "metadata": {"severity": str(rec.get("severityNumber", ""))}
+                                if rec.get("severityNumber")
+                                else {},
+                            }
+                        )
                 except Exception:
                     logger.warning("Failed to convert OTLP log record", exc_info=True)
 
     traces = list(prompt_traces.values())
-    print(f"OTLP logs converted: {len(traces)} traces, {len(spans)} spans, prompt_traces_keys={list(prompt_traces.keys())[:5]}", flush=True)
+    print(
+        f"OTLP logs converted: {len(traces)} traces, {len(spans)} spans, prompt_traces_keys={list(prompt_traces.keys())[:5]}",
+        flush=True,
+    )
     if traces:
-        print(f"OTLP first trace: name={traces[0].get('name')}, input={repr(traces[0].get('input'))[:100]}, session={traces[0].get('session_id')}", flush=True)
+        print(
+            f"OTLP first trace: name={traces[0].get('name')}, input={repr(traces[0].get('input'))[:100]}, session={traces[0].get('session_id')}",
+            flush=True,
+        )
     return traces, spans
 
 
@@ -483,7 +531,11 @@ async def otlp_traces(request: Request):
         body = await request.json()
     except Exception:
         logger.warning("OTLP /v1/traces: malformed JSON body")
-        return Response(content=json.dumps({"partialSuccess": {"rejectedSpans": 1, "errorMessage": "malformed JSON"}}), status_code=400, media_type="application/json")
+        return Response(
+            content=json.dumps({"partialSuccess": {"rejectedSpans": 1, "errorMessage": "malformed JSON"}}),
+            status_code=400,
+            media_type="application/json",
+        )
 
     try:
         trace_rows, span_rows = _convert_resource_spans(body)
@@ -521,17 +573,32 @@ async def otlp_logs(request: Request):
         body = await request.json()
     except Exception:
         logger.warning("OTLP /v1/logs: malformed JSON body")
-        return Response(content=json.dumps({"partialSuccess": {"rejectedLogRecords": 1, "errorMessage": "malformed JSON"}}), status_code=400, media_type="application/json")
+        return Response(
+            content=json.dumps({"partialSuccess": {"rejectedLogRecords": 1, "errorMessage": "malformed JSON"}}),
+            status_code=400,
+            media_type="application/json",
+        )
 
     rl_count = len(body.get("resourceLogs", []))
-    total_recs = sum(len(rec) for rl in body.get("resourceLogs", []) for sl in rl.get("scopeLogs", []) for rec in [sl.get("logRecords", [])])
+    total_recs = sum(
+        len(rec)
+        for rl in body.get("resourceLogs", [])
+        for sl in rl.get("scopeLogs", [])
+        for rec in [sl.get("logRecords", [])]
+    )
     print(f"OTLP /v1/logs: {rl_count} resourceLogs, {total_recs} total records", flush=True)
     if rl_count > 0:
         sample = body["resourceLogs"][0]
-        print(f"OTLP /v1/logs sample resource attrs: {[a.get('key') for a in sample.get('resource', {}).get('attributes', [])][:10]}", flush=True)
+        print(
+            f"OTLP /v1/logs sample resource attrs: {[a.get('key') for a in sample.get('resource', {}).get('attributes', [])][:10]}",
+            flush=True,
+        )
         for sl in sample.get("scopeLogs", []):
             for rec in sl.get("logRecords", [])[:3]:
-                print(f"OTLP /v1/logs sample record: body={repr(rec.get('body', {}))[:200]}, attrs={[a.get('key') for a in rec.get('attributes', [])][:15]}", flush=True)
+                print(
+                    f"OTLP /v1/logs sample record: body={repr(rec.get('body', {}))[:200]}, attrs={[a.get('key') for a in rec.get('attributes', [])][:15]}",
+                    flush=True,
+                )
 
     try:
         trace_rows, span_rows = _convert_resource_logs(body)
@@ -569,7 +636,11 @@ async def otlp_metrics(request: Request):
         body = await request.json()
     except Exception:
         logger.warning("OTLP /v1/metrics: malformed JSON body")
-        return Response(content=json.dumps({"partialSuccess": {"rejectedDataPoints": 1, "errorMessage": "malformed JSON"}}), status_code=400, media_type="application/json")
+        return Response(
+            content=json.dumps({"partialSuccess": {"rejectedDataPoints": 1, "errorMessage": "malformed JSON"}}),
+            status_code=400,
+            media_type="application/json",
+        )
 
     span_rows: list[dict] = []
     now = _now_ms()
@@ -597,25 +668,31 @@ async def otlp_metrics(request: Request):
                         if val is None:
                             continue
                         meta = {"metric_name": name, **dp_attrs}
-                        tok_in = _safe_int(dp_attrs.get("gen_ai.usage.input_tokens")) if "token" in name.lower() else None
-                        tok_out = _safe_int(dp_attrs.get("gen_ai.usage.output_tokens")) if "token" in name.lower() else None
-                        span_rows.append({
-                            "span_id": uuid.uuid4().hex,
-                            "trace_id": uuid.uuid4().hex,
-                            "project_id": DEFAULT_PROJECT,
-                            "user_id": user_id,
-                            "type": "metric",
-                            "name": name,
-                            "start_time": now,
-                            "end_time": now,
-                            "status": "success",
-                            "ide": ide,
-                            "environment": "default",
-                            "metadata": {k: str(v) for k, v in meta.items()},
-                            "token_count_input": tok_in,
-                            "token_count_output": tok_out,
-                            "cost": _safe_float(dp_attrs.get("cost")),
-                        })
+                        tok_in = (
+                            _safe_int(dp_attrs.get("gen_ai.usage.input_tokens")) if "token" in name.lower() else None
+                        )
+                        tok_out = (
+                            _safe_int(dp_attrs.get("gen_ai.usage.output_tokens")) if "token" in name.lower() else None
+                        )
+                        span_rows.append(
+                            {
+                                "span_id": uuid.uuid4().hex,
+                                "trace_id": uuid.uuid4().hex,
+                                "project_id": DEFAULT_PROJECT,
+                                "user_id": user_id,
+                                "type": "metric",
+                                "name": name,
+                                "start_time": now,
+                                "end_time": now,
+                                "status": "success",
+                                "ide": ide,
+                                "environment": "default",
+                                "metadata": {k: str(v) for k, v in meta.items()},
+                                "token_count_input": tok_in,
+                                "token_count_output": tok_out,
+                                "cost": _safe_float(dp_attrs.get("cost")),
+                            }
+                        )
                 except Exception:
                     logger.warning("Failed to convert OTLP metric %s", metric.get("name"), exc_info=True)
 

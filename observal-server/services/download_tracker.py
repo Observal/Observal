@@ -60,27 +60,32 @@ async def record_component_download(
     db: AsyncSession,
 ) -> None:
     """Record a component download (not deduplicated)."""
-    db.add(ComponentDownloadRecord(
-        component_type=component_type,
-        component_id=component_id,
-        version_ref=version_ref,
-        agent_id=agent_id,
-        source=source,
-    ))
+    db.add(
+        ComponentDownloadRecord(
+            component_type=component_type,
+            component_id=component_id,
+            version_ref=version_ref,
+            agent_id=agent_id,
+            source=source,
+        )
+    )
     await db.flush()
 
 
 async def _update_agent_counts(agent_id: uuid.UUID, db: AsyncSession) -> None:
     """Recompute download_count and unique_users for an agent."""
-    total = await db.scalar(
-        select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)
-    ) or 0
-    unique = await db.scalar(
-        select(func.count(func.distinct(AgentDownloadRecord.user_id))).where(
-            AgentDownloadRecord.agent_id == agent_id,
-            AgentDownloadRecord.user_id.isnot(None),
+    total = (
+        await db.scalar(select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)) or 0
+    )
+    unique = (
+        await db.scalar(
+            select(func.count(func.distinct(AgentDownloadRecord.user_id))).where(
+                AgentDownloadRecord.agent_id == agent_id,
+                AgentDownloadRecord.user_id.isnot(None),
+            )
         )
-    ) or 0
+        or 0
+    )
     agent = await db.get(Agent, agent_id)
     if agent:
         agent.download_count = total
@@ -91,24 +96,30 @@ async def get_download_stats(agent_id: uuid.UUID, db: AsyncSession) -> dict:
     """Get download statistics for an agent."""
     from datetime import timedelta
 
-    total = await db.scalar(
-        select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)
-    ) or 0
-    unique = await db.scalar(
-        select(func.count(func.distinct(AgentDownloadRecord.user_id))).where(
-            AgentDownloadRecord.agent_id == agent_id,
-            AgentDownloadRecord.user_id.isnot(None),
+    total = (
+        await db.scalar(select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)) or 0
+    )
+    unique = (
+        await db.scalar(
+            select(func.count(func.distinct(AgentDownloadRecord.user_id))).where(
+                AgentDownloadRecord.agent_id == agent_id,
+                AgentDownloadRecord.user_id.isnot(None),
+            )
         )
-    ) or 0
+        or 0
+    )
 
     # Recent 7-day downloads
     cutoff = datetime.now(UTC) - timedelta(days=7)
-    recent_7d = await db.scalar(
-        select(func.count(AgentDownloadRecord.id)).where(
-            AgentDownloadRecord.agent_id == agent_id,
-            AgentDownloadRecord.installed_at >= cutoff,
+    recent_7d = (
+        await db.scalar(
+            select(func.count(AgentDownloadRecord.id)).where(
+                AgentDownloadRecord.agent_id == agent_id,
+                AgentDownloadRecord.installed_at >= cutoff,
+            )
         )
-    ) or 0
+        or 0
+    )
 
     # Source breakdown
     source_rows = await db.execute(

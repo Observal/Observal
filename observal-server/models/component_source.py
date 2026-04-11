@@ -10,9 +10,7 @@ from models.base import Base
 
 class ComponentSource(Base):
     __tablename__ = "component_sources"
-    __table_args__ = (
-        UniqueConstraint("url", "component_type", name="uq_component_sources_url_type"),
-    )
+    __table_args__ = (UniqueConstraint("url", "component_type", name="uq_component_sources_url_type"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     url: Mapped[str] = mapped_column(Text, nullable=False)

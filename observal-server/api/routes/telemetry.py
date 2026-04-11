@@ -45,7 +45,7 @@ async def ingest(
         try:
             rows = []
             for t in batch.traces:
-                    rows.append(
+                rows.append(
                     {
                         "trace_id": t.trace_id,
                         "parent_trace_id": t.parent_trace_id,

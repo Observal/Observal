@@ -107,7 +107,9 @@ async def agent_metrics(
     from models.eval import Scorecard
     from services.score_aggregator import ScoreAggregator
 
-    dl_count = await db.scalar(select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)) or 0
+    dl_count = (
+        await db.scalar(select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)) or 0
+    )
 
     rows = await _ch_json(
         "SELECT "
@@ -124,10 +126,7 @@ async def agent_metrics(
 
     # Fetch recent scorecards for dimension breakdown
     sc_result = await db.execute(
-        select(Scorecard)
-        .where(Scorecard.agent_id == agent_id)
-        .order_by(Scorecard.evaluated_at.desc())
-        .limit(100)
+        select(Scorecard).where(Scorecard.agent_id == agent_id).order_by(Scorecard.evaluated_at.desc()).limit(100)
     )
     scorecards = sc_result.scalars().all()
     dimension_averages = None
@@ -272,12 +271,9 @@ async def agent_leaderboard(
     )
     if window != "all":
         days = _RANGE_MAP.get(window, 7)
-        stmt = stmt.where(
-            AgentDownloadRecord.installed_at >= dt.now(UTC) - timedelta(days=days)
-        )
+        stmt = stmt.where(AgentDownloadRecord.installed_at >= dt.now(UTC) - timedelta(days=days))
     stmt = (
-        stmt
-        .group_by(AgentDownloadRecord.agent_id, Agent.name, Agent.description, Agent.owner, Agent.version)
+        stmt.group_by(AgentDownloadRecord.agent_id, Agent.name, Agent.description, Agent.owner, Agent.version)
         .order_by(func.count(AgentDownloadRecord.id).desc())
         .limit(limit)
     )
@@ -418,10 +414,19 @@ async def token_stats(
     agent_ids = [r["agent_id"] for r in by_agent_rows if r.get("agent_id")]
     agent_names: dict[str, str] = {}
     if agent_ids:
-        rows = (await db.execute(select(Agent.id, Agent.name).where(Agent.id.in_([uuid.UUID(a) for a in agent_ids])))).all()
+        rows = (
+            await db.execute(select(Agent.id, Agent.name).where(Agent.id.in_([uuid.UUID(a) for a in agent_ids])))
+        ).all()
         agent_names = {str(r.id): r.name for r in rows}
     by_agent = [
-        TokenByEntity(id=r["agent_id"], name=agent_names.get(r["agent_id"], ""), input=int(r["input"]), output=int(r["output"]), total=int(r["total"]), traces=int(r["traces"]))
+        TokenByEntity(
+            id=r["agent_id"],
+            name=agent_names.get(r["agent_id"], ""),
+            input=int(r["input"]),
+            output=int(r["output"]),
+            total=int(r["total"]),
+            traces=int(r["traces"]),
+        )
         for r in by_agent_rows
     ]
 
@@ -440,10 +445,21 @@ async def token_stats(
     mcp_ids = [r["mcp_id"] for r in by_mcp_rows if r.get("mcp_id")]
     mcp_names: dict[str, str] = {}
     if mcp_ids:
-        rows = (await db.execute(select(McpListing.id, McpListing.name).where(McpListing.id.in_([uuid.UUID(m) for m in mcp_ids])))).all()
+        rows = (
+            await db.execute(
+                select(McpListing.id, McpListing.name).where(McpListing.id.in_([uuid.UUID(m) for m in mcp_ids]))
+            )
+        ).all()
         mcp_names = {str(r.id): r.name for r in rows}
     by_mcp = [
-        TokenByEntity(id=r["mcp_id"], name=mcp_names.get(r["mcp_id"], ""), input=int(r["input"]), output=int(r["output"]), total=int(r["total"]), traces=int(r["traces"]))
+        TokenByEntity(
+            id=r["mcp_id"],
+            name=mcp_names.get(r["mcp_id"], ""),
+            input=int(r["input"]),
+            output=int(r["output"]),
+            total=int(r["total"]),
+            traces=int(r["traces"]),
+        )
         for r in by_mcp_rows
     ]
 
@@ -455,7 +471,9 @@ async def token_stats(
         f"FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 {time_filter} "
         "GROUP BY date ORDER BY date"
     )
-    over_time = [TokenTimePoint(date=str(r["date"]), input=int(r["input"]), output=int(r["output"])) for r in over_time_rows]
+    over_time = [
+        TokenTimePoint(date=str(r["date"]), input=int(r["input"]), output=int(r["output"])) for r in over_time_rows
+    ]
 
     return TokenStats(
         total_input=total_input,
@@ -678,9 +696,11 @@ async def graphrag_ragas_scores(
     """Get previously computed RAGAS scores. If graphrag_id is provided, scoped to that GraphRAG; otherwise aggregate."""
     if graphrag_id:
         from services.ragas_eval import get_ragas_scores
+
         avgs = await get_ragas_scores(graphrag_id)
     else:
         from services.ragas_eval import get_ragas_aggregate
+
         avgs = await get_ragas_aggregate()
 
     return RagasScores(

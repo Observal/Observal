@@ -31,6 +31,7 @@ _LISTING_MODELS: dict[str, type] = {
 
 class ResolvedComponent(BaseModel):
     """A fully resolved component with its listing data."""
+
     model_config = {"frozen": True}
 
     component_type: ComponentType
@@ -48,6 +49,7 @@ class ResolvedComponent(BaseModel):
 
 class ResolutionError(BaseModel):
     """A single resolution failure."""
+
     model_config = {"frozen": True}
 
     component_type: str
@@ -138,45 +140,53 @@ async def resolve_agent(
     for comp in agent.components:
         model = _LISTING_MODELS.get(comp.component_type)
         if model is None:
-            errors.append(ResolutionError(
-                component_type=comp.component_type,
-                component_id=comp.component_id,
-                reason=f"Unknown component type: {comp.component_type}",
-            ))
+            errors.append(
+                ResolutionError(
+                    component_type=comp.component_type,
+                    component_id=comp.component_id,
+                    reason=f"Unknown component type: {comp.component_type}",
+                )
+            )
             continue
 
         stmt = select(model).where(model.id == comp.component_id)
         listing = (await db.execute(stmt)).scalar_one_or_none()
 
         if listing is None:
-            errors.append(ResolutionError(
-                component_type=comp.component_type,
-                component_id=comp.component_id,
-                reason=f"{comp.component_type} listing {comp.component_id} not found",
-            ))
+            errors.append(
+                ResolutionError(
+                    component_type=comp.component_type,
+                    component_id=comp.component_id,
+                    reason=f"{comp.component_type} listing {comp.component_id} not found",
+                )
+            )
             continue
 
         if require_approved and listing.status != ListingStatus.approved:
-            errors.append(ResolutionError(
-                component_type=comp.component_type,
-                component_id=comp.component_id,
-                reason=f"{comp.component_type} '{listing.name}' is not approved (status: {listing.status.value})",
-            ))
+            errors.append(
+                ResolutionError(
+                    component_type=comp.component_type,
+                    component_id=comp.component_id,
+                    reason=f"{comp.component_type} '{listing.name}' is not approved (status: {listing.status.value})",
+                )
+            )
             continue
 
-        components.append(ResolvedComponent(
-            component_type=comp.component_type,
-            component_id=comp.component_id,
-            name=listing.name,
-            version=listing.version,
-            git_url=listing.git_url,
-            git_ref=listing.git_ref or "",
-            description=listing.description,
-            order_index=comp.order_index,
-            config_override=comp.config_override,
-            listing_status=listing.status.value,
-            extra=_extract_extra(listing, comp.component_type),
-        ))
+        components.append(
+            ResolvedComponent(
+                component_type=comp.component_type,
+                component_id=comp.component_id,
+                name=listing.name,
+                version=listing.version,
+                git_url=listing.git_url,
+                git_ref=listing.git_ref or "",
+                description=listing.description,
+                order_index=comp.order_index,
+                config_override=comp.config_override,
+                listing_status=listing.status.value,
+                extra=_extract_extra(listing, comp.component_type),
+            )
+        )
 
     return ResolvedAgent(
         agent_id=agent.id,
@@ -206,38 +216,46 @@ async def validate_component_ids(
         ctype = ref.get("component_type", "")
         cid = ref.get("component_id")
         if cid is None:
-            errors.append(ResolutionError(
-                component_type=ctype,
-                component_id=uuid.UUID(int=0),
-                reason=f"Missing component_id for {ctype}",
-            ))
+            errors.append(
+                ResolutionError(
+                    component_type=ctype,
+                    component_id=uuid.UUID(int=0),
+                    reason=f"Missing component_id for {ctype}",
+                )
+            )
             continue
 
         model = _LISTING_MODELS.get(ctype)
         if model is None:
-            errors.append(ResolutionError(
-                component_type=ctype,
-                component_id=cid,
-                reason=f"Unknown component type: {ctype}",
-            ))
+            errors.append(
+                ResolutionError(
+                    component_type=ctype,
+                    component_id=cid,
+                    reason=f"Unknown component type: {ctype}",
+                )
+            )
             continue
 
         stmt = select(model).where(model.id == cid)
         listing = (await db.execute(stmt)).scalar_one_or_none()
 
         if listing is None:
-            errors.append(ResolutionError(
-                component_type=ctype,
-                component_id=cid,
-                reason=f"{ctype} listing {cid} not found",
-            ))
+            errors.append(
+                ResolutionError(
+                    component_type=ctype,
+                    component_id=cid,
+                    reason=f"{ctype} listing {cid} not found",
+                )
+            )
             continue
 
         if require_approved and listing.status != ListingStatus.approved:
-            errors.append(ResolutionError(
-                component_type=ctype,
-                component_id=cid,
-                reason=f"{ctype} '{listing.name}' is not approved (status: {listing.status.value})",
-            ))
+            errors.append(
+                ResolutionError(
+                    component_type=ctype,
+                    component_id=cid,
+                    reason=f"{ctype} '{listing.name}' is not approved (status: {listing.status.value})",
+                )
+            )
 
     return errors

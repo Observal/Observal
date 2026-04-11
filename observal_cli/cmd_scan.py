@@ -76,7 +76,6 @@ def _backup_config(config_path: Path) -> Path:
 
 
 def register_scan(app: typer.Typer):
-
     @app.command(name="scan")
     def scan(
         project_dir: str = typer.Argument(".", help="Project directory to scan"),
@@ -213,6 +212,8 @@ def register_scan(app: typer.Typer):
                 config_path.write_text(json.dumps(config, indent=2) + "\n")
                 rprint(f"  [dim]Backup: {backup.name}[/dim]")
 
-        rprint(f"\n[green]✓ Done![/green] Registered {total_registered} items, instrumented {total_shimmed} with telemetry.")
+        rprint(
+            f"\n[green]✓ Done![/green] Registered {total_registered} items, instrumented {total_shimmed} with telemetry."
+        )
         rprint("[dim]Your existing tools still work exactly the same — observal-shim is transparent.[/dim]")
         rprint("[dim]Telemetry flows to Observal even without admin approval.[/dim]")

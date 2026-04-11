@@ -55,17 +55,20 @@ def tmp_base(tmp_path):
 @pytest.fixture
 def simple_mcp_repo(tmp_path):
     """A git repo with a single FastMCP server at src/my-mcp/."""
-    return _create_git_repo(tmp_path / "mcp-repo", {
-        "src/my-mcp/server.py": (
-            'from mcp.server.fastmcp import FastMCP\n'
-            'mcp = FastMCP("my-mcp")\n'
-            '\n'
-            '@mcp.tool()\n'
-            'def hello(name: str) -> str:\n'
-            '    """Say hello."""\n'
-            '    return f"Hello {name}"\n'
-        ),
-    })
+    return _create_git_repo(
+        tmp_path / "mcp-repo",
+        {
+            "src/my-mcp/server.py": (
+                "from mcp.server.fastmcp import FastMCP\n"
+                'mcp = FastMCP("my-mcp")\n'
+                "\n"
+                "@mcp.tool()\n"
+                "def hello(name: str) -> str:\n"
+                '    """Say hello."""\n'
+                '    return f"Hello {name}"\n'
+            ),
+        },
+    )
 
 
 @pytest.fixture
@@ -81,39 +84,45 @@ def manifest_repo(tmp_path):
             {"path": "skills/tdd", "name": "tdd-skill", "description": "TDD workflow"},
         ],
     }
-    return _create_git_repo(tmp_path / "manifest-repo", {
-        ".observal.json": json.dumps(manifest, indent=2),
-        "src/filesystem/server.py": 'from mcp.server.fastmcp import FastMCP\nmcp = FastMCP("filesystem")\n',
-        "src/git-ops/server.py": 'from mcp.server.fastmcp import FastMCP\nmcp = FastMCP("git-ops")\n',
-        "skills/tdd/SKILL.md": "# TDD Skill\nTest-driven development.",
-    })
+    return _create_git_repo(
+        tmp_path / "manifest-repo",
+        {
+            ".observal.json": json.dumps(manifest, indent=2),
+            "src/filesystem/server.py": 'from mcp.server.fastmcp import FastMCP\nmcp = FastMCP("filesystem")\n',
+            "src/git-ops/server.py": 'from mcp.server.fastmcp import FastMCP\nmcp = FastMCP("git-ops")\n',
+            "skills/tdd/SKILL.md": "# TDD Skill\nTest-driven development.",
+        },
+    )
 
 
 @pytest.fixture
 def monorepo_convention(tmp_path):
     """A git repo with multiple components using convention layout (no manifest)."""
-    return _create_git_repo(tmp_path / "mono-repo", {
-        "src/server-a/main.py": 'from fastmcp import FastMCP\napp = FastMCP("a")\n',
-        "src/server-b/main.py": 'from mcp.server.fastmcp import FastMCP\napp = FastMCP("b")\n',
-        "src/not-mcp/README.md": "This has no Python files.",
-        "skills/debugging/SKILL.md": "# Debugging skill",
-        "hooks/pre-commit/hook.json": json.dumps({"event": "PreCommit"}),
-        "prompts/code-review/review.md": "# Code Review Prompt",
-        "sandboxes/python/Dockerfile": "FROM python:3.12\nRUN pip install pytest\n",
-    })
+    return _create_git_repo(
+        tmp_path / "mono-repo",
+        {
+            "src/server-a/main.py": 'from fastmcp import FastMCP\napp = FastMCP("a")\n',
+            "src/server-b/main.py": 'from mcp.server.fastmcp import FastMCP\napp = FastMCP("b")\n',
+            "src/not-mcp/README.md": "This has no Python files.",
+            "skills/debugging/SKILL.md": "# Debugging skill",
+            "hooks/pre-commit/hook.json": json.dumps({"event": "PreCommit"}),
+            "prompts/code-review/review.md": "# Code Review Prompt",
+            "sandboxes/python/Dockerfile": "FROM python:3.12\nRUN pip install pytest\n",
+        },
+    )
 
 
 @pytest.fixture
 def non_fastmcp_repo(tmp_path):
     """A git repo with a non-FastMCP MCP server (should fail validation)."""
-    return _create_git_repo(tmp_path / "bad-mcp", {
-        "src/old-server/server.py": (
-            'import flask\n'
-            'app = flask.Flask(__name__)\n'
-            '@app.route("/tool")\n'
-            'def tool(): return "hi"\n'
-        ),
-    })
+    return _create_git_repo(
+        tmp_path / "bad-mcp",
+        {
+            "src/old-server/server.py": (
+                'import flask\napp = flask.Flask(__name__)\n@app.route("/tool")\ndef tool(): return "hi"\n'
+            ),
+        },
+    )
 
 
 # ── Clone & Update ──────────────────────────────────────────────────
@@ -171,8 +180,10 @@ class TestGetCommitSha:
         mirror = clone_or_update(str(simple_mcp_repo), branch="main", base=tmp_base)
         mirror_sha = get_commit_sha(mirror)
         source_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=str(simple_mcp_repo),
-            capture_output=True, text=True,
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(simple_mcp_repo),
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         assert mirror_sha == source_sha
 
@@ -311,9 +322,12 @@ class TestFastMcpValidation:
 
     def test_alternative_import_style(self, tmp_path, tmp_base):
         """Test 'from fastmcp import FastMCP' (alternative import) is accepted."""
-        repo = _create_git_repo(tmp_path / "alt-import-repo", {
-            "src/alt/server.py": 'from fastmcp import FastMCP\napp = FastMCP("alt")\n',
-        })
+        repo = _create_git_repo(
+            tmp_path / "alt-import-repo",
+            {
+                "src/alt/server.py": 'from fastmcp import FastMCP\napp = FastMCP("alt")\n',
+            },
+        )
         mirror = clone_or_update(str(repo), branch="main", base=tmp_base)
         passed, detail = validate_mcp_component(mirror / "src" / "alt")
         assert passed is True
@@ -352,7 +366,9 @@ class TestSyncSource:
         assert result.components[0].name == "debugging"
 
     def test_sync_invalid_url_returns_error(self, tmp_base):
-        result = sync_source("https://github.com/nonexistent/no-such-repo-99999.git", component_type="mcp", base=tmp_base)
+        result = sync_source(
+            "https://github.com/nonexistent/no-such-repo-99999.git", component_type="mcp", base=tmp_base
+        )
         assert result.success is False
         assert result.error != ""
         assert result.components == []

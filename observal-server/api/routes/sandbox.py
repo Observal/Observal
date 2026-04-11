@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,9 +56,7 @@ async def list_sandboxes(
     if runtime_type:
         stmt = stmt.where(SandboxListing.runtime_type == runtime_type)
     if search:
-        stmt = stmt.where(
-            SandboxListing.name.ilike(f"%{search}%") | SandboxListing.description.ilike(f"%{search}%")
-        )
+        stmt = stmt.where(SandboxListing.name.ilike(f"%{search}%") | SandboxListing.description.ilike(f"%{search}%"))
     result = await db.execute(stmt.order_by(SandboxListing.created_at.desc()))
     return [SandboxListingSummary.model_validate(r) for r in result.scalars().all()]
 
@@ -107,8 +104,8 @@ async def delete_sandbox(
         raise HTTPException(status_code=403, detail="Not authorized")
 
     for r in (
-        await db.execute(select(SandboxDownload).where(SandboxDownload.listing_id == listing.id))
-    ).scalars().all():
+        (await db.execute(select(SandboxDownload).where(SandboxDownload.listing_id == listing.id))).scalars().all()
+    ):
         await db.delete(r)
 
     await db.delete(listing)

@@ -14,6 +14,7 @@ DEFAULTS = {
     "api_key": "",
 }
 
+
 def load() -> dict:
     """Load config from disk and apply environment variable overrides."""
     cfg = dict(DEFAULTS)
@@ -28,6 +29,7 @@ def load() -> dict:
 
     return cfg
 
+
 def save(data: dict):
     """Save config to disk (safely ignoring environment variables)."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -40,13 +42,16 @@ def save(data: dict):
     existing.update(data)
     CONFIG_FILE.write_text(json.dumps(existing, indent=2))
 
+
 def get_or_exit() -> dict:
     cfg = load()
     if not cfg.get("server_url") or not cfg.get("api_key"):
         import typer
         from rich import print as rprint
 
-        rprint("[red]Not configured.[/red] Run [bold]observal init[/bold], [bold]observal login[/bold], or set the [bold]OBSERVAL_API_KEY[/bold] environment variable.")
+        rprint(
+            "[red]Not configured.[/red] Run [bold]observal init[/bold], [bold]observal login[/bold], or set the [bold]OBSERVAL_API_KEY[/bold] environment variable."
+        )
         raise typer.Exit(1)
     return cfg
 

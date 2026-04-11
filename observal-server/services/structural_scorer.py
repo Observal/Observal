@@ -39,19 +39,19 @@ class StructuralScorer:
         # Detected when non-tool spans contain assertion patterns but the trace
         # has zero tool calls to back them up.
         if len(tool_call_spans) == 0 and len(non_tool_spans) > 0:
-            has_assertions = any(
-                _span_asserts_external_state(s) for s in non_tool_spans
-            )
+            has_assertions = any(_span_asserts_external_state(s) for s in non_tool_spans)
             if has_assertions:
-                penalties.append({
-                    "event_name": "ungrounded_claims",
-                    "dimension": ScoringDimension.tool_efficiency,
-                    "evidence": (
-                        f"Agent {agent_id} made assertions about external state "
-                        f"but trace contains 0 tool call spans to ground them."
-                    ),
-                    "trace_event_index": None,
-                })
+                penalties.append(
+                    {
+                        "event_name": "ungrounded_claims",
+                        "dimension": ScoringDimension.tool_efficiency,
+                        "evidence": (
+                            f"Agent {agent_id} made assertions about external state "
+                            f"but trace contains 0 tool call spans to ground them."
+                        ),
+                        "trace_event_index": None,
+                    }
+                )
                 return penalties
 
         # Duplicate tool calls: same tool name + same input hash
@@ -59,15 +59,17 @@ class StructuralScorer:
         for idx, span in enumerate(tool_call_spans):
             key = _span_dedup_key(span)
             if key in seen:
-                penalties.append({
-                    "event_name": "duplicate_tool_call",
-                    "dimension": ScoringDimension.tool_efficiency,
-                    "evidence": (
-                        f"Duplicate call to '{span.get('name', '')}' with same params. "
-                        f"First at index {seen[key]}, duplicate at index {idx}."
-                    ),
-                    "trace_event_index": idx,
-                })
+                penalties.append(
+                    {
+                        "event_name": "duplicate_tool_call",
+                        "dimension": ScoringDimension.tool_efficiency,
+                        "evidence": (
+                            f"Duplicate call to '{span.get('name', '')}' with same params. "
+                            f"First at index {seen[key]}, duplicate at index {idx}."
+                        ),
+                        "trace_event_index": idx,
+                    }
+                )
             else:
                 seen[key] = idx
 
@@ -79,7 +81,7 @@ class StructuralScorer:
             if not output:
                 continue
             global_idx = spans.index(span) if span in spans else -1
-            subsequent = spans[global_idx + 1:] if global_idx >= 0 else []
+            subsequent = spans[global_idx + 1 :] if global_idx >= 0 else []
             if not subsequent:
                 continue  # last span — nothing can reference it
             referenced = False
@@ -89,15 +91,17 @@ class StructuralScorer:
                     referenced = True
                     break
             if not referenced:
-                penalties.append({
-                    "event_name": "unused_tool_result",
-                    "dimension": ScoringDimension.tool_efficiency,
-                    "evidence": (
-                        f"Tool '{span.get('name', '')}' (span {span.get('span_id', '')}) "
-                        f"produced output but no subsequent span references it."
-                    ),
-                    "trace_event_index": idx,
-                })
+                penalties.append(
+                    {
+                        "event_name": "unused_tool_result",
+                        "dimension": ScoringDimension.tool_efficiency,
+                        "evidence": (
+                            f"Tool '{span.get('name', '')}' (span {span.get('span_id', '')}) "
+                            f"produced output but no subsequent span references it."
+                        ),
+                        "trace_event_index": idx,
+                    }
+                )
 
         return penalties
 
@@ -123,44 +127,50 @@ class StructuralScorer:
 
             # Timeout detection
             if is_timeout:
-                penalties.append({
-                    "event_name": "tool_call_timeout",
-                    "dimension": ScoringDimension.tool_failures,
-                    "evidence": (
-                        f"Tool '{span.get('name', '')}' (span {span.get('span_id', '')}) "
-                        f"took {latency}ms, exceeding {self.timeout_ms}ms threshold."
-                    ),
-                    "trace_event_index": idx,
-                })
+                penalties.append(
+                    {
+                        "event_name": "tool_call_timeout",
+                        "dimension": ScoringDimension.tool_failures,
+                        "evidence": (
+                            f"Tool '{span.get('name', '')}' (span {span.get('span_id', '')}) "
+                            f"took {latency}ms, exceeding {self.timeout_ms}ms threshold."
+                        ),
+                        "trace_event_index": idx,
+                    }
+                )
             elif is_error:
                 # Check for retry success
                 key = _span_dedup_key(span)
                 retried = False
-                for later_idx, later_span in enumerate(tool_call_spans[idx + 1:], idx + 1):
+                for later_idx, later_span in enumerate(tool_call_spans[idx + 1 :], idx + 1):
                     if _span_dedup_key(later_span) == key:
                         later_status = later_span.get("status", "success")
                         if later_status != "error" and not later_span.get("error"):
                             retried = True
-                            penalties.append({
-                                "event_name": "tool_call_retry_success",
-                                "dimension": ScoringDimension.tool_failures,
-                                "evidence": (
-                                    f"Tool '{span.get('name', '')}' failed at index {idx} "
-                                    f"but succeeded on retry at index {later_idx}."
-                                ),
-                                "trace_event_index": idx,
-                            })
+                            penalties.append(
+                                {
+                                    "event_name": "tool_call_retry_success",
+                                    "dimension": ScoringDimension.tool_failures,
+                                    "evidence": (
+                                        f"Tool '{span.get('name', '')}' failed at index {idx} "
+                                        f"but succeeded on retry at index {later_idx}."
+                                    ),
+                                    "trace_event_index": idx,
+                                }
+                            )
                             break
                 if not retried:
-                    penalties.append({
-                        "event_name": "tool_call_error",
-                        "dimension": ScoringDimension.tool_failures,
-                        "evidence": (
-                            f"Tool '{span.get('name', '')}' (span {span.get('span_id', '')}) "
-                            f"returned error: {str(error or status)[:200]}"
-                        ),
-                        "trace_event_index": idx,
-                    })
+                    penalties.append(
+                        {
+                            "event_name": "tool_call_error",
+                            "dimension": ScoringDimension.tool_failures,
+                            "evidence": (
+                                f"Tool '{span.get('name', '')}' (span {span.get('span_id', '')}) "
+                                f"returned error: {str(error or status)[:200]}"
+                            ),
+                            "trace_event_index": idx,
+                        }
+                    )
 
         # Ignored tool failure: error span followed by non-tool span
         # (candidate for SLM confirmation)
@@ -174,20 +184,22 @@ class StructuralScorer:
                 # Check no retry anywhere later
                 has_retry = any(
                     _span_dedup_key(s) == key
-                    for s in tool_call_spans[tool_call_spans.index(span) + 1:]
+                    for s in tool_call_spans[tool_call_spans.index(span) + 1 :]
                     if s is not span
                 )
                 if not has_retry:
-                    penalties.append({
-                        "event_name": "ignored_tool_failure",
-                        "dimension": ScoringDimension.tool_failures,
-                        "evidence": (
-                            f"Tool '{span.get('name', '')}' failed at span {span.get('span_id', '')}, "
-                            f"but agent continued with '{next_span.get('type', '')}' span without "
-                            f"retry or acknowledgment. (SLM confirmation recommended)"
-                        ),
-                        "trace_event_index": idx,
-                    })
+                    penalties.append(
+                        {
+                            "event_name": "ignored_tool_failure",
+                            "dimension": ScoringDimension.tool_failures,
+                            "evidence": (
+                                f"Tool '{span.get('name', '')}' failed at span {span.get('span_id', '')}, "
+                                f"but agent continued with '{next_span.get('type', '')}' span without "
+                                f"retry or acknowledgment. (SLM confirmation recommended)"
+                            ),
+                            "trace_event_index": idx,
+                        }
+                    )
 
         return penalties
 

@@ -230,23 +230,25 @@ async def run_ragas_on_graphrag(
             span_result[dim] = dim_result.get("score", 0.0)
             span_result[f"{dim}_reason"] = dim_result.get("reason", "")
 
-            scores_to_insert.append({
-                "score_id": str(uuid.uuid4()),
-                "trace_id": span["trace_id"],
-                "span_id": span["span_id"],
-                "project_id": project_id,
-                "mcp_id": None,
-                "agent_id": None,
-                "user_id": "system",
-                "name": f"ragas_{dim}",
-                "source": "ragas_eval",
-                "data_type": "numeric",
-                "value": dim_result.get("score", 0.0),
-                "comment": dim_result.get("reason", ""),
-                "eval_template_id": f"ragas-{dim}",
-                "metadata": {"graphrag_id": graphrag_id},
-                "timestamp": now,
-            })
+            scores_to_insert.append(
+                {
+                    "score_id": str(uuid.uuid4()),
+                    "trace_id": span["trace_id"],
+                    "span_id": span["span_id"],
+                    "project_id": project_id,
+                    "mcp_id": None,
+                    "agent_id": None,
+                    "user_id": "system",
+                    "name": f"ragas_{dim}",
+                    "source": "ragas_eval",
+                    "data_type": "numeric",
+                    "value": dim_result.get("score", 0.0),
+                    "comment": dim_result.get("reason", ""),
+                    "eval_template_id": f"ragas-{dim}",
+                    "metadata": {"graphrag_id": graphrag_id},
+                    "timestamp": now,
+                }
+            )
 
         all_scores.append(span_result)
 

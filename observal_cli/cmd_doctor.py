@@ -59,6 +59,7 @@ IDE_CONFIGS = {
 
 # ── Check functions ──────────────────────────────────────
 
+
 def _load_json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text())
@@ -129,7 +130,9 @@ def _check_kiro(path: Path, data: dict, issues: list, warnings: list):
     """Check Kiro CLI/IDE settings for Observal conflicts."""
     # Telemetry disabled
     if data.get("telemetry.enabled") is False or data.get("telemetry", {}).get("enabled") is False:
-        warnings.append(f"{path}: Kiro telemetry is disabled. This does not affect Observal, but may indicate a preference against data collection.")
+        warnings.append(
+            f"{path}: Kiro telemetry is disabled. This does not affect Observal, but may indicate a preference against data collection."
+        )
 
     # MCP init timeout too low
     mcp_timeout = data.get("mcp.initTimeout") or data.get("mcp", {}).get("initTimeout")
@@ -189,6 +192,7 @@ def _check_mcp_json(path: Path, data: dict, issues: list, warnings: list):
 
 # ── Observal config checks ──────────────────────────────
 
+
 def _check_observal_config(issues: list, warnings: list):
     """Check Observal's own config."""
     config_path = Path.home() / ".observal" / "config.json"
@@ -212,6 +216,7 @@ def _check_observal_config(issues: list, warnings: list):
     if server_url:
         try:
             import httpx
+
             resp = httpx.get(f"{server_url}/health", timeout=5)
             if resp.status_code != 200:
                 issues.append(f"Observal server at {server_url} returned status {resp.status_code}.")
@@ -220,6 +225,7 @@ def _check_observal_config(issues: list, warnings: list):
 
 
 # ── Environment checks ───────────────────────────────────
+
 
 def _check_environment(issues: list, warnings: list):
     """Check environment variables."""
@@ -239,6 +245,7 @@ def _check_environment(issues: list, warnings: list):
 
 
 # ── Main doctor command ──────────────────────────────────
+
 
 @doctor_app.callback(invoke_without_command=True)
 def doctor(

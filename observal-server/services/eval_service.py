@@ -254,9 +254,7 @@ async def run_structured_eval(
     aggregator = ScoreAggregator()
 
     # Phase 1: Structural scoring (always runs)
-    structural_penalties = structural_scorer.score_tool_efficiency(
-        spans, str(agent.id)
-    )
+    structural_penalties = structural_scorer.score_tool_efficiency(spans, str(agent.id))
     structural_penalties += structural_scorer.score_tool_failures(spans)
 
     # Attach penalty amounts from catalog
@@ -275,13 +273,10 @@ async def run_structured_eval(
             if agent.goal_template:
                 goal_desc = agent.goal_template.description
                 required_sections = [
-                    {"name": s.name, "grounding_required": s.grounding_required}
-                    for s in agent.goal_template.sections
+                    {"name": s.name, "grounding_required": s.grounding_required} for s in agent.goal_template.sections
                 ]
             if required_sections:
-                slm_penalties += await slm_scorer.score_goal_completion(
-                    trace, spans, goal_desc, required_sections
-                )
+                slm_penalties += await slm_scorer.score_goal_completion(trace, spans, goal_desc, required_sections)
 
             # Factual grounding
             slm_penalties += await slm_scorer.score_factual_grounding(trace, spans)

@@ -75,11 +75,16 @@ def _backup_current(label: str) -> Path:
             backed_up.append(rel_path)
 
     if backed_up:
-        (backup_path / "manifest.json").write_text(json.dumps({
-            "label": label,
-            "timestamp": ts,
-            "files": backed_up,
-        }, indent=2))
+        (backup_path / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "label": label,
+                    "timestamp": ts,
+                    "files": backed_up,
+                },
+                indent=2,
+            )
+        )
 
     return backup_path
 

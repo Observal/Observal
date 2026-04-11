@@ -48,7 +48,9 @@ class TestSandboxRunner:
 
         _send_span("http://localhost:8000", "key", {"test": True})  # should not raise
 
-    def _run_with_mock_docker(self, mock_container, sandbox_id="test-id", image="alpine:latest", command=None, timeout=300):
+    def _run_with_mock_docker(
+        self, mock_container, sandbox_id="test-id", image="alpine:latest", command=None, timeout=300
+    ):
         """Helper: run sandbox with mocked Docker SDK, return (exit_code, span_sent)."""
         mock_client = MagicMock()
         mock_client.containers.run.return_value = mock_container
@@ -63,6 +65,7 @@ class TestSandboxRunner:
             import importlib
 
             import observal_cli.sandbox_runner as sr
+
             importlib.reload(sr)
 
             original_send = sr._send_span

@@ -78,8 +78,12 @@ def hook_list(
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
-            str(i), item["name"], item.get("version", ""), item.get("owner", ""),
-            status_badge(item.get("status", "")), str(item["id"])[:8] + "…",
+            str(i),
+            item["name"],
+            item.get("version", ""),
+            item.get("owner", ""),
+            status_badge(item.get("status", "")),
+            str(item["id"])[:8] + "…",
         )
     console.print(table)
 
@@ -96,19 +100,21 @@ def hook_show(
     if output == "json":
         output_json(item)
         return
-    console.print(kv_panel(
-        f"{item['name']} v{item.get('version', '?')}",
-        [
-            ("Status", status_badge(item.get("status", ""))),
-            ("Event", item.get("event", "N/A")),
-            ("Handler Type", item.get("handler_type", "N/A")),
-            ("Owner", item.get("owner", "N/A")),
-            ("Description", item.get("description", "")),
-            ("Created", relative_time(item.get("created_at"))),
-            ("ID", f"[dim]{item['id']}[/dim]"),
-        ],
-        border_style="yellow",
-    ))
+    console.print(
+        kv_panel(
+            f"{item['name']} v{item.get('version', '?')}",
+            [
+                ("Status", status_badge(item.get("status", ""))),
+                ("Event", item.get("event", "N/A")),
+                ("Handler Type", item.get("handler_type", "N/A")),
+                ("Owner", item.get("owner", "N/A")),
+                ("Description", item.get("description", "")),
+                ("Created", relative_time(item.get("created_at"))),
+                ("ID", f"[dim]{item['id']}[/dim]"),
+            ],
+            border_style="yellow",
+        )
+    )
 
 
 @hook_app.command(name="install")

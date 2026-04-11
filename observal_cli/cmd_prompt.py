@@ -20,7 +20,9 @@ def register_prompt(app: typer.Typer):
 
 @prompt_app.command(name="submit")
 def prompt_submit(
-    from_file: str | None = typer.Option(None, "--from-file", "-f", help="Create from JSON file or read template from file"),
+    from_file: str | None = typer.Option(
+        None, "--from-file", "-f", help="Create from JSON file or read template from file"
+    ),
 ):
     """Submit a new prompt for review."""
     if from_file:
@@ -86,8 +88,12 @@ def prompt_list(
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
-            str(i), item["name"], item.get("version", ""), item.get("owner", ""),
-            status_badge(item.get("status", "")), str(item["id"])[:8] + "…",
+            str(i),
+            item["name"],
+            item.get("version", ""),
+            item.get("owner", ""),
+            status_badge(item.get("status", "")),
+            str(item["id"])[:8] + "…",
         )
     console.print(table)
 
@@ -104,18 +110,20 @@ def prompt_show(
     if output == "json":
         output_json(item)
         return
-    console.print(kv_panel(
-        f"{item['name']} v{item.get('version', '?')}",
-        [
-            ("Status", status_badge(item.get("status", ""))),
-            ("Category", item.get("category", "N/A")),
-            ("Owner", item.get("owner", "N/A")),
-            ("Description", item.get("description", "")),
-            ("Created", relative_time(item.get("created_at"))),
-            ("ID", f"[dim]{item['id']}[/dim]"),
-        ],
-        border_style="cyan",
-    ))
+    console.print(
+        kv_panel(
+            f"{item['name']} v{item.get('version', '?')}",
+            [
+                ("Status", status_badge(item.get("status", ""))),
+                ("Category", item.get("category", "N/A")),
+                ("Owner", item.get("owner", "N/A")),
+                ("Description", item.get("description", "")),
+                ("Created", relative_time(item.get("created_at"))),
+                ("ID", f"[dim]{item['id']}[/dim]"),
+            ],
+            border_style="cyan",
+        )
+    )
     if item.get("template"):
         rprint(f"\n[bold]Template:[/bold]\n[dim]{item['template']}[/dim]")
 

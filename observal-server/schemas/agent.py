@@ -33,6 +33,7 @@ ComponentType = Literal["mcp", "skill", "hook", "prompt", "sandbox"]
 
 class ComponentRef(BaseModel):
     """Reference to a registry component to include in an agent."""
+
     component_type: ComponentType
     component_id: uuid.UUID
     config_override: dict | None = None
@@ -91,6 +92,7 @@ class McpLinkResponse(BaseModel):
 
 class ComponentLinkResponse(BaseModel):
     """A component attached to an agent."""
+
     component_type: str
     component_id: uuid.UUID
     version_ref: str

@@ -51,8 +51,18 @@ class TestComputeScorecard:
 
     def test_penalties_reduce_score(self):
         penalties = [
-            {"event_name": "duplicate_tool_call", "dimension": ScoringDimension.tool_efficiency, "amount": -5, "evidence": "dup"},
-            {"event_name": "tool_call_error", "dimension": ScoringDimension.tool_failures, "amount": -10, "evidence": "err"},
+            {
+                "event_name": "duplicate_tool_call",
+                "dimension": ScoringDimension.tool_efficiency,
+                "amount": -5,
+                "evidence": "dup",
+            },
+            {
+                "event_name": "tool_call_error",
+                "dimension": ScoringDimension.tool_failures,
+                "amount": -10,
+                "evidence": "err",
+            },
         ]
         sc = self.aggregator.compute_scorecard(
             structural_penalties=penalties,
@@ -70,12 +80,42 @@ class TestComputeScorecard:
 
     def test_score_floors_at_zero(self):
         penalties = [
-            {"event_name": "contradicts_source", "dimension": ScoringDimension.factual_grounding, "amount": -25, "evidence": "e1"},
-            {"event_name": "numeric_mismatch", "dimension": ScoringDimension.factual_grounding, "amount": -20, "evidence": "e2"},
-            {"event_name": "hallucinated_entity", "dimension": ScoringDimension.factual_grounding, "amount": -20, "evidence": "e3"},
-            {"event_name": "ungrounded_claim", "dimension": ScoringDimension.factual_grounding, "amount": -15, "evidence": "e4"},
-            {"event_name": "ungrounded_claim", "dimension": ScoringDimension.factual_grounding, "amount": -15, "evidence": "e5"},
-            {"event_name": "hallucinated_entity", "dimension": ScoringDimension.factual_grounding, "amount": -20, "evidence": "e6"},
+            {
+                "event_name": "contradicts_source",
+                "dimension": ScoringDimension.factual_grounding,
+                "amount": -25,
+                "evidence": "e1",
+            },
+            {
+                "event_name": "numeric_mismatch",
+                "dimension": ScoringDimension.factual_grounding,
+                "amount": -20,
+                "evidence": "e2",
+            },
+            {
+                "event_name": "hallucinated_entity",
+                "dimension": ScoringDimension.factual_grounding,
+                "amount": -20,
+                "evidence": "e3",
+            },
+            {
+                "event_name": "ungrounded_claim",
+                "dimension": ScoringDimension.factual_grounding,
+                "amount": -15,
+                "evidence": "e4",
+            },
+            {
+                "event_name": "ungrounded_claim",
+                "dimension": ScoringDimension.factual_grounding,
+                "amount": -15,
+                "evidence": "e5",
+            },
+            {
+                "event_name": "hallucinated_entity",
+                "dimension": ScoringDimension.factual_grounding,
+                "amount": -20,
+                "evidence": "e6",
+            },
         ]
         sc = self.aggregator.compute_scorecard(
             structural_penalties=[],
@@ -103,8 +143,18 @@ class TestComputeScorecard:
 
     def test_recommendations_generated(self):
         penalties = [
-            {"event_name": "tool_call_error", "dimension": ScoringDimension.tool_failures, "amount": -10, "evidence": "err"},
-            {"event_name": "tool_call_timeout", "dimension": ScoringDimension.tool_failures, "amount": -8, "evidence": "timeout"},
+            {
+                "event_name": "tool_call_error",
+                "dimension": ScoringDimension.tool_failures,
+                "amount": -10,
+                "evidence": "err",
+            },
+            {
+                "event_name": "tool_call_timeout",
+                "dimension": ScoringDimension.tool_failures,
+                "amount": -8,
+                "evidence": "timeout",
+            },
         ]
         sc = self.aggregator.compute_scorecard(
             structural_penalties=penalties,
@@ -119,7 +169,12 @@ class TestComputeScorecard:
 
     def test_bottleneck_identifies_worst(self):
         penalties = [
-            {"event_name": "missing_required_section", "dimension": ScoringDimension.goal_completion, "amount": -25, "evidence": "e"},
+            {
+                "event_name": "missing_required_section",
+                "dimension": ScoringDimension.goal_completion,
+                "amount": -25,
+                "evidence": "e",
+            },
         ]
         sc = self.aggregator.compute_scorecard(
             structural_penalties=[],
@@ -142,7 +197,19 @@ class TestAgentAggregate:
         assert result["drift_alert"] is False
 
     def test_single_scorecard(self):
-        scorecards = [{"composite_score": 80, "dimension_scores": {"goal_completion": 90, "tool_efficiency": 70, "tool_failures": 80, "factual_grounding": 85, "thought_process": 75}, "evaluated_at": "2026-01-01"}]
+        scorecards = [
+            {
+                "composite_score": 80,
+                "dimension_scores": {
+                    "goal_completion": 90,
+                    "tool_efficiency": 70,
+                    "tool_failures": 80,
+                    "factual_grounding": 85,
+                    "thought_process": 75,
+                },
+                "evaluated_at": "2026-01-01",
+            }
+        ]
         result = self.aggregator.compute_agent_aggregate(scorecards)
         assert result["mean"] == 80
         assert result["std"] == 0
@@ -162,8 +229,13 @@ class TestAgentAggregate:
 
     def test_drift_detection(self):
         # Recent scores much higher than baseline (baseline has variance)
-        recent = [{"composite_score": 95, "dimension_scores": {}, "evaluated_at": f"2026-02-{i:02d}"} for i in range(1, 51)]
-        baseline = [{"composite_score": 45 + (i % 10), "dimension_scores": {}, "evaluated_at": f"2026-01-{i:02d}"} for i in range(1, 51)]
+        recent = [
+            {"composite_score": 95, "dimension_scores": {}, "evaluated_at": f"2026-02-{i:02d}"} for i in range(1, 51)
+        ]
+        baseline = [
+            {"composite_score": 45 + (i % 10), "dimension_scores": {}, "evaluated_at": f"2026-01-{i:02d}"}
+            for i in range(1, 51)
+        ]
         result = self.aggregator.compute_agent_aggregate(recent + baseline)
         assert result["drift_alert"] is True
 

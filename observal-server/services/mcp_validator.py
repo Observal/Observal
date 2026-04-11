@@ -16,16 +16,16 @@ BLOCKED_SCHEMES = {"file", "ftp", "ssh", "git"}
 
 # Patterns that indicate an MCP server implementation (Python files)
 _PYTHON_MCP_PATTERN = re.compile(
-    r"FastMCP\("           # FastMCP framework
-    r"|@mcp\.server"       # standard MCP SDK decorator
+    r"FastMCP\("  # FastMCP framework
+    r"|@mcp\.server"  # standard MCP SDK decorator
     r"|from\s+mcp\.server\s+import\s+Server"  # standard MCP SDK Server import
-    r"|from\s+mcp\s+import"   # any MCP SDK usage
-    r"|import\s+mcp\b"        # any MCP SDK usage
-    r"|McpServer\("           # common custom class name
-    r"|MCPServer\("           # common custom class name (alt casing)
-    r"|@app\.tool\b"          # common tool decorator
-    r"|@server\.tool\b"       # common tool decorator
-    r"|Server\(\s*name\s*="   # Server(name=...) pattern
+    r"|from\s+mcp\s+import"  # any MCP SDK usage
+    r"|import\s+mcp\b"  # any MCP SDK usage
+    r"|McpServer\("  # common custom class name
+    r"|MCPServer\("  # common custom class name (alt casing)
+    r"|@app\.tool\b"  # common tool decorator
+    r"|@server\.tool\b"  # common tool decorator
+    r"|Server\(\s*name\s*="  # Server(name=...) pattern
 )
 
 

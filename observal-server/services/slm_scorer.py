@@ -92,8 +92,7 @@ class SLMScorer:
         agent_output = trace.get("output") or ""
         tool_results = _extract_tool_results(spans)
         sections_text = "\n".join(
-            f"- {s.get('name', 'Unknown')}"
-            + (" [grounding required]" if s.get("grounding_required") else "")
+            f"- {s.get('name', 'Unknown')}" + (" [grounding required]" if s.get("grounding_required") else "")
             for s in required_sections
         )
 
@@ -113,26 +112,32 @@ class SLMScorer:
             section_name = section.get("section_name", "")
 
             if status == "missing":
-                penalties.append({
-                    "event_name": "missing_required_section",
-                    "dimension": ScoringDimension.goal_completion,
-                    "evidence": f"Section '{section_name}' is missing. {evidence}",
-                    "trace_event_index": None,
-                })
+                penalties.append(
+                    {
+                        "event_name": "missing_required_section",
+                        "dimension": ScoringDimension.goal_completion,
+                        "evidence": f"Section '{section_name}' is missing. {evidence}",
+                        "trace_event_index": None,
+                    }
+                )
             elif status == "stub":
-                penalties.append({
-                    "event_name": "empty_stub_section",
-                    "dimension": ScoringDimension.goal_completion,
-                    "evidence": f"Section '{section_name}' contains only stub content. {evidence}",
-                    "trace_event_index": None,
-                })
+                penalties.append(
+                    {
+                        "event_name": "empty_stub_section",
+                        "dimension": ScoringDimension.goal_completion,
+                        "evidence": f"Section '{section_name}' contains only stub content. {evidence}",
+                        "trace_event_index": None,
+                    }
+                )
             elif status == "ungrounded":
-                penalties.append({
-                    "event_name": "ungrounded_section",
-                    "dimension": ScoringDimension.goal_completion,
-                    "evidence": f"Section '{section_name}' is not grounded in tool results. {evidence}",
-                    "trace_event_index": None,
-                })
+                penalties.append(
+                    {
+                        "event_name": "ungrounded_section",
+                        "dimension": ScoringDimension.goal_completion,
+                        "evidence": f"Section '{section_name}' is not grounded in tool results. {evidence}",
+                        "trace_event_index": None,
+                    }
+                )
 
         return penalties
 
@@ -165,12 +170,14 @@ class SLMScorer:
             status = claim.get("status", "grounded")
             event_name = status_to_event.get(status)
             if event_name:
-                penalties.append({
-                    "event_name": event_name,
-                    "dimension": ScoringDimension.factual_grounding,
-                    "evidence": f"Claim: '{claim.get('claim', '')}'. {claim.get('evidence', '')}",
-                    "trace_event_index": None,
-                })
+                penalties.append(
+                    {
+                        "event_name": event_name,
+                        "dimension": ScoringDimension.factual_grounding,
+                        "evidence": f"Claim: '{claim.get('claim', '')}'. {claim.get('evidence', '')}",
+                        "trace_event_index": None,
+                    }
+                )
 
         return penalties
 
@@ -197,12 +204,14 @@ class SLMScorer:
         for finding in result.get("findings", []):
             event_name = finding.get("type", "")
             if event_name in valid_types:
-                penalties.append({
-                    "event_name": event_name,
-                    "dimension": ScoringDimension.thought_process,
-                    "evidence": f"{finding.get('description', '')} Evidence: {finding.get('evidence', '')}",
-                    "trace_event_index": None,
-                })
+                penalties.append(
+                    {
+                        "event_name": event_name,
+                        "dimension": ScoringDimension.thought_process,
+                        "evidence": f"{finding.get('description', '')} Evidence: {finding.get('evidence', '')}",
+                        "trace_event_index": None,
+                    }
+                )
 
         return penalties
 
@@ -223,6 +232,7 @@ class SLMScorer:
     async def _call_model_direct(self, prompt: str) -> dict:
         """Direct model call for structured JSON responses."""
         from services.eval_service import call_eval_model
+
         try:
             result = await call_eval_model(prompt)
             if result:

@@ -20,8 +20,7 @@ from observal_cli.render import (
 )
 
 _DEPRECATION_TPL = (
-    "[yellow]Warning:[/yellow] [dim]`observal {old}` is deprecated. "
-    "Use `observal {new}` instead.[/dim]\n"
+    "[yellow]Warning:[/yellow] [dim]`observal {old}` is deprecated. Use `observal {new}` instead.[/dim]\n"
 )
 
 # ═══════════════════════════════════════════════════════════
@@ -192,9 +191,7 @@ def _metrics_impl(item_id, item_type, output, watch):
             rprint("\n  [bold]Agent Metrics[/bold]")
             rprint(f"  Interactions:   {total}")
             rprint(f"  Downloads:      {data.get('total_downloads', 0)}")
-            rprint(
-                f"  Acceptance:     [{'green' if rate > 0.7 else 'yellow' if rate > 0.4 else 'red'}]{rate:.1%}[/]"
-            )
+            rprint(f"  Acceptance:     [{'green' if rate > 0.7 else 'yellow' if rate > 0.4 else 'red'}]{rate:.1%}[/]")
             rprint(f"  Avg tool calls: {data.get('avg_tool_calls', 0)}")
             rprint(f"  Avg latency:    {(data.get('avg_latency_ms') or 0):.0f}ms")
         else:
@@ -443,7 +440,17 @@ def eval_show(
         table.add_column("Bar", width=30)
         for dim_name, dim_score in dim_scores.items():
             ds = float(dim_score)
-            dc = "green" if ds >= 85 else "blue" if ds >= 70 else "yellow" if ds >= 55 else "#ff8c00" if ds >= 40 else "red"
+            dc = (
+                "green"
+                if ds >= 85
+                else "blue"
+                if ds >= 70
+                else "yellow"
+                if ds >= 55
+                else "#ff8c00"
+                if ds >= 40
+                else "red"
+            )
             bar_len = int(ds / 100 * 25)
             bar = f"[{dc}]{'█' * bar_len}[/{dc}][dim]{'░' * (25 - bar_len)}[/dim]"
             table.add_row(dim_name, f"[{dc}]{ds:.0f}[/{dc}]", bar)
@@ -576,7 +583,17 @@ def eval_aggregate(
         table.add_column("Bar", width=30)
         for dim, avg in sorted(dim_avgs.items()):
             ds = float(avg)
-            dc = "green" if ds >= 85 else "blue" if ds >= 70 else "yellow" if ds >= 55 else "#ff8c00" if ds >= 40 else "red"
+            dc = (
+                "green"
+                if ds >= 85
+                else "blue"
+                if ds >= 70
+                else "yellow"
+                if ds >= 55
+                else "#ff8c00"
+                if ds >= 40
+                else "red"
+            )
             bar_len = int(ds / 100 * 25)
             bar = f"[{dc}]{'█' * bar_len}[/{dc}][dim]{'░' * (25 - bar_len)}[/dim]"
             table.add_row(dim, f"[{dc}]{ds:.0f}[/{dc}]", bar)
@@ -676,7 +693,9 @@ def admin_penalty_set(
 
     with spinner("Updating penalty..."):
         result = client.put(f"/api/v1/admin/penalties/{match['id']}", body)
-    rprint(f"[green]Updated {result.get('event_name', penalty_name)}: amount={result.get('amount')}, active={result.get('is_active')}[/green]")
+    rprint(
+        f"[green]Updated {result.get('event_name', penalty_name)}: amount={result.get('amount')}, active={result.get('is_active')}[/green]"
+    )
 
 
 @admin_app.command(name="weights")

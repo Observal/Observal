@@ -45,6 +45,7 @@ def _save_agent_yaml(directory: Path, data: dict) -> None:
     with open(path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
+
 agent_app = typer.Typer(help="Agent registry commands")
 
 
@@ -261,7 +262,9 @@ def agent_install(
         rprint(f"[bold]Save to:[/bold] {agent_file['path']}")
         rprint()
         console.print_json(_json.dumps(agent_file["content"], indent=2))
-        rprint(f"\n[dim]Or pipe:[/dim] observal agent install {agent_id} --ide {ide} --raw | jq .agent_file.content > {agent_file['path']}")
+        rprint(
+            f"\n[dim]Or pipe:[/dim] observal agent install {agent_id} --ide {ide} --raw | jq .agent_file.content > {agent_file['path']}"
+        )
         return
 
     # Rules file

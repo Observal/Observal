@@ -59,6 +59,7 @@ class TopAgentItem(BaseModel):
 
 class LeaderboardItem(TopAgentItem):
     """Same as TopAgentItem — used by the leaderboard endpoint."""
+
     pass
 
 
@@ -69,6 +70,7 @@ class TrendPoint(BaseModel):
 
 
 # --- Token usage ---
+
 
 class TokenByEntity(BaseModel):
     id: str
@@ -97,6 +99,7 @@ class TokenStats(BaseModel):
 
 # --- IDE usage ---
 
+
 class IdeBreakdown(BaseModel):
     ide: str
     traces: int
@@ -110,6 +113,7 @@ class IdeUsage(BaseModel):
 
 
 # --- Sandbox metrics ---
+
 
 class SandboxRun(BaseModel):
     span_id: str
@@ -142,6 +146,7 @@ class SandboxStats(BaseModel):
 
 # --- GraphRAG metrics ---
 
+
 class RelevanceBucket(BaseModel):
     bucket: str
     count: int
@@ -169,6 +174,7 @@ class GraphRagStats(BaseModel):
 
 
 # --- RAGAS evaluation ---
+
 
 class RagasDimensionScore(BaseModel):
     avg: float | None
@@ -209,6 +215,7 @@ class RagasEvalRequest(BaseModel):
 
 # --- Latency heatmap ---
 
+
 class LatencyCell(BaseModel):
     name: str
     hour: str
@@ -218,6 +225,7 @@ class LatencyCell(BaseModel):
 
 
 # --- Unannotated traces ---
+
 
 class UnannotatedTrace(BaseModel):
     trace_id: str

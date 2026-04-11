@@ -176,7 +176,9 @@ async def list_penalties(
     _require_admin(current_user)
     from models.scoring import PenaltyDefinition
 
-    result = await db.execute(select(PenaltyDefinition).order_by(PenaltyDefinition.dimension, PenaltyDefinition.event_name))
+    result = await db.execute(
+        select(PenaltyDefinition).order_by(PenaltyDefinition.dimension, PenaltyDefinition.event_name)
+    )
     return [
         {
             "id": str(p.id),
@@ -240,11 +242,13 @@ async def list_weights(
     # Merge with defaults
     weights = []
     for dim, default_weight in DEFAULT_DIMENSION_WEIGHTS.items():
-        weights.append({
-            "dimension": dim.value,
-            "weight": db_weights.get(dim.value, default_weight),
-            "is_custom": dim.value in db_weights,
-        })
+        weights.append(
+            {
+                "dimension": dim.value,
+                "weight": db_weights.get(dim.value, default_weight),
+                "is_custom": dim.value in db_weights,
+            }
+        )
     return weights
 
 

@@ -60,11 +60,12 @@ def _resolve_path(raw_path: str, target_dir: Path) -> Path:
 
 
 def register_pull(app: typer.Typer):
-
     @app.command("pull")
     def pull(
         agent_id: str = typer.Argument(..., help="Agent ID, name, row number, or @alias"),
-        ide: str = typer.Option(..., "--ide", "-i", help="Target IDE (cursor, vscode, claude-code, gemini-cli, kiro, codex, copilot)"),
+        ide: str = typer.Option(
+            ..., "--ide", "-i", help="Target IDE (cursor, vscode, claude-code, gemini-cli, kiro, codex, copilot)"
+        ),
         directory: str = typer.Option(".", "--dir", "-d", help="Target directory for written files"),
         dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview files without writing"),
     ):
@@ -125,7 +126,9 @@ def register_pull(app: typer.Typer):
         if dry_run:
             rprint("\n[bold yellow]Dry run[/bold yellow] — no files written:\n")
         else:
-            rprint(f"\n[bold green]Pulled {ide} config[/bold green] ({len(written)} file{'s' if len(written) != 1 else ''}):\n")
+            rprint(
+                f"\n[bold green]Pulled {ide} config[/bold green] ({len(written)} file{'s' if len(written) != 1 else ''}):\n"
+            )
 
         for path, status in written:
             style = "dim" if dry_run else "green"

@@ -87,7 +87,12 @@ class TestContextRecall:
     @pytest.mark.asyncio
     @patch("services.ragas_eval._call_model", new_callable=AsyncMock)
     async def test_returns_score(self, mock_call):
-        mock_call.return_value = {"statements_total": 4, "statements_attributed": 3, "score": 0.75, "reason": "1 missing"}
+        mock_call.return_value = {
+            "statements_total": 4,
+            "statements_attributed": 3,
+            "score": 0.75,
+            "reason": "1 missing",
+        }
         result = await _eval_context_recall("ground truth", "context")
         assert result["score"] == 0.75
 

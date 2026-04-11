@@ -25,6 +25,7 @@ def _plain(text: str) -> str:
     """Strip ANSI escape codes from text."""
     return _ANSI_RE.sub("", text)
 
+
 # ── Helpers ──────────────────────────────────────────────────
 
 _FAKE_CONFIG = {"server_url": "http://localhost:8000", "api_key": "test-key"}
@@ -41,6 +42,7 @@ def _patch_post(return_value: dict):
 
 
 # ── Fixtures for common server responses ─────────────────────
+
 
 def _cursor_snippet() -> dict:
     return {
@@ -73,11 +75,7 @@ def _vscode_snippet() -> dict:
             },
             "mcp_config": {
                 "path": ".vscode/mcp.json",
-                "content": {
-                    "mcpServers": {
-                        "vscode-srv": {"command": "node", "args": ["server.js"]}
-                    }
-                },
+                "content": {"mcpServers": {"vscode-srv": {"command": "node", "args": ["server.js"]}}},
             },
         }
     }
@@ -90,12 +88,8 @@ def _claude_code_snippet() -> dict:
                 "path": ".claude/rules/my-agent.md",
                 "content": "# Claude Code Agent\n",
             },
-            "mcp_config": {
-                "name": {"command": "observal-mcp", "args": ["--agent", "abc"]}
-            },
-            "mcp_setup_commands": [
-                ["claude", "mcp", "add", "observal-mcp", "--", "observal-mcp", "--agent", "abc"]
-            ],
+            "mcp_config": {"name": {"command": "observal-mcp", "args": ["--agent", "abc"]}},
+            "mcp_setup_commands": [["claude", "mcp", "add", "observal-mcp", "--", "observal-mcp", "--agent", "abc"]],
             "otlp_env": {
                 "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
                 "OTEL_SERVICE_NAME": "my-agent",
@@ -113,11 +107,7 @@ def _gemini_snippet() -> dict:
             },
             "mcp_config": {
                 "path": ".gemini/mcp.json",
-                "content": {
-                    "mcpServers": {
-                        "gemini-srv": {"command": "python", "args": ["serve.py"]}
-                    }
-                },
+                "content": {"mcpServers": {"gemini-srv": {"command": "python", "args": ["serve.py"]}}},
             },
         }
     }
@@ -324,11 +314,9 @@ class TestPullMcpMerge:
         """Pre-existing mcpServers should not be overwritten."""
         mcp_path = tmp_path / ".cursor" / "mcp.json"
         mcp_path.parent.mkdir(parents=True)
-        mcp_path.write_text(json.dumps({
-            "mcpServers": {
-                "existing-server": {"command": "old-cmd", "args": ["--old"]}
-            }
-        }, indent=2))
+        mcp_path.write_text(
+            json.dumps({"mcpServers": {"existing-server": {"command": "old-cmd", "args": ["--old"]}}}, indent=2)
+        )
 
         with _patch_config(), _patch_post(_cursor_snippet()):
             result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path)])
@@ -345,11 +333,7 @@ class TestPullMcpMerge:
         """If the incoming server has the same name, it should update."""
         mcp_path = tmp_path / ".cursor" / "mcp.json"
         mcp_path.parent.mkdir(parents=True)
-        mcp_path.write_text(json.dumps({
-            "mcpServers": {
-                "my-server": {"command": "old", "args": []}
-            }
-        }, indent=2))
+        mcp_path.write_text(json.dumps({"mcpServers": {"my-server": {"command": "old", "args": []}}}, indent=2))
 
         with _patch_config(), _patch_post(_cursor_snippet()):
             result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path)])
@@ -433,9 +417,11 @@ class TestPullEdgeCases:
 
     def test_resolve_alias_is_called(self, tmp_path: Path):
         """The command should call config.resolve_alias for the agent_id."""
-        with _patch_config(), \
-             _patch_post(_codex_snippet()), \
-             patch("observal_cli.cmd_pull.config.resolve_alias", return_value="real-uuid") as mock_resolve:
+        with (
+            _patch_config(),
+            _patch_post(_codex_snippet()),
+            patch("observal_cli.cmd_pull.config.resolve_alias", return_value="real-uuid") as mock_resolve,
+        ):
             result = runner.invoke(cli_app, ["pull", "@myagent", "--ide", "codex", "--dir", str(tmp_path)])
 
         assert result.exit_code == 0, result.output
@@ -572,9 +558,12 @@ class TestAgentAdd:
 
     def test_prevents_duplicate_component(self, tmp_path: Path):
         """Adding the same component twice exits non-zero."""
-        _make_agent_yaml(tmp_path, components=[
-            {"component_type": "skill", "component_id": "abc-123"},
-        ])
+        _make_agent_yaml(
+            tmp_path,
+            components=[
+                {"component_type": "skill", "component_id": "abc-123"},
+            ],
+        )
         result = runner.invoke(
             cli_app,
             ["agent", "add", "skill", "abc-123", "--dir", str(tmp_path)],
@@ -595,10 +584,13 @@ class TestAgentAdd:
 class TestAgentBuild:
     def test_validates_components_against_server(self, tmp_path: Path):
         """Components are validated via GET calls; output shows results."""
-        _make_agent_yaml(tmp_path, components=[
-            {"component_type": "mcp", "component_id": "id-1"},
-            {"component_type": "skill", "component_id": "id-2"},
-        ])
+        _make_agent_yaml(
+            tmp_path,
+            components=[
+                {"component_type": "mcp", "component_id": "id-1"},
+                {"component_type": "skill", "component_id": "id-2"},
+            ],
+        )
 
         def mock_get(path, **kwargs):
             return {"id": "id-1", "name": "test"}
@@ -613,9 +605,12 @@ class TestAgentBuild:
 
     def test_reports_invalid_components(self, tmp_path: Path):
         """Components that fail GET show as errors."""
-        _make_agent_yaml(tmp_path, components=[
-            {"component_type": "mcp", "component_id": "bad-id"},
-        ])
+        _make_agent_yaml(
+            tmp_path,
+            components=[
+                {"component_type": "mcp", "component_id": "bad-id"},
+            ],
+        )
 
         def mock_get(path, **kwargs):
             raise typer.Exit(code=1)
@@ -666,9 +661,7 @@ class TestAgentPublish:
         search_results = [{"id": "existing-uuid", "name": "test-agent"}]
         put_result = {"id": "existing-uuid", "name": "test-agent"}
 
-        with _patch_config(), \
-             _patch_get(search_results) as mock_get_fn, \
-             _patch_put(put_result) as mock_put_fn:
+        with _patch_config(), _patch_get(search_results) as mock_get_fn, _patch_put(put_result) as mock_put_fn:
             result = runner.invoke(
                 cli_app,
                 ["agent", "publish", "--dir", str(tmp_path), "--update"],
