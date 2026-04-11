@@ -20,6 +20,7 @@ _Links to blog posts, patterns, libraries or addons used to solve this problem_
 ## Checklist
 _Please, go through these checks before submitting the PR._
 
+- [ ] All commits are signed off (`git commit -s`) per the [DCO](https://developercertificate.org/)
 - [ ] You have a descriptive commit message with a short title (first line, max 50 chars).
 - [ ] You have commented your code, particularly in hard-to-understand areas
 - [ ] You have performed a self-review of your own code

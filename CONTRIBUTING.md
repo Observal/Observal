@@ -102,6 +102,24 @@ fix(telemetry): handle null span timestamps
 docs: update contributing guide
 ```
 
+### DCO Sign-off
+
+All commits must include a `Signed-off-by` line to certify the [Developer Certificate of Origin (DCO)](https://developercertificate.org/). This confirms that you wrote (or have the right to submit) your contribution and that it is licensed under the project's GNU AGPL v3.0 license.
+
+Add the sign-off automatically with the `-s` flag:
+
+```bash
+git commit -s -m "feat(cli): add skill submit command"
+```
+
+This appends a line like:
+
+```
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+Make sure your `user.name` and `user.email` in git config match the identity you want to use. A CI check will block PRs that have unsigned commits.
+
 ## Changelog
 
 We maintain a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. When submitting a PR that adds a feature, fixes a bug, or makes any user-facing change, add an entry under the `[Unreleased]` section in the appropriate category:
@@ -130,7 +148,8 @@ At release time, a maintainer will move unreleased entries into a versioned sect
 1. Push your branch to your fork.
 2. Open a PR against `main`.
 3. Ensure linters and tests pass.
-4. Add a changelog entry if your change is user-facing.
+4. Ensure all commits are signed off (`git commit -s`).
+5. Add a changelog entry if your change is user-facing.
 5. Respond to review feedback and update your code if requested.
 
 ## Issues
@@ -143,4 +162,4 @@ See [AGENTS.md](AGENTS.md) for internal architecture notes, file layout, and con
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0.
+By contributing, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0. The DCO sign-off on each commit is your explicit acknowledgement of this.
