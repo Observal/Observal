@@ -39,3 +39,7 @@ class UserCreateResponse(BaseModel):
     name: str
     role: str
     api_key: str
+
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str

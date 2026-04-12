@@ -76,3 +76,13 @@ class UserResponse(BaseModel):
 class InitResponse(BaseModel):
     user: UserResponse
     api_key: str
+
+
+class RequestResetRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    token: str
+    new_password: str

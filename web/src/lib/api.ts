@@ -116,6 +116,10 @@ export const auth = {
   login: (body: { api_key?: string; email?: string; password?: string }) =>
     post<AuthResponse>("/auth/login", body),
   whoami: () => get<{ id: string; email: string; name: string; role: string }>("/auth/whoami"),
+  requestReset: (body: { email: string }) =>
+    post<{ message: string }>("/auth/request-reset", body),
+  resetPassword: (body: { email: string; token: string; new_password: string }) =>
+    post<AuthResponse>("/auth/reset-password", body),
 };
 
 // ── Registry (all 8 types) ─────────────────────────────────────────
@@ -235,6 +239,8 @@ export const admin = {
     post<{ id: string; email: string; name: string; role: string; api_key: string }>("/admin/users", body),
   updateRole: (id: string, body: { role: string }) =>
     put<AdminUser>(`/admin/users/${id}/role`, body),
+  resetPassword: (id: string, body: { new_password: string }) =>
+    put<{ message: string }>(`/admin/users/${id}/password`, body),
 };
 
 // ── Health ──────────────────────────────────────────────────────────

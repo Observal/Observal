@@ -11,6 +11,7 @@ from config import settings
 from models.enterprise_config import EnterpriseConfig
 from models.user import User, UserRole
 from schemas.admin import (
+    AdminResetPasswordRequest,
     EnterpriseConfigResponse,
     EnterpriseConfigUpdate,
     UserAdminResponse,
@@ -162,6 +163,26 @@ async def update_user_role(
     await db.commit()
     await db.refresh(user)
     return UserAdminResponse.model_validate(user)
+
+
+@router.put("/users/{user_id}/password")
+async def reset_user_password(
+    user_id: uuid.UUID,
+    req: AdminResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Admin resets a user's password."""
+    _require_admin(current_user)
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.set_password(req.new_password)
+    await db.commit()
+    return {"message": f"Password reset for {user.email}"}
 
 
 # ── Penalty & Weight Customization ──────────────────────

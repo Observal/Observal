@@ -170,6 +170,76 @@ def register(
         raise typer.Exit(1)
 
 
+@auth_app.command(name="reset-password")
+def reset_password(
+    server: str = typer.Option(None, "--server", "-s", help="Server URL"),
+    email: str = typer.Option(None, "--email", "-e", help="Account email"),
+):
+    """Reset a forgotten password using a server-generated code.
+
+    The reset code is logged to the Observal server console.
+    You need access to server logs to complete this flow.
+    """
+    cfg = config.load()
+    server_url = server or cfg.get("server_url") or typer.prompt("Server URL", default="http://localhost:8000")
+    server_url = server_url.rstrip("/")
+    reset_email = email or typer.prompt("Email")
+
+    # Step 1: Request reset code
+    try:
+        with spinner("Requesting reset code..."):
+            r = httpx.post(
+                f"{server_url}/api/v1/auth/request-reset",
+                json={"email": reset_email},
+                timeout=30,
+            )
+            r.raise_for_status()
+    except httpx.ConnectError:
+        rprint(f"[red]Connection failed.[/red] Is the server running at {server_url}?")
+        raise typer.Exit(1)
+    except httpx.HTTPStatusError as e:
+        rprint(f"[red]Request failed ({e.response.status_code}):[/red] {e.response.text}")
+        raise typer.Exit(1)
+
+    rprint("\n[yellow]A reset code has been logged to the server console.[/yellow]")
+    rprint("[dim]Check your server logs (docker logs, journalctl, etc.) for the code.[/dim]\n")
+
+    # Step 2: Enter the code + new password
+    reset_code = typer.prompt("Reset code")
+    new_password = typer.prompt("New password", hide_input=True)
+    confirm_password = typer.prompt("Confirm password", hide_input=True)
+
+    if new_password != confirm_password:
+        rprint("[red]Passwords do not match.[/red]")
+        raise typer.Exit(1)
+
+    # Step 3: Submit reset
+    try:
+        with spinner("Resetting password..."):
+            r = httpx.post(
+                f"{server_url}/api/v1/auth/reset-password",
+                json={"email": reset_email, "token": reset_code, "new_password": new_password},
+                timeout=30,
+            )
+            r.raise_for_status()
+            data = r.json()
+
+        api_key = data["api_key"]
+        user = data["user"]
+        config.save({"server_url": server_url, "api_key": api_key})
+        rprint(f"\n[green]Password reset! Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]")
+        rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
+
+    except httpx.HTTPStatusError as e:
+        detail = ""
+        try:
+            detail = e.response.json().get("detail", e.response.text)
+        except Exception:
+            detail = e.response.text
+        rprint(f"[red]Reset failed:[/red] {detail}")
+        raise typer.Exit(1)
+
+
 @auth_app.command()
 def init(
     server: str = typer.Option(None, "--server", "-s", help="Server URL"),

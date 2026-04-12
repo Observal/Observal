@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type Mode = "login" | "register" | "api-key";
+type Mode = "login" | "register" | "api-key" | "reset-request" | "reset-confirm";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +18,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [apiKey, setKey] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -81,7 +83,46 @@ export default function LoginPage() {
     }
   }
 
-  const onSubmit = mode === "login" ? handlePasswordLogin : mode === "register" ? handleRegister : handleApiKeyLogin;
+  async function handleRequestReset() {
+    setError("");
+    setLoading(true);
+    try {
+      await auth.requestReset({ email });
+      toast.success("Check your server logs for the reset code");
+      switchMode("reset-confirm");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Request failed";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await auth.resetPassword({ email, token: resetToken, new_password: newPassword });
+      setApiKey(res.api_key);
+      setUserRole(res.user.role);
+      toast.success("Password reset successfully");
+      router.push("/");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Reset failed";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const onSubmit =
+    mode === "login" ? handlePasswordLogin
+    : mode === "register" ? handleRegister
+    : mode === "reset-request" ? handleRequestReset
+    : mode === "reset-confirm" ? handleResetPassword
+    : handleApiKeyLogin;
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
@@ -97,7 +138,11 @@ export default function LoginPage() {
                 ? "Create your account"
                 : mode === "api-key"
                   ? "Sign in with API key"
-                  : "Sign in to your account"}
+                  : mode === "reset-request"
+                    ? "Reset your password"
+                    : mode === "reset-confirm"
+                      ? "Enter your reset code"
+                      : "Sign in to your account"}
             </p>
           </div>
 
@@ -111,7 +156,7 @@ export default function LoginPage() {
               className="space-y-4"
             >
               {/* Email + Password mode (login & register) */}
-              {mode !== "api-key" && (
+              {(mode === "login" || mode === "register") && (
                 <>
                   <div className="space-y-2 animate-in">
                     <Label htmlFor="email">Email</Label>
@@ -189,6 +234,68 @@ export default function LoginPage() {
                 </div>
               )}
 
+              {/* Reset request mode — enter email */}
+              {mode === "reset-request" && (
+                <div className="space-y-2 animate-in">
+                  <Label htmlFor="reset-email">Email</Label>
+                  <Input
+                    id="reset-email"
+                    type="email"
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    A reset code will be logged to the server console.
+                  </p>
+                </div>
+              )}
+
+              {/* Reset confirm mode — enter code + new password */}
+              {mode === "reset-confirm" && (
+                <>
+                  <div className="space-y-2 animate-in">
+                    <Label htmlFor="reset-token">Reset Code</Label>
+                    <Input
+                      id="reset-token"
+                      placeholder="e.g. A7X9B2"
+                      value={resetToken}
+                      onChange={(e) => setResetToken(e.target.value)}
+                      required
+                      autoFocus
+                      className="font-[family-name:var(--font-mono)] tracking-widest uppercase"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Check your server logs for the 6-character code.
+                    </p>
+                  </div>
+                  <div className="space-y-2 animate-in stagger-1">
+                    <Label htmlFor="new-password">New Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="new-password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter new password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
               {/* Error */}
               {error && (
                 <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2.5 text-sm text-destructive animate-in">
@@ -204,7 +311,10 @@ export default function LoginPage() {
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      {mode === "register" ? "Create Account" : "Sign in"}
+                      {mode === "register" ? "Create Account"
+                        : mode === "reset-request" ? "Send Reset Code"
+                        : mode === "reset-confirm" ? "Reset Password"
+                        : "Sign in"}
                       <ArrowRight className="ml-1 h-4 w-4" />
                     </>
                   )}
@@ -215,6 +325,13 @@ export default function LoginPage() {
               <div className="animate-in stagger-3 space-y-2 text-center">
                 {mode === "login" && (
                   <>
+                    <button
+                      type="button"
+                      className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
+                      onClick={() => switchMode("reset-request")}
+                    >
+                      Forgot password?
+                    </button>
                     <button
                       type="button"
                       className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -247,6 +364,15 @@ export default function LoginPage() {
                     onClick={() => switchMode("login")}
                   >
                     Sign in with email instead
+                  </button>
+                )}
+                {(mode === "reset-request" || mode === "reset-confirm") && (
+                  <button
+                    type="button"
+                    className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => switchMode("login")}
+                  >
+                    Back to sign in
                   </button>
                 )}
               </div>

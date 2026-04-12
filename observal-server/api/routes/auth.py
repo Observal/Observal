@@ -1,6 +1,8 @@
 import hashlib
+import logging
 import secrets
-from datetime import UTC, datetime
+import string
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -19,8 +21,17 @@ from schemas.auth import (
     InviteResponse,
     LoginRequest,
     RegisterRequest,
+    RequestResetRequest,
+    ResetPasswordRequest,
     UserResponse,
 )
+
+logger = logging.getLogger(__name__)
+
+# In-memory store for password reset tokens: email -> (token_hash, expires_at)
+_reset_tokens: dict[str, tuple[str, datetime]] = {}
+
+RESET_TOKEN_TTL_MINUTES = 15
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -128,6 +139,84 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 @router.get("/whoami", response_model=UserResponse)
 async def whoami(current_user: User = Depends(get_current_user)):
     return UserResponse.model_validate(current_user)
+
+
+# ── Password Reset ──────────────────────────────────────────
+
+
+def _generate_reset_token() -> str:
+    """Generate a 6-character uppercase alphanumeric reset code."""
+    return "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+
+
+def _purge_expired_tokens() -> None:
+    """Remove expired tokens from the in-memory store."""
+    now = datetime.now(UTC)
+    expired = [email for email, (_, exp) in _reset_tokens.items() if exp < now]
+    for email in expired:
+        del _reset_tokens[email]
+
+
+@router.post("/request-reset")
+async def request_password_reset(req: RequestResetRequest, db: AsyncSession = Depends(get_db)):
+    """Request a password reset code. The code is logged to the server console.
+
+    Since Observal is self-hosted, the admin has access to server logs.
+    Always returns 200 to avoid leaking whether the email exists.
+    """
+    _purge_expired_tokens()
+
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        token = _generate_reset_token()
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        expires = datetime.now(UTC) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+        _reset_tokens[req.email] = (token_hash, expires)
+
+        logger.warning(
+            "PASSWORD RESET CODE for %s: %s (expires in %d minutes)",
+            req.email,
+            token,
+            RESET_TOKEN_TTL_MINUTES,
+        )
+
+    return {"message": "If the account exists, a reset code has been logged to the server console."}
+
+
+@router.post("/reset-password", response_model=InitResponse)
+async def reset_password(req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Reset password using a code from the server logs. Returns new API key."""
+    _purge_expired_tokens()
+
+    stored = _reset_tokens.get(req.email)
+    if not stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    token_hash, expires = stored
+    if datetime.now(UTC) > expires:
+        del _reset_tokens[req.email]
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    if hashlib.sha256(req.token.strip().upper().encode()).hexdigest() != token_hash:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    # Token is valid — consume it
+    del _reset_tokens[req.email]
+
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    user.set_password(req.new_password)
+    api_key, key_hash = _generate_api_key()
+    user.api_key_hash = key_hash
+    await db.commit()
+    await db.refresh(user)
+
+    return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
 
 
 # ── Invite Codes ────────────────────────────────────────────
