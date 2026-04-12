@@ -94,14 +94,14 @@ class CanaryDetector:
 
         logger.info(
             "Canary injected: type=%s, value=%s, point=%s, canary_id=%s",
-            config.canary_type, config.canary_value[:50],
-            config.injection_point, config.id,
+            config.canary_type,
+            config.canary_value[:50],
+            config.injection_point,
+            config.id,
         )
         return injected
 
-    def check_for_parroted_canary(
-        self, trace: dict, config: CanaryConfig
-    ) -> dict | None:
+    def check_for_parroted_canary(self, trace: dict, config: CanaryConfig) -> dict | None:
         """Check if the agent's output contains the canary value or derivatives.
 
         Returns a penalty dict if canary was parroted, None if agent behaved correctly.
@@ -182,10 +182,12 @@ class CanaryDetector:
         if "context" not in trace:
             trace["context"] = []
         if isinstance(trace["context"], list):
-            trace["context"].append({
-                "source": f"canary_{config.id}",
-                "content": config.canary_value,
-            })
+            trace["context"].append(
+                {
+                    "source": f"canary_{config.id}",
+                    "content": config.canary_value,
+                }
+            )
 
     # --- Internal: detection ---
 

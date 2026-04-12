@@ -44,8 +44,7 @@ class EvalWatchdog:
         # 1. Perfect score with zero penalties
         if composite_score == 100 and penalty_count == 0:
             warnings.append(
-                "Perfect score with zero penalties. Verify penalty "
-                "catalog coverage for this agent's goal template."
+                "Perfect score with zero penalties. Verify penalty catalog coverage for this agent's goal template."
             )
 
         # 2. SLM dimension at 100 with no SLM penalties applied
@@ -84,19 +83,15 @@ class EvalWatchdog:
             if score is not None:
                 slm_scores.append(score)
         if len(slm_scores) >= 2 and len(set(slm_scores)) == 1:
-            warnings.append(
-                "SLM dimensions suspiciously uniform. Possible judge template issue."
-            )
+            warnings.append("SLM dimensions suspiciously uniform. Possible judge template issue.")
 
         # 5. Long trace with no structural penalties
         structural_penalties = [
-            p for p in penalties
-            if p.get("trigger_type") in (PenaltyTriggerType.structural, "structural")
+            p for p in penalties if p.get("trigger_type") in (PenaltyTriggerType.structural, "structural")
         ]
         if span_count > 50 and len(structural_penalties) == 0:
             warnings.append(
-                "Long trace with no structural issues detected. Verify "
-                "structural scorer is receiving spans correctly."
+                "Long trace with no structural issues detected. Verify structural scorer is receiving spans correctly."
             )
 
         for w in warnings:

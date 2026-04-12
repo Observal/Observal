@@ -1,7 +1,5 @@
 """Observal CLI: MCP Server & Agent Registry."""
 
-
-
 import typer
 
 from observal_cli.cmd_auth import version_callback

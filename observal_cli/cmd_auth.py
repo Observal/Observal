@@ -150,7 +150,9 @@ def register(
         api_key = data["api_key"]
         user = data["user"]
         config.save({"server_url": server_url, "api_key": api_key})
-        rprint(f"[green]Account created! Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]")
+        rprint(
+            f"[green]Account created! Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]"
+        )
         rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
 
         _configure_claude_code(server_url, api_key)
@@ -519,11 +521,7 @@ def _configure_claude_code(server_url: str, api_key: str):
 
         # Stop uses a command hook to read the transcript for Claude's response text
         stop_script = _find_stop_hook_script()
-        stop_hook = (
-            [{"hooks": [{"type": "command", "command": stop_script}]}]
-            if stop_script
-            else http_hook
-        )
+        stop_hook = [{"hooks": [{"type": "command", "command": stop_script}]}] if stop_script else http_hook
 
         settings["hooks"] = {
             "SessionStart": http_hook,

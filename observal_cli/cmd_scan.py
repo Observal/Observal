@@ -272,7 +272,7 @@ def _extract_body(content: str) -> str:
     """Extract everything after YAML frontmatter."""
     match = re.match(r"^---\s*\n.*?\n---\s*\n?", content, re.DOTALL)
     if match:
-        return content[match.end():]
+        return content[match.end() :]
     return content
 
 
@@ -646,7 +646,9 @@ def register_scan(app: typer.Typer):
                         existing_target = h.get("url") or h.get("command", "")
                     except (KeyError, IndexError, TypeError):
                         pass
-                    expected_target = hooks_block[event_name][0]["hooks"][0].get("url") or hooks_block[event_name][0]["hooks"][0].get("command", "")
+                    expected_target = hooks_block[event_name][0]["hooks"][0].get("url") or hooks_block[event_name][0][
+                        "hooks"
+                    ][0].get("command", "")
                     if existing_target != expected_target:
                         needs_update = True
                         break
@@ -660,10 +662,7 @@ def register_scan(app: typer.Typer):
                     claude_settings.write_text(json.dumps(settings, indent=2) + "\n")
                     rprint(f"\n[green]Injected hooks config into {claude_settings}[/green]")
                     rprint(f"[dim]Hooks endpoint: {hooks_url}[/dim]")
-                    rprint(
-                        "[dim]Captures: prompts, tool I/O, MCP responses, "
-                        "subagents, elicitations[/dim]"
-                    )
+                    rprint("[dim]Captures: prompts, tool I/O, MCP responses, subagents, elicitations[/dim]")
                 else:
                     rprint(f"\n[dim]Hooks already configured -> {hooks_url}[/dim]")
             except Exception as e:

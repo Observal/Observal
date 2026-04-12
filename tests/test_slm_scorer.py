@@ -15,7 +15,14 @@ def _make_backend(response: dict):
 
 
 def _tool_span(name="tool_a", output="result", span_id="s1", status="success", input_data=""):
-    return {"type": "tool_call", "name": name, "output": output, "span_id": span_id, "status": status, "input": input_data}
+    return {
+        "type": "tool_call",
+        "name": name,
+        "output": output,
+        "span_id": span_id,
+        "status": status,
+        "input": input_data,
+    }
 
 
 def _reasoning_span(input_data="thinking...", span_id="r1"):
@@ -60,9 +67,7 @@ class TestGoalCompletion:
         backend = _make_backend({})
         scorer = SLMScorer(backend)
         llm_response = {
-            "sections": [
-                {"section_name": "Summary", "status": "missing", "evidence_span_id": None, "confidence": 0.9}
-            ]
+            "sections": [{"section_name": "Summary", "status": "missing", "evidence_span_id": None, "confidence": 0.9}]
         }
         with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=llm_response):
             penalties = await scorer.score_goal_completion(
@@ -79,9 +84,7 @@ class TestGoalCompletion:
         backend = _make_backend({})
         scorer = SLMScorer(backend)
         llm_response = {
-            "sections": [
-                {"section_name": "Analysis", "status": "stub", "evidence_span_id": None, "confidence": 0.85}
-            ]
+            "sections": [{"section_name": "Analysis", "status": "stub", "evidence_span_id": None, "confidence": 0.85}]
         }
         with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=llm_response):
             penalties = await scorer.score_goal_completion(
@@ -98,9 +101,7 @@ class TestGoalCompletion:
         backend = _make_backend({})
         scorer = SLMScorer(backend)
         llm_response = {
-            "sections": [
-                {"section_name": "Data", "status": "ungrounded", "evidence_span_id": None, "confidence": 0.8}
-            ]
+            "sections": [{"section_name": "Data", "status": "ungrounded", "evidence_span_id": None, "confidence": 0.8}]
         }
         with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=llm_response):
             penalties = await scorer.score_goal_completion(
@@ -117,9 +118,7 @@ class TestGoalCompletion:
         backend = _make_backend({})
         scorer = SLMScorer(backend)
         llm_response = {
-            "sections": [
-                {"section_name": "Summary", "status": "present", "evidence_span_id": "s1", "confidence": 0.95}
-            ]
+            "sections": [{"section_name": "Summary", "status": "present", "evidence_span_id": "s1", "confidence": 0.95}]
         }
         with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=llm_response):
             penalties = await scorer.score_goal_completion(
@@ -134,9 +133,7 @@ class TestGoalCompletion:
     async def test_no_sections_returns_empty(self):
         backend = _make_backend({})
         scorer = SLMScorer(backend)
-        penalties = await scorer.score_goal_completion(
-            trace={"output": "output"}, spans=[], required_sections=[]
-        )
+        penalties = await scorer.score_goal_completion(trace={"output": "output"}, spans=[], required_sections=[])
         assert penalties == []
 
 
@@ -147,7 +144,12 @@ class TestFactualGrounding:
         scorer = SLMScorer(backend)
         llm_response = {
             "claims": [
-                {"claim_text": "Revenue is $10M", "status": "ungrounded", "evidence_quote": "No data source", "source_span_id": None}
+                {
+                    "claim_text": "Revenue is $10M",
+                    "status": "ungrounded",
+                    "evidence_quote": "No data source",
+                    "source_span_id": None,
+                }
             ]
         }
         with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=llm_response):
@@ -164,7 +166,12 @@ class TestFactualGrounding:
         scorer = SLMScorer(backend)
         llm_response = {
             "claims": [
-                {"claim_text": "Revenue is $10M", "status": "contradicted", "evidence_quote": "Source says $5M", "source_span_id": "s1"}
+                {
+                    "claim_text": "Revenue is $10M",
+                    "status": "contradicted",
+                    "evidence_quote": "Source says $5M",
+                    "source_span_id": "s1",
+                }
             ]
         }
         with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=llm_response):
@@ -181,7 +188,12 @@ class TestFactualGrounding:
         scorer = SLMScorer(backend)
         llm_response = {
             "claims": [
-                {"claim_text": "Revenue is $10M", "status": "grounded", "evidence_quote": "Matches source", "source_span_id": "s1"}
+                {
+                    "claim_text": "Revenue is $10M",
+                    "status": "grounded",
+                    "evidence_quote": "Matches source",
+                    "source_span_id": "s1",
+                }
             ]
         }
         with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=llm_response):
@@ -221,11 +233,7 @@ class TestThoughtProcess:
         """Invalid finding types are now rejected by schema validation."""
         backend = _make_backend({})
         scorer = SLMScorer(backend)
-        llm_response = {
-            "findings": [
-                {"finding_type": "unknown_type", "span_id": "s1", "explanation": "Something"}
-            ]
-        }
+        llm_response = {"findings": [{"finding_type": "unknown_type", "span_id": "s1", "explanation": "Something"}]}
         with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=llm_response):
             penalties = await scorer.score_thought_process(
                 spans=[_tool_span()],

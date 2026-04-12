@@ -38,9 +38,7 @@ async def _ensure_columns(conn):
     from sqlalchemy import text
 
     try:
-        await conn.execute(text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"
-        ))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
     except Exception:
         pass  # column already exists or DB doesn't support IF NOT EXISTS
 

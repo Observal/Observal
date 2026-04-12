@@ -128,66 +128,80 @@ class TraceSanitizer:
         """Run detection patterns against a single string field."""
         # High: HTML/XML comments with eval keywords
         for m in RE_HTML_EVAL_COMMENT.finditer(text):
-            attempts.append(InjectionAttempt(
-                pattern_matched="html_comment_with_eval_keywords",
-                location=location,
-                raw_content=m.group()[:200],
-                severity="high",
-            ))
+            attempts.append(
+                InjectionAttempt(
+                    pattern_matched="html_comment_with_eval_keywords",
+                    location=location,
+                    raw_content=m.group()[:200],
+                    severity="high",
+                )
+            )
 
         # High: system prompt patterns
         for m in RE_SYSTEM_PROMPT.finditer(text):
-            attempts.append(InjectionAttempt(
-                pattern_matched="system_prompt_pattern",
-                location=location,
-                raw_content=m.group()[:200],
-                severity="high",
-            ))
+            attempts.append(
+                InjectionAttempt(
+                    pattern_matched="system_prompt_pattern",
+                    location=location,
+                    raw_content=m.group()[:200],
+                    severity="high",
+                )
+            )
 
         # High: score assertions
         for m in RE_SCORE_ASSERTION.finditer(text):
-            attempts.append(InjectionAttempt(
-                pattern_matched="score_assertion",
-                location=location,
-                raw_content=m.group()[:200],
-                severity="high",
-            ))
+            attempts.append(
+                InjectionAttempt(
+                    pattern_matched="score_assertion",
+                    location=location,
+                    raw_content=m.group()[:200],
+                    severity="high",
+                )
+            )
 
         # Medium: markdown comments
         for m in RE_MARKDOWN_COMMENT.finditer(text):
-            attempts.append(InjectionAttempt(
-                pattern_matched="markdown_comment",
-                location=location,
-                raw_content=m.group()[:200],
-                severity="medium",
-            ))
+            attempts.append(
+                InjectionAttempt(
+                    pattern_matched="markdown_comment",
+                    location=location,
+                    raw_content=m.group()[:200],
+                    severity="medium",
+                )
+            )
 
         # Medium: long zero-width sequences
         for m in RE_LONG_ZERO_WIDTH.finditer(text):
-            attempts.append(InjectionAttempt(
-                pattern_matched="zero_width_unicode_sequence",
-                location=location,
-                raw_content=repr(m.group())[:200],
-                severity="medium",
-            ))
+            attempts.append(
+                InjectionAttempt(
+                    pattern_matched="zero_width_unicode_sequence",
+                    location=location,
+                    raw_content=repr(m.group())[:200],
+                    severity="medium",
+                )
+            )
 
         # Low: unusual whitespace
         for m in RE_UNUSUAL_WHITESPACE.finditer(text):
-            attempts.append(InjectionAttempt(
-                pattern_matched="unusual_whitespace",
-                location=location,
-                raw_content=repr(m.group())[:200],
-                severity="low",
-            ))
+            attempts.append(
+                InjectionAttempt(
+                    pattern_matched="unusual_whitespace",
+                    location=location,
+                    raw_content=repr(m.group())[:200],
+                    severity="low",
+                )
+            )
 
         # Low: repeated delimiters
         for m in RE_REPEATED_DELIMITERS.finditer(text):
-            attempts.append(InjectionAttempt(
-                pattern_matched="repeated_delimiters",
-                location=location,
-                raw_content=m.group()[:200],
-                severity="low",
-            ))
+            attempts.append(
+                InjectionAttempt(
+                    pattern_matched="repeated_delimiters",
+                    location=location,
+                    raw_content=m.group()[:200],
+                    severity="low",
+                )
+            )
 
     # --- Internal: sanitization ---
 

@@ -13,6 +13,7 @@ from services.canary import CanaryConfig, CanaryDetector, CanaryReport
 
 # --- Helpers ---
 
+
 def _make_config(**overrides):
     defaults = {
         "agent_id": "agent-1",
@@ -156,9 +157,7 @@ class TestEntityCanaryDetection:
             canary_type="entity",
             canary_value="Contact: Dr. Reginald Canarysworth, VP of Synergy",
         )
-        trace = _make_trace(
-            output="Per Dr. Reginald Canarysworth, the project should proceed."
-        )
+        trace = _make_trace(output="Per Dr. Reginald Canarysworth, the project should proceed.")
 
         result = detector.check_for_parroted_canary(trace, config)
         assert result is not None

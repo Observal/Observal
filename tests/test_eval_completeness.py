@@ -104,9 +104,7 @@ class TestNullTraceScoresLow:
     def test_null_trace_with_missing_sections(self):
         """A null trace with penalties across all dimensions MUST score below 30/100."""
         sc = _make_scorecard(self._null_trace_penalties())
-        assert sc.composite_score < 30, (
-            f"Null trace scored {sc.composite_score}, expected < 30"
-        )
+        assert sc.composite_score < 30, f"Null trace scored {sc.composite_score}, expected < 30"
 
     def test_null_trace_gets_low_grade(self):
         """Null trace should receive D or F grade."""
@@ -159,10 +157,7 @@ class TestEveryDimensionHasActivePenalties:
 
         for dim in ScoringDimension:
             count = len(by_dim.get(dim, []))
-            assert count >= 2, (
-                f"Dimension '{dim.value}' has only {count} penalties — "
-                f"needs at least 2 to be meaningful"
-            )
+            assert count >= 2, f"Dimension '{dim.value}' has only {count} penalties — needs at least 2 to be meaningful"
 
     def test_penalty_amounts_are_negative(self):
         """All penalty amounts must be negative integers."""
@@ -187,65 +182,110 @@ class TestEveryPenaltyCanFire:
 
     def test_duplicate_tool_call_fires(self):
         spans = [
-            {"type": "tool_call", "name": "search", "input": "q", "output": "r",
-             "status": "success", "span_id": "s1"},
-            {"type": "tool_call", "name": "search", "input": "q", "output": "r",
-             "status": "success", "span_id": "s2"},
+            {"type": "tool_call", "name": "search", "input": "q", "output": "r", "status": "success", "span_id": "s1"},
+            {"type": "tool_call", "name": "search", "input": "q", "output": "r", "status": "success", "span_id": "s2"},
         ]
         penalties = self._run_structural_scorer(spans)
         assert any(p["event_name"] == "duplicate_tool_call" for p in penalties)
 
     def test_tool_call_error_fires(self):
         spans = [
-            {"type": "tool_call", "name": "search", "input": "q", "output": "",
-             "status": "error", "error": "connection failed", "span_id": "s1",
-             "latency_ms": 100},
+            {
+                "type": "tool_call",
+                "name": "search",
+                "input": "q",
+                "output": "",
+                "status": "error",
+                "error": "connection failed",
+                "span_id": "s1",
+                "latency_ms": 100,
+            },
         ]
         penalties = self._run_structural_scorer(spans)
         assert any(p["event_name"] == "tool_call_error" for p in penalties)
 
     def test_tool_call_timeout_fires(self):
         spans = [
-            {"type": "tool_call", "name": "search", "input": "q", "output": "r",
-             "status": "success", "span_id": "s1", "latency_ms": 60000},
+            {
+                "type": "tool_call",
+                "name": "search",
+                "input": "q",
+                "output": "r",
+                "status": "success",
+                "span_id": "s1",
+                "latency_ms": 60000,
+            },
         ]
         penalties = self._run_structural_scorer(spans)
         assert any(p["event_name"] == "tool_call_timeout" for p in penalties)
 
     def test_tool_call_retry_success_fires(self):
         spans = [
-            {"type": "tool_call", "name": "search", "input": "q", "output": "",
-             "status": "error", "error": "fail", "span_id": "s1", "latency_ms": 100},
-            {"type": "tool_call", "name": "search", "input": "q", "output": "ok",
-             "status": "success", "span_id": "s2", "latency_ms": 100},
+            {
+                "type": "tool_call",
+                "name": "search",
+                "input": "q",
+                "output": "",
+                "status": "error",
+                "error": "fail",
+                "span_id": "s1",
+                "latency_ms": 100,
+            },
+            {
+                "type": "tool_call",
+                "name": "search",
+                "input": "q",
+                "output": "ok",
+                "status": "success",
+                "span_id": "s2",
+                "latency_ms": 100,
+            },
         ]
         penalties = self._run_structural_scorer(spans)
         assert any(p["event_name"] == "tool_call_retry_success" for p in penalties)
 
     def test_ungrounded_claims_fires(self):
         spans = [
-            {"type": "reasoning_step", "name": "think", "input": "the file contains X",
-             "output": "", "span_id": "r1"},
+            {"type": "reasoning_step", "name": "think", "input": "the file contains X", "output": "", "span_id": "r1"},
         ]
         penalties = self._run_structural_scorer(spans)
         assert any(p["event_name"] == "ungrounded_claims" for p in penalties)
 
     def test_unused_tool_result_fires(self):
         spans = [
-            {"type": "tool_call", "name": "search", "input": "q", "output": "unique_data_xyz",
-             "status": "success", "span_id": "s1", "latency_ms": 100},
-            {"type": "reasoning_step", "name": "think",
-             "input": "I will do something unrelated", "output": "", "span_id": "r1"},
+            {
+                "type": "tool_call",
+                "name": "search",
+                "input": "q",
+                "output": "unique_data_xyz",
+                "status": "success",
+                "span_id": "s1",
+                "latency_ms": 100,
+            },
+            {
+                "type": "reasoning_step",
+                "name": "think",
+                "input": "I will do something unrelated",
+                "output": "",
+                "span_id": "r1",
+            },
         ]
         penalties = self._run_structural_scorer(spans)
         assert any(p["event_name"] == "unused_tool_result" for p in penalties)
 
     def test_ignored_tool_failure_fires(self):
         spans = [
-            {"type": "tool_call", "name": "search", "input": "q", "output": "",
-             "status": "error", "error": "fail", "span_id": "s1", "latency_ms": 100},
-            {"type": "reasoning_step", "name": "think",
-             "input": "moving on", "output": "", "span_id": "r1"},
+            {
+                "type": "tool_call",
+                "name": "search",
+                "input": "q",
+                "output": "",
+                "status": "error",
+                "error": "fail",
+                "span_id": "s1",
+                "latency_ms": 100,
+            },
+            {"type": "reasoning_step", "name": "think", "input": "moving on", "output": "", "span_id": "r1"},
         ]
         penalties = self._run_structural_scorer(spans)
         assert any(p["event_name"] == "ignored_tool_failure" for p in penalties)
@@ -333,11 +373,7 @@ class TestCompositeBounds:
 
     def test_composite_floor_at_zero(self):
         """Even with massive penalties, composite >= 0."""
-        massive_penalties = [
-            _penalty("tool_call_error", dim, -200)
-            for dim in ScoringDimension
-            for _ in range(5)
-        ]
+        massive_penalties = [_penalty("tool_call_error", dim, -200) for dim in ScoringDimension for _ in range(5)]
         sc = _make_scorecard(massive_penalties)
         assert sc.composite_score >= 0
 
@@ -401,8 +437,10 @@ class TestEvalWatchdog:
         warnings = self.watchdog.validate_scorecard(
             composite_score=90,
             dimension_scores={
-                "goal_completion": 100, "tool_efficiency": 80,
-                "tool_failures": 90, "factual_grounding": 100,
+                "goal_completion": 100,
+                "tool_efficiency": 80,
+                "tool_failures": 90,
+                "factual_grounding": 100,
                 "thought_process": 100,
             },
             penalty_count=2,
@@ -420,7 +458,8 @@ class TestEvalWatchdog:
             penalty_count=3,
             penalties=[
                 {"dimension": ScoringDimension.tool_efficiency, "trigger_type": "structural"},
-            ] * 3,
+            ]
+            * 3,
         )
         assert any("still very high" in w for w in warnings)
 
@@ -428,14 +467,17 @@ class TestEvalWatchdog:
         warnings = self.watchdog.validate_scorecard(
             composite_score=85,
             dimension_scores={
-                "goal_completion": 85, "tool_efficiency": 90,
-                "tool_failures": 95, "factual_grounding": 85,
+                "goal_completion": 85,
+                "tool_efficiency": 90,
+                "tool_failures": 95,
+                "factual_grounding": 85,
                 "thought_process": 85,
             },
             penalty_count=5,
             penalties=[
                 {"dimension": ScoringDimension.goal_completion, "trigger_type": "slm_assisted"},
-            ] * 5,
+            ]
+            * 5,
         )
         assert any("suspiciously uniform" in w for w in warnings)
 
@@ -446,7 +488,8 @@ class TestEvalWatchdog:
             penalty_count=2,
             penalties=[
                 {"dimension": ScoringDimension.goal_completion, "trigger_type": "slm_assisted"},
-            ] * 2,
+            ]
+            * 2,
             span_count=60,
         )
         assert any("Long trace" in w for w in warnings)
@@ -456,8 +499,10 @@ class TestEvalWatchdog:
         warnings = self.watchdog.validate_scorecard(
             composite_score=75,
             dimension_scores={
-                "goal_completion": 75, "tool_efficiency": 80,
-                "tool_failures": 90, "factual_grounding": 60,
+                "goal_completion": 75,
+                "tool_efficiency": 80,
+                "tool_failures": 90,
+                "factual_grounding": 60,
                 "thought_process": 70,
             },
             penalty_count=5,

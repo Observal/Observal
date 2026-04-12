@@ -874,7 +874,9 @@ def admin_canary_reports(
     table.add_column("Evidence", max_width=40)
     for r in data:
         behavior = r.get("agent_behavior", "")
-        behavior_color = {"parroted": "red", "flagged": "green", "ignored": "yellow", "corrected": "cyan"}.get(behavior, "white")
+        behavior_color = {"parroted": "red", "flagged": "green", "ignored": "yellow", "corrected": "cyan"}.get(
+            behavior, "white"
+        )
         penalty = "[red]Yes[/red]" if r.get("penalty_applied") else "[green]No[/green]"
         table.add_row(
             str(r.get("trace_id", ""))[:8] + "...",

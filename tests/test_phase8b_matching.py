@@ -3,7 +3,6 @@
 Tests MatchingEngine and NumericComparator for robust structural comparisons.
 """
 
-
 from services.structural_scorer import MatchingEngine, NumericComparator
 
 # =========================================================================
@@ -139,9 +138,7 @@ class TestIsOutputSectionPresent:
         content = "The server crashed due to an out-of-memory error in the worker process."
         output = f"## Root Cause\n{content}\n## Next Steps\n{content}"
         # When checking Next Steps, pass Root Cause's content as existing
-        assert not self.engine.is_output_section_present(
-            output, "Next Steps", all_section_contents=[content]
-        )
+        assert not self.engine.is_output_section_present(output, "Next Steps", all_section_contents=[content])
 
     def test_format_check_bullet_list(self):
         output = "## Steps\n- First do this\n- Then do that\n- Finally check results"

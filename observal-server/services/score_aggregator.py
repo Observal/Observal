@@ -112,19 +112,14 @@ class ScoreAggregator:
             total_active_weight = sum(weights.get(d, 0) for d in active_dims)
             if total_active_weight > 0:
                 # Redistribute proportionally so active weights sum to 1.0
-                effective_weights = {
-                    d: weights.get(d, 0) / total_active_weight for d in active_dims
-                }
+                effective_weights = {d: weights.get(d, 0) / total_active_weight for d in active_dims}
             else:
                 effective_weights = {d: 1.0 / len(active_dims) for d in active_dims}
         else:
             effective_weights = {d: weights.get(d, 0) for d in ScoringDimension}
 
         # Weighted composite (only over active dimensions)
-        composite = sum(
-            (dimension_scores[dim.value] or 0) * effective_weights.get(dim, 0)
-            for dim in active_dims
-        )
+        composite = sum((dimension_scores[dim.value] or 0) * effective_weights.get(dim, 0) for dim in active_dims)
         composite = max(0, min(100, composite))
 
         # Display score (0-10)
@@ -139,9 +134,7 @@ class ScoreAggregator:
 
         # Add recommendations for skipped dimensions
         for dim_name in skipped:
-            recommendations.append(
-                f"Dimension '{dim_name}' was not evaluated (SLM backend unavailable)."
-            )
+            recommendations.append(f"Dimension '{dim_name}' was not evaluated (SLM backend unavailable).")
 
         partial = bool(skipped)
 
@@ -206,8 +199,13 @@ class ScoreAggregator:
         """
         if not scorecards:
             return {
-                "mean": 0, "std": 0, "ci_low": 0, "ci_high": 0,
-                "dimension_averages": {}, "drift_alert": False, "trend": [],
+                "mean": 0,
+                "std": 0,
+                "ci_low": 0,
+                "ci_high": 0,
+                "dimension_averages": {},
+                "drift_alert": False,
+                "trend": [],
             }
 
         recent = scorecards[:window_size]
@@ -223,11 +221,7 @@ class ScoreAggregator:
         # Per-dimension averages
         dim_avgs: dict[str, float] = {}
         for dim in ScoringDimension:
-            scores = [
-                s.get("dimension_scores", {}).get(dim.value, 0)
-                for s in recent
-                if s.get("dimension_scores")
-            ]
+            scores = [s.get("dimension_scores", {}).get(dim.value, 0) for s in recent if s.get("dimension_scores")]
             dim_avgs[dim.value] = round(sum(scores) / len(scores), 2) if scores else 0
 
         # Find weakest dimension
@@ -236,7 +230,7 @@ class ScoreAggregator:
         # Drift alert: compare recent mean to 30-day baseline
         drift_alert = False
         if len(scorecards) > window_size:
-            baseline = scorecards[window_size: window_size + 50]
+            baseline = scorecards[window_size : window_size + 50]
             if baseline:
                 baseline_composites = [s.get("composite_score", 0) for s in baseline]
                 baseline_mean = sum(baseline_composites) / len(baseline_composites)
@@ -246,10 +240,7 @@ class ScoreAggregator:
                     drift_alert = True
 
         # Trend data
-        trend = [
-            {"timestamp": s.get("evaluated_at", ""), "composite": s.get("composite_score", 0)}
-            for s in recent
-        ]
+        trend = [{"timestamp": s.get("evaluated_at", ""), "composite": s.get("composite_score", 0)} for s in recent]
 
         return {
             "mean": round(mean, 2),
@@ -294,28 +285,23 @@ class ScoreAggregator:
 
             if dim == ScoringDimension.goal_completion:
                 recommendations.append(
-                    f"Improve goal completion (score: {score:.0f}). "
-                    f"Issues: {', '.join(unique_names[:3])}."
+                    f"Improve goal completion (score: {score:.0f}). Issues: {', '.join(unique_names[:3])}."
                 )
             elif dim == ScoringDimension.tool_efficiency:
                 recommendations.append(
-                    f"Improve tool efficiency (score: {score:.0f}). "
-                    f"Issues: {', '.join(unique_names[:3])}."
+                    f"Improve tool efficiency (score: {score:.0f}). Issues: {', '.join(unique_names[:3])}."
                 )
             elif dim == ScoringDimension.tool_failures:
                 recommendations.append(
-                    f"Reduce tool failures (score: {score:.0f}). "
-                    f"Issues: {', '.join(unique_names[:3])}."
+                    f"Reduce tool failures (score: {score:.0f}). Issues: {', '.join(unique_names[:3])}."
                 )
             elif dim == ScoringDimension.factual_grounding:
                 recommendations.append(
-                    f"Improve factual grounding (score: {score:.0f}). "
-                    f"Issues: {', '.join(unique_names[:3])}."
+                    f"Improve factual grounding (score: {score:.0f}). Issues: {', '.join(unique_names[:3])}."
                 )
             elif dim == ScoringDimension.thought_process:
                 recommendations.append(
-                    f"Improve thought process (score: {score:.0f}). "
-                    f"Issues: {', '.join(unique_names[:3])}."
+                    f"Improve thought process (score: {score:.0f}). Issues: {', '.join(unique_names[:3])}."
                 )
             elif dim == ScoringDimension.adversarial_robustness:
                 recommendations.append(

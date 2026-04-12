@@ -280,16 +280,16 @@ async def run_structured_eval(
 
     logger.info(
         "Adversarial scan: %d injection attempts, %d penalties for trace %s",
-        len(injection_attempts), len(adversarial_penalties), trace_id,
+        len(injection_attempts),
+        len(adversarial_penalties),
+        trace_id,
     )
 
     # --- Step 2: Sanitize trace for SLM judge ---
     sanitized_trace = sanitizer.sanitize_for_judge(trace)
 
     # --- Step 3: Structural scoring on ORIGINAL trace ---
-    structural_penalties = structural_scorer.score_tool_efficiency(
-        spans, str(agent.id)
-    )
+    structural_penalties = structural_scorer.score_tool_efficiency(spans, str(agent.id))
     structural_penalties += structural_scorer.score_tool_failures(spans)
 
     for p in structural_penalties:
@@ -308,8 +308,7 @@ async def run_structured_eval(
             if agent.goal_template:
                 goal_desc = agent.goal_template.description
                 required_sections = [
-                    {"name": s.name, "grounding_required": s.grounding_required}
-                    for s in agent.goal_template.sections
+                    {"name": s.name, "grounding_required": s.grounding_required} for s in agent.goal_template.sections
                 ]
             if required_sections:
                 slm_penalties += await slm_scorer.score_goal_completion(
@@ -339,12 +338,12 @@ async def run_structured_eval(
                 canary_penalty["amount"] = _PENALTY_AMOUNTS.get(canary_penalty["event_name"], 0)
             adversarial_penalties.append(canary_penalty)
 
-        canary_report = canary_detector.generate_canary_report(
-            trace_id, canary_config, canary_penalty
-        )
+        canary_report = canary_detector.generate_canary_report(trace_id, canary_config, canary_penalty)
         logger.info(
             "Canary check: behavior=%s, penalty=%s for trace %s",
-            canary_report.agent_behavior, canary_report.penalty_applied, trace_id,
+            canary_report.agent_behavior,
+            canary_report.penalty_applied,
+            trace_id,
         )
 
     # --- Step 6: Aggregate all penalties ---

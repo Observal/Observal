@@ -247,11 +247,11 @@ def _span_dedup_key(span: dict) -> str:
 
 # Patterns for section header detection
 _SECTION_HEADER_PATTERNS = [
-    r"^##\s+{name}\s*$",         # ## Root Cause
-    r"^###\s+{name}\s*$",        # ### Root Cause
-    r"^\*\*{name}:?\*\*",        # **Root Cause:** or **Root Cause**
-    r"^{name}\s*$",              # Root Cause (bare heading on its own line)
-    r"^{name}:",                 # Root Cause: ...
+    r"^##\s+{name}\s*$",  # ## Root Cause
+    r"^###\s+{name}\s*$",  # ### Root Cause
+    r"^\*\*{name}:?\*\*",  # **Root Cause:** or **Root Cause**
+    r"^{name}\s*$",  # Root Cause (bare heading on its own line)
+    r"^{name}:",  # Root Cause: ...
 ]
 
 
@@ -402,12 +402,12 @@ class MatchingEngine:
 
 # Regex for extracting numeric values from text
 _RE_NUMBER = re.compile(
-    r"(?<![a-zA-Z])"          # not preceded by a letter
-    r"[$€£¥]?\s*"             # optional currency symbol
-    r"(-?\d[\d,]*\.?\d*)"     # the number itself (with optional commas and decimal)
+    r"(?<![a-zA-Z])"  # not preceded by a letter
+    r"[$€£¥]?\s*"  # optional currency symbol
+    r"(-?\d[\d,]*\.?\d*)"  # the number itself (with optional commas and decimal)
     r"\s*"
     r"(%|[KkMmBbTt](?:illion)?|[Kk]?)?"  # optional suffix
-    r"(?![a-zA-Z])"           # not followed by a letter (except suffix)
+    r"(?![a-zA-Z])"  # not followed by a letter (except suffix)
 )
 
 # Multiplier suffixes
