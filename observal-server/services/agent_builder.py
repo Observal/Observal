@@ -344,12 +344,26 @@ def _generate_claude_code(manifest: AgentManifest) -> IdeAgentConfig:
         args = cfg.get("args", [])
         setup_commands.append(["claude", "mcp", "add", name, "--", cmd, *args])
 
+    # Build Claude Code agent file with YAML frontmatter
+    desc_line = (manifest.description or safe_name).replace("\n", " ").strip()
+    frontmatter_lines = [
+        "---",
+        f"name: {safe_name}",
+        f"description: \"{desc_line}\"",
+    ]
+    if mcp_entries:
+        frontmatter_lines.append("mcpServers:")
+        for mcp_name in mcp_entries:
+            frontmatter_lines.append(f"  - {mcp_name}")
+    frontmatter_lines.append("---")
+    agent_content = "\n".join(frontmatter_lines) + "\n\n" + rules_content
+
     return IdeAgentConfig(
         ide="claude-code",
         files=[
             AgentFile(
                 path=f".claude/agents/{safe_name}.md",
-                content=rules_content,
+                content=agent_content,
                 format="markdown",
             ),
         ],

@@ -85,10 +85,19 @@ def _claude_code_snippet() -> dict:
     return {
         "config_snippet": {
             "rules_file": {
-                "path": ".claude/rules/my-agent.md",
-                "content": "# Claude Code Agent\n",
+                "path": ".claude/agents/my-agent.md",
+                "content": (
+                    "---\n"
+                    "name: my-agent\n"
+                    'description: "A test agent"\n'
+                    "mcpServers:\n"
+                    "  - observal-mcp\n"
+                    "---\n"
+                    "\n"
+                    "# Claude Code Agent\n"
+                ),
             },
-            "mcp_config": {"name": {"command": "observal-mcp", "args": ["--agent", "abc"]}},
+            "mcp_config": {"observal-mcp": {"command": "observal-mcp", "args": ["--agent", "abc"]}},
             "mcp_setup_commands": [["claude", "mcp", "add", "observal-mcp", "--", "observal-mcp", "--agent", "abc"]],
             "otlp_env": {
                 "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
@@ -199,14 +208,18 @@ class TestPullVSCode:
 
 
 class TestPullClaudeCode:
-    def test_writes_rules_file(self, tmp_path: Path):
+    def test_writes_agent_file(self, tmp_path: Path):
         with _patch_config(), _patch_post(_claude_code_snippet()):
             result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path)])
 
         assert result.exit_code == 0, result.output
-        rules = tmp_path / ".claude" / "rules" / "my-agent.md"
-        assert rules.exists()
-        assert "Claude Code Agent" in rules.read_text()
+        agent_file = tmp_path / ".claude" / "agents" / "my-agent.md"
+        assert agent_file.exists()
+        content = agent_file.read_text()
+        assert content.startswith("---\n")
+        assert "name: my-agent" in content
+        assert "mcpServers:" in content
+        assert "Claude Code Agent" in content
 
     def test_shows_setup_commands(self, tmp_path: Path):
         with _patch_config(), _patch_post(_claude_code_snippet()):
@@ -227,8 +240,8 @@ class TestPullClaudeCode:
             result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path)])
 
         assert result.exit_code == 0
-        # Only the rules file should be written, not an mcp_config file
-        assert (tmp_path / ".claude" / "rules" / "my-agent.md").exists()
+        # Only the agent file should be written, not an mcp_config file
+        assert (tmp_path / ".claude" / "agents" / "my-agent.md").exists()
         # No .claude/mcp.json should exist — Claude Code uses setup commands instead
         assert not (tmp_path / ".claude" / "mcp.json").exists()
 

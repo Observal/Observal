@@ -183,8 +183,23 @@ def generate_agent_config(
             args = cfg.get("args", [])
             setup_commands.append(["claude", "mcp", "add", name, "--", cmd, *args])
             claude_mcps[name] = {"command": cmd, "args": args, "env": cfg.get("env", {})}
+
+        # Build Claude Code agent file with YAML frontmatter
+        desc_line = (agent.description or safe_name).replace("\n", " ").strip()
+        frontmatter_lines = [
+            "---",
+            f"name: {safe_name}",
+            f"description: \"{desc_line}\"",
+        ]
+        if claude_mcps:
+            frontmatter_lines.append("mcpServers:")
+            for mcp_name in claude_mcps:
+                frontmatter_lines.append(f"  - {mcp_name}")
+        frontmatter_lines.append("---")
+        agent_content = "\n".join(frontmatter_lines) + "\n\n" + rules_content
+
         return {
-            "rules_file": {"path": f".claude/agents/{safe_name}.md", "content": rules_content},
+            "rules_file": {"path": f".claude/agents/{safe_name}.md", "content": agent_content},
             "mcp_config": claude_mcps,
             "mcp_setup_commands": setup_commands,
             "otlp_env": otlp,
