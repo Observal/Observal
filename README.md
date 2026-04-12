@@ -67,10 +67,10 @@ Tool  <-->  observal-shim  <-->  MCP Server / Sandbox
           Observal API  -->  ClickHouse (traces, spans, scores)
                 |
                 v
-          Eval Engine (LLM-as-judge)  -->  Scorecards
+          Eval Engine (SLM-as-a-Judge / Deductive Penalty Scoring)  -->  Scorecards
 ```
 
-The eval engine runs on collected traces after the fact. It scores agent sessions across dimensions like tool selection quality, prompt effectiveness, and code correctness. Scorecards let you compare agent versions, identify bottlenecks, and track improvements over time.
+The eval engine runs on collected traces after the fact. It scores agent sessions across five dimensions: Goal Completion, Tool Call Efficiency, Tool Call Failures, Factual Grounding, and Thought Process. Scorecards let you compare agent versions, identify bottlenecks, and track improvements over time.
 
 ## The Registry
 
