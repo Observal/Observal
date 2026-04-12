@@ -161,3 +161,5 @@ def register_uninstall(app: typer.Typer):
             _uninstall_cli()
 
         rprint("\n[green]Observal has been uninstalled. Goodbye![/green]")
+        if repo_root:
+            rprint(f"\n[dim]Run [bold]cd {repo_root.parent}[/bold] to leave the deleted directory.[/dim]")
