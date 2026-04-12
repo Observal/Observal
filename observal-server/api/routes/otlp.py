@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Request, Response
 
 from services.clickhouse import insert_spans, insert_traces
+from services.secrets_redactor import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,18 @@ def _now_ms() -> str:
     return datetime.now(UTC).strftime(_DT_FMT)[:-3]
 
 
+_REDACT_FIELDS = {"input", "output", "error"}
+
+
+def _redact_rows(rows: list[dict]) -> None:
+    """Redact secrets from input/output/error fields in place."""
+    for row in rows:
+        for field in _REDACT_FIELDS:
+            val = row.get(field)
+            if val and isinstance(val, str):
+                row[field] = redact_secrets(val)
+
+
 # ---------------------------------------------------------------------------
 # OTLP Trace conversion
 # ---------------------------------------------------------------------------
@@ -152,9 +165,9 @@ def _convert_resource_spans(body: dict) -> tuple[list[dict], list[dict]]:
                     )
                     session_id = all_attrs.get("session.id")
 
-                    # GenAI semantic conventions
-                    input_text = all_attrs.get("gen_ai.prompt")
-                    output_text = all_attrs.get("gen_ai.completion")
+                    # GenAI semantic conventions (redact secrets)
+                    input_text = redact_secrets(all_attrs.get("gen_ai.prompt") or "") or None
+                    output_text = redact_secrets(all_attrs.get("gen_ai.completion") or "") or None
                     tok_in = _safe_int(all_attrs.get("gen_ai.usage.input_tokens"))
                     tok_out = _safe_int(all_attrs.get("gen_ai.usage.output_tokens"))
                     tok_total = (tok_in or 0) + (tok_out or 0) if (tok_in is not None or tok_out is not None) else None
@@ -572,6 +585,9 @@ async def otlp_traces(request: Request):
         logger.warning("OTLP /v1/traces: conversion failed", exc_info=True)
         return Response(content=json.dumps(_OTLP_OK), status_code=200, media_type="application/json")
 
+    _redact_rows(trace_rows)
+    _redact_rows(span_rows)
+
     errors = 0
     if trace_rows:
         try:
@@ -634,6 +650,9 @@ async def otlp_logs(request: Request):
     except Exception:
         logger.warning("OTLP /v1/logs: conversion failed", exc_info=True)
         return Response(content=json.dumps(_OTLP_OK), status_code=200, media_type="application/json")
+
+    _redact_rows(trace_rows)
+    _redact_rows(span_rows)
 
     errors = 0
     if trace_rows:

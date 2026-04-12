@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Request
 
 from services.clickhouse import _escape, _map_literal, _query
+from services.secrets_redactor import redact_secrets
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/otel", tags=["otel-dashboard"])
@@ -470,6 +471,12 @@ async def ingest_hook(request: Request):
 
     # Event name for the EventName column (used by list_sessions countIf)
     event_name = attrs.get("event.name", f"hook_{hook_event.lower()}")
+
+    # ── Redact secrets from user-content fields before storage ──
+    for _redact_field in ("tool_input", "tool_response", "error"):
+        if _redact_field in attrs:
+            attrs[_redact_field] = redact_secrets(attrs[_redact_field])
+    body_text = redact_secrets(body_text)
 
     # INSERT into otel_logs
     attr_map = _map_literal(attrs)

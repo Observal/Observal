@@ -20,6 +20,7 @@ from services.clickhouse import (
     insert_traces,
     query_recent_events,
 )
+from services.secrets_redactor import redact_secrets
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/telemetry", tags=["telemetry"])
@@ -62,8 +63,8 @@ async def ingest(
                         "name": t.name,
                         "metadata": t.metadata,
                         "tags": t.tags,
-                        "input": t.input,
-                        "output": t.output,
+                        "input": redact_secrets(t.input) if t.input else t.input,
+                        "output": redact_secrets(t.output) if t.output else t.output,
                         "tool_id": t.tool_id,
                         "sandbox_id": t.sandbox_id,
                         "graphrag_id": t.graphrag_id,
@@ -95,9 +96,9 @@ async def ingest(
                         "type": s.type,
                         "name": s.name,
                         "method": s.method,
-                        "input": s.input,
-                        "output": s.output,
-                        "error": s.error,
+                        "input": redact_secrets(s.input) if s.input else s.input,
+                        "output": redact_secrets(s.output) if s.output else s.output,
+                        "error": redact_secrets(s.error) if s.error else s.error,
                         "start_time": s.start_time,
                         "end_time": s.end_time,
                         "latency_ms": s.latency_ms,
@@ -193,8 +194,8 @@ async def ingest_events(
                     "timestamp": now,
                     "mcp_server_id": tc.mcp_server_id,
                     "tool_name": tc.tool_name,
-                    "input_params": tc.input_params,
-                    "response": tc.response,
+                    "input_params": redact_secrets(tc.input_params) if tc.input_params else tc.input_params,
+                    "response": redact_secrets(tc.response) if tc.response else tc.response,
                     "latency_ms": tc.latency_ms,
                     "status": tc.status,
                     "user_action": tc.user_action,
