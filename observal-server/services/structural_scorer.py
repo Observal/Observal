@@ -316,11 +316,7 @@ class MatchingEngine:
                     return False
 
         # Rule 4: check expected format if specified
-        if expected_format:
-            if not self._check_format(content, expected_format):
-                return False
-
-        return True
+        return not (expected_format and not self._check_format(content, expected_format))
 
     def normalize_for_comparison(self, text: str) -> str:
         """Normalize text for comparison WITHOUT collapsing semantically different strings.
@@ -389,8 +385,8 @@ class MatchingEngine:
             return bool(re.search(r"^\s*[-*]\s", content, re.MULTILINE))
         if fmt == "paragraph":
             # At least one sentence-like string (20+ chars without list markers)
-            lines = [l.strip() for l in content.split("\n") if l.strip()]
-            return any(len(l) >= 20 and not l.startswith(("-", "*", "1.")) for l in lines)
+            lines = [line.strip() for line in content.split("\n") if line.strip()]
+            return any(len(line) >= 20 and not line.startswith(("-", "*", "1.")) for line in lines)
         if fmt == "json":
             try:
                 json.loads(content.strip())

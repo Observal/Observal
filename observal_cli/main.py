@@ -1,6 +1,6 @@
 """Observal CLI: MCP Server & Agent Registry."""
 
-from typing import Optional
+
 
 import typer
 
@@ -26,7 +26,7 @@ app = typer.Typer(
 
 @app.callback()
 def main(
-    version: Optional[bool] = typer.Option(
+    version: bool | None = typer.Option(
         None,
         "--version",
         "-V",

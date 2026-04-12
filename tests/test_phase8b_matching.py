@@ -3,10 +3,8 @@
 Tests MatchingEngine and NumericComparator for robust structural comparisons.
 """
 
-import pytest
 
 from services.structural_scorer import MatchingEngine, NumericComparator
-
 
 # =========================================================================
 # MatchingEngine — normalize_for_comparison

@@ -77,10 +77,7 @@ class ScorecardResponse(BaseModel):
     @classmethod
     def _extract_adversarial_from_raw(cls, data: Any) -> Any:
         """Extract adversarial_findings and canary_report from raw_output if present."""
-        if isinstance(data, dict):
-            raw = data.get("raw_output")
-        else:
-            raw = getattr(data, "raw_output", None)
+        raw = data.get("raw_output") if isinstance(data, dict) else getattr(data, "raw_output", None)
 
         if not isinstance(raw, dict):
             return data

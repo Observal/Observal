@@ -4,7 +4,7 @@ Forces the judge to return structured JSON rather than free-text reasoning
 that can be steered by prompt injection in agent output.
 """
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -14,7 +14,7 @@ class SectionJudgment(BaseModel):
 
     section_name: str
     status: Literal["present", "missing", "stub", "ungrounded"]
-    evidence_span_id: Optional[str] = None
+    evidence_span_id: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
 
 
@@ -29,7 +29,7 @@ class ClaimJudgment(BaseModel):
 
     claim_text: str = Field(max_length=100)
     status: Literal["grounded", "ungrounded", "contradicted", "numeric_mismatch", "hallucinated_entity"]
-    source_span_id: Optional[str] = None
+    source_span_id: str | None = None
     evidence_quote: str = Field(max_length=100)
 
 

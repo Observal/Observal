@@ -9,17 +9,13 @@ silently default to 100.
 import uuid
 from collections import defaultdict
 
-import pytest
-
 from models.scoring import (
-    DEFAULT_DIMENSION_WEIGHTS,
     DEFAULT_PENALTIES,
     ScoringDimension,
 )
 from services.eval_watchdog import EvalWatchdog
 from services.score_aggregator import ScoreAggregator, _score_to_grade
 from services.structural_scorer import StructuralScorer
-
 
 # --- Helpers ---
 
@@ -352,34 +348,34 @@ class TestCompositeBounds:
 
 
 class TestGradeBoundaries:
-    def test_85_is_A(self):
+    def test_85_is_grade_a(self):
         assert _score_to_grade(85.0) == "A"
 
-    def test_84_9_is_B(self):
+    def test_84_9_is_grade_b(self):
         assert _score_to_grade(84.9) == "B"
 
-    def test_70_is_B(self):
+    def test_70_is_grade_b(self):
         assert _score_to_grade(70.0) == "B"
 
-    def test_69_9_is_C(self):
+    def test_69_9_is_grade_c(self):
         assert _score_to_grade(69.9) == "C"
 
-    def test_55_is_C(self):
+    def test_55_is_grade_c(self):
         assert _score_to_grade(55.0) == "C"
 
-    def test_54_9_is_D(self):
+    def test_54_9_is_grade_d(self):
         assert _score_to_grade(54.9) == "D"
 
-    def test_40_is_D(self):
+    def test_40_is_grade_d(self):
         assert _score_to_grade(40.0) == "D"
 
-    def test_39_9_is_F(self):
+    def test_39_9_is_grade_f(self):
         assert _score_to_grade(39.9) == "F"
 
-    def test_0_is_F(self):
+    def test_0_is_grade_f(self):
         assert _score_to_grade(0) == "F"
 
-    def test_100_is_A(self):
+    def test_100_is_grade_a(self):
         assert _score_to_grade(100) == "A"
 
 

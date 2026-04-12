@@ -5,12 +5,12 @@ and structured output schemas.
 """
 
 import copy
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import ValidationError
 
-from models.sanitization import InjectionAttempt, SanitizationReport
+from models.sanitization import SanitizationReport
 from schemas.judge_output import (
     ClaimJudgment,
     FactualGroundingJudgment,
@@ -26,7 +26,6 @@ from services.slm_scorer import (
     THOUGHT_PROCESS_PROMPT,
     SLMScorer,
 )
-
 
 # --- Helper: sample trace ---
 
@@ -287,7 +286,7 @@ class TestJudgeOutputSchemas:
         assert judgment.sections[0].status == "present"
 
     def test_goal_completion_rejects_invalid_status(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             SectionJudgment(
                 section_name="X", status="excellent", confidence=0.5,
             )
@@ -314,7 +313,7 @@ class TestJudgeOutputSchemas:
         assert judgment.findings[0].finding_type == "blind_tool_use"
 
     def test_thought_process_rejects_invalid_type(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ThoughtFinding(
                 finding_type="awesome_reasoning",
                 span_id="s1",

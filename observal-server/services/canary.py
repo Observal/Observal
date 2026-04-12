@@ -12,7 +12,7 @@ import copy
 import logging
 import re
 import uuid
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -101,7 +101,7 @@ class CanaryDetector:
 
     def check_for_parroted_canary(
         self, trace: dict, config: CanaryConfig
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Check if the agent's output contains the canary value or derivatives.
 
         Returns a penalty dict if canary was parroted, None if agent behaved correctly.
@@ -139,10 +139,9 @@ class CanaryDetector:
         self,
         trace_id: str,
         config: CanaryConfig,
-        penalty: Optional[dict],
+        penalty: dict | None,
     ) -> CanaryReport:
         """Produce a report for the admin dashboard."""
-        agent_output = ""
         # Determine behavior
         if penalty:
             behavior: Literal["parroted", "flagged", "ignored", "corrected"] = "parroted"
@@ -210,7 +209,7 @@ class CanaryDetector:
                 return True, f"Agent output references canary entity '{entity}'"
         # Also check the full canary value as a substring
         if canary_value.lower() in output.lower():
-            return True, f"Agent output contains canary value verbatim"
+            return True, "Agent output contains canary value verbatim"
         return False, ""
 
     def _check_instruction_canary(self, output: str, canary_value: str) -> tuple[bool, str]:

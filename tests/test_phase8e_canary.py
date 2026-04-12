@@ -7,9 +7,9 @@ CanaryConfig/CanaryReport models, and admin API canary routes.
 import copy
 
 import pytest
+from pydantic import ValidationError
 
 from services.canary import CanaryConfig, CanaryDetector, CanaryReport
-
 
 # --- Helpers ---
 
@@ -60,7 +60,7 @@ class TestCanaryConfig:
         assert config.canary_type == "entity"
 
     def test_invalid_canary_type_rejected(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             _make_config(canary_type="invalid_type")
 
 

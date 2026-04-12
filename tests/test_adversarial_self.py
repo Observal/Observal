@@ -8,15 +8,12 @@ Phase 8F of the BenchJack-Hardened pipeline.
 
 import uuid
 
-import pytest
-
 from models.scoring import ScoringDimension
 from services.adversarial_scorer import AdversarialScorer
 from services.canary import CanaryConfig, CanaryDetector
 from services.sanitizer import TraceSanitizer
 from services.score_aggregator import ScoreAggregator
 from services.structural_scorer import MatchingEngine
-
 
 # --- Helpers ---
 
@@ -87,7 +84,7 @@ class TestNullAgent:
         sc = _scorecard(structural=penalties)
         assert sc.composite_score < 30, f"Null agent scored {sc.composite_score}, expected < 30"
 
-    def test_null_agent_gets_F_grade(self):
+    def test_null_agent_gets_f_grade(self):
         """Null agent must receive grade F."""
         penalties = [
             {"event_name": "no_tool_calls", "dimension": ScoringDimension.tool_efficiency, "amount": -50, "evidence": "null"},

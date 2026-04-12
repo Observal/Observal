@@ -384,7 +384,7 @@ async def delete_canary(
 ):
     """Remove a canary config."""
     _require_admin(current_user)
-    for agent_id, configs in _canary_configs.items():
+    for _agent_id, configs in _canary_configs.items():
         for i, config in enumerate(configs):
             if config.get("id") == canary_id:
                 configs.pop(i)

@@ -6,18 +6,13 @@ and weight redistribution.
 
 import uuid
 
-import pytest
-
 from models.scoring import (
     DEFAULT_DIMENSION_WEIGHTS,
     DEFAULT_PENALTIES,
-    PenaltySeverity,
     ScoringDimension,
 )
 from services.adversarial_scorer import AdversarialScorer
-from services.sanitizer import TraceSanitizer
 from services.score_aggregator import ScoreAggregator
-
 
 # --- Helpers ---
 

@@ -8,11 +8,10 @@ Also tests the updated ScorecardResponse schema.
 """
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from models.scoring import ScoringDimension
 from schemas.eval import (
     AdversarialFindings,
     CanaryReportResponse,
@@ -21,7 +20,6 @@ from schemas.eval import (
     ScorecardResponse,
 )
 from services.canary import CanaryConfig
-
 
 # --- Helpers ---
 
