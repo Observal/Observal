@@ -1168,7 +1168,7 @@ class TestGenerateIdeAgentFiles:
         assert config.ide == "claude-code"
         rules_files = [f for f in config.files if f.format == "markdown"]
         assert len(rules_files) == 1
-        assert rules_files[0].path == ".claude/rules/test-agent.md"
+        assert rules_files[0].path == ".claude/agents/test-agent.md"
         assert "You are a helpful coding assistant." in rules_files[0].content
 
     def test_claude_code_mcp_setup_commands(self):
