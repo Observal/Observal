@@ -4,39 +4,85 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [Unreleased] - 2026-04-12
 
 ### Added — Kiro CLI Telemetry Support
 
-Adds Kiro CLI as a supported telemetry source. Kiro sessions now appear in the dashboard with user prompts, tool I/O, model responses, credit tracking, and agent attribution. Not yet at full parity with Claude Code — see status table below.
+Adds Kiro CLI as a supported telemetry source. Kiro sessions now appear in the dashboard with user prompts, tool I/O, model responses, credit tracking, and agent attribution. Not at full parity with Claude Code — see status table below.
 
 #### Telemetry Status: Claude Code vs Kiro CLI
 
 | Capability | Claude Code | Kiro CLI | Notes |
 |---|---|---|---|
-| Sessions in dashboard | **Full** | **Working** | Kiro uses `$PPID`-based session IDs (see below) |
+| Sessions in dashboard | **Full** | **Working** | Kiro groups by `conversation_id` from SQLite (resumed sessions merge) |
 | User prompts | **Full** | **Working** | Captured via `userPromptSubmit` hook |
 | Model responses | **Full** | **Working** | Captured via `stop` hook `assistant_response` |
 | Tool names + I/O | **Full** | **Working** | `preToolUse`/`postToolUse` with params and response |
-| Token counts | **Full** (`input_tokens`, `output_tokens`, `cache_read_tokens`) | **Not available** | Kiro CLI does not expose token counts anywhere — not in hooks, not in its SQLite DB. Only credits. |
-| Cost tracking | `cost_usd` per API call (not yet aggregated to session level) | **Credits** (session-level, from SQLite DB) | Dashboard shows credits for Kiro, tokens for Claude Code |
+| Token counts | **Full** (`input_tokens`, `output_tokens`, `cache_read_tokens`) | **Not available** | Kiro CLI does not expose token counts — only credits |
+| Cost tracking | `cost_usd` per API call | **Credits** (session-level, from SQLite DB) | Dashboard shows credits for Kiro, tokens for Claude Code |
 | Model name | **Full** | **Working** | Resolved from Kiro SQLite, often shows "auto" |
 | Agent attribution | `agent_id`, `agent_type` from subagents | `agent_name` only | Kiro has no agent_id/agent_type concept |
-| Session continuations | Native `session_id` (UUID) persists across resumes | `$PPID` changes on each `kiro-cli` invocation | `conversation_id` from SQLite is attached as an attribute but NOT used as session_id — resumed Kiro sessions appear as separate sessions |
-| User identity | `user.id` captured | Not available | Kiro hooks don't include user identity |
-| IDE/terminal info | `terminal.type` captured | Not available | |
-| Permission mode | Captured | Not available | |
-| Subagent tracking | `SubagentStart`/`SubagentStop` events | Not available | Kiro has no subagent hook events |
-| Task tracking | `TaskCreated`/`TaskCompleted` events | Not available | |
-| Eval engine support | **Working** — traces feed into structured eval pipeline | **Not working** — hook data goes to `otel_logs`, eval reads from `agent_interactions` table | Needs a bridge layer (see Known Gaps) |
+| Session continuations | Native `session_id` (UUID) persists across resumes | **Working** | Dashboard groups by `conversation_id` from SQLite DB |
+| User identity | `user.id` from Claude + Observal login | **Working** (Observal login) | Both IDEs use Observal login identity stored in `~/.observal/config.json` |
+| IDE/terminal info | `terminal.type` captured | **Working** | `$TERM` and `$SHELL` injected via sed |
+| Permission mode | Captured | Not available | Kiro doesn't expose this |
+| Subagent tracking | `SubagentStart`/`SubagentStop` events | Not available | Kiro has no subagent hook events (only 5 events total) |
+| Task tracking | `TaskCreated`/`TaskCompleted` events | Not available | Kiro has no task concept in hooks |
+| Eval engine support | **Full** — spans table + hook materializer | **Working** — hook materializer converts `otel_logs` to eval-compatible spans | 5/6 scoring dimensions work; only `thought_process` (13% weight) skipped |
 
 #### Known Gaps
 
-- **Session continuations broken for Kiro**: When a user does `kiro-cli chat --resume`, a new `$PPID` is assigned, creating a separate session in the dashboard. The real `conversation_id` from Kiro's SQLite DB is captured as an attribute on each event, but the dashboard doesn't yet group sessions by `conversation_id`. Fix requires: session grouping/linking in the dashboard query.
-- **Eval engine cannot score Kiro sessions**: The eval pipeline (`run_structured_eval`) reads from the `agent_interactions` and `spans` tables, which expect structured span data with `type`, `input`, `output`, `status` fields. Kiro hook events are flat log entries in `otel_logs` — no bridge exists to convert them into eval-compatible spans. Fix requires: a materializer that converts `otel_logs` hook events into structured spans, or a new eval path that reads directly from `otel_logs`.
-- **Per-agent trace isolation incomplete**: The ClickHouse schema has indexed `agent_id` columns on both `spans` and `traces` tables, and `otel_logs` stores `agent_name` in `LogAttributes`. But no API endpoint exists to query "all traces/spans where this agent participated" — the eval endpoint requires a `trace_id` first, then fetches spans. For agent-level evals, we need: `GET /api/v1/agents/{id}/traces` that queries across both `otel_logs` (hook data) and `spans` (shim data).
+- **Kiro token counts**: Kiro only exposes credits (billing units) and character counts — no actual token counts anywhere (hooks, SQLite DB, config). Not fixable on our side.
+- **Kiro subagent/task tracking**: Kiro CLI exposes exactly 5 hook events (`agentSpawn`, `userPromptSubmit`, `preToolUse`, `postToolUse`, `stop`). No subagent lifecycle or task management events exist. Architecture is fundamentally single-agent per session.
+- **Thought process scoring**: The `thought_process` eval dimension (13% weight) requires `reasoning_step`/`thought`/`agent_turn` span types which come from internal agent instrumentation, not hooks. Skipped for all hook-sourced sessions (both Kiro and Claude Code hooks). Scores gracefully degrade.
 
-#### What Was Implemented
+### Added — Agent-Scoped Evaluation
+
+Evaluate a specific agent's contribution within a session, including subagents that never own a full session (e.g., researcher, explore).
+
+- **`POST /api/v1/eval/agents/{id}/session/{session_id}`** — evaluates a specific agent within a session
+- **Three eval modes**:
+  - `agent_scoped` — agent was a subagent; isolates spans between `SubagentStart`/`SubagentStop`; uses delegation prompt as goal
+  - `full_session` — agent is the primary agent (e.g., Kiro single-agent sessions); evaluates everything
+  - `404` — agent not found in session
+- **Structural scoring** (tool efficiency, tool failures) runs on the agent's spans only
+- **SLM scoring** (goal completion, factual grounding) sees the full session context but evaluates against the delegation prompt — what the parent agent asked this agent to do
+- **Hook materializer** now tags every span with `agent_id`/`agent_type` from source events and materializes `SubagentStart`/`SubagentStop` as span boundaries
+
+### Added — Eval Materializer
+
+Bridge layer that converts `otel_logs` hook events into eval-compatible spans so the scoring pipeline works with hook-sourced sessions (Kiro, Claude Code hooks).
+
+- **`hook_materializer.py`** — converts hook events into spans with `type`/`input`/`output`/`status`/`latency_ms`
+- Pairs `PreToolUse` + `PostToolUse` into `tool_call` spans; `Stop` → `agent_response`; `UserPromptSubmit` → `user_prompt`
+- **`POST /api/v1/eval/sessions/{session_id}`** — evaluate any hook-based session directly
+- Integrated into main eval pipeline as fallback when `agent_interactions` table has no data
+
+### Added — Per-Agent Trace Endpoint
+
+- **`GET /api/v1/agents/{id}/traces`** — query all traces where an agent participated, using existing indexed `agent_id` column on the `traces` table
+
+### Added — Observal User Identity for Hooks
+
+User identity for both Claude Code and Kiro now comes from `observal login`, not from IDE-specific identity.
+
+- All login paths (bootstrap, key, password, invite, register) save `user_id` to `~/.observal/config.json`
+- **Claude Code**: `X-Observal-User-Id` header injected into HTTP hooks
+- **Kiro**: `user_id` field injected into hook payload via sed prefix
+- **Server**: extracts from body (`user_id` field) or header (`X-Observal-User-Id`), stores as `user.id` in ClickHouse
+
+### Fixed — Kiro Session Continuations
+
+- Dashboard now groups Kiro sessions by `conversation_id` (from SQLite DB) instead of `$PPID`
+- Resumed sessions (`kiro-cli chat --resume`) merge into a single dashboard row
+- Session detail endpoint matches both `session.id` and `conversation_id`
+
+### Fixed — Kiro Terminal/Shell Info
+
+- `$TERM` and `$SHELL` environment variables injected into all Kiro hook payloads via sed prefix
+- Captured in both `cmd_scan.py` (CLI hook injection) and `hook_config_generator.py` (server-side config)
+
+#### What Was Implemented (Kiro Telemetry)
 
 **Critical bug fix**: All generated Kiro hook configs were pointing to `/api/v1/telemetry/hooks` (writes to `spans` table) instead of `/api/v1/otel/hooks` (writes to `otel_logs` table). This caused zero Kiro sessions in the dashboard.
 
@@ -48,7 +94,7 @@ Adds Kiro CLI as a supported telemetry source. Kiro sessions now appear in the d
 **SQLite enrichment pipeline**:
 - `kiro_stop_hook.py` — On `stop` event, queries `~/.local/share/kiro-cli/data.sqlite3` for the most recent conversation matching `cwd`. Extracts: `model_id`, `credits`, `tools_used`, `turn_count`, `conversation_id`.
 - `kiro_hook.py` — Lightweight script (~23ms) for non-stop events. Adds `conversation_id` from SQLite.
-- Session IDs use `$PPID` (Kiro doesn't expose any session identifier in hook payloads).
+- Session IDs use `$PPID` with `conversation_id` for grouping.
 
 **Per-agent hook enrichment**: Hook commands inject `agent_name` and `model` into every payload via `sed`. Added `userPromptSubmit` to hooks (was missing — prompts weren't captured before).
 
