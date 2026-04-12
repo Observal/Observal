@@ -389,3 +389,146 @@ async def run_structured_eval(
     }
 
     return scorecard
+
+
+async def run_agent_scoped_eval(
+    agent: Agent,
+    trace: dict,
+    full_spans: list[dict],
+    agent_spans: list[dict],
+    eval_run_id: uuid.UUID,
+    delegation_prompt: str = "",
+    agent_output: str = "",
+    canary_config: CanaryConfig | None = None,
+) -> Scorecard:
+    """Run eval focused on a specific agent's contribution within a session.
+
+    Structural scoring runs on agent_spans only (the agent's tool calls).
+    SLM scoring sees full_spans for context but evaluates against the
+    delegation_prompt (what the agent was asked to do) rather than the
+    registered goal template.
+    """
+    sanitizer = TraceSanitizer()
+    adversarial_scorer = AdversarialScorer(sanitizer)
+    canary_detector = CanaryDetector()
+    structural_scorer = StructuralScorer()
+    aggregator = ScoreAggregator()
+    watchdog = EvalWatchdog()
+
+    trace_id = trace.get("trace_id", trace.get("event_id", str(uuid.uuid4())))
+
+    # Build a focused trace with the agent's output
+    agent_trace = dict(trace)
+    if agent_output:
+        agent_trace["output"] = agent_output
+
+    # --- Step 1: Adversarial detection on agent's output ---
+    injection_attempts = sanitizer.detect_injection_attempts(agent_trace)
+    adversarial_penalties = adversarial_scorer.score(agent_trace, canary_config)
+    for p in adversarial_penalties:
+        if "amount" not in p:
+            p["amount"] = _PENALTY_AMOUNTS.get(p["event_name"], 0)
+
+    # --- Step 2: Sanitize for SLM ---
+    sanitized_trace = sanitizer.sanitize_for_judge(agent_trace)
+
+    # --- Step 3: Structural scoring on AGENT's spans only ---
+    structural_penalties = structural_scorer.score_tool_efficiency(agent_spans, str(agent.id))
+    structural_penalties += structural_scorer.score_tool_failures(agent_spans)
+    for p in structural_penalties:
+        if "amount" not in p:
+            p["amount"] = _PENALTY_AMOUNTS.get(p["event_name"], 0)
+
+    # --- Step 4: SLM scoring with delegation context ---
+    # Use delegation_prompt as goal if available, otherwise fall back to template
+    slm_penalties: list[dict] = []
+    skipped_dimensions: list[str] = []
+    backend = get_backend()
+    if not isinstance(backend, FallbackBackend):
+        slm_scorer = SLMScorer(backend)
+        try:
+            goal_desc = delegation_prompt or ""
+            required_sections: list[dict] = []
+
+            if not goal_desc and agent.goal_template:
+                goal_desc = agent.goal_template.description
+                required_sections = [
+                    {"name": s.name, "grounding_required": s.grounding_required}
+                    for s in agent.goal_template.sections
+                ]
+
+            # For agent-scoped eval, pass full_spans for grounding context
+            # but the SLM prompt uses the delegation as the goal
+            if goal_desc:
+                if required_sections:
+                    slm_penalties += await slm_scorer.score_goal_completion(
+                        sanitized_trace, full_spans, goal_desc, required_sections
+                    )
+                else:
+                    # No structured sections — use delegation prompt as
+                    # a single "task completion" section
+                    slm_penalties += await slm_scorer.score_goal_completion(
+                        sanitized_trace, full_spans, goal_desc,
+                        [{"name": "Delegated Task", "grounding_required": True}],
+                    )
+
+            slm_penalties += await slm_scorer.score_factual_grounding(
+                sanitized_trace, full_spans
+            )
+            slm_penalties += await slm_scorer.score_thought_process(full_spans)
+        except Exception as e:
+            logger.error(f"SLM scoring failed for agent-scoped eval: {e}")
+            slm_penalties = []
+            skipped_dimensions = ["goal_completion", "factual_grounding", "thought_process"]
+
+        for p in slm_penalties:
+            if "amount" not in p:
+                p["amount"] = _PENALTY_AMOUNTS.get(p["event_name"], 0)
+    else:
+        skipped_dimensions = ["goal_completion", "factual_grounding", "thought_process"]
+
+    # --- Step 5: Canary ---
+    canary_report = None
+    if canary_config and canary_config.enabled:
+        canary_penalty = canary_detector.check_for_parroted_canary(agent_trace, canary_config)
+        if canary_penalty:
+            if "amount" not in canary_penalty:
+                canary_penalty["amount"] = _PENALTY_AMOUNTS.get(canary_penalty["event_name"], 0)
+            adversarial_penalties.append(canary_penalty)
+        canary_report = canary_detector.generate_canary_report(trace_id, canary_config, canary_penalty)
+
+    # --- Step 6: Aggregate ---
+    scorecard = aggregator.compute_scorecard(
+        structural_penalties=structural_penalties + adversarial_penalties,
+        slm_penalties=slm_penalties,
+        agent_id=agent.id,
+        eval_run_id=eval_run_id,
+        trace_id=trace_id,
+        version=agent.version,
+        skipped_dimensions=skipped_dimensions if skipped_dimensions else None,
+    )
+
+    # --- Step 7: Watchdog ---
+    all_penalties = structural_penalties + adversarial_penalties + slm_penalties
+    warnings = watchdog.validate_scorecard(
+        composite_score=scorecard.composite_score,
+        dimension_scores=scorecard.dimension_scores,
+        penalty_count=scorecard.penalty_count,
+        penalties=all_penalties,
+        span_count=len(agent_spans),
+    )
+    scorecard.warnings = warnings
+
+    scorecard.raw_output = {
+        "eval_mode": "agent_scoped",
+        "delegation_prompt": delegation_prompt[:500] if delegation_prompt else None,
+        "agent_span_count": len(agent_spans),
+        "full_session_span_count": len(full_spans),
+        "adversarial_findings": {
+            "injection_attempts_detected": len(injection_attempts),
+            "adversarial_score": scorecard.dimension_scores.get("adversarial_robustness", 100),
+        },
+        "canary_report": canary_report.model_dump() if canary_report else None,
+    }
+
+    return scorecard

@@ -12,8 +12,14 @@ from models.eval import EvalRun, EvalRunStatus, Scorecard
 from models.user import User
 from schemas.eval import EvalRequest, EvalRunDetailResponse, EvalRunResponse, ScorecardResponse
 from services.clickhouse import query_spans
-from services.eval_service import evaluate_trace, fetch_traces, parse_scorecard, run_structured_eval
-from services.hook_materializer import materialize_session_spans
+from services.eval_service import (
+    evaluate_trace,
+    fetch_traces,
+    parse_scorecard,
+    run_agent_scoped_eval,
+    run_structured_eval,
+)
+from services.hook_materializer import build_agent_eval_context, materialize_agent_eval, materialize_session_spans
 from services.score_aggregator import ScoreAggregator
 
 router = APIRouter(prefix="/api/v1/eval", tags=["eval"])
@@ -217,6 +223,120 @@ async def eval_session(
         ],
         "source": "hook_materializer",
         "note": "No agent_id provided — returning materialized spans without scoring.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Agent-scoped eval (evaluate a subagent's contribution within a session)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/agents/{agent_id}/session/{session_id}", response_model=dict)
+async def eval_agent_in_session(
+    agent_id: str,
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Evaluate a specific agent's contribution within a session.
+
+    Materializes the full session from otel_logs, identifies which spans
+    belong to the target agent (via SubagentStart/Stop boundaries or
+    agent_id attribution), then runs the eval pipeline with:
+    - Structural scoring on the agent's spans only
+    - SLM scoring with full session context + delegation prompt as goal
+    """
+    # Load agent from DB (by UUID or name)
+    from api.routes.agent import _agent_id_clause, _load_agent
+
+    agent = await _load_agent(db, _agent_id_clause(agent_id))
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Materialize session and find the agent's spans
+    trace, all_spans, agent_ctx = await materialize_agent_eval(
+        session_id, agent.name
+    )
+
+    if not all_spans:
+        raise HTTPException(status_code=404, detail="No hook events found for session")
+
+    # If not found by name, try by agent ID
+    if agent_ctx is None:
+        trace, all_spans, agent_ctx = await materialize_agent_eval(
+            session_id, str(agent.id)
+        )
+
+    if agent_ctx is None:
+        # Agent wasn't found as a subagent — check if this is a single-agent
+        # session where the agent IS the primary (e.g., Kiro sessions)
+        session_agent = trace.get("agent_id", "")
+        if session_agent and session_agent.lower() == agent.name.lower():
+            # Whole session is this agent's work — eval the full session
+            eval_run = EvalRun(agent_id=agent.id, triggered_by=current_user.id)
+            db.add(eval_run)
+            await db.flush()
+
+            sc = await run_structured_eval(agent, trace, all_spans, eval_run.id)
+            db.add(sc)
+            eval_run.status = EvalRunStatus.completed
+            eval_run.traces_evaluated = 1
+            eval_run.completed_at = datetime.now(UTC)
+            await db.commit()
+
+            return {
+                "session_id": session_id,
+                "agent_id": str(agent.id),
+                "agent_name": agent.name,
+                "eval_mode": "full_session",
+                "eval_run_id": str(eval_run.id),
+                "composite_score": sc.composite_score,
+                "overall_grade": sc.overall_grade,
+                "dimension_scores": sc.dimension_scores,
+                "span_count": len(all_spans),
+            }
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent '{agent.name}' not found in session {session_id}",
+        )
+
+    # Build the eval context
+    eval_ctx = build_agent_eval_context(all_spans, agent_ctx)
+
+    # Run agent-scoped eval
+    eval_run = EvalRun(agent_id=agent.id, triggered_by=current_user.id)
+    db.add(eval_run)
+    await db.flush()
+
+    sc = await run_agent_scoped_eval(
+        agent=agent,
+        trace=trace,
+        full_spans=eval_ctx["full_spans"],
+        agent_spans=eval_ctx["agent_spans"],
+        eval_run_id=eval_run.id,
+        delegation_prompt=eval_ctx["delegation_prompt"],
+        agent_output=eval_ctx["agent_output"],
+    )
+    db.add(sc)
+    eval_run.status = EvalRunStatus.completed
+    eval_run.traces_evaluated = 1
+    eval_run.completed_at = datetime.now(UTC)
+    await db.commit()
+
+    return {
+        "session_id": session_id,
+        "agent_id": str(agent.id),
+        "agent_name": agent.name,
+        "eval_mode": "agent_scoped",
+        "eval_run_id": str(eval_run.id),
+        "composite_score": sc.composite_score,
+        "overall_grade": sc.overall_grade,
+        "dimension_scores": sc.dimension_scores,
+        "delegation_prompt": eval_ctx["delegation_prompt"][:200] if eval_ctx["delegation_prompt"] else None,
+        "agent_span_count": len(eval_ctx["agent_spans"]),
+        "full_session_span_count": len(eval_ctx["full_spans"]),
+        "invocations": len(eval_ctx["invocations"]),
     }
 
 
