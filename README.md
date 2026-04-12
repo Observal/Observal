@@ -374,8 +374,8 @@ All `{id}` parameters accept either a UUID or a name.
 | `DATABASE_URL` | Yes | | PostgreSQL connection string (asyncpg) |
 | `CLICKHOUSE_URL` | Yes | | ClickHouse connection string |
 | `POSTGRES_USER` | Yes | `postgres` | PostgreSQL user |
-| `POSTGRES_PASSWORD` | Yes | | PostgreSQL password |
-| `SECRET_KEY` | Yes | | Secret key for API key hashing |
+| `POSTGRES_PASSWORD` | Yes | `postgres` | PostgreSQL password |
+| `SECRET_KEY` | Yes | | Secret key for API key hashing. Generate with: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `CLICKHOUSE_USER` | No | `default` | ClickHouse user |
 | `CLICKHOUSE_PASSWORD` | No | `clickhouse` | ClickHouse password |
 | `EVAL_MODEL_URL` | No | | OpenAI-compatible endpoint for the eval engine |

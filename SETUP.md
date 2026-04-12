@@ -76,8 +76,8 @@ You're ready to go. See the [README](README.md) for usage.
 | `DATABASE_URL` | Yes | | PostgreSQL connection string (e.g. `postgresql+asyncpg://postgres:secret@observal-db:5432/observal`) |
 | `CLICKHOUSE_URL` | Yes | | ClickHouse connection string (e.g. `clickhouse://default:clickhouse@observal-clickhouse:8123/observal`) |
 | `POSTGRES_USER` | Yes | `postgres` | PostgreSQL user |
-| `POSTGRES_PASSWORD` | Yes | | PostgreSQL password |
-| `SECRET_KEY` | Yes | | Secret key for API key hashing. Generate one with `openssl rand -hex 32` |
+| `POSTGRES_PASSWORD` | Yes | `postgres` | PostgreSQL password |
+| `SECRET_KEY` | Yes | | Secret key for API key hashing. Generate one with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `CLICKHOUSE_USER` | No | `default` | ClickHouse user |
 | `CLICKHOUSE_PASSWORD` | No | `clickhouse` | ClickHouse password |
 | `EVAL_MODEL_URL` | No | | OpenAI-compatible endpoint for the eval engine |
