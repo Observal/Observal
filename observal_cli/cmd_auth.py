@@ -38,7 +38,7 @@ def login(
 ):
     """Connect to Observal.
 
-    On a fresh server: auto-creates admin, no prompts needed.
+    On a fresh server: prompts for email, name, and password to create admin.
     With email+password: logs in with credentials.
     With an invite code: redeems it and creates your account.
     With --key: logs in with an API key.
@@ -61,12 +61,28 @@ def login(
 
     initialized = health_data.get("initialized", True)
 
-    # 2. Fresh server → auto-bootstrap admin
+    # 2. Fresh server → prompt for admin credentials and initialize
     if not initialized:
-        rprint("[green]Connected.[/green] No users yet — creating admin account.\n")
+        rprint("[green]Connected.[/green] No users yet — let's set up your admin account.\n")
+
+        admin_email = email or typer.prompt("Admin email")
+        admin_name = name or typer.prompt("Admin name", default="admin")
+        if password:
+            admin_password = password
+        else:
+            admin_password = typer.prompt("Admin password", hide_input=True)
+            confirm = typer.prompt("Confirm password", hide_input=True)
+            if admin_password != confirm:
+                rprint("[red]Passwords do not match.[/red]")
+                raise typer.Exit(1)
+
         try:
-            with spinner("Bootstrapping..."):
-                r = httpx.post(f"{server_url}/api/v1/auth/bootstrap", timeout=30)
+            with spinner("Creating admin account..."):
+                r = httpx.post(
+                    f"{server_url}/api/v1/auth/init",
+                    json={"email": admin_email, "name": admin_name, "password": admin_password},
+                    timeout=30,
+                )
                 r.raise_for_status()
                 data = r.json()
 
@@ -87,7 +103,7 @@ def login(
                 rprint("[yellow]Server was just initialized by someone else.[/yellow]")
                 _do_key_login(server_url, key)
             else:
-                rprint(f"[red]Bootstrap failed ({e.response.status_code}):[/red] {e.response.text}")
+                rprint(f"[red]Setup failed ({e.response.status_code}):[/red] {e.response.text}")
                 raise typer.Exit(1)
         return
 
