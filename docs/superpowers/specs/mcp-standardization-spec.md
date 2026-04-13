@@ -37,6 +37,7 @@ Observal preserves all official fields and adds registry-specific extensions. A 
 | Field | Type | Constraints | Source |
 |-------|------|-------------|--------|
 | `transport` | string | One of: `stdio`, `sse`, `streamable-http` | Auto-detected or publisher |
+| `environment_variables` | list[object] | Each: `name` (string), `description` (string), `required` (bool) | Auto-detected + publisher |
 | `setup_instructions` | string | Free text | Publisher |
 | `changelog` | string | Free text | Publisher |
 | `tools_schema` | list[object] | Extracted tool definitions | Auto-detected |
@@ -74,7 +75,7 @@ Performed at submission time (CLI + API).
 
 ### Level 1: Repository Inspection
 
-Performed asynchronously after submission.
+Performed asynchronously as a background task after submission. The clone runs in a thread pool (`asyncio.to_thread`) to avoid blocking the server event loop, with a configurable timeout (`GIT_CLONE_TIMEOUT`, default 120s).
 
 - Git repo is cloneable (depth=1)
 - MCP implementation detected via pattern matching across supported languages:
@@ -84,6 +85,11 @@ Performed asynchronously after submission.
   - Other: any implementation that exposes MCP-compatible endpoints
 - Framework identified and recorded for informational purposes (not enforced)
 - Servers with unrecognized frameworks are still accepted if they pass subsequent validation
+- Environment variables detected from:
+  - Python source: `os.environ.get()`, `os.environ[]`, `os.getenv()` patterns
+  - `.env.example` / `.env.sample` files (`.env` and `.env.local` are skipped to avoid secrets)
+  - Dockerfile `ENV` and `ARG` directives
+  - Internal/framework env vars (PATH, HOME, NODE_ENV, etc.) are filtered out
 
 **Result:** `mcp_validated` set to true/false. Validation result stored with stage `clone_and_inspect`.
 
