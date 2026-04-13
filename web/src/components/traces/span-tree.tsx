@@ -61,7 +61,12 @@ const threadColor: Record<string, { line: string; hover: string; bg: string }> =
   sandbox_exec: { line: "bg-green-400",  hover: "bg-green-500",  bg: "bg-green-100 text-green-700" },
   hook:         { line: "bg-pink-400",   hover: "bg-pink-500",   bg: "bg-pink-100 text-pink-700" },
   prompt:       { line: "bg-teal-400",   hover: "bg-teal-500",   bg: "bg-teal-100 text-teal-700" },
+  lifecycle:    { line: "bg-gray-300",   hover: "bg-gray-400",   bg: "bg-gray-100 text-gray-500" },
 };
+
+function isLifecycleSpan(span: Span): boolean {
+  return span.input == null && span.output == null;
+}
 
 function getColors(type: string) {
   return threadColor[type] ?? { line: "bg-gray-300", hover: "bg-gray-400", bg: "bg-gray-100 text-gray-700" };
@@ -95,7 +100,8 @@ function SpanRow({
   const hasChildren = node.children.length > 0;
   const isCollapsed = collapsed.has(node.span.span_id);
   const isSelected = selectedId === node.span.span_id;
-  const colors = getColors(node.span.type);
+  const isLifecycle = isLifecycleSpan(node.span);
+  const colors = isLifecycle ? threadColor.lifecycle : getColors(node.span.type);
   const descendantCount = isCollapsed ? countDescendants(node) : 0;
   const tokens = (node.span.token_input ?? 0) + (node.span.token_output ?? 0);
 
@@ -141,7 +147,8 @@ function SpanRow({
           onClick={() => onSelect(node.span)}
           className={cn(
             "flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted/60 relative",
-            isSelected && "bg-muted"
+            isSelected && "bg-muted",
+            isLifecycle && "opacity-50"
           )}
           style={{ paddingLeft: `${depth * INDENT + 8}px` }}
         >
@@ -151,7 +158,7 @@ function SpanRow({
             <span className="text-[10px] text-muted-foreground whitespace-nowrap">[+{descendantCount}]</span>
           )}
           <Badge variant="outline" className={cn("ml-auto text-[10px] px-1.5 py-0 shrink-0", colors.bg)}>
-            {node.span.type}
+            {isLifecycle ? "lifecycle" : node.span.type}
           </Badge>
           {node.span.latency_ms != null && (
             <span className="text-xs text-muted-foreground tabular-nums shrink-0">{node.span.latency_ms}ms</span>

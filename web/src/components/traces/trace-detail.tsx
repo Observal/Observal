@@ -9,6 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SpanTree, type Span } from "./span-tree";
 
+function isLifecycleSpan(span: Span): boolean {
+  return span.input == null && span.output == null;
+}
+
 interface Trace {
   trace_id: string;
   parent_trace_id?: string;
@@ -90,6 +94,27 @@ export function TraceDetail({ trace, isLoading }: { trace?: Trace; isLoading: bo
                   <Badge variant={selectedSpan.status === "error" ? "destructive" : "secondary"}>{selectedSpan.status}</Badge>
                   {selectedSpan.latency_ms != null && <span className="text-sm text-muted-foreground">{selectedSpan.latency_ms}ms</span>}
                 </div>
+                {isLifecycleSpan(selectedSpan) && (
+                  <Card className="border-dashed">
+                    <CardContent className="pt-4">
+                      <p className="text-sm text-muted-foreground mb-3">Lifecycle span — no conversation content. Metrics captured:</p>
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                        {selectedSpan.latency_ms != null && (
+                          <div><span className="text-muted-foreground">Latency</span><p className="font-mono">{selectedSpan.latency_ms}ms</p></div>
+                        )}
+                        {(selectedSpan.token_input != null || selectedSpan.token_output != null) && (
+                          <div><span className="text-muted-foreground">Tokens</span><p className="font-mono">{selectedSpan.token_input ?? 0} in / {selectedSpan.token_output ?? 0} out</p></div>
+                        )}
+                        <div><span className="text-muted-foreground">Type</span><p>{selectedSpan.type}</p></div>
+                        <div><span className="text-muted-foreground">Status</span><p>{selectedSpan.status}</p></div>
+                        <div><span className="text-muted-foreground">Start</span><p className="font-mono text-xs">{new Date(selectedSpan.start_time).toLocaleString()}</p></div>
+                        {selectedSpan.end_time && (
+                          <div><span className="text-muted-foreground">End</span><p className="font-mono text-xs">{new Date(selectedSpan.end_time).toLocaleString()}</p></div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
                 {selectedSpan.input != null && (
                   <Card><CardHeader className="py-2 px-4"><CardTitle className="text-sm">Input</CardTitle></CardHeader>
                     <CardContent className="px-4 pb-3"><JsonView src={typeof selectedSpan.input === "string" ? JSON.parse(selectedSpan.input as string) : selectedSpan.input} collapsed={2} /></CardContent>

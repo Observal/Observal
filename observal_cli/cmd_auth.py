@@ -543,12 +543,11 @@ def register_config(app: typer.Typer):
     app.add_typer(config_app, name="config")
 
 
-def _find_stop_hook_script() -> str | None:
-    """Locate the observal-stop-hook.sh script."""
-    # Check common locations
+def _find_hook_script(name: str) -> str | None:
+    """Locate a hook script by filename."""
     candidates = [
-        Path(__file__).parent / "hooks" / "observal-stop-hook.sh",
-        Path(shutil.which("observal-stop-hook.sh") or ""),
+        Path(__file__).parent / "hooks" / name,
+        Path(shutil.which(name) or ""),
     ]
     for p in candidates:
         if p.is_file():
@@ -602,37 +601,44 @@ def _configure_claude_code(server_url: str, api_key: str):
         settings["env"].update(otel_env)
 
         # ── Inject hooks for full content capture (prompts, tool I/O, MCP, agents) ──
+        # Use command hooks instead of HTTP hooks so that ECONNREFUSED errors
+        # don't flood the LLM when the Observal server is offline (#236).
         hooks_url = f"{server_url.rstrip('/')}/api/v1/otel/hooks"
-        hook_def: dict = {"type": "http", "url": hooks_url}
-        # Inject Observal user identity via header so the server can attribute sessions
-        cfg = config.load()
-        if cfg.get("user_id"):
-            hook_def["headers"] = {"X-Observal-User-Id": cfg["user_id"]}
-        http_hook = [{"hooks": [hook_def]}]
 
-        # Stop uses a command hook to read the transcript for Claude's response text
-        stop_script = _find_stop_hook_script()
-        stop_hook = [{"hooks": [{"type": "command", "command": stop_script}]}] if stop_script else http_hook
+        hook_script = _find_hook_script("observal-hook.sh")
+        stop_script = _find_hook_script("observal-stop-hook.sh")
+
+        if hook_script:
+            cmd_hook = [{"hooks": [{"type": "command", "command": hook_script}]}]
+        else:
+            # Fallback to HTTP if the script isn't found
+            hook_def: dict = {"type": "http", "url": hooks_url}
+            cfg = config.load()
+            if cfg.get("user_id"):
+                hook_def["headers"] = {"X-Observal-User-Id": cfg["user_id"]}
+            cmd_hook = [{"hooks": [hook_def]}]
+
+        stop_hook = [{"hooks": [{"type": "command", "command": stop_script}]}] if stop_script else cmd_hook
 
         settings["hooks"] = {
-            "SessionStart": http_hook,
-            "UserPromptSubmit": http_hook,
-            "PreToolUse": http_hook,
-            "PostToolUse": http_hook,
-            "PostToolUseFailure": http_hook,
-            "SubagentStart": http_hook,
-            "SubagentStop": http_hook,
+            "SessionStart": cmd_hook,
+            "UserPromptSubmit": cmd_hook,
+            "PreToolUse": cmd_hook,
+            "PostToolUse": cmd_hook,
+            "PostToolUseFailure": cmd_hook,
+            "SubagentStart": cmd_hook,
+            "SubagentStop": cmd_hook,
             "Stop": stop_hook,
-            "StopFailure": http_hook,
-            "Notification": http_hook,
-            "TaskCreated": http_hook,
-            "TaskCompleted": http_hook,
-            "PreCompact": http_hook,
-            "PostCompact": http_hook,
-            "WorktreeCreate": http_hook,
-            "WorktreeRemove": http_hook,
-            "Elicitation": http_hook,
-            "ElicitationResult": http_hook,
+            "StopFailure": cmd_hook,
+            "Notification": cmd_hook,
+            "TaskCreated": cmd_hook,
+            "TaskCompleted": cmd_hook,
+            "PreCompact": cmd_hook,
+            "PostCompact": cmd_hook,
+            "WorktreeCreate": cmd_hook,
+            "WorktreeRemove": cmd_hook,
+            "Elicitation": cmd_hook,
+            "ElicitationResult": cmd_hook,
         }
 
         # Set the hooks URL env var so the stop script knows where to POST
