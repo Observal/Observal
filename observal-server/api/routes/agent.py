@@ -49,6 +49,7 @@ async def _load_agent(db: AsyncSession, agent_id: str, extra_conditions=None) ->
         stmt = select(Agent).where(Agent.name == agent_id).options(*_agent_load_options)
         if extra_conditions:
             stmt = stmt.where(*extra_conditions)
+        stmt = stmt.order_by(Agent.created_at.desc()).limit(1)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -218,7 +219,7 @@ async def create_agent(
         )
 
     await db.commit()
-    agent = await _load_agent(db, Agent.id == agent.id)
+    agent = await _load_agent(db, str(agent.id))
     name_map = await _resolve_component_names(agent.components, db)
     return _agent_to_response(agent, name_map)
 
@@ -397,7 +398,7 @@ async def update_agent(
             )
 
     await db.commit()
-    agent = await _load_agent(db, Agent.id == agent.id)
+    agent = await _load_agent(db, str(agent.id))
     name_map = await _resolve_component_names(agent.components, db)
     return _agent_to_response(agent, name_map)
 

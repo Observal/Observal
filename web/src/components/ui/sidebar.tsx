@@ -220,7 +220,7 @@ const SidebarInset = React.forwardRef<HTMLDivElement, React.ComponentProps<"main
   ({ className, ...props }, ref) => (
     <main
       ref={ref}
-      className={cn("relative flex min-w-0 flex-1 flex-col overflow-y-auto bg-background", className)}
+      className={cn("relative flex min-w-0 flex-1 flex-col overflow-y-auto bg-background [scrollbar-gutter:stable]", className)}
       {...props}
     />
   ),

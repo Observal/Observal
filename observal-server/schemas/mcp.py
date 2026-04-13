@@ -92,6 +92,8 @@ class McpAnalyzeResponse(BaseModel):
     description: str
     version: str
     tools: list[dict]
+    issues: list[str] = []
+    error: str = ""
 
 
 class ReviewActionRequest(BaseModel):

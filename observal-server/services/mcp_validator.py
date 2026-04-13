@@ -120,8 +120,13 @@ async def _clone_and_inspect(listing: McpListing, db: AsyncSession, tmp_dir: str
         db.add(McpValidationResult(listing_id=listing.id, stage="clone_and_inspect", passed=False, details=url_err))
         await db.commit()
         return None
+    clone_url = listing.git_url
+    git_token = os.environ.get("GIT_CLONE_TOKEN", "")
+    if git_token:
+        parsed = urlparse(listing.git_url)
+        clone_url = f"{parsed.scheme}://x-access-token:{git_token}@{parsed.hostname}{parsed.path}"
     try:
-        Repo.clone_from(listing.git_url, tmp_dir, depth=1)
+        Repo.clone_from(clone_url, tmp_dir, depth=1)
     except Exception as e:
         db.add(
             McpValidationResult(
@@ -297,12 +302,30 @@ async def _manifest_validation(listing: McpListing, db: AsyncSession, entry_poin
 
 async def analyze_repo(git_url: str) -> dict:
     """Clone and analyze a repo without creating a listing. Returns extracted metadata."""
+    _empty = {"name": "", "description": "", "version": "0.1.0", "tools": []}
     url_err = _validate_git_url(git_url)
     if url_err:
-        return {"name": "", "description": "", "version": "0.1.0", "tools": []}
+        return {**_empty, "error": url_err}
+
+    # Support cloning private repos when a GitHub token is configured
+    clone_url = git_url
+    git_token = os.environ.get("GIT_CLONE_TOKEN", "")
+    if git_token:
+        parsed = urlparse(git_url)
+        clone_url = f"{parsed.scheme}://x-access-token:{git_token}@{parsed.hostname}{parsed.path}"
+
     tmp_dir = tempfile.mkdtemp(prefix="observal_analyze_")
     try:
-        Repo.clone_from(git_url, tmp_dir, depth=1)
+        try:
+            Repo.clone_from(clone_url, tmp_dir, depth=1)
+        except Exception as e:
+            err_msg = str(e).lower()
+            auth_hints = ("authentication", "403", "404", "could not read username", "terminal prompts disabled")
+            if any(h in err_msg for h in auth_hints):
+                return {**_empty, "error": "Repository is private or not accessible. Configure GIT_CLONE_TOKEN for private repos."}
+            if "not found" in err_msg or "does not exist" in err_msg:
+                return {**_empty, "error": "Repository not found. Check the URL."}
+            return {**_empty, "error": "Failed to clone repository. Check the URL and try again."}
 
         entry_point = None
         for py_file in Path(tmp_dir).rglob("*.py"):
@@ -354,6 +377,7 @@ async def analyze_repo(git_url: str) -> dict:
             server_name = _extract_repo_name(git_url, tmp_dir)
 
         tools = []
+        issues = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
@@ -363,9 +387,24 @@ async def analyze_repo(git_url: str) -> dict:
                 for d in node.decorator_list
             )
             if is_tool:
-                tools.append({"name": node.name, "docstring": ast.get_docstring(node) or ""})
+                docstring = ast.get_docstring(node) or ""
+                untyped = [a.arg for a in node.args.args if a.arg != "self" and a.annotation is None]
+                tools.append({"name": node.name, "docstring": docstring})
+                if len(docstring) < 20:
+                    issues.append(f"Tool '{node.name}': docstring too short ({len(docstring)} chars, need 20+)")
+                if untyped:
+                    issues.append(f"Tool '{node.name}': untyped params: {', '.join(untyped)}")
 
-        return {"name": server_name, "description": server_desc, "version": "0.1.0", "tools": tools}
+        if not tools:
+            issues.append("No @tool decorated functions found")
+
+        return {
+            "name": server_name,
+            "description": server_desc,
+            "version": "0.1.0",
+            "tools": tools,
+            "issues": issues,
+        }
     except Exception:
         return {"name": "", "description": "", "version": "0.1.0", "tools": []}
     finally:

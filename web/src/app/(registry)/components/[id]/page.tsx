@@ -113,12 +113,12 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
                 <TabsTrigger value="install">Add to Agent</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="overview" className="mt-6 space-y-6">
+              <TabsContent value="overview" forceMount className="mt-6 space-y-6 data-[state=inactive]:hidden">
                 <ComponentMetadata item={item} />
                 <MetricsSection entries={metricsEntries} />
               </TabsContent>
 
-              <TabsContent value="reviews" className="mt-6 space-y-6">
+              <TabsContent value="reviews" forceMount className="mt-6 space-y-6 data-[state=inactive]:hidden">
                 {isAuthenticated && (
                   <>
                     <ReviewForm
@@ -174,7 +174,7 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
                 )}
               </TabsContent>
 
-              <TabsContent value="install" className="mt-6 space-y-6">
+              <TabsContent value="install" forceMount className="mt-6 space-y-6 data-[state=inactive]:hidden">
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold font-display">Add to Agent</h3>
                   <p className="text-xs text-muted-foreground">

@@ -125,6 +125,12 @@ export interface ValidationResult {
 
 // ── Review ──────────────────────────────────────────────────────────
 
+export interface McpValidationResult {
+  stage: string;
+  passed: boolean;
+  details?: string;
+}
+
 export interface ReviewItem {
   id: string;
   name?: string;
@@ -137,6 +143,8 @@ export interface ReviewItem {
   submitted_at?: string;
   created_at?: string;
   status?: string;
+  mcp_validated?: boolean;
+  validation_results?: McpValidationResult[];
 }
 
 // ── Scores ──────────────────────────────────────────────────────────

@@ -34,31 +34,91 @@ def _submit_impl(git_url, name, category, yes):
         try:
             prefill = client.post("/api/v1/mcps/analyze", {"git_url": git_url})
         except (Exception, SystemExit):
-            rprint("[yellow]Could not analyze repo: fill in details manually.[/yellow]")
+            rprint("[yellow]Could not analyze repo. Fill in details manually.[/yellow]")
             prefill = {}
 
-    if prefill.get("tools"):
-        rprint(f"\n[bold]Detected {len(prefill['tools'])} tools:[/bold]")
-        for t in prefill["tools"][:10]:
-            rprint(f"  [cyan]•[/cyan] {t.get('name', '?')}: {t.get('description', '')[:60]}")
-        if len(prefill["tools"]) > 10:
-            rprint(f"  [dim]...and {len(prefill['tools']) - 10} more[/dim]")
+    # ── Analysis summary ──────────────────────────────────────
+    detected_name = prefill.get("name", "")
+    detected_desc = prefill.get("description", "")
+    detected_ver = prefill.get("version", "0.1.0")
+    detected_framework = prefill.get("framework", "")
+    tools = prefill.get("tools", [])
+
+    issues = prefill.get("issues", [])
+    error = prefill.get("error", "")
+
+    rprint("\n[bold]--- Analysis Results ---[/bold]")
+
+    if error:
+        rprint(f"  [bold red]Error:[/bold red] {error}")
+        rprint("  [dim]You can still submit manually, but the server could not be analyzed.[/dim]")
+        if not yes and not typer.confirm("Continue with manual submission?", default=False):
+            raise typer.Abort()
+    else:
+        if detected_name:
+            rprint(f"  Server name:  [cyan]{detected_name}[/cyan]")
+        if detected_framework:
+            rprint(f"  Framework:    [cyan]{detected_framework}[/cyan]")
+        if detected_desc:
+            rprint(f"  Description:  [dim]{detected_desc[:80]}{'...' if len(detected_desc) > 80 else ''}[/dim]")
+        if tools:
+            rprint(f"  Tools found:  [green]{len(tools)}[/green]")
+            for t in tools[:10]:
+                doc = t.get("docstring", t.get("description", ""))
+                rprint(f"    [cyan]*[/cyan] {t.get('name', '?')}: {doc[:60] if doc else '[dim](no description)[/dim]'}")
+            if len(tools) > 10:
+                rprint(f"    [dim]...and {len(tools) - 10} more[/dim]")
+        if not detected_name and not tools:
+            rprint("  [dim]No MCP metadata detected. You will need to fill in all fields manually.[/dim]")
+
+        if issues:
+            rprint(f"\n  [bold yellow]Warnings ({len(issues)}):[/bold yellow]")
+            for issue in issues:
+                rprint(f"    [yellow]![/yellow] {issue}")
+            rprint()
+            if not yes and not typer.confirm("This server has quality issues. Submit anyway?", default=False):
+                raise typer.Abort()
+
+    rprint("[bold]------------------------[/bold]\n")
+
+    # ── Auto-accept detected fields, only prompt for missing/required ──
+    if yes:
+        _name = name or detected_name
+        _version = detected_ver
+        _desc = detected_desc
+        _owner = "default"
+        _category = category or "general"
+        supported_ides = list(VALID_IDES)
+        _setup = ""
+        _changelog = "Initial release"
+    else:
+        # Name: auto-accept if detected, otherwise ask
+        if name:
+            _name = name
+        elif detected_name:
+            _name = detected_name
+            rprint(f"  Server name: [cyan]{_name}[/cyan] [dim](from analysis)[/dim]")
+        else:
+            _name = typer.prompt("Server name")
+
+        # Version: auto-accept detected
+        _version = detected_ver
+        rprint(f"  Version:     [cyan]{_version}[/cyan]")
+
+        # Description: auto-accept if detected, otherwise ask
+        if detected_desc:
+            _desc = detected_desc
+            rprint(f"  Description: [cyan]{_desc[:60]}{'...' if len(_desc) > 60 else ''}[/cyan] [dim](from analysis)[/dim]")
+        else:
+            _desc = typer.prompt("Description (what does this server do?)")
+
+        _owner = typer.prompt("\nOwner / Team (e.g. your GitHub username)")
         rprint()
 
-    _name = name or (prefill.get("name", "") if yes else typer.prompt("Name", default=prefill.get("name", "")))
-    _version = (
-        prefill.get("version", "0.1.0") if yes else typer.prompt("Version", default=prefill.get("version", "0.1.0"))
-    )
-    _category = category or ("general" if yes else select_one("Category", VALID_MCP_CATEGORIES, default="general"))
-    _desc = (
-        prefill.get("description", "") if yes else typer.prompt("Description", default=prefill.get("description", ""))
-    )
-    _owner = typer.prompt("Owner / Team") if not yes else "default"
-
-    supported_ides = select_many("Supported IDEs", VALID_IDES, defaults=VALID_IDES) if not yes else list(VALID_IDES)
-
-    _setup = "" if yes else typer.prompt("Setup instructions", default="")
-    _changelog = "Initial release" if yes else typer.prompt("Changelog", default="Initial release")
+        _category = category or select_one("Category", VALID_MCP_CATEGORIES, default="general")
+        supported_ides = select_many("Supported IDEs", VALID_IDES, defaults=VALID_IDES)
+        _setup = typer.prompt("Setup instructions (optional, press Enter to skip)", default="")
+        _changelog = typer.prompt("Changelog", default="Initial release")
 
     with spinner("Submitting..."):
         result = client.post(

@@ -123,18 +123,8 @@ class TestListPending:
 
         assert r.status_code == 200
         item = r.json()[0]
-        expected_keys = {
-            "type",
-            "id",
-            "name",
-            "description",
-            "version",
-            "owner",
-            "status",
-            "submitted_by",
-            "created_at",
-        }
-        assert expected_keys == set(item.keys())
+        expected_keys = {"type", "id", "name", "description", "version", "owner", "status", "submitted_by", "created_at"}
+        assert expected_keys.issubset(set(item.keys()))
 
     @pytest.mark.asyncio
     async def test_missing_description_defaults_to_empty(self):

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { CheckCircle2, X, LayoutGrid, TableProperties } from "lucide-react";
+import { CheckCircle2, X, LayoutGrid, TableProperties, AlertTriangle, ShieldCheck, ShieldX } from "lucide-react";
 import { useReviewList, useReviewAction } from "@/hooks/use-api";
-import type { ReviewItem } from "@/lib/types";
+import type { ReviewItem, McpValidationResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,64 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 
 type ViewMode = "list" | "grid";
+
+function ValidationBadge({ item }: { item: ReviewItem }) {
+  if (item.type !== "mcp" || !item.validation_results?.length) return null;
+
+  const failed = item.validation_results.filter((v: McpValidationResult) => !v.passed);
+  const hasIssues = failed.some((v: McpValidationResult) => v.details?.includes("Issues:"));
+
+  if (failed.length > 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-destructive bg-destructive/10 border border-destructive/25 rounded px-1.5 py-0.5">
+        <ShieldX className="h-3 w-3" /> Validation failed
+      </span>
+    );
+  }
+  if (hasIssues) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-amber-500 bg-amber-500/10 border border-amber-500/25 rounded px-1.5 py-0.5">
+        <AlertTriangle className="h-3 w-3" /> Has warnings
+      </span>
+    );
+  }
+  if (item.mcp_validated) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-success bg-success/10 border border-success/25 rounded px-1.5 py-0.5">
+        <ShieldCheck className="h-3 w-3" /> Validated
+      </span>
+    );
+  }
+  return null;
+}
+
+function ValidationDetails({ results }: { results?: McpValidationResult[] }) {
+  if (!results?.length) return null;
+
+  const issues = results
+    .filter((v: McpValidationResult) => v.details)
+    .flatMap((v: McpValidationResult) => {
+      const lines = v.details!.split("\n");
+      return lines
+        .filter((l: string) => l.startsWith("- "))
+        .map((l: string) => l.slice(2));
+    });
+
+  if (!issues.length) return null;
+
+  return (
+    <div className="mt-2 p-2 rounded bg-amber-500/5 border border-amber-500/15 space-y-1">
+      <p className="text-[10px] font-medium text-amber-500 flex items-center gap-1">
+        <AlertTriangle className="h-3 w-3" /> Quality warnings ({issues.length})
+      </p>
+      {issues.map((issue: string, i: number) => (
+        <p key={i} className="text-[10px] text-muted-foreground pl-4">
+          {issue}
+        </p>
+      ))}
+    </div>
+  );
+}
 
 function ReviewCard({ item, onApprove, onReject }: {
   item: ReviewItem;
@@ -57,11 +115,16 @@ function ReviewCard({ item, onApprove, onReject }: {
         )}
       </div>
 
-      <div className="text-xs text-muted-foreground">
-        {item.submitted_at || item.created_at
-          ? new Date((item.submitted_at ?? item.created_at)!).toLocaleDateString()
-          : ""}
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>
+          {item.submitted_at || item.created_at
+            ? new Date((item.submitted_at ?? item.created_at)!).toLocaleDateString()
+            : ""}
+        </span>
+        <ValidationBadge item={item} />
       </div>
+
+      <ValidationDetails results={item.validation_results} />
 
       {/* Reject reason input */}
       {showRejectInput && (
@@ -142,12 +205,14 @@ function ReviewRow({ item, onApprove, onReject }: {
             {item.version && (
               <span className="text-xs text-muted-foreground">v{item.version}</span>
             )}
+            <ValidationBadge item={item} />
           </div>
           {item.description && (
             <p className="text-xs text-muted-foreground line-clamp-2 max-w-2xl">
               {item.description}
             </p>
           )}
+          <ValidationDetails results={item.validation_results} />
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             {item.submitted_by && <span>by {item.submitted_by}</span>}
             {(item.submitted_at || item.created_at) && (
