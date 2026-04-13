@@ -1,5 +1,11 @@
 """Tests for the 4-tier RBAC system."""
 
+from unittest.mock import MagicMock
+
+import pytest
+from fastapi import HTTPException
+
+from api.deps import ROLE_HIERARCHY, require_role
 from models.user import User, UserRole
 
 
@@ -31,13 +37,6 @@ def test_user_model_has_is_demo_field():
         api_key_hash="a" * 64,
     )
     assert user.is_demo is False, "is_demo should default to False"
-
-
-import pytest
-from unittest.mock import MagicMock
-from fastapi import HTTPException
-
-from api.deps import require_role, ROLE_HIERARCHY
 
 
 def test_role_hierarchy_ordering():
