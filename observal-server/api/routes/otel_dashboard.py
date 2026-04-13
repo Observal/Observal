@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from api.deps import get_current_user
 from models.user import User
-from services.clickhouse import _insert_json, _query
+from services.clickhouse import _query
 from services.secrets_redactor import redact_secrets
 
 logger = logging.getLogger(__name__)
