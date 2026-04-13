@@ -2,11 +2,30 @@
 
 <a href="https://github.com/BlazeUp-AI/Observal/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/BlazeUp-AI/Observal/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
 
-Contributions of all kinds are welcome: bug fixes, new features, documentation improvements.
+Thank you for considering contributing to Observal! Contributions of all kinds are welcome: bug reports, bug fixes, new features, documentation improvements, and tests. This guide walks you through the process from setting up your environment to getting your pull request merged.
 
 Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
 
-## Fork and Clone
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [Finding Work](#finding-work)
+- [Making Changes](#making-changes)
+- [Submitting a Pull Request](#submitting-a-pull-request)
+- [Reporting Issues](#reporting-issues)
+- [Codebase Context](#codebase-context)
+- [License](#license)
+
+## Getting Started
+
+### Prerequisites
+
+- Docker and Docker Compose
+- [uv](https://docs.astral.sh/uv/) (Python 3.11+)
+- Node.js 20+ and pnpm (for the web frontend)
+- Git
+
+### Fork and Clone
 
 1. Fork the repository on GitHub.
 2. Clone your fork:
@@ -22,16 +41,9 @@ cd Observal
 git remote add upstream https://github.com/BlazeUp-AI/Observal.git
 ```
 
-## Development Environment
+### Running Locally
 
-Requirements:
-
-- Docker and Docker Compose
-- [uv](https://docs.astral.sh/uv/) (Python 3.11+)
-- Node.js 20+ and pnpm (for the web frontend)
-- Git
-
-## Running Locally
+**Backend:**
 
 ```bash
 cp .env.example .env
@@ -47,7 +59,7 @@ observal auth login
 
 The API starts at http://localhost:8000. On a fresh server, `auth login` auto-creates an admin account.
 
-### Frontend
+**Frontend:**
 
 ```bash
 cd web
@@ -59,28 +71,19 @@ The web UI starts at http://localhost:3000. Set `NEXT_PUBLIC_API_URL=http://loca
 
 See [SETUP.md](SETUP.md) for detailed configuration and troubleshooting.
 
-## Code Style
+## Finding Work
 
-Python is linted and formatted with `ruff`. Docker files are linted with `hadolint`. Pre-commit hooks enforce both.
+Before starting work, check the [open issues](https://github.com/BlazeUp-AI/Observal/issues) to see what needs attention.
 
-```bash
-make format   # auto-format
-make lint     # run linters
-make hooks    # install pre-commit hooks
-```
+- Look for issues labelled **good first issue** if you are new to the project.
+- Comment on an issue to let others know you are working on it before you start.
+- For larger features or architectural changes, open an issue to discuss your approach before writing code. This avoids wasted effort if the direction needs adjustment.
 
-## Running Tests
+## Making Changes
 
-```bash
-make test     # quick
-make test-v   # verbose
-```
+### Branch Naming
 
-All tests must pass before submitting a PR. Tests mock all external services: no Docker needed.
-
-## Branch Naming
-
-Do not commit directly to `main`. Use prefixes:
+Do not commit directly to `main`. Create a branch from the latest `main` with one of these prefixes:
 
 - `feature/` for new features
 - `fix/` for bug fixes
@@ -92,9 +95,28 @@ fix/clickhouse-insert-timeout
 docs/update-setup-guide
 ```
 
-## Commit Messages
+### Code Style
 
-Follow conventional commits:
+Python is linted and formatted with `ruff`. Dockerfiles are linted with `hadolint`. Pre-commit hooks enforce both — install them early so issues are caught before you commit.
+
+```bash
+make hooks     # install pre-commit hooks
+make format    # auto-format
+make lint      # run linters
+```
+
+### Testing
+
+```bash
+make test      # quick
+make test-v    # verbose
+```
+
+All tests must pass before submitting a PR. Tests mock all external services, so Docker does not need to be running. If you are adding a new feature or fixing a bug, include tests that cover the change.
+
+### Commit Messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 <type>(<scope>): <description>
@@ -106,9 +128,11 @@ fix(telemetry): handle null span timestamps
 docs: update contributing guide
 ```
 
+Keep the subject line under 72 characters, use the imperative mood ("add", not "added"), and do not end it with a period. If more detail is needed, add a blank line after the subject and write a longer description wrapped at 80 characters.
+
 ### DCO Sign-off
 
-All commits must include a `Signed-off-by` line to certify the [Developer Certificate of Origin (DCO)](https://developercertificate.org/). This confirms that you wrote (or have the right to submit) your contribution and that it is licensed under the project's GNU AGPL v3.0 license.
+All commits must include a `Signed-off-by` line to certify the [Developer Certificate of Origin (DCO)](https://developercertificate.org/). The DCO is a lightweight agreement that confirms you wrote (or have the right to submit) your contribution and that it is licensed under the project's GNU AGPL v3.0 license.
 
 Add the sign-off automatically with the `-s` flag:
 
@@ -124,7 +148,7 @@ Signed-off-by: Your Name <your.email@example.com>
 
 Make sure your `user.name` and `user.email` in git config match the identity you want to use. A CI check will block PRs that have unsigned commits.
 
-## Changelog
+### Changelog
 
 We maintain a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. When submitting a PR that adds a feature, fixes a bug, or makes any user-facing change, add an entry under the `[Unreleased]` section in the appropriate category:
 
@@ -147,23 +171,44 @@ Example:
 
 At release time, a maintainer will move unreleased entries into a versioned section.
 
-## Pull Request Process
+## Submitting a Pull Request
 
-1. Push your branch to your fork.
-2. Open a PR against `main`.
-3. Ensure linters and tests pass.
-4. Ensure all commits are signed off (`git commit -s`).
-5. Add a changelog entry if your change is user-facing.
-5. Respond to review feedback and update your code if requested.
+1. Make sure your branch is up to date with `main`:
+   ```bash
+   git fetch upstream
+   git rebase upstream/main
+   ```
+2. Push your branch to your fork.
+3. Open a PR against `main` on the [Observal repository](https://github.com/BlazeUp-AI/Observal).
+4. Describe your changes clearly: what you changed and why. Link the related issue if one exists.
+5. Ensure CI passes (linters, tests).
+6. Ensure all commits are signed off (`git commit -s`).
+7. Add a changelog entry if your change is user-facing.
+8. Respond to review feedback and update your code if requested.
 
-## Issues
+Keep pull requests focused on a single concern. It is better to open three small PRs that each address one issue than one large PR that mixes unrelated changes. Smaller PRs are easier to review and faster to merge.
 
-Check existing issues before starting work. For bug reports, include reproduction steps and environment details. For feature requests, describe the use case clearly. Discuss major features in an issue before implementing.
+## Reporting Issues
+
+### Bug Reports
+
+Search [existing issues](https://github.com/BlazeUp-AI/Observal/issues) first to avoid duplicates. When filing a bug report, include:
+
+- **Steps to reproduce** the problem
+- **Expected behaviour** vs **actual behaviour**
+- **Environment details**: OS, Python version, Node.js version, Docker version
+- **Error logs or screenshots** if applicable
+
+The more detail you provide, the faster the issue can be diagnosed.
+
+### Feature Requests
+
+Describe the use case clearly. Explain the problem you are trying to solve, not just the solution you have in mind. This helps maintainers evaluate the request in the broader context of the project.
 
 ## Codebase Context
 
-See [AGENTS.md](AGENTS.md) for internal architecture notes, file layout, and conventions. This is especially useful when working with AI coding agents.
+See [AGENTS.md](AGENTS.md) for internal architecture notes, file layout, and conventions. This is useful for new contributors and AI coding agents alike.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0. The DCO sign-off on each commit is your explicit acknowledgement of this.
+By contributing, you agree that your contributions will be licensed under the [GNU Affero General Public License v3.0](LICENSE). The DCO sign-off on each commit is your explicit acknowledgement of this.
