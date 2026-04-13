@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_current_user, get_db, resolve_prefix_id
+from api.deps import get_db, require_role, resolve_prefix_id
 from models.hook import HookListing
 from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
@@ -20,11 +20,6 @@ LISTING_MODELS = {
     "prompt": PromptListing,
     "sandbox": SandboxListing,
 }
-
-
-def _require_admin(user: User):
-    if user.role != UserRole.admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 async def _find_listing(listing_id: str, db: AsyncSession):
@@ -62,9 +57,8 @@ async def _find_listing(listing_id: str, db: AsyncSession):
 async def list_pending(
     type: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
-    _require_admin(current_user)
 
     models_to_query = {type: LISTING_MODELS[type]} if type and type in LISTING_MODELS else LISTING_MODELS
     items = []
@@ -117,9 +111,8 @@ async def list_pending(
 async def get_review(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
-    _require_admin(current_user)
     listing_type, listing = await _find_listing(listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -146,9 +139,8 @@ async def get_review(
 async def approve(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
-    _require_admin(current_user)
     listing_type, listing = await _find_listing(listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -163,9 +155,8 @@ async def reject(
     listing_id: str,
     req: ReviewActionRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
-    _require_admin(current_user)
     listing_type, listing = await _find_listing(listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
