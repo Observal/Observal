@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     # OAuth Settings
     OAUTH_CLIENT_ID: str | None = "39372289-d565-4a70-985f-8d36d54a4c71"
     OAUTH_CLIENT_SECRET: str | None = "secret-here"  # OAuth client secret here
-    OAUTH_SERVER_METADATA_URL: str | None = "https://login.microsoftonline.com/932446f1-3249-4966-b2a2-8f4bfef64b1b/v2.0/.well-known/openid-configuration"
+    OAUTH_SERVER_METADATA_URL: str | None = (
+        "https://login.microsoftonline.com/932446f1-3249-4966-b2a2-8f4bfef64b1b/v2.0/.well-known/openid-configuration"
+    )
     FRONTEND_URL: str = "http://localhost:3000"
 
     model_config = {"env_file": ".env", "extra": "ignore"}

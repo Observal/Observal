@@ -482,9 +482,7 @@ def register_scan(app: typer.Typer):
     def scan(
         project_dir: str = typer.Argument(".", help="Project directory to scan"),
         ide: str | None = typer.Option(None, "--ide", "-i", help="Target IDE (auto-detected if omitted)"),
-        home: bool = typer.Option(
-            False, "--home", help="Scan IDE home directories for plugins, agents, skills, hooks"
-        ),
+        home: bool = typer.Option(False, "--home", help="Scan IDE home directories for plugins, agents, skills, hooks"),
         all_ides: bool = typer.Option(
             False, "--all-ides", help="Scan home directories for ALL IDEs (Claude Code, Kiro, Cursor)"
         ),
@@ -860,24 +858,14 @@ def register_scan(app: typer.Typer):
                 prefix = _kiro_sed_prefix(agent_name, model)
                 if hook_script.is_file():
                     return f"{prefix}| python3 {hook_script.resolve()} --url {kiro_hooks_url}"
-                return (
-                    f"{prefix}"
-                    f"| curl -sf -X POST {kiro_hooks_url} "
-                    f'-H "Content-Type: application/json" '
-                    f"-d @-"
-                )
+                return f'{prefix}| curl -sf -X POST {kiro_hooks_url} -H "Content-Type: application/json" -d @-'
 
             def _kiro_stop_cmd(agent_name: str, model: str) -> str:
                 """Build the stop hook command with full SQLite enrichment."""
                 prefix = _kiro_sed_prefix(agent_name, model)
                 if stop_script.is_file():
                     return f"{prefix}| python3 {stop_script.resolve()} --url {kiro_hooks_url}"
-                return (
-                    f"{prefix}"
-                    f"| curl -sf -X POST {kiro_hooks_url} "
-                    f'-H "Content-Type: application/json" '
-                    f"-d @-"
-                )
+                return f'{prefix}| curl -sf -X POST {kiro_hooks_url} -H "Content-Type: application/json" -d @-'
 
             def _kiro_hooks_block(agent_name: str, model: str) -> dict:
                 cmd = _kiro_hook_cmd(agent_name, model)

@@ -243,7 +243,9 @@ def reset_password(
         api_key = data["api_key"]
         user = data["user"]
         config.save({"server_url": server_url, "api_key": api_key})
-        rprint(f"\n[green]Password reset! Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]")
+        rprint(
+            f"\n[green]Password reset! Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]"
+        )
         rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
 
     except httpx.HTTPStatusError as e:

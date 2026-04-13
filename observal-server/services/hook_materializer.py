@@ -106,6 +106,7 @@ def _parse_attrs(event: dict) -> dict:
     attrs = event.get("attributes", {})
     if isinstance(attrs, str):
         import json
+
         try:
             attrs = json.loads(attrs)
         except Exception:
@@ -113,9 +114,7 @@ def _parse_attrs(event: dict) -> dict:
     return attrs
 
 
-def _build_trace_and_spans(
-    session_id: str, events: list[dict]
-) -> tuple[dict, list[dict]]:
+def _build_trace_and_spans(session_id: str, events: list[dict]) -> tuple[dict, list[dict]]:
     """Parse hook events into a trace dict and span list.
 
     Each span is tagged with agent_id/agent_type if the source event
@@ -134,9 +133,7 @@ def _build_trace_and_spans(
     for event in events:
         attrs = _parse_attrs(event)
 
-        event_name = _normalize_event_name(
-            attrs.get("event.name", event.get("event_name", ""))
-        )
+        event_name = _normalize_event_name(attrs.get("event.name", event.get("event_name", "")))
 
         if not model and attrs.get("model"):
             model = attrs["model"]
@@ -173,107 +170,111 @@ def _build_trace_and_spans(
 
             latency_ms = _compute_latency(start_ts, event.get("timestamp", ""))
 
-            spans.append({
-                "span_id": str(uuid.uuid4())[:16],
-                "type": "tool_call",
-                "name": tool_name,
-                "input": _truncate(tool_input, 2000),
-                "output": _truncate(tool_output, 2000),
-                "status": "error" if is_error else "success",
-                "error": attrs.get("error", "") if is_error else None,
-                "latency_ms": latency_ms,
-                "start_time": start_ts,
-                "agent_id": span_agent_id,
-                "agent_type": span_agent_type,
-            })
+            spans.append(
+                {
+                    "span_id": str(uuid.uuid4())[:16],
+                    "type": "tool_call",
+                    "name": tool_name,
+                    "input": _truncate(tool_input, 2000),
+                    "output": _truncate(tool_output, 2000),
+                    "status": "error" if is_error else "success",
+                    "error": attrs.get("error", "") if is_error else None,
+                    "latency_ms": latency_ms,
+                    "start_time": start_ts,
+                    "agent_id": span_agent_id,
+                    "agent_type": span_agent_type,
+                }
+            )
 
         elif event_name in ("hook_UserPromptSubmit", "UserPromptSubmit", "user_prompt"):
-            prompt_text = (
-                attrs.get("tool_input", "")
-                or attrs.get("prompt", "")
-                or event.get("body", "")
+            prompt_text = attrs.get("tool_input", "") or attrs.get("prompt", "") or event.get("body", "")
+            spans.append(
+                {
+                    "span_id": str(uuid.uuid4())[:16],
+                    "type": "user_prompt",
+                    "name": "user_prompt",
+                    "input": _truncate(prompt_text, 2000),
+                    "output": "",
+                    "status": "success",
+                    "error": None,
+                    "latency_ms": 0,
+                    "start_time": event.get("timestamp", ""),
+                    "agent_id": span_agent_id,
+                    "agent_type": span_agent_type,
+                }
             )
-            spans.append({
-                "span_id": str(uuid.uuid4())[:16],
-                "type": "user_prompt",
-                "name": "user_prompt",
-                "input": _truncate(prompt_text, 2000),
-                "output": "",
-                "status": "success",
-                "error": None,
-                "latency_ms": 0,
-                "start_time": event.get("timestamp", ""),
-                "agent_id": span_agent_id,
-                "agent_type": span_agent_type,
-            })
 
         elif event_name in ("hook_subagentstart", "hook_SubagentStart"):
             delegation = attrs.get("tool_input", event.get("body", ""))
-            spans.append({
-                "span_id": str(uuid.uuid4())[:16],
-                "type": "subagent_start",
-                "name": f"SubagentStart:{span_agent_type or span_agent_id}",
-                "input": _truncate(delegation, 2000),
-                "output": "",
-                "status": "success",
-                "error": None,
-                "latency_ms": 0,
-                "start_time": event.get("timestamp", ""),
-                "agent_id": span_agent_id,
-                "agent_type": span_agent_type,
-            })
+            spans.append(
+                {
+                    "span_id": str(uuid.uuid4())[:16],
+                    "type": "subagent_start",
+                    "name": f"SubagentStart:{span_agent_type or span_agent_id}",
+                    "input": _truncate(delegation, 2000),
+                    "output": "",
+                    "status": "success",
+                    "error": None,
+                    "latency_ms": 0,
+                    "start_time": event.get("timestamp", ""),
+                    "agent_id": span_agent_id,
+                    "agent_type": span_agent_type,
+                }
+            )
 
         elif event_name in ("hook_subagentstop", "hook_SubagentStop"):
             agent_output = attrs.get("tool_response", event.get("body", ""))
-            spans.append({
-                "span_id": str(uuid.uuid4())[:16],
-                "type": "subagent_stop",
-                "name": f"SubagentStop:{span_agent_type or span_agent_id}",
-                "input": "",
-                "output": _truncate(agent_output, 2000),
-                "status": "success",
-                "error": None,
-                "latency_ms": 0,
-                "start_time": event.get("timestamp", ""),
-                "agent_id": span_agent_id,
-                "agent_type": span_agent_type,
-            })
+            spans.append(
+                {
+                    "span_id": str(uuid.uuid4())[:16],
+                    "type": "subagent_stop",
+                    "name": f"SubagentStop:{span_agent_type or span_agent_id}",
+                    "input": "",
+                    "output": _truncate(agent_output, 2000),
+                    "status": "success",
+                    "error": None,
+                    "latency_ms": 0,
+                    "start_time": event.get("timestamp", ""),
+                    "agent_id": span_agent_id,
+                    "agent_type": span_agent_type,
+                }
+            )
 
         elif event_name in ("hook_Stop", "Stop"):
-            response = (
-                attrs.get("tool_response", "")
-                or attrs.get("assistant_response", "")
-                or event.get("body", "")
-            )
+            response = attrs.get("tool_response", "") or attrs.get("assistant_response", "") or event.get("body", "")
             trace_output = _truncate(response, 4000)
-            spans.append({
-                "span_id": str(uuid.uuid4())[:16],
-                "type": "agent_response",
-                "name": "final_response",
-                "input": "",
-                "output": trace_output,
-                "status": "success",
-                "error": None,
-                "latency_ms": 0,
-                "start_time": event.get("timestamp", ""),
-                "agent_id": span_agent_id,
-                "agent_type": span_agent_type,
-            })
+            spans.append(
+                {
+                    "span_id": str(uuid.uuid4())[:16],
+                    "type": "agent_response",
+                    "name": "final_response",
+                    "input": "",
+                    "output": trace_output,
+                    "status": "success",
+                    "error": None,
+                    "latency_ms": 0,
+                    "start_time": event.get("timestamp", ""),
+                    "agent_id": span_agent_id,
+                    "agent_type": span_agent_type,
+                }
+            )
 
         elif event_name in ("hook_SessionStart", "SessionStart", "agentSpawn"):
-            spans.append({
-                "span_id": str(uuid.uuid4())[:16],
-                "type": "session_start",
-                "name": "session_start",
-                "input": event.get("body", ""),
-                "output": "",
-                "status": "success",
-                "error": None,
-                "latency_ms": 0,
-                "start_time": event.get("timestamp", ""),
-                "agent_id": span_agent_id,
-                "agent_type": span_agent_type,
-            })
+            spans.append(
+                {
+                    "span_id": str(uuid.uuid4())[:16],
+                    "type": "session_start",
+                    "name": "session_start",
+                    "input": event.get("body", ""),
+                    "output": "",
+                    "status": "success",
+                    "error": None,
+                    "latency_ms": 0,
+                    "start_time": event.get("timestamp", ""),
+                    "agent_id": span_agent_id,
+                    "agent_type": span_agent_type,
+                }
+            )
 
     # Build the trace dict
     trace = {
@@ -293,9 +294,7 @@ def _build_trace_and_spans(
     return trace, spans
 
 
-def _find_agent_context(
-    spans: list[dict], target_agent: str
-) -> AgentContext | None:
+def _find_agent_context(spans: list[dict], target_agent: str) -> AgentContext | None:
     """Find all invocations of a target agent within a session's spans.
 
     Matches by agent_id, agent_type, or agent_name (case-insensitive).
@@ -348,7 +347,8 @@ def _find_agent_context(
 
     # Fallback: no SubagentStart/Stop but spans carry agent_id attribution
     agent_span_indices = [
-        idx for idx, span in enumerate(spans)
+        idx
+        for idx, span in enumerate(spans)
         if (
             (span.get("agent_id") or "").lower() == target_lower
             or (span.get("agent_type") or "").lower() == target_lower
@@ -360,12 +360,14 @@ def _find_agent_context(
         ctx.span_start_idx = agent_span_indices[0]
         ctx.span_end_idx = agent_span_indices[-1]
         ctx.agent_id = target_agent
-        ctx.invocations = [{
-            "start_idx": agent_span_indices[0],
-            "end_idx": agent_span_indices[-1],
-            "delegation_prompt": "",
-            "agent_output": "",
-        }]
+        ctx.invocations = [
+            {
+                "start_idx": agent_span_indices[0],
+                "end_idx": agent_span_indices[-1],
+                "delegation_prompt": "",
+                "agent_output": "",
+            }
+        ]
         return ctx
 
     return None
@@ -411,8 +413,11 @@ def build_agent_eval_context(
 def _normalize_event_name(name: str) -> str:
     """Normalize event names to a consistent form."""
     if name.startswith("hook_") or name in (
-        "PreToolUse", "PostToolUse", "UserPromptSubmit",
-        "Stop", "SessionStart",
+        "PreToolUse",
+        "PostToolUse",
+        "UserPromptSubmit",
+        "Stop",
+        "SessionStart",
     ):
         return name
     mapping = {

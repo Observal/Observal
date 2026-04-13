@@ -3,11 +3,11 @@
 # ── Linting ──────────────────────────────────────────────
 
 lint:  ## Run all linters
-	uv run ruff check .
+	uv run --with ruff==0.15.10 ruff check .
 
 format:  ## Auto-format all code
-	uv run ruff format .
-	uv run ruff check --fix .
+	uv run --with ruff==0.15.10 ruff format .
+	uv run --with ruff==0.15.10 ruff check --fix .
 
 check:  ## Full pre-commit check on all files
 	pre-commit run --all-files

@@ -123,7 +123,17 @@ class TestListPending:
 
         assert r.status_code == 200
         item = r.json()[0]
-        expected_keys = {"type", "id", "name", "description", "version", "owner", "status", "submitted_by", "created_at"}
+        expected_keys = {
+            "type",
+            "id",
+            "name",
+            "description",
+            "version",
+            "owner",
+            "status",
+            "submitted_by",
+            "created_at",
+        }
         assert expected_keys == set(item.keys())
 
     @pytest.mark.asyncio

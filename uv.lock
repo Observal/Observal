@@ -354,7 +354,7 @@ dev = [
     { name = "fastapi", specifier = ">=0.135.3" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
-    { name = "ruff" },
+    { name = "ruff", specifier = "==0.15.10" },
     { name = "sqlalchemy", specifier = ">=2.0.49" },
 ]
 

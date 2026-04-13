@@ -40,9 +40,7 @@ async def run_evaluation(
         Agent,
         agent_id,
         db,
-        load_options=[
-            selectinload(Agent.goal_template).selectinload(AgentGoalTemplate.sections)
-        ],
+        load_options=[selectinload(Agent.goal_template).selectinload(AgentGoalTemplate.sections)],
     )
 
     # Create eval run
@@ -131,9 +129,7 @@ async def get_scorecard(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sc = await resolve_prefix_id(
-        Scorecard, scorecard_id, db, load_options=_scorecard_load, display_field="version"
-    )
+    sc = await resolve_prefix_id(Scorecard, scorecard_id, db, load_options=_scorecard_load, display_field="version")
     return ScorecardResponse.model_validate(sc)
 
 
@@ -147,7 +143,9 @@ async def compare_versions(
 ):
     """Compare average scores between two agent versions."""
     from sqlalchemy import func
+
     agent = await resolve_prefix_id(Agent, agent_id, db)
+
     async def _avg_scores(version: str) -> dict:
         result = await db.execute(
             select(
@@ -188,9 +186,7 @@ async def eval_session(
             Agent,
             agent_id,
             db,
-            load_options=[
-                selectinload(Agent.goal_template).selectinload(AgentGoalTemplate.sections)
-            ],
+            load_options=[selectinload(Agent.goal_template).selectinload(AgentGoalTemplate.sections)],
         )
 
     if agent:
@@ -220,10 +216,7 @@ async def eval_session(
         "session_id": session_id,
         "trace": trace,
         "span_count": len(spans),
-        "spans_summary": [
-            {"type": s["type"], "name": s["name"], "status": s["status"]}
-            for s in spans
-        ],
+        "spans_summary": [{"type": s["type"], "name": s["name"], "status": s["status"]} for s in spans],
         "source": "hook_materializer",
         "note": "No agent_id provided — returning materialized spans without scoring.",
     }
@@ -251,23 +244,20 @@ async def eval_agent_in_session(
     """
     # Load agent from DB (by UUID or name)
     from api.routes.agent import _load_agent
+
     agent = await _load_agent(db, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Materialize session and find the agent's spans
-    trace, all_spans, agent_ctx = await materialize_agent_eval(
-        session_id, agent.name
-    )
+    trace, all_spans, agent_ctx = await materialize_agent_eval(session_id, agent.name)
 
     if not all_spans:
         raise HTTPException(status_code=404, detail="No hook events found for session")
 
     # If not found by name, try by agent ID
     if agent_ctx is None:
-        trace, all_spans, agent_ctx = await materialize_agent_eval(
-            session_id, str(agent.id)
-        )
+        trace, all_spans, agent_ctx = await materialize_agent_eval(session_id, str(agent.id))
 
     if agent_ctx is None:
         # Agent wasn't found as a subagent — check if this is a single-agent

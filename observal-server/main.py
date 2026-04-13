@@ -66,7 +66,7 @@ app = FastAPI(
 app.add_middleware(
     SessionMiddleware,
     secret_key="dev-hardcoded-secret-key",
-    max_age=3600  # 1 hour
+    max_age=3600,  # 1 hour
 )
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

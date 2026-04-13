@@ -69,10 +69,7 @@ async def get_session(session_id: str):
     sid = _escape(session_id)
     # Match either session.id or conversation_id so resumed Kiro sessions
     # (which share a conversation_id) resolve correctly.
-    session_filter = (
-        f"(LogAttributes['session.id'] = '{sid}' "
-        f"OR LogAttributes['conversation_id'] = '{sid}')"
-    )
+    session_filter = f"(LogAttributes['session.id'] = '{sid}' OR LogAttributes['conversation_id'] = '{sid}')"
     events = await _ch_json(
         "SELECT "
         "Timestamp AS timestamp, "
@@ -436,8 +433,12 @@ async def ingest_hook(request: Request):
 
     # ── Enriched fields from Kiro SQLite DB (sent by kiro_stop_hook.py) ──
     for enriched_field in (
-        "input_tokens", "output_tokens",
-        "turn_count", "credits", "tools_used", "conversation_id",
+        "input_tokens",
+        "output_tokens",
+        "turn_count",
+        "credits",
+        "tools_used",
+        "conversation_id",
     ):
         if body.get(enriched_field):
             attrs[enriched_field] = str(body[enriched_field])

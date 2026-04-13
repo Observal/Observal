@@ -37,15 +37,11 @@ def _enrich(payload: dict) -> dict:
         # Find the most recent conversation for this cwd
         if cwd:
             cur.execute(
-                "SELECT conversation_id, value FROM conversations_v2 "
-                "WHERE key = ? ORDER BY updated_at DESC LIMIT 1",
+                "SELECT conversation_id, value FROM conversations_v2 WHERE key = ? ORDER BY updated_at DESC LIMIT 1",
                 (cwd,),
             )
         else:
-            cur.execute(
-                "SELECT conversation_id, value FROM conversations_v2 "
-                "ORDER BY updated_at DESC LIMIT 1"
-            )
+            cur.execute("SELECT conversation_id, value FROM conversations_v2 ORDER BY updated_at DESC LIMIT 1")
 
         row = cur.fetchone()
         conn.close()

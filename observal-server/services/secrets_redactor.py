@@ -59,9 +59,7 @@ _KNOWN_KEY_PATTERNS: list[re.Pattern] = [
 # JWT tokens (three base64url segments separated by dots)
 # ---------------------------------------------------------------------------
 
-_RE_JWT = re.compile(
-    r"eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}"
-)
+_RE_JWT = re.compile(r"eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}")
 
 # ---------------------------------------------------------------------------
 # PEM private keys
@@ -94,9 +92,7 @@ _SECRET_KEY_NAMES = (
 _RE_KEY_VALUE = re.compile(
     r"(?i)"
     r"(?<!\$)(?<!\$\{)"  # NOT preceded by $ or ${  (env var reference)
-    r"""["']?"""  # optional quotes around key name (JSON)
-    + _SECRET_KEY_NAMES
-    + r"""["']?\s*[=:]\s*"""
+    r"""["']?""" + _SECRET_KEY_NAMES + r"""["']?\s*[=:]\s*"""  # optional quotes around key name (JSON)
     r"(?:"
     r'"([^"\n]{8,})"'  # double-quoted value
     r"|'([^'\n]{8,})'"  # single-quoted value

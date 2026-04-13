@@ -105,15 +105,9 @@ def register_uninstall(app: typer.Typer):
 
     @app.command("uninstall")
     def uninstall(
-        repo_dir: str | None = typer.Option(
-            None, "--repo-dir", "-d", help="Path to cloned Observal repo."
-        ),
-        keep_config: bool = typer.Option(
-            False, "--keep-config", help="Keep ~/.observal/ config directory."
-        ),
-        keep_cli: bool = typer.Option(
-            False, "--keep-cli", help="Keep the CLI tool installed."
-        ),
+        repo_dir: str | None = typer.Option(None, "--repo-dir", "-d", help="Path to cloned Observal repo."),
+        keep_config: bool = typer.Option(False, "--keep-config", help="Keep ~/.observal/ config directory."),
+        keep_cli: bool = typer.Option(False, "--keep-cli", help="Keep the CLI tool installed."),
     ):
         """Completely uninstall Observal: stop containers, remove volumes, delete repo and config."""
         repo_root = _find_repo_root(repo_dir)

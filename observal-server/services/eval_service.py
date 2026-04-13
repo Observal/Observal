@@ -453,8 +453,7 @@ async def run_agent_scoped_eval(
             if not goal_desc and agent.goal_template:
                 goal_desc = agent.goal_template.description
                 required_sections = [
-                    {"name": s.name, "grounding_required": s.grounding_required}
-                    for s in agent.goal_template.sections
+                    {"name": s.name, "grounding_required": s.grounding_required} for s in agent.goal_template.sections
                 ]
 
             # For agent-scoped eval, pass full_spans for grounding context
@@ -468,13 +467,13 @@ async def run_agent_scoped_eval(
                     # No structured sections — use delegation prompt as
                     # a single "task completion" section
                     slm_penalties += await slm_scorer.score_goal_completion(
-                        sanitized_trace, full_spans, goal_desc,
+                        sanitized_trace,
+                        full_spans,
+                        goal_desc,
                         [{"name": "Delegated Task", "grounding_required": True}],
                     )
 
-            slm_penalties += await slm_scorer.score_factual_grounding(
-                sanitized_trace, full_spans
-            )
+            slm_penalties += await slm_scorer.score_factual_grounding(sanitized_trace, full_spans)
             slm_penalties += await slm_scorer.score_thought_process(full_spans)
         except Exception as e:
             logger.error(f"SLM scoring failed for agent-scoped eval: {e}")

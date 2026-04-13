@@ -270,11 +270,7 @@ class TestRealisticTraces:
 
     def test_tool_output_with_code(self):
         """Tool output showing code that references env vars — don't strip."""
-        text = (
-            "import os\n"
-            'key = os.environ["OPENAI_API_KEY"]\n'
-            'client = OpenAI(api_key=key)\n'
-        )
+        text = 'import os\nkey = os.environ["OPENAI_API_KEY"]\nclient = OpenAI(api_key=key)\n'
         result = redact_secrets(text)
         assert 'os.environ["OPENAI_API_KEY"]' in result
 

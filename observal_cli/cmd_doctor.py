@@ -151,9 +151,7 @@ def _check_kiro_installation(issues: list, warnings: list):
     """Check Kiro CLI installation and agent hook configuration."""
     # Check kiro-cli binary
     if os.system("which kiro-cli > /dev/null 2>&1") != 0:
-        warnings.append(
-            "`kiro-cli` not found in PATH. Install with: curl -fsSL https://cli.kiro.dev/install | bash"
-        )
+        warnings.append("`kiro-cli` not found in PATH. Install with: curl -fsSL https://cli.kiro.dev/install | bash")
     else:
         # Check if kiro-cli is authenticated
         if os.system("kiro-cli whoami > /dev/null 2>&1") != 0:
@@ -189,8 +187,10 @@ def _check_kiro_installation(issues: list, warnings: list):
         if mcp_data:
             servers = mcp_data.get("mcpServers", {})
             unwrapped = [
-                n for n, c in servers.items()
-                if isinstance(c, dict) and "observal-shim" not in c.get("command", "")
+                n
+                for n, c in servers.items()
+                if isinstance(c, dict)
+                and "observal-shim" not in c.get("command", "")
                 and "observal-proxy" not in c.get("command", "")
                 and "url" not in c  # HTTP transport doesn't need shim
             ]

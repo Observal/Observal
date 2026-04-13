@@ -10,9 +10,7 @@
 #
 # Recommended branch-protection rules (Settings → Branches → main):
 #   Required status checks (initial soft-launch set):
-#     • test (3.11)
 #     • test (3.12)
-#     • test (3.13)
 #     • docker-build
 #   Required status checks (after soft-launch, once lint backlog is clean):
 #     • lint
@@ -34,49 +32,110 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# ── Job 1: Python lint ────────────────────────────────────────────────────────
+# ── Job 0: Path filtering ─────────────────────────────────────────────────────
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      web: ${{ steps.filter.outputs.web }}
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - 'observal_cli/**/*.py'
+              - 'observal-server/**/*.py'
+              - 'tests/**/*.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'Makefile'
+              - '.pre-commit-config.yaml'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+            docker:
+              - 'docker/**'
+              - 'observal_cli/**'
+              - 'observal-server/**'
+              - 'web/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'web/package.json'
+              - 'web/pnpm-lock.yaml'
+              - '.env.example'
+              - '.github/workflows/ci.yml'
+
+# ── Job 1: Python lint ────────────────────────────────────────────────────────
   lint:
     name: lint
     runs-on: ubuntu-latest
-    # Soft-launch: don't block merges on pre-existing ruff violations.
+    needs: changes
     continue-on-error: true
     steps:
+      - name: Skip if no Python changes
+        if: needs.changes.outputs.python != 'true'
+        run: |
+          echo "::notice::No Python changes detected, skipping lint"
+          echo "This job reports success to satisfy branch protection"
+
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.python == 'true'
 
       - uses: astral-sh/setup-uv@v4
+        if: needs.changes.outputs.python == 'true'
         with:
           enable-cache: true
 
       - name: Install Python 3.13
+        if: needs.changes.outputs.python == 'true'
         run: uv python install 3.13
 
       - name: ruff check
-        run: uv run --with ruff==0.9.10 ruff check .
+        if: needs.changes.outputs.python == 'true'
+        run: uv run --with ruff==0.15.10 ruff check .
 
       - name: ruff format --check
-        run: uv run --with ruff==0.9.10 ruff format --check .
+        if: needs.changes.outputs.python == 'true'
+        run: uv run --with ruff==0.15.10 ruff format --check .
 
-# ── Job 2: Python tests (matrix) ─────────────────────────────────────────────
+# ── Job 2: Python tests (matrix) ──────────────────────────────────────────────
   test:
     name: test (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12"]
 
     steps:
+      - name: Skip if no Python changes
+        if: needs.changes.outputs.python != 'true'
+        run: |
+          echo "::notice::No Python changes detected, skipping test"
+          echo "This job reports success to satisfy branch protection"
+
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.python == 'true'
 
       - uses: astral-sh/setup-uv@v4
+        if: needs.changes.outputs.python == 'true'
         with:
           enable-cache: true
 
       - name: Install Python ${{ matrix.python-version }}
+        if: needs.changes.outputs.python == 'true'
         run: uv python install ${{ matrix.python-version }}
 
       - name: Run pytest
+        if: needs.changes.outputs.python == 'true'
         run: |
           cd observal-server
           uv run \
@@ -88,53 +147,73 @@ jobs:
             --with rich \
             pytest ../tests/ -q
 
-# ── Job 3: Next.js lint + typecheck ──────────────────────────────────────────
+# ── Job 3: Next.js lint + typecheck ───────────────────────────────────────────
   web-lint:
     name: web-lint
     runs-on: ubuntu-latest
-    # Soft-launch: don't block merges on pre-existing ESLint errors.
+    needs: changes
     continue-on-error: true
     defaults:
       run:
         working-directory: web
 
     steps:
+      - name: Skip if no web changes
+        if: needs.changes.outputs.web != 'true'
+        run: |
+          echo "::notice::No web changes detected, skipping web-lint"
+          echo "This job reports success to satisfy branch protection"
+
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.web == 'true'
 
       - uses: pnpm/action-setup@v4
+        if: needs.changes.outputs.web == 'true'
         with:
           version: 10
 
       - uses: actions/setup-node@v4
+        if: needs.changes.outputs.web == 'true'
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install dependencies
+        if: needs.changes.outputs.web == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: ESLint
+        if: needs.changes.outputs.web == 'true'
         run: pnpm run lint
 
       - name: TypeScript typecheck
+        if: needs.changes.outputs.web == 'true'
         run: pnpm run typecheck
 
 # ── Job 4: Docker build ───────────────────────────────────────────────────────
   docker-build:
     name: docker-build
     runs-on: ubuntu-latest
+    needs: changes
     defaults:
       run:
         working-directory: docker
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Skip if no Docker changes
+        if: needs.changes.outputs.docker != 'true'
+        run: |
+          echo "::notice::No Docker changes detected, skipping docker-build"
+          echo "This job reports success to satisfy branch protection"
 
-      # docker-compose.yml references env_file: ../.env — create a stub so
-      # the build doesn't fail on a missing file.
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.docker == 'true'
+
       - name: Create stub .env
+        if: needs.changes.outputs.docker == 'true'
         run: touch ../.env
 
       - name: Build images
+        if: needs.changes.outputs.docker == 'true'
         run: docker compose build

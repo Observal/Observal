@@ -133,8 +133,8 @@ def generate_agent_config(
         # Telemetry collected via observal-shim + hook bridge
         model_field = f',\\"model\\":\\"{agent.model_name}\\"' if agent.model_name else ""
         curl_cmd = (
-            f"cat | sed 's/^{{/{{\"session_id\":\"kiro-'$PPID'\",\"service_name\":\"kiro-cli\","
-            f"\"agent_name\":\"{safe_name}\"{model_field},/' "
+            f'cat | sed \'s/^{{/{{"session_id":"kiro-\'$PPID\'","service_name":"kiro-cli",'
+            f'"agent_name":"{safe_name}"{model_field},/\' '
             f"| curl -sf -X POST {observal_url}/api/v1/otel/hooks "
             f'-H "Content-Type: application/json" '
             f"-d @-"
@@ -143,8 +143,8 @@ def generate_agent_config(
         # Uses the observal CLI's enrichment script if installed, otherwise
         # falls back to the same curl command as other events.
         stop_cmd = (
-            f"cat | sed 's/^{{/{{\"session_id\":\"kiro-'$PPID'\",\"service_name\":\"kiro-cli\","
-            f"\"agent_name\":\"{safe_name}\"{model_field},/' "
+            f'cat | sed \'s/^{{/{{"session_id":"kiro-\'$PPID\'","service_name":"kiro-cli",'
+            f'"agent_name":"{safe_name}"{model_field},/\' '
             f"| python3 -m observal_cli.hooks.kiro_stop_hook "
             f"--url {observal_url}/api/v1/otel/hooks"
         )
@@ -197,7 +197,7 @@ def generate_agent_config(
         frontmatter_lines = [
             "---",
             f"name: {safe_name}",
-            f"description: \"{desc_line}\"",
+            f'description: "{desc_line}"',
         ]
         if claude_mcps:
             frontmatter_lines.append("mcpServers:")

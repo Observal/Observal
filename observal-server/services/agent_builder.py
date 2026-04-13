@@ -349,7 +349,7 @@ def _generate_claude_code(manifest: AgentManifest) -> IdeAgentConfig:
     frontmatter_lines = [
         "---",
         f"name: {safe_name}",
-        f"description: \"{desc_line}\"",
+        f'description: "{desc_line}"',
     ]
     if mcp_entries:
         frontmatter_lines.append("mcpServers:")

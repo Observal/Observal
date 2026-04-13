@@ -80,5 +80,5 @@ dev = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "sqlalchemy>=2.0.49",
-    "ruff",
+    "ruff==0.15.10",
 ]

@@ -33,8 +33,7 @@ def _add_conversation_id(payload: dict) -> dict:
         conn = sqlite3.connect(f"file:{KIRO_DB}?mode=ro", uri=True)
         cur = conn.cursor()
         cur.execute(
-            "SELECT conversation_id FROM conversations_v2 "
-            "WHERE key = ? ORDER BY updated_at DESC LIMIT 1",
+            "SELECT conversation_id FROM conversations_v2 WHERE key = ? ORDER BY updated_at DESC LIMIT 1",
             (cwd,),
         )
         row = cur.fetchone()
