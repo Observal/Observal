@@ -160,6 +160,7 @@ jobs:
     steps:
       - name: Skip if no web changes
         if: needs.changes.outputs.web != 'true'
+        working-directory: .
         run: |
           echo "::notice::No web changes detected, skipping web-lint"
           echo "This job reports success to satisfy branch protection"
@@ -203,6 +204,7 @@ jobs:
     steps:
       - name: Skip if no Docker changes
         if: needs.changes.outputs.docker != 'true'
+        working-directory: .
         run: |
           echo "::notice::No Docker changes detected, skipping docker-build"
           echo "This job reports success to satisfy branch protection"
