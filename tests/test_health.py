@@ -1,8 +1,7 @@
 """Tests for the 3-tier health check endpoints."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
 import uuid
-from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -37,6 +36,7 @@ class TestReadiness:
 
         app.dependency_overrides = {}
         from api.deps import get_db
+
         app.dependency_overrides[get_db] = _mock_get_db
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -59,6 +59,7 @@ class TestReadiness:
             yield mock_db
 
         from api.deps import get_db
+
         app.dependency_overrides[get_db] = _mock_get_db
         app.state.enterprise_issues = ["SECRET_KEY is default"]
         try:
@@ -80,6 +81,7 @@ class TestDiagnostics:
 
     def _make_admin(self):
         from models.user import User, UserRole
+
         user = MagicMock(spec=User)
         user.id = uuid.uuid4()
         user.role = UserRole.admin
@@ -87,6 +89,7 @@ class TestDiagnostics:
 
     def _make_user(self):
         from models.user import User, UserRole
+
         user = MagicMock(spec=User)
         user.id = uuid.uuid4()
         user.role = UserRole.user
@@ -94,8 +97,8 @@ class TestDiagnostics:
 
     @pytest.mark.asyncio
     async def test_returns_diagnostics_for_admin(self):
+        from api.deps import get_current_user, get_db
         from main import app
-        from api.deps import get_db, get_current_user
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=MagicMock())
@@ -128,14 +131,16 @@ class TestDiagnostics:
 
     @pytest.mark.asyncio
     async def test_requires_admin_role(self):
+        from api.deps import get_current_user, get_db
         from main import app
-        from api.deps import get_db, get_current_user
 
         mock_db = AsyncMock()
+
         async def _mock_get_db():
             yield mock_db
 
         user = self._make_user()
+
         async def _mock_user():
             return user
 
@@ -150,8 +155,8 @@ class TestDiagnostics:
 
     @pytest.mark.asyncio
     async def test_enterprise_mode_shows_config_issues(self):
+        from api.deps import get_current_user, get_db
         from main import app
-        from api.deps import get_db, get_current_user
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=MagicMock())
@@ -161,6 +166,7 @@ class TestDiagnostics:
             yield mock_db
 
         admin = self._make_admin()
+
         async def _mock_admin():
             return admin
 

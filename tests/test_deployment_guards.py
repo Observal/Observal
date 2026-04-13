@@ -1,6 +1,6 @@
 """Tests for deployment mode guards (require_local_mode)."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient

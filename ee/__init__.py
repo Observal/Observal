@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
     from config import Settings
 
 logger = logging.getLogger("observal.ee")
@@ -25,9 +26,9 @@ def register_enterprise(app: FastAPI, settings: Settings) -> list[str]:
     3. Add EnterpriseGuardMiddleware (503 on misconfigured EE routes)
     4. Register event bus handlers for audit logging
     """
-    from ee.observal_server.services.config_validator import validate_enterprise_config
-    from ee.observal_server.routes import mount_ee_routes
     from ee.observal_server.middleware.enterprise_guard import EnterpriseGuardMiddleware
+    from ee.observal_server.routes import mount_ee_routes
+    from ee.observal_server.services.config_validator import validate_enterprise_config
 
     # 1. Validate config
     issues = validate_enterprise_config(settings)

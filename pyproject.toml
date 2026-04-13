@@ -45,6 +45,7 @@ select = [
     "SIM",   # flake8-simplify
     "TCH",   # flake8-type-checking
     "RUF",   # ruff-specific
+    "TID",   # flake8-tidy-imports (import boundary enforcement)
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
@@ -58,11 +59,16 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["observal_cli", "models", "schemas", "services", "api"]
+known-first-party = ["observal_cli", "models", "schemas", "services", "api", "ee"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"ee".msg = "Core must not import from ee/. Only main.py may cross this boundary."
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["F841", "RUF059", "B007"]  # unused vars common in test assertions
+"tests/*" = ["F841", "RUF059", "B007", "TID251"]  # unused vars, allow ee imports in tests
+"ee/*" = ["TID251"]                     # ee/ may import from itself
 "observal_cli/main.py" = ["E402"]       # imports after app = typer.Typer()
+"observal-server/main.py" = ["TID251"]  # main.py is the single allowed ee/ crossing point
 "demo/*" = ["E402"]
 
 [tool.ruff.format]

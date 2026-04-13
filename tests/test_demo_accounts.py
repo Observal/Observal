@@ -1,7 +1,7 @@
 """Tests for demo account seeding and cleanup."""
 
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -163,23 +163,27 @@ class TestEventDrivenCleanup:
                 mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_db)
                 mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-                await bus.emit(UserCreated(
-                    user_id="abc",
-                    email="real@company.com",
-                    role="admin",
-                    is_demo=False,
-                ))
+                await bus.emit(
+                    UserCreated(
+                        user_id="abc",
+                        email="real@company.com",
+                        role="admin",
+                        is_demo=False,
+                    )
+                )
 
             mock_cleanup.assert_awaited_once_with(mock_db, UserRole.admin)
 
     @pytest.mark.asyncio
     async def test_demo_user_does_not_trigger_cleanup(self):
         with patch("services.demo_accounts.cleanup_demo_accounts", new_callable=AsyncMock) as mock_cleanup:
-            await bus.emit(UserCreated(
-                user_id="abc",
-                email="demo@demo.local",
-                role="user",
-                is_demo=True,
-            ))
+            await bus.emit(
+                UserCreated(
+                    user_id="abc",
+                    email="demo@demo.local",
+                    role="user",
+                    is_demo=True,
+                )
+            )
 
             mock_cleanup.assert_not_awaited()

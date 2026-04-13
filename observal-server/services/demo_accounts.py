@@ -8,13 +8,16 @@ are created at the corresponding tier.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 from models.user import User, UserRole
-from services.events import UserCreated, UserDeleted, bus
+from services.events import UserCreated, bus
 
 logger = logging.getLogger("observal.demo")
 
@@ -34,9 +37,7 @@ async def seed_demo_accounts(db: AsyncSession) -> int:
     that already exist.
     """
     # Bail out if ANY real (non-demo) user exists
-    real_count = await db.scalar(
-        select(func.count()).select_from(User).where(User.is_demo.is_(False))
-    )
+    real_count = await db.scalar(select(func.count()).select_from(User).where(User.is_demo.is_(False)))
     if real_count and real_count > 0:
         return 0
 
@@ -48,9 +49,7 @@ async def seed_demo_accounts(db: AsyncSession) -> int:
             continue
 
         # Idempotent: skip if already exists
-        exists = await db.scalar(
-            select(func.count()).select_from(User).where(User.email == email)
-        )
+        exists = await db.scalar(select(func.count()).select_from(User).where(User.email == email))
         if exists:
             continue
 

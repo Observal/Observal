@@ -5,7 +5,6 @@ Revises:
 Create Date: 2026-04-13
 """
 
-
 from alembic import op
 
 revision = "0001"

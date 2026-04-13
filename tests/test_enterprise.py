@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 class TestConfigValidator:
     def test_detects_default_secret_key(self):
         from unittest.mock import MagicMock
+
         from ee.observal_server.services.config_validator import validate_enterprise_config
 
         settings = MagicMock()
@@ -22,6 +23,7 @@ class TestConfigValidator:
 
     def test_detects_missing_oauth(self):
         from unittest.mock import MagicMock
+
         from ee.observal_server.services.config_validator import validate_enterprise_config
 
         settings = MagicMock()
@@ -39,6 +41,7 @@ class TestConfigValidator:
 
     def test_detects_localhost_frontend(self):
         from unittest.mock import MagicMock
+
         from ee.observal_server.services.config_validator import validate_enterprise_config
 
         settings = MagicMock()
@@ -53,6 +56,7 @@ class TestConfigValidator:
 
     def test_healthy_config_returns_empty(self):
         from unittest.mock import MagicMock
+
         from ee.observal_server.services.config_validator import validate_enterprise_config
 
         settings = MagicMock()
@@ -71,8 +75,9 @@ class TestEEPlaceholderRoutes:
 
     @pytest.mark.asyncio
     async def test_saml_login_returns_501(self):
-        from ee.observal_server.routes.sso_saml import router
         from fastapi import FastAPI
+
+        from ee.observal_server.routes.sso_saml import router
 
         app = FastAPI()
         app.include_router(router)
@@ -83,8 +88,9 @@ class TestEEPlaceholderRoutes:
 
     @pytest.mark.asyncio
     async def test_saml_metadata_returns_501(self):
-        from ee.observal_server.routes.sso_saml import router
         from fastapi import FastAPI
+
+        from ee.observal_server.routes.sso_saml import router
 
         app = FastAPI()
         app.include_router(router)
@@ -94,8 +100,9 @@ class TestEEPlaceholderRoutes:
 
     @pytest.mark.asyncio
     async def test_scim_list_users_returns_501(self):
-        from ee.observal_server.routes.scim import router
         from fastapi import FastAPI
+
+        from ee.observal_server.routes.scim import router
 
         app = FastAPI()
         app.include_router(router)
@@ -105,8 +112,9 @@ class TestEEPlaceholderRoutes:
 
     @pytest.mark.asyncio
     async def test_scim_create_user_returns_501(self):
-        from ee.observal_server.routes.scim import router
         from fastapi import FastAPI
+
+        from ee.observal_server.routes.scim import router
 
         app = FastAPI()
         app.include_router(router)
@@ -119,6 +127,7 @@ class TestEnterpriseGuardMiddleware:
     @pytest.mark.asyncio
     async def test_blocks_ee_routes_when_misconfigured(self):
         from fastapi import FastAPI
+
         from ee.observal_server.middleware.enterprise_guard import EnterpriseGuardMiddleware
         from ee.observal_server.routes.sso_saml import router as saml_router
 
@@ -134,6 +143,7 @@ class TestEnterpriseGuardMiddleware:
     @pytest.mark.asyncio
     async def test_allows_non_ee_routes_when_misconfigured(self):
         from fastapi import FastAPI
+
         from ee.observal_server.middleware.enterprise_guard import EnterpriseGuardMiddleware
 
         app = FastAPI()
@@ -151,6 +161,7 @@ class TestEnterpriseGuardMiddleware:
     @pytest.mark.asyncio
     async def test_allows_ee_routes_when_healthy(self):
         from fastapi import FastAPI
+
         from ee.observal_server.middleware.enterprise_guard import EnterpriseGuardMiddleware
         from ee.observal_server.routes.sso_saml import router as saml_router
 
@@ -168,6 +179,7 @@ class TestEnterpriseGuardMiddleware:
 class TestRegisterEnterprise:
     def test_register_enterprise_returns_issues(self):
         from unittest.mock import MagicMock
+
         from ee import register_enterprise
 
         app = MagicMock()

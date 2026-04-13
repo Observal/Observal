@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
 from starlette.responses import JSONResponse
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 # Prefixes that require a fully configured enterprise deployment
 EE_ROUTE_PREFIXES = (

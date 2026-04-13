@@ -192,7 +192,27 @@ jobs:
         if: needs.changes.outputs.web == 'true'
         run: pnpm run typecheck
 
-# ── Job 4: Docker build ───────────────────────────────────────────────────────
+# ── Job 4: Import boundary check ─────────────────────────────────────────────
+  import-boundary:
+    name: import-boundary
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check ee/ import boundary
+        run: |
+          echo "Checking that core does not import from ee/..."
+          VIOLATIONS=$(grep -rn "from ee\b\|import ee\b" observal-server/ observal_cli/ --include="*.py" | grep -v "main.py" || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::Import boundary violation — core must not import from ee/"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✓ No import boundary violations found"
+
+# ── Job 5: Docker build ───────────────────────────────────────────────────────
   docker-build:
     name: docker-build
     runs-on: ubuntu-latest

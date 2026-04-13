@@ -92,6 +92,7 @@ async def lifespan(app: FastAPI):
     if settings.DEPLOYMENT_MODE == "enterprise":
         try:
             from ee import register_enterprise
+
             register_enterprise(app, settings)
         except ImportError:
             _logger.error("DEPLOYMENT_MODE=enterprise but ee/ module not found")

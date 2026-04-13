@@ -45,9 +45,7 @@ async def diagnostics(
     try:
         await db.execute(text("SELECT 1"))
         user_count = await db.scalar(select(func.count()).select_from(User))
-        demo_count = await db.scalar(
-            select(func.count()).select_from(User).where(User.is_demo.is_(True))
-        )
+        demo_count = await db.scalar(select(func.count()).select_from(User).where(User.is_demo.is_(True)))
         diag["checks"]["database"] = {
             "status": "ok",
             "users": user_count or 0,
@@ -59,7 +57,7 @@ async def diagnostics(
 
     # JWT keys
     try:
-        km = get_key_manager()
+        get_key_manager()
         diag["checks"]["jwt_keys"] = {
             "status": "ok",
             "algorithm": settings.JWT_SIGNING_ALGORITHM,
