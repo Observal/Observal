@@ -171,8 +171,8 @@
     --header: 0.97 0.006 260;
     --header-fg: 0.15 0.02 260;
 
-    --border: 0.91 0.01 260;
-    --input: 0.91 0.01 260;
+    --border: 0.82 0.01 260;
+    --input: 0.82 0.01 260;
 
     --primary: 0.15 0.02 260;
     --primary-fg: 0.97 0.005 260;
@@ -217,7 +217,7 @@
     --sidebar-primary-fg: 0.97 0.005 260;
     --sidebar-accent: 0.95 0.01 260;
     --sidebar-accent-fg: 0.15 0.02 260;
-    --sidebar-border: 0.92 0.008 260;
+    --sidebar-border: 0.82 0.008 260;
     --sidebar-ring: 0.58 0.18 255;
 
     --chart-1: 0.55 0.2 270;
@@ -251,8 +251,8 @@
     --header: 0.18 0.02 260;
     --header-fg: 0.88 0.01 260;
 
-    --border: 0.28 0.02 260;
-    --input: 0.28 0.02 260;
+    --border: 0.38 0.02 260;
+    --input: 0.38 0.02 260;
 
     --primary: 0.88 0.01 260;
     --primary-fg: 0.13 0.02 260;
@@ -297,7 +297,7 @@
     --sidebar-primary-fg: 0.13 0.02 260;
     --sidebar-accent: 0.19 0.02 260;
     --sidebar-accent-fg: 0.82 0.01 260;
-    --sidebar-border: 0.24 0.02 260;
+    --sidebar-border: 0.35 0.02 260;
     --sidebar-ring: 0.55 0.15 255;
 
     --chart-1: 0.6 0.18 270;
@@ -325,8 +325,8 @@
     --card-fg: 0.88 0.008 260;
     --header: 0.16 0.022 270;
     --header-fg: 0.88 0.008 260;
-    --border: 0.25 0.025 270;
-    --input: 0.25 0.025 270;
+    --border: 0.35 0.025 270;
+    --input: 0.35 0.025 270;
     --primary: 0.88 0.008 260;
     --primary-fg: 0.1 0.025 270;
     --secondary: 0.18 0.025 270;
@@ -360,7 +360,7 @@
     --sidebar-primary-fg: 0.1 0.025 270;
     --sidebar-accent: 0.17 0.025 270;
     --sidebar-accent-fg: 0.8 0.01 265;
-    --sidebar-border: 0.22 0.025 270;
+    --sidebar-border: 0.33 0.025 270;
     --sidebar-ring: 0.55 0.18 275;
     --chart-1: 0.6 0.18 270;
     --chart-2: 0.65 0.13 195;
@@ -387,8 +387,8 @@
     --card-fg: 0.87 0.01 150;
     --header: 0.16 0.018 155;
     --header-fg: 0.87 0.01 150;
-    --border: 0.24 0.02 155;
-    --input: 0.24 0.02 155;
+    --border: 0.35 0.02 155;
+    --input: 0.35 0.02 155;
     --primary: 0.87 0.01 150;
     --primary-fg: 0.1 0.02 155;
     --secondary: 0.17 0.02 155;
@@ -422,7 +422,7 @@
     --sidebar-primary-fg: 0.1 0.02 155;
     --sidebar-accent: 0.16 0.02 155;
     --sidebar-accent-fg: 0.77 0.01 150;
-    --sidebar-border: 0.21 0.02 155;
+    --sidebar-border: 0.33 0.02 155;
     --sidebar-ring: 0.55 0.12 155;
     --chart-1: 0.6 0.18 270;
     --chart-2: 0.65 0.13 195;
@@ -449,8 +449,8 @@
     --card-fg: 0.87 0.01 50;
     --header: 0.17 0.022 45;
     --header-fg: 0.87 0.01 50;
-    --border: 0.26 0.025 45;
-    --input: 0.26 0.025 45;
+    --border: 0.37 0.025 45;
+    --input: 0.37 0.025 45;
     --primary: 0.87 0.01 50;
     --primary-fg: 0.11 0.025 45;
     --secondary: 0.18 0.025 45;
@@ -484,7 +484,7 @@
     --sidebar-primary-fg: 0.11 0.025 45;
     --sidebar-accent: 0.17 0.025 45;
     --sidebar-accent-fg: 0.78 0.01 50;
-    --sidebar-border: 0.23 0.025 45;
+    --sidebar-border: 0.34 0.025 45;
     --sidebar-ring: 0.65 0.12 55;
     --chart-1: 0.6 0.18 270;
     --chart-2: 0.65 0.13 195;
