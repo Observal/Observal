@@ -26,6 +26,12 @@ async def submit_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    existing = await db.execute(
+        select(PromptListing).where(PromptListing.name == req.name, PromptListing.submitted_by == current_user.id)
+    )
+    if existing.scalars().first():
+        raise HTTPException(status_code=409, detail=f"You already have a prompt named '{req.name}'")
+
     listing = PromptListing(
         name=req.name,
         version=req.version,

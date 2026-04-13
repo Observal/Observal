@@ -88,7 +88,7 @@ def require_role(*roles: UserRole):
 
 
 async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_status=None):
-    """Resolve a listing by UUID or name."""
+    """Resolve a listing by UUID or name. Returns most recent if duplicates exist."""
 
     if isinstance(identifier, _uuid.UUID):
         stmt = select(model).where(model.id == identifier)
@@ -100,8 +100,11 @@ async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_s
             stmt = select(model).where(model.name == identifier)
     if require_status is not None:
         stmt = stmt.where(model.status == require_status)
+    # Order by created_at desc so duplicates resolve to the most recent entry
+    if hasattr(model, "created_at"):
+        stmt = stmt.order_by(model.created_at.desc())
     result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def resolve_prefix_id(

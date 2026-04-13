@@ -23,6 +23,12 @@ async def submit_sandbox(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    existing = await db.execute(
+        select(SandboxListing).where(SandboxListing.name == req.name, SandboxListing.submitted_by == current_user.id)
+    )
+    if existing.scalars().first():
+        raise HTTPException(status_code=409, detail=f"You already have a sandbox named '{req.name}'")
+
     listing = SandboxListing(
         name=req.name,
         version=req.version,

@@ -23,6 +23,12 @@ async def submit_hook(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    existing = await db.execute(
+        select(HookListing).where(HookListing.name == req.name, HookListing.submitted_by == current_user.id)
+    )
+    if existing.scalars().first():
+        raise HTTPException(status_code=409, detail=f"You already have a hook named '{req.name}'")
+
     listing = HookListing(
         name=req.name,
         version=req.version,

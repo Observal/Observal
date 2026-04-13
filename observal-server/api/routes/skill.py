@@ -23,6 +23,12 @@ async def submit_skill(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    existing = await db.execute(
+        select(SkillListing).where(SkillListing.name == req.name, SkillListing.submitted_by == current_user.id)
+    )
+    if existing.scalars().first():
+        raise HTTPException(status_code=409, detail=f"You already have a skill named '{req.name}'")
+
     listing = SkillListing(
         name=req.name,
         version=req.version,
