@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_current_user, get_db, require_role
+from api.deps import get_current_user, get_db, require_local_mode, require_role
 from api.ratelimit import limiter
 from config import settings
 from models.invite import InviteCode
@@ -95,7 +95,7 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
     return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
 
 
-@router.post("/bootstrap", response_model=InitResponse)
+@router.post("/bootstrap", response_model=InitResponse, dependencies=[Depends(require_local_mode)])
 @limiter.limit("1/minute")
 async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
     """Auto-create admin account on a fresh server. No input needed."""
@@ -126,7 +126,7 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
     return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
 
 
-@router.post("/register", response_model=InitResponse)
+@router.post("/register", response_model=InitResponse, dependencies=[Depends(require_local_mode)])
 @limiter.limit("3/minute")
 async def register(request: Request, req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """Create a new account with email + password."""
@@ -486,7 +486,7 @@ async def reset_password(request: Request, req: ResetPasswordRequest, db: AsyncS
 # -- Invite Codes --
 
 
-@router.post("/invite", response_model=InviteResponse)
+@router.post("/invite", response_model=InviteResponse, dependencies=[Depends(require_local_mode)])
 async def create_invite(
     req: InviteCreateRequest = InviteCreateRequest(),
     db: AsyncSession = Depends(get_db),
@@ -507,7 +507,7 @@ async def create_invite(
     return InviteResponse.model_validate(invite)
 
 
-@router.post("/redeem", response_model=InitResponse)
+@router.post("/redeem", response_model=InitResponse, dependencies=[Depends(require_local_mode)])
 @limiter.limit("5/minute")
 async def redeem_invite(request: Request, req: InviteRedeemRequest, db: AsyncSession = Depends(get_db)):
     """Redeem an invite code to create an account and get an API key."""

@@ -7,6 +7,7 @@ from fastapi import Depends, Header, HTTPException
 from sqlalchemy import String, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from database import async_session
 from models.user import User, UserRole
 from services.jwt_service import decode_access_token
@@ -100,6 +101,15 @@ def require_role(min_role: UserRole):
 
 # Convenience shorthand for super_admin-only endpoints
 require_super_admin = require_role(UserRole.super_admin)
+
+
+async def require_local_mode() -> None:
+    """FastAPI dependency that blocks the endpoint in enterprise mode.
+
+    Usage: @router.post("/bootstrap", dependencies=[Depends(require_local_mode)])
+    """
+    if settings.DEPLOYMENT_MODE != "local":
+        raise HTTPException(status_code=403, detail="Disabled in enterprise mode")
 
 
 async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_status=None):
