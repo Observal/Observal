@@ -78,6 +78,10 @@ class InitResponse(BaseModel):
     api_key: str
 
 
+class CodeExchangeRequest(BaseModel):
+    code: str
+
+
 class RequestResetRequest(BaseModel):
     email: EmailStr
 

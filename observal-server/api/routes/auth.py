@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import secrets
 import string
@@ -11,10 +12,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db
+from api.ratelimit import limiter
 from config import settings
 from models.invite import InviteCode
 from models.user import User, UserRole
 from schemas.auth import (
+    CodeExchangeRequest,
     InitRequest,
     InitResponse,
     InviteCreateRequest,
@@ -27,6 +30,7 @@ from schemas.auth import (
     ResetPasswordRequest,
     UserResponse,
 )
+from services.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +85,13 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/bootstrap", response_model=InitResponse)
-async def bootstrap(db: AsyncSession = Depends(get_db)):
+@limiter.limit("1/minute")
+async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
     """Auto-create admin account on a fresh server. No input needed."""
+    client_host = request.client.host if request.client else None
+    if client_host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Bootstrap is only available from localhost")
+
     count = await db.scalar(select(func.count()).select_from(User))
     if count and count > 0:
         raise HTTPException(status_code=400, detail="System already initialized")
@@ -103,7 +112,8 @@ async def bootstrap(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/register", response_model=InitResponse)
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/minute")
+async def register(request: Request, req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """Create a new account with email + password."""
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
@@ -126,7 +136,8 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=InitResponse)
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Login with API key or email+password. Returns user info and API key."""
     if req.api_key:
         key_hash = hashlib.sha256(req.api_key.encode()).hexdigest()
@@ -206,10 +217,55 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(user)
 
-    # Normally we'd use a more secure form of handoff (like Secure cookies for sessions),
-    # but since the system primarily relies on X-API-Key exchange dynamically:
-    frontend_redirect = f"{settings.FRONTEND_URL}/login?apiKey={api_key}&role={user.role.value}"
+    # Generate a short-lived opaque code instead of exposing the API key in the URL.
+    # The frontend will exchange this code for credentials via a POST request.
+    code = secrets.token_urlsafe(32)
+    redis = get_redis()
+    await redis.setex(
+        f"oauth_code:{code}",
+        30,
+        json.dumps({"api_key": api_key, "user_id": str(user.id), "role": user.role.value}),
+    )
+
+    frontend_redirect = f"{settings.FRONTEND_URL}/login?code={code}"
     return RedirectResponse(url=frontend_redirect)
+
+
+@router.post("/exchange", response_model=InitResponse)
+async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get_db)):
+    """Exchange a one-time OAuth auth code for API credentials.
+
+    The code is stored in Redis with a 30-second TTL and is deleted after
+    a single successful use, preventing replay attacks.
+    """
+    redis = get_redis()
+    redis_key = f"oauth_code:{req.code}"
+    data = await redis.get(redis_key)
+
+    if not data:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+
+    # Delete immediately to enforce single-use
+    await redis.delete(redis_key)
+
+    try:
+        payload = json.loads(data)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+
+    api_key = payload.get("api_key")
+    user_id = payload.get("user_id")
+
+    if not api_key or not user_id:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+
+    return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
 
 
 @router.get("/whoami", response_model=UserResponse)
@@ -234,7 +290,8 @@ def _purge_expired_tokens() -> None:
 
 
 @router.post("/request-reset")
-async def request_password_reset(req: RequestResetRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/minute")
+async def request_password_reset(request: Request, req: RequestResetRequest, db: AsyncSession = Depends(get_db)):
     """Request a password reset code. The code is logged to the server console.
 
     Since Observal is self-hosted, the admin has access to server logs.
@@ -262,7 +319,8 @@ async def request_password_reset(req: RequestResetRequest, db: AsyncSession = De
 
 
 @router.post("/reset-password", response_model=InitResponse)
-async def reset_password(req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def reset_password(request: Request, req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     """Reset password using a code from the server logs. Returns new API key."""
     _purge_expired_tokens()
 
@@ -323,7 +381,8 @@ async def create_invite(
 
 
 @router.post("/redeem", response_model=InitResponse)
-async def redeem_invite(req: InviteRedeemRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def redeem_invite(request: Request, req: InviteRedeemRequest, db: AsyncSession = Depends(get_db)):
     """Redeem an invite code to create an account and get an API key."""
     code = req.code.strip().upper()
 

@@ -34,18 +34,38 @@ function LoginContent() {
   }, [router]);
 
   useEffect(() => {
-    // Handling SSO callback logic dynamically in same route or query params
-    const ssoApiKey = searchParams.get("apiKey");
-    const ssoRole = searchParams.get("role");
+    // Handle one-time auth code from OAuth callback
+    const ssoCode = searchParams.get("code");
 
-    if (ssoApiKey && ssoRole) {
+    if (ssoCode) {
       setLoading(true);
-      setApiKey(ssoApiKey);
-      setUserRole(ssoRole);
-      toast.success("Signed in successfully via SSO");
-      
-      // Cleanup URL params and redirect cleanly to main page
-      router.push("/");
+      // Strip the code from the URL immediately to prevent leakage
+      window.history.replaceState({}, "", "/login");
+
+      fetch("/api/v1/auth/exchange", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: ssoCode }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const text = await res.text().catch(() => res.statusText);
+            throw new Error(text);
+          }
+          return res.json();
+        })
+        .then((data: { api_key: string; user: { role: string } }) => {
+          setApiKey(data.api_key);
+          setUserRole(data.user.role);
+          toast.success("Signed in successfully via SSO");
+          router.push("/");
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : "SSO sign-in failed";
+          setError(msg);
+          toast.error("SSO sign-in failed — the code may have expired. Please try again.");
+          setLoading(false);
+        });
     } else if (searchParams.get("error")) {
       setError(searchParams.get("error") || "SSO Authentication Failed");
     }

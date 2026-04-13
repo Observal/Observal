@@ -14,12 +14,14 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
 
     # OAuth Settings
-    OAUTH_CLIENT_ID: str | None = "39372289-d565-4a70-985f-8d36d54a4c71"
-    OAUTH_CLIENT_SECRET: str | None = "secret-here"  # OAuth client secret here
-    OAUTH_SERVER_METADATA_URL: str | None = (
-        "https://login.microsoftonline.com/932446f1-3249-4966-b2a2-8f4bfef64b1b/v2.0/.well-known/openid-configuration"
-    )
+    OAUTH_CLIENT_ID: str | None = None
+    OAUTH_CLIENT_SECRET: str | None = None
+    OAUTH_SERVER_METADATA_URL: str | None = None
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # Rate limiting
+    RATE_LIMIT_AUTH: str = "10/minute"
+    RATE_LIMIT_AUTH_STRICT: str = "5/minute"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

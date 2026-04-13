@@ -121,6 +121,8 @@ export const auth = {
     post<{ message: string }>("/auth/request-reset", body),
   resetPassword: (body: { email: string; token: string; new_password: string }) =>
     post<AuthResponse>("/auth/reset-password", body),
+  exchangeCode: (body: { code: string }) =>
+    post<AuthResponse>("/auth/exchange", body),
 };
 
 // ── Registry (all 8 types) ─────────────────────────────────────────

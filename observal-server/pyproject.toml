@@ -24,4 +24,5 @@ dependencies = [
     "itsdangerous",
     "cryptography",
     "cffi",
+    "slowapi",
 ]

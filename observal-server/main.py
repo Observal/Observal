@@ -1,14 +1,21 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
 from strawberry.fastapi import GraphQLRouter
 
 from api.deps import get_db
 from api.graphql import get_context_dep, schema
+from api.ratelimit import limiter
 from api.routes.admin import router as admin_router
 from api.routes.agent import router as agent_router
 from api.routes.alert import router as alert_router
@@ -27,6 +34,7 @@ from api.routes.sandbox import router as sandbox_router
 from api.routes.scan import router as scan_router
 from api.routes.skill import router as skill_router
 from api.routes.telemetry import router as telemetry_router
+from config import settings
 from database import engine
 from models import Base
 from models.user import User
@@ -62,14 +70,69 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Add SessionMiddleware for Authlib (OAuth state)
 app.add_middleware(
     SessionMiddleware,
-    secret_key="dev-hardcoded-secret-key",
+    secret_key=settings.SECRET_KEY,
     max_age=3600,  # 1 hour
 )
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# --- CORS configuration ---
+_cors_env = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+CORS_ALLOWED_ORIGINS: list[str] = [o.strip() for o in _cors_env.split(",") if o.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Request body size limit ---
+MAX_REQUEST_SIZE_BYTES: int = int(os.environ.get("MAX_REQUEST_SIZE_MB", "10")) * 1024 * 1024
+
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests whose Content-Length exceeds the configured limit."""
+
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > MAX_REQUEST_SIZE_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Request body too large"},
+            )
+        return await call_next(request)
+
+
+app.add_middleware(RequestSizeLimitMiddleware)
+
+
+# --- Security headers ---
+_is_localhost = any(o.startswith("http://localhost") or o.startswith("http://127.0.0.1") for o in CORS_ALLOWED_ORIGINS)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach common security headers to every response."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if not _is_localhost:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # GraphQL (replaces REST dashboard endpoints)
 graphql_app = GraphQLRouter(schema, context_getter=get_context_dep)

@@ -11,3 +11,6 @@ curl -sf --max-time 5 -X POST "$OBSERVAL_HOOKS_URL" \
   ${OBSERVAL_USER_ID:+-H "X-Observal-User-Id: $OBSERVAL_USER_ID"} \
   -H "Content-Type: application/json" \
   -d @- >/dev/null 2>&1 || true
+
+# Claude Code requires JSON with "continue" on stdout for the session to proceed
+echo '{"continue":true}'
