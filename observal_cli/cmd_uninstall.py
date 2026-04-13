@@ -32,7 +32,7 @@ def _find_repo_root(explicit_dir: str | None) -> Path | None:
             return directory
 
     rprint("[yellow]Could not detect Observal repo directory.[/yellow]")
-    rprint("[dim]Run from inside the repo or pass --repo-dir.[/dim]")
+    rprint("[bold bright_magenta]Run from inside the repo or pass --repo-dir.[/bold bright_magenta]")
     return None
 
 
@@ -108,18 +108,22 @@ def register_uninstall(app: typer.Typer):
         repo_dir: str | None = typer.Option(None, "--repo-dir", "-d", help="Path to cloned Observal repo."),
         keep_config: bool = typer.Option(False, "--keep-config", help="Keep ~/.observal/ config directory."),
         keep_cli: bool = typer.Option(False, "--keep-cli", help="Keep the CLI tool installed."),
+        keep_repo: bool = typer.Option(False, "--keep-repo", help="Keep the repo directory (still tears down Docker)."),
     ):
         """Completely uninstall Observal: stop containers, remove volumes, delete repo and config."""
         repo_root = _find_repo_root(repo_dir)
 
+        # Require repo detection - Docker teardown is mandatory
+        if repo_root is None:
+            rprint("[red]ERROR: Repo not found. Could not initiate Docker teardown: required for uninstall.[/red]")
+            raise typer.Exit(1)
+
         # ── Show what will be removed ──────────────────────
         rprint("\n[bold red]Observal Uninstall[/bold red]\n")
         rprint("[bold]The following will be removed:[/bold]")
-        if repo_root:
-            rprint("  - Docker containers and volumes (via docker compose down -v)")
+        rprint("  - Docker containers and volumes (via docker compose down -v)")
+        if not keep_repo:
             rprint(f"  - Repo directory: [bold]{repo_root}[/bold]")
-        else:
-            rprint("  - [dim]Repo directory: not detected (skipping Docker and repo cleanup)[/dim]")
         if not keep_config:
             rprint(f"  - Config directory: [bold]{CONFIG_DIR}[/bold]")
         if not keep_cli:
@@ -137,11 +141,10 @@ def register_uninstall(app: typer.Typer):
         rprint()
 
         # ── Phase 1: Docker teardown ──────────────────────
-        if repo_root:
-            _docker_teardown(repo_root)
+        _docker_teardown(repo_root)
 
         # ── Phase 2: Delete repo directory ────────────────
-        if repo_root:
+        if not keep_repo:
             # Move to parent of repo dir before deleting it
             os.chdir(repo_root.parent)
             _delete_directory(repo_root, "Observal repo")
@@ -155,5 +158,5 @@ def register_uninstall(app: typer.Typer):
             _uninstall_cli()
 
         rprint("\n[green]Observal has been uninstalled. Goodbye![/green]")
-        if repo_root:
+        if not keep_repo:
             rprint(f"\n[dim]Run [bold]cd {repo_root.parent}[/bold] to leave the deleted directory.[/dim]")
