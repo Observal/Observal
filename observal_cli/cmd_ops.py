@@ -1184,5 +1184,3 @@ ops_app.add_typer(telemetry_app, name="telemetry")
 # review and eval are subgroups of admin
 admin_app.add_typer(review_app, name="review")
 admin_app.add_typer(eval_app, name="eval")
-
-
