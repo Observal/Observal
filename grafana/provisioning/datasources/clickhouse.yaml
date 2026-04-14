@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Observal ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: observal-clickhouse
+    access: proxy
+    isDefault: true
+    jsonData:
+      host: observal-clickhouse
+      port: 8123
+      protocol: http
+      defaultDatabase: observal
+      username: default
+    secureJsonData:
+      password: clickhouse
+    editable: true

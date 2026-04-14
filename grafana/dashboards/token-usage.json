@@ -1,0 +1,386 @@
+{
+  "uid": "observal-token-usage",
+  "title": "Observal \u2014 Token Usage",
+  "description": "Input, output, and total token consumption over time",
+  "tags": [
+    "observal"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "project_id",
+        "label": "Project",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "observal-clickhouse"
+        },
+        "query": "SELECT DISTINCT project_id FROM spans FINAL WHERE is_deleted = 0 ORDER BY project_id",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "includeAll": true,
+        "allValue": "1",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Input vs Output Tokens Over Time",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal"
+            },
+            "axisBorderShow": false
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "input_tokens"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "output_tokens"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT\n  $__timeInterval(start_time) AS time,\n  sum(token_count_input) AS input_tokens,\n  sum(token_count_output) AS output_tokens\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))\n  AND token_count_total > 0\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Total Input Tokens",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT sum(token_count_input) AS total_input\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Total Output Tokens",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT sum(token_count_output) AS total_output\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Total Tokens (All)",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT sum(token_count_total) AS total_tokens\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Token Usage by Span Type",
+      "type": "barchart",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        },
+        "stacking": "normal"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT\n  type,\n  sum(token_count_input) AS input_tokens,\n  sum(token_count_output) AS output_tokens\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))\n  AND token_count_total > 0\nGROUP BY type\nORDER BY input_tokens + output_tokens DESC\nLIMIT 10",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Top Token Consumers",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "total_tokens",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT\n  name,\n  type,\n  sum(token_count_input) AS input_tokens,\n  sum(token_count_output) AS output_tokens,\n  sum(token_count_total) AS total_tokens,\n  count() AS invocations\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))\n  AND token_count_total > 0\nGROUP BY name, type\nORDER BY total_tokens DESC\nLIMIT 20",
+          "refId": "A",
+          "format": 2
+        }
+      ]
+    }
+  ]
+}

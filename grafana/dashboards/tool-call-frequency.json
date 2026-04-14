@@ -1,0 +1,448 @@
+{
+  "uid": "observal-tool-call-frequency",
+  "title": "Observal \u2014 Tool Call Frequency",
+  "description": "Tool call volume by name and MCP server",
+  "tags": [
+    "observal"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "project_id",
+        "label": "Project",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "observal-clickhouse"
+        },
+        "query": "SELECT DISTINCT project_id FROM spans FINAL WHERE is_deleted = 0 ORDER BY project_id",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "includeAll": true,
+        "allValue": "1",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Tool Call Volume Over Time",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "spanNulls": false,
+            "axisBorderShow": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT\n  $__timeInterval(start_time) AS time,\n  count() AS tool_calls\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND type = 'tool_invoke'\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Total Tool Calls",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT count() AS total\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND type = 'tool_invoke'\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Avg Latency (ms)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          },
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT avg(latency_ms) AS avg_latency\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND type = 'tool_invoke'\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))\n  AND latency_ms IS NOT NULL",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Tool Calls by Name",
+      "type": "barchart",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT\n  name AS tool_name,\n  count() AS calls\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND type = 'tool_invoke'\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))\nGROUP BY tool_name\nORDER BY calls DESC\nLIMIT 15",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Tool Calls by MCP Server",
+      "type": "piechart",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "tooltip": {
+          "mode": "single"
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT\n  mcp_server_id,\n  count() AS calls\nFROM mcp_tool_calls\nWHERE $__timeFilter(timestamp)\nGROUP BY mcp_server_id\nORDER BY calls DESC\nLIMIT 15",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Tool Call Latency Percentiles",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "axisBorderShow": false
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT\n  $__timeInterval(start_time) AS time,\n  quantile(0.50)(latency_ms) AS p50,\n  quantile(0.95)(latency_ms) AS p95,\n  quantile(0.99)(latency_ms) AS p99\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND type = 'tool_invoke'\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))\n  AND latency_ms IS NOT NULL\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Top Tools by Latency",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "observal-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "p95_ms",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "observal-clickhouse"
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT\n  name AS tool_name,\n  count() AS calls,\n  round(avg(latency_ms)) AS avg_ms,\n  round(quantile(0.95)(latency_ms)) AS p95_ms,\n  round(max(latency_ms)) AS max_ms\nFROM spans FINAL\nWHERE is_deleted = 0\n  AND type = 'tool_invoke'\n  AND $__timeFilter(start_time)\n  AND ('${project_id}' = '1' OR project_id IN (${project_id:singlequote}))\n  AND latency_ms IS NOT NULL\nGROUP BY tool_name\nORDER BY p95_ms DESC\nLIMIT 15",
+          "refId": "A",
+          "format": 2
+        }
+      ]
+    }
+  ]
+}

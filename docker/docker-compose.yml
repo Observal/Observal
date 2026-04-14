@@ -132,7 +132,7 @@ services:
       observal-redis:
         condition: service_healthy
       observal-clickhouse:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -190,10 +190,29 @@ services:
     networks:
       - observal-net
 
+  observal-grafana:
+    image: grafana/grafana-oss:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning
+      - ../grafana/dashboards:/var/lib/grafana/dashboards
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      observal-clickhouse:
+        condition: service_healthy
+    networks:
+      - observal-net
+
 volumes:
   pgdata:
   chdata:
   redisdata:
+  grafanadata:
 
 networks:
   observal-net:
