@@ -166,7 +166,9 @@ def agent_list(
 
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {item['name']}  v{item.get('version', '?')}  {item.get('model_name', '')}  {', '.join(item.get('supported_ides', []))}")
+            rprint(
+                f"{item['id']}  {item['name']}  v{item.get('version', '?')}  {item.get('model_name', '')}  {', '.join(item.get('supported_ides', []))}"
+            )
         return
 
     table = Table(title=f"Agents ({len(data)})", show_lines=False, padding=(0, 1))

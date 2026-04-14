@@ -27,7 +27,11 @@ def _inject_agent_id(mcp_config: dict, agent_id: str):
 
 
 def _build_mcp_configs(
-    agent: Agent, ide: str, observal_url: str, mcp_listings: dict | None = None, env_values: dict | None = None,
+    agent: Agent,
+    ide: str,
+    observal_url: str,
+    mcp_listings: dict | None = None,
+    env_values: dict | None = None,
 ) -> dict:
     """Build MCP server configs from registry components + external MCPs.
 

@@ -146,7 +146,8 @@ def register_pull(app: typer.Typer):
 
         with spinner(f"Pulling {ide} config for agent {resolved[:8]}..."):
             result = client.post(
-                f"/api/v1/agents/{resolved}/install", {"ide": ide, "env_values": env_values},
+                f"/api/v1/agents/{resolved}/install",
+                {"ide": ide, "env_values": env_values},
             )
 
         snippet = result.get("config_snippet", {})

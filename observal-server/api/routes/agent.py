@@ -428,7 +428,11 @@ async def install_agent(
     name_map = await _resolve_component_names(agent.components, db)
 
     snippet = generate_agent_config(
-        agent, req.ide, mcp_listings=mcp_listings_map, component_names=name_map, env_values=req.env_values,
+        agent,
+        req.ide,
+        mcp_listings=mcp_listings_map,
+        component_names=name_map,
+        env_values=req.env_values,
     )
 
     # Capture agent.id before any DB operations that might expire the ORM

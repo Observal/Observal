@@ -67,10 +67,7 @@ async def _authenticate_via_api_key(api_key: str, db: AsyncSession, request: Req
 
     # Update last_used_at (debounced - max once per minute)
     now = datetime.now(UTC)
-    should_update = (
-        api_key_record.last_used_at is None
-        or (now - api_key_record.last_used_at) > timedelta(minutes=1)
-    )
+    should_update = api_key_record.last_used_at is None or (now - api_key_record.last_used_at) > timedelta(minutes=1)
 
     if should_update:
         # Get IP from headers (support proxies)

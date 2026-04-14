@@ -152,15 +152,11 @@ async def list_keys(
     # Apply filters
     if status == "active":
         now = datetime.now(UTC)
-        query = query.where(
-            (ApiKey.revoked_at.is_(None))
-            & ((ApiKey.expires_at.is_(None)) | (ApiKey.expires_at > now))
-        )
+        query = query.where((ApiKey.revoked_at.is_(None)) & ((ApiKey.expires_at.is_(None)) | (ApiKey.expires_at > now)))
     elif status == "inactive":
         now = datetime.now(UTC)
         query = query.where(
-            (ApiKey.revoked_at.isnot(None))
-            | ((ApiKey.expires_at.isnot(None)) & (ApiKey.expires_at <= now))
+            (ApiKey.revoked_at.isnot(None)) | ((ApiKey.expires_at.isnot(None)) & (ApiKey.expires_at <= now))
         )
 
     if environment:
@@ -217,9 +213,7 @@ async def revoke_key(
     Authorization: Users can only revoke their own keys.
     """
     # Lookup key with authorization check
-    result = await db.execute(
-        select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == current_user.id)
-    )
+    result = await db.execute(select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == current_user.id))
     api_key = result.scalar_one_or_none()
 
     if not api_key:
@@ -253,9 +247,7 @@ async def rotate_key(
     Authorization: Users can only rotate their own keys.
     """
     # Lookup key with authorization check
-    result = await db.execute(
-        select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == current_user.id)
-    )
+    result = await db.execute(select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == current_user.id))
     old_key = result.scalar_one_or_none()
 
     if not old_key:

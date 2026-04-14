@@ -496,9 +496,11 @@ class TestPullEnvVarPrompting:
                 return _MCP_LISTING_WITH_ENV
             return _AGENT_WITH_MCP
 
-        with _patch_config(), patch("observal_cli.client.get", side_effect=mock_get), _patch_post(
-            _cursor_snippet()
-        ) as mock_post:
+        with (
+            _patch_config(),
+            patch("observal_cli.client.get", side_effect=mock_get),
+            _patch_post(_cursor_snippet()) as mock_post,
+        ):
             result = runner.invoke(
                 cli_app,
                 ["pull", "agent-uuid", "--ide", "cursor", "--dir", str(tmp_path)],
@@ -530,9 +532,7 @@ class TestPullEnvVarPrompting:
                 return mcp_no_env
             return agent_no_env
 
-        with _patch_config(), patch("observal_cli.client.get", side_effect=mock_get), _patch_post(
-            _cursor_snippet()
-        ):
+        with _patch_config(), patch("observal_cli.client.get", side_effect=mock_get), _patch_post(_cursor_snippet()):
             result = runner.invoke(
                 cli_app,
                 ["pull", "agent-uuid", "--ide", "cursor", "--dir", str(tmp_path)],
