@@ -30,3 +30,15 @@ repos:
     hooks:
       - id: hadolint-docker
         args: [--ignore, DL3008, --ignore, DL3013]
+
+  # ── Graphify ───────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: graphify-rebuild
+        name: Rebuild graphify knowledge graph
+        entry: python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"
+        language: system
+        stages: [post-commit, post-checkout]
+        pass_filenames: false
+        always_run: true
+        verbose: true
