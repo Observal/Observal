@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Users, Plus, Copy, Check, Loader2, Key } from "lucide-react";
+import { Users, Plus, Copy, Check, Loader2, Key, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useAdminUsers, useCreateUser, useUpdateUserRole } from "@/hooks/use-api";
+import { useAdminUsers, useCreateUser, useUpdateUserRole, useDeleteUser } from "@/hooks/use-api";
 import type { AdminUser } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +52,9 @@ function RoleSelect({ userId, currentRole }: { userId: string; currentRole: stri
 export default function UsersPage() {
   const { data: users, isLoading, isError, error, refetch } = useAdminUsers();
   const createUser = useCreateUser();
+  const deleteUser = useDeleteUser();
   const [showCreate, setShowCreate] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<string>("user");
@@ -128,6 +130,7 @@ export default function UsersPage() {
                     <TableHead className="h-8 text-xs">Email</TableHead>
                     <TableHead className="h-8 text-xs">Role</TableHead>
                     <TableHead className="h-8 text-xs text-right">Joined</TableHead>
+                    <TableHead className="h-8 text-xs w-[60px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -144,6 +147,16 @@ export default function UsersPage() {
                       </TableCell>
                       <TableCell className="py-1.5 text-xs text-muted-foreground text-right tabular-nums">
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}
+                      </TableCell>
+                      <TableCell className="py-1.5 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => setDeleteTarget(u)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -240,6 +253,38 @@ export default function UsersPage() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete User</DialogTitle>
+            <DialogDescription>
+              This will permanently delete <strong>{deleteTarget?.name}</strong> ({deleteTarget?.email}) and all associated data including API keys.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (!deleteTarget) return;
+                deleteUser.mutate(deleteTarget.id, {
+                  onSuccess: () => setDeleteTarget(null),
+                });
+              }}
+              disabled={deleteUser.isPending}
+            >
+              {deleteUser.isPending ? (
+                <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Deleting...</>
+              ) : (
+                "Delete User"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

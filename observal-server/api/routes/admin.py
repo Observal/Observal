@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import secrets
 import uuid
 
@@ -20,6 +21,8 @@ from schemas.admin import (
     UserCreateResponse,
     UserRoleUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -228,15 +231,81 @@ async def reset_user_password(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Admin resets a user's password."""
+    """Admin resets a user's password.
+
+    Either provide new_password directly, or set generate=true to create
+    a secure random password that doesn't collide with existing hashes.
+    """
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.set_password(req.new_password)
+    if req.generate:
+        new_password = await _generate_unique_password(db)
+    elif req.new_password:
+        new_password = req.new_password
+    else:
+        raise HTTPException(status_code=422, detail="Provide new_password or set generate=true")
+
+    user.set_password(new_password)
     await db.commit()
-    return {"message": f"Password reset for {user.email}"}
+    logger.warning("Admin %s reset password for user %s", current_user.email, user.email)
+
+    resp: dict[str, str] = {"message": f"Password reset for {user.email}"}
+    if req.generate:
+        resp["generated_password"] = new_password
+    return resp
+
+
+async def _generate_unique_password(db: AsyncSession, length: int = 20, max_attempts: int = 10) -> str:
+    """Generate a secure password whose hash doesn't collide with any existing password hash."""
+    import os
+    import string
+
+    alphabet = string.ascii_letters + string.digits + string.punctuation
+    result = await db.execute(select(User.password_hash).where(User.password_hash.is_not(None)))
+    existing_hashes = {row[0] for row in result.all()}
+
+    for _ in range(max_attempts):
+        password = "".join(secrets.choice(alphabet) for _ in range(length))
+        # Check against all existing password hashes
+        salt = os.urandom(16)
+        key = hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1, dklen=32)
+        candidate_hash = f"{salt.hex()}${key.hex()}"
+        if candidate_hash not in existing_hashes:
+            return password
+
+    # Astronomically unlikely to reach here, but be safe
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Admin deletes a user account and all associated data."""
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Prevent deleting the last admin/super_admin
+    if user.role in (UserRole.admin, UserRole.super_admin):
+        admin_count = await db.scalar(
+            select(func.count()).select_from(User).where(User.role.in_([UserRole.admin, UserRole.super_admin]))
+        )
+        if admin_count is not None and admin_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last admin")
+
+    logger.warning("Admin %s deleted user %s (%s)", current_user.email, user.email, user.id)
+    await db.delete(user)
+    await db.commit()
 
 
 # ── Penalty & Weight Customization ──────────────────────

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type Mode = "login" | "register" | "api-key" | "reset-request" | "reset-confirm";
+type Mode = "login" | "register" | "api-key";
 
 function LoginContent() {
   const router = useRouter();
@@ -22,8 +22,6 @@ function LoginContent() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [apiKey, setKey] = useState("");
-  const [resetToken, setResetToken] = useState("");
-  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
@@ -157,42 +155,6 @@ function LoginContent() {
     }
   }
 
-  async function handleRequestReset() {
-    setError("");
-    setLoading(true);
-    try {
-      await auth.requestReset({ email });
-      toast.success("Check your server logs for the reset code");
-      switchMode("reset-confirm");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Request failed";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleResetPassword() {
-    setError("");
-    setLoading(true);
-    try {
-      const res = await auth.resetPassword({ email, token: resetToken, new_password: newPassword });
-      setApiKey(res.api_key);
-      setUserRole(res.user.role);
-      setUserName(res.user.name);
-      setUserEmail(res.user.email);
-      toast.success("Password reset successfully");
-      router.push("/");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Reset failed";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   function handleSsoLogin() {
     setSsoLoading(true);
     // Redirects to backend SSO endpoint which initializes OAuth flow
@@ -202,8 +164,6 @@ function LoginContent() {
   const onSubmit =
     mode === "login" ? handlePasswordLogin
     : mode === "register" ? handleRegister
-    : mode === "reset-request" ? handleRequestReset
-    : mode === "reset-confirm" ? handleResetPassword
     : handleApiKeyLogin;
 
   return (
@@ -221,11 +181,7 @@ function LoginContent() {
                 ? "Create your account"
                 : mode === "api-key"
                   ? "Sign in with API key"
-                  : mode === "reset-request"
-                    ? "Reset your password"
-                    : mode === "reset-confirm"
-                      ? "Enter your reset code"
-                      : "Sign in to your account"}
+                  : "Sign in to your account"}
             </p>
           </div>
 
@@ -317,68 +273,6 @@ function LoginContent() {
                 </div>
               )}
 
-              {/* Reset request mode — hidden in enterprise mode */}
-              {mode === "reset-request" && !isEnterprise && (
-                <div className="space-y-2 animate-in">
-                  <Label htmlFor="reset-email">Email</Label>
-                  <Input
-                    id="reset-email"
-                    type="email"
-                    placeholder="you@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    A reset code will be logged to the server console.
-                  </p>
-                </div>
-              )}
-
-              {/* Reset confirm mode — hidden in enterprise mode */}
-              {mode === "reset-confirm" && !isEnterprise && (
-                <>
-                  <div className="space-y-2 animate-in">
-                    <Label htmlFor="reset-token">Reset Code</Label>
-                    <Input
-                      id="reset-token"
-                      placeholder="e.g. A7X9B2"
-                      value={resetToken}
-                      onChange={(e) => setResetToken(e.target.value)}
-                      required
-                      autoFocus
-                      className="font-[family-name:var(--font-mono)] tracking-widest uppercase"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Check your server logs for the 6-character code.
-                    </p>
-                  </div>
-                  <div className="space-y-2 animate-in stagger-1">
-                    <Label htmlFor="new-password">New Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="new-password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Enter new password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        required
-                        className="pr-10"
-                      />
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-
               {/* Error */}
               {error && (
                 <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2.5 text-sm text-destructive animate-in">
@@ -396,10 +290,7 @@ function LoginContent() {
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
-                        {mode === "register" ? "Create Account"
-                          : mode === "reset-request" ? "Send Reset Code"
-                          : mode === "reset-confirm" ? "Reset Password"
-                          : "Sign in"}
+                        {mode === "register" ? "Create Account" : "Sign in"}
                         <ArrowRight className="ml-1 h-4 w-4" />
                       </>
                     )}
@@ -439,13 +330,9 @@ function LoginContent() {
               <div className="animate-in stagger-3 space-y-2 text-center">
                 {mode === "login" && !isEnterprise && (
                   <>
-                    <button
-                      type="button"
-                      className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
-                      onClick={() => switchMode("reset-request")}
-                    >
-                      Forgot password?
-                    </button>
+                    <p className="text-sm text-muted-foreground/60">
+                      Forgot password? Contact your admin.
+                    </p>
                     <button
                       type="button"
                       className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -478,15 +365,6 @@ function LoginContent() {
                     onClick={() => switchMode("login")}
                   >
                     Sign in with email instead
-                  </button>
-                )}
-                {(mode === "reset-request" || mode === "reset-confirm") && !isEnterprise && (
-                  <button
-                    type="button"
-                    className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    onClick={() => switchMode("login")}
-                  >
-                    Back to sign in
                   </button>
                 )}
               </div>

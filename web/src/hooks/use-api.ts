@@ -236,6 +236,20 @@ export function useUpdateUserRole() {
   });
 }
 
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => admin.deleteUser(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      toast.success("User deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to delete user");
+    },
+  });
+}
+
 export function useAdminSettings() {
   return useQuery({ queryKey: ["admin", "settings"], queryFn: admin.settings });
 }

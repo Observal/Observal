@@ -47,4 +47,5 @@ class UserCreateResponse(BaseModel):
 
 
 class AdminResetPasswordRequest(BaseModel):
-    new_password: str
+    new_password: str | None = None
+    generate: bool = False

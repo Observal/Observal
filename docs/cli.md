@@ -14,7 +14,7 @@ observal
 ├── registry      Component registry (mcp, skill, hook, prompt, sandbox)
 ├── agent         Agent authoring and management
 ├── ops           Observability and operational commands
-├── admin         Admin commands (settings, review, eval, canaries)
+├── admin         Admin commands (settings, users, review, eval, canaries)
 ├── config        CLI configuration
 ├── self          CLI self-management (upgrade, downgrade)
 ├── doctor        IDE diagnostics
@@ -41,7 +41,6 @@ observal
 |---------|-------------|
 | `auth login` | Log in to an Observal server (auto-creates admin on fresh server) |
 | `auth register` | Create a new account with email + password |
-| `auth reset-password` | Reset a forgotten password (uses server-logged code) |
 | `auth logout` | Clear saved credentials |
 | `auth whoami` | Show current authenticated user |
 | `auth status` | Check server connectivity, health, and local telemetry buffer |
@@ -61,14 +60,6 @@ observal auth register [--server URL] [--email EMAIL] [--password PASSWORD] [--n
 ```
 
 Self-registration for new users. Creates an account and logs in. Only available in local deployment mode.
-
-### `observal auth reset-password`
-
-```bash
-observal auth reset-password [--server URL] [--email EMAIL]
-```
-
-Requests a 6-character reset code logged to the server console. Check server logs for the code, then enter it with a new password to regain access.
 
 ---
 
@@ -303,6 +294,8 @@ Requires admin role.
 | `admin settings` | View server settings |
 | `admin set <key> <value>` | Update a server setting |
 | `admin users` | List all users |
+| `admin reset-password <email>` | Reset a user's password (interactive or `--generate`) |
+| `admin delete-user <email>` | Permanently delete a user account |
 
 ### Review Workflow
 

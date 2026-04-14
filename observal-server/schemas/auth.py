@@ -71,26 +71,6 @@ class CodeExchangeRequest(BaseModel):
     code: str
 
 
-class RequestResetRequest(BaseModel):
-    email: EmailStr
-
-    @field_validator("email", mode="before")
-    @classmethod
-    def _normalize(cls, v: str) -> str:
-        return _normalize_email(v)
-
-
-class ResetPasswordRequest(BaseModel):
-    email: EmailStr
-    token: str
-    new_password: str
-
-    @field_validator("email", mode="before")
-    @classmethod
-    def _normalize(cls, v: str) -> str:
-        return _normalize_email(v)
-
-
 class TokenRequest(BaseModel):
     api_key: str | None = None
     email: EmailStr | None = None

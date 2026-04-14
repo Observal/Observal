@@ -149,10 +149,6 @@ export const auth = {
   login: (body: { api_key?: string; email?: string; password?: string }) =>
     post<AuthResponse>("/auth/login", body),
   whoami: () => get<{ id: string; email: string; name: string; role: string }>("/auth/whoami"),
-  requestReset: (body: { email: string }) =>
-    post<{ message: string }>("/auth/request-reset", body),
-  resetPassword: (body: { email: string; token: string; new_password: string }) =>
-    post<AuthResponse>("/auth/reset-password", body),
   exchangeCode: (body: { code: string }) =>
     post<AuthResponse>("/auth/exchange", body),
 };
@@ -276,6 +272,7 @@ export const admin = {
     put<AdminUser>(`/admin/users/${id}/role`, body),
   resetPassword: (id: string, body: { new_password: string }) =>
     put<{ message: string }>(`/admin/users/${id}/password`, body),
+  deleteUser: (id: string) => del(`/admin/users/${id}`),
 };
 
 // ── Config ─────────────────────────────────────────────────────────

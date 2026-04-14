@@ -858,6 +858,70 @@ def admin_users(output: str = typer.Option("table", "--output", "-o")):
     console.print(table)
 
 
+@admin_app.command(name="reset-password")
+def admin_reset_password(
+    email: str = typer.Argument(..., help="Email of the user to reset"),
+    generate: bool = typer.Option(False, "--generate", "-g", help="Generate a secure random password"),
+):
+    """Reset a user's password. Requires admin privileges.
+
+    Provide the user's email and either enter a new password interactively
+    or use --generate to create a secure random password.
+    """
+    # Look up user ID by email
+    with spinner("Looking up user..."):
+        users = client.get("/api/v1/admin/users")
+    match = next((u for u in users if u["email"] == email.strip().lower()), None)
+    if not match:
+        rprint(f"[red]User not found:[/red] {email}")
+        raise typer.Exit(1)
+
+    if generate:
+        body: dict = {"generate": True}
+    else:
+        new_password = typer.prompt("New password", hide_input=True)
+        confirm = typer.prompt("Confirm password", hide_input=True)
+        if new_password != confirm:
+            rprint("[red]Passwords do not match.[/red]")
+            raise typer.Exit(1)
+        body = {"new_password": new_password}
+
+    with spinner("Resetting password..."):
+        result = client.put(f"/api/v1/admin/users/{match['id']}/password", body)
+
+    rprint(f"[green]{result['message']}[/green]")
+    if "generated_password" in result:
+        rprint(f"\n[yellow]Generated password:[/yellow] {result['generated_password']}")
+        rprint("[dim]Save this — it will not be shown again.[/dim]")
+
+
+@admin_app.command(name="delete-user")
+def admin_delete_user(
+    email: str = typer.Argument(..., help="Email of the user to delete"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+    """Delete a user account. Requires admin privileges.
+
+    This permanently removes the user and all associated data (API keys, etc.).
+    """
+    # Look up user ID by email
+    with spinner("Looking up user..."):
+        users = client.get("/api/v1/admin/users")
+    match = next((u for u in users if u["email"] == email.strip().lower()), None)
+    if not match:
+        rprint(f"[red]User not found:[/red] {email}")
+        raise typer.Exit(1)
+
+    rprint(f"\n  [bold]{match['name']}[/bold] ({match['email']}) — {match['role']}")
+    if not force:
+        typer.confirm("\nPermanently delete this user?", abort=True)
+
+    with spinner("Deleting user..."):
+        client.delete(f"/api/v1/admin/users/{match['id']}")
+
+    rprint(f"[green]Deleted user {match['email']}[/green]")
+
+
 @admin_app.command(name="canaries")
 def admin_canaries(
     agent_id: str = typer.Argument(..., help="Agent ID to list canaries for"),
