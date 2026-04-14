@@ -8,15 +8,13 @@ unencrypted payloads.
 from __future__ import annotations
 
 import json
-import os
-import textwrap
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -50,12 +48,7 @@ def key_manager(key_pair):
     # Import here so we can test even if the server package layout differs
     import importlib.util
 
-    crypto_path = (
-        Path(__file__).resolve().parent.parent
-        / "observal-server"
-        / "services"
-        / "crypto.py"
-    )
+    crypto_path = Path(__file__).resolve().parent.parent / "observal-server" / "services" / "crypto.py"
     spec = importlib.util.spec_from_file_location("services.crypto", crypto_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -85,12 +78,7 @@ def _load_payload_crypto():
     """Dynamically load the payload_crypto module."""
     import importlib.util
 
-    path = (
-        Path(__file__).resolve().parent.parent
-        / "observal_cli"
-        / "hooks"
-        / "payload_crypto.py"
-    )
+    path = Path(__file__).resolve().parent.parent / "observal_cli" / "hooks" / "payload_crypto.py"
     spec = importlib.util.spec_from_file_location("payload_crypto", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -147,11 +135,13 @@ class TestEncryptDecryptRoundTrip:
         _, pub_path = key_pair
 
         # Simulate a large tool_response payload
-        plaintext = json.dumps({
-            "hook_event_name": "Stop",
-            "tool_response": "x" * 50_000,
-            "session_id": "large-session",
-        })
+        plaintext = json.dumps(
+            {
+                "hook_event_name": "Stop",
+                "tool_response": "x" * 50_000,
+                "session_id": "large-session",
+            }
+        )
 
         with patch.object(mod, "PUBLIC_KEY_PATH", pub_path):
             encrypted_blob, was_encrypted = mod.encrypt_payload(plaintext)
@@ -192,7 +182,7 @@ class TestTamperDetection:
             blob[78] ^= 0xFF
         tampered = bytes(blob)
 
-        with pytest.raises(Exception):
+        with pytest.raises((InvalidTag, ValueError)):
             # AES-GCM should reject tampered ciphertext (InvalidTag)
             key_manager.decrypt_payload(tampered)
 
@@ -208,7 +198,7 @@ class TestTamperDetection:
         # Truncate — remove the last 10 bytes (part of the GCM tag)
         truncated = encrypted_blob[:-10]
 
-        with pytest.raises(Exception):
+        with pytest.raises((InvalidTag, ValueError)):
             key_manager.decrypt_payload(truncated)
 
 

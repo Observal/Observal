@@ -42,10 +42,7 @@ def is_observal_matcher_group(matcher_group: dict) -> bool:
     if OBSERVAL_METADATA_KEY in matcher_group:
         return True
     # Fallback: legacy path matching
-    for hook_entry in matcher_group.get("hooks", []):
-        if is_observal_hook_entry(hook_entry):
-            return True
-    return False
+    return any(is_observal_hook_entry(hook_entry) for hook_entry in matcher_group.get("hooks", []))
 
 
 def get_desired_hooks(
@@ -75,9 +72,7 @@ def get_desired_hooks(
     # Stop event: generic hook first (always fires), then stop-specific
     # hook for transcript parsing (response + thinking capture).
     if stop_script:
-        stop_group: list[dict] = [
-            {**meta, "hooks": [generic, {"type": "command", "command": stop_script}]}
-        ]
+        stop_group: list[dict] = [{**meta, "hooks": [generic, {"type": "command", "command": stop_script}]}]
     else:
         stop_group = generic_group
 
@@ -133,14 +128,16 @@ def get_desired_env(
 
 # Keys in settings.env that Observal manages.  Used by the reconciler
 # to know which env vars it can safely update without touching others.
-MANAGED_ENV_KEYS = frozenset({
-    "CLAUDE_CODE_ENABLE_TELEMETRY",
-    "OTEL_METRICS_EXPORTER",
-    "OTEL_LOGS_EXPORTER",
-    "OTEL_EXPORTER_OTLP_PROTOCOL",
-    "OTEL_EXPORTER_OTLP_HEADERS",
-    "OTEL_EXPORTER_OTLP_ENDPOINT",
-    "OBSERVAL_HOOKS_URL",
-    "OBSERVAL_HOOKS_SPEC_VERSION",
-    "OBSERVAL_USER_ID",
-})
+MANAGED_ENV_KEYS = frozenset(
+    {
+        "CLAUDE_CODE_ENABLE_TELEMETRY",
+        "OTEL_METRICS_EXPORTER",
+        "OTEL_LOGS_EXPORTER",
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_HEADERS",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OBSERVAL_HOOKS_URL",
+        "OBSERVAL_HOOKS_SPEC_VERSION",
+        "OBSERVAL_USER_ID",
+    }
+)

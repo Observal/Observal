@@ -197,9 +197,7 @@ class KeyManager:
         ciphertext_with_tag = encrypted_blob[77:]
 
         # Reconstruct ephemeral public key
-        ephemeral_pub = ec.EllipticCurvePublicKey.from_encoded_point(
-            ec.SECP256R1(), ephemeral_pub_bytes
-        )
+        ephemeral_pub = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), ephemeral_pub_bytes)
 
         # ECDH shared secret using server's private key
         shared_secret = self.get_private_key().exchange(ec.ECDH(), ephemeral_pub)

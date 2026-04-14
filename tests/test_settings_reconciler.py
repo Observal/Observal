@@ -7,8 +7,11 @@ add new events, idempotent re-run, env reconciliation, and version tracking.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 
@@ -24,7 +27,6 @@ from observal_cli.settings_reconciler import (
     reconcile_env,
     reconcile_hooks,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -95,7 +97,9 @@ class TestHookIdentification:
 
     def test_desired_hooks_have_metadata(self):
         """get_desired_hooks injects _observal metadata into every matcher group."""
-        desired = get_desired_hooks("/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks")
+        desired = get_desired_hooks(
+            "/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks"
+        )
         for event, groups in desired.items():
             for group in groups:
                 assert "_observal" in group, f"Missing metadata in {event}"
@@ -108,7 +112,9 @@ class TestHookIdentification:
 class TestReconcileHooks:
     def test_fresh_install_adds_all_events(self):
         """On empty settings, all desired events are added."""
-        desired = get_desired_hooks("/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks")
+        desired = get_desired_hooks(
+            "/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks"
+        )
         merged, changes = reconcile_hooks({}, desired)
 
         assert set(merged.keys()) == set(desired.keys())
@@ -164,7 +170,9 @@ class TestReconcileHooks:
 
     def test_idempotent_rerun(self):
         """Running reconcile twice with same desired state produces no changes."""
-        desired = get_desired_hooks("/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks")
+        desired = get_desired_hooks(
+            "/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks"
+        )
 
         # First run: everything is new
         merged, changes1 = reconcile_hooks({}, desired)
@@ -200,7 +208,9 @@ class TestReconcileHooks:
 
     def test_stop_has_two_hooks(self):
         """Stop event should have both generic and stop-specific handlers."""
-        desired = get_desired_hooks("/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks")
+        desired = get_desired_hooks(
+            "/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks"
+        )
         stop_groups = desired["Stop"]
 
         # One matcher group with two hook handlers
@@ -260,7 +270,9 @@ class TestReconcileEnv:
 class TestFullReconcile:
     def test_fresh_install_writes_file(self, settings_path, config_path):
         """Full reconcile on empty settings creates the file."""
-        desired_hooks = get_desired_hooks("/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks")
+        desired_hooks = get_desired_hooks(
+            "/path/observal-hook.sh", "/path/observal-stop-hook.sh", "http://localhost:8000/api/v1/otel/hooks"
+        )
         desired_env = get_desired_env("http://localhost:8000", "test-key")
 
         changes = reconcile(desired_hooks, desired_env)
@@ -276,10 +288,15 @@ class TestFullReconcile:
     def test_preserves_non_hook_settings(self, settings_path, config_path):
         """Non-hook/env settings are preserved."""
         settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(json.dumps({
-            "model": "opus",
-            "enabledPlugins": {"foo": True},
-        }), encoding="utf-8")
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "model": "opus",
+                    "enabledPlugins": {"foo": True},
+                }
+            ),
+            encoding="utf-8",
+        )
 
         desired_hooks = get_desired_hooks("/path/observal-hook.sh", None, "http://localhost:8000/api/v1/otel/hooks")
         desired_env = get_desired_env("http://localhost:8000", "test-key")
@@ -321,6 +338,7 @@ class TestFullReconcile:
 
         # Second reconcile — no changes
         import time
+
         time.sleep(0.01)
         changes = reconcile(desired_hooks, desired_env)
 
