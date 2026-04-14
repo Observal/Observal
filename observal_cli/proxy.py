@@ -44,30 +44,40 @@ async def _handle_request(
     # Forward headers, skip hop-by-hop
     fwd_headers = {k: v for k, v in headers.items() if k.lower() not in ("host", "transfer-encoding")}
 
-    start = time.monotonic()
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.request(method, url, headers=fwd_headers, content=body)
-        latency_ms = int((time.monotonic() - start) * 1000)
-        resp_body = resp.content
-        resp_headers = dict(resp.headers)
+    max_attempts = 2
+    for attempt in range(max_attempts):
+        start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.request(method, url, headers=fwd_headers, content=body)
+            latency_ms = int((time.monotonic() - start) * 1000)
+            resp_body = resp.content
+            resp_headers = dict(resp.headers)
 
-        # Try to capture JSON-RPC telemetry
-        req_msg = _parse_jsonrpc_body(body)
-        resp_msg = _parse_jsonrpc_body(resp_body)
+            # Try to capture JSON-RPC telemetry
+            req_msg = _parse_jsonrpc_body(body)
+            resp_msg = _parse_jsonrpc_body(resp_body)
 
-        if req_msg and isinstance(req_msg, dict) and "method" in req_msg:
-            state.on_request(req_msg)
-        if resp_msg and isinstance(resp_msg, dict):
-            span = state.on_response(resp_msg)
-            if span:
-                span["latency_ms"] = latency_ms
-                await state.buffer_span(span)
+            if req_msg and isinstance(req_msg, dict) and "method" in req_msg:
+                state.on_request(req_msg)
+            if resp_msg and isinstance(resp_msg, dict):
+                span = state.on_response(resp_msg)
+                if span:
+                    span["latency_ms"] = latency_ms
+                    await state.buffer_span(span)
 
-        return resp.status_code, resp_headers, resp_body
-    except Exception as e:
-        latency_ms = int((time.monotonic() - start) * 1000)
-        return 502, {"content-type": "application/json"}, json.dumps({"error": str(e)}).encode()
+            return resp.status_code, resp_headers, resp_body
+        except httpx.ConnectError:
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(1)
+                continue
+            return (
+                502,
+                {"content-type": "application/json"},
+                json.dumps({"error": "upstream connection failed"}).encode(),
+            )
+        except Exception as e:
+            return 502, {"content-type": "application/json"}, json.dumps({"error": str(e)}).encode()
 
 
 async def run_proxy(mcp_id: str, target_url: str, port: int = 0):

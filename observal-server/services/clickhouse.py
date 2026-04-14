@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from config import settings
 
@@ -25,6 +26,12 @@ def _get_client() -> httpx.AsyncClient:
     return _client
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=5),
+    retry=retry_if_exception_type((httpx.ConnectError, httpx.ConnectTimeout)),
+    reraise=True,
+)
 async def _query(sql: str, params: dict | None = None, *, data: str | None = None):
     """Execute a ClickHouse query via HTTP.
 
@@ -47,6 +54,15 @@ async def _query(sql: str, params: dict | None = None, *, data: str | None = Non
         query_params.update(params)
     body = f"{sql}\n{data}" if data else sql
     return await client.post(CLICKHOUSE_HTTP, content=body, params=query_params)
+
+
+async def clickhouse_health() -> bool:
+    """Check ClickHouse connectivity. Returns True if healthy."""
+    try:
+        resp = await _query("SELECT 1")
+        return resp.status_code == 200
+    except Exception:
+        return False
 
 
 INIT_SQL = [
@@ -224,12 +240,19 @@ INIT_SQL = [
 
 
 async def init_clickhouse():
-    """Create ClickHouse tables if they don't exist."""
+    """Create ClickHouse tables if they don't exist.
+
+    Raises on unreachable server so startup fails fast.
+    """
+    # Verify ClickHouse is reachable before running DDL
+    if not await clickhouse_health():
+        raise RuntimeError(f"ClickHouse unreachable at {CLICKHOUSE_HTTP}")
+
     for stmt in INIT_SQL:
         try:
             await _query(stmt)
         except Exception as e:
-            logger.warning(f"ClickHouse init failed: {e}")
+            logger.warning(f"ClickHouse init statement failed: {e}")
 
 
 async def insert_tool_call(event: dict):

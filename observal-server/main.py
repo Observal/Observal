@@ -217,7 +217,7 @@ async def liveness():
 
 @app.get("/health")
 async def readiness(db: AsyncSession = Depends(get_db)):
-    """K8s readiness probe. Checks DB connectivity and enterprise config."""
+    """K8s readiness probe. Checks DB connectivity, ClickHouse, and enterprise config."""
     checks: dict[str, object] = {"status": "ok"}
 
     try:
@@ -226,6 +226,15 @@ async def readiness(db: AsyncSession = Depends(get_db)):
     except Exception:
         checks["status"] = "unhealthy"
         return JSONResponse(content=checks, status_code=503)
+
+    # ClickHouse health
+    from services.clickhouse import clickhouse_health
+
+    if not await clickhouse_health():
+        checks["clickhouse"] = "unreachable"
+        checks["status"] = "degraded"
+    else:
+        checks["clickhouse"] = "ok"
 
     if settings.DEPLOYMENT_MODE == "enterprise":
         issues = getattr(app.state, "enterprise_issues", [])

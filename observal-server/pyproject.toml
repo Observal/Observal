@@ -27,6 +27,7 @@ dependencies = [
     "slowapi",
     "PyJWT>=2.8.0",
     "aiosqlite>=0.22.1",
+    "tenacity>=8.0.0",
 ]
 
 [dependency-groups]

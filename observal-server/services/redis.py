@@ -25,28 +25,53 @@ def get_redis() -> aioredis.Redis:
 
 async def publish(channel: str, data: dict):
     """Publish a message to a Redis pub/sub channel (for GraphQL subscriptions)."""
+    import asyncio
+
     r = get_redis()
-    try:
-        await r.publish(channel, json.dumps(data))
-    except Exception as e:
-        logger.warning(f"Redis publish failed: {e}")
+    attempts = 0
+    max_attempts = 3
+    while attempts < max_attempts:
+        try:
+            await r.publish(channel, json.dumps(data))
+            return
+        except (ConnectionError, OSError) as e:
+            attempts += 1
+            if attempts >= max_attempts:
+                logger.warning(f"Redis publish failed after {max_attempts} attempts: {e}")
+                return
+            logger.debug(f"Redis publish attempt {attempts} failed, retrying: {e}")
+            await asyncio.sleep(0.5 * attempts)
 
 
 async def subscribe(channel: str):
-    """Subscribe to a Redis pub/sub channel. Yields parsed messages."""
-    r = get_redis()
-    pubsub = r.pubsub()
-    await pubsub.subscribe(channel)
-    try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                try:
-                    yield json.loads(message["data"])
-                except (json.JSONDecodeError, TypeError):
-                    continue
-    finally:
-        await pubsub.unsubscribe(channel)
-        await pubsub.close()
+    """Subscribe to a Redis pub/sub channel. Yields parsed messages. Auto-reconnects."""
+    import asyncio
+
+    max_reconnects = 5
+    reconnect_count = 0
+    while reconnect_count < max_reconnects:
+        r = get_redis()
+        pubsub = r.pubsub()
+        try:
+            await pubsub.subscribe(channel)
+            async for message in pubsub.listen():
+                reconnect_count = 0  # Reset on successful message
+                if message["type"] == "message":
+                    try:
+                        yield json.loads(message["data"])
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+        except (ConnectionError, OSError) as e:
+            reconnect_count += 1
+            logger.warning(f"Redis subscribe reconnecting ({reconnect_count}/{max_reconnects}): {e}")
+            await asyncio.sleep(1.0 * reconnect_count)
+        finally:
+            try:
+                await pubsub.unsubscribe(channel)
+                await pubsub.close()
+            except Exception:
+                pass
+    logger.error(f"Redis subscribe gave up after {max_reconnects} reconnects on channel {channel}")
 
 
 async def enqueue_eval(agent_id: str, trace_id: str | None = None):
