@@ -12,4 +12,5 @@ async def get_public_config():
         "deployment_mode": settings.DEPLOYMENT_MODE,
         "sso_enabled": bool(settings.OAUTH_CLIENT_ID),
         "saml_enabled": False,  # placeholder for future ee/ SAML
+        "eval_configured": bool(settings.EVAL_MODEL_NAME),
     }

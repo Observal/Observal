@@ -82,7 +82,7 @@ export default function RegistryHome() {
         breadcrumbs={[{ label: "Registry" }]}
       />
 
-      <div className="p-6 lg:p-8 max-w-[1200px] space-y-12">
+      <div className="p-6 lg:p-8 w-full max-w-[1200px] mx-auto space-y-12">
         {/* Hero section */}
         <section className="animate-in space-y-6 pt-2">
           <div className="space-y-3 max-w-2xl">

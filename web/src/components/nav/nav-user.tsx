@@ -69,7 +69,7 @@ export function NavUser({ user }: NavUserProps) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link href="/admin/settings">
+          <Link href="/settings">
             <Settings className="mr-2 h-4 w-4" />
             Account Settings
           </Link>

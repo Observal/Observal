@@ -340,7 +340,7 @@ export default function AgentBuilderPage() {
         ]}
       />
 
-      <div className="p-6 lg:p-8 max-w-[1400px]">
+      <div className="p-6 lg:p-8 w-full max-w-[1400px] mx-auto">
         <div className="flex flex-col gap-8 lg:flex-row">
           {/* Left column: Form */}
           <div className="min-w-0 flex-1 space-y-6 lg:max-w-[calc(66.667%-1rem)]">

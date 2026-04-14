@@ -241,7 +241,7 @@ export default function TracesPage() {
           { label: "Traces" },
         ]}
       />
-      <div className="p-6 space-y-4">
+      <div className="p-6 w-full max-w-6xl mx-auto space-y-4">
         {isLoading ? (
           <TableSkeleton rows={8} cols={7} />
         ) : isError ? (

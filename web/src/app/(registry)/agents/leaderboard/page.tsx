@@ -31,7 +31,7 @@ export default function LeaderboardPage() {
         ]}
       />
 
-      <div className="p-6 lg:p-8 max-w-[1200px] space-y-6">
+      <div className="p-6 lg:p-8 w-full max-w-[1200px] mx-auto space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <p className="text-sm text-muted-foreground">
             Agents ranked by downloads within the selected time window.

@@ -1479,7 +1479,7 @@ export default function TraceDetailPage({ params }: { params: Promise<{ id: stri
           { label: id.slice(0, 12) + "..." },
         ]}
       />
-      <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="p-6 w-full max-w-6xl mx-auto space-y-6">
         {isLoading ? (
           <DetailSkeleton />
         ) : isError ? (

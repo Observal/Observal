@@ -283,6 +283,7 @@ export type PublicConfig = {
   deployment_mode: "local" | "enterprise";
   sso_enabled: boolean;
   saml_enabled: boolean;
+  eval_configured: boolean;
 };
 
 export const config = {

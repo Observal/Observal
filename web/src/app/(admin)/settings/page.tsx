@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Settings, Plus, Pencil, Trash2, Save, X, Loader2 } from "lucide-react";
+import { Settings, Plus, Pencil, Trash2, Save, X, Loader2, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useAdminSettings } from "@/hooks/use-api";
+import { useDeploymentConfig } from "@/hooks/use-deployment-config";
+import { useRoleGuard } from "@/hooks/use-role-guard";
 import type { AdminSetting } from "@/lib/types";
 import { admin } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -103,7 +105,9 @@ const DEFAULT_SETTINGS = [
 ];
 
 export default function SettingsPage() {
+  const { ready } = useRoleGuard("super_admin");
   const { data: settings, isLoading, isError, error, refetch } = useAdminSettings();
+  const { deploymentMode, ssoEnabled, evalConfigured } = useDeploymentConfig();
   const [addingKey, setAddingKey] = useState("");
   const [addingValue, setAddingValue] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -133,6 +137,8 @@ export default function SettingsPage() {
     }
   }, [addingKey, addingValue, refetch]);
 
+  if (!ready) return null;
+
   return (
     <>
       <PageHeader
@@ -147,7 +153,40 @@ export default function SettingsPage() {
           </Button>
         }
       />
-      <div className="p-6 max-w-4xl mx-auto space-y-6">
+      <div className="p-6 w-full max-w-4xl mx-auto space-y-6">
+        {/* System Overview */}
+        <section className="animate-in">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            System Overview
+          </h3>
+          <div className="rounded-md border border-border bg-card px-4 py-3 space-y-2">
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs text-muted-foreground">Deployment Mode</span>
+              <span className="text-xs font-medium font-[family-name:var(--font-mono)]">
+                {deploymentMode}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-1 border-t border-border">
+              <span className="text-xs text-muted-foreground">SSO</span>
+              <span className={`text-xs font-medium ${ssoEnabled ? "text-success" : "text-muted-foreground"}`}>
+                {ssoEnabled ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-1 border-t border-border">
+              <span className="text-xs text-muted-foreground">Eval Model</span>
+              <span className={`text-xs font-medium ${evalConfigured ? "text-success" : "text-amber-500"}`}>
+                {evalConfigured ? "Configured" : "Not configured"}
+              </span>
+            </div>
+          </div>
+          {deploymentMode === "enterprise" && (
+            <div className="flex items-start gap-2 mt-2 text-xs text-muted-foreground">
+              <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>Enterprise mode is active. Self-registration and password login are disabled.</span>
+            </div>
+          )}
+        </section>
+
         {isLoading ? (
           <TableSkeleton rows={5} cols={2} />
         ) : isError ? (

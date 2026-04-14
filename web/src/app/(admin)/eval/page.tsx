@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FlaskConical, Play } from "lucide-react";
+import { FlaskConical, Play, AlertTriangle } from "lucide-react";
 import { useRegistryList, useEvalScorecards, useEvalRun } from "@/hooks/use-api";
+import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import type { RegistryItem, Scorecard } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layouts/page-header";
@@ -79,6 +80,7 @@ function AgentEvalCard({ agent }: { agent: RegistryItem }) {
 
 export default function EvalPage() {
   const { data: agents, isLoading, isError, error, refetch } = useRegistryList("agents");
+  const { evalConfigured, loading: configLoading } = useDeploymentConfig();
 
   return (
     <>
@@ -89,30 +91,48 @@ export default function EvalPage() {
           { label: "Eval" },
         ]}
       />
-      <div className="p-6 max-w-6xl mx-auto space-y-4">
+      <div className="p-6 w-full max-w-6xl mx-auto space-y-4">
+        {!configLoading && !evalConfigured && (
+          <div className="animate-in flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                No eval model configured
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Set <code className="font-[family-name:var(--font-mono)] bg-muted px-1 rounded">EVAL_MODEL_NAME</code> in
+                your <code className="font-[family-name:var(--font-mono)] bg-muted px-1 rounded">.env</code> to
+                enable LLM-as-judge scoring. Without it, evaluations use heuristic scoring only. See the setup guide for supported providers (AWS Bedrock, OpenAI-compatible).
+              </p>
+            </div>
+          </div>
+        )}
+
         <p className="text-sm text-muted-foreground animate-in">
           Run evaluations against deployed agents to score quality, efficiency, and reliability.
         </p>
 
-        {isLoading ? (
-          <CardSkeleton count={6} columns={3} />
-        ) : isError ? (
-          <ErrorState message={error?.message} onRetry={() => refetch()} />
-        ) : (agents ?? []).length === 0 ? (
-          <EmptyState
-            icon={FlaskConical}
-            title="No agents to evaluate"
-            description="Submit an agent to the registry to run evaluations against it."
-            actionLabel="Browse Agents"
-            actionHref="/agents"
-          />
-        ) : (
-          <div className="animate-in stagger-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(agents ?? []).map((a: RegistryItem) => (
-              <AgentEvalCard key={a.id} agent={a} />
-            ))}
-          </div>
-        )}
+        <div className={!evalConfigured ? "opacity-60 pointer-events-none" : ""}>
+          {isLoading ? (
+            <CardSkeleton count={6} columns={3} />
+          ) : isError ? (
+            <ErrorState message={error?.message} onRetry={() => refetch()} />
+          ) : (agents ?? []).length === 0 ? (
+            <EmptyState
+              icon={FlaskConical}
+              title="No agents to evaluate"
+              description="Submit an agent to the registry to run evaluations against it."
+              actionLabel="Browse Agents"
+              actionHref="/agents"
+            />
+          ) : (
+            <div className="animate-in stagger-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(agents ?? []).map((a: RegistryItem) => (
+                <AgentEvalCard key={a.id} agent={a} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );
