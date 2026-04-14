@@ -426,6 +426,118 @@ make test-v    # verbose
 
 All tests mock external services. No Docker needed.
 
+## Knowledge Graph (graphify)
+
+This project uses [graphify](https://github.com/safishamsi/graphify) to maintain a navigable knowledge graph of the codebase at `graphify-out/`. The graph maps all components, their relationships, and architectural patterns - making it much faster to understand the codebase without reading every file.
+
+**Benefits:**
+- **7.8x fewer tokens** per architecture question vs. reading raw files
+- Navigate by concept instead of file paths
+- Discover surprising connections between modules
+- Get AI answers grounded in actual code structure
+
+### For Teammates: Setup Instructions
+
+Since Claude Code configuration files (`.claude/settings.json`, `CLAUDE.md`) are not checked into version control, you'll need to configure graphify locally:
+
+#### 1. Install graphify
+
+```bash
+pip install graphifyy
+```
+
+#### 2. Configure Your AI Tool
+
+Add these rules to your local `CLAUDE.md` (create it in the project root if it doesn't exist):
+
+```markdown
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current
+```
+
+For other AI coding tools (Cursor, Windsurf, etc.), add similar instructions to your project rules file.
+
+#### 3. View the Graph
+
+The graph has already been built. To explore it:
+
+```bash
+# View the HTML visualization (interactive, works in any browser)
+open graphify-out/graph.html
+
+# Read the audit report (god nodes, surprising connections, suggested questions)
+cat graphify-out/GRAPH_REPORT.md
+```
+
+#### 4. Query the Graph
+
+Ask your AI tool architecture questions - it will use the graph to answer:
+
+```
+"How does authentication work?"
+"What connects the eval engine to the scoring system?"
+"Show me the path from User to ScoringDimension"
+```
+
+Or use the CLI directly:
+
+```bash
+# BFS traversal (broad context)
+python3 -c "from graphify.query import query_graph; query_graph('.', 'how does authentication work')"
+
+# Find shortest path between concepts
+python3 -c "from graphify.query import find_path; find_path('.', 'User', 'ScoringDimension')"
+
+# Explain a specific node
+python3 -c "from graphify.query import explain_node; explain_node('.', 'ScoreAggregator')"
+```
+
+#### 5. Keep the Graph Updated
+
+The graph reflects the codebase at the time it was built. After making code changes:
+
+```bash
+# Incremental update (only re-processes changed files - much faster)
+python3 -m graphify . --update
+
+# Full rebuild (if you've made major structural changes)
+python3 -m graphify .
+```
+
+**Auto-update:** If you want the graph to auto-rebuild after code changes, you can use `--watch` mode in a background terminal:
+
+```bash
+python3 -m graphify . --watch
+```
+
+This monitors the directory and automatically updates the graph when code files change (docs/papers require manual `--update`).
+
+### Key Files
+
+- `graphify-out/graph.html` - Interactive visualization (open in browser)
+- `graphify-out/GRAPH_REPORT.md` - Audit report with god nodes and surprising connections
+- `graphify-out/graph.json` - Raw graph data (for programmatic access)
+- `graphify-out/cost.json` - Token usage tracking across all runs
+
+### Advanced Usage
+
+```bash
+# Export to Neo4j for advanced graph queries
+python3 -m graphify . --neo4j
+
+# Generate Obsidian vault (one note per node)
+python3 -m graphify . --obsidian
+
+# Export as SVG (embeds in GitHub READMEs, Notion, etc.)
+python3 -m graphify . --svg
+```
+
 ## Community
 
 Have a question, idea, or want to share what you've built? Head to [GitHub Discussions](https://github.com/BlazeUp-AI/Observal/discussions). Please use Discussions for questions instead of opening issues. Issues are reserved for bug reports and feature requests.
