@@ -209,6 +209,8 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
     if not email:
         raise HTTPException(status_code=400, detail="Email claim is missing from ID token")
 
+    email = email.strip().lower()
+
     # Check if user exists
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()

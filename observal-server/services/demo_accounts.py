@@ -47,6 +47,7 @@ async def seed_demo_accounts(db: AsyncSession) -> int:
         password = getattr(settings, f"{prefix}_PASSWORD", None)
         if not email or not password:
             continue
+        email = email.strip().lower()
 
         # Idempotent: skip if already exists
         exists = await db.scalar(select(func.count()).select_from(User).where(User.email == email))

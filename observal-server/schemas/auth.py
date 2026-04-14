@@ -1,9 +1,14 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, model_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 from models.user import UserRole
+
+
+def _normalize_email(v: str) -> str:
+    """Lowercase and strip whitespace so email lookups are case-insensitive."""
+    return v.strip().lower() if isinstance(v, str) else v
 
 
 class InitRequest(BaseModel):
@@ -11,11 +16,21 @@ class InitRequest(BaseModel):
     name: str
     password: str | None = None
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_email(v)
+
 
 class LoginRequest(BaseModel):
     api_key: str | None = None
     email: EmailStr | None = None
     password: str | None = None
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize(cls, v: str | None) -> str | None:
+        return _normalize_email(v) if v is not None else v
 
     @model_validator(mode="after")
     def _require_credentials(self):
@@ -30,6 +45,11 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     name: str
     password: str
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_email(v)
 
 
 class UserResponse(BaseModel):
@@ -54,17 +74,32 @@ class CodeExchangeRequest(BaseModel):
 class RequestResetRequest(BaseModel):
     email: EmailStr
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_email(v)
+
 
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
     token: str
     new_password: str
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_email(v)
+
 
 class TokenRequest(BaseModel):
     api_key: str | None = None
     email: EmailStr | None = None
     password: str | None = None
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize(cls, v: str | None) -> str | None:
+        return _normalize_email(v) if v is not None else v
 
     @model_validator(mode="after")
     def _require_credentials(self):

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class EnterpriseConfigResponse(BaseModel):
@@ -31,6 +31,11 @@ class UserCreateRequest(BaseModel):
     email: str
     name: str
     role: str = "reviewer"
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        return v.strip().lower() if isinstance(v, str) else v
 
 
 class UserCreateResponse(BaseModel):
