@@ -378,6 +378,8 @@ async def ingest_hook(request: Request):
             attrs["event.name"] = "hook_assistant_response"
         elif tool_name == "assistant_response" and tool_response_raw:
             attrs["event.name"] = "hook_assistant_response"
+        elif tool_name == "assistant_thinking" and tool_response_raw:
+            attrs["event.name"] = "hook_assistant_thinking"
         # Sequence metadata for interleaving with tool calls
         if body.get("message_sequence") is not None:
             attrs["message_sequence"] = str(body["message_sequence"])
@@ -392,8 +394,13 @@ async def ingest_hook(request: Request):
             attrs["stop_reason"] = body["stop_reason"]
 
     # SessionStart — session lifecycle
-    if hook_event == "SessionStart" and body.get("resume"):
-        attrs["session_resumed"] = str(body["resume"])
+    # Claude Code sends "source" field: startup, resume, clear, compact
+    session_source = body.get("source", "")
+    if hook_event == "SessionStart":
+        if session_source:
+            attrs["session_source"] = session_source
+        if session_source in ("resume", "compact") or body.get("resume"):
+            attrs["session_resumed"] = "true"
 
     # Notification
     if hook_event == "Notification":
@@ -459,6 +466,12 @@ async def ingest_hook(request: Request):
         body_text = f"{hook_event}: {attrs.get('agent_type', 'unknown')}"
     elif hook_event in ("Elicitation", "ElicitationResult"):
         body_text = f"{hook_event}: {body.get('mcp_server_name', 'unknown')}"
+    elif hook_event == "Stop" and tool_name == "assistant_thinking":
+        seq = attrs.get("message_sequence", "")
+        total = attrs.get("message_total", "")
+        seq_label = f" [{seq}/{total}]" if seq and total else ""
+        preview = (attrs.get("tool_response") or "")[:100]
+        body_text = f"Thinking{seq_label}: {preview}"
     elif hook_event == "Stop" and (tool_name == "assistant_response" or body.get("assistant_response")):
         seq = attrs.get("message_sequence", "")
         total = attrs.get("message_total", "")
@@ -470,9 +483,13 @@ async def ingest_hook(request: Request):
     elif hook_event == "StopFailure":
         body_text = f"StopFailure: {attrs.get('error', 'unknown')[:80]}"
     elif hook_event == "SessionStart":
-        resumed = " (resumed)" if attrs.get("session_resumed") == "True" else ""
+        source_label = ""
+        if attrs.get("session_source") == "compact":
+            source_label = " (continued)"
+        elif attrs.get("session_resumed") == "true":
+            source_label = " (resumed)"
         prompt_preview = (attrs.get("tool_input") or "")[:100]
-        body_text = f"SessionStart{resumed}: {prompt_preview}" if prompt_preview else f"SessionStart{resumed}"
+        body_text = f"SessionStart{source_label}: {prompt_preview}" if prompt_preview else f"SessionStart{source_label}"
     elif hook_event == "Notification":
         body_text = f"Notification: {attrs.get('notification_title', '')}"
     elif hook_event in ("TaskCreated", "TaskCompleted"):

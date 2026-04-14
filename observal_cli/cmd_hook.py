@@ -8,8 +8,9 @@ import typer
 from rich import print as rprint
 from rich.table import Table
 
-from observal_cli import client, config
+from observal_cli import client, config, settings_reconciler
 from observal_cli.constants import VALID_HOOK_EVENTS, VALID_HOOK_HANDLER_TYPES
+from observal_cli.hooks_spec import get_desired_env, get_desired_hooks
 from observal_cli.prompts import select_one
 from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
 
@@ -152,3 +153,66 @@ def hook_delete(
     with spinner("Deleting..."):
         client.delete(f"/api/v1/hooks/{resolved}")
     rprint(f"[green]✓ Deleted {resolved}[/green]")
+
+
+def _find_hook_script(name: str) -> str | None:
+    """Locate hook script by name (same search logic as cmd_auth)."""
+    from pathlib import Path
+
+    candidates = [
+        Path(__file__).resolve().parent / "hooks" / name,
+        Path.home() / ".observal" / "hooks" / name,
+    ]
+    for p in candidates:
+        if p.is_file():
+            return str(p.resolve())
+    return None
+
+
+@hook_app.command(name="sync")
+def hook_sync(
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show changes without applying"),
+):
+    """Sync Claude Code hooks to the latest Observal spec.
+
+    Non-destructively updates ~/.claude/settings.json: adds missing hooks,
+    upgrades stale Observal hooks, and preserves any non-Observal hooks
+    you've added.
+    """
+    cfg = config.load()
+
+    server_url = cfg.get("server_url")
+    api_key = cfg.get("api_key")
+    if not server_url or not api_key:
+        rprint("[red]Not authenticated. Run [bold]observal auth login[/bold] first.[/red]")
+        raise typer.Exit(1)
+
+    hooks_url = f"{server_url.rstrip('/')}/api/v1/otel/hooks"
+    hook_script = _find_hook_script("observal-hook.sh")
+    stop_script = _find_hook_script("observal-stop-hook.sh")
+    user_id = cfg.get("user_id", "")
+
+    desired_hooks = get_desired_hooks(hook_script, stop_script, hooks_url, user_id)
+    desired_env = get_desired_env(server_url, api_key, user_id)
+
+    applied = settings_reconciler.get_applied_version()
+    from observal_cli.hooks_spec import HOOKS_SPEC_VERSION
+
+    if dry_run:
+        changes = settings_reconciler.reconcile(desired_hooks, desired_env, dry_run=True)
+        if changes:
+            rprint(f"[yellow]Dry run[/yellow] — spec v{applied} → v{HOOKS_SPEC_VERSION}:")
+            for change in changes:
+                rprint(f"  {change}")
+        else:
+            rprint(f"[dim]Already at spec v{HOOKS_SPEC_VERSION}, no changes needed.[/dim]")
+        return
+
+    changes = settings_reconciler.reconcile(desired_hooks, desired_env)
+
+    if changes:
+        rprint(f"[green]✓ Synced[/green] hooks spec v{applied} → v{HOOKS_SPEC_VERSION}:")
+        for change in changes:
+            rprint(f"  {change}")
+    else:
+        rprint(f"[dim]Already at spec v{HOOKS_SPEC_VERSION}, no changes needed.[/dim]")

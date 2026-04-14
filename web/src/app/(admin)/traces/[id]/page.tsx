@@ -28,6 +28,9 @@ import {
   GitBranch,
   LogIn,
   Users,
+  Info,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { DetailSkeleton } from "@/components/shared/skeleton-layouts";
@@ -36,6 +39,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /* ── Helpers ─────────────────────────────────────────────── */
 
@@ -95,6 +99,7 @@ function eventIcon(eventName: string) {
   if (eventName === "hook_subagentstart") return Play;
   if (eventName === "hook_subagentstop") return Square;
   if (eventName === "hook_assistant_response") return Bot;
+  if (eventName === "hook_assistant_thinking") return Bot;
   if (eventName === "hook_stop") return Square;
   if (eventName === "hook_stopfailure") return AlertTriangle;
   if (eventName === "hook_sessionstart") return LogIn;
@@ -117,6 +122,7 @@ function eventColor(eventName: string): string {
   if (eventName === "hook_posttoolusefailure" || eventName === "hook_stopfailure") return "text-red-500";
   if (eventName === "hook_subagentstart" || eventName === "hook_subagentstop") return "text-indigo-500";
   if (eventName === "hook_assistant_response") return "text-violet-500";
+  if (eventName === "hook_assistant_thinking") return "text-fuchsia-500";
   if (eventName === "hook_stop") return "text-rose-500";
   if (eventName === "hook_sessionstart") return "text-green-500";
   if (eventName === "hook_notification") return "text-yellow-500";
@@ -140,6 +146,7 @@ type FilterCategory = {
 const FILTER_CATEGORIES: FilterCategory[] = [
   { key: "prompts", label: "Prompts", match: (e) => e === "user_prompt" || e === "hook_userpromptsubmit", color: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20" },
   { key: "responses", label: "Responses", match: (e) => e === "hook_assistant_response", color: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20" },
+  { key: "thinking", label: "Thinking", match: (e) => e === "hook_assistant_thinking", color: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 border-fuchsia-500/20" },
   { key: "tools", label: "Tools", match: (e) => ["tool_result", "tool_decision", "hook_posttooluse", "hook_pretooluse", "hook_posttoolusefailure"].includes(e), color: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20" },
   { key: "api", label: "API", match: (e) => e === "api_request", color: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" },
   { key: "agents", label: "Agents", match: (e) => e === "hook_subagentstart" || e === "hook_subagentstop", color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" },
@@ -162,6 +169,7 @@ interface AgentScope {
 interface Turn {
   promptEvent?: RawOtelEvent;           // The user prompt that started this turn
   responseEvent?: RawOtelEvent;         // The assistant response text
+  thinkingEvents: RawOtelEvent[];       // Assistant thinking/reasoning blocks
   stopEvent?: RawOtelEvent;             // The stop/end event
   topLevelEvents: RawOtelEvent[];       // Events not inside any subagent
   agents: AgentScope[];                 // Subagent scopes with their events
@@ -269,6 +277,7 @@ function buildEventTree(events: RawOtelEvent[]): { turns: Turn[]; preSessionEven
       }
       currentTurn = {
         promptEvent: evt,
+        thinkingEvents: [],
         topLevelEvents: [],
         agents: [],
         allEvents: [evt],
@@ -309,6 +318,12 @@ function buildEventTree(events: RawOtelEvent[]): { turns: Turn[]; preSessionEven
         // Unmatched stop — add to top level
         currentTurn.topLevelEvents.push(evt);
       }
+      continue;
+    }
+
+    // Assistant thinking: collect on the turn
+    if (eName === "hook_assistant_thinking") {
+      currentTurn.thinkingEvents.push(evt);
       continue;
     }
 
@@ -771,6 +786,48 @@ function AssistantResponseBlock({ event }: { event: RawOtelEvent }) {
   );
 }
 
+/* ── Thinking block (chain-of-thought) ────────────────────── */
+
+function ThinkingBlock({ event }: { event: RawOtelEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const attrs = event.attributes ?? {};
+  const fullText = attrs.tool_response || "";
+  const seq = attrs.message_sequence;
+  const total = attrs.message_total;
+  const seqLabel = seq && total ? ` (${seq}/${total})` : "";
+  const lines = fullText.split("\n");
+  const isLong = lines.length > 8;
+  const shown = isLong && !expanded ? lines.slice(0, 8).join("\n") + "\n…" : fullText;
+
+  if (!fullText) return null;
+
+  return (
+    <div className="mx-3 mt-2 mb-1 rounded-md border border-fuchsia-500/20 bg-fuchsia-500/5 overflow-hidden">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-fuchsia-500/10">
+        <Bot className="h-3 w-3 text-fuchsia-500" />
+        <span className="text-[11px] font-medium text-fuchsia-600 dark:text-fuchsia-400">Thinking{seqLabel}</span>
+        {event.timestamp && (
+          <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+            {new Date(event.timestamp).toLocaleTimeString()}
+          </span>
+        )}
+      </div>
+      <div className="px-3 py-2 text-sm text-foreground/80 whitespace-pre-wrap break-words leading-relaxed max-h-[300px] overflow-auto italic">
+        {shown}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="w-full text-center py-1 text-[11px] text-fuchsia-500 hover:underline border-t border-fuchsia-500/10"
+        >
+          {expanded ? "Show less" : `Show all ${lines.length} lines`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ── Friendly event label ────────────────────────────────── */
 
 function eventLabel(evt: RawOtelEvent): string {
@@ -1036,6 +1093,11 @@ function TurnNode({ turn, index, expandedSet, onToggleEvent, activeFilters, sear
             />
           ))}
 
+          {/* Thinking blocks (before response, chronological) */}
+          {turn.thinkingEvents.length > 0 && turn.thinkingEvents.map((evt, ti) => (
+            <ThinkingBlock key={`turn-${index}-think-${ti}`} event={evt} />
+          ))}
+
           {/* Assistant response */}
           {turn.responseEvent && <AssistantResponseBlock event={turn.responseEvent} />}
 
@@ -1097,7 +1159,7 @@ function SessionStats({ events }: { events: RawOtelEvent[] }) {
 
       if (isHookEvent(eName)) {
         hookEvents++;
-        if (attrs.tool_name && attrs.tool_name !== "user_prompt" && attrs.tool_name !== "assistant_response") {
+        if (attrs.tool_name && attrs.tool_name !== "user_prompt" && attrs.tool_name !== "assistant_response" && attrs.tool_name !== "assistant_thinking") {
           const tn = attrs.tool_name;
           tools[tn] = (tools[tn] || 0) + 1;
         }
@@ -1162,6 +1224,163 @@ function SessionStats({ events }: { events: RawOtelEvent[] }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Session Info tab ─────────────────────────────────────── */
+
+/** All hook event types we know about, grouped by category. */
+const HOOK_CAPABILITIES: { category: string; hooks: { event: string; label: string; description: string }[] }[] = [
+  {
+    category: "Capture",
+    hooks: [
+      { event: "hook_userpromptsubmit", label: "User Prompts", description: "Captures what the user sends to Claude" },
+      { event: "hook_assistant_response", label: "Assistant Responses", description: "Captures Claude's text replies" },
+      { event: "hook_assistant_thinking", label: "Assistant Thinking", description: "Captures Claude's chain-of-thought reasoning" },
+    ],
+  },
+  {
+    category: "Tool Use",
+    hooks: [
+      { event: "hook_pretooluse", label: "Pre Tool Use", description: "Fires before each tool call" },
+      { event: "hook_posttooluse", label: "Post Tool Use", description: "Captures tool input/output after execution" },
+      { event: "hook_posttoolusefailure", label: "Tool Failures", description: "Captures failed tool executions" },
+    ],
+  },
+  {
+    category: "Agents",
+    hooks: [
+      { event: "hook_subagentstart", label: "Subagent Start", description: "Fires when a subagent is spawned" },
+      { event: "hook_subagentstop", label: "Subagent Stop", description: "Fires when a subagent finishes" },
+    ],
+  },
+  {
+    category: "Lifecycle",
+    hooks: [
+      { event: "hook_sessionstart", label: "Session Start", description: "Session initialization and resumption" },
+      { event: "hook_stop", label: "Stop", description: "Turn/session end events" },
+      { event: "hook_notification", label: "Notifications", description: "System notifications from Claude" },
+      { event: "hook_taskcreated", label: "Task Created", description: "Task tracking events" },
+      { event: "hook_taskcompleted", label: "Task Completed", description: "Task completion events" },
+      { event: "hook_precompact", label: "Pre Compact", description: "Before context compaction" },
+      { event: "hook_postcompact", label: "Post Compact", description: "After context compaction" },
+    ],
+  },
+];
+
+function SessionInfoTab({ events, sessionId, serviceName }: { events: RawOtelEvent[]; sessionId: string; serviceName: string }) {
+  // Derive active hooks from events actually present in this session
+  const activeHookEvents = useMemo(() => {
+    const seen = new Set<string>();
+    for (const evt of events) {
+      const eName = getEventName(evt);
+      if (isHookEvent(eName)) seen.add(eName);
+    }
+    return seen;
+  }, [events]);
+
+  // Extract session metadata from SessionStart event
+  const sessionMeta = useMemo(() => {
+    const startEvt = events.find((e) => getEventName(e) === "hook_sessionstart");
+    const attrs = startEvt?.attributes ?? {};
+    const firstEvt = events[0];
+    const lastEvt = events[events.length - 1];
+    const duration = firstEvt?.timestamp && lastEvt?.timestamp
+      ? new Date(lastEvt.timestamp).getTime() - new Date(firstEvt.timestamp).getTime()
+      : 0;
+
+    return {
+      source: attrs.session_source || "startup",
+      resumed: attrs.session_resumed === "true" || attrs.session_resumed === "True",
+      cwd: attrs.cwd || "",
+      permissionMode: attrs.permission_mode || "",
+      startTime: firstEvt?.timestamp ? new Date(firstEvt.timestamp).toLocaleString() : "",
+      endTime: lastEvt?.timestamp ? new Date(lastEvt.timestamp).toLocaleString() : "",
+      duration,
+      totalEvents: events.length,
+    };
+  }, [events]);
+
+  return (
+    <div className="space-y-6">
+      {/* Session metadata */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5">
+          <Info className="h-4 w-4 text-muted-foreground" />
+          Session Details
+        </h3>
+        <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm bg-surface-sunken rounded-lg p-4">
+          <span className="text-muted-foreground">Session ID</span>
+          <span className="font-[family-name:var(--font-mono)] text-xs">{sessionId}</span>
+          <span className="text-muted-foreground">Service</span>
+          <span>{serviceName || "unknown"}</span>
+          <span className="text-muted-foreground">Source</span>
+          <span className="capitalize">{sessionMeta.source}{sessionMeta.resumed ? " (resumed)" : ""}</span>
+          {sessionMeta.cwd && <>
+            <span className="text-muted-foreground">Working Dir</span>
+            <span className="font-[family-name:var(--font-mono)] text-xs truncate">{sessionMeta.cwd}</span>
+          </>}
+          {sessionMeta.permissionMode && <>
+            <span className="text-muted-foreground">Permission Mode</span>
+            <span>{sessionMeta.permissionMode}</span>
+          </>}
+          <span className="text-muted-foreground">Started</span>
+          <span className="tabular-nums">{sessionMeta.startTime}</span>
+          <span className="text-muted-foreground">Last Event</span>
+          <span className="tabular-nums">{sessionMeta.endTime}</span>
+          <span className="text-muted-foreground">Duration</span>
+          <span className="tabular-nums">{sessionMeta.duration > 0 ? formatDuration(sessionMeta.duration) : "-"}</span>
+          <span className="text-muted-foreground">Total Events</span>
+          <span className="tabular-nums">{sessionMeta.totalEvents}</span>
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* Active hooks */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5">
+          <Zap className="h-4 w-4 text-orange-500" />
+          Active Hooks
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Hook types detected in this session. Missing hooks mean those event types were not captured — check your hook configuration.
+        </p>
+        <div className="space-y-4">
+          {HOOK_CAPABILITIES.map((group) => (
+            <div key={group.category} className="space-y-2">
+              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{group.category}</h4>
+              <div className="grid gap-1.5">
+                {group.hooks.map((hook) => {
+                  const active = activeHookEvents.has(hook.event);
+                  return (
+                    <div
+                      key={hook.event}
+                      className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm ${
+                        active
+                          ? "bg-emerald-500/5 border border-emerald-500/20"
+                          : "bg-muted/30 border border-transparent opacity-60"
+                      }`}
+                    >
+                      {active
+                        ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        : <XCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium">{hook.label}</span>
+                        <span className="text-xs text-muted-foreground ml-2">{hook.description}</span>
+                      </div>
+                      {active && (
+                        <Badge variant="success">{events.filter((e) => getEventName(e) === hook.event).length}</Badge>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1289,101 +1508,110 @@ export default function TraceDetailPage({ params }: { params: Promise<{ id: stri
             <SessionStats events={events} />
             <Separator />
 
-            {/* Events tree */}
+            {/* Tabbed content */}
             {events.length === 0 ? (
               <EmptyState icon={FileText} title="No events in this session" description="Events will appear here once telemetry data is recorded." />
             ) : (
-              <div className="animate-in stagger-1 space-y-2">
-                {/* Search + Filter bar */}
-                <div className="space-y-2 mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1 max-w-sm">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                      <Input
-                        placeholder="Search events, tools, content..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-8 h-8 text-sm"
-                      />
-                      {searchQuery && (
-                        <button type="button" onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                          <X className="h-3.5 w-3.5" />
+              <Tabs defaultValue="traces" className="animate-in stagger-1">
+                <TabsList>
+                  <TabsTrigger value="traces">Traces</TabsTrigger>
+                  <TabsTrigger value="info">Session Info</TabsTrigger>
+                </TabsList>
+                <TabsContent value="traces" className="space-y-2 mt-4">
+                  {/* Search + Filter bar */}
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1 max-w-sm">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                          placeholder="Search events, tools, content..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="pl-8 h-8 text-sm"
+                        />
+                        {searchQuery && (
+                          <button type="button" onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={expandAllTurns} className="h-8 text-xs gap-1">
+                        <ChevronsUpDown className="h-3 w-3" />
+                        Toggle turns
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
+                      {FILTER_CATEGORIES.filter((cat) => filterCounts[cat.key] > 0).map((cat) => (
+                        <button
+                          type="button"
+                          key={cat.key}
+                          onClick={() => toggleFilter(cat.key)}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-all ${
+                            activeFilters.has(cat.key) ? cat.color + " border-current" : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                          }`}
+                        >
+                          {cat.label}
+                          <span className="opacity-60">{filterCounts[cat.key]}</span>
+                        </button>
+                      ))}
+                      {(activeFilters.size > 0 || searchQuery) && (
+                        <button type="button" onClick={clearFilters} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground">
+                          <X className="h-3 w-3" /> Clear
                         </button>
                       )}
                     </div>
-                    <Button variant="ghost" size="sm" onClick={expandAllTurns} className="h-8 text-xs gap-1">
-                      <ChevronsUpDown className="h-3 w-3" />
-                      Toggle turns
-                    </Button>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
-                    {FILTER_CATEGORIES.filter((cat) => filterCounts[cat.key] > 0).map((cat) => (
-                      <button
-                        type="button"
-                        key={cat.key}
-                        onClick={() => toggleFilter(cat.key)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-all ${
-                          activeFilters.has(cat.key) ? cat.color + " border-current" : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
-                        }`}
-                      >
-                        {cat.label}
-                        <span className="opacity-60">{filterCounts[cat.key]}</span>
-                      </button>
-                    ))}
-                    {(activeFilters.size > 0 || searchQuery) && (
-                      <button type="button" onClick={clearFilters} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground">
-                        <X className="h-3 w-3" /> Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
 
-                {/* Turn count */}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    {visibleTurns.length === tree.turns.length
-                      ? `${tree.turns.length} turn${tree.turns.length !== 1 ? "s" : ""}`
-                      : `${visibleTurns.length} of ${tree.turns.length} turns`}
-                    {" · "}{allDeduped.length} events (deduped from {events.length})
-                  </span>
-                </div>
-
-                {/* Pre-session events */}
-                {tree.preSessionEvents.length > 0 && (
-                  <div className="rounded-lg border border-border/50 p-2 space-y-0.5">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wide px-2">Pre-session</span>
-                    {tree.preSessionEvents.map((evt, i) => {
-                      const key = `pre-${i}`;
-                      return (
-                        <LeafEvent key={key} event={evt} isExpanded={expandedSet.has(key)} onToggle={() => onToggleEvent(key)} depth={0} />
-                      );
-                    })}
+                  {/* Turn count */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      {visibleTurns.length === tree.turns.length
+                        ? `${tree.turns.length} turn${tree.turns.length !== 1 ? "s" : ""}`
+                        : `${visibleTurns.length} of ${tree.turns.length} turns`}
+                      {" · "}{allDeduped.length} events (deduped from {events.length})
+                    </span>
                   </div>
-                )}
 
-                {/* Turn nodes */}
-                {visibleTurns.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-muted-foreground">No turns match your filters.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {visibleTurns.map((turn) => {
-                      const originalIndex = tree.turns.indexOf(turn);
-                      return (
-                        <TurnNode
-                          key={`turn-${originalIndex}`}
-                          turn={turn}
-                          index={originalIndex}
-                          expandedSet={expandedSet}
-                          onToggleEvent={onToggleEvent}
-                          activeFilters={activeFilters}
-                          searchQuery={searchQuery}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                  {/* Pre-session events */}
+                  {tree.preSessionEvents.length > 0 && (
+                    <div className="rounded-lg border border-border/50 p-2 space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide px-2">Pre-session</span>
+                      {tree.preSessionEvents.map((evt, i) => {
+                        const key = `pre-${i}`;
+                        return (
+                          <LeafEvent key={key} event={evt} isExpanded={expandedSet.has(key)} onToggle={() => onToggleEvent(key)} depth={0} />
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Turn nodes */}
+                  {visibleTurns.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-muted-foreground">No turns match your filters.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {visibleTurns.map((turn) => {
+                        const originalIndex = tree.turns.indexOf(turn);
+                        return (
+                          <TurnNode
+                            key={`turn-${originalIndex}`}
+                            turn={turn}
+                            index={originalIndex}
+                            expandedSet={expandedSet}
+                            onToggleEvent={onToggleEvent}
+                            activeFilters={activeFilters}
+                            searchQuery={searchQuery}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+                <TabsContent value="info" className="mt-4">
+                  <SessionInfoTab events={events} sessionId={id} serviceName={session.service_name} />
+                </TabsContent>
+              </Tabs>
             )}
           </>
         )}

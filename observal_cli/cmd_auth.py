@@ -10,7 +10,8 @@ import httpx
 import typer
 from rich import print as rprint
 
-from observal_cli import client, config
+from observal_cli import client, config, settings_reconciler
+from observal_cli.hooks_spec import get_desired_env, get_desired_hooks
 from observal_cli.render import console, kv_panel, spinner, status_badge
 
 # ── Auth subgroup ───────────────────────────────────────────
@@ -603,9 +604,13 @@ def _find_hook_script(name: str) -> str | None:
 
 
 def _configure_claude_code(server_url: str, api_key: str):
-    """Check for Claude Code and offer to configure its telemetry."""
+    """Check for Claude Code and offer to configure its telemetry.
+
+    Uses declarative reconciliation: computes desired state from hooks_spec,
+    diffs against current ~/.claude/settings.json, and applies minimal changes.
+    Non-Observal hooks and env vars are preserved untouched.
+    """
     claude_dir = Path.home() / ".claude"
-    claude_settings_file = claude_dir / "settings.json"
 
     try:
         claude_exists = claude_dir.is_dir() or shutil.which("claude")
@@ -618,89 +623,25 @@ def _configure_claude_code(server_url: str, api_key: str):
         ):
             return
 
-        settings = {}
-        if claude_settings_file.exists():
-            with open(claude_settings_file, encoding="utf-8") as f:
-                try:
-                    settings = _json.load(f)
-                except _json.JSONDecodeError:
-                    rprint(
-                        f"[yellow]Warning: Could not parse {claude_settings_file}. A new file will be created.[/yellow]"
-                    )
-
-        otel_env = {
-            "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-            "OTEL_METRICS_EXPORTER": "otlp",
-            "OTEL_LOGS_EXPORTER": "otlp",
-            "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-            "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {api_key}",
-        }
-
-        from urllib.parse import urlparse
-
-        parsed_url = urlparse(server_url)
-        scheme = "http" if parsed_url.hostname == "localhost" else "https"
-        otel_endpoint = f"{scheme}://{parsed_url.hostname}:4317"
-        otel_env["OTEL_EXPORTER_OTLP_ENDPOINT"] = otel_endpoint
-
-        if "env" not in settings:
-            settings["env"] = {}
-        settings["env"].update(otel_env)
-
-        # ── Inject hooks for full content capture (prompts, tool I/O, MCP, agents) ──
-        # Use command hooks instead of HTTP hooks so that ECONNREFUSED errors
-        # don't flood the LLM when the Observal server is offline (#236).
+        # Build desired state from the declarative spec
         hooks_url = f"{server_url.rstrip('/')}/api/v1/otel/hooks"
-
         hook_script = _find_hook_script("observal-hook.sh")
         stop_script = _find_hook_script("observal-stop-hook.sh")
-
-        if hook_script:
-            cmd_hook = [{"hooks": [{"type": "command", "command": hook_script}]}]
-        else:
-            # Fallback to HTTP if the script isn't found
-            hook_def: dict = {"type": "http", "url": hooks_url}
-            cfg = config.load()
-            if cfg.get("user_id"):
-                hook_def["headers"] = {"X-Observal-User-Id": cfg["user_id"]}
-            cmd_hook = [{"hooks": [hook_def]}]
-
-        stop_hook = [{"hooks": [{"type": "command", "command": stop_script}]}] if stop_script else cmd_hook
-
-        settings["hooks"] = {
-            "SessionStart": cmd_hook,
-            "UserPromptSubmit": cmd_hook,
-            "PreToolUse": cmd_hook,
-            "PostToolUse": cmd_hook,
-            "PostToolUseFailure": cmd_hook,
-            "SubagentStart": cmd_hook,
-            "SubagentStop": cmd_hook,
-            "Stop": stop_hook,
-            "StopFailure": cmd_hook,
-            "Notification": cmd_hook,
-            "TaskCreated": cmd_hook,
-            "TaskCompleted": cmd_hook,
-            "PreCompact": cmd_hook,
-            "PostCompact": cmd_hook,
-            "WorktreeCreate": cmd_hook,
-            "WorktreeRemove": cmd_hook,
-            "Elicitation": cmd_hook,
-            "ElicitationResult": cmd_hook,
-        }
-
-        # Set the hooks URL env var so the stop script knows where to POST
-        settings["env"]["OBSERVAL_HOOKS_URL"] = hooks_url
-
-        # Inject user identity so hooks carry the Observal user ID
         cfg = config.load()
-        if cfg.get("user_id"):
-            settings["env"]["OBSERVAL_USER_ID"] = cfg["user_id"]
+        user_id = cfg.get("user_id", "")
 
-        claude_dir.mkdir(exist_ok=True)
-        with open(claude_settings_file, "w", encoding="utf-8") as f:
-            _json.dump(settings, f, indent=2)
+        desired_hooks = get_desired_hooks(hook_script, stop_script, hooks_url, user_id)
+        desired_env = get_desired_env(server_url, api_key, user_id)
 
-        rprint(f"Updated [dim]{claude_settings_file}[/dim] — telemetry + hooks will flow to Observal.")
+        # Reconcile: non-destructive merge preserving foreign hooks/env
+        changes = settings_reconciler.reconcile(desired_hooks, desired_env)
+
+        if changes:
+            rprint(f"Updated [dim]{settings_reconciler.CLAUDE_SETTINGS_PATH}[/dim]:")
+            for change in changes:
+                rprint(f"  {change}")
+        else:
+            rprint("[dim]Claude Code settings already up to date.[/dim]")
 
     except Exception as e:
         rprint(f"\n[yellow]Could not configure Claude Code automatically: {e}[/yellow]")
