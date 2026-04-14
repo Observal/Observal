@@ -7,6 +7,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
+from observal_cli.analyzer import analyze_local
 from observal_cli.constants import VALID_IDES, VALID_MCP_CATEGORIES
 from observal_cli.prompts import select_many, select_one
 from observal_cli.render import (
@@ -32,10 +33,21 @@ mcp_app = typer.Typer(help="MCP server registry commands")
 def _submit_impl(git_url, name, category, yes):
     with spinner("Analyzing repository..."):
         try:
-            prefill = client.post("/api/v1/mcps/analyze", {"git_url": git_url})
-        except (Exception, SystemExit):
-            rprint("[yellow]Could not analyze repo. Fill in details manually.[/yellow]")
-            prefill = {}
+            prefill = analyze_local(git_url)
+            if prefill.get("error"):
+                rprint(f"[yellow]Local analysis issue:[/yellow] {prefill['error']}")
+                rprint("[dim]Falling back to server-side analysis...[/dim]")
+                try:
+                    prefill = client.post("/api/v1/mcps/analyze", {"git_url": git_url})
+                except (Exception, SystemExit):
+                    rprint("[yellow]Server analysis also failed. Fill in details manually.[/yellow]")
+                    prefill = {}
+        except Exception:
+            try:
+                prefill = client.post("/api/v1/mcps/analyze", {"git_url": git_url})
+            except (Exception, SystemExit):
+                rprint("[yellow]Could not analyze repo. Fill in details manually.[/yellow]")
+                prefill = {}
 
     # ── Analysis summary ──────────────────────────────────────
     detected_name = prefill.get("name", "")
