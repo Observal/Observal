@@ -2,6 +2,14 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export interface Span {
@@ -89,6 +97,7 @@ function SpanRow({
   onSelect,
   collapsed,
   onToggleCollapse,
+  matchingSpanIds,
 }: {
   node: SpanNode;
   depth: number;
@@ -96,6 +105,7 @@ function SpanRow({
   onSelect: (span: Span) => void;
   collapsed: Set<string>;
   onToggleCollapse: (id: string) => void;
+  matchingSpanIds: Set<string> | null;
 }) {
   const hasChildren = node.children.length > 0;
   const isCollapsed = collapsed.has(node.span.span_id);
@@ -104,6 +114,7 @@ function SpanRow({
   const colors = isLifecycle ? threadColor.lifecycle : getColors(node.span.type);
   const descendantCount = isCollapsed ? countDescendants(node) : 0;
   const tokens = (node.span.token_input ?? 0) + (node.span.token_output ?? 0);
+  const isAncestorOnly = matchingSpanIds !== null && !matchingSpanIds.has(node.span.span_id);
 
   return (
     <>
@@ -148,7 +159,8 @@ function SpanRow({
           className={cn(
             "flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted/60 relative",
             isSelected && "bg-muted",
-            isLifecycle && "opacity-50"
+            isLifecycle && "opacity-50",
+            isAncestorOnly && "opacity-40"
           )}
           style={{ paddingLeft: `${depth * INDENT + 8}px` }}
         >
@@ -180,6 +192,7 @@ function SpanRow({
             onSelect={onSelect}
             collapsed={collapsed}
             onToggleCollapse={onToggleCollapse}
+            matchingSpanIds={matchingSpanIds}
           />
         ))
       }
@@ -194,8 +207,9 @@ interface SpanTreeProps {
 }
 
 export function SpanTree({ spans, selectedId, onSelect }: SpanTreeProps) {
-  const roots = useMemo(() => buildTree(spans), [spans]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [agentFilter, setAgentFilter] = useState("all");
+  const [modelFilter, setModelFilter] = useState("all");
 
   const onToggleCollapse = useCallback((id: string) => {
     setCollapsed((prev) => {
@@ -206,23 +220,154 @@ export function SpanTree({ spans, selectedId, onSelect }: SpanTreeProps) {
     });
   }, []);
 
-  if (roots.length === 0) {
+  // Extract unique agent and model names from span metadata
+  const { agentNames, modelNames } = useMemo(() => {
+    const agents = new Set<string>();
+    const models = new Set<string>();
+    for (const span of spans) {
+      const agent =
+        (span.metadata?.["agent_name"] as string | undefined) ??
+        (span.metadata?.["agent.name"] as string | undefined);
+      if (agent) agents.add(agent);
+      const model =
+        (span.metadata?.["gen_ai.request.model"] as string | undefined) ??
+        (span.metadata?.["model"] as string | undefined);
+      if (model) models.add(model);
+    }
+    return {
+      agentNames: Array.from(agents).sort(),
+      modelNames: Array.from(models).sort(),
+    };
+  }, [spans]);
+
+  const hasFilterableData = agentNames.length > 0 || modelNames.length > 0;
+  const filtersActive = agentFilter !== "all" || modelFilter !== "all";
+
+  // Build parent lookup for ancestor expansion
+  const parentMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const span of spans) {
+      if (span.parent_span_id) {
+        map.set(span.span_id, span.parent_span_id);
+      }
+    }
+    return map;
+  }, [spans]);
+
+  // Compute matching and visible span IDs
+  const { matchingSpanIds, visibleSpanIds } = useMemo(() => {
+    if (!filtersActive) {
+      return { matchingSpanIds: null, visibleSpanIds: null };
+    }
+
+    const matching = new Set<string>();
+    for (const span of spans) {
+      const agent =
+        (span.metadata?.["agent_name"] as string | undefined) ??
+        (span.metadata?.["agent.name"] as string | undefined);
+      const model =
+        (span.metadata?.["gen_ai.request.model"] as string | undefined) ??
+        (span.metadata?.["model"] as string | undefined);
+
+      const agentMatch = agentFilter === "all" || agent === agentFilter;
+      const modelMatch = modelFilter === "all" || model === modelFilter;
+
+      if (agentMatch && modelMatch) {
+        matching.add(span.span_id);
+      }
+    }
+
+    // Expand to include all ancestors
+    const visible = new Set(matching);
+    for (const id of matching) {
+      let current = parentMap.get(id);
+      while (current) {
+        if (visible.has(current)) break;
+        visible.add(current);
+        current = parentMap.get(current);
+      }
+    }
+
+    return { matchingSpanIds: matching, visibleSpanIds: visible };
+  }, [spans, agentFilter, modelFilter, filtersActive, parentMap]);
+
+  // Filter spans to only visible ones and build tree
+  const filteredSpans = useMemo(() => {
+    if (!visibleSpanIds) return spans;
+    return spans.filter((s) => visibleSpanIds.has(s.span_id));
+  }, [spans, visibleSpanIds]);
+
+  const roots = useMemo(() => buildTree(filteredSpans), [filteredSpans]);
+
+  if (spans.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">No spans</p>;
   }
 
   return (
     <div className="py-2">
-      {roots.map((node) => (
-        <SpanRow
-          key={node.span.span_id}
-          node={node}
-          depth={0}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          collapsed={collapsed}
-          onToggleCollapse={onToggleCollapse}
-        />
-      ))}
+      {hasFilterableData && (
+        <div className="flex items-center gap-2 px-2 pb-2">
+          {agentNames.length > 0 && (
+            <Select value={agentFilter} onValueChange={setAgentFilter}>
+              <SelectTrigger className="h-7 w-[160px] text-xs">
+                <SelectValue placeholder="Agent" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-xs">All agents</SelectItem>
+                {agentNames.map((name) => (
+                  <SelectItem key={name} value={name} className="text-xs">
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {modelNames.length > 0 && (
+            <Select value={modelFilter} onValueChange={setModelFilter}>
+              <SelectTrigger className="h-7 w-[160px] text-xs">
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-xs">All models</SelectItem>
+                {modelNames.map((name) => (
+                  <SelectItem key={name} value={name} className="text-xs">
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {filtersActive && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setAgentFilter("all");
+                setModelFilter("all");
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+      )}
+      {roots.length === 0 ? (
+        <p className="p-4 text-sm text-muted-foreground">No spans match filters</p>
+      ) : (
+        roots.map((node) => (
+          <SpanRow
+            key={node.span.span_id}
+            node={node}
+            depth={0}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            collapsed={collapsed}
+            onToggleCollapse={onToggleCollapse}
+            matchingSpanIds={matchingSpanIds}
+          />
+        ))
+      )}
     </div>
   );
 }
