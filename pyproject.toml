@@ -81,6 +81,12 @@ indent-style = "space"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
+# ── Bandit ───────────────────────────────────────────────
+
+[tool.bandit]
+exclude_dirs = ["tests", "alembic"]
+skips = ["B101"]  # assert used in tests
+
 [dependency-groups]
 dev = [
     "fastapi>=0.135.3",
