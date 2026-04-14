@@ -12,7 +12,7 @@ Everything works out of the box with defaults. No configuration needed for local
 
 ## Quickstart (Docker)
 
-Three commands to get everything running:
+### 1. Clone and configure
 
 ```bash
 git clone https://github.com/BlazeUp-AI/Observal.git
@@ -20,12 +20,15 @@ cd Observal
 cp .env.example .env
 ```
 
-The `.env.example` ships with working defaults for every setting. No editing needed for local development.
+The `.env.example` ships with working defaults for every setting, including demo account credentials. No editing needed for local development.
+
+### 2. Start the stack
 
 ```bash
-cd docker
-docker compose up --build -d
+docker compose -f docker/docker-compose.yml up --build -d
 ```
+
+The first build takes a few minutes (pulling images, installing dependencies). Subsequent starts are fast.
 
 This starts eight services:
 
@@ -40,15 +43,74 @@ This starts eight services:
 | `observal-otel-collector` | localhost:4317 | OpenTelemetry Collector |
 | `observal-grafana` | http://localhost:3001 | Grafana dashboards (optional) |
 
-Install the CLI and create your first admin account:
+### 3. Verify services are healthy
 
 ```bash
-cd ..
+docker compose -f docker/docker-compose.yml ps
+```
+
+All services should show `healthy` or `running`. The API waits for PostgreSQL, ClickHouse, and Redis to pass their health checks before starting, so it may take 15-30 seconds. If a service shows `starting`, wait a moment and check again.
+
+You can also hit the health endpoint directly:
+
+```bash
+curl http://localhost:8000/health
+# {"status": "ok"}
+```
+
+### 4. Install the CLI
+
+From the project root:
+
+```bash
 uv tool install --editable .
+```
+
+This installs the `observal` command globally. Verify it works:
+
+```bash
+observal --version
+```
+
+### 5. Log in
+
+```bash
 observal auth login
 ```
 
-On a fresh server, `observal auth login` detects that no users exist and bootstraps an admin account automatically. No prompts needed. Your credentials are saved to `~/.observal/config.json`.
+The CLI will prompt you for:
+1. **Server URL** — press Enter to accept the default (`http://localhost:8000`)
+2. **Login method** — choose `[E]mail` or `[K]ey`
+3. **Email and password** — use a demo account (see below)
+
+**Demo accounts:** The `.env.example` includes four demo accounts that are seeded automatically on first startup:
+
+| Role | Email | Password |
+|------|-------|----------|
+| Super Admin | `super@demo.example` | `super-changeme` |
+| Admin | `admin@demo.example` | `admin-changeme` |
+| Reviewer | `reviewer@demo.example` | `reviewer-changeme` |
+| User | `user@demo.example` | `user-changeme` |
+
+Log in as super admin for full access. Your credentials are saved to `~/.observal/config.json`.
+
+Verify you are logged in:
+
+```bash
+observal auth whoami
+```
+
+**Fresh server without demo accounts:** If you remove the `DEMO_*` variables from `.env`, no accounts are seeded. In that case, `observal auth login` detects that no users exist and bootstraps an admin account interactively — it prompts for an email and password to create the first admin.
+
+### 6. You are ready
+
+Open the web UI at http://localhost:3000 or start using the CLI:
+
+```bash
+observal ops overview           # dashboard stats
+observal registry mcp list      # list MCP servers
+observal auth status            # check connectivity
+```
 
 To add team members, they can self-register:
 
@@ -63,7 +125,7 @@ export OBSERVAL_SERVER_URL=http://localhost:8000
 export OBSERVAL_API_KEY=<your-key>
 ```
 
-You are ready to go. See the [README](README.md) for usage.
+See the [README](README.md) for full CLI and API reference.
 
 ## Environment Variables
 
@@ -94,6 +156,18 @@ All settings have sensible defaults that work for local development. The server 
 | `AWS_REGION` | `us-east-1` | AWS region for Bedrock |
 | `RATE_LIMIT_AUTH` | `10/minute` | Rate limit for general auth endpoints |
 | `RATE_LIMIT_AUTH_STRICT` | `5/minute` | Rate limit for login and password reset |
+| `DEPLOYMENT_MODE` | `local` | `local` or `enterprise` (SSO-only, SCIM provisioning) |
+| `DATA_RETENTION_DAYS` | `90` | ClickHouse data retention in days |
+| `DEMO_SUPER_ADMIN_EMAIL` | `super@demo.example` | Demo super admin email (seeded on first startup) |
+| `DEMO_SUPER_ADMIN_PASSWORD` | `super-changeme` | Demo super admin password |
+| `DEMO_ADMIN_EMAIL` | `admin@demo.example` | Demo admin email |
+| `DEMO_ADMIN_PASSWORD` | `admin-changeme` | Demo admin password |
+| `DEMO_REVIEWER_EMAIL` | `reviewer@demo.example` | Demo reviewer email |
+| `DEMO_REVIEWER_PASSWORD` | `reviewer-changeme` | Demo reviewer password |
+| `DEMO_USER_EMAIL` | `user@demo.example` | Demo user email |
+| `DEMO_USER_PASSWORD` | `user-changeme` | Demo user password |
+| `GRAFANA_ADMIN_USER` | `admin` | Grafana admin username |
+| `GRAFANA_ADMIN_PASSWORD` | `admin` | Grafana admin password |
 
 ## Local Development
 
@@ -104,8 +178,7 @@ For development you can run the backend, frontend, and CLI individually outside 
 Start just PostgreSQL, ClickHouse, and Redis:
 
 ```bash
-cd docker
-docker compose up observal-db observal-clickhouse observal-redis -d
+docker compose -f docker/docker-compose.yml up observal-db observal-clickhouse observal-redis -d
 ```
 
 ### Backend (FastAPI)
@@ -309,9 +382,8 @@ If ClickHouse is unavailable at startup, the API still starts. Telemetry ingesti
 To wipe everything and start fresh:
 
 ```bash
-cd docker
-docker compose down -v
-docker compose up --build -d
+docker compose -f docker/docker-compose.yml down -v
+docker compose -f docker/docker-compose.yml up --build -d
 ```
 
 The `-v` flag removes the named volumes (`pgdata`, `chdata`, `redisdata`, `grafanadata`, `apidata`), which deletes all data. After restarting, run `observal auth login` again. It will auto-create a new admin account.
@@ -321,13 +393,11 @@ The `-v` flag removes the named volumes (`pgdata`, `chdata`, `redisdata`, `grafa
 ### Viewing logs
 
 ```bash
-cd docker
-
 # All services
-docker compose logs -f
+docker compose -f docker/docker-compose.yml logs -f
 
 # Single service
-docker compose logs -f observal-api
+docker compose -f docker/docker-compose.yml logs -f observal-api
 ```
 
 Or use the Makefile shortcuts:
@@ -339,8 +409,7 @@ make logs              # tail all service logs
 ### Restarting a single service
 
 ```bash
-cd docker
-docker compose restart observal-api
+docker compose -f docker/docker-compose.yml restart observal-api
 ```
 
 ### Rebuilding after code changes
@@ -348,15 +417,21 @@ docker compose restart observal-api
 ```bash
 make rebuild           # rebuild and restart everything
 # or target a single service:
-cd docker
-docker compose up --build -d observal-api
+docker compose -f docker/docker-compose.yml up --build -d observal-api
 ```
 
 ### Health checks
 
-PostgreSQL has a health check configured (`pg_isready`). The API waits for it before starting. ClickHouse currently uses `service_started` only.
+All database services have health checks configured:
 
-You can verify the API is healthy:
+| Service | Check | Interval |
+|---------|-------|----------|
+| PostgreSQL | `pg_isready` | 5s |
+| ClickHouse | `clickhouse-client --query 'SELECT 1'` | 5s |
+| Redis | `redis-cli ping` | 5s |
+| API | HTTP `/health` endpoint | 10s |
+
+The API waits for all three databases to be healthy before starting (`service_healthy` dependency). You can verify the API is healthy:
 
 ```bash
 curl http://localhost:8000/health

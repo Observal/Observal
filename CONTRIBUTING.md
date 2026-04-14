@@ -49,16 +49,17 @@ No configuration needed for local development. All settings have working default
 
 ```bash
 cp .env.example .env
+docker compose -f docker/docker-compose.yml up --build -d
+```
 
-cd docker
-docker compose up --build -d
-cd ..
+Wait for all services to be healthy (`docker compose -f docker/docker-compose.yml ps`), then install the CLI and log in:
 
+```bash
 uv tool install --editable .
 observal auth login
 ```
 
-The API starts at http://localhost:8000 and the web UI at http://localhost:3000. On a fresh server, `auth login` auto-creates an admin account.
+The API starts at http://localhost:8000 and the web UI at http://localhost:3000. The `.env.example` seeds four demo accounts on first startup — log in with `super@demo.example` / `super-changeme` for full admin access. See [SETUP.md](SETUP.md) for all demo credentials and the full step-by-step walkthrough.
 
 **Frontend only (for UI work):**
 
@@ -84,6 +85,10 @@ The open-source core must never depend on code in `ee/`. The dependency directio
 
 - `ee/` code **can** import from the open-source core
 - Open-source code **cannot** import from `ee/`
+
+### Enterprise Setup
+
+To develop or test enterprise features locally, set `DEPLOYMENT_MODE=enterprise` in your `.env` and follow the standard setup in [SETUP.md](SETUP.md). Enterprise mode enables SSO-only authentication, SCIM user provisioning, and audit logging. You will need to configure OAuth/OIDC variables (`OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OAUTH_SERVER_METADATA_URL`) — see the environment variables table in SETUP.md for details.
 
 ## Finding Work
 

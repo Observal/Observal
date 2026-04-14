@@ -140,25 +140,9 @@ def _submit_impl(git_url, name, category, yes):
         _setup = typer.prompt("Setup instructions (optional, press Enter to skip)", default="")
         _changelog = typer.prompt("Changelog", default="Initial release")
 
-        # ── Environment variables ──────────────────────────────
+        # Env vars are auto-included from analysis — users are prompted
+        # for actual values during `install`, not here.
         env_vars = list(detected_env_vars)
-        if env_vars:
-            rprint(f"\n[bold]Detected {len(env_vars)} environment variable(s):[/bold]")
-            for ev in env_vars:
-                ev_name = ev.get("name", "") if isinstance(ev, dict) else ev
-                req = ev.get("required", True) if isinstance(ev, dict) else True
-                tag = "[green]required[/green]" if req else "[dim]optional[/dim]"
-                rprint(f"  [cyan]*[/cyan] {ev_name} ({tag})")
-            if not typer.confirm("Accept detected env vars?", default=True):
-                env_vars = []
-        # Let publisher add extra env vars not detected by analysis
-        while True:
-            extra = typer.prompt("Add env var (NAME) or press Enter to continue", default="").strip()
-            if not extra:
-                break
-            desc = typer.prompt(f"  Description for {extra} (optional)", default="")
-            req = typer.confirm(f"  Is {extra} required?", default=True)
-            env_vars.append({"name": extra, "description": desc, "required": req})
 
     submit_payload = {
         "git_url": git_url,
