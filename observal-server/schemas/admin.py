@@ -31,6 +31,7 @@ class UserCreateRequest(BaseModel):
     email: str
     name: str
     role: str = "reviewer"
+    password: str | None = None
 
     @field_validator("email", mode="before")
     @classmethod
@@ -43,7 +44,7 @@ class UserCreateResponse(BaseModel):
     email: str
     name: str
     role: str
-    api_key: str
+    password: str
 
 
 class AdminResetPasswordRequest(BaseModel):

@@ -102,10 +102,10 @@ def check_schema_compliance(params: dict | None, tool_schemas: dict) -> tuple[in
 class ShimState:
     """Mutable state for the shim process."""
 
-    def __init__(self, mcp_id: str, server_url: str, api_key: str, agent_id: str | None = None):
+    def __init__(self, mcp_id: str, server_url: str, access_token: str, agent_id: str | None = None):
         self.mcp_id = mcp_id
         self.server_url = server_url.rstrip("/")
-        self.api_key = api_key
+        self.access_token = access_token
         self.agent_id = agent_id
         self.trace_id = os.environ.get("OBSERVAL_TRACE_ID") or str(uuid.uuid4())
         self.parent_trace_id = os.environ.get("OBSERVAL_TRACE_ID")  # if set, we're a child
@@ -224,7 +224,7 @@ class ShimState:
                     f"{self.server_url}/api/v1/telemetry/ingest",
                     json=payload,
                     headers={
-                        "X-API-Key": self.api_key,
+                        "Authorization": f"Bearer {self.access_token}",
                         "X-Observal-Environment": self.environment,
                     },
                 )
@@ -318,14 +318,14 @@ async def _periodic_flush(state: ShimState, interval: float = 5.0):
 async def run_shim(mcp_id: str, command: list[str]):
     """Main shim entry point: spawn MCP process and relay stdio."""
     # Resolve auth
-    api_key = os.environ.get("OBSERVAL_KEY", "")
+    access_token = os.environ.get("OBSERVAL_KEY", "")
     server_url = os.environ.get("OBSERVAL_SERVER", "")
-    if not api_key or not server_url:
+    if not access_token or not server_url:
         cfg = load_config()
-        api_key = api_key or cfg.get("api_key", "")
+        access_token = access_token or cfg.get("access_token", "")
         server_url = server_url or cfg.get("server_url", "")
 
-    if not server_url or not api_key:
+    if not server_url or not access_token:
         # No config: pass through without capturing
         proc = await asyncio.create_subprocess_exec(
             *command,
@@ -336,7 +336,7 @@ async def run_shim(mcp_id: str, command: list[str]):
         sys.exit(await proc.wait())
 
     agent_id = os.environ.get("OBSERVAL_AGENT_ID")
-    state = ShimState(mcp_id, server_url, api_key, agent_id)
+    state = ShimState(mcp_id, server_url, access_token, agent_id)
 
     # Spawn the real MCP process
     proc = await asyncio.create_subprocess_exec(

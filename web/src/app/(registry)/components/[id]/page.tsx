@@ -37,7 +37,7 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
 
   const isAuthenticated =
     typeof window !== "undefined" &&
-    !!localStorage.getItem("observal_api_key");
+    !!localStorage.getItem("observal_access_token");
 
   const componentName = item?.name ?? id.slice(0, 8);
   const avgRating = feedbackSummary?.average_rating;

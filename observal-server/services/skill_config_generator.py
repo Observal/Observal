@@ -7,13 +7,13 @@ def generate_skill_config(skill_listing, ide: str, server_url: str = "http://loc
         "type": "http",
         "url": f"{server_url}/api/v1/telemetry/hooks",
         "headers": {
-            "X-API-Key": "$OBSERVAL_API_KEY",
+            "Authorization": "Bearer $OBSERVAL_ACCESS_TOKEN",
             "X-Observal-Skill-Id": skill_id,
         },
         "timeout": 10,
     }
     if ide == "claude-code":
-        hook_entry["allowedEnvVars"] = ["OBSERVAL_API_KEY"]
+        hook_entry["allowedEnvVars"] = ["OBSERVAL_ACCESS_TOKEN"]
 
     config = {
         "hooks": {

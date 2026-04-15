@@ -235,7 +235,7 @@ export default function AgentDetailPage({
 
   const isAuthenticated =
     typeof window !== "undefined" &&
-    !!localStorage.getItem("observal_api_key");
+    !!localStorage.getItem("observal_access_token");
 
   const isAdmin =
     typeof window !== "undefined" &&

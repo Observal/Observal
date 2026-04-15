@@ -68,7 +68,7 @@ export function RegistrySidebar() {
   const role = getUserRole();
   const userName = getUserName();
   const userEmail = getUserEmail();
-  const isAuthenticated = typeof window !== "undefined" && !!localStorage.getItem("observal_api_key");
+  const isAuthenticated = typeof window !== "undefined" && !!localStorage.getItem("observal_access_token");
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";

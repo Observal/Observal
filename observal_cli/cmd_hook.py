@@ -182,8 +182,8 @@ def hook_sync(
     cfg = config.load()
 
     server_url = cfg.get("server_url")
-    api_key = cfg.get("api_key")
-    if not server_url or not api_key:
+    access_token = cfg.get("access_token")
+    if not server_url or not access_token:
         rprint("[red]Not authenticated. Run [bold]observal auth login[/bold] first.[/red]")
         raise typer.Exit(1)
 
@@ -193,7 +193,7 @@ def hook_sync(
     user_id = cfg.get("user_id", "")
 
     desired_hooks = get_desired_hooks(hook_script, stop_script, hooks_url, user_id)
-    desired_env = get_desired_env(server_url, api_key, user_id)
+    desired_env = get_desired_env(server_url, access_token, user_id)
 
     applied = settings_reconciler.get_applied_version()
     from observal_cli.hooks_spec import HOOKS_SPEC_VERSION

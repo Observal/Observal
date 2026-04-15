@@ -27,17 +27,25 @@ import type {
 
 const API = "/api/v1";
 
-function getApiKey(): string | null {
+function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("observal_api_key");
+  return localStorage.getItem("observal_access_token");
 }
 
-export function setApiKey(key: string) {
-  localStorage.setItem("observal_api_key", key);
+function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("observal_refresh_token");
 }
 
-export function clearApiKey() {
-  localStorage.removeItem("observal_api_key");
+export function setTokens(accessToken: string, refreshToken: string) {
+  localStorage.setItem("observal_access_token", accessToken);
+  localStorage.setItem("observal_refresh_token", refreshToken);
+}
+
+export function clearSession() {
+  localStorage.removeItem("observal_access_token");
+  localStorage.removeItem("observal_refresh_token");
+  localStorage.removeItem("observal_api_key"); // clean up legacy
   localStorage.removeItem("observal_user_role");
   localStorage.removeItem("observal_user_name");
   localStorage.removeItem("observal_user_email");
@@ -70,11 +78,27 @@ export function getUserEmail(): string | null {
   return localStorage.getItem("observal_user_email");
 }
 
-export function clearSession() {
-  localStorage.removeItem("observal_api_key");
-  localStorage.removeItem("observal_user_role");
-  localStorage.removeItem("observal_user_name");
-  localStorage.removeItem("observal_user_email");
+let _refreshPromise: Promise<boolean> | null = null;
+
+async function _tryRefreshToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+
+  try {
+    const res = await fetch(`${API}/auth/token/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    setTokens(data.access_token, data.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function request<T = unknown>(
@@ -85,8 +109,8 @@ async function request<T = unknown>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  const key = getApiKey();
-  if (key) headers["X-API-Key"] = key;
+  const token = getAccessToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API}${path}`, {
     method,
@@ -95,9 +119,32 @@ async function request<T = unknown>(
   });
 
   if (!res.ok) {
-    // Auto-clear session and redirect on 401 (except for auth endpoints
-    // where 401 means "bad credentials", not session expiry)
+    // Auto-refresh on 401 (except for auth endpoints where 401 means bad credentials)
     if (res.status === 401 && !path.startsWith("/auth/")) {
+      // Deduplicate concurrent refresh attempts
+      if (!_refreshPromise) {
+        _refreshPromise = _tryRefreshToken().finally(() => {
+          _refreshPromise = null;
+        });
+      }
+      const refreshed = await _refreshPromise;
+
+      if (refreshed) {
+        // Retry the original request with new token
+        const newToken = getAccessToken();
+        if (newToken) headers["Authorization"] = `Bearer ${newToken}`;
+        const retryRes = await fetch(`${API}${path}`, {
+          method,
+          headers,
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        if (retryRes.ok) {
+          if (retryRes.status === 204) return undefined as T;
+          return retryRes.json() as Promise<T>;
+        }
+      }
+
+      // Refresh failed or retry failed — clear session
       clearSession();
       if (typeof window !== "undefined") {
         window.location.href = "/login?reason=session_expired";
@@ -139,14 +186,19 @@ export async function graphql<T = unknown>(
 }
 
 // ── Auth ────────────────────────────────────────────────────────────
-type AuthResponse = { user: { id: string; email: string; name: string; role: string; created_at: string }; api_key: string };
+type AuthResponse = {
+  user: { id: string; email: string; name: string; role: string; created_at: string };
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+};
 
 export const auth = {
   init: (body: { email: string; name: string; password?: string }) =>
     post<AuthResponse>("/auth/init", body),
   register: (body: { email: string; name: string; password: string }) =>
     post<AuthResponse>("/auth/register", body),
-  login: (body: { api_key?: string; email?: string; password?: string }) =>
+  login: (body: { email: string; password: string }) =>
     post<AuthResponse>("/auth/login", body),
   whoami: () => get<{ id: string; email: string; name: string; role: string }>("/auth/whoami"),
   exchangeCode: (body: { code: string }) =>
@@ -267,7 +319,7 @@ export const admin = {
   deleteSetting: (key: string) => del(`/admin/settings/${key}`),
   users: () => get<AdminUser[]>("/admin/users"),
   createUser: (body: { email: string; name: string; role?: string }) =>
-    post<{ id: string; email: string; name: string; role: string; api_key: string }>("/admin/users", body),
+    post<{ id: string; email: string; name: string; role: string; password: string }>("/admin/users", body),
   updateRole: (id: string, body: { role: string }) =>
     put<AdminUser>(`/admin/users/${id}/role`, body),
   resetPassword: (id: string, body: { new_password: string }) =>

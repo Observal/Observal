@@ -1,9 +1,6 @@
-import hashlib
-import hmac
 import json
 import logging
 import secrets
-from datetime import UTC, datetime
 
 import jwt as pyjwt
 from authlib.integrations.starlette_client import OAuth
@@ -16,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.deps import get_current_user, get_db, require_local_mode
 from api.ratelimit import limiter
 from config import settings
-from models.api_key import ApiKey, ApiKeyEnvironment
 from models.user import User, UserRole
 from schemas.auth import (
     CodeExchangeRequest,
@@ -51,33 +47,19 @@ if settings.OAUTH_CLIENT_ID and settings.OAUTH_CLIENT_SECRET and settings.OAUTH_
     )
 
 
-def _generate_api_key() -> tuple[str, str]:
-    """Return (raw_key, sha256_hash) for legacy User.api_key_hash storage."""
-    raw = secrets.token_hex(settings.API_KEY_LENGTH)
-    return raw, hashlib.sha256(raw.encode()).hexdigest()
+async def _issue_tokens(user: User) -> tuple[str, str, int]:
+    """Issue JWT access + refresh tokens for a user, storing refresh JTI in Redis.
 
-
-async def _create_login_api_key(user: User, db: AsyncSession, source: str = "login") -> str:
-    """Create a new API key via the ApiKey table for a login session.
-
-    Returns the raw key (shown once). Uses HMAC-SHA256 consistent with
-    the key management endpoints in api/routes/keys.py.
+    Returns (access_token, refresh_token, expires_in).
     """
-    random_part = secrets.token_urlsafe(43)
-    prefix = f"obs_{ApiKeyEnvironment.live.value}_"
-    full_key = f"{prefix}{random_part}"
-    key_hash = hmac.new(settings.SECRET_KEY.encode(), full_key.encode(), "sha256").hexdigest()
+    access_token, expires_in = create_access_token(user.id, user.role)
+    refresh_token, jti = create_refresh_token(user.id, user.role)
 
-    api_key = ApiKey(
-        user_id=user.id,
-        name=f"{source}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}",
-        key_hash=key_hash,
-        prefix=full_key[:10],
-        environment=ApiKeyEnvironment.live,
-    )
-    db.add(api_key)
-    await db.flush()
-    return full_key
+    redis = get_redis()
+    refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400
+    await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
+
+    return access_token, refresh_token, expires_in
 
 
 @router.post("/init", response_model=InitResponse)
@@ -86,13 +68,10 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
     if count and count > 0:
         raise HTTPException(status_code=400, detail="System already initialized")
 
-    api_key, key_hash = _generate_api_key()
-
     user = User(
         email=req.email,
         name=req.name,
         role=UserRole.admin,
-        api_key_hash=key_hash,
     )
     if req.password:
         user.set_password(req.password)
@@ -104,7 +83,13 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=409, detail="System already initialized or email already exists")
     await db.refresh(user)
 
-    return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
+    access_token, refresh_token, expires_in = await _issue_tokens(user)
+    return InitResponse(
+        user=UserResponse.model_validate(user),
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+    )
 
 
 @router.post("/bootstrap", response_model=InitResponse, dependencies=[Depends(require_local_mode)])
@@ -119,13 +104,10 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
     if count and count > 0:
         raise HTTPException(status_code=400, detail="System already initialized")
 
-    api_key, key_hash = _generate_api_key()
-
     user = User(
         email="admin@localhost",
         name="admin",
         role=UserRole.admin,
-        api_key_hash=key_hash,
     )
     db.add(user)
     try:
@@ -135,7 +117,13 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=409, detail="System already initialized")
     await db.refresh(user)
 
-    return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
+    access_token, refresh_token, expires_in = await _issue_tokens(user)
+    return InitResponse(
+        user=UserResponse.model_validate(user),
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+    )
 
 
 @router.post("/register", response_model=InitResponse, dependencies=[Depends(require_local_mode)])
@@ -146,13 +134,10 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    api_key, key_hash = _generate_api_key()
-
     user = User(
         email=req.email,
         name=req.name,
         role=UserRole.user,
-        api_key_hash=key_hash,
     )
     user.set_password(req.password)
     db.add(user)
@@ -163,32 +148,31 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
         raise HTTPException(status_code=409, detail="Email already registered")
     await db.refresh(user)
 
-    return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
+    access_token, refresh_token, expires_in = await _issue_tokens(user)
+    return InitResponse(
+        user=UserResponse.model_validate(user),
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+    )
 
 
 @router.post("/login", response_model=InitResponse)
 @limiter.limit("5/minute")
 async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Login with API key or email+password. Returns user info and API key."""
-    if req.api_key:
-        key_hash = hashlib.sha256(req.api_key.encode()).hexdigest()
-        result = await db.execute(select(User).where(User.api_key_hash == key_hash))
-        user = result.scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid API key")
-        return InitResponse(user=UserResponse.model_validate(user), api_key=req.api_key)
-
-    # Email + password login
+    """Login with email + password. Returns user info and JWT tokens."""
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
     if not user or not user.verify_password(req.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Create a new API key in the ApiKey table (doesn't invalidate existing keys)
-    api_key = await _create_login_api_key(user, db, source="login")
-    await db.commit()
-
-    return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
+    access_token, refresh_token, expires_in = await _issue_tokens(user)
+    return InitResponse(
+        user=UserResponse.model_validate(user),
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+    )
 
 
 @router.get("/oauth/login")
@@ -222,7 +206,6 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
     email = userinfo.get("email")
     name = userinfo.get("name") or userinfo.get("preferred_username") or "SSO User"
 
-    # Handle Okta / Entry specific formatting
     if not email:
         raise HTTPException(status_code=400, detail="Email claim is missing from ID token")
 
@@ -251,18 +234,26 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
             if not user:
                 raise HTTPException(status_code=500, detail="Failed to create or find user")
 
-    # Create a session API key for the OAuth login
-    api_key = await _create_login_api_key(user, db, source="sso")
+    # Issue JWT tokens for the OAuth login
+    access_token, refresh_token, expires_in = await _issue_tokens(user)
     await db.commit()
 
-    # Generate a short-lived opaque code instead of exposing the API key in the URL.
+    # Generate a short-lived opaque code instead of exposing tokens in the URL.
     # The frontend will exchange this code for credentials via a POST request.
     code = secrets.token_urlsafe(32)
     redis = get_redis()
     await redis.setex(
         f"oauth_code:{code}",
         30,
-        json.dumps({"api_key": api_key, "user_id": str(user.id), "role": user.role.value}),
+        json.dumps(
+            {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_in": expires_in,
+                "user_id": str(user.id),
+                "role": user.role.value,
+            }
+        ),
     )
 
     frontend_redirect = f"{settings.FRONTEND_URL}/login?code={code}"
@@ -271,7 +262,7 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.post("/exchange", response_model=InitResponse)
 async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get_db)):
-    """Exchange a one-time OAuth auth code for API credentials.
+    """Exchange a one-time OAuth auth code for JWT credentials.
 
     The code is stored in Redis with a 30-second TTL and is deleted after
     a single successful use, preventing replay attacks.
@@ -291,10 +282,12 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
     except (json.JSONDecodeError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid or expired code")
 
-    api_key = payload.get("api_key")
+    access_token = payload.get("access_token")
+    refresh_token = payload.get("refresh_token")
+    expires_in = payload.get("expires_in")
     user_id = payload.get("user_id")
 
-    if not api_key or not user_id:
+    if not access_token or not user_id:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -303,7 +296,12 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
 
-    return InitResponse(user=UserResponse.model_validate(user), api_key=api_key)
+    return InitResponse(
+        user=UserResponse.model_validate(user),
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+    )
 
 
 @router.get("/whoami", response_model=UserResponse)
@@ -317,30 +315,13 @@ async def whoami(current_user: User = Depends(get_current_user)):
 @router.post("/token", response_model=TokenResponse)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def issue_token(request: Request, req: TokenRequest, db: AsyncSession = Depends(get_db)):
-    """Exchange API key or email+password for JWT access + refresh tokens."""
-    user: User | None = None
+    """Exchange email+password for JWT access + refresh tokens."""
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+    if not user or not user.verify_password(req.password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if req.api_key:
-        key_hash = hashlib.sha256(req.api_key.encode()).hexdigest()
-        result = await db.execute(select(User).where(User.api_key_hash == key_hash))
-        user = result.scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid API key")
-    else:
-        result = await db.execute(select(User).where(User.email == req.email))
-        user = result.scalar_one_or_none()
-        if not user or not user.verify_password(req.password):
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    access_token, expires_in = create_access_token(user.id, user.role)
-    refresh_token, jti = create_refresh_token(user.id, user.role)
-
-    # Store refresh token JTI in Redis so it can be revoked later.
-    # TTL matches the refresh token's lifetime.
-    redis = get_redis()
-    refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400
-    await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
-
+    access_token, refresh_token, expires_in = await _issue_tokens(user)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -408,3 +389,18 @@ async def revoke_token(request: Request, req: RevokeRequest):
     await redis.delete(f"refresh_jti:{jti}")
 
     return {"detail": "Token revoked"}
+
+
+@router.post("/hooks-token")
+async def create_hooks_token(current_user: User = Depends(get_current_user)):
+    """Return a long-lived access token for OTEL telemetry hooks.
+
+    Hooks need a static token in the environment that can't do refresh
+    mid-session, so this endpoint issues a 30-day access token by default.
+    """
+    token, expires_in = create_access_token(
+        current_user.id,
+        current_user.role,
+        expires_in_minutes=settings.JWT_HOOKS_TOKEN_EXPIRE_MINUTES,
+    )
+    return {"access_token": token, "expires_in": expires_in}

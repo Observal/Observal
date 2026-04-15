@@ -14,7 +14,8 @@ DEFAULTS = {
     "output": "table",
     "color": True,
     "server_url": "",
-    "api_key": "",
+    "access_token": "",
+    "refresh_token": "",
     "timeout": 30,
 }
 
@@ -28,8 +29,11 @@ def load() -> dict:
     # Environment variable overrides (No login required if these are set)
     if env_url := os.environ.get("OBSERVAL_SERVER_URL"):
         cfg["server_url"] = env_url
+    if env_token := os.environ.get("OBSERVAL_ACCESS_TOKEN"):
+        cfg["access_token"] = env_token
+    # Backward compat: OBSERVAL_API_KEY env var maps to access_token
     if env_key := os.environ.get("OBSERVAL_API_KEY"):
-        cfg["api_key"] = env_key
+        cfg["access_token"] = env_key
 
     return cfg
 
@@ -67,12 +71,12 @@ def get_timeout() -> int:
 
 def get_or_exit() -> dict:
     cfg = load()
-    if not cfg.get("server_url") or not cfg.get("api_key"):
+    if not cfg.get("server_url") or not cfg.get("access_token"):
         import typer
         from rich import print as rprint
 
         rprint(
-            "[red]Not configured.[/red] Run [bold]observal auth login[/bold] or set the [bold]OBSERVAL_API_KEY[/bold] environment variable."
+            "[red]Not configured.[/red] Run [bold]observal auth login[/bold] or set the [bold]OBSERVAL_ACCESS_TOKEN[/bold] environment variable."
         )
         raise typer.Exit(1)
     return cfg

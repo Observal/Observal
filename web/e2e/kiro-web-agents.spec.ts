@@ -17,7 +17,7 @@ test.describe("Kiro Agent Compatibility in Web UI", () => {
     // Get an agent ID from the API
     const apiKey = await getApiKey();
     const agents = await fetch(`${API_BASE}/api/v1/agents`, {
-      headers: { "X-API-Key": apiKey },
+      headers: { "Authorization": `Bearer ${apiKey}` },
     }).then((r) => r.json());
 
     if (agents.length === 0) {

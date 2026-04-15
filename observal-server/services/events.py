@@ -45,7 +45,7 @@ class UserDeleted(Event):
 class LoginSuccess(Event):
     user_id: str
     email: str
-    method: str  # "password", "api_key", "oauth", "jwt"
+    method: str  # "password", "oauth", "jwt"
 
 
 @dataclass(frozen=True, slots=True)

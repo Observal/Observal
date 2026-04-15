@@ -3,16 +3,12 @@ import hashlib
 import os
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from models.base import Base
-
-if TYPE_CHECKING:
-    from models.api_key import ApiKey
 
 
 class UserRole(str, enum.Enum):
@@ -29,15 +25,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.user)
-    # DEPRECATED: Will be removed in v0.4.0 - use api_keys relationship instead
-    api_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-
-    # Relationships
-    api_keys: Mapped[list["ApiKey"]] = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
 
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("is_demo", False)

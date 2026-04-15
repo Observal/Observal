@@ -9,8 +9,6 @@ class Settings(BaseSettings):
     CLICKHOUSE_URL: str = "clickhouse://localhost:8123/observal"
     REDIS_URL: str = "redis://localhost:6379"
     SECRET_KEY: str = "change-me-to-a-random-string"
-    API_KEY_LENGTH: int = 32
-    API_KEY_DEFAULT_TTL_DAYS: int | None = None  # Default expiration for new API keys (None = never expires)
     EVAL_MODEL_URL: str = ""  # OpenAI-compatible endpoint (e.g., https://bedrock-runtime.us-east-1.amazonaws.com)
     EVAL_MODEL_API_KEY: str = ""  # API key or empty for AWS credential chain
     EVAL_MODEL_NAME: str = ""  # e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0
@@ -31,6 +29,9 @@ class Settings(BaseSettings):
     JWT_SIGNING_ALGORITHM: str = "ES256"  # ES256 (ECDSA) or RS256 (RSA)
     JWT_KEY_DIR: str = "~/.observal/keys"
     JWT_KEY_PASSWORD: str | None = None  # Optional password for private key encryption at rest
+
+    # Long-lived JWT for OTEL hooks (30 days default)
+    JWT_HOOKS_TOKEN_EXPIRE_MINUTES: int = 43200
 
     # Rate limiting
     RATE_LIMIT_AUTH: str = "10/minute"

@@ -260,8 +260,8 @@ def _check_observal_config(issues: list, warnings: list):
         issues.append("~/.observal/config.json is not valid JSON.")
         return
 
-    if not data.get("api_key"):
-        issues.append("No API key in ~/.observal/config.json. Run `observal auth login`.")
+    if not data.get("access_token"):
+        issues.append("No access token in ~/.observal/config.json. Run `observal auth login`.")
 
     if not data.get("server_url"):
         issues.append("No server_url in ~/.observal/config.json. Run `observal auth login`.")

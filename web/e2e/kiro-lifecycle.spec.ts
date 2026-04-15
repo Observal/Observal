@@ -87,7 +87,7 @@ test.describe("Kiro Full Lifecycle E2E", () => {
 
     // Check OTEL sessions
     const sessions = await fetch(`${API_BASE}/api/v1/otel/sessions`, {
-      headers: { "X-API-Key": apiKey },
+      headers: { "Authorization": `Bearer ${apiKey}` },
     }).then((r) => r.json());
 
     expect(sessions.length).toBeGreaterThan(0);

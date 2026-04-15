@@ -34,7 +34,6 @@ def test_user_model_has_is_demo_field():
     user = User(
         email="test@example.com",
         name="Test",
-        api_key_hash="a" * 64,
     )
     assert user.is_demo is False, "is_demo should default to False"
 

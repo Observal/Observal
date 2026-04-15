@@ -30,8 +30,8 @@ def _parse_jsonrpc_body(body: bytes) -> dict | None:
 class ProxyState(ShimState):
     """Extends ShimState for HTTP proxy use."""
 
-    def __init__(self, mcp_id: str, target_url: str, server_url: str, api_key: str, agent_id: str | None = None):
-        super().__init__(mcp_id, server_url, api_key, agent_id)
+    def __init__(self, mcp_id: str, target_url: str, server_url: str, access_token: str, agent_id: str | None = None):
+        super().__init__(mcp_id, server_url, access_token, agent_id)
         self.target_url = target_url.rstrip("/")
 
 
@@ -83,14 +83,14 @@ async def _handle_request(
 async def run_proxy(mcp_id: str, target_url: str, port: int = 0):
     """Start the HTTP proxy server."""
     # Resolve auth
-    api_key = os.environ.get("OBSERVAL_KEY", "")
+    access_token = os.environ.get("OBSERVAL_KEY", "")
     server_url = os.environ.get("OBSERVAL_SERVER", "")
-    if not api_key or not server_url:
+    if not access_token or not server_url:
         cfg = load_config()
-        api_key = api_key or cfg.get("api_key", "")
+        access_token = access_token or cfg.get("access_token", "")
         server_url = server_url or cfg.get("server_url", "")
 
-    state = ProxyState(mcp_id, target_url, server_url or "", api_key or "", os.environ.get("OBSERVAL_AGENT_ID"))
+    state = ProxyState(mcp_id, target_url, server_url or "", access_token or "", os.environ.get("OBSERVAL_AGENT_ID"))
 
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:

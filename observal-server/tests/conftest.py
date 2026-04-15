@@ -1,6 +1,5 @@
 """Shared fixtures for JWT / auth tests."""
 
-import hashlib
 import os
 import uuid
 
@@ -20,14 +19,3 @@ def user_id():
 @pytest.fixture()
 def user_role():
     return "admin"
-
-
-@pytest.fixture()
-def api_key():
-    """A deterministic raw API key for testing."""
-    return "deadbeef" * 8
-
-
-@pytest.fixture()
-def api_key_hash(api_key):
-    return hashlib.sha256(api_key.encode()).hexdigest()

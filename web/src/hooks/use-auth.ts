@@ -8,7 +8,7 @@ export function useAuthGuard() {
   const pathname = usePathname();
   const [ready, setReady] = useState(() => {
     if (typeof window === "undefined") return false;
-    const key = localStorage.getItem("observal_api_key");
+    const key = localStorage.getItem("observal_access_token");
     if (!key) return false;
     return !!getUserRole();
   });
@@ -18,7 +18,7 @@ export function useAuthGuard() {
   });
 
   useEffect(() => {
-    const key = localStorage.getItem("observal_api_key");
+    const key = localStorage.getItem("observal_access_token");
     if (!key && pathname !== "/login") {
       router.replace("/login");
       return;
@@ -54,7 +54,7 @@ export function useAuthGuard() {
 export function useOptionalAuth() {
   const [ready, setReady] = useState(() => {
     if (typeof window === "undefined") return false;
-    const key = localStorage.getItem("observal_api_key");
+    const key = localStorage.getItem("observal_access_token");
     if (!key) return true;
     return !!getUserRole();
   });
@@ -68,7 +68,7 @@ export function useOptionalAuth() {
   });
 
   useEffect(() => {
-    const key = localStorage.getItem("observal_api_key");
+    const key = localStorage.getItem("observal_access_token");
     if (!key) {
       // Already ready from initial state
       return;

@@ -188,7 +188,7 @@ test.describe("SSO Login Flow", () => {
 
     const whoami = await page.evaluate(async (key) => {
       const res = await fetch("/api/v1/auth/whoami", {
-        headers: { "X-API-Key": key! },
+        headers: { "Authorization": `Bearer ${key!}` },
       });
       return res.json();
     }, apiKey);

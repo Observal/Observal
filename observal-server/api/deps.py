@@ -1,18 +1,13 @@
-import hashlib
-import hmac
 import uuid as _uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy import String, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from config import settings
 from database import async_session
-from models.api_key import ApiKey
 from models.user import User, UserRole
 from services.jwt_service import decode_access_token
 
@@ -42,74 +37,17 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
     return result.scalar_one_or_none()
 
 
-async def _authenticate_via_api_key(api_key: str, db: AsyncSession, request: Request) -> User | None:
-    """Try to authenticate using a raw API key. Returns User or None."""
-    key_hash = hmac.new(settings.SECRET_KEY.encode(), api_key.encode(), "sha256").hexdigest()
-
-    # Query ApiKey table with authorization check built into query
-    result = await db.execute(
-        select(ApiKey)
-        .where(ApiKey.key_hash == key_hash, ApiKey.revoked_at.is_(None))
-        .options(selectinload(ApiKey.user))
-    )
-    api_key_record = result.scalar_one_or_none()
-
-    if not api_key_record:
-        # Fallback: Check legacy User.api_key_hash for backward compatibility
-        # Legacy keys were stored with plain SHA256 (not HMAC)
-        legacy_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        result = await db.execute(select(User).where(User.api_key_hash == legacy_hash))
-        return result.scalar_one_or_none()
-
-    # Check expiration
-    if api_key_record.expires_at and api_key_record.expires_at <= datetime.now(UTC):
-        return None
-
-    # Update last_used_at (debounced - max once per minute)
-    now = datetime.now(UTC)
-    should_update = api_key_record.last_used_at is None or (now - api_key_record.last_used_at) > timedelta(minutes=1)
-
-    if should_update:
-        # Get IP from headers (support proxies)
-        client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else None)
-        if client_ip and "," in client_ip:
-            client_ip = client_ip.split(",")[0].strip()
-
-        api_key_record.last_used_at = now
-        api_key_record.last_used_ip = client_ip
-        await db.commit()
-
-    return api_key_record.user
-
-
 async def get_current_user(
-    request: Request,
-    x_api_key: str | None = Header(None),
     authorization: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    # Extract bearer token from Authorization header
-    bearer_token: str | None = None
-    if authorization and authorization.startswith("Bearer "):
-        bearer_token = authorization.removeprefix("Bearer ").strip()
-
-    # 1. If we have a Bearer token, try JWT first
-    if bearer_token:
-        user = await _authenticate_via_jwt(bearer_token, db)
-        if user:
-            return user
-        # JWT decode failed -- fall back to treating it as a raw API key
-        user = await _authenticate_via_api_key(bearer_token, db, request)
-        if user:
-            return user
-
-    # 2. Try X-API-Key header (backward compat with existing CLI installs)
-    if x_api_key:
-        user = await _authenticate_via_api_key(x_api_key, db, request)
-        if user:
-            return user
-
-    raise HTTPException(status_code=401, detail="Invalid or missing credentials")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing credentials")
+    token = authorization.removeprefix("Bearer ").strip()
+    user = await _authenticate_via_jwt(token, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return user
 
 
 # Role hierarchy: lower number = higher privilege

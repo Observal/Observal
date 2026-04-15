@@ -58,7 +58,7 @@ export default function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<string>("user");
-  const [createdApiKey, setCreatedApiKey] = useState<string | null>(null);
+  const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const handleCreate = useCallback(async () => {
@@ -67,7 +67,7 @@ export default function UsersPage() {
       { email: email.trim(), name: name.trim(), role },
       {
         onSuccess: (data) => {
-          setCreatedApiKey(data.api_key);
+          setCreatedPassword(data.password);
           setName("");
           setEmail("");
           setRole("user");
@@ -76,17 +76,17 @@ export default function UsersPage() {
     );
   }, [name, email, role, createUser]);
 
-  const handleCopyKey = useCallback(() => {
-    if (!createdApiKey) return;
-    navigator.clipboard.writeText(createdApiKey);
+  const handleCopyPassword = useCallback(() => {
+    if (!createdPassword) return;
+    navigator.clipboard.writeText(createdPassword);
     setCopied(true);
-    toast.success("API key copied");
+    toast.success("Password copied");
     setTimeout(() => setCopied(false), 2000);
-  }, [createdApiKey]);
+  }, [createdPassword]);
 
   const closeDialog = useCallback(() => {
     setShowCreate(false);
-    setCreatedApiKey(null);
+    setCreatedPassword(null);
     setName("");
     setEmail("");
     setRole("user");
@@ -171,26 +171,26 @@ export default function UsersPage() {
       <Dialog open={showCreate} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{createdApiKey ? "User Created" : "Add User"}</DialogTitle>
+            <DialogTitle>{createdPassword ? "User Created" : "Add User"}</DialogTitle>
             <DialogDescription>
-              {createdApiKey
-                ? "Save this API key — it will not be shown again."
-                : "Create a new user account. They will receive an API key for authentication."}
+              {createdPassword
+                ? "Save this password — it will not be shown again."
+                : "Create a new user account. They will receive a password for authentication."}
             </DialogDescription>
           </DialogHeader>
 
-          {createdApiKey ? (
+          {createdPassword ? (
             <div className="space-y-4">
               <div className="rounded-md border border-border bg-muted/30 p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Key className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">API Key</span>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Password</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <code className="text-xs font-[family-name:var(--font-mono)] text-foreground break-all flex-1 select-all">
-                    {createdApiKey}
+                    {createdPassword}
                   </code>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleCopyKey}>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleCopyPassword}>
                     {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
@@ -262,7 +262,7 @@ export default function UsersPage() {
           <DialogHeader>
             <DialogTitle>Delete User</DialogTitle>
             <DialogDescription>
-              This will permanently delete <strong>{deleteTarget?.name}</strong> ({deleteTarget?.email}) and all associated data including API keys.
+              This will permanently delete <strong>{deleteTarget?.name}</strong> ({deleteTarget?.email}) and all associated data.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

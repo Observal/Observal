@@ -188,7 +188,7 @@ class TestCliRetry:
         mock_resp_200.raise_for_status = MagicMock()
 
         with patch("httpx.get", side_effect=[mock_resp_429, mock_resp_200]), patch("time.sleep"):
-            r = _request_with_retry("get", "http://test/api", {"X-API-Key": "key"})
+            r = _request_with_retry("get", "http://test/api", {"Authorization": "Bearer test-token"})
             assert r.status_code == 200
 
     def test_retries_on_503(self):
@@ -204,7 +204,7 @@ class TestCliRetry:
         mock_resp_200.raise_for_status = MagicMock()
 
         with patch("httpx.get", side_effect=[mock_resp_503, mock_resp_200]), patch("time.sleep"):
-            r = _request_with_retry("get", "http://test/api", {"X-API-Key": "key"})
+            r = _request_with_retry("get", "http://test/api", {"Authorization": "Bearer test-token"})
             assert r.status_code == 200
 
     def test_honors_retry_after_header(self):
@@ -223,7 +223,7 @@ class TestCliRetry:
             patch("httpx.get", side_effect=[mock_resp_429, mock_resp_200]),
             patch("time.sleep") as mock_sleep,
         ):
-            r = _request_with_retry("get", "http://test/api", {"X-API-Key": "key"})
+            r = _request_with_retry("get", "http://test/api", {"Authorization": "Bearer test-token"})
             assert r.status_code == 200
             mock_sleep.assert_called_once_with(3.0)
 
@@ -241,7 +241,7 @@ class TestCliRetry:
         )
 
         with patch("httpx.get", return_value=mock_resp), pytest.raises(httpx.HTTPStatusError):
-            _request_with_retry("get", "http://test/api", {"X-API-Key": "key"})
+            _request_with_retry("get", "http://test/api", {"Authorization": "Bearer test-token"})
 
 
 # ---------------------------------------------------------------------------

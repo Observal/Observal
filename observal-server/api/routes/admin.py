@@ -168,7 +168,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Admin creates a new user and gets back their API key."""
+    """Admin creates a new user and gets back their generated password."""
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -178,10 +178,10 @@ async def create_user(
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid role. Must be one of: {[r.value for r in UserRole]}")
 
-    api_key = secrets.token_hex(settings.API_KEY_LENGTH)
-    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    password = req.password or await _generate_unique_password(db)
 
-    user = User(email=req.email, name=req.name, role=role, api_key_hash=key_hash)
+    user = User(email=req.email, name=req.name, role=role)
+    user.set_password(password)
     db.add(user)
     try:
         await db.commit()
@@ -195,7 +195,7 @@ async def create_user(
         email=user.email,
         name=user.name,
         role=user.role.value,
-        api_key=api_key,
+        password=password,
     )
 
 

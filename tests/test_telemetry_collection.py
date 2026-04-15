@@ -38,7 +38,7 @@ class TestSandboxRunner:
         mock_post.assert_called_once()
         call_args = mock_post.call_args
         assert "/api/v1/telemetry/ingest" in call_args[0][0]
-        assert call_args[1]["headers"]["X-API-Key"] == "test-key"
+        assert call_args[1]["headers"]["Authorization"] == "Bearer test-key"
         body = call_args[1]["json"]
         assert body["spans"] == [span]
 

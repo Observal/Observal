@@ -4,13 +4,13 @@ import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { auth, setApiKey, setUserRole, getUserRole, setUserName, setUserEmail } from "@/lib/api";
+import { auth, setTokens, setUserRole, getUserRole, setUserName, setUserEmail } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type Mode = "login" | "register" | "api-key";
+type Mode = "login" | "register";
 
 function LoginContent() {
   const router = useRouter();
@@ -21,7 +21,6 @@ function LoginContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [apiKey, setKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
@@ -55,8 +54,8 @@ function LoginContent() {
           }
           return res.json();
         })
-        .then((data: { api_key: string; user: { role: string; name: string; email: string } }) => {
-          setApiKey(data.api_key);
+        .then((data: { access_token: string; refresh_token: string; user: { role: string; name: string; email: string } }) => {
+          setTokens(data.access_token, data.refresh_token);
           setUserRole(data.user.role);
           setUserName(data.user.name);
           setUserEmail(data.user.email);
@@ -100,7 +99,7 @@ function LoginContent() {
     setLoading(true);
     try {
       const res = await auth.login({ email, password });
-      setApiKey(res.api_key);
+      setTokens(res.access_token, res.refresh_token);
       setUserRole(res.user.role);
       setUserName(res.user.name);
       setUserEmail(res.user.email);
@@ -120,7 +119,7 @@ function LoginContent() {
     setLoading(true);
     try {
       const res = await auth.register({ email, name, password });
-      setApiKey(res.api_key);
+      setTokens(res.access_token, res.refresh_token);
       setUserRole(res.user.role);
       setUserName(res.user.name);
       setUserEmail(res.user.email);
@@ -135,36 +134,13 @@ function LoginContent() {
     }
   }
 
-  async function handleApiKeyLogin() {
-    setError("");
-    setLoading(true);
-    try {
-      const res = await auth.login({ api_key: apiKey });
-      setApiKey(res.api_key);
-      setUserRole(res.user.role);
-      setUserName(res.user.name);
-      setUserEmail(res.user.email);
-      toast.success("Signed in successfully");
-      router.push("/");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Invalid API key";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   function handleSsoLogin() {
     setSsoLoading(true);
     // Redirects to backend SSO endpoint which initializes OAuth flow
     window.location.href = "/api/v1/auth/oauth/login";
   }
 
-  const onSubmit =
-    mode === "login" ? handlePasswordLogin
-    : mode === "register" ? handleRegister
-    : handleApiKeyLogin;
+  const onSubmit = mode === "login" ? handlePasswordLogin : handleRegister;
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
@@ -172,16 +148,13 @@ function LoginContent() {
         <div className="rounded-lg border bg-card shadow-sm">
           {/* Brand header */}
           <div className="flex flex-col items-center gap-2 border-b px-8 pb-6 pt-8 animate-in">
-            <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font
--display)]">
+            <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
               Observal
             </h1>
             <p className="text-sm text-muted-foreground">
               {mode === "register"
                 ? "Create your account"
-                : mode === "api-key"
-                  ? "Sign in with API key"
-                  : "Sign in to your account"}
+                : "Sign in to your account"}
             </p>
           </div>
 
@@ -244,33 +217,6 @@ function LoginContent() {
                     </div>
                   </div>
                 </>
-              )}
-
-              {/* API Key mode — hidden in enterprise mode */}
-              {mode === "api-key" && !isEnterprise && (
-                <div className="space-y-2 animate-in">
-                  <Label htmlFor="api-key">API Key</Label>
-                  <div className="relative">
-                    <Input
-                      id="api-key"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Paste your API key"
-                      value={apiKey}
-                      onChange={(e) => setKey(e.target.value)}
-                      required
-                      autoFocus
-                      className="pr-10 font-[family-name:var(--font-mono)]"
-                    />
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                      onClick={() => setShowPassword(!showPassword)}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
               )}
 
               {/* Error */}
@@ -340,13 +286,6 @@ function LoginContent() {
                     >
                       Don&apos;t have an account? Register
                     </button>
-                    <button
-                      type="button"
-                      className="block w-full text-sm text-muted-foreground/60 transition-colors hover:text-foreground"
-                      onClick={() => switchMode("api-key")}
-                    >
-                      Sign in with API key instead
-                    </button>
                   </>
                 )}
                 {mode === "register" && !isEnterprise && (
@@ -356,15 +295,6 @@ function LoginContent() {
                     onClick={() => switchMode("login")}
                   >
                     Already have an account? Sign in
-                  </button>
-                )}
-                {mode === "api-key" && !isEnterprise && (
-                  <button
-                    type="button"
-                    className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    onClick={() => switchMode("login")}
-                  >
-                    Sign in with email instead
                   </button>
                 )}
               </div>

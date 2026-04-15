@@ -113,7 +113,7 @@ test.describe("Kiro OTLP Log Ingestion", () => {
 
     const apiKey = await getApiKey();
     const sessions = await fetch(`${API_BASE}/api/v1/otel/sessions`, {
-      headers: { "X-API-Key": apiKey },
+      headers: { "Authorization": `Bearer ${apiKey}` },
     }).then((r) => r.json());
 
     // Verify at least one session exists (might be the one we just created)

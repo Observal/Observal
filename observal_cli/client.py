@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _client() -> tuple[str, dict]:
     cfg = config.get_or_exit()
-    return cfg["server_url"].rstrip("/"), {"X-API-Key": cfg["api_key"]}
+    return cfg["server_url"].rstrip("/"), {"Authorization": f"Bearer {cfg['access_token']}"}
 
 
 def _handle_error(e: httpx.HTTPStatusError, path: str = ""):
@@ -76,6 +76,37 @@ def _handle_timeout(path: str = ""):
     raise typer.Exit(code=1)
 
 
+def _try_refresh_token() -> bool:
+    """Attempt to refresh the access token using the stored refresh token.
+
+    Returns True if the refresh succeeded and config was updated.
+    """
+    cfg = config.load()
+    refresh_token = cfg.get("refresh_token")
+    server_url = cfg.get("server_url", "").rstrip("/")
+    if not refresh_token or not server_url:
+        return False
+
+    try:
+        r = httpx.post(
+            f"{server_url}/api/v1/auth/token/refresh",
+            json={"refresh_token": refresh_token},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return False
+        data = r.json()
+        config.save(
+            {
+                "access_token": data["access_token"],
+                "refresh_token": data["refresh_token"],
+            }
+        )
+        return True
+    except Exception:
+        return False
+
+
 _MAX_RETRIES = 3
 _RETRY_STATUSES = {429, 503, 504}
 
@@ -88,7 +119,10 @@ def _request_with_retry(
     params: dict | None = None,
     json: dict | None = None,
 ) -> httpx.Response:
-    """Execute an HTTP request with retries on 429/503/504 and Retry-After support."""
+    """Execute an HTTP request with retries on 429/503/504 and Retry-After support.
+
+    On 401, attempts a token refresh and retries once.
+    """
     timeout = config.get_timeout()
     func = getattr(httpx, method)
 
@@ -100,6 +134,15 @@ def _request_with_retry(
 
     for attempt in range(_MAX_RETRIES):
         r = func(url, **kwargs)
+
+        # Auto-refresh on 401
+        if r.status_code == 401 and attempt == 0 and _try_refresh_token():
+            # Update headers with new token and retry
+            cfg = config.load()
+            headers["Authorization"] = f"Bearer {cfg['access_token']}"
+            kwargs["headers"] = headers
+            continue
+
         if r.status_code not in _RETRY_STATUSES or attempt == _MAX_RETRIES - 1:
             r.raise_for_status()
             return r

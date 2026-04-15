@@ -11,13 +11,13 @@ from models.user import UserRole
 ALGORITHM = "HS256"
 
 
-def create_access_token(user_id: uuid.UUID, role: UserRole) -> tuple[str, int]:
+def create_access_token(user_id: uuid.UUID, role: UserRole, expires_in_minutes: int | None = None) -> tuple[str, int]:
     """Create a short-lived access token.
 
     Returns (encoded_token, expires_in_seconds).
     """
     now = datetime.now(UTC)
-    expires_delta = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    expires_delta = timedelta(minutes=expires_in_minutes or settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     expires_in = int(expires_delta.total_seconds())
     payload = {
         "sub": str(user_id),

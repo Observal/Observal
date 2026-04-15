@@ -59,7 +59,6 @@ async def seed_demo_accounts(db: AsyncSession) -> int:
             name=f"Demo {role.value.replace('_', ' ').title()}",
             role=role,
             is_demo=True,
-            api_key_hash="demo-no-api-key",  # unmatchable — password auth only
         )
         user.set_password(password)
         db.add(user)

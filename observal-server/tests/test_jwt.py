@@ -1,6 +1,5 @@
-"""Tests for JWT token generation, validation, refresh, revocation, and backward compatibility."""
+"""Tests for JWT token generation, validation, refresh, revocation, and auth dependency."""
 
-import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
@@ -28,19 +27,16 @@ from services.jwt_service import (
 def _make_user(
     user_id: uuid.UUID | None = None,
     role: UserRole = UserRole.user,
-    api_key_raw: str = "test-api-key-hex",
-) -> tuple[User, str]:
-    """Return a (User, raw_api_key) pair for testing."""
+) -> User:
+    """Return a User for testing."""
     uid = user_id or uuid.uuid4()
-    key_hash = hashlib.sha256(api_key_raw.encode()).hexdigest()
     user = User(
         id=uid,
         email="test@example.com",
         name="Test User",
         role=role,
-        api_key_hash=key_hash,
     )
-    return user, api_key_raw
+    return user
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +57,13 @@ class TestTokenGeneration:
         assert "iat" in payload
         assert "exp" in payload
         assert expires_in == settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+    def test_create_access_token_custom_expiry(self):
+        uid = uuid.uuid4()
+        token, expires_in = create_access_token(uid, UserRole.user, expires_in_minutes=1440)
+        assert expires_in == 1440 * 60
+        payload = pyjwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        assert payload["sub"] == str(uid)
 
     def test_create_refresh_token_returns_valid_jwt_with_jti(self):
         uid = uuid.uuid4()
@@ -153,22 +156,19 @@ class TestTokenValidation:
 
 
 # ---------------------------------------------------------------------------
-# Auth dependency — backward compatibility & JWT
+# Auth dependency — JWT only
 # ---------------------------------------------------------------------------
 
 
 class TestAuthDependency:
-    """Test the get_current_user dependency with both JWT and raw API keys.
-
-    These tests mock the database session to avoid needing a real DB.
-    """
+    """Test the get_current_user dependency with JWT Bearer tokens."""
 
     @pytest.mark.asyncio
     async def test_jwt_bearer_authenticates(self):
         """A valid JWT in Authorization: Bearer should authenticate the user."""
         from api.deps import get_current_user
 
-        user, _ = _make_user()
+        user = _make_user()
         token, _ = create_access_token(user.id, user.role)
 
         mock_result = MagicMock()
@@ -177,49 +177,7 @@ class TestAuthDependency:
         mock_db.execute.return_value = mock_result
 
         result = await get_current_user(
-            x_api_key=None,
             authorization=f"Bearer {token}",
-            db=mock_db,
-        )
-        assert result.id == user.id
-
-    @pytest.mark.asyncio
-    async def test_raw_api_key_header_authenticates(self):
-        """X-API-Key header with raw key should still work (backward compat)."""
-        from api.deps import get_current_user
-
-        user, raw_key = _make_user()
-
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = user
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = mock_result
-
-        result = await get_current_user(
-            x_api_key=raw_key,
-            authorization=None,
-            db=mock_db,
-        )
-        assert result.id == user.id
-
-    @pytest.mark.asyncio
-    async def test_raw_api_key_in_bearer_authenticates(self):
-        """Authorization: Bearer <raw-api-key> should fall through JWT and work as API key."""
-        from api.deps import get_current_user
-
-        user, raw_key = _make_user()
-
-        # JWT decode will fail (raw_key is not a JWT), so it falls through
-        # to _authenticate_via_api_key which does a DB lookup by hash
-        mock_result_user = MagicMock()
-        mock_result_user.scalar_one_or_none.return_value = user
-
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = mock_result_user
-
-        result = await get_current_user(
-            x_api_key=None,
-            authorization=f"Bearer {raw_key}",
             db=mock_db,
         )
         assert result.id == user.id
@@ -232,33 +190,29 @@ class TestAuthDependency:
         mock_db = AsyncMock()
 
         with pytest.raises(Exception) as exc_info:
-            await get_current_user(x_api_key=None, authorization=None, db=mock_db)
+            await get_current_user(authorization=None, db=mock_db)
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_invalid_jwt_falls_through_to_api_key(self):
-        """If the Bearer token is an invalid JWT but also not a valid API key, raise 401."""
+    async def test_invalid_jwt_raises_401(self):
+        """If the Bearer token is an invalid JWT, raise 401."""
         from api.deps import get_current_user
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
         mock_db = AsyncMock()
-        mock_db.execute.return_value = mock_result
 
         with pytest.raises(Exception) as exc_info:
             await get_current_user(
-                x_api_key=None,
                 authorization="Bearer totally-bogus-token",
                 db=mock_db,
             )
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_expired_jwt_falls_through_to_api_key_check(self):
-        """An expired JWT should not authenticate, but the system should try the raw key path."""
+    async def test_expired_jwt_raises_401(self):
+        """An expired JWT should raise 401."""
         from api.deps import get_current_user
 
-        user, _ = _make_user()
+        user = _make_user()
         now = datetime.now(UTC)
         payload = {
             "sub": str(user.id),
@@ -270,16 +224,27 @@ class TestAuthDependency:
         }
         expired_token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
-        # The expired JWT string is not a valid API key hash either
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
         mock_db = AsyncMock()
-        mock_db.execute.return_value = mock_result
 
         with pytest.raises(Exception) as exc_info:
             await get_current_user(
-                x_api_key=None,
                 authorization=f"Bearer {expired_token}",
+                db=mock_db,
+            )
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_missing_bearer_prefix_raises_401(self):
+        """Authorization header without Bearer prefix should raise 401."""
+        from api.deps import get_current_user
+
+        user = _make_user()
+        token, _ = create_access_token(user.id, user.role)
+        mock_db = AsyncMock()
+
+        with pytest.raises(Exception) as exc_info:
+            await get_current_user(
+                authorization=token,  # Missing "Bearer " prefix
                 db=mock_db,
             )
         assert exc_info.value.status_code == 401
@@ -296,12 +261,6 @@ class TestSchemas:
 
         with pytest.raises(ValueError):
             TokenRequest()
-
-    def test_token_request_accepts_api_key(self):
-        from schemas.auth import TokenRequest
-
-        req = TokenRequest(api_key="some-key")
-        assert req.api_key == "some-key"
 
     def test_token_request_accepts_email_password(self):
         from schemas.auth import TokenRequest

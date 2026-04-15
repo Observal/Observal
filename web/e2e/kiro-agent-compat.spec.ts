@@ -17,7 +17,7 @@ test.describe("Kiro Agent Cross-Compatibility", () => {
     // Get an existing agent or skip
     const apiKey = await getApiKey();
     const agents = await fetch(`${API_BASE}/api/v1/agents`, {
-      headers: { "X-API-Key": apiKey },
+      headers: { "Authorization": `Bearer ${apiKey}` },
     }).then((r) => r.json());
 
     if (agents.length > 0) {
@@ -31,7 +31,7 @@ test.describe("Kiro Agent Cross-Compatibility", () => {
     const apiKey = await getApiKey();
     const config = await fetch(
       `${API_BASE}/api/v1/agents/${agentId}/install?ide=kiro`,
-      { headers: { "X-API-Key": apiKey } },
+      { headers: { "Authorization": `Bearer ${apiKey}` } },
     ).then((r) => r.json());
 
     expect(config).toBeTruthy();
@@ -46,7 +46,7 @@ test.describe("Kiro Agent Cross-Compatibility", () => {
     const apiKey = await getApiKey();
     const config = await fetch(
       `${API_BASE}/api/v1/agents/${agentId}/install?ide=claude-code`,
-      { headers: { "X-API-Key": apiKey } },
+      { headers: { "Authorization": `Bearer ${apiKey}` } },
     ).then((r) => r.json());
 
     expect(config).toBeTruthy();

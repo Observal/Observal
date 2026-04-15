@@ -30,7 +30,6 @@ from api.routes.eval import router as eval_router
 from api.routes.feedback import router as feedback_router
 from api.routes.hook import router as hook_router
 from api.routes.jwks import router as jwks_router
-from api.routes.keys import router as keys_router
 from api.routes.mcp import router as mcp_router
 from api.routes.otel_dashboard import router as otel_dashboard_router
 from api.routes.otlp import router as otlp_router
@@ -190,7 +189,6 @@ app.include_router(otlp_router)
 
 # REST (CLI operations, auth, telemetry ingestion)
 app.include_router(auth_router)
-app.include_router(keys_router)
 app.include_router(jwks_router)
 app.include_router(mcp_router)
 app.include_router(review_router)

@@ -22,15 +22,15 @@ def _now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 
-def _send_span(server_url: str, api_key: str, span: dict):
+def _send_span(server_url: str, access_token: str, span: dict):
     """Fire-and-forget POST span to ingest endpoint."""
-    if not server_url or not api_key:
+    if not server_url or not access_token:
         return
     try:
         httpx.post(
             f"{server_url.rstrip('/')}/api/v1/telemetry/ingest",
             json={"traces": [], "spans": [span], "scores": []},
-            headers={"X-API-Key": api_key},
+            headers={"Authorization": f"Bearer {access_token}"},
             timeout=5,
         )
     except Exception:
@@ -112,14 +112,14 @@ def run_sandbox(sandbox_id: str, image: str, command: str | None = None, timeout
         }
 
         # Resolve auth
-        api_key = os.environ.get("OBSERVAL_KEY", "")
+        access_token = os.environ.get("OBSERVAL_KEY", "")
         server_url = os.environ.get("OBSERVAL_SERVER", "")
-        if not api_key or not server_url:
+        if not access_token or not server_url:
             cfg = load_config()
-            api_key = api_key or cfg.get("api_key", "")
+            access_token = access_token or cfg.get("access_token", "")
             server_url = server_url or cfg.get("server_url", "")
 
-        _send_span(server_url, api_key, span)
+        _send_span(server_url, access_token, span)
 
         sys.exit(exit_code)
 
@@ -127,16 +127,16 @@ def run_sandbox(sandbox_id: str, image: str, command: str | None = None, timeout
         wall_ms = int((time.monotonic() - wall_start) * 1000)
         print(f"Error: {e}", file=sys.stderr)
 
-        api_key = os.environ.get("OBSERVAL_KEY", "")
+        access_token = os.environ.get("OBSERVAL_KEY", "")
         server_url = os.environ.get("OBSERVAL_SERVER", "")
-        if not api_key or not server_url:
+        if not access_token or not server_url:
             cfg = load_config()
-            api_key = api_key or cfg.get("api_key", "")
+            access_token = access_token or cfg.get("access_token", "")
             server_url = server_url or cfg.get("server_url", "")
 
         _send_span(
             server_url,
-            api_key,
+            access_token,
             {
                 "span_id": str(uuid.uuid4()),
                 "trace_id": str(uuid.uuid4()),

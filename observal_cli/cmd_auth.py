@@ -31,16 +31,14 @@ config_app = typer.Typer(help="CLI configuration")
 @auth_app.command()
 def login(
     server: str = typer.Option(None, "--server", "-s", help="Server URL"),
-    key: str = typer.Option(None, "--key", "-k", help="API key (skip prompt)"),
-    email: str = typer.Option(None, "--email", "-e", help="Email (for password login)"),
-    password: str = typer.Option(None, "--password", "-p", help="Password (for password login)"),
+    email: str = typer.Option(None, "--email", "-e", help="Email"),
+    password: str = typer.Option(None, "--password", "-p", help="Password"),
     name: str = typer.Option(None, "--name", "-n", help="Your name (used with register)"),
 ):
     """Connect to Observal.
 
     On a fresh server: prompts for email, name, and password to create admin.
     With email+password: logs in with credentials.
-    With --key: logs in with an API key.
     """
     server_url = server or typer.prompt("Server URL", default="http://localhost:8000")
     server_url = server_url.rstrip("/")
@@ -85,19 +83,25 @@ def login(
                 r.raise_for_status()
                 data = r.json()
 
-            api_key = data["api_key"]
             user = data["user"]
-            config.save({"server_url": server_url, "api_key": api_key, "user_id": user.get("id", "")})
+            config.save(
+                {
+                    "server_url": server_url,
+                    "access_token": data["access_token"],
+                    "refresh_token": data["refresh_token"],
+                    "user_id": user.get("id", ""),
+                }
+            )
 
             rprint(f"[green]Logged in as {user['name']}[/green] ({user['email']}) [admin]")
             rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]\n")
             _fetch_server_public_key(server_url)
-            _configure_claude_code(server_url, api_key)
+            _configure_claude_code(server_url, data["access_token"])
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 400 and "already initialized" in e.response.text.lower():
                 rprint("[yellow]Server was just initialized by someone else.[/yellow]")
-                _do_key_login(server_url, key)
+                rprint("Please log in with your email and password.")
             else:
                 rprint(f"[red]Setup failed ({e.response.status_code}):[/red] {e.response.text}")
                 raise typer.Exit(1)
@@ -110,20 +114,10 @@ def login(
         _do_password_login(server_url, email, password)
         return
 
-    # 4. API key provided via flag → key login
-    if key:
-        _do_key_login(server_url, key)
-        return
-
-    # 5. Interactive: choose method
-    choice = typer.prompt("Login with [E]mail or [K]ey?", default="E")
-    ch = choice.strip().upper()
-    if ch.startswith("K"):
-        _do_key_login(server_url, None)
-    else:
-        login_email = email or typer.prompt("Email")
-        login_password = password or typer.prompt("Password", hide_input=True)
-        _do_password_login(server_url, login_email, login_password)
+    # 4. Interactive: prompt for email + password
+    login_email = email or typer.prompt("Email")
+    login_password = password or typer.prompt("Password", hide_input=True)
+    _do_password_login(server_url, login_email, login_password)
 
 
 @auth_app.command()
@@ -150,16 +144,22 @@ def register(
             r.raise_for_status()
             data = r.json()
 
-        api_key = data["api_key"]
         user = data["user"]
-        config.save({"server_url": server_url, "api_key": api_key, "user_id": user.get("id", "")})
+        config.save(
+            {
+                "server_url": server_url,
+                "access_token": data["access_token"],
+                "refresh_token": data["refresh_token"],
+                "user_id": user.get("id", ""),
+            }
+        )
         rprint(
             f"[green]Account created! Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]"
         )
         rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
 
         _fetch_server_public_key(server_url)
-        _configure_claude_code(server_url, api_key)
+        _configure_claude_code(server_url, data["access_token"])
 
     except httpx.HTTPStatusError as e:
         detail = ""
@@ -193,9 +193,9 @@ def logout():
 
         raw_cfg = json.loads(config.CONFIG_FILE.read_text())
 
-        if "api_key" in raw_cfg:
-            del raw_cfg["api_key"]
-            config.CONFIG_FILE.write_text(json.dumps(raw_cfg, indent=2))
+        for key in ("access_token", "refresh_token", "api_key"):
+            raw_cfg.pop(key, None)
+        config.CONFIG_FILE.write_text(json.dumps(raw_cfg, indent=2))
 
         rprint("[green]Logged out.[/green]")
     else:
@@ -231,11 +231,11 @@ def status():
     """Check server connectivity and health."""
     cfg = config.load()
     url = cfg.get("server_url", "not set")
-    has_key = bool(cfg.get("api_key"))
+    has_token = bool(cfg.get("access_token"))
     ok, latency = client.health()
 
     rprint(f"  Server:  {url}")
-    rprint(f"  API Key: {'[green]configured[/green]' if has_key else '[red]not set[/red]'}")
+    rprint(f"  Auth:    {'[green]configured[/green]' if has_token else '[red]not set[/red]'}")
     if ok:
         color = "green" if latency < 200 else "yellow" if latency < 1000 else "red"
         rprint(f"  Health:  [{color}]ok[/{color}] ({latency:.0f}ms)")
@@ -274,24 +274,6 @@ def version_callback():
 # ── Helper functions ────────────────────────────────────────
 
 
-def _do_config_only_init(server_url: str | None = None):
-    """Initialize config without validating server connection."""
-    server_url = server_url or typer.prompt("Server URL", default="http://localhost:8000")
-    server_url = server_url.rstrip("/")
-
-    api_key = typer.prompt("API Key (optional, press Enter to skip)", default="", show_default=False)
-
-    cfg_data = {"server_url": server_url}
-    if api_key:
-        cfg_data["api_key"] = api_key
-
-    config.save(cfg_data)
-    rprint("[green]Config initialized.[/green]")
-    rprint(f"[dim]Saved to {config.CONFIG_FILE}[/dim]")
-    rprint("\n[yellow]Note:[/yellow] Server connection not validated.")
-    rprint("[dim]Run 'observal auth login' to authenticate when the server is running.[/dim]")
-
-
 def _fetch_server_public_key(server_url: str):
     """Fetch and cache the server's ECIES public key for payload encryption.
 
@@ -311,31 +293,6 @@ def _fetch_server_public_key(server_url: str):
         pass  # Server may not support encryption yet
 
 
-def _do_key_login(server_url: str, api_key: str | None = None):
-    """Authenticate with an API key."""
-    api_key = api_key or typer.prompt("API Key", hide_input=True)
-    try:
-        with spinner("Authenticating..."):
-            r = httpx.post(
-                f"{server_url}/api/v1/auth/login",
-                json={"api_key": api_key},
-                timeout=30,
-            )
-            r.raise_for_status()
-            data = r.json()
-        # Use the key returned by server (same key echoed back)
-        user = data.get("user", data)
-        config.save({"server_url": server_url, "api_key": data.get("api_key", api_key), "user_id": user.get("id", "")})
-        rprint(f"[green]Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]")
-        _fetch_server_public_key(server_url)
-    except httpx.ConnectError:
-        rprint(f"[red]Connection failed.[/red] Is the server running at {server_url}?")
-        raise typer.Exit(1)
-    except httpx.HTTPStatusError:
-        rprint("[red]Invalid API key.[/red]")
-        raise typer.Exit(1)
-
-
 def _do_password_login(server_url: str, email: str, password: str):
     """Authenticate with email + password."""
     try:
@@ -348,14 +305,20 @@ def _do_password_login(server_url: str, email: str, password: str):
             r.raise_for_status()
             data = r.json()
 
-        api_key = data["api_key"]
         user = data["user"]
-        config.save({"server_url": server_url, "api_key": api_key, "user_id": user.get("id", "")})
+        config.save(
+            {
+                "server_url": server_url,
+                "access_token": data["access_token"],
+                "refresh_token": data["refresh_token"],
+                "user_id": user.get("id", ""),
+            }
+        )
         rprint(f"[green]Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]")
         rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
 
         _fetch_server_public_key(server_url)
-        _configure_claude_code(server_url, api_key)
+        _configure_claude_code(server_url, data["access_token"])
 
     except httpx.ConnectError:
         rprint(f"[red]Connection failed.[/red] Is the server running at {server_url}?")
@@ -378,8 +341,14 @@ def register_config(app: typer.Typer):
         """Show current CLI configuration."""
         cfg = config.load()
         safe = dict(cfg)
-        if safe.get("api_key"):
-            safe["api_key"] = safe["api_key"][:8] + "..." + safe["api_key"][-4:]
+        if safe.get("access_token"):
+            t = safe["access_token"]
+            safe["access_token"] = t[:8] + "..." + t[-4:] if len(t) > 12 else "***"
+        if safe.get("refresh_token"):
+            t = safe["refresh_token"]
+            safe["refresh_token"] = t[:8] + "..." + t[-4:] if len(t) > 12 else "***"
+        # Clean up legacy key if present
+        safe.pop("api_key", None)
         console.print_json(_json.dumps(safe, indent=2))
 
     @config_app.command(name="set")
@@ -443,7 +412,7 @@ def _find_hook_script(name: str) -> str | None:
     return None
 
 
-def _configure_claude_code(server_url: str, api_key: str):
+def _configure_claude_code(server_url: str, access_token: str):
     """Check for Claude Code and offer to configure its telemetry.
 
     Uses declarative reconciliation: computes desired state from hooks_spec,
@@ -463,6 +432,9 @@ def _configure_claude_code(server_url: str, api_key: str):
         ):
             return
 
+        # Fetch a long-lived hooks token for OTEL env vars
+        hooks_token = _fetch_hooks_token(server_url, access_token)
+
         # Build desired state from the declarative spec
         hooks_url = f"{server_url.rstrip('/')}/api/v1/otel/hooks"
         hook_script = _find_hook_script("observal-hook.sh")
@@ -471,7 +443,7 @@ def _configure_claude_code(server_url: str, api_key: str):
         user_id = cfg.get("user_id", "")
 
         desired_hooks = get_desired_hooks(hook_script, stop_script, hooks_url, user_id)
-        desired_env = get_desired_env(server_url, api_key, user_id)
+        desired_env = get_desired_env(server_url, hooks_token, user_id)
 
         # Reconcile: non-destructive merge preserving foreign hooks/env
         changes = settings_reconciler.reconcile(desired_hooks, desired_env)
@@ -486,3 +458,21 @@ def _configure_claude_code(server_url: str, api_key: str):
     except Exception as e:
         rprint(f"\n[yellow]Could not configure Claude Code automatically: {e}[/yellow]")
         rprint("See documentation for manual configuration.")
+
+
+def _fetch_hooks_token(server_url: str, access_token: str) -> str:
+    """Call /auth/hooks-token to get a long-lived token for OTEL hooks.
+
+    Falls back to the session access_token if the endpoint fails.
+    """
+    try:
+        r = httpx.post(
+            f"{server_url.rstrip('/')}/api/v1/auth/hooks-token",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            return r.json().get("access_token", access_token)
+    except Exception:
+        pass
+    return access_token

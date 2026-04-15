@@ -100,7 +100,7 @@ def get_desired_hooks(
 
 def get_desired_env(
     server_url: str,
-    api_key: str,
+    hooks_token: str,
     user_id: str = "",
 ) -> dict[str, str]:
     """Return the desired Observal env vars for Claude Code settings."""
@@ -115,7 +115,7 @@ def get_desired_env(
         "OTEL_METRICS_EXPORTER": "otlp",
         "OTEL_LOGS_EXPORTER": "otlp",
         "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-        "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {api_key}",
+        "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {hooks_token}",
         "OTEL_EXPORTER_OTLP_ENDPOINT": otel_endpoint,
         "OBSERVAL_HOOKS_URL": f"{server_url.rstrip('/')}/api/v1/otel/hooks",
     }
