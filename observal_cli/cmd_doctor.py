@@ -8,6 +8,9 @@ from pathlib import Path
 import typer
 from rich import print as rprint
 
+from observal_cli import config, settings_reconciler
+from observal_cli.hooks_spec import get_desired_env, get_desired_hooks
+
 doctor_app = typer.Typer(help="Diagnose IDE settings for Observal compatibility")
 
 
@@ -205,9 +208,9 @@ def _check_kiro_installation(issues: list, warnings: list):
 def _check_cursor(path: Path, data: dict, issues: list, warnings: list):
     """Check Cursor MCP config for Observal conflicts."""
     servers = data.get("mcpServers", {})
-    for name, config in servers.items():
-        cmd = config.get("command", "")
-        args = config.get("args", [])
+    for name, srv_cfg in servers.items():
+        cmd = srv_cfg.get("command", "")
+        args = srv_cfg.get("args", [])
         full_cmd = f"{cmd} {' '.join(str(a) for a in args)}"
         # Check if MCP is wrapped with observal-shim
         if "observal-shim" not in full_cmd and "observal-proxy" not in full_cmd:
@@ -220,9 +223,9 @@ def _check_cursor(path: Path, data: dict, issues: list, warnings: list):
 def _check_gemini(path: Path, data: dict, issues: list, warnings: list):
     """Check Gemini CLI settings for Observal conflicts."""
     servers = data.get("mcpServers", {})
-    for name, config in servers.items():
-        cmd = config.get("command", "")
-        args = config.get("args", [])
+    for name, srv_cfg in servers.items():
+        cmd = srv_cfg.get("command", "")
+        args = srv_cfg.get("args", [])
         full_cmd = f"{cmd} {' '.join(str(a) for a in args)}"
         if "observal-shim" not in full_cmd and "observal-proxy" not in full_cmd:
             warnings.append(
@@ -234,9 +237,9 @@ def _check_gemini(path: Path, data: dict, issues: list, warnings: list):
 def _check_mcp_json(path: Path, data: dict, issues: list, warnings: list):
     """Check .mcp.json for unwrapped servers."""
     servers = data.get("mcpServers", {})
-    for name, config in servers.items():
-        cmd = config.get("command", "")
-        args = config.get("args", [])
+    for name, srv_cfg in servers.items():
+        cmd = srv_cfg.get("command", "")
+        args = srv_cfg.get("args", [])
         full_cmd = f"{cmd} {' '.join(str(a) for a in args)}"
         if "observal-shim" not in full_cmd and "observal-proxy" not in full_cmd:
             warnings.append(
@@ -304,10 +307,13 @@ def _check_environment(issues: list, warnings: list):
 
 @doctor_app.callback(invoke_without_command=True)
 def doctor(
+    ctx: typer.Context,
     ide: str = typer.Option(None, help="Check specific IDE only (claude-code, kiro, cursor, gemini-cli)"),
     fix: bool = typer.Option(False, help="Show suggested fixes"),
 ):
     """Diagnose IDE and Observal settings for compatibility issues."""
+    if ctx.invoked_subcommand is not None:
+        return  # Let the subcommand handle it
     issues: list[str] = []
     warnings: list[str] = []
 
@@ -406,3 +412,219 @@ def doctor(
                 rprint("  Run: observal scan --ide kiro")
 
     raise typer.Exit(1 if issues else 0)
+
+
+# ── SLI: reinstall hooks ──────────────────────────────────
+
+# Kiro camelCase event mapping and all supported events
+_KIRO_EVENT_MAP = {
+    "SessionStart": "agentSpawn",
+    "UserPromptSubmit": "userPromptSubmit",
+    "PreToolUse": "preToolUse",
+    "PostToolUse": "postToolUse",
+    "Stop": "stop",
+}
+
+# All Claude Code events that should have hooks
+_ALL_EVENTS = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "StopFailure",
+    "Notification",
+    "TaskCreated",
+    "TaskCompleted",
+    "PreCompact",
+    "PostCompact",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "Elicitation",
+    "ElicitationResult",
+]
+
+
+def _find_hook_script(name: str) -> str | None:
+    """Locate a hook script by filename."""
+    candidates = [
+        Path(__file__).parent / "hooks" / name,
+        Path(shutil.which(name) or ""),
+    ]
+    for p in candidates:
+        if p.is_file():
+            return str(p.resolve())
+    return None
+
+
+def _install_claude_code_hooks(server_url: str, api_key: str) -> list[str]:
+    """Reconcile Claude Code hooks into ~/.claude/settings.json."""
+    hooks_url = f"{server_url.rstrip('/')}/api/v1/otel/hooks"
+    hook_script = _find_hook_script("observal-hook.sh")
+    stop_script = _find_hook_script("observal-stop-hook.sh")
+    cfg = config.load()
+    user_id = cfg.get("user_id", "")
+
+    desired_hooks = get_desired_hooks(hook_script, stop_script, hooks_url, user_id)
+    desired_env = get_desired_env(server_url, api_key, user_id)
+
+    return settings_reconciler.reconcile(desired_hooks, desired_env)
+
+
+def _install_kiro_hooks(server_url: str) -> tuple[list[str], bool]:
+    """Install Observal hooks into all Kiro agent configs.
+
+    Returns (messages, changed) where changed is True if any file was modified.
+    """
+    agents_dir = Path.home() / ".kiro" / "agents"
+    changes: list[str] = []
+    changed = False
+
+    if not agents_dir.exists():
+        return ["[dim]~/.kiro/agents/ not found — skipping Kiro[/dim]"], False
+
+    agent_files = list(agents_dir.glob("*.json"))
+    if not agent_files:
+        return ["[dim]No Kiro agent configs found — skipping[/dim]"], False
+
+    hooks_url = f"{server_url.rstrip('/')}/api/v1/otel/hooks"
+
+    # Locate the Kiro hook scripts
+    hook_py = Path(__file__).parent / "hooks" / "kiro_hook.py"
+    stop_py = Path(__file__).parent / "hooks" / "kiro_stop_hook.py"
+
+    if not hook_py.is_file() or not stop_py.is_file():
+        return ["[red]Cannot find kiro_hook.py / kiro_stop_hook.py — reinstall Observal CLI[/red]"], False
+
+    hook_py_str = str(hook_py.resolve())
+    stop_py_str = str(stop_py.resolve())
+
+    for af in agent_files:
+        agent_name = af.stem
+        try:
+            data = json.loads(af.read_text())
+        except (json.JSONDecodeError, OSError):
+            changes.append(f"[yellow]⚠ {agent_name}: could not parse, skipped[/yellow]")
+            continue
+
+        # Build per-agent sed prefix (includes agent_name)
+        # Must produce: cat | sed 's/^{/{"session_id":"kiro-'$PPID'","service_name":"kiro-cli","agent_name":"<name>",/'
+        sed_prefix = (
+            'cat | sed \'s/^{/{"session_id":"kiro-\'$PPID\'",'
+            '"service_name":"kiro-cli",'
+            '"agent_name":"' + agent_name + "\",/' "
+        )
+        generic_cmd = sed_prefix + "| python3 " + hook_py_str + " --url " + hooks_url
+        stop_cmd = sed_prefix + "| python3 " + stop_py_str + " --url " + hooks_url
+
+        desired_kiro_hooks: dict[str, list[dict]] = {}
+        for event in _ALL_EVENTS:
+            kiro_event = _KIRO_EVENT_MAP.get(event)
+            if not kiro_event:
+                continue
+            if kiro_event == "stop":
+                desired_kiro_hooks[kiro_event] = [{"command": stop_cmd}]
+            else:
+                entry: dict = {"command": generic_cmd}
+                if kiro_event in ("preToolUse", "postToolUse"):
+                    entry["matcher"] = "*"
+                desired_kiro_hooks[kiro_event] = [entry]
+
+        current_hooks = data.get("hooks", {})
+        updated = False
+
+        for kiro_event, desired_entries in desired_kiro_hooks.items():
+            existing = current_hooks.get(kiro_event, [])
+            # Check if Observal hook already present
+            has_observal = any(
+                "observal" in h.get("command", "") or "otel/hooks" in h.get("command", "") for h in existing
+            )
+            if not has_observal:
+                # Append our hooks, keep existing ones
+                current_hooks[kiro_event] = existing + desired_entries
+                updated = True
+
+        if updated:
+            data["hooks"] = current_hooks
+            af.write_text(json.dumps(data, indent=2) + "\n")
+            changes.append(f"+ {agent_name}: added Observal hooks")
+            changed = True
+        else:
+            changes.append(f"[dim]  {agent_name}: already has Observal hooks[/dim]")
+
+    return changes, changed
+
+
+@doctor_app.command(name="sli")
+def doctor_sli(
+    ide: str = typer.Option(
+        None,
+        "--ide",
+        "-i",
+        help="Target IDE only (claude-code, kiro). Default: both.",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show changes without applying"),
+):
+    """Re-install Observal telemetry hooks into Claude Code and/or Kiro.
+
+    Repairs missing or outdated hooks non-destructively — your existing
+    hooks and settings are preserved.
+    """
+    cfg = config.load()
+    server_url = cfg.get("server_url")
+    api_key = cfg.get("api_key", "")
+
+    if not server_url:
+        rprint("[red]Not configured. Run [bold]observal auth login[/bold] first.[/red]")
+        raise typer.Exit(1)
+
+    targets = [ide] if ide else ["claude-code", "kiro"]
+    any_changes = False
+
+    for target in targets:
+        if target == "claude-code":
+            claude_dir = Path.home() / ".claude"
+            if not claude_dir.is_dir() and not shutil.which("claude"):
+                rprint("[dim]Claude Code not detected — skipping[/dim]")
+                continue
+
+            rprint("[cyan]Claude Code[/cyan]")
+            if dry_run:
+                hooks_url = f"{server_url.rstrip('/')}/api/v1/otel/hooks"
+                hook_script = _find_hook_script("observal-hook.sh")
+                stop_script = _find_hook_script("observal-stop-hook.sh")
+                user_id = cfg.get("user_id", "")
+                desired_hooks = get_desired_hooks(hook_script, stop_script, hooks_url, user_id)
+                desired_env = get_desired_env(server_url, api_key, user_id)
+                changes = settings_reconciler.reconcile(desired_hooks, desired_env, dry_run=True)
+            else:
+                changes = _install_claude_code_hooks(server_url, api_key)
+
+            if changes:
+                any_changes = True
+                for c in changes:
+                    rprint(f"  {c}")
+            else:
+                rprint("  [dim]Already up to date[/dim]")
+
+        elif target in ("kiro", "kiro-cli"):
+            rprint("[cyan]Kiro[/cyan]")
+            if dry_run:
+                rprint("  [yellow]Dry run not supported for Kiro — use without --dry-run[/yellow]")
+                continue
+
+            messages, kiro_changed = _install_kiro_hooks(server_url)
+            if kiro_changed:
+                any_changes = True
+            for c in messages:
+                rprint(f"  {c}")
+        else:
+            rprint(f"[yellow]Unknown IDE: {target}. Use 'claude-code' or 'kiro'.[/yellow]")
+
+    if any_changes:
+        rprint("\n[green]✓ Hooks installed.[/green] Restart your IDE session to pick up changes.")
+    elif not dry_run:
+        rprint("\n[dim]All hooks already up to date.[/dim]")
