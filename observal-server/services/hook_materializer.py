@@ -86,7 +86,6 @@ async def _fetch_session_events(session_id: str) -> list[dict]:
         "ServiceName AS service_name "
         "FROM otel_logs "
         "WHERE LogAttributes['session.id'] = {sid:String} "
-        "OR LogAttributes['conversation_id'] = {sid:String} "
         "ORDER BY Timestamp ASC "
         "FORMAT JSON"
     )

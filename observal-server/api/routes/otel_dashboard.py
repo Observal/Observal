@@ -44,20 +44,16 @@ async def list_sessions(
 ):
     rows = await _ch_json(
         "SELECT "
-        # For Kiro sessions with a conversation_id, group by that instead of
-        # the ephemeral $PPID-based session_id.  This merges resumed sessions.
-        "if(LogAttributes['conversation_id'] != '', "
-        "   LogAttributes['conversation_id'], "
-        "   LogAttributes['session.id']) AS session_id, "
+        "LogAttributes['session.id'] AS session_id, "
         "min(Timestamp) AS first_event_time, "
         "max(Timestamp) AS last_event_time, "
         "(max(Timestamp) > now('UTC') - INTERVAL 30 MINUTE "
         " AND argMax("
-        "   if(LogAttributes['event.name'] != '', LogAttributes['event.name'], EventName),"
+        "   LogAttributes['event.name'],"
         "   Timestamp"
         " ) NOT IN ('hook_stop', 'hook_stopfailure')"
         ") AS is_active, "
-        "countIf(EventName = 'user_prompt' OR LogAttributes['event.name'] = 'user_prompt' OR LogAttributes['event.name'] = 'hook_userpromptsubmit') AS prompt_count, "
+        "countIf(LogAttributes['event.name'] = 'user_prompt' OR LogAttributes['event.name'] = 'hook_userpromptsubmit') AS prompt_count, "
         "countIf(LogAttributes['event.name'] = 'api_request') AS api_request_count, "
         "countIf(LogAttributes['event.name'] = 'tool_result') AS tool_result_count, "
         "countIf(LogAttributes['event.name'] LIKE 'hook_%') AS hook_event_count, "
@@ -88,12 +84,12 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
     events = await _ch_json(
         "SELECT "
         "Timestamp AS timestamp, "
-        "if(LogAttributes['event.name'] != '', LogAttributes['event.name'], EventName) AS event_name, "
+        "LogAttributes['event.name'] AS event_name, "
         "Body AS body, "
         "LogAttributes AS attributes, "
         "ServiceName AS service_name "
         "FROM otel_logs "
-        "WHERE (LogAttributes['session.id'] = {sid:String} OR LogAttributes['conversation_id'] = {sid:String}) "
+        "WHERE LogAttributes['session.id'] = {sid:String} "
         "ORDER BY Timestamp ASC",
         {"param_sid": session_id},
     )
@@ -187,7 +183,7 @@ async def list_errors(current_user: User = Depends(require_role(UserRole.admin))
     rows = await _ch_json(
         "SELECT "
         "Timestamp AS timestamp, "
-        "if(LogAttributes['event.name'] != '', LogAttributes['event.name'], EventName) AS event_name, "
+        "LogAttributes['event.name'] AS event_name, "
         "Body AS body, "
         "LogAttributes['session.id'] AS session_id, "
         "LogAttributes['tool_name'] AS tool_name, "
@@ -201,7 +197,6 @@ async def list_errors(current_user: User = Depends(require_role(UserRole.admin))
         "FROM otel_logs "
         "WHERE LogAttributes['event.name'] IN "
         "('hook_posttoolusefailure', 'hook_stopfailure', 'api_error') "
-        "OR EventName = 'api_error' "
         "ORDER BY Timestamp DESC "
         "LIMIT 200"
     )
@@ -213,7 +208,7 @@ async def otel_stats(current_user: User = Depends(require_role(UserRole.admin)))
     log_rows = await _ch_json(
         "SELECT "
         "count(DISTINCT LogAttributes['session.id']) AS total_sessions, "
-        "countIf(EventName = 'user_prompt' OR LogAttributes['event.name'] = 'user_prompt' OR LogAttributes['event.name'] = 'hook_userpromptsubmit') AS total_prompts, "
+        "countIf(LogAttributes['event.name'] = 'user_prompt' OR LogAttributes['event.name'] = 'hook_userpromptsubmit') AS total_prompts, "
         "countIf(LogAttributes['event.name'] = 'api_request') AS total_api_requests, "
         "countIf(LogAttributes['event.name'] = 'tool_result') AS total_tool_calls, "
         "sum(toUInt64OrZero(LogAttributes['input_tokens'])) AS total_input_tokens, "
@@ -283,6 +278,167 @@ _KIRO_FIELD_MAP = {
 }
 
 
+# ── IDE-specific extraction helpers ──────────────────────────────────
+
+
+def _extract_kiro(body: dict, hook_event: str, attrs: dict[str, str]) -> None:
+    """Extract Kiro-specific fields into *attrs*.
+
+    Kiro sends: ``prompt`` on agentSpawn/userPromptSubmit,
+    ``assistant_response`` on stop, and ``tool_input``/``tool_response``
+    as dicts (not strings).
+    """
+    tool_input_raw = body.get("tool_input")
+    tool_response_raw = body.get("tool_response")
+
+    if tool_input_raw is not None:
+        attrs["tool_input"] = _truncate(_safe_json(tool_input_raw))
+    if tool_response_raw is not None:
+        attrs["tool_response"] = _truncate(_safe_json(tool_response_raw))
+
+    # Kiro uses ``prompt`` for the user's message
+    if body.get("prompt") and not attrs.get("tool_input"):
+        attrs["tool_input"] = _truncate(str(body["prompt"]))
+    # ``assistant_response`` arrives on Stop payloads
+    if body.get("assistant_response") and not attrs.get("tool_response"):
+        attrs["tool_response"] = _truncate(str(body["assistant_response"]))
+
+    if hook_event == "UserPromptSubmit":
+        prompt_text = body.get("prompt") or body.get("user_prompt") or ""
+        if prompt_text:
+            attrs["tool_input"] = _truncate(prompt_text)
+            attrs["prompt_length"] = str(len(prompt_text))
+        attrs["tool_name"] = "user_prompt"
+
+    if hook_event == "SessionStart":
+        prompt_text = body.get("prompt") or ""
+        if prompt_text:
+            attrs["tool_input"] = _truncate(prompt_text)
+        attrs["event.name"] = "hook_sessionstart"
+
+    if hook_event == "Stop":
+        if body.get("stop_reason"):
+            attrs["stop_reason"] = body["stop_reason"]
+        # Kiro packs assistant_response into the Stop payload.
+        # Keep event.name as hook_stop (lifecycle), content in tool_response.
+        if body.get("assistant_response"):
+            attrs["tool_response"] = _truncate(str(body["assistant_response"]))
+
+    if hook_event == "PostToolUseFailure" and body.get("error"):
+        attrs["error"] = _truncate(str(body["error"]))
+
+    # Enriched fields from kiro_stop_hook.py SQLite extraction
+    for enriched_field in (
+        "input_tokens",
+        "output_tokens",
+        "turn_count",
+        "credits",
+        "tools_used",
+        "conversation_id",
+    ):
+        if body.get(enriched_field):
+            attrs[enriched_field] = str(body[enriched_field])
+
+
+def _extract_claude_code(body: dict, hook_event: str, attrs: dict[str, str]) -> None:
+    """Extract Claude Code-specific fields into *attrs*.
+
+    Claude Code sends rich per-event payloads with ``tool_input`` /
+    ``tool_response`` as strings, per-message Stop events with
+    ``tool_name`` discriminators, subagent events, task tracking,
+    compaction, worktrees, elicitations, and notifications.
+    """
+    tool_name = attrs.get("tool_name", "")
+    tool_input_raw = body.get("tool_input")
+    tool_response_raw = body.get("tool_response")
+
+    if tool_input_raw is not None:
+        attrs["tool_input"] = _truncate(_safe_json(tool_input_raw))
+    if tool_response_raw is not None:
+        attrs["tool_response"] = _truncate(_safe_json(tool_response_raw))
+
+    # UserPromptSubmit
+    if hook_event == "UserPromptSubmit":
+        prompt_text = body.get("user_prompt") or body.get("prompt") or ""
+        if prompt_text:
+            attrs["tool_input"] = _truncate(prompt_text)
+            attrs["prompt_length"] = str(len(prompt_text))
+        attrs["tool_name"] = "user_prompt"
+
+    # SessionStart
+    if hook_event == "SessionStart":
+        prompt_text = body.get("prompt") or ""
+        if prompt_text:
+            attrs["tool_input"] = _truncate(prompt_text)
+        attrs["event.name"] = "hook_sessionstart"
+        source = body.get("source", "")
+        if source:
+            attrs["session_source"] = source
+        if source in ("resume", "compact") or body.get("resume"):
+            attrs["session_resumed"] = "true"
+
+    # SubagentStart / SubagentStop
+    if hook_event == "SubagentStart" and body.get("last_assistant_message"):
+        attrs["tool_input"] = _truncate(body["last_assistant_message"])
+    if hook_event == "SubagentStop" and body.get("last_assistant_message"):
+        attrs["tool_response"] = _truncate(body["last_assistant_message"])
+
+    # PostToolUseFailure
+    if hook_event == "PostToolUseFailure" and body.get("error"):
+        attrs["error"] = _truncate(str(body["error"]))
+
+    # Stop — Claude Code fires per-message Stop events discriminated by tool_name
+    if hook_event == "Stop":
+        if body.get("stop_reason"):
+            attrs["stop_reason"] = body["stop_reason"]
+        if tool_name == "assistant_response" and tool_response_raw:
+            attrs["event.name"] = "hook_assistant_response"
+        elif tool_name == "assistant_thinking" and tool_response_raw:
+            attrs["event.name"] = "hook_assistant_thinking"
+        if body.get("message_sequence") is not None:
+            attrs["message_sequence"] = str(body["message_sequence"])
+        if body.get("message_total") is not None:
+            attrs["message_total"] = str(body["message_total"])
+
+    # StopFailure
+    if hook_event == "StopFailure":
+        if body.get("error"):
+            attrs["error"] = _truncate(str(body["error"]))
+        if body.get("stop_reason"):
+            attrs["stop_reason"] = body["stop_reason"]
+
+    # Notification
+    if hook_event == "Notification":
+        if body.get("message"):
+            attrs["tool_response"] = _truncate(str(body["message"]))
+        if body.get("title"):
+            attrs["notification_title"] = str(body["title"])
+
+    # TaskCreated / TaskCompleted
+    if hook_event in ("TaskCreated", "TaskCompleted"):
+        for field in ("task_id", "task_subject", "task_status"):
+            if body.get(field):
+                attrs[field] = str(body[field])
+
+    # PreCompact / PostCompact
+    if hook_event in ("PreCompact", "PostCompact") and body.get("summary"):
+        attrs["tool_response"] = _truncate(str(body["summary"]))
+
+    # WorktreeCreate / WorktreeRemove
+    if hook_event in ("WorktreeCreate", "WorktreeRemove"):
+        if body.get("worktree_path"):
+            attrs["worktree_path"] = str(body["worktree_path"])
+        if body.get("branch"):
+            attrs["branch"] = str(body["branch"])
+
+    # Elicitation / ElicitationResult
+    if hook_event in ("Elicitation", "ElicitationResult"):
+        for field in ("mcp_server_name", "message", "response", "elicitation_id"):
+            if body.get(field):
+                key = "tool_input" if field == "message" else ("tool_response" if field == "response" else field)
+                attrs[key] = _truncate(str(body[field]))
+
+
 @router.post("/hooks")
 async def ingest_hook(request: Request):
     """Ingest hook events from Claude Code / Kiro and store in otel_logs.
@@ -314,6 +470,17 @@ async def ingest_hook(request: Request):
     # ── Normalize Kiro camelCase event names to PascalCase ──
     raw_event = body.get("hook_event_name", "unknown")
     hook_event = _KIRO_TO_CC_EVENT.get(raw_event, raw_event)
+
+    # Kiro postToolUse with tool_response.success=false → remap to PostToolUseFailure
+    if hook_event == "PostToolUse":
+        tool_resp = body.get("tool_response")
+        if isinstance(tool_resp, dict) and tool_resp.get("success") is False:
+            hook_event = "PostToolUseFailure"
+            # Extract error info from the failed result
+            result = tool_resp.get("result", "")
+            if result and not body.get("error"):
+                body["error"] = _truncate(str(result))
+
     body["hook_event_name"] = hook_event
 
     session_id = body.get("session_id", "")
@@ -346,137 +513,23 @@ async def ingest_hook(request: Request):
     if user_id:
         attrs["user.id"] = user_id
 
-    # Capture full content — this is the Langfuse-equivalent visibility
-    tool_input_raw = body.get("tool_input")
-    tool_response_raw = body.get("tool_response")
+    # ── IDE-specific extraction ──
+    # Detect IDE from service_name, then delegate to the right handler.
+    # This keeps Kiro and Claude Code logic fully isolated so they can't
+    # overwrite each other's fields.
+    is_kiro = service_name in ("kiro-cli", "kiro")
+    if is_kiro:
+        _extract_kiro(body, hook_event, attrs)
+    else:
+        _extract_claude_code(body, hook_event, attrs)
 
-    if tool_input_raw is not None:
-        attrs["tool_input"] = _truncate(_safe_json(tool_input_raw))
-    if tool_response_raw is not None:
-        attrs["tool_response"] = _truncate(_safe_json(tool_response_raw))
-
-    # ── Kiro-specific field extraction ──
-    # Kiro sends `prompt` on agentSpawn/userPromptSubmit,
-    # `assistant_response` on stop, and tool_input/tool_response as dicts.
-    if body.get("prompt") and not attrs.get("tool_input"):
-        attrs["tool_input"] = _truncate(str(body["prompt"]))
-    if body.get("assistant_response") and not attrs.get("tool_response"):
-        attrs["tool_response"] = _truncate(str(body["assistant_response"]))
-        attrs["event.name"] = "hook_assistant_response"
-
-    # UserPromptSubmit — capture the actual user prompt
-    if hook_event == "UserPromptSubmit":
-        prompt_text = body.get("prompt") or body.get("user_prompt") or ""
-        if prompt_text:
-            attrs["tool_input"] = _truncate(prompt_text)
-            attrs["prompt_length"] = str(len(prompt_text))
-        attrs["tool_name"] = "user_prompt"
-        # Keep as hook_userpromptsubmit — the frontend uses this to start
-        # new turns. "user_prompt" gets deduped away when hooks are present.
-
-    # SessionStart / agentSpawn — capture initial prompt and mark as session start
-    if hook_event == "SessionStart":
-        prompt_text = body.get("prompt") or ""
-        if prompt_text:
-            attrs["tool_input"] = _truncate(prompt_text)
-        attrs["event.name"] = "hook_sessionstart"
-
-    # SubagentStart — capture agent spawn
-    if hook_event == "SubagentStart" and body.get("last_assistant_message"):
-        attrs["tool_input"] = _truncate(body["last_assistant_message"])
-
-    # SubagentStop — capture agent final output
-    if hook_event == "SubagentStop" and body.get("last_assistant_message"):
-        attrs["tool_response"] = _truncate(body["last_assistant_message"])
-
-    # PostToolUseFailure — tool failure (critical for debugging)
-    if hook_event == "PostToolUseFailure" and body.get("error"):
-        attrs["error"] = _truncate(str(body["error"]))
-
-    # Stop — session/turn end (command hook sends assistant response text)
-    if hook_event == "Stop":
-        if body.get("stop_reason"):
-            attrs["stop_reason"] = body["stop_reason"]
-        # Kiro sends assistant_response directly; Claude Code sends via tool_response
-        if body.get("assistant_response"):
-            attrs["tool_response"] = _truncate(str(body["assistant_response"]))
-            attrs["event.name"] = "hook_assistant_response"
-        elif tool_name == "assistant_response" and tool_response_raw:
-            attrs["event.name"] = "hook_assistant_response"
-        elif tool_name == "assistant_thinking" and tool_response_raw:
-            attrs["event.name"] = "hook_assistant_thinking"
-        # Sequence metadata for interleaving with tool calls
-        if body.get("message_sequence") is not None:
-            attrs["message_sequence"] = str(body["message_sequence"])
-        if body.get("message_total") is not None:
-            attrs["message_total"] = str(body["message_total"])
-
-    # StopFailure — API error on turn end
-    if hook_event == "StopFailure":
-        if body.get("error"):
-            attrs["error"] = _truncate(str(body["error"]))
-        if body.get("stop_reason"):
-            attrs["stop_reason"] = body["stop_reason"]
-
-    # SessionStart — session lifecycle
-    # Claude Code sends "source" field: startup, resume, clear, compact
-    session_source = body.get("source", "")
-    if hook_event == "SessionStart":
-        if session_source:
-            attrs["session_source"] = session_source
-        if session_source in ("resume", "compact") or body.get("resume"):
-            attrs["session_resumed"] = "true"
-
-    # Notification
-    if hook_event == "Notification":
-        if body.get("message"):
-            attrs["tool_response"] = _truncate(str(body["message"]))
-        if body.get("title"):
-            attrs["notification_title"] = str(body["title"])
-
-    # TaskCreated / TaskCompleted
-    if hook_event in ("TaskCreated", "TaskCompleted"):
-        for field in ("task_id", "task_subject", "task_status"):
-            if body.get(field):
-                attrs[field] = str(body[field])
-
-    # PreCompact / PostCompact — context compaction
-    if hook_event in ("PreCompact", "PostCompact") and body.get("summary"):
-        attrs["tool_response"] = _truncate(str(body["summary"]))
-
-    # WorktreeCreate / WorktreeRemove
-    if hook_event in ("WorktreeCreate", "WorktreeRemove"):
-        if body.get("worktree_path"):
-            attrs["worktree_path"] = str(body["worktree_path"])
-        if body.get("branch"):
-            attrs["branch"] = str(body["branch"])
-
-    # Elicitation / ElicitationResult — MCP server interactions
-    if hook_event in ("Elicitation", "ElicitationResult"):
-        for field in ("mcp_server_name", "message", "response", "elicitation_id"):
-            if body.get(field):
-                key = "tool_input" if field == "message" else ("tool_response" if field == "response" else field)
-                attrs[key] = _truncate(str(body[field]))
-
-    # Extra context fields (present on most events)
+    # Extra context fields (present on most events, all IDEs)
     if body.get("tool_use_id"):
         attrs["tool_use_id"] = body["tool_use_id"]
     if body.get("cwd"):
         attrs["cwd"] = body["cwd"]
     if body.get("permission_mode"):
         attrs["permission_mode"] = body["permission_mode"]
-
-    # ── Enriched fields from Kiro SQLite DB (sent by kiro_stop_hook.py) ──
-    for enriched_field in (
-        "input_tokens",
-        "output_tokens",
-        "turn_count",
-        "credits",
-        "tools_used",
-        "conversation_id",
-    ):
-        if body.get(enriched_field):
-            attrs[enriched_field] = str(body[enriched_field])
 
     # Build the Body as a readable summary
     agent_prefix = f"[{attrs.get('agent_type', '')}] " if attrs.get("agent_id") else ""
@@ -526,9 +579,6 @@ async def ingest_hook(request: Request):
     else:
         body_text = f"{agent_prefix}hook: {hook_event}"
 
-    # Event name for the EventName column (used by list_sessions countIf)
-    event_name = attrs.get("event.name", f"hook_{hook_event.lower()}")
-
     # ── Redact secrets from user-content fields before storage ──
     for _redact_field in ("tool_input", "tool_response", "error"):
         if _redact_field in attrs:
@@ -536,16 +586,18 @@ async def ingest_hook(request: Request):
     body_text = redact_secrets(body_text)
 
     # INSERT into otel_logs using JSONEachRow (safe against injection)
+    # Note: The otel_logs table is created by the OTEL collector with its
+    # standard schema — there is no EventName column.  Event names live in
+    # LogAttributes['event.name'] (already set above).
     row = {
         "Timestamp": now,
-        "EventName": event_name,
         "Body": body_text,
         "LogAttributes": attrs,
         "ServiceName": service_name,
         "SeverityText": "INFO",
         "SeverityNumber": 9,
     }
-    sql = "INSERT INTO otel_logs (Timestamp, EventName, Body, LogAttributes, ServiceName, SeverityText, SeverityNumber) FORMAT JSONEachRow"
+    sql = "INSERT INTO otel_logs (Timestamp, Body, LogAttributes, ServiceName, SeverityText, SeverityNumber) FORMAT JSONEachRow"
 
     try:
         r = await _query(sql, data=json.dumps(row, default=str))
