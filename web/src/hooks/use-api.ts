@@ -299,23 +299,25 @@ export function useOtelErrors() {
 
 export function useSessionSubscription() {
   const qc = useQueryClient();
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const listDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
 
     import("@/lib/graphql-ws").then(({ subscribeToSessionUpdates }) => {
       unsubscribe = subscribeToSessionUpdates((sessionId) => {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
+        // Debounce the list refetch (many events → one list refresh)
+        clearTimeout(listDebounceRef.current);
+        listDebounceRef.current = setTimeout(() => {
           qc.invalidateQueries({ queryKey: ["otel", "sessions"] });
-          qc.invalidateQueries({ queryKey: ["otel", "session", sessionId] });
         }, 300);
+        // Session detail: invalidate immediately so new turns appear
+        qc.invalidateQueries({ queryKey: ["otel", "session", sessionId] });
       });
     });
 
     return () => {
-      clearTimeout(debounceRef.current);
+      clearTimeout(listDebounceRef.current);
       unsubscribe?.();
     };
   }, [qc]);
