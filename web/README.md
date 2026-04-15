@@ -234,7 +234,7 @@ Session explorer for debugging agent interactions.
 
 Forensic event viewer for a single agent session. The most complex page in the UI.
 
-**Header**: Session ID, service name, timestamp, duration, turn count. Stats row showing token counts, API calls, tool calls, hook events, models used.
+**Header**: Session ID, service name, timestamp, duration, turn count. Stats row showing token counts, API calls, tool calls, models used.
 
 **Traces Tab:**
 
@@ -251,7 +251,6 @@ Forensic event viewer for a single agent session. The most complex page in the U
 **Session Info Tab:**
 
 - Metadata grid (session ID, service, source, CWD, permission mode, timestamps, duration, event count)
-- Active hooks checklist showing which hook types fired with event counts
 
 <!-- Screenshot: Trace detail -- event tree with expanded tool call (WIP -- needs active session) -->
 
@@ -337,7 +336,6 @@ System configuration. **Super admin only** -- not visible to admin or lower role
    - `registry.auto_approve` -- Auto-approve new submissions
    - `registry.max_agents_per_user` -- Maximum agents per user
    - `eval.default_window_size` -- Default eval window size
-   - `hooks.auth_required` -- Require auth for hook endpoints
 
 4. **Add Setting** -- Form to add custom key-value settings.
 

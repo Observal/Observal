@@ -23,7 +23,13 @@ Browse agents created by others, publish your own, and pull complete agent confi
 
 Every interaction generates traces, spans, and sessions that flow into a telemetry pipeline, giving you full observability, traceability, and real-time metrics for your agents in production. The built-in eval engine (WIP) scores agent sessions so you can measure performance and make your agents better over time.
 
-**Supported tools:** Claude Code, Codex CLI, Gemini CLI, and [Kiro CLI](docs/kiro-setup.md) are fully supported. Cursor and VS Code have MCP/rules file support.
+**Supported tools:**
+
+| IDE / Tool | Support Level |
+|------------|--------------|
+| Claude Code | Fully supported |
+| Kiro CLI | Supported (next most tested). See [setup guide](docs/kiro-setup.md). |
+| Codex CLI, Gemini CLI, Cursor, VS Code | Untested |
 
 See the [Changelog](CHANGELOG.md) for recent updates.
 
@@ -266,7 +272,7 @@ observal doctor [--ide <ide>] [--fix]  # diagnose IDE settings compatibility
 
 ## Setup & Configuration
 
-See [SETUP.md](SETUP.md) for local development setup, eval engine configuration, and troubleshooting. For the web UI reference (pages, auth flows, RBAC), see [docs/frontend.md](docs/frontend.md). For enterprise deployment (SSO, SCIM, audit logging), see [ee/docs/cli.md](ee/docs/cli.md).
+See [SETUP.md](SETUP.md) for local development setup, eval engine configuration, and troubleshooting. For the web UI reference (pages, auth flows, RBAC), see [web/README.md](web/README.md). For enterprise deployment (SSO, SCIM, audit logging), see [ee/docs/cli.md](ee/docs/cli.md).
 
 <details>
 <summary><strong>API Endpoints</strong></summary>
@@ -324,7 +330,6 @@ All `{id}` parameters accept either a UUID or a name.
 | `POST` | `/api/v1/telemetry/ingest` | Batch ingest traces, spans, scores |
 | `POST` | `/api/v1/telemetry/events` | Legacy event ingestion |
 | `GET` | `/api/v1/telemetry/status` | Data flow status |
-| `POST` | `/api/v1/otel/hooks` | Hook-based telemetry ingestion (Claude Code, Kiro) |
 | `GET` | `/api/v1/otel/crypto/public-key` | Server public key for payload encryption |
 
 ### Alerts

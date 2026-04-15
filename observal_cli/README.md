@@ -94,11 +94,11 @@ observal uninstall                 # tear down Docker, remove config
 
 ## Supported IDEs
 
-- Claude Code
-- Kiro
-- Cursor
-- VS Code
-- Gemini CLI
+| IDE / Tool | Support Level |
+|------------|--------------|
+| Claude Code | Fully supported |
+| Kiro CLI | Supported (next most tested) |
+| Cursor, VS Code, Gemini CLI | Untested |
 
 The `--ide` flag controls which config format is generated. Each IDE has its own config paths and JSON structure.
 
