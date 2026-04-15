@@ -89,6 +89,20 @@ def main() -> None:
 
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     if resp.status < 300:
+                        # Verify the server actually ingested the event.
+                        # The hook endpoint returns {"ingested": 0} on
+                        # insert failure with HTTP 200 — treat that as a
+                        # retryable failure so we don't lose events.
+                        try:
+                            body = resp.read()
+                            import json as _json
+
+                            result = _json.loads(body)
+                            if result.get("ingested", 0) < 1:
+                                failed_ids.append(row_id)
+                                continue
+                        except Exception:
+                            pass
                         sent_ids.append(row_id)
                     else:
                         failed_ids.append(row_id)
