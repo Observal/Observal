@@ -113,11 +113,11 @@ def _review_env_vars(env_vars: list[dict]) -> list[dict]:
     """Let the developer review, remove, and annotate each env var."""
     reviewed: list[dict] = []
 
-    rprint("\n[bold]Review each variable[/bold] [dim](enter to keep, 'r' to remove, 'o' for optional)[/dim]\n")
+    rprint("\n[bold]Review each variable[/bold]\n")
 
     for ev in env_vars:
         action = typer.prompt(
-            f"  {ev['name']} [required]",
+            f"  {ev['name']} — keep? [Enter=keep / r=remove / o=optional]",
             default="",
             show_default=False,
         )
