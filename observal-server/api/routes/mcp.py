@@ -90,12 +90,25 @@ async def submit_mcp(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    # Prevent duplicate names for the same user
-    existing = await db.execute(
-        select(McpListing).where(McpListing.name == req.name, McpListing.submitted_by == current_user.id)
+    # Prevent duplicate names for the same user.
+    # Pending/rejected listings are replaced automatically so the user isn't
+    # blocked when re-submitting after a mistake.  Approved listings are
+    # protected — use the update flow instead.
+    existing = (
+        (
+            await db.execute(
+                select(McpListing).where(McpListing.name == req.name, McpListing.submitted_by == current_user.id)
+            )
+        )
+        .scalars()
+        .first()
     )
-    if existing.scalars().first():
-        raise HTTPException(status_code=409, detail=f"You already have a listing named '{req.name}'")
+    if existing:
+        if existing.status == ListingStatus.approved:
+            raise HTTPException(status_code=409, detail=f"You already have an approved listing named '{req.name}'")
+        # Replace the old pending/rejected listing
+        await db.delete(existing)
+        await db.flush()
 
     listing = McpListing(
         name=req.name,
