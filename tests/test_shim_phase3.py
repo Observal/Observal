@@ -255,10 +255,13 @@ class TestShimState:
 
 
 class TestConfigGenerator:
-    def _make_listing(self, name="my-mcp", listing_id="abc-123"):
+    def _make_listing(self, name="my-mcp", listing_id="abc-123", **kw):
         listing = MagicMock()
         listing.name = name
         listing.id = listing_id
+        listing.docker_image = kw.get("docker_image")
+        listing.framework = kw.get("framework")
+        listing.environment_variables = kw.get("environment_variables", [])
         return listing
 
     def test_cursor_wraps_with_shim(self):
