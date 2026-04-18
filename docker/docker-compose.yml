@@ -77,7 +77,7 @@ services:
       - observal-net
 
   observal-clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+    image: clickhouse/clickhouse-server:24.12
     ports:
       - "8123:8123"
     env_file:
@@ -173,7 +173,7 @@ services:
       - observal-net
 
   observal-otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.117.0
+    image: otel/opentelemetry-collector-contrib:0.150.1
     command: ["--config", "/etc/otelcol/config.yaml"]
     restart: on-failure
     ports:
@@ -194,7 +194,7 @@ services:
       - observal-net
 
   observal-grafana:
-    image: grafana/grafana-oss:11.6.0
+    image: grafana/grafana-oss:11.6.5
     ports:
       - "3001:3000"
     environment:
