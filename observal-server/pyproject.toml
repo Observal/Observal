@@ -20,7 +20,7 @@ dependencies = [
     "redis[hiredis]",
     "arq",
     "strawberry-graphql[fastapi]",
-    "authlib",
+    "authlib>=1.6.11",
     "itsdangerous",
     "cryptography>=43.0.0",
     "cffi",
