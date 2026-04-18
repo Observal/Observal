@@ -61,10 +61,27 @@ def _build_mcp_configs(
             # an mcpServers dict. Build the shim entry directly so the
             # agent file gets proper mcpServers frontmatter.
             safe = _sanitize_name(listing.name)
-            mcp_id = str(listing.id)
-            run_cmd = _build_run_command(safe, listing.framework, listing.docker_image, mcp_env)
-            shim_args = ["--mcp-id", mcp_id, "--", *run_cmd]
-            mcp_configs[safe] = {"command": "observal-shim", "args": shim_args, "env": mcp_env}
+            if listing.url:
+                # SSE/streamable-http listing — no shim needed
+                entry: dict = {"type": (listing.transport or "sse").lower(), "url": listing.url}
+                if mcp_env:
+                    entry["env"] = mcp_env
+                if listing.auto_approve:
+                    entry["autoApprove"] = listing.auto_approve
+                    entry["disabled"] = False
+                mcp_configs[safe] = entry
+            else:
+                mcp_id = str(listing.id)
+                run_cmd = _build_run_command(
+                    safe,
+                    listing.framework,
+                    listing.docker_image,
+                    mcp_env,
+                    stored_command=listing.command,
+                    stored_args=listing.args,
+                )
+                shim_args = ["--mcp-id", mcp_id, "--", *run_cmd]
+                mcp_configs[safe] = {"command": "observal-shim", "args": shim_args, "env": mcp_env}
 
     for ext in agent.external_mcps or []:
         name = _sanitize_name(ext.get("name", ""))

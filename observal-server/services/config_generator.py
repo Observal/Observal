@@ -61,14 +61,25 @@ def _build_run_command(
     framework: str | None,
     docker_image: str | None = None,
     server_env: dict[str, str] | None = None,
+    stored_command: str | None = None,
+    stored_args: list[str] | None = None,
 ) -> list[str]:
     """Return the appropriate run command based on the MCP framework.
 
+    - Stored command/args: use as-is (set during analysis or by publisher)
     - Docker: docker run -i --rm [-e KEY=VAL ...] <image>
     - TypeScript: npx -y <name>
     - Go: <name> (assumes binary on PATH)
     - Python / unknown: python -m <name>
     """
+    # Use stored command/args if available
+    if stored_command is not None:
+        cmd = [stored_command]
+        if stored_args:
+            cmd.extend(stored_args)
+        return cmd
+
+    # Legacy path: infer from framework/docker_image
     fw = (framework or "").lower()
     if docker_image:
         cmd = ["docker", "run", "-i", "--rm"]
@@ -98,12 +109,34 @@ def generate_config(
     proxy_port: int | None = None,
     observal_url: str = "http://localhost:4318",
     env_values: dict[str, str] | None = None,
+    header_values: dict[str, str] | None = None,
 ) -> dict:
     name = _sanitize_name(listing.name)
     mcp_id = str(listing.id)
     server_env = _build_server_env(listing, env_values)
 
-    # HTTP transport: point IDE at the proxy URL
+    # SSE / streamable-http transport: point IDE at the remote URL
+    if listing.url and (listing.transport or "").lower() in ("sse", "streamable-http", ""):
+        transport_type = (listing.transport or "sse").lower()
+        config: dict = {"type": transport_type, "url": listing.url}
+        if header_values:
+            config["headers"] = header_values
+        if server_env:
+            config["env"] = server_env
+        if listing.auto_approve:
+            config["autoApprove"] = listing.auto_approve
+        config["disabled"] = False
+
+        if ide == "claude-code":
+            return {
+                "command": ["claude", "mcp", "add", name, "--url", listing.url],
+                "type": "shell_command",
+                "claude_settings_snippet": {"env": server_env} if server_env else {},
+                "mcpServers": {name: config},
+            }
+        return {"mcpServers": {name: config}}
+
+    # HTTP proxy transport (existing): point IDE at the proxy URL
     if proxy_port is not None:
         proxy_url = f"http://localhost:{proxy_port}"
         if ide == "claude-code":
@@ -127,8 +160,19 @@ def generate_config(
         return {"mcpServers": {name: {"url": proxy_url, "env": server_env}}}
 
     # Stdio transport: shim wraps the original command
-    run_cmd = _build_run_command(name, listing.framework, listing.docker_image, server_env)
+    run_cmd = _build_run_command(
+        name,
+        listing.framework,
+        listing.docker_image,
+        server_env,
+        stored_command=listing.command,
+        stored_args=listing.args,
+    )
     shim_args = ["--mcp-id", mcp_id, "--", *run_cmd]
+
+    auto_approve_fields: dict = {}
+    if listing.auto_approve:
+        auto_approve_fields = {"autoApprove": listing.auto_approve, "disabled": False}
 
     if ide == "claude-code":
         otlp = _claude_otlp_env(observal_url)
@@ -143,15 +187,21 @@ def generate_config(
         }
     if ide == "gemini-cli":
         return {
-            "mcpServers": {name: {"command": "observal-shim", "args": shim_args, "env": server_env}},
+            "mcpServers": {
+                name: {"command": "observal-shim", "args": shim_args, "env": server_env, **auto_approve_fields}
+            },
             "otlp_env": _gemini_otlp_env(observal_url),
             "gemini_settings_snippet": _gemini_settings(observal_url),
         }
     if ide == "codex":
         return {
-            "mcpServers": {name: {"command": "observal-shim", "args": shim_args, "env": server_env}},
+            "mcpServers": {
+                name: {"command": "observal-shim", "args": shim_args, "env": server_env, **auto_approve_fields}
+            },
             "codex_config": generate_codex_config(observal_url),
         }
 
     # cursor, vscode, kiro, kiro-cli — no native OTel; telemetry collected via observal-shim
-    return {"mcpServers": {name: {"command": "observal-shim", "args": shim_args, "env": server_env}}}
+    return {
+        "mcpServers": {name: {"command": "observal-shim", "args": shim_args, "env": server_env, **auto_approve_fields}}
+    }
