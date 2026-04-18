@@ -290,8 +290,8 @@ def agent_list(
     if include_id:
         table.add_column("ID", style="dim", no_wrap=full_id)
     for i, item in enumerate(data, 1):
-        email = item.get("created_by_email", "")
-        row = [str(i), item["name"], item.get("version", ""), item.get("model_name", ""), email]
+        creator = item.get("created_by_username") or item.get("created_by_email", "")
+        row = [str(i), item["name"], item.get("version", ""), item.get("model_name", ""), creator]
         if include_id:
             row.append(str(item["id"]) if full_id else str(item["id"])[:8] + "…")
         table.add_row(*row)
@@ -329,7 +329,7 @@ def agent_show(
                 ("Status", status_badge(item.get("status", ""))),
                 ("Model", f"[bold]{item.get('model_name', 'N/A')}[/bold]"),
                 ("Owner", item.get("owner", "N/A")),
-                ("Created By", item.get("created_by_email", "")),
+                ("Created By", item.get("created_by_username") or item.get("created_by_email", "")),
                 ("Description", item.get("description", "")),
                 ("IDEs", ide_tags(item.get("supported_ides", []))),
                 ("Created", relative_time(item.get("created_at"))),

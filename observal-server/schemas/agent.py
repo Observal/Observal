@@ -150,6 +150,7 @@ class AgentResponse(BaseModel):
     rejection_reason: str | None = None
     created_by: uuid.UUID
     created_by_email: str = ""
+    created_by_username: str | None = None
     created_at: datetime
     updated_at: datetime
     mcp_links: list[McpLinkResponse] = []
@@ -172,6 +173,7 @@ class AgentSummary(BaseModel):
     average_rating: float | None = None
     component_count: int = 0
     created_by_email: str = ""
+    created_by_username: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     components_ready: bool = True

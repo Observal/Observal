@@ -218,6 +218,7 @@ def whoami(
         kv_panel(
             user["name"],
             [
+                ("Username", f"@{user['username']}" if user.get("username") else "[dim]not set[/dim]"),
                 ("Email", user["email"]),
                 ("Role", status_badge(user.get("role", "user"))),
                 ("ID", f"[dim]{user['id']}[/dim]"),

@@ -127,6 +127,7 @@ export default function UsersPage() {
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="h-8 text-xs">Name</TableHead>
+                    <TableHead className="h-8 text-xs">Username</TableHead>
                     <TableHead className="h-8 text-xs">Email</TableHead>
                     <TableHead className="h-8 text-xs">Role</TableHead>
                     <TableHead className="h-8 text-xs text-right">Joined</TableHead>
@@ -137,7 +138,10 @@ export default function UsersPage() {
                   {(users ?? []).map((u: AdminUser) => (
                     <TableRow key={u.id}>
                       <TableCell className="py-1.5">
-                        <span className="text-sm font-medium">{u.name ?? u.username ?? "-"}</span>
+                        <span className="text-sm font-medium">{u.name ?? "-"}</span>
+                      </TableCell>
+                      <TableCell className="py-1.5 text-sm text-muted-foreground">
+                        {u.username ? `@${u.username}` : "-"}
                       </TableCell>
                       <TableCell className="py-1.5 text-sm text-muted-foreground font-[family-name:var(--font-mono)]">
                         {u.email ?? "-"}

@@ -97,6 +97,7 @@ export interface TopAgentItem {
   name: string;
   description: string;
   owner: string;
+  created_by_username?: string | null;
   version: string;
   download_count: number;
   average_rating: number | null;

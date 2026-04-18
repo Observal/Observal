@@ -187,7 +187,7 @@ export async function graphql<T = unknown>(
 
 // ── Auth ────────────────────────────────────────────────────────────
 type AuthResponse = {
-  user: { id: string; email: string; name: string; role: string; created_at: string };
+  user: { id: string; email: string; username?: string | null; name: string; role: string; created_at: string };
   access_token: string;
   refresh_token: string;
   expires_in: number;
@@ -200,7 +200,7 @@ export const auth = {
     post<AuthResponse>("/auth/register", body),
   login: (body: { email: string; password: string }) =>
     post<AuthResponse>("/auth/login", body),
-  whoami: () => get<{ id: string; email: string; name: string; role: string }>("/auth/whoami"),
+  whoami: () => get<{ id: string; email: string; username?: string | null; name: string; role: string }>("/auth/whoami"),
   exchangeCode: (body: { code: string }) =>
     post<AuthResponse>("/auth/exchange", body),
 };

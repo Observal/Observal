@@ -83,7 +83,11 @@ async def _load_agent(
 
 
 def _agent_to_response(
-    agent: Agent, name_map: dict[str, str] | None = None, *, created_by_email: str = ""
+    agent: Agent,
+    name_map: dict[str, str] | None = None,
+    *,
+    created_by_email: str = "",
+    created_by_username: str | None = None,
 ) -> AgentResponse:
     name_map = name_map or {}
     # Build mcp_links from components with component_type='mcp' (backwards compat)
@@ -123,6 +127,7 @@ def _agent_to_response(
     agent_dict["component_links"] = component_links
     agent_dict["goal_template"] = goal_template
     agent_dict["created_by_email"] = created_by_email
+    agent_dict["created_by_username"] = created_by_username
     return AgentResponse(**agent_dict)
 
 
@@ -283,7 +288,9 @@ async def create_agent(
         metadata={"agent_name": req.name, "version": req.version, "component_count": str(len(req.components))},
     )
 
-    return _agent_to_response(agent, name_map, created_by_email=current_user.email)
+    return _agent_to_response(
+        agent, name_map, created_by_email=current_user.email, created_by_username=current_user.username
+    )
 
 
 @router.get("", response_model=list[AgentSummary])
@@ -325,12 +332,15 @@ async def list_agents(
         )
         rating_map = {r[0]: round(float(r[1]), 2) for r in rows.all()}
 
-    # Batch-fetch creator emails
+    # Batch-fetch creator emails and usernames
     user_ids = {a.created_by for a in agents}
     email_map: dict[uuid.UUID, str] = {}
+    username_map: dict[uuid.UUID, str | None] = {}
     if user_ids:
-        rows = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
-        email_map = {r[0]: r[1] for r in rows.all()}
+        rows = await db.execute(select(User.id, User.email, User.username).where(User.id.in_(user_ids)))
+        for r in rows.all():
+            email_map[r[0]] = r[1]
+            username_map[r[0]] = r[2]
 
     return [
         AgentSummary(
@@ -346,6 +356,7 @@ async def list_agents(
             average_rating=rating_map.get(a.id),
             component_count=len(a.components),
             created_by_email=email_map.get(a.created_by, ""),
+            created_by_username=username_map.get(a.created_by),
             created_at=a.created_at,
             updated_at=a.updated_at,
         )
@@ -359,8 +370,13 @@ async def get_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     name_map = await _resolve_component_names(agent.components, db)
-    email_row = (await db.execute(select(User.email).where(User.id == agent.created_by))).scalar_one_or_none()
-    return _agent_to_response(agent, name_map, created_by_email=email_row or "")
+    user_row = (await db.execute(select(User.email, User.username).where(User.id == agent.created_by))).first()
+    return _agent_to_response(
+        agent,
+        name_map,
+        created_by_email=user_row[0] if user_row else "",
+        created_by_username=user_row[1] if user_row else None,
+    )
 
 
 @router.get("/{agent_id}/version-suggestions")
@@ -511,7 +527,9 @@ async def update_agent(
         resource_name=agent.name,
     )
 
-    return _agent_to_response(agent, name_map, created_by_email=current_user.email)
+    return _agent_to_response(
+        agent, name_map, created_by_email=current_user.email, created_by_username=current_user.username
+    )
 
 
 @router.post("/{agent_id}/install", response_model=AgentInstallResponse)
@@ -821,7 +839,7 @@ async def save_draft(
 
     await db.commit()
     agent = await _load_agent(db, str(agent.id))
-    return _agent_to_response(agent, created_by_email=current_user.email)
+    return _agent_to_response(agent, created_by_email=current_user.email, created_by_username=current_user.username)
 
 
 @router.put("/{agent_id}/draft", response_model=AgentResponse)
@@ -877,7 +895,7 @@ async def update_draft(
 
     await db.commit()
     agent = await _load_agent(db, str(agent.id))
-    return _agent_to_response(agent, created_by_email=current_user.email)
+    return _agent_to_response(agent, created_by_email=current_user.email, created_by_username=current_user.username)
 
 
 @router.post("/{agent_id}/submit", response_model=AgentResponse)
@@ -926,4 +944,6 @@ async def submit_draft(
         resource_name=agent.name,
     )
 
-    return _agent_to_response(agent, name_map, created_by_email=current_user.email)
+    return _agent_to_response(
+        agent, name_map, created_by_email=current_user.email, created_by_username=current_user.username
+    )

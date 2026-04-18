@@ -180,7 +180,7 @@ async def create_user(
 
     password = req.password or await _generate_unique_password(db)
 
-    user = User(email=req.email, name=req.name, role=role)
+    user = User(email=req.email, username=req.username, name=req.name, role=role)
     user.set_password(password)
     db.add(user)
     try:
@@ -193,6 +193,7 @@ async def create_user(
     return UserCreateResponse(
         id=user.id,
         email=user.email,
+        username=user.username,
         name=user.name,
         role=user.role.value,
         password=password,

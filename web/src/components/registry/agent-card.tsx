@@ -11,6 +11,7 @@ interface AgentCardProps {
   description?: string;
   model_name?: string;
   owner?: string;
+  created_by_username?: string | null;
   downloads?: number;
   score?: number;
   version?: string;
@@ -24,6 +25,7 @@ export function AgentCard({
   name,
   description,
   owner,
+  created_by_username,
   downloads,
   score,
   version,
@@ -58,9 +60,9 @@ export function AgentCard({
         </p>
       )}
 
-      {owner && (
+      {(created_by_username || owner) && (
         <p className="mt-2 text-[11px] text-muted-foreground/70 truncate">
-          {owner}
+          {created_by_username ? `@${created_by_username}` : owner}
         </p>
       )}
 

@@ -24,6 +24,7 @@ from schemas.auth import (
     RevokeRequest,
     TokenRequest,
     TokenResponse,
+    UsernameUpdateRequest,
     UserResponse,
 )
 from services.jwt_service import create_access_token, create_refresh_token, decode_refresh_token
@@ -70,6 +71,7 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
 
     user = User(
         email=req.email,
+        username=req.username,
         name=req.name,
         role=UserRole.admin,
     )
@@ -80,7 +82,7 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="System already initialized or email already exists")
+        raise HTTPException(status_code=409, detail="System already initialized or email/username already exists")
     await db.refresh(user)
 
     access_token, refresh_token, expires_in = await _issue_tokens(user)
@@ -136,6 +138,7 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
 
     user = User(
         email=req.email,
+        username=req.username,
         name=req.name,
         role=UserRole.user,
     )
@@ -145,7 +148,7 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Email or username already registered")
     await db.refresh(user)
 
     access_token, refresh_token, expires_in = await _issue_tokens(user)
@@ -389,6 +392,27 @@ async def revoke_token(request: Request, req: RevokeRequest):
     await redis.delete(f"refresh_jti:{jti}")
 
     return {"detail": "Token revoked"}
+
+
+@router.put("/profile/username", response_model=UserResponse)
+async def set_username(
+    req: UsernameUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set or update the current user's username."""
+    existing = await db.execute(select(User).where(User.username == req.username))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Username already taken")
+
+    current_user.username = req.username
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Username already taken")
+    await db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
 
 
 @router.post("/hooks-token")

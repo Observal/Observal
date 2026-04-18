@@ -86,7 +86,7 @@ export default function LeaderboardPage() {
                     {item.name}
                   </span>
                   <span className="text-xs text-muted-foreground/70 truncate block">
-                    {item.owner}
+                    {item.created_by_username ? `@${item.created_by_username}` : item.owner}
                     {item.description && ` — ${item.description}`}
                   </span>
                 </div>

@@ -303,9 +303,12 @@ async def agent_leaderboard(
         )
         rating_map = {r[0]: round(float(r[1]), 2) for r in rating_rows.all()}
     email_map: dict[uuid.UUID, str] = {}
+    username_map: dict[uuid.UUID, str | None] = {}
     if user_ids:
-        email_rows = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
-        email_map = {r[0]: r[1] for r in email_rows.all()}
+        email_rows = await db.execute(select(User.id, User.email, User.username).where(User.id.in_(user_ids)))
+        for r in email_rows.all():
+            email_map[r[0]] = r[1]
+            username_map[r[0]] = r[2]
 
     # Also include agents with no downloads if window=all and we have fewer than limit
     if window == "all" and len(rows) < limit:
@@ -315,13 +318,14 @@ async def agent_leaderboard(
             extra_stmt = extra_stmt.join(User, Agent.created_by == User.id).where(User.email.ilike(f"%{user}%"))
         extra_stmt = extra_stmt.order_by(Agent.created_at.desc()).limit(limit - len(rows))
         extra = (await db.execute(extra_stmt)).scalars().all()
-        for a in extra:
-            if a.created_by not in email_map:
-                user_ids.add(a.created_by)
-        if user_ids - set(email_map.keys()):
-            missing = user_ids - set(email_map.keys())
-            extra_emails = await db.execute(select(User.id, User.email).where(User.id.in_(missing)))
-            email_map.update({r[0]: r[1] for r in extra_emails.all()})
+        missing_ids = {a.created_by for a in extra} - set(email_map.keys())
+        if missing_ids:
+            extra_user_rows = await db.execute(
+                select(User.id, User.email, User.username).where(User.id.in_(missing_ids))
+            )
+            for r in extra_user_rows.all():
+                email_map[r[0]] = r[1]
+                username_map[r[0]] = r[2]
         extra_items = [
             LeaderboardItem(
                 id=a.id,
@@ -332,6 +336,7 @@ async def agent_leaderboard(
                 download_count=0,
                 average_rating=rating_map.get(a.id),
                 created_by_email=email_map.get(a.created_by, ""),
+                created_by_username=username_map.get(a.created_by),
             )
             for a in extra
         ]
@@ -348,6 +353,7 @@ async def agent_leaderboard(
             download_count=row.cnt,
             average_rating=rating_map.get(row.agent_id),
             created_by_email=email_map.get(row.created_by, ""),
+            created_by_username=username_map.get(row.created_by),
         )
         for row in rows
     ] + extra_items

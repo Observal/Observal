@@ -27,8 +27,9 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    // If the user is already authenticated, redirect to the home page
-    if (typeof window !== "undefined" && getUserRole()) {
+    if (typeof window === "undefined") return;
+    const hasToken = !!localStorage.getItem("observal_access_token");
+    if (hasToken && getUserRole()) {
       router.replace("/");
     }
   }, [router]);

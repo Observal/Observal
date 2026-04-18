@@ -17,6 +17,7 @@ class EnterpriseConfigUpdate(BaseModel):
 class UserAdminResponse(BaseModel):
     id: uuid.UUID
     email: str
+    username: str | None = None
     name: str
     role: str
     created_at: datetime | None = None
@@ -30,6 +31,7 @@ class UserRoleUpdate(BaseModel):
 class UserCreateRequest(BaseModel):
     email: str
     name: str
+    username: str | None = None
     role: str = "reviewer"
     password: str | None = None
 
@@ -42,6 +44,7 @@ class UserCreateRequest(BaseModel):
 class UserCreateResponse(BaseModel):
     id: uuid.UUID
     email: str
+    username: str | None = None
     name: str
     role: str
     password: str
