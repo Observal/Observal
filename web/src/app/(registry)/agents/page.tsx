@@ -49,6 +49,64 @@ import type { RegistryItem } from "@/lib/types";
 
 type ViewMode = "table" | "grid";
 
+function DeleteAgentButton({ agent }: { agent: RegistryItem }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const qc = useQueryClient();
+  const { data: whoami } = useWhoami();
+  const isAdmin = hasMinRole(getUserRole(), "admin");
+  const canDelete = isAdmin || (whoami?.id && agent.created_by && whoami.id === String(agent.created_by));
+
+  async function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDeleting(true);
+    try {
+      await registry.delete("agents", agent.id);
+      qc.invalidateQueries({ queryKey: ["registry", "agents"] });
+      toast.success("Agent deleted");
+      setConfirmOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+      setDeleting(false);
+    }
+  }
+
+  if (!canDelete) return null;
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+        onClick={(e) => {
+          e.stopPropagation();
+          setConfirmOpen(true);
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Delete {agent.name}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will permanently delete this agent. This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function SortIcon({ column }: { column: Column<RegistryItem> }) {
   const sorted = column.getIsSorted();
   if (sorted === "asc") return <ArrowUp className="h-3 w-3" />;
@@ -163,63 +221,7 @@ const columns: ColumnDef<RegistryItem>[] = [
   {
     id: "actions",
     header: "",
-    cell: ({ row }) => {
-      const [confirmOpen, setConfirmOpen] = useState(false);
-      const [deleting, setDeleting] = useState(false);
-      const qc = useQueryClient();
-      const { data: whoami } = useWhoami();
-      const isAdmin = hasMinRole(getUserRole(), "admin");
-      const canDelete = isAdmin || (whoami?.id && row.original.created_by && whoami.id === String(row.original.created_by));
-
-      async function handleDelete(e: React.MouseEvent) {
-        e.stopPropagation();
-        setDeleting(true);
-        try {
-          await registry.delete("agents", row.original.id);
-          qc.invalidateQueries({ queryKey: ["registry", "agents"] });
-          toast.success("Agent deleted");
-          setConfirmOpen(false);
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Failed to delete");
-          setDeleting(false);
-        }
-      }
-
-      if (!canDelete) return null;
-
-      return (
-        <>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirmOpen(true);
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-
-          <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-            <DialogContent onClick={(e) => e.stopPropagation()}>
-              <DialogHeader>
-                <DialogTitle>Delete {row.original.name}?</DialogTitle>
-              </DialogHeader>
-              <p className="text-sm text-muted-foreground">
-                This will permanently delete this agent. This action cannot be undone.
-              </p>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-                <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-                  {deleting ? "Deleting..." : "Delete"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </>
-      );
-    },
+    cell: ({ row }) => <DeleteAgentButton agent={row.original} />,
   },
 ];
 
