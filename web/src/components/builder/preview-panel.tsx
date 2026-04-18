@@ -23,6 +23,7 @@ interface PreviewPanelProps {
   modelName?: string;
   selectedComponents: Record<string, { id: string; name: string }[]>;
   goalSections: { id: string; title: string; content: string }[];
+  customPrompts?: { id: string; title: string; content: string }[];
   validationResult: ValidationResult | null;
 }
 
@@ -32,6 +33,7 @@ function buildMarkdownBody(
   description: string,
   selectedComponents: Record<string, { id: string; name: string }[]>,
   goalSections: { id: string; title: string; content: string }[],
+  customPrompts?: { id: string; title: string; content: string }[],
 ): string {
   const lines: string[] = [];
 
@@ -49,6 +51,21 @@ function buildMarkdownBody(
     lines.push(`## ${heading}`);
     lines.push("");
     items.forEach((item) => lines.push(`- **${item.name}**`));
+  }
+
+  const nonEmptyPrompts = (customPrompts ?? []).filter(
+    (p) => p.content.trim(),
+  );
+  if (nonEmptyPrompts.length > 0) {
+    lines.push("");
+    lines.push("## Custom Prompts");
+    lines.push("");
+    nonEmptyPrompts.forEach((prompt) => {
+      if (prompt.title.trim()) {
+        lines.push(`### ${prompt.title.trim()}`);
+      }
+      lines.push(prompt.content.trim());
+    });
   }
 
   const nonEmptyGoals = goalSections.filter((s) => s.title || s.content);
@@ -225,12 +242,13 @@ export function PreviewPanel({
   modelName,
   selectedComponents,
   goalSections,
+  customPrompts,
   validationResult,
 }: PreviewPanelProps) {
   const [ide, setIde] = useState<Ide>("claude-code");
 
   const mcps = selectedComponents.mcps ?? [];
-  const body = buildMarkdownBody(description, selectedComponents, goalSections);
+  const body = buildMarkdownBody(description, selectedComponents, goalSections, customPrompts);
 
   let files: PreviewFile[];
   switch (ide) {

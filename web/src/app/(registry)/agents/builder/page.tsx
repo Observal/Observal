@@ -9,6 +9,7 @@ import {
   Loader2,
   ArrowRight,
   Save,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,12 @@ const COMPONENT_TYPES: { value: RegistryType; label: string }[] = [
   { value: "prompts", label: "Prompts" },
   { value: "sandboxes", label: "Sandboxes" },
 ];
+
+interface CustomPrompt {
+  id: string;
+  title: string;
+  content: string;
+}
 
 interface GoalSection {
   id: string;
@@ -352,6 +359,9 @@ function AgentBuilderInner() {
     sandboxes: [],
   });
 
+  // Custom inline prompts
+  const [customPrompts, setCustomPrompts] = useState<CustomPrompt[]>([]);
+
   // Goal template sections
   const [goalSections, setGoalSections] = useState<GoalSection[]>([
     { id: generateId(), title: "", content: "" },
@@ -606,6 +616,26 @@ function AgentBuilderInner() {
     }));
   }, []);
 
+  const addCustomPrompt = useCallback(() => {
+    setCustomPrompts((prev) => [
+      ...prev,
+      { id: generateId(), title: "", content: "" },
+    ]);
+  }, []);
+
+  const updateCustomPrompt = useCallback(
+    (id: string, field: "title" | "content", value: string) => {
+      setCustomPrompts((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, [field]: value } : p)),
+      );
+    },
+    [],
+  );
+
+  const removeCustomPrompt = useCallback((id: string) => {
+    setCustomPrompts((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
   const handleReorder = useCallback(
     (type: string) => (items: { id: string; name: string }[]) => {
       setSelectedComponents((prev) => {
@@ -658,11 +688,21 @@ function AgentBuilderInner() {
 
     const goalDescription = description.trim() || name.trim();
 
+    // Build prompt field from custom inline prompts
+    const promptParts = customPrompts
+      .filter((p) => p.content.trim())
+      .map((p) =>
+        p.title.trim()
+          ? `## ${p.title.trim()}\n${p.content.trim()}`
+          : p.content.trim(),
+      );
+
     return {
       name: name.trim(),
       version: (versionOverride ?? version).trim() || "1.0.0",
       description: description.trim(),
       owner: whoami?.name || whoami?.email || "unknown",
+      prompt: promptParts.join("\n\n"),
       model_name: modelName,
       components: components.length > 0 ? components : [],
       goal_template: {
@@ -854,7 +894,9 @@ function AgentBuilderInner() {
               >
                 <TabsList>
                   {COMPONENT_TYPES.map((ct) => {
-                    const count = (selectedComponents[ct.value] ?? []).length;
+                    const count =
+                      (selectedComponents[ct.value] ?? []).length +
+                      (ct.value === "prompts" ? customPrompts.length : 0);
                     return (
                       <TabsTrigger key={ct.value} value={ct.value}>
                         {ct.label}
@@ -886,6 +928,75 @@ function AgentBuilderInner() {
                           onReorder={handleReorder(ct.value)}
                           onRemove={(id) => removeComponent(ct.value, id)}
                         />
+                      </div>
+                    )}
+
+                    {/* Custom prompt input — Prompts tab only */}
+                    {ct.value === "prompts" && (
+                      <div className="mt-4 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <Separator className="flex-1" />
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            or add custom prompt text
+                          </span>
+                          <Separator className="flex-1" />
+                        </div>
+
+                        {customPrompts.map((prompt) => (
+                          <div
+                            key={prompt.id}
+                            className="rounded-md border bg-muted/20 p-4 space-y-3"
+                          >
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                              <Input
+                                placeholder="Prompt title (optional)"
+                                value={prompt.title}
+                                onChange={(e) =>
+                                  updateCustomPrompt(
+                                    prompt.id,
+                                    "title",
+                                    e.target.value,
+                                  )
+                                }
+                                className="h-8 max-w-xs text-sm font-medium"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeCustomPrompt(prompt.id)}
+                                className="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                            <Textarea
+                              placeholder="Enter prompt text..."
+                              value={prompt.content}
+                              onChange={(e) =>
+                                updateCustomPrompt(
+                                  prompt.id,
+                                  "content",
+                                  e.target.value,
+                                )
+                              }
+                              rows={4}
+                              className="resize-y text-sm"
+                            />
+                          </div>
+                        ))}
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addCustomPrompt}
+                          className="h-8"
+                        >
+                          <Plus className="mr-1 h-3.5 w-3.5" />
+                          Add Custom Prompt
+                        </Button>
                       </div>
                     )}
                   </TabsContent>
@@ -1020,6 +1131,7 @@ function AgentBuilderInner() {
                   ),
                 )}
                 goalSections={goalSections}
+                customPrompts={customPrompts}
                 validationResult={validationResult}
               />
             </div>
