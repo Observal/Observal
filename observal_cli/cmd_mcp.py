@@ -767,8 +767,34 @@ def _install_impl(mcp_id, ide, raw):
         for ev in env_var_list:
             env_values[ev["name"]] = f"<{ev['name']}>"
 
+    # Prompt for headers (SSE/HTTP servers with auth)
+    header_values: dict[str, str] = {}
+    header_list = listing.get("headers") or []
+    if header_list and not raw:
+        required_headers = [h for h in header_list if h.get("required", True)]
+        optional_headers = [h for h in header_list if not h.get("required", True)]
+        if required_headers:
+            rprint(f"\n[bold]This server requires {len(required_headers)} header(s):[/bold]")
+            for h in required_headers:
+                desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
+                val = typer.prompt(f"  {h['name']}{desc}")
+                header_values[h["name"]] = val
+        if optional_headers:
+            rprint(f"\n[dim]{len(optional_headers)} optional header(s) available:[/dim]")
+            for h in optional_headers:
+                desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
+                val = typer.prompt(f"  {h['name']}{desc} (press Enter to skip)", default="")
+                if val:
+                    header_values[h["name"]] = val
+    elif header_list and raw:
+        for h in header_list:
+            header_values[h["name"]] = f"<{h['name']}>"
+
     with spinner(f"Generating {ide} config..."):
-        result = client.post(f"/api/v1/mcps/{resolved}/install", {"ide": ide, "env_values": env_values})
+        result = client.post(
+            f"/api/v1/mcps/{resolved}/install",
+            {"ide": ide, "env_values": env_values, "header_values": header_values},
+        )
 
     snippet = result.get("config_snippet", {})
     if raw:
