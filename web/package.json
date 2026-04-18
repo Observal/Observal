@@ -46,10 +46,10 @@
     "date-fns": "^4.1.0",
     "graphql-ws": "^6.0.8",
     "lucide-react": "^1.7.0",
-    "next": "16.2.3",
+    "next": "16.2.4",
     "next-themes": "^0.4.6",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
     "react-resizable-panels": "^4.9.0",
     "react18-json-view": "^0.2.10",
     "recharts": "^3.8.1",
@@ -66,7 +66,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.2",
+    "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
