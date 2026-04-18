@@ -13,15 +13,19 @@ import {
   BarChart3,
   Loader2,
   Activity,
+  Trash2,
 } from "lucide-react";
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useRegistryItem,
   useAgentDownloads,
   useFeedback,
   useFeedbackSummary,
   useEvalAggregate,
+  useWhoami,
 } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
@@ -31,6 +35,7 @@ import { StatusBadge } from "@/components/registry/status-badge";
 import { ReviewForm } from "@/components/registry/review-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layouts/page-header";
@@ -48,6 +53,7 @@ interface AgentDetail {
   prompt?: string;
   model_name?: string;
   download_count?: number;
+  created_by?: string;
   component_links?: ComponentLink[];
   mcp_links?: ComponentLink[];
   goal_template?: {
@@ -94,6 +100,53 @@ function ExportButton({ agentId }: { agentId: string }) {
       {exporting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1 h-3.5 w-3.5" />}
       Export
     </Button>
+  );
+}
+
+function DeleteButton({ agentId, agentName }: { agentId: string; agentName: string }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
+  const qc = useQueryClient();
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await registry.delete("agents", agentId);
+      qc.invalidateQueries({ queryKey: ["registry", "agents"] });
+      toast.success("Agent deleted");
+      router.push("/agents");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete agent");
+      setDeleting(false);
+      setConfirmOpen(false);
+    }
+  }
+
+  return (
+    <>
+      <Button variant="destructive" size="sm" className="h-8" onClick={() => setConfirmOpen(true)}>
+        <Trash2 className="mr-1 h-3.5 w-3.5" />
+        Delete
+      </Button>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {agentName}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will permanently delete this agent and all associated data. This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Deleting...</> : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -233,6 +286,8 @@ export default function AgentDetailPage({
   const { data: feedbackSummary, refetch: refetchSummary } =
     useFeedbackSummary(id);
 
+  const { data: whoami } = useWhoami();
+
   const isAuthenticated =
     typeof window !== "undefined" &&
     !!localStorage.getItem("observal_access_token");
@@ -242,6 +297,17 @@ export default function AgentDetailPage({
     hasMinRole(getUserRole(), "admin");
 
   const a = agent as unknown as AgentDetail | undefined;
+  const canDelete = isAdmin || (whoami?.id && a?.created_by && whoami.id === String(a.created_by));
+
+  // Debug logging
+  if (typeof window !== "undefined" && a) {
+    console.log("[Delete Debug]", {
+      isAdmin,
+      whoamiId: whoami?.id,
+      createdBy: a?.created_by,
+      canDelete
+    });
+  }
   const components: ComponentLink[] = a?.component_links ?? a?.mcp_links ?? [];
   const goalTemplate = a?.goal_template;
   const agentName = a?.name ?? id.slice(0, 8);
@@ -260,7 +326,12 @@ export default function AgentDetailPage({
           { label: isLoading ? "..." : agentName },
         ]}
         actionButtonsRight={
-          !isLoading && a ? <ExportButton agentId={id} /> : undefined
+          !isLoading && a ? (
+            <div className="flex items-center gap-2">
+              <ExportButton agentId={id} />
+              {canDelete && <DeleteButton agentId={id} agentName={agentName} />}
+            </div>
+          ) : undefined
         }
       />
 

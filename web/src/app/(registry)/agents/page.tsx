@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   Bot,
@@ -11,10 +13,14 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Trash2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useRegistryList } from "@/hooks/use-api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useRegistryList, useWhoami } from "@/hooks/use-api";
+import { registry, getUserRole } from "@/lib/api";
+import { hasMinRole } from "@/hooks/use-role-guard";
 import {
   Table,
   TableBody,
@@ -153,6 +159,67 @@ const columns: ColumnDef<RegistryItem>[] = [
           : "-"}
       </span>
     ),
+  },
+  {
+    id: "actions",
+    header: "",
+    cell: ({ row }) => {
+      const [confirmOpen, setConfirmOpen] = useState(false);
+      const [deleting, setDeleting] = useState(false);
+      const qc = useQueryClient();
+      const { data: whoami } = useWhoami();
+      const isAdmin = hasMinRole(getUserRole(), "admin");
+      const canDelete = isAdmin || (whoami?.id && row.original.created_by && whoami.id === String(row.original.created_by));
+
+      async function handleDelete(e: React.MouseEvent) {
+        e.stopPropagation();
+        setDeleting(true);
+        try {
+          await registry.delete("agents", row.original.id);
+          qc.invalidateQueries({ queryKey: ["registry", "agents"] });
+          toast.success("Agent deleted");
+          setConfirmOpen(false);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Failed to delete");
+          setDeleting(false);
+        }
+      }
+
+      if (!canDelete) return null;
+
+      return (
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmOpen(true);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+
+          <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <DialogContent onClick={(e) => e.stopPropagation()}>
+              <DialogHeader>
+                <DialogTitle>Delete {row.original.name}?</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                This will permanently delete this agent. This action cannot be undone.
+              </p>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+                <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+                  {deleting ? "Deleting..." : "Delete"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      );
+    },
   },
 ];
 
