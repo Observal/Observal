@@ -16,7 +16,7 @@ from services.clickhouse import insert_audit_log, insert_spans, insert_traces
 logger = logging.getLogger(__name__)
 
 # prevent GC of fire-and-forget tasks (same pattern as telemetry.py)
-_background_tasks: set[asyncio.Task] = set()  # noqa: RUF012
+_background_tasks: set[asyncio.Task] = set()
 
 
 async def _emit(trace: dict, span: dict, audit: dict):
