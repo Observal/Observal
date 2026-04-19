@@ -115,15 +115,22 @@ async function request<T = unknown>(
   const token = getAccessToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (res.status < 500) break;
+    // Brief pause before retry on 5xx
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 500));
+  }
+  const response = res!;
 
-  if (!res.ok) {
+  if (!response.ok) {
     // Auto-refresh on 401 (except for auth endpoints where 401 means bad credentials)
-    if (res.status === 401 && !path.startsWith("/auth/")) {
+    if (response.status === 401 && !path.startsWith("/auth/")) {
       // Deduplicate concurrent refresh attempts
       if (!_refreshPromise) {
         _refreshPromise = _tryRefreshToken().finally(() => {
@@ -155,12 +162,12 @@ async function request<T = unknown>(
       throw new Error("Session expired");
     }
 
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`${res.status}: ${text}`);
+    const text = await response.text().catch(() => response.statusText);
+    throw new Error(`${response.status}: ${text}`);
   }
 
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
 }
 
 function get<T = unknown>(path: string) {

@@ -159,7 +159,8 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://observal-api:8000
     depends_on:
-      - observal-api
+      observal-api:
+        condition: service_healthy
     restart: unless-stopped
     read_only: true
     tmpfs:
