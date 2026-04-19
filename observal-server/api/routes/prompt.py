@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role, resolve_listing
+from api.sanitize import escape_like
 from models.mcp import ListingStatus
 from models.prompt import PromptDownload, PromptListing
 from models.user import User, UserRole
@@ -65,7 +66,8 @@ async def list_prompts(
     if category:
         stmt = stmt.where(PromptListing.category == category)
     if search:
-        stmt = stmt.where(PromptListing.name.ilike(f"%{search}%") | PromptListing.description.ilike(f"%{search}%"))
+        safe = escape_like(search)
+        stmt = stmt.where(PromptListing.name.ilike(f"%{safe}%") | PromptListing.description.ilike(f"%{safe}%"))
     result = await db.execute(stmt.order_by(PromptListing.created_at.desc()))
     return [PromptListingSummary.model_validate(r) for r in result.scalars().all()]
 

@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role, resolve_listing
+from api.sanitize import escape_like
 from models.hook import HookDownload, HookListing
 from models.mcp import ListingStatus
 from models.user import User, UserRole
@@ -70,7 +71,8 @@ async def list_hooks(
     if scope:
         stmt = stmt.where(HookListing.scope == scope)
     if search:
-        stmt = stmt.where(HookListing.name.ilike(f"%{search}%") | HookListing.description.ilike(f"%{search}%"))
+        safe = escape_like(search)
+        stmt = stmt.where(HookListing.name.ilike(f"%{safe}%") | HookListing.description.ilike(f"%{safe}%"))
     result = await db.execute(stmt.order_by(HookListing.created_at.desc()))
     return [HookListingSummary.model_validate(r) for r in result.scalars().all()]
 

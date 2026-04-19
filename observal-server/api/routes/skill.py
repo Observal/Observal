@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role, resolve_listing
+from api.sanitize import escape_like
 from models.mcp import ListingStatus
 from models.skill import SkillDownload, SkillListing
 from models.user import User, UserRole
@@ -70,9 +71,10 @@ async def list_skills(
     if task_type:
         stmt = stmt.where(SkillListing.task_type == task_type)
     if target_agent:
-        stmt = stmt.where(SkillListing.target_agents.cast(str).ilike(f"%{target_agent}%"))
+        stmt = stmt.where(SkillListing.target_agents.cast(str).ilike(f"%{escape_like(target_agent)}%"))
     if search:
-        stmt = stmt.where(SkillListing.name.ilike(f"%{search}%") | SkillListing.description.ilike(f"%{search}%"))
+        safe = escape_like(search)
+        stmt = stmt.where(SkillListing.name.ilike(f"%{safe}%") | SkillListing.description.ilike(f"%{safe}%"))
     result = await db.execute(stmt.order_by(SkillListing.created_at.desc()))
     return [SkillListingSummary.model_validate(r) for r in result.scalars().all()]
 

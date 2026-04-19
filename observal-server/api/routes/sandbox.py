@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role, resolve_listing
+from api.sanitize import escape_like
 from models.mcp import ListingStatus
 from models.sandbox import SandboxDownload, SandboxListing
 from models.user import User, UserRole
@@ -65,7 +66,8 @@ async def list_sandboxes(
     if runtime_type:
         stmt = stmt.where(SandboxListing.runtime_type == runtime_type)
     if search:
-        stmt = stmt.where(SandboxListing.name.ilike(f"%{search}%") | SandboxListing.description.ilike(f"%{search}%"))
+        safe = escape_like(search)
+        stmt = stmt.where(SandboxListing.name.ilike(f"%{safe}%") | SandboxListing.description.ilike(f"%{safe}%"))
     result = await db.execute(stmt.order_by(SandboxListing.created_at.desc()))
     return [SandboxListingSummary.model_validate(r) for r in result.scalars().all()]
 

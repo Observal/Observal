@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role, resolve_listing
+from api.sanitize import escape_like
 from database import async_session
 from models.mcp import ListingStatus, McpDownload, McpListing, McpValidationResult
 from models.user import User, UserRole
@@ -166,7 +167,8 @@ async def list_mcps(
     if category:
         stmt = stmt.where(McpListing.category == category)
     if search:
-        stmt = stmt.where(McpListing.name.ilike(f"%{search}%") | McpListing.description.ilike(f"%{search}%"))
+        safe = escape_like(search)
+        stmt = stmt.where(McpListing.name.ilike(f"%{safe}%") | McpListing.description.ilike(f"%{safe}%"))
     result = await db.execute(stmt.order_by(McpListing.created_at.desc()))
     return [McpListingSummary.model_validate(r) for r in result.scalars().all()]
 

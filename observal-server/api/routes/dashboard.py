@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
+from api.sanitize import escape_like
 from models.agent import Agent, AgentStatus
 from models.download import AgentDownloadRecord
 from models.mcp import ListingStatus, McpDownload, McpListing
@@ -275,7 +276,7 @@ async def agent_leaderboard(
         .where(Agent.status == AgentStatus.active)
     )
     if user:
-        stmt = stmt.join(User, Agent.created_by == User.id).where(User.email.ilike(f"%{user}%"))
+        stmt = stmt.join(User, Agent.created_by == User.id).where(User.email.ilike(f"%{escape_like(user)}%"))
     if window != "all":
         days = _RANGE_MAP.get(window, 7)
         stmt = stmt.where(AgentDownloadRecord.installed_at >= dt.now(UTC) - timedelta(days=days))
@@ -315,7 +316,9 @@ async def agent_leaderboard(
         existing_ids = {r.agent_id for r in rows}
         extra_stmt = select(Agent).where(Agent.status == AgentStatus.active, Agent.id.notin_(existing_ids))
         if user:
-            extra_stmt = extra_stmt.join(User, Agent.created_by == User.id).where(User.email.ilike(f"%{user}%"))
+            extra_stmt = extra_stmt.join(User, Agent.created_by == User.id).where(
+                User.email.ilike(f"%{escape_like(user)}%")
+            )
         extra_stmt = extra_stmt.order_by(Agent.created_at.desc()).limit(limit - len(rows))
         extra = (await db.execute(extra_stmt)).scalars().all()
         missing_ids = {a.created_by for a in extra} - set(email_map.keys())
@@ -379,7 +382,7 @@ async def component_leaderboard(
         .where(McpListing.status == ListingStatus.approved)
     )
     if user:
-        stmt = stmt.join(User, McpListing.submitted_by == User.id).where(User.email.ilike(f"%{user}%"))
+        stmt = stmt.join(User, McpListing.submitted_by == User.id).where(User.email.ilike(f"%{escape_like(user)}%"))
     if window != "all":
         days = _RANGE_MAP.get(window, 7)
         stmt = stmt.where(McpDownload.downloaded_at >= dt.now(UTC) - timedelta(days=days))

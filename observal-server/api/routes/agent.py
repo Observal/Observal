@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.deps import get_db, optional_current_user, require_role, resolve_prefix_id
+from api.sanitize import escape_like
 from models.agent import Agent, AgentGoalSection, AgentGoalTemplate, AgentStatus
 from models.agent_component import AgentComponent
 from models.download import AgentDownloadRecord
@@ -305,7 +306,8 @@ async def list_agents(
     base_filter = Agent.status == AgentStatus.active
     search_filter = None
     if search:
-        search_filter = Agent.name.ilike(f"%{search}%") | Agent.description.ilike(f"%{search}%")
+        safe = escape_like(search)
+        search_filter = Agent.name.ilike(f"%{safe}%") | Agent.description.ilike(f"%{safe}%")
 
     # Org-scoping: when the caller belongs to an org, only show agents owned by that org
     org_filter = None
