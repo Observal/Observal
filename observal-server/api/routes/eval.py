@@ -266,7 +266,7 @@ async def eval_agent_in_session(
     # Load agent from DB (by UUID or name)
     from api.routes.agent import _load_agent
 
-    agent = await _load_agent(db, agent_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
