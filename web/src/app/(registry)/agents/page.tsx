@@ -16,11 +16,15 @@ import {
   Trash2,
   Clock,
   Archive,
+  FileEdit,
+  Send,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { useRegistryList, useMyAgents, useWhoami, useArchiveAgent } from "@/hooks/use-api";
+import { useRegistryList, useMyAgents, useWhoami, useArchiveAgent, useSubmitDraft } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import {
@@ -334,15 +338,23 @@ function AgentListContent() {
   );
 
   const { data: myAgents } = useMyAgents();
+  const submitDraft = useSubmitDraft();
+  const [draftsExpanded, setDraftsExpanded] = useState(true);
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
+  const qc = useQueryClient();
+
+  const drafts = useMemo(() => {
+    return (myAgents ?? []).filter((a) => a.status === "draft");
+  }, [myAgents]);
 
   const { filtered, pendingCount } = useMemo(() => {
     const active = agents ?? [];
     const activeIds = new Set(active.map((a) => a.id));
     const pending = (myAgents ?? []).filter(
-      (a) => a.status !== "active" && !activeIds.has(a.id),
+      (a) => a.status !== "active" && a.status !== "draft" && !activeIds.has(a.id),
     );
     return { filtered: [...pending, ...active], pendingCount: pending.length };
-  }, [agents, myAgents]);
+  }, [agents, myAgents, drafts]);
 
   const table = useReactTable({
     data: filtered,
@@ -359,6 +371,39 @@ function AgentListContent() {
     },
     [router],
   );
+
+  function handleEditDraft(draft: RegistryItem) {
+    // Store draft data in localStorage so the builder can pick it up
+    const draftData = {
+      name: draft.name,
+      description: draft.description ?? "",
+      version: (draft.version as string) ?? "1.0.0",
+      model_name: (draft.model_name as string) ?? "",
+      components: {},
+      goal_sections: [{ id: "1", title: "", content: "" }],
+      draft_id: draft.id,
+      saved_at: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem("observal_agent_draft", JSON.stringify(draftData));
+    } catch {
+      // ignore
+    }
+    router.push("/agents/builder");
+  }
+
+  async function handleDeleteDraft(id: string) {
+    setDeletingDraftId(id);
+    try {
+      await registry.delete("agents", id);
+      qc.invalidateQueries({ queryKey: ["registry", "agents"] });
+      toast.success("Draft deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete draft");
+    } finally {
+      setDeletingDraftId(null);
+    }
+  }
 
   return (
     <>
@@ -403,6 +448,78 @@ function AgentListContent() {
             </Button>
           </div>
         </div>
+
+        {/* My Drafts */}
+        {drafts.length > 0 && (
+          <div className="rounded-lg border border-border bg-card">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-accent/40 transition-colors rounded-t-lg"
+              onClick={() => setDraftsExpanded((prev) => !prev)}
+            >
+              {draftsExpanded ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+              My Drafts
+              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+                {drafts.length}
+              </span>
+            </button>
+            {draftsExpanded && (
+              <div className="divide-y divide-border border-t">
+                {drafts.map((draft) => (
+                  <div key={draft.id} className="flex items-center gap-4 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{draft.name}</p>
+                      {draft.description && (
+                        <p className="truncate text-xs text-muted-foreground mt-0.5">
+                          {draft.description}
+                        </p>
+                      )}
+                      {draft.updated_at && (
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Last updated {new Date(draft.updated_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => handleEditDraft(draft)}
+                      >
+                        <FileEdit className="mr-1 h-3 w-3" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={submitDraft.isPending}
+                        onClick={() => submitDraft.mutate(draft.id)}
+                      >
+                        <Send className="mr-1 h-3 w-3" />
+                        Submit for Review
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        disabled={deletingDraftId === draft.id}
+                        onClick={() => handleDeleteDraft(draft.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {pendingCount > 0 && (
           <div className="flex items-start gap-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3">

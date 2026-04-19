@@ -8,6 +8,7 @@ import {
   Trash2,
   Loader2,
   ArrowRight,
+  Save,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -22,11 +23,13 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layouts/page-header";
-import { useRegistryList, useAgentValidation, useWhoami } from "@/hooks/use-api";
+import { useRegistryList, useAgentValidation, useWhoami, useSaveDraft, useUpdateDraft } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
 import type { ValidationResult } from "@/lib/types";
+
+const DRAFT_STORAGE_KEY = "observal_agent_draft";
 
 import { SortableComponentList } from "@/components/builder/sortable-component-list";
 import { ValidationPanel } from "@/components/builder/validation-panel";
@@ -167,6 +170,14 @@ export default function AgentBuilderPage() {
   const [publishing, setPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
 
+  // Draft state
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [showRestoreBanner, setShowRestoreBanner] = useState(false);
+  const saveDraft = useSaveDraft();
+  const updateDraft = useUpdateDraft();
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
   // Selected components keyed by type
   const [selectedComponents, setSelectedComponents] = useState<
     Record<string, RegistryItem[]>
@@ -230,6 +241,138 @@ export default function AgentBuilderPage() {
       if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
     };
   }, [selectedComponents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Check for localStorage draft on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (stored) {
+        setShowRestoreBanner(true);
+      }
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
+
+  // Debounced localStorage auto-save (2s)
+  useEffect(() => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+    autoSaveTimerRef.current = setTimeout(() => {
+      const hasContent = name || description || modelName || version !== "1.0.0" ||
+        Object.values(selectedComponents).some((items) => items.length > 0) ||
+        goalSections.some((s) => s.title || s.content);
+
+      if (!hasContent) return;
+
+      try {
+        const draft = {
+          name,
+          description,
+          version,
+          model_name: modelName,
+          components: selectedComponents,
+          goal_sections: goalSections,
+          draft_id: draftId,
+          saved_at: new Date().toISOString(),
+        };
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      } catch {
+        // localStorage full or unavailable
+      }
+    }, 2000);
+
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [name, description, version, modelName, selectedComponents, goalSections, draftId]);
+
+  function restoreLocalDraft() {
+    try {
+      const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (!stored) return;
+      const draft = JSON.parse(stored);
+      if (draft.name) setName(draft.name);
+      if (draft.description) setDescription(draft.description);
+      if (draft.version) setVersion(draft.version);
+      if (draft.model_name) setModelName(draft.model_name);
+      if (draft.components) setSelectedComponents(draft.components);
+      if (draft.goal_sections) setGoalSections(draft.goal_sections);
+      if (draft.draft_id) setDraftId(draft.draft_id);
+      setShowRestoreBanner(false);
+      toast.success("Draft restored");
+    } catch {
+      toast.error("Failed to restore draft");
+    }
+  }
+
+  function discardLocalDraft() {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setShowRestoreBanner(false);
+  }
+
+  async function handleSaveDraft() {
+    if (!name.trim()) {
+      toast.error("Agent name is required");
+      return;
+    }
+
+    setSavingDraft(true);
+    try {
+      const components: { component_type: string; component_id: string }[] = [];
+      for (const [type, items] of Object.entries(selectedComponents)) {
+        const singularType = TYPE_MAP[type] ?? type;
+        for (const item of items) {
+          components.push({ component_type: singularType, component_id: item.id });
+        }
+      }
+
+      const sections = goalSections
+        .filter((s) => s.title.trim())
+        .map((s) => ({
+          name: s.title.trim(),
+          description: s.content.trim() || null,
+        }));
+
+      const goalDescription = description.trim() || name.trim();
+
+      const body = {
+        name: name.trim(),
+        version: version.trim() || "1.0.0",
+        description: description.trim(),
+        owner: whoami?.name || whoami?.email || "unknown",
+        model_name: modelName,
+        components: components.length > 0 ? components : [],
+        goal_template: {
+          description: goalDescription,
+          sections: sections.length > 0 ? sections : [{ name: "Default", description: goalDescription }],
+        },
+      };
+
+      if (draftId) {
+        await updateDraft.mutateAsync({ id: draftId, body });
+      } else {
+        const created = await saveDraft.mutateAsync(body);
+        setDraftId(created.id);
+      }
+
+      // Clear localStorage on successful server save
+      try {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to save draft";
+      toast.error(msg);
+    } finally {
+      setSavingDraft(false);
+    }
+  }
 
   const handleToggle = useCallback(
     (type: string) => (item: RegistryItem) => {
@@ -359,6 +502,21 @@ export default function AgentBuilderPage() {
       />
 
       <div className="p-6 lg:p-8 w-full max-w-[1400px] mx-auto">
+        {/* Restore draft banner */}
+        {showRestoreBanner && (
+          <div className="mb-4 flex items-center gap-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3">
+            <p className="flex-1 text-sm text-blue-700 dark:text-blue-300">
+              You have an unsaved draft.
+            </p>
+            <Button variant="outline" size="sm" onClick={restoreLocalDraft}>
+              Restore
+            </Button>
+            <Button variant="ghost" size="sm" onClick={discardLocalDraft}>
+              Discard
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-col gap-8 lg:flex-row">
           {/* Left column: Form */}
           <div className="min-w-0 flex-1 space-y-6 lg:max-w-[calc(66.667%-1rem)]">
@@ -583,6 +741,19 @@ export default function AgentBuilderPage() {
 
             {/* Publish */}
             <div className="flex items-center gap-3 animate-in stagger-3">
+              <Button
+                variant="outline"
+                onClick={handleSaveDraft}
+                disabled={savingDraft || !name.trim()}
+                className="min-w-[160px]"
+              >
+                {savingDraft ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Save Draft
+              </Button>
               <Button
                 onClick={handlePublish}
                 disabled={publishing || !name.trim()}
