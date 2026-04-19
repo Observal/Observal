@@ -88,11 +88,13 @@ class ContentTypeMiddleware(BaseHTTPMiddleware):
         if path in _SKIP_PATHS or any(path.startswith(p) for p in _SKIP_PREFIXES):
             return await call_next(request)
 
-        # If there is no Content-Length or it is 0, there is no body to validate.
+        # If there is no body to validate, skip Content-Type enforcement.
         content_length = request.headers.get("content-length")
+        ct_header = request.headers.get("content-type")
         if content_length is not None and int(content_length) == 0:
             return await call_next(request)
-
+        if content_length is None and not ct_header:
+            return await call_next(request)
         ct = _content_type_base(request.headers.get("content-type"))
 
         # Determine allowed set based on path.

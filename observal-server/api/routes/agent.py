@@ -929,18 +929,34 @@ async def save_draft(
     db.add(agent)
     await db.flush()
 
-    for i, cref in enumerate(req.components):
+    # Legacy: mcp_server_ids -> AgentComponent(type=mcp)
+    order = 0
+    if not req.components and req.mcp_server_ids:
+        for mid in req.mcp_server_ids:
+            db.add(
+                AgentComponent(
+                    agent_id=agent.id,
+                    component_type="mcp",
+                    component_id=mid,
+                    version_ref="latest",
+                    order_index=order,
+                )
+            )
+            order += 1
+
+    # New: components list with all types
+    for cref in req.components:
         db.add(
             AgentComponent(
                 agent_id=agent.id,
                 component_type=cref.component_type,
                 component_id=cref.component_id,
                 version_ref="latest",
-                order_index=i,
+                order_index=order,
                 config_override=cref.config_override,
             )
         )
-
+        order += 1
     goal = AgentGoalTemplate(agent_id=agent.id, description=req.goal_template.description)
     db.add(goal)
     await db.flush()
