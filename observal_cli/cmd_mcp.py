@@ -338,9 +338,13 @@ def _submit_impl(git_url, name, category, yes, direct_config=False):
             raise typer.Exit(1)
         try:
             cfg = json.loads(raw_text)
-        except json.JSONDecodeError as e:
-            rprint(f"[red]Invalid JSON:[/red] {e}")
-            raise typer.Exit(1)
+        except json.JSONDecodeError:
+            # Long single-line pastes can get split by the terminal — retry without newlines
+            try:
+                cfg = json.loads("".join(part.strip() for part in lines))
+            except json.JSONDecodeError as e:
+                rprint(f"[red]Invalid JSON:[/red] {e}")
+                raise typer.Exit(1)
 
         parsed = _parse_direct_config(cfg)
         _name = name or parsed.pop("_server_name", None) or "my-mcp-server"
