@@ -321,10 +321,11 @@ function AgentBuilderInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit");
+  const draftParam = searchParams.get("draft");
   const isEditMode = !!editId;
 
   const { data: whoami } = useWhoami();
-  const { data: existingAgent } = useRegistryItem("agents", editId ?? undefined);
+  const { data: existingAgent } = useRegistryItem("agents", editId ?? draftParam ?? undefined);
 
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState("");
@@ -373,7 +374,7 @@ function AgentBuilderInner() {
     useState<ValidationResult | null>(null);
   const validateTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Load existing agent data when in edit mode
+  // Load existing agent data when in edit or draft-resume mode
   useEffect(() => {
     if (!existingAgent || editLoadedRef.current) return;
     editLoadedRef.current = true;
@@ -384,6 +385,8 @@ function AgentBuilderInner() {
     if (typeof agentVersion === "string") setVersion(agentVersion);
     const agentModel = (existingAgent as Record<string, unknown>).model_name;
     if (typeof agentModel === "string") setModelName(agentModel);
+
+    if (draftParam) setDraftId(draftParam);
 
     // Load components if available
     const agentComponents = (existingAgent as Record<string, unknown>).components;
@@ -415,7 +418,23 @@ function AgentBuilderInner() {
       }));
       if (loadedSections.length > 0) setGoalSections(loadedSections);
     }
-  }, [existingAgent]);
+
+    // Load custom prompts from the prompt field
+    const promptField = (existingAgent as Record<string, unknown>).prompt;
+    if (typeof promptField === "string" && promptField.trim()) {
+      const parts = promptField.split(/\n## /).filter(Boolean);
+      const loaded: CustomPrompt[] = parts.map((part) => {
+        const lines = part.startsWith("## ") ? part.slice(3).split("\n") : part.split("\n");
+        const title = lines[0]?.trim() ?? "";
+        const content = lines.slice(1).join("\n").trim();
+        if (title && content) {
+          return { id: generateId(), title, content };
+        }
+        return { id: generateId(), title: "", content: part.startsWith("## ") ? part.slice(3).trim() : part.trim() };
+      });
+      if (loaded.length > 0) setCustomPrompts(loaded);
+    }
+  }, [existingAgent, draftParam]);
 
   // Compute selected IDs for quick lookup
   const selectedIds = useMemo(() => {
@@ -480,7 +499,8 @@ function AgentBuilderInner() {
     autoSaveTimerRef.current = setTimeout(() => {
       const hasContent = name || description || modelName || version !== "1.0.0" ||
         Object.values(selectedComponents).some((items) => items.length > 0) ||
-        goalSections.some((s) => s.title || s.content);
+        goalSections.some((s) => s.title || s.content) ||
+        customPrompts.some((p) => p.title || p.content);
 
       if (!hasContent) return;
 
@@ -492,6 +512,7 @@ function AgentBuilderInner() {
           model_name: modelName,
           components: selectedComponents,
           goal_sections: goalSections,
+          custom_prompts: customPrompts,
           draft_id: draftId,
           saved_at: new Date().toISOString(),
         };
@@ -504,7 +525,7 @@ function AgentBuilderInner() {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [name, description, version, modelName, selectedComponents, goalSections, draftId, isEditMode]);
+  }, [name, description, version, modelName, selectedComponents, goalSections, customPrompts, draftId, isEditMode]);
 
   function restoreLocalDraft() {
     try {
@@ -517,6 +538,7 @@ function AgentBuilderInner() {
       if (draft.model_name) setModelName(draft.model_name);
       if (draft.components) setSelectedComponents(draft.components);
       if (draft.goal_sections) setGoalSections(draft.goal_sections);
+      if (Array.isArray(draft.custom_prompts)) setCustomPrompts(draft.custom_prompts);
       if (draft.draft_id) setDraftId(draft.draft_id);
       setShowRestoreBanner(false);
       toast.success("Draft restored");
@@ -542,35 +564,7 @@ function AgentBuilderInner() {
 
     setSavingDraft(true);
     try {
-      const components: { component_type: string; component_id: string }[] = [];
-      for (const [type, items] of Object.entries(selectedComponents)) {
-        const singularType = TYPE_MAP[type] ?? type;
-        for (const item of items) {
-          components.push({ component_type: singularType, component_id: item.id });
-        }
-      }
-
-      const sections = goalSections
-        .filter((s) => s.title.trim())
-        .map((s) => ({
-          name: s.title.trim(),
-          description: s.content.trim() || null,
-        }));
-
-      const goalDescription = description.trim() || name.trim();
-
-      const body = {
-        name: name.trim(),
-        version: version.trim() || "1.0.0",
-        description: description.trim(),
-        owner: whoami?.name || whoami?.email || "unknown",
-        model_name: modelName,
-        components: components.length > 0 ? components : [],
-        goal_template: {
-          description: goalDescription,
-          sections: sections.length > 0 ? sections : [{ name: "Default", description: goalDescription }],
-        },
-      };
+      const body = buildRequestBody();
 
       if (draftId) {
         await updateDraft.mutateAsync({ id: draftId, body });

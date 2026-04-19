@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { auth, setUserRole, getUserRole, clearSession } from "@/lib/api";
 
@@ -22,11 +22,19 @@ export function useAuthGuard() {
   const router = useRouter();
   const pathname = usePathname();
   const snapshot = useSyncExternalStore(subscribe, getAuthSnapshot, getServerSnapshot);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
+
   const hasToken = snapshot !== "";
   const ready = hasToken && snapshot !== "pending";
   const role = ready ? snapshot : null;
 
   useEffect(() => {
+    if (!hydrated) return;
+
     if (!hasToken && pathname !== "/login") {
       router.replace("/login");
       return;
@@ -43,7 +51,7 @@ export function useAuthGuard() {
         router.replace("/login");
       });
     }
-  }, [hasToken, snapshot, pathname, router]);
+  }, [hydrated, hasToken, snapshot, pathname, router]);
 
   return { ready, role };
 }

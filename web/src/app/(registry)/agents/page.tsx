@@ -373,23 +373,7 @@ function AgentListContent() {
   );
 
   function handleEditDraft(draft: RegistryItem) {
-    // Store draft data in localStorage so the builder can pick it up
-    const draftData = {
-      name: draft.name,
-      description: draft.description ?? "",
-      version: (draft.version as string) ?? "1.0.0",
-      model_name: (draft.model_name as string) ?? "",
-      components: {},
-      goal_sections: [{ id: "1", title: "", content: "" }],
-      draft_id: draft.id,
-      saved_at: new Date().toISOString(),
-    };
-    try {
-      localStorage.setItem("observal_agent_draft", JSON.stringify(draftData));
-    } catch {
-      // ignore
-    }
-    router.push("/agents/builder");
+    router.push(`/agents/builder?draft=${draft.id}`);
   }
 
   async function handleDeleteDraft(id: string) {
