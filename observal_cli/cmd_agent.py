@@ -227,6 +227,114 @@ def agent_create(
     rprint(f"[yellow]Status: {status} — an admin must approve it before it becomes visible.[/yellow]")
 
 
+@agent_app.command(name="bulk-create")
+def agent_bulk_create(
+    file_path: str = typer.Option(..., "--from-file", help="JSON file with agent definitions"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without creating"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Bulk-create agents from a JSON file."""
+    import json
+
+    path = Path(file_path)
+    if not path.exists():
+        rprint(f"[red]Error:[/red] File not found: {file_path}")
+        raise typer.Exit(code=1)
+
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+    except json.JSONDecodeError as exc:
+        rprint(f"[red]Error:[/red] Invalid JSON: {exc}")
+        raise typer.Exit(code=1)
+
+    # Accept {"agents": [...]} or bare [...]
+    if isinstance(raw, list):
+        agents = raw
+    elif isinstance(raw, dict) and "agents" in raw:
+        agents = raw["agents"]
+    else:
+        rprint("[red]Error:[/red] JSON must be {\"agents\": [...]} or a bare array.")
+        raise typer.Exit(code=1)
+
+    if not agents:
+        rprint("[yellow]No agents found in file.[/yellow]")
+        raise typer.Exit(code=1)
+
+    # ── Preview table ────────────────────────────────────────
+    preview = Table(title=f"Agents to create ({len(agents)})", show_lines=False, padding=(0, 1))
+    preview.add_column("#", style="dim", width=3)
+    preview.add_column("Name", style="bold cyan", no_wrap=True)
+    preview.add_column("Version", style="green")
+    preview.add_column("Components")
+    preview.add_column("Model")
+    for i, ag in enumerate(agents, 1):
+        comp_count = str(len(ag.get("components", [])))
+        preview.add_row(
+            str(i),
+            ag.get("name", "unnamed"),
+            ag.get("version", "1.0.0"),
+            comp_count,
+            ag.get("model_name", "claude-sonnet-4"),
+        )
+    console.print(preview)
+
+    # ── Dry-run mode ─────────────────────────────────────────
+    if dry_run:
+        with spinner("Running dry-run..."):
+            result = client.post("/api/v1/bulk/agents", {"agents": agents, "dry_run": True})
+
+        results_table = Table(title="Dry-run results", show_lines=False, padding=(0, 1))
+        results_table.add_column("#", style="dim", width=3)
+        results_table.add_column("Name", style="bold cyan", no_wrap=True)
+        results_table.add_column("Status")
+        results_table.add_column("Error", style="red")
+        for i, item in enumerate(result.get("results", []), 1):
+            status = item.get("status", "")
+            badge = "[green]created[/green]" if status == "created" else (
+                "[yellow]skipped[/yellow]" if status == "skipped" else f"[red]{status}[/red]"
+            )
+            results_table.add_row(str(i), item.get("name", ""), badge, item.get("error", "") or "")
+        console.print(results_table)
+
+        rprint(
+            f"\n[bold]Summary:[/bold] {result.get('created', 0)} would be created, "
+            f"{result.get('skipped', 0)} skipped, {result.get('errors', 0)} errors"
+        )
+        return
+
+    # ── Confirmation ─────────────────────────────────────────
+    if not yes:
+        if not typer.confirm(f"\nCreate {len(agents)} agents?", default=False):
+            rprint("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(0)
+
+    # ── Create ───────────────────────────────────────────────
+    with spinner("Creating agents..."):
+        result = client.post("/api/v1/bulk/agents", {"agents": agents, "dry_run": False})
+
+    results_table = Table(title="Bulk create results", show_lines=False, padding=(0, 1))
+    results_table.add_column("#", style="dim", width=3)
+    results_table.add_column("Name", style="bold cyan", no_wrap=True)
+    results_table.add_column("Status")
+    results_table.add_column("Agent ID", style="dim")
+    results_table.add_column("Error", style="red")
+    for i, item in enumerate(result.get("results", []), 1):
+        status = item.get("status", "")
+        badge = "[green]created[/green]" if status == "created" else (
+            "[yellow]skipped[/yellow]" if status == "skipped" else f"[red]{status}[/red]"
+        )
+        agent_id = str(item["agent_id"])[:8] + "…" if item.get("agent_id") else ""
+        results_table.add_row(str(i), item.get("name", ""), badge, agent_id, item.get("error", "") or "")
+    console.print(results_table)
+
+    rprint(
+        f"\n[green]✓ Bulk create complete![/green] "
+        f"{result.get('created', 0)} created, {result.get('skipped', 0)} skipped, "
+        f"{result.get('errors', 0)} errors"
+    )
+
+
 @agent_app.command(name="list")
 def agent_list(
     search: str | None = typer.Option(None, "--search", "-s"),
