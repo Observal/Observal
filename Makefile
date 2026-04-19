@@ -1,4 +1,4 @@
-.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate
+.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate check-migrations new-migration
 
 # ── Linting ──────────────────────────────────────────────
 
@@ -46,6 +46,13 @@ down:  ## Stop Docker stack
 
 migrate:  ## Run database migrations
 	docker compose -f docker/docker-compose.yml exec observal-api /app/.venv/bin/python -m alembic upgrade head
+
+check-migrations:  ## Validate alembic migration chain (no duplicates, no forks)
+	python3 scripts/check_migrations.py
+
+new-migration:  ## Create a new migration: make new-migration MSG="add foo to bar"
+	@test -n "$(MSG)" || (echo 'Usage: make new-migration MSG="description"' && exit 1)
+	./scripts/new_migration.sh "$(MSG)"
 
 rebuild:  ## Rebuild and restart Docker stack (runs migrations automatically)
 	cd docker && docker compose up --build -d

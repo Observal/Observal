@@ -24,6 +24,16 @@ repos:
       - id: no-commit-to-branch
         args: [--branch, main]
 
+  # ── Alembic migrations ─────────────────────────────────
+  - repo: local
+    hooks:
+      - id: check-migrations
+        name: check alembic migration chain
+        entry: python3 scripts/check_migrations.py
+        language: system
+        files: ^observal-server/alembic/versions/.*\.py$
+        pass_filenames: false
+
   # ── Docker ─────────────────────────────────────────────
   - repo: https://github.com/hadolint/hadolint
     rev: v2.12.0
