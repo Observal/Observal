@@ -77,6 +77,7 @@ class HookListingSummary(BaseModel):
 
 class HookInstallRequest(BaseModel):
     ide: str
+    platform: str = ""  # e.g. "win32", "darwin", "linux" — empty = Unix default
 
 
 class HookInstallResponse(BaseModel):

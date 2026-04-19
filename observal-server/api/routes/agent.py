@@ -615,6 +615,7 @@ async def install_agent(
         component_names=name_map,
         env_values=req.env_values,
         options=req.options,
+        platform=req.platform,
     )
 
     # Capture agent.id before any DB operations that might expire the ORM

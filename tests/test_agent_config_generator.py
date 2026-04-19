@@ -672,3 +672,199 @@ class TestBuilderRulesMarkdown:
         assert "**srv-a**" in md_file.content
         assert "## Skills" in md_file.content
         assert "**skill-b**" in md_file.content
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Windows platform-aware Kiro config generation
+# ═══════════════════════════════════════════════════════════════════
+
+UNIX_FORBIDDEN_IN_WIN32 = ["cat |", "sed '", "$PPID", "$TERM", "$SHELL", "python3"]
+
+
+class TestGenerateKiroWin32:
+    """Fix checking: Windows Kiro configs must not contain Unix-only syntax."""
+
+    def _all_hook_commands(self, cfg: dict) -> list[str]:
+        """Extract all hook command strings from a Kiro agent config."""
+        hooks = cfg["agent_file"]["content"]["hooks"]
+        cmds = []
+        for _event, entries in hooks.items():
+            for entry in entries:
+                if "command" in entry:
+                    cmds.append(entry["command"])
+        return cmds
+
+    def test_win32_hooks_contain_no_unix_syntax(self):
+        agent = _make_agent()
+        cfg = generate_agent_config(agent, "kiro", platform="win32")
+        cmds = self._all_hook_commands(cfg)
+        assert cmds, "Expected at least one hook command"
+        for cmd in cmds:
+            for forbidden in UNIX_FORBIDDEN_IN_WIN32:
+                assert forbidden not in cmd, f"Found Unix-only '{forbidden}' in win32 hook: {cmd}"
+
+    def test_win32_hooks_use_python_not_python3(self):
+        agent = _make_agent()
+        cfg = generate_agent_config(agent, "kiro", platform="win32")
+        cmds = self._all_hook_commands(cfg)
+        for cmd in cmds:
+            assert "python3" not in cmd
+            assert "python " in cmd or "python -m" in cmd
+
+    def test_win32_hooks_include_agent_name(self):
+        agent = _make_agent(name="my-cool-agent")
+        cfg = generate_agent_config(agent, "kiro", platform="win32")
+        cmds = self._all_hook_commands(cfg)
+        for cmd in cmds:
+            assert "--agent-name my-cool-agent" in cmd
+
+    def test_win32_hooks_include_model_when_present(self):
+        agent = _make_agent(model_name="claude-sonnet-4")
+        cfg = generate_agent_config(agent, "kiro", platform="win32")
+        cmds = self._all_hook_commands(cfg)
+        for cmd in cmds:
+            assert "--model claude-sonnet-4" in cmd
+
+    def test_win32_hooks_omit_model_when_empty(self):
+        agent = _make_agent(model_name="")
+        cfg = generate_agent_config(agent, "kiro", platform="win32")
+        cmds = self._all_hook_commands(cfg)
+        for cmd in cmds:
+            assert "--model" not in cmd
+
+    def test_win32_still_has_all_hook_events(self):
+        agent = _make_agent()
+        cfg = generate_agent_config(agent, "kiro", platform="win32")
+        hooks = cfg["agent_file"]["content"]["hooks"]
+        for event in ("agentSpawn", "userPromptSubmit", "preToolUse", "postToolUse", "stop"):
+            assert event in hooks
+
+    def test_win32_agent_file_path_unchanged(self):
+        agent = _make_agent()
+        cfg = generate_agent_config(agent, "kiro", platform="win32")
+        assert cfg["agent_file"]["path"] == "~/.kiro/agents/test-agent.json"
+
+
+class TestGenerateKiroPreservation:
+    """Preservation checking: Unix Kiro configs must be identical with or without platform."""
+
+    def test_no_platform_matches_linux(self):
+        agent = _make_agent()
+        cfg_default = generate_agent_config(agent, "kiro")
+        cfg_linux = generate_agent_config(agent, "kiro", platform="linux")
+        assert cfg_default == cfg_linux
+
+    def test_darwin_matches_default(self):
+        agent = _make_agent()
+        cfg_default = generate_agent_config(agent, "kiro")
+        cfg_darwin = generate_agent_config(agent, "kiro", platform="darwin")
+        assert cfg_default == cfg_darwin
+
+    def test_empty_platform_matches_default(self):
+        agent = _make_agent()
+        cfg_default = generate_agent_config(agent, "kiro")
+        cfg_empty = generate_agent_config(agent, "kiro", platform="")
+        assert cfg_default == cfg_empty
+
+    def test_unix_hooks_still_use_cat_sed_curl(self):
+        agent = _make_agent()
+        cfg = generate_agent_config(agent, "kiro", platform="linux")
+        hooks = cfg["agent_file"]["content"]["hooks"]
+        spawn_cmd = hooks["agentSpawn"][0]["command"]
+        assert "cat |" in spawn_cmd
+        assert "sed '" in spawn_cmd
+        assert "curl" in spawn_cmd
+
+    def test_non_kiro_ides_unaffected_by_platform(self):
+        agent = _make_agent()
+        for ide in ("cursor", "vscode", "codex", "copilot"):
+            cfg_default = generate_agent_config(agent, ide)
+            cfg_win32 = generate_agent_config(agent, ide, platform="win32")
+            assert cfg_default == cfg_win32, f"{ide} config changed with platform=win32"
+
+
+class TestHookConfigGeneratorWin32:
+    """Fix checking: hook_config_generator Windows output has no Unix syntax."""
+
+    def test_win32_kiro_hook_no_unix_syntax(self):
+        from services.hook_config_generator import generate_hook_telemetry_config
+
+        listing = MagicMock()
+        listing.event = "UserPromptSubmit"
+        cfg = generate_hook_telemetry_config(listing, "kiro", platform="win32")
+        cmd = cfg["hooks"]["userPromptSubmit"][0]["command"]
+        for forbidden in UNIX_FORBIDDEN_IN_WIN32:
+            assert forbidden not in cmd, f"Found Unix-only '{forbidden}' in win32 hook: {cmd}"
+        assert "python " in cmd or "python -m" in cmd
+
+    def test_win32_kiro_stop_hook_no_unix_syntax(self):
+        from services.hook_config_generator import generate_hook_telemetry_config
+
+        listing = MagicMock()
+        listing.event = "Stop"
+        cfg = generate_hook_telemetry_config(listing, "kiro", platform="win32")
+        cmd = cfg["hooks"]["stop"][0]["command"]
+        for forbidden in UNIX_FORBIDDEN_IN_WIN32:
+            assert forbidden not in cmd, f"Found Unix-only '{forbidden}' in win32 hook: {cmd}"
+        assert "python " in cmd or "python -m" in cmd
+
+    def test_unix_kiro_hook_preserved(self):
+        from services.hook_config_generator import generate_hook_telemetry_config
+
+        listing = MagicMock()
+        listing.event = "UserPromptSubmit"
+        cfg_default = generate_hook_telemetry_config(listing, "kiro")
+        cfg_linux = generate_hook_telemetry_config(listing, "kiro", platform="linux")
+        assert cfg_default == cfg_linux
+
+    def test_unix_kiro_stop_hook_preserved(self):
+        from services.hook_config_generator import generate_hook_telemetry_config
+
+        listing = MagicMock()
+        listing.event = "Stop"
+        cfg_default = generate_hook_telemetry_config(listing, "kiro")
+        cfg_linux = generate_hook_telemetry_config(listing, "kiro", platform="linux")
+        assert cfg_default == cfg_linux
+
+    def test_non_kiro_ides_unaffected(self):
+        from services.hook_config_generator import generate_hook_telemetry_config
+
+        listing = MagicMock()
+        listing.event = "PreToolUse"
+        cfg_default = generate_hook_telemetry_config(listing, "claude-code")
+        cfg_win32 = generate_hook_telemetry_config(listing, "claude-code", platform="win32")
+        assert cfg_default == cfg_win32
+
+
+class TestGetKiroDb:
+    """Test platform-aware Kiro DB path resolution."""
+
+    def test_unix_path(self):
+        import unittest.mock
+
+        from observal_cli.hooks.kiro_hook import _get_kiro_db
+
+        with unittest.mock.patch("observal_cli.hooks.kiro_hook.sys") as mock_sys:
+            mock_sys.platform = "linux"
+            db = _get_kiro_db()
+            assert ".local" in str(db)
+            assert "kiro-cli" in str(db)
+            assert "data.sqlite3" in str(db)
+
+    def test_win32_path_with_localappdata(self):
+        import unittest.mock
+
+        from observal_cli.hooks.kiro_hook import _get_kiro_db
+
+        with (
+            unittest.mock.patch("observal_cli.hooks.kiro_hook.sys") as mock_sys,
+            unittest.mock.patch("observal_cli.hooks.kiro_hook.os") as mock_os,
+        ):
+            mock_sys.platform = "win32"
+            mock_os.environ.get = lambda key, default="": (
+                "C:\\Users\\test\\AppData\\Local" if key == "LOCALAPPDATA" else default
+            )
+            db = _get_kiro_db()
+            assert "AppData" in str(db)
+            assert "kiro-cli" in str(db)
+            assert "data.sqlite3" in str(db)

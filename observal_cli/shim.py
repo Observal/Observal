@@ -8,7 +8,9 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import sys
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
@@ -287,7 +289,7 @@ async def _relay_ide_to_mcp(
 
 async def _relay_mcp_to_ide(
     mcp_queue: asyncio.Queue,
-    ide_stdout: asyncio.StreamWriter,
+    ide_stdout: asyncio.StreamWriter | None,
     state: ShimState,
 ):
     """Relay messages from MCP to IDE, pairing responses to create spans."""
@@ -301,8 +303,13 @@ async def _relay_mcp_to_ide(
             if span:
                 await state.buffer_span(span)
         raw = json.dumps(msg) + "\n"
-        ide_stdout.write(raw.encode())
-        await ide_stdout.drain()
+        if ide_stdout is not None:
+            ide_stdout.write(raw.encode())
+            await ide_stdout.drain()
+        else:
+            # Windows fallback: write directly to stdout buffer
+            sys.stdout.buffer.write(raw.encode())
+            sys.stdout.buffer.flush()
 
 
 async def _periodic_flush(state: ShimState, interval: float = 5.0):
@@ -315,8 +322,33 @@ async def _periodic_flush(state: ShimState, interval: float = 5.0):
         pass
 
 
+def _thread_read_stdin(loop: asyncio.AbstractEventLoop, reader: asyncio.StreamReader):
+    """Read stdin in a thread and feed data to an asyncio StreamReader.
+
+    On Windows, asyncio's connect_read_pipe does not work with sys.stdin
+    (the Proactor event loop doesn't support it). This thread bridges the
+    gap by reading stdin synchronously and feeding lines into the reader.
+    """
+    try:
+        while True:
+            line = sys.stdin.buffer.readline()
+            if not line:
+                loop.call_soon_threadsafe(reader.feed_eof)
+                break
+            loop.call_soon_threadsafe(reader.feed_data, line)
+    except Exception:
+        loop.call_soon_threadsafe(reader.feed_eof)
+
+
 async def run_shim(mcp_id: str, command: list[str]):
     """Main shim entry point: spawn MCP process and relay stdio."""
+    # On Windows, asyncio.create_subprocess_exec cannot find .cmd/.bat
+    # scripts (like npx.cmd) by PATH alone. Resolve the executable first.
+    if sys.platform == "win32" and command:
+        resolved = shutil.which(command[0])
+        if resolved:
+            command = [resolved, *command[1:]]
+
     # Resolve auth
     access_token = os.environ.get("OBSERVAL_KEY", "")
     server_url = os.environ.get("OBSERVAL_SERVER", "")
@@ -346,15 +378,28 @@ async def run_shim(mcp_id: str, command: list[str]):
         stderr=asyncio.subprocess.PIPE,
     )
 
-    # Set up async readers
+    # Set up IDE stdin reader.
+    # On Windows, connect_read_pipe / connect_write_pipe don't work with
+    # regular file handles (stdin/stdout). Use a background thread instead.
     ide_reader = asyncio.StreamReader()
-    protocol = asyncio.StreamReaderProtocol(ide_reader)
-    await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
+    if sys.platform == "win32":
+        loop = asyncio.get_event_loop()
+        t = threading.Thread(target=_thread_read_stdin, args=(loop, ide_reader), daemon=True)
+        t.start()
+    else:
+        protocol = asyncio.StreamReaderProtocol(ide_reader)
+        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
 
-    ide_writer_transport, ide_writer_protocol = await asyncio.get_event_loop().connect_write_pipe(
-        asyncio.streams.FlowControlMixin, sys.stdout
-    )
-    ide_stdout = asyncio.StreamWriter(ide_writer_transport, ide_writer_protocol, None, asyncio.get_event_loop())
+    # Set up IDE stdout writer.
+    if sys.platform == "win32":
+        # On Windows, write directly to stdout buffer instead of using
+        # connect_write_pipe which fails on the Proactor event loop.
+        ide_stdout = None  # sentinel — _relay_mcp_to_ide will write to sys.stdout
+    else:
+        ide_writer_transport, ide_writer_protocol = await asyncio.get_event_loop().connect_write_pipe(
+            asyncio.streams.FlowControlMixin, sys.stdout
+        )
+        ide_stdout = asyncio.StreamWriter(ide_writer_transport, ide_writer_protocol, None, asyncio.get_event_loop())
 
     ide_queue = await _read_messages(ide_reader)
     mcp_queue = await _read_messages(proc.stdout)

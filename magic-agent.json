@@ -1,0 +1,28 @@
+{
+  "name": "magic-agent",
+  "version": "1.0.0",
+  "description": "Agent with 21st.dev Magic MCP for UI component generation",
+  "owner": "admin",
+  "prompt": "You are a UI development assistant. Use the magic MCP server to generate beautiful UI components.",
+  "model_name": "claude-sonnet-4",
+  "model_config_json": {},
+  "supported_ides": ["kiro"],
+  "mcp_server_ids": [],
+  "components": [],
+  "external_mcps": [
+    {
+      "name": "magic-mcp",
+      "command": "npx",
+      "args": ["-y", "@21st-dev/magic-mcp"]
+    }
+  ],
+  "goal_template": {
+    "description": "UI component generation",
+    "sections": [
+      {
+        "name": "Task",
+        "description": "What UI component to build"
+      }
+    ]
+  }
+}

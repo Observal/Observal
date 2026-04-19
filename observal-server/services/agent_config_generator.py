@@ -131,6 +131,7 @@ def generate_agent_config(
     component_names: dict | None = None,
     env_values: dict | None = None,
     options: dict | None = None,
+    platform: str = "",
 ) -> dict:
     """Generate IDE-specific config for an agent.
 
@@ -138,6 +139,7 @@ def generate_agent_config(
         mcp_listings: optional {component_id: McpListing} map pre-loaded by caller.
         component_names: optional {component_id_str: name} map for all component types.
         env_values: optional {mcp_listing_id_str: {VAR: value}} map of user-supplied env var values.
+        platform: client platform string (e.g. "win32", "darwin", "linux"). Empty = Unix default.
     """
     safe_name = _sanitize_name(agent.name)
     mcp_configs = _build_mcp_configs(agent, ide, observal_url, mcp_listings=mcp_listings, env_values=env_values)
@@ -148,27 +150,41 @@ def generate_agent_config(
         # Kiro agent JSON: drop into ~/.kiro/agents/<name>.json
         # Telemetry collected via observal-shim + hook bridge
         model_field = f',\\"model\\":\\"{agent.model_name}\\"' if agent.model_name else ""
-        curl_cmd = (
-            f'cat | sed \'s/^{{/{{"session_id":"kiro-\'$PPID\'","service_name":"kiro-cli",'
-            f'"agent_name":"{safe_name}"{model_field},/\' '
-            f"| curl -sf -X POST {observal_url}/api/v1/otel/hooks "
-            f'-H "Content-Type: application/json" '
-            f"-d @-"
-        )
-        # Stop hook: enrich with model/token data from Kiro SQLite DB.
-        # Uses the observal CLI's enrichment script if installed, otherwise
-        # falls back to the same curl command as other events.
-        stop_cmd = (
-            f'cat | sed \'s/^{{/{{"session_id":"kiro-\'$PPID\'","service_name":"kiro-cli",'
-            f'"agent_name":"{safe_name}"{model_field},/\' '
-            f"| python3 -m observal_cli.hooks.kiro_stop_hook "
-            f"--url {observal_url}/api/v1/otel/hooks"
-        )
+
+        if platform == "win32":
+            # PowerShell-compatible: pipe stdin through the Python hook script.
+            # No cat/sed/curl/$PPID/$TERM/$SHELL — those don't exist in PowerShell.
+            model_arg = f" --model {agent.model_name}" if agent.model_name else ""
+            hook_cmd = (
+                f"python -m observal_cli.hooks.kiro_hook "
+                f"--url {observal_url}/api/v1/otel/hooks "
+                f"--agent-name {safe_name}{model_arg}"
+            )
+            stop_cmd = (
+                f"python -m observal_cli.hooks.kiro_stop_hook "
+                f"--url {observal_url}/api/v1/otel/hooks "
+                f"--agent-name {safe_name}{model_arg}"
+            )
+        else:
+            # Unix: cat | sed | curl pipeline (unchanged)
+            hook_cmd = (
+                f'cat | sed \'s/^{{/{{"session_id":"kiro-\'$PPID\'","service_name":"kiro-cli",'
+                f'"agent_name":"{safe_name}"{model_field},/\' '
+                f"| curl -sf -X POST {observal_url}/api/v1/otel/hooks "
+                f'-H "Content-Type: application/json" '
+                f"-d @-"
+            )
+            stop_cmd = (
+                f'cat | sed \'s/^{{/{{"session_id":"kiro-\'$PPID\'","service_name":"kiro-cli",'
+                f'"agent_name":"{safe_name}"{model_field},/\' '
+                f"| python3 -m observal_cli.hooks.kiro_stop_hook "
+                f"--url {observal_url}/api/v1/otel/hooks"
+            )
         hooks = {
-            "agentSpawn": [{"command": curl_cmd}],
-            "userPromptSubmit": [{"command": curl_cmd}],
-            "preToolUse": [{"matcher": "*", "command": curl_cmd}],
-            "postToolUse": [{"matcher": "*", "command": curl_cmd}],
+            "agentSpawn": [{"command": hook_cmd}],
+            "userPromptSubmit": [{"command": hook_cmd}],
+            "preToolUse": [{"matcher": "*", "command": hook_cmd}],
+            "postToolUse": [{"matcher": "*", "command": hook_cmd}],
             "stop": [{"command": stop_cmd}],
         }
         kiro_scope = options.get("scope", "user")  # Kiro historically defaults to user-level

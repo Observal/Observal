@@ -3,35 +3,45 @@
 
 When a Kiro agent's ``stop`` hook fires, this script:
 1. Reads the hook JSON payload from stdin.
-2. Queries ``~/.local/share/kiro-cli/data.sqlite3`` for the most recent
+2. Queries the Kiro SQLite database for the most recent
    conversation matching the working directory (``cwd``).
 3. Extracts per-turn metadata: model_id, input/output char counts,
    credit usage, tools used, and context usage.
 4. Merges the enriched fields into the payload and POSTs to Observal.
 
 Usage (in a Kiro agent hook):
-    cat | python3 /path/to/kiro-stop-hook.py --url http://localhost:8000/api/v1/otel/hooks
+    Unix:    cat | python3 /path/to/kiro_stop_hook.py --url http://localhost:8000/api/v1/otel/hooks
+    Windows: python -m observal_cli.hooks.kiro_stop_hook --url http://localhost:8000/api/v1/otel/hooks --agent-name my-agent
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
 
-KIRO_DB = Path.home() / ".local" / "share" / "kiro-cli" / "data.sqlite3"
+
+def _get_kiro_db() -> Path:
+    """Return the platform-appropriate path to the Kiro SQLite database."""
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or ""
+        if local_app_data:
+            return Path(local_app_data) / "kiro-cli" / "data.sqlite3"
+    return Path.home() / ".local" / "share" / "kiro-cli" / "data.sqlite3"
 
 
 def _enrich(payload: dict) -> dict:
     """Read the Kiro SQLite DB and merge session-level stats into *payload*."""
-    if not KIRO_DB.exists():
+    kiro_db = _get_kiro_db()
+    if not kiro_db.exists():
         return payload
 
     cwd = payload.get("cwd", "")
 
     try:
-        conn = sqlite3.connect(f"file:{KIRO_DB}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:{kiro_db}?mode=ro", uri=True)
         cur = conn.cursor()
 
         # Find the most recent conversation for this cwd
@@ -129,12 +139,18 @@ def _enrich(payload: dict) -> dict:
 def main():
     import urllib.request
 
-    # Parse --url argument
+    # Parse --url and --agent-name arguments
     url = "http://localhost:8000/api/v1/otel/hooks"
+    agent_name = ""
+    model = ""
     args = sys.argv[1:]
     for i, arg in enumerate(args):
         if arg == "--url" and i + 1 < len(args):
             url = args[i + 1]
+        elif arg == "--agent-name" and i + 1 < len(args):
+            agent_name = args[i + 1]
+        elif arg == "--model" and i + 1 < len(args):
+            model = args[i + 1]
 
     # Read hook payload from stdin
     try:
@@ -144,6 +160,12 @@ def main():
         sys.exit(0)
 
     payload.setdefault("service_name", "kiro-cli")
+
+    # Inject metadata from CLI args (used on Windows where sed is unavailable)
+    if agent_name:
+        payload.setdefault("agent_name", agent_name)
+    if model:
+        payload.setdefault("model", model)
 
     # Enrich with SQLite data
     payload = _enrich(payload)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import typer
@@ -226,7 +227,7 @@ def register_pull(app: typer.Typer):
         with spinner(f"Pulling {ide} config for agent {resolved[:8]}..."):
             result = client.post(
                 f"/api/v1/agents/{resolved}/install",
-                {"ide": ide, "env_values": env_values, "options": options},
+                {"ide": ide, "env_values": env_values, "options": options, "platform": sys.platform},
             )
 
         snippet = result.get("config_snippet", {})

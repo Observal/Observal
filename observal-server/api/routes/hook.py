@@ -98,7 +98,7 @@ async def install_hook(
 
     from services.hook_config_generator import generate_hook_telemetry_config
 
-    config = generate_hook_telemetry_config(listing, req.ide)
+    config = generate_hook_telemetry_config(listing, req.ide, platform=req.platform)
     return HookInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 

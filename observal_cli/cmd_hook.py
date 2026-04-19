@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as _json
+import sys
 
 import typer
 from rich import print as rprint
@@ -129,7 +130,7 @@ def hook_install(
     """Get install config for a hook."""
     resolved = config.resolve_alias(hook_id)
     with spinner(f"Generating {ide} config..."):
-        result = client.post(f"/api/v1/hooks/{resolved}/install", {"ide": ide})
+        result = client.post(f"/api/v1/hooks/{resolved}/install", {"ide": ide, "platform": sys.platform})
     snippet = result.get("config_snippet", result)
     if raw:
         print(_json.dumps(snippet, indent=2))
