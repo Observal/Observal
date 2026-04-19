@@ -429,6 +429,20 @@ export function useArchiveAgent() {
   });
 }
 
+export function useUnarchiveAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => registry.unarchive(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["registry", "agents"] });
+      toast.success("Agent restored");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to restore agent");
+    },
+  });
+}
+
 // ── Draft ──────────────────────────────────────────────────────────
 
 export function useSaveDraft() {

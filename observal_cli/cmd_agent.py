@@ -542,6 +542,23 @@ def agent_delete(
     rprint("[green]✓ Agent archived[/green]")
 
 
+@agent_app.command(name="unarchive")
+def agent_unarchive(
+    agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Restore an archived agent back to active status."""
+    resolved = config.resolve_alias(agent_id)
+    if not yes:
+        with spinner():
+            item = client.get(f"/api/v1/agents/{resolved}")
+        if not typer.confirm(f"Unarchive [bold]{item['name']}[/bold] ({resolved})?"):
+            raise typer.Abort()
+    with spinner("Restoring..."):
+        client.patch(f"/api/v1/agents/{resolved}/unarchive")
+    rprint("[green]✓ Agent restored[/green]")
+
+
 # ═══════════════════════════════════════════════════════════════
 # Agent authoring commands (local YAML workflow)
 # ═══════════════════════════════════════════════════════════════

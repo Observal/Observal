@@ -872,6 +872,34 @@ async def archive_agent(
     return {"id": str(agent.id), "name": agent.name, "status": agent.status.value}
 
 
+@router.patch("/{agent_id}/unarchive")
+async def unarchive_agent(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    agent = await _load_agent(db, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if agent.status != AgentStatus.archived:
+        raise HTTPException(status_code=400, detail="Agent is not archived")
+    agent.status = AgentStatus.active
+    await db.commit()
+
+    emit_registry_event(
+        action="agent.unarchive",
+        user_id=str(current_user.id),
+        user_email=current_user.email,
+        user_role=current_user.role.value,
+        agent_id=str(agent.id),
+        resource_name=agent.name,
+    )
+
+    return {"id": str(agent.id), "name": agent.name, "status": agent.status.value}
+
+
 # ---------------------------------------------------------------------------
 # Draft workflow
 # ---------------------------------------------------------------------------

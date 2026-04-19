@@ -16,6 +16,7 @@ import {
   Trash2,
   Clock,
   Archive,
+  ArchiveRestore,
   FileEdit,
   Send,
   ChevronDown,
@@ -24,7 +25,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { useRegistryList, useMyAgents, useWhoami, useArchiveAgent, useSubmitDraft } from "@/hooks/use-api";
+import { useRegistryList, useMyAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useSubmitDraft } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import {
@@ -168,6 +169,55 @@ function ArchiveAgentButton({ agent }: { agent: RegistryItem }) {
   );
 }
 
+function UnarchiveAgentButton({ agent }: { agent: RegistryItem }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const isAdmin = useSyncExternalStore(roleSub, () => hasMinRole(getUserRole(), "admin"), () => false);
+  const unarchiveMutation = useUnarchiveAgent();
+
+  if (!isAdmin || agent.status !== "archived") return null;
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0 text-muted-foreground hover:text-green-600"
+        onClick={(e) => {
+          e.stopPropagation();
+          setConfirmOpen(true);
+        }}
+      >
+        <ArchiveRestore className="h-3.5 w-3.5" />
+      </Button>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Restore Agent</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will restore the agent to the public registry.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                unarchiveMutation.mutate(agent.id, {
+                  onSuccess: () => setConfirmOpen(false),
+                });
+              }}
+              disabled={unarchiveMutation.isPending}
+            >
+              {unarchiveMutation.isPending ? "Restoring..." : "Restore"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function SortIcon({ column }: { column: Column<RegistryItem> }) {
   const sorted = column.getIsSorted();
   if (sorted === "asc") return <ArrowUp className="h-3 w-3" />;
@@ -293,6 +343,7 @@ const columns: ColumnDef<RegistryItem>[] = [
     cell: ({ row }) => (
       <div className="flex items-center gap-1">
         <ArchiveAgentButton agent={row.original} />
+        <UnarchiveAgentButton agent={row.original} />
         <DeleteAgentButton agent={row.original} />
       </div>
     ),

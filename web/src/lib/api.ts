@@ -240,6 +240,7 @@ export const registry = {
     post<ValidationResult>("/agents/validate", body),
   my: (type?: RegistryType) => get<RegistryItem[]>(`/${type ?? "agents"}/my`),
   archive: (id: string) => patch(`/agents/${id}/archive`),
+  unarchive: (id: string) => patch(`/agents/${id}/unarchive`),
   draft: (body: unknown, type?: RegistryType) =>
     post<RegistryItem>(`/${type ?? "agents"}/draft`, body),
   updateDraft: (id: string, body: unknown, type?: RegistryType) =>
