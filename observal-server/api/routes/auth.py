@@ -6,6 +6,7 @@ import jwt as pyjwt
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,13 +53,17 @@ async def _issue_tokens(user: User) -> tuple[str, str, int]:
     """Issue JWT access + refresh tokens for a user, storing refresh JTI in Redis.
 
     Returns (access_token, refresh_token, expires_in).
+    Fails open: tokens are still returned if Redis is temporarily unreachable.
     """
     access_token, expires_in = create_access_token(user.id, user.role)
     refresh_token, jti = create_refresh_token(user.id, user.role)
 
-    redis = get_redis()
-    refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400
-    await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
+    try:
+        redis = get_redis()
+        refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400
+        await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
+    except RedisError as e:
+        logger.warning("Redis unavailable when storing refresh JTI, failing open: %s", e)
 
     return access_token, refresh_token, expires_in
 
@@ -252,20 +257,24 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
     # Generate a short-lived opaque code instead of exposing tokens in the URL.
     # The frontend will exchange this code for credentials via a POST request.
     code = secrets.token_urlsafe(32)
-    redis = get_redis()
-    await redis.setex(
-        f"oauth_code:{code}",
-        30,
-        json.dumps(
-            {
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "expires_in": expires_in,
-                "user_id": str(user.id),
-                "role": user.role.value,
-            }
-        ),
-    )
+    try:
+        redis = get_redis()
+        await redis.setex(
+            f"oauth_code:{code}",
+            30,
+            json.dumps(
+                {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "expires_in": expires_in,
+                    "user_id": str(user.id),
+                    "role": user.role.value,
+                }
+            ),
+        )
+    except RedisError as e:
+        logger.warning("Redis unavailable during OAuth callback: %s", e)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     frontend_redirect = f"{settings.FRONTEND_URL}/login?code={code}"
     return RedirectResponse(url=frontend_redirect)
@@ -278,15 +287,22 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
     The code is stored in Redis with a 30-second TTL and is deleted after
     a single successful use, preventing replay attacks.
     """
-    redis = get_redis()
-    redis_key = f"oauth_code:{req.code}"
-    data = await redis.get(redis_key)
+    try:
+        redis = get_redis()
+        redis_key = f"oauth_code:{req.code}"
+        data = await redis.get(redis_key)
+    except RedisError as e:
+        logger.warning("Redis unavailable during code exchange: %s", e)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     if not data:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
 
     # Delete immediately to enforce single-use
-    await redis.delete(redis_key)
+    try:
+        await redis.delete(redis_key)
+    except RedisError:
+        pass
 
     try:
         payload = json.loads(data)
@@ -355,13 +371,21 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
         raise HTTPException(status_code=401, detail="Invalid refresh token claims")
 
     # Check that the JTI has not been revoked
-    redis = get_redis()
-    stored = await redis.get(f"refresh_jti:{jti}")
+    try:
+        redis = get_redis()
+        stored = await redis.get(f"refresh_jti:{jti}")
+    except RedisError as e:
+        logger.warning("Redis unavailable during token refresh: %s", e)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
     if stored is None:
         raise HTTPException(status_code=401, detail="Refresh token has been revoked or expired")
 
     # Revoke the old refresh token (one-time use / rotation)
-    await redis.delete(f"refresh_jti:{jti}")
+    try:
+        await redis.delete(f"refresh_jti:{jti}")
+    except RedisError:
+        pass
 
     # Look up the user to ensure they still exist
     result = await db.execute(select(User).where(User.id == user_id))
@@ -373,8 +397,11 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
     access_token, expires_in = create_access_token(user.id, user.role)
     new_refresh_token, new_jti = create_refresh_token(user.id, user.role)
 
-    refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400
-    await redis.setex(f"refresh_jti:{new_jti}", refresh_ttl, str(user.id))
+    try:
+        refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400
+        await redis.setex(f"refresh_jti:{new_jti}", refresh_ttl, str(user.id))
+    except RedisError as e:
+        logger.warning("Redis unavailable when storing new refresh JTI: %s", e)
 
     return TokenResponse(
         access_token=access_token,
@@ -396,8 +423,12 @@ async def revoke_token(request: Request, req: RevokeRequest):
     if not jti:
         raise HTTPException(status_code=401, detail="Invalid refresh token claims")
 
-    redis = get_redis()
-    await redis.delete(f"refresh_jti:{jti}")
+    try:
+        redis = get_redis()
+        await redis.delete(f"refresh_jti:{jti}")
+    except RedisError as e:
+        logger.warning("Redis unavailable during token revocation: %s", e)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     return {"detail": "Token revoked"}
 
