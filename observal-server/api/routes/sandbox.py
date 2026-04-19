@@ -160,9 +160,19 @@ async def update_sandbox_draft(
         raise HTTPException(status_code=400, detail="Listing is not a draft")
 
     for field in (
-        "name", "version", "description", "owner", "runtime_type", "image",
-        "dockerfile_url", "resource_limits", "network_policy", "allowed_mounts",
-        "env_vars", "entrypoint", "supported_ides",
+        "name",
+        "version",
+        "description",
+        "owner",
+        "runtime_type",
+        "image",
+        "dockerfile_url",
+        "resource_limits",
+        "network_policy",
+        "allowed_mounts",
+        "env_vars",
+        "entrypoint",
+        "supported_ides",
     ):
         val = getattr(req, field)
         if val is not None:

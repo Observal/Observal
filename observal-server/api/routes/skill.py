@@ -171,10 +171,23 @@ async def update_skill_draft(
         raise HTTPException(status_code=400, detail="Listing is not a draft")
 
     for field in (
-        "name", "version", "description", "owner", "git_url", "skill_path",
-        "target_agents", "task_type", "triggers", "slash_command",
-        "has_scripts", "has_templates", "supported_ides", "is_power",
-        "power_md", "mcp_server_config", "activation_keywords",
+        "name",
+        "version",
+        "description",
+        "owner",
+        "git_url",
+        "skill_path",
+        "target_agents",
+        "task_type",
+        "triggers",
+        "slash_command",
+        "has_scripts",
+        "has_templates",
+        "supported_ides",
+        "is_power",
+        "power_md",
+        "mcp_server_config",
+        "activation_keywords",
     ):
         val = getattr(req, field)
         if val is not None:

@@ -212,8 +212,16 @@ async def update_prompt_draft(
         raise HTTPException(status_code=400, detail="Listing is not a draft")
 
     for field in (
-        "name", "version", "description", "owner", "category",
-        "template", "variables", "model_hints", "tags", "supported_ides",
+        "name",
+        "version",
+        "description",
+        "owner",
+        "category",
+        "template",
+        "variables",
+        "model_hints",
+        "tags",
+        "supported_ides",
     ):
         val = getattr(req, field)
         if val is not None:

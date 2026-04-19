@@ -892,6 +892,7 @@ def submit(
     """Submit an MCP server for review."""
     if submit_draft:
         from observal_cli import config as cfg
+
         resolved = cfg.resolve_alias(submit_draft)
         with spinner("Submitting draft for review..."):
             result = client.post(f"/api/v1/mcps/{resolved}/submit")

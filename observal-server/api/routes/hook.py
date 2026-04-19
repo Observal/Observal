@@ -111,9 +111,7 @@ async def my_hooks(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     stmt = (
-        select(HookListing)
-        .where(HookListing.submitted_by == current_user.id)
-        .order_by(HookListing.created_at.desc())
+        select(HookListing).where(HookListing.submitted_by == current_user.id).order_by(HookListing.created_at.desc())
     )
     result = await db.execute(stmt)
     return [HookListingSummary.model_validate(r) for r in result.scalars().all()]
@@ -167,9 +165,21 @@ async def update_hook_draft(
         raise HTTPException(status_code=400, detail="Listing is not a draft")
 
     for field in (
-        "name", "version", "description", "owner", "event", "execution_mode",
-        "priority", "handler_type", "handler_config", "input_schema",
-        "output_schema", "scope", "tool_filter", "file_pattern", "supported_ides",
+        "name",
+        "version",
+        "description",
+        "owner",
+        "event",
+        "execution_mode",
+        "priority",
+        "handler_type",
+        "handler_config",
+        "input_schema",
+        "output_schema",
+        "scope",
+        "tool_filter",
+        "file_pattern",
+        "supported_ides",
     ):
         val = getattr(req, field)
         if val is not None:

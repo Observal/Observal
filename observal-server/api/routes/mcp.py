@@ -204,11 +204,7 @@ async def my_mcps(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    stmt = (
-        select(McpListing)
-        .where(McpListing.submitted_by == current_user.id)
-        .order_by(McpListing.created_at.desc())
-    )
+    stmt = select(McpListing).where(McpListing.submitted_by == current_user.id).order_by(McpListing.created_at.desc())
     result = await db.execute(stmt)
     return [McpListingSummary.model_validate(r) for r in result.scalars().all()]
 
@@ -264,9 +260,22 @@ async def update_mcp_draft(
         raise HTTPException(status_code=400, detail="Listing is not a draft")
 
     for field in (
-        "name", "version", "description", "category", "owner", "git_url",
-        "framework", "docker_image", "command", "args", "url", "auto_approve",
-        "transport", "supported_ides", "setup_instructions", "changelog",
+        "name",
+        "version",
+        "description",
+        "category",
+        "owner",
+        "git_url",
+        "framework",
+        "docker_image",
+        "command",
+        "args",
+        "url",
+        "auto_approve",
+        "transport",
+        "supported_ides",
+        "setup_instructions",
+        "changelog",
     ):
         val = getattr(req, field)
         if val is not None:
