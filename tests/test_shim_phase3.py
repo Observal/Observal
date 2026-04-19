@@ -262,6 +262,11 @@ class TestConfigGenerator:
         listing.docker_image = kw.get("docker_image")
         listing.framework = kw.get("framework")
         listing.environment_variables = kw.get("environment_variables", [])
+        listing.command = kw.get("command")
+        listing.args = kw.get("args")
+        listing.url = kw.get("url")
+        listing.transport = kw.get("transport")
+        listing.auto_approve = kw.get("auto_approve")
         return listing
 
     def test_cursor_wraps_with_shim(self):
