@@ -270,6 +270,97 @@ class TestParseDirectConfig:
         parsed = _parse_direct_config(cfg)
         assert parsed["framework"] == "typescript"
 
+    def test_unwrap_mcpservers_wrapper(self):
+        """Full mcpServers wrapper should be unwrapped and server name extracted."""
+        from observal_cli.cmd_mcp import _parse_direct_config
+
+        cfg = {
+            "mcpServers": {
+                "github": {
+                    "command": "docker",
+                    "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"],
+                    "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "your-token"},
+                    "disabled": False,
+                    "autoApprove": [],
+                }
+            }
+        }
+        parsed = _parse_direct_config(cfg)
+        assert parsed["_server_name"] == "github"
+        assert parsed["command"] == "docker"
+        assert parsed["docker_image"] == "ghcr.io/github/github-mcp-server"
+        assert len(parsed["environment_variables"]) == 1
+
+    def test_unwrap_named_server(self):
+        """Single named key wrapping a config dict should be unwrapped."""
+        from observal_cli.cmd_mcp import _parse_direct_config
+
+        cfg = {
+            "gitlab": {
+                "command": "docker",
+                "args": ["run", "--rm", "-i", "-env", "GITLAB_TOKEN", "registry.example.com/gitlab-mcp-server:latest"],
+                "env": {"GITLAB_TOKEN": "your-token"},
+            }
+        }
+        parsed = _parse_direct_config(cfg)
+        assert parsed["_server_name"] == "gitlab"
+        assert parsed["command"] == "docker"
+        assert parsed["docker_image"] == "registry.example.com/gitlab-mcp-server:latest"
+
+    def test_unwrap_sse_from_mcpservers(self):
+        """SSE config inside mcpServers wrapper should be parsed correctly."""
+        from observal_cli.cmd_mcp import _parse_direct_config
+
+        cfg = {
+            "mcpServers": {
+                "docs-server": {
+                    "type": "sse",
+                    "url": "https://docs-api.example.com",
+                    "headers": {"Authorization": ""},
+                    "autoApprove": ["search_knowledge_sources"],
+                }
+            }
+        }
+        parsed = _parse_direct_config(cfg)
+        assert parsed["_server_name"] == "docs-server"
+        assert parsed["transport"] == "sse"
+        assert parsed["url"] == "https://docs-api.example.com"
+        assert parsed["headers"][0]["name"] == "Authorization"
+        assert parsed["auto_approve"] == ["search_knowledge_sources"]
+
+    def test_docker_with_volume_mounts_and_env_flags(self):
+        """Complex docker args with -v mounts and -env flags (Jira-style)."""
+        from observal_cli.cmd_mcp import _parse_direct_config
+
+        cfg = {
+            "command": "docker",
+            "args": [
+                "--rm", "-i",
+                "-v", "/Users/user/Downloads/Jira Attachments:/tmp",
+                "-env", "JIRA_EMAIL", "-env", "JIRA_TOKEN", "-env", "JIRA_URL",
+                "registry.example.com/jira-mcp-proxy:latest",
+            ],
+            "env": {
+                "JIRA_URL": "https://my-org.atlassian.net",
+                "JIRA_EMAIL": "user@example.com",
+                "JIRA_TOKEN": "token",
+            },
+        }
+        parsed = _parse_direct_config(cfg)
+        assert parsed["command"] == "docker"
+        assert parsed["docker_image"] == "registry.example.com/jira-mcp-proxy:latest"
+        assert len(parsed["environment_variables"]) == 3
+
+    def test_unknown_command_still_parses(self):
+        """Any command type should be accepted, framework is just None."""
+        from observal_cli.cmd_mcp import _parse_direct_config
+
+        cfg = {"command": "my-custom-binary", "args": ["--serve"]}
+        parsed = _parse_direct_config(cfg)
+        assert parsed["command"] == "my-custom-binary"
+        assert parsed["args"] == ["--serve"]
+        assert parsed["framework"] is None
+
 
 # ═══════════════════════════════════════════════════════════
 # 5. _build_config_preview

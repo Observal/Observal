@@ -169,44 +169,80 @@ def _enter_env_vars_manually() -> list[dict]:
 # ── Direct config helpers ────────────────────────────────────
 
 
+def _unwrap_mcp_config(cfg: dict) -> tuple[dict, str | None]:
+    """Unwrap nested mcpServers / named-server wrappers.
+
+    Accepts three shapes:
+      1. {"mcpServers": {"name": {config}}}
+      2. {"name": {config}}  (single key whose value has command/url/type)
+      3. {config}            (bare config with command/args or url)
+
+    Returns (inner_config, server_name | None).
+    """
+    # Shape 1: wrapped under mcpServers
+    if "mcpServers" in cfg and isinstance(cfg["mcpServers"], dict):
+        servers = cfg["mcpServers"]
+        if len(servers) == 1:
+            server_name, inner = next(iter(servers.items()))
+            if isinstance(inner, dict):
+                return inner, server_name
+        return cfg, None
+
+    # Shape 3: bare config — has a direct config key
+    if cfg.get("command") or cfg.get("url") or cfg.get("type"):
+        return cfg, None
+
+    # Shape 2: single named key wrapping a config dict
+    if len(cfg) == 1:
+        server_name, inner = next(iter(cfg.items()))
+        if isinstance(inner, dict) and (inner.get("command") or inner.get("url") or inner.get("type")):
+            return inner, server_name
+
+    return cfg, None
+
+
 def _parse_direct_config(cfg: dict) -> dict:
     """Normalize a JSON config dict (mcp.json style) into submit-ready fields.
 
-    Handles two shapes:
+    Accepts wrapped (mcpServers) or bare configs.
+    Handles two transport shapes:
     - stdio: {command, args, env}
     - SSE/HTTP: {url, type, headers, autoApprove}
     """
+    inner, server_name = _unwrap_mcp_config(cfg)
     parsed: dict = {}
+    if server_name:
+        parsed["_server_name"] = server_name
 
-    if cfg.get("url") and not cfg.get("command"):
+    if inner.get("url") and not inner.get("command"):
         # SSE / streamable-http transport
-        transport = cfg.get("type", "sse")
+        transport = inner.get("type", "sse")
         parsed["transport"] = transport
-        parsed["url"] = cfg["url"]
+        parsed["url"] = inner["url"]
 
         # Convert headers dict {name: value} → list of {name, description, required}
-        raw_headers = cfg.get("headers") or {}
+        raw_headers = inner.get("headers") or {}
         if isinstance(raw_headers, dict):
             parsed["headers"] = [{"name": k, "description": "", "required": True} for k in raw_headers]
         elif isinstance(raw_headers, list):
             parsed["headers"] = raw_headers
 
-        if cfg.get("autoApprove"):
-            parsed["auto_approve"] = cfg["autoApprove"]
+        if inner.get("autoApprove"):
+            parsed["auto_approve"] = inner["autoApprove"]
 
         # env as environment_variables
-        raw_env = cfg.get("env") or {}
+        raw_env = inner.get("env") or {}
         if isinstance(raw_env, dict):
             parsed["environment_variables"] = [{"name": k, "description": "", "required": True} for k in raw_env]
 
-    elif cfg.get("command"):
+    elif inner.get("command"):
         # stdio transport
         parsed["transport"] = "stdio"
-        parsed["command"] = cfg["command"]
-        parsed["args"] = cfg.get("args") or []
+        parsed["command"] = inner["command"]
+        parsed["args"] = inner.get("args") or []
 
         # Derive framework from command
-        cmd = cfg["command"]
+        cmd = inner["command"]
         if cmd == "docker":
             parsed["framework"] = "docker"
             # Extract docker_image: last non-flag arg
@@ -215,20 +251,20 @@ def _parse_direct_config(cfg: dict) -> dict:
                 if not arg.startswith("-"):
                     parsed["docker_image"] = arg
                     break
-        elif cmd == "python" or cmd == "python3":
+        elif cmd in ("python", "python3"):
             parsed["framework"] = "python"
-        elif cmd == "npx" or cmd == "node":
+        elif cmd in ("npx", "node"):
             parsed["framework"] = "typescript"
         else:
             parsed["framework"] = None
 
         # env as environment_variables
-        raw_env = cfg.get("env") or {}
+        raw_env = inner.get("env") or {}
         if isinstance(raw_env, dict):
             parsed["environment_variables"] = [{"name": k, "description": "", "required": True} for k in raw_env]
 
-        if cfg.get("autoApprove"):
-            parsed["auto_approve"] = cfg["autoApprove"]
+        if inner.get("autoApprove"):
+            parsed["auto_approve"] = inner["autoApprove"]
 
     return parsed
 
@@ -278,45 +314,38 @@ def _build_config_preview(server_name: str, parsed: dict) -> dict:
 # ── Implementation functions (shared by canonical + deprecated) ──
 
 
-def _submit_impl(git_url, name, category, yes, direct_config=False, config_file_path=None):
+def _submit_impl(git_url, name, category, yes, direct_config=False):
     # ── Path B/C: Direct JSON config (no git URL needed) ─────
-    if direct_config or config_file_path:
-        if config_file_path:
-            cfg_path = Path(config_file_path).expanduser().resolve()
-            if not cfg_path.exists():
-                rprint(f"[red]File not found:[/red] {cfg_path}")
-                raise typer.Exit(1)
-            cfg = json.loads(cfg_path.read_text())
-        else:
-            rprint("[bold]Paste your MCP server JSON config below.[/bold]")
-            rprint("[dim]Press Enter twice when done.[/dim]\n")
-            lines: list[str] = []
-            empty_count = 0
-            while True:
-                try:
-                    line = input()
-                except EOFError:
-                    break
-                if line.strip() == "":
-                    empty_count += 1
-                    if empty_count >= 2:
-                        break
-                    lines.append(line)
-                else:
-                    empty_count = 0
-                    lines.append(line)
-            raw_text = "\n".join(lines).strip()
-            if not raw_text:
-                rprint("[red]No input received.[/red]")
-                raise typer.Exit(1)
+    if direct_config:
+        rprint("[bold]Paste your MCP server JSON config below.[/bold]")
+        rprint("[dim]Press Enter twice when done.[/dim]\n")
+        lines: list[str] = []
+        empty_count = 0
+        while True:
             try:
-                cfg = json.loads(raw_text)
-            except json.JSONDecodeError as e:
-                rprint(f"[red]Invalid JSON:[/red] {e}")
-                raise typer.Exit(1)
+                line = input()
+            except EOFError:
+                break
+            if line.strip() == "":
+                empty_count += 1
+                if empty_count >= 2:
+                    break
+                lines.append(line)
+            else:
+                empty_count = 0
+                lines.append(line)
+        raw_text = "\n".join(lines).strip()
+        if not raw_text:
+            rprint("[red]No input received.[/red]")
+            raise typer.Exit(1)
+        try:
+            cfg = json.loads(raw_text)
+        except json.JSONDecodeError as e:
+            rprint(f"[red]Invalid JSON:[/red] {e}")
+            raise typer.Exit(1)
 
         parsed = _parse_direct_config(cfg)
-        _name = name or "my-mcp-server"
+        _name = name or parsed.pop("_server_name", None) or "my-mcp-server"
 
         rprint("\n[bold]Config preview:[/bold]")
         console.print_json(json.dumps(_build_config_preview(_name, parsed), indent=2))
@@ -849,13 +878,12 @@ def submit(
     category: str = typer.Option(None, "--category", "-c", help="Skip category prompt"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults from repo analysis"),
     config: bool = typer.Option(False, "--config", help="Submit via direct JSON config (paste mode)"),
-    config_file: str = typer.Option(None, "--config-file", help="Path to JSON config file"),
 ):
     """Submit an MCP server for review."""
-    if not git_url and not config and not config_file:
-        rprint("[red]Provide a git URL or use --config / --config-file[/red]")
+    if not git_url and not config:
+        rprint("[red]Provide a git URL or use --config[/red]")
         raise typer.Exit(1)
-    _submit_impl(git_url, name, category, yes, config, config_file)
+    _submit_impl(git_url, name, category, yes, config)
 
 
 @mcp_app.command(name="list")
