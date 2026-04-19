@@ -1,0 +1,43 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+          script: |
+            cd ~/Observal
+            git pull origin main
+
+            cd docker
+            docker compose up -d --build --remove-orphans
+
+            # Wait for API health check
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "API is healthy"
+                exit 0
+              fi
+              echo "Waiting for API... ($i/30)"
+              sleep 5
+            done
+
+            echo "API failed health check"
+            docker compose logs observal-api --tail 30
+            exit 1
