@@ -266,8 +266,11 @@ async def delete_prompt(
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id and current_user.role.value != "admin":
+    is_admin = current_user.role.value == "admin"
+    if listing.submitted_by != current_user.id and not is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
+    if listing.status == ListingStatus.approved and not is_admin:
+        raise HTTPException(status_code=400, detail="Cannot delete an approved listing. Contact an admin.")
 
     for r in (await db.execute(select(PromptDownload).where(PromptDownload.listing_id == listing.id))).scalars().all():
         await db.delete(r)

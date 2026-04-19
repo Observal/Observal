@@ -806,8 +806,11 @@ async def delete_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
     if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
-    if agent.created_by != current_user.id and current_user.role.value != "admin":
+    is_admin = current_user.role.value == "admin"
+    if agent.created_by != current_user.id and not is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
+    if agent.status == AgentStatus.active and not is_admin:
+        raise HTTPException(status_code=400, detail="Cannot delete an approved listing. Contact an admin.")
 
     # Delete related records with correct type filters
     for r in (
