@@ -1,5 +1,7 @@
 """observal migrate: PostgreSQL shallow-copy migration tools."""
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -12,9 +14,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import asyncpg
 import typer
+
+if TYPE_CHECKING:
+    import asyncpg
 from rich import print as rprint
 
 from observal_cli import client
@@ -186,6 +191,8 @@ def _sha256_file(path: Path) -> str:
 
 async def _connect(db_url: str) -> asyncpg.Connection:
     """Establish asyncpg connection, verify alembic_version table exists."""
+    import asyncpg
+
     # Strip SQLAlchemy dialect suffixes (e.g. postgresql+asyncpg:// → postgresql://)
     clean_url = (
         db_url.split("+")[0] + db_url[db_url.index("://") :] if "+asyncpg" in db_url or "+psycopg" in db_url else db_url
@@ -257,6 +264,8 @@ async def _flush_batch(
     batch: list[dict],
 ) -> tuple[int, int]:
     """Flush a batch of rows to the database. Returns (inserted, skipped)."""
+    import asyncpg
+
     if not batch:
         return 0, 0
 
