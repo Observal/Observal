@@ -35,6 +35,12 @@ from observal_cli.main import app as cli_app
 
 runner = CliRunner()
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
 
 # ── 1. CLI Registration Tests ────────────────────────────
 
@@ -43,30 +49,32 @@ class TestCLIRegistration:
     def test_migrate_command_group_exists(self):
         result = runner.invoke(cli_app, ["migrate", "--help"])
         assert result.exit_code == 0
-        assert "migrate" in result.output.lower()
+        assert "migrate" in _plain(result.output).lower()
 
     def test_migrate_help_lists_subcommands(self):
         result = runner.invoke(cli_app, ["migrate", "--help"])
         assert result.exit_code == 0
-        assert "export" in result.output
-        assert "import" in result.output
-        assert "validate" in result.output
+        out = _plain(result.output)
+        assert "export" in out
+        assert "import" in out
+        assert "validate" in out
 
     def test_export_subcommand_help(self):
         result = runner.invoke(cli_app, ["migrate", "export", "--help"])
         assert result.exit_code == 0
-        assert "--db-url" in result.output
+        assert "--db-url" in _plain(result.output)
 
     def test_import_subcommand_help(self):
         result = runner.invoke(cli_app, ["migrate", "import", "--help"])
         assert result.exit_code == 0
-        assert "--db-url" in result.output
-        assert "--archive" in result.output
+        out = _plain(result.output)
+        assert "--db-url" in out
+        assert "--archive" in out
 
     def test_validate_subcommand_help(self):
         result = runner.invoke(cli_app, ["migrate", "validate", "--help"])
         assert result.exit_code == 0
-        assert "--archive" in result.output
+        assert "--archive" in _plain(result.output)
 
 
 # ── 2. PGEncoder Tests ───────────────────────────────────
