@@ -215,6 +215,30 @@ def _scan_claude_home(
             except (json.JSONDecodeError, OSError):
                 pass
 
+    # ── Discover standalone skills from ~/.claude/skills/ ──
+    skills_dir = claude_dir / "skills"
+    if skills_dir.is_dir():
+        for skill_md in sorted(skills_dir.rglob("SKILL.md")):
+            skill_name = skill_md.parent.name
+            desc = ""
+            task_type = "general"
+            try:
+                content = skill_md.read_text()
+                desc = _parse_frontmatter_field(content, "description") or ""
+                task_type = _parse_frontmatter_field(content, "task_type") or "general"
+                if not desc:
+                    desc = _first_content_line(content)
+            except OSError:
+                pass
+            skills.append(
+                DiscoveredSkill(
+                    name=skill_name,
+                    description=desc or f"Skill: {skill_name}",
+                    source="claude:skills",
+                    task_type=task_type,
+                )
+            )
+
     # ── Discover Agents from ~/.claude/agents/ ──────
     agents_dir = claude_dir / "agents"
     if agents_dir.is_dir():
