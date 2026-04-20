@@ -4,6 +4,7 @@ from models.mcp import McpListing
 from services.codex_config_generator import generate_codex_config
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
+_DOLLAR_VAR = re.compile(r"\$\{([A-Z][A-Z0-9_]+)\}|\$([A-Z][A-Z0-9_]+)")
 
 
 def _sanitize_name(name: str) -> str:
@@ -56,6 +57,18 @@ def _gemini_settings(observal_url: str) -> dict:
     }
 
 
+def _substitute_dollar_vars(args: list[str], env: dict[str, str] | None) -> list[str]:
+    """Replace $VAR and ${VAR} patterns in args with values from env dict."""
+    if not env:
+        return list(args)
+
+    def _replacer(m: re.Match) -> str:
+        var_name = m.group(1) or m.group(2)
+        return env.get(var_name, m.group(0))  # keep original if no value
+
+    return [_DOLLAR_VAR.sub(_replacer, arg) for arg in args]
+
+
 def _build_run_command(
     name: str,
     framework: str | None,
@@ -72,11 +85,11 @@ def _build_run_command(
     - Go: <name> (assumes binary on PATH)
     - Python / unknown: python -m <name>
     """
-    # Use stored command/args if available
+    # Use stored command/args if available, substituting $VAR placeholders
     if stored_command is not None:
         cmd = [stored_command]
         if stored_args:
-            cmd.extend(stored_args)
+            cmd.extend(_substitute_dollar_vars(stored_args, server_env))
         return cmd
 
     # Legacy path: infer from framework/docker_image
