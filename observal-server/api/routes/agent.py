@@ -281,14 +281,23 @@ async def create_agent(
             )
         )
 
-    # Auto-infer IDE feature requirements from components
-    await db.flush()
-    skill_comp_ids = [c.component_id for c in agent.components if c.component_type == "skill"]
+    # Auto-infer IDE feature requirements from the request data
+    # (avoid accessing agent.components which would trigger a lazy load)
+    all_crefs = list(req.components) + [
+        type("_Ref", (), {"component_type": "mcp", "component_id": mid})() for mid in req.mcp_server_ids
+    ]
+    skill_comp_ids = [c.component_id for c in all_crefs if c.component_type == "skill"]
     skill_listings_map: dict = {}
     if skill_comp_ids:
         rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_comp_ids)))).scalars().all()
         skill_listings_map = {row.id: row for row in rows}
-    agent.required_ide_features = infer_required_features(agent, skill_listings=skill_listings_map)
+
+    # Build a lightweight stand-in so the inference function can iterate components
+    class _AgentProxy:
+        components = all_crefs
+        external_mcps = agent.external_mcps
+
+    agent.required_ide_features = infer_required_features(_AgentProxy(), skill_listings=skill_listings_map)
     agent.inferred_supported_ides = compute_supported_ides(agent.required_ide_features)
 
     try:
@@ -624,13 +633,21 @@ async def update_agent(
             )
 
     # Re-infer IDE features after component changes
-    await db.flush()
-    skill_comp_ids = [c.component_id for c in agent.components if c.component_type == "skill"]
+    # Re-query the current component rows to avoid stale relationship state
+    current_comps = (
+        (await db.execute(select(AgentComponent).where(AgentComponent.agent_id == agent.id))).scalars().all()
+    )
+    skill_comp_ids = [c.component_id for c in current_comps if c.component_type == "skill"]
     skill_listings_map_update: dict = {}
     if skill_comp_ids:
         rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_comp_ids)))).scalars().all()
         skill_listings_map_update = {row.id: row for row in rows}
-    agent.required_ide_features = infer_required_features(agent, skill_listings=skill_listings_map_update)
+
+    class _AgentProxy:
+        components = current_comps
+        external_mcps = agent.external_mcps
+
+    agent.required_ide_features = infer_required_features(_AgentProxy(), skill_listings=skill_listings_map_update)
     agent.inferred_supported_ides = compute_supported_ides(agent.required_ide_features)
 
     await db.commit()
@@ -1045,14 +1062,21 @@ async def save_draft(
             )
         )
 
-    # Auto-infer IDE features for draft
-    await db.flush()
-    skill_comp_ids = [c.component_id for c in agent.components if c.component_type == "skill"]
+    # Auto-infer IDE features for draft (use request data, not ORM relationship)
+    all_crefs_draft = list(req.components) + [
+        type("_Ref", (), {"component_type": "mcp", "component_id": mid})() for mid in req.mcp_server_ids
+    ]
+    skill_comp_ids = [c.component_id for c in all_crefs_draft if c.component_type == "skill"]
     skill_listings_map_draft: dict = {}
     if skill_comp_ids:
         rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_comp_ids)))).scalars().all()
         skill_listings_map_draft = {row.id: row for row in rows}
-    agent.required_ide_features = infer_required_features(agent, skill_listings=skill_listings_map_draft)
+
+    class _DraftProxy:
+        components = all_crefs_draft
+        external_mcps = agent.external_mcps
+
+    agent.required_ide_features = infer_required_features(_DraftProxy(), skill_listings=skill_listings_map_draft)
     agent.inferred_supported_ides = compute_supported_ides(agent.required_ide_features)
 
     await db.commit()
@@ -1114,13 +1138,22 @@ async def update_draft(
             )
 
     # Re-infer IDE features for draft update
-    await db.flush()
-    skill_comp_ids = [c.component_id for c in agent.components if c.component_type == "skill"]
+    current_comps_draft = (
+        (await db.execute(select(AgentComponent).where(AgentComponent.agent_id == agent.id))).scalars().all()
+    )
+    skill_comp_ids = [c.component_id for c in current_comps_draft if c.component_type == "skill"]
     skill_listings_map_draft_update: dict = {}
     if skill_comp_ids:
         rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_comp_ids)))).scalars().all()
         skill_listings_map_draft_update = {row.id: row for row in rows}
-    agent.required_ide_features = infer_required_features(agent, skill_listings=skill_listings_map_draft_update)
+
+    class _DraftUpdateProxy:
+        components = current_comps_draft
+        external_mcps = agent.external_mcps
+
+    agent.required_ide_features = infer_required_features(
+        _DraftUpdateProxy(), skill_listings=skill_listings_map_draft_update
+    )
     agent.inferred_supported_ides = compute_supported_ides(agent.required_ide_features)
 
     await db.commit()
