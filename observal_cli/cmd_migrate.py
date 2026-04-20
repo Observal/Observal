@@ -16,18 +16,17 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 import typer
 
 if TYPE_CHECKING:
     import asyncpg
+    import httpx
 from rich import print as rprint
 
 from observal_cli import client
 from observal_cli.render import spinner
-
-logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ── Constants ────────────────────────────────────────────
 
@@ -96,7 +95,17 @@ JSONB_COLUMNS: dict[str, list[str]] = {
 
 # ── Phase 2: ClickHouse telemetry constants ──────────────
 
-CLICKHOUSE_TABLES: list[dict[str, str | list[str]]] = [
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+
+
+class TableCfg(TypedDict):
+    name: str
+    engine: Literal["replacing", "mergetree"]
+    time_col: str
+    fk_cols: list[str]
+
+
+CLICKHOUSE_TABLES: list[TableCfg] = [
     {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": ["agent_id", "mcp_id", "user_id"]},
     {"name": "spans", "engine": "replacing", "time_col": "start_time", "fk_cols": ["agent_id", "mcp_id", "user_id"]},
     {"name": "scores", "engine": "replacing", "time_col": "timestamp", "fk_cols": ["agent_id", "mcp_id", "user_id"]},
@@ -205,10 +214,10 @@ def _require_admin() -> None:
     """Verify the current user has admin or super_admin role. Exit if not."""
     try:
         user = client.get("/api/v1/auth/whoami")
-    except SystemExit:
+    except SystemExit as exc:
         rprint("[red]Authentication required.[/red]")
         rprint("[dim]  Run [bold]observal auth login[/bold] first.[/dim]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     role = user.get("role", "")
     if role not in ("admin", "super_admin"):
         rprint("[red]Permission denied.[/red] The migrate command requires admin or super_admin role.")
@@ -240,11 +249,24 @@ def _sha256_file(path: Path) -> str:
 
 
 def _parse_clickhouse_url(url: str) -> tuple[str, str, str, str]:
-    """Parse clickhouse://user:pass@host:port/db -> (http_url, db, user, password)."""
+    """Parse clickhouse://user:pass@host:port/db -> (http_url, db, user, password).
+
+    Supports ``clickhouses://`` for TLS (maps to https, default port 8443).
+    """
     from urllib.parse import urlparse
 
-    parsed = urlparse(url.replace("clickhouse://", "http://"))
-    http_url = f"http://{parsed.hostname}:{parsed.port or 8123}"
+    if url.startswith("clickhouses://"):
+        raw = "https://" + url[len("clickhouses://") :]
+        default_port = 8443
+    elif url.startswith("clickhouse://"):
+        raw = "http://" + url[len("clickhouse://") :]
+        default_port = 8123
+    else:
+        raw = url
+        default_port = 8123
+    parsed = urlparse(raw)
+    scheme = "https" if raw.startswith("https") else "http"
+    http_url = f"{scheme}://{parsed.hostname}:{parsed.port or default_port}"
     db = (parsed.path or "/").strip("/") or "default"
     user = parsed.username or "default"
     password = parsed.password or ""
@@ -270,9 +292,9 @@ async def _connect(db_url: str) -> asyncpg.Connection:
     )
     try:
         conn = await asyncpg.connect(clean_url)
-    except (asyncpg.InvalidCatalogNameError, asyncpg.InvalidPasswordError, OSError, Exception) as e:
-        rprint(f"[red]Database connection failed:[/red] {type(e).__name__}: {e}")
-        raise typer.Exit(1)
+    except (asyncpg.InvalidCatalogNameError, asyncpg.InvalidPasswordError, OSError, Exception) as exc:
+        rprint(f"[red]Database connection failed:[/red] {type(exc).__name__}: {exc}")
+        raise typer.Exit(1) from exc
     # Verify this is an Observal database
     result = await conn.fetchval(
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'alembic_version')"
@@ -418,41 +440,54 @@ async def _ch_query(
     sql: str,
     *,
     stream_to: Path | None = None,
-    client: object | None = None,
-) -> object:
+    http_client: httpx.AsyncClient | None = None,
+    extra_params: dict[str, str] | None = None,
+) -> httpx.Response:
     """Execute a ClickHouse query via HTTP.
 
-    If stream_to is provided, streams response body to disk.
-    An optional pre-existing client avoids creating new connections per call.
+    If stream_to is provided, streams response body to disk atomically via a
+    ``.tmp`` sibling file.  An optional pre-existing *http_client* avoids
+    creating new connections per call.  *extra_params* are merged into the
+    query-string (used for ClickHouse parameterized queries).
     """
     import httpx as _httpx
 
-    params = {"database": db, "user": user, "password": password}
-    owns_client = client is None
+    params: dict[str, str] = {"database": db}
+    if extra_params:
+        params.update(extra_params)
+    owns_client = http_client is None
     if owns_client:
-        client = _httpx.AsyncClient(timeout=_httpx.Timeout(300.0, connect=10.0))
+        http_client = _httpx.AsyncClient(timeout=_httpx.Timeout(300.0, connect=10.0))
     try:
         if stream_to:
-            async with client.stream("POST", http_url, content=sql, params=params) as resp:
-                resp.raise_for_status()
-                with open(stream_to, "wb") as f:
-                    async for chunk in resp.aiter_bytes(chunk_size=65536):
-                        f.write(chunk)
+            tmp = stream_to.with_suffix(stream_to.suffix + ".tmp")
+            try:
+                async with http_client.stream(
+                    "POST", http_url, content=sql, auth=(user, password), params=params
+                ) as resp:
+                    resp.raise_for_status()
+                    with open(tmp, "wb") as f:
+                        async for chunk in resp.aiter_bytes(chunk_size=65536):
+                            f.write(chunk)
+                os.replace(tmp, stream_to)
                 return resp
+            except Exception:
+                tmp.unlink(missing_ok=True)
+                raise
         else:
-            resp = await client.post(http_url, content=sql, params=params)
+            resp = await http_client.post(http_url, content=sql, auth=(user, password), params=params)
             resp.raise_for_status()
             return resp
     except _httpx.HTTPStatusError as exc:
         rprint(f"[red]ClickHouse returned HTTP {exc.response.status_code}[/red]")
         rprint(f"[dim]{exc.response.text[:500]}[/dim]")
-        raise typer.Exit(1)
-    except _httpx.RequestError:
+        raise typer.Exit(1) from exc
+    except _httpx.RequestError as exc:
         rprint("[red]ClickHouse unreachable.[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     finally:
         if owns_client:
-            await client.aclose()
+            await http_client.aclose()
 
 
 async def _ch_import(
@@ -467,7 +502,7 @@ async def _ch_import(
     import httpx as _httpx
 
     sql_prefix = f"INSERT INTO {table} FORMAT Parquet"
-    params = {"database": db, "user": user, "password": password, "query": sql_prefix}
+    params = {"database": db, "query": sql_prefix}
 
     async def _file_stream():
         with open(parquet_path, "rb") as f:
@@ -476,15 +511,15 @@ async def _ch_import(
 
     try:
         async with _httpx.AsyncClient(timeout=_httpx.Timeout(600.0, connect=10.0)) as c:
-            resp = await c.post(http_url, content=_file_stream(), params=params)
+            resp = await c.post(http_url, content=_file_stream(), auth=(user, password), params=params)
             resp.raise_for_status()
     except _httpx.HTTPStatusError as exc:
         rprint(f"[red]ClickHouse returned HTTP {exc.response.status_code}[/red]")
         rprint(f"[dim]{exc.response.text[:500]}[/dim]")
-        raise typer.Exit(1)
-    except _httpx.RequestError:
+        raise typer.Exit(1) from exc
+    except _httpx.RequestError as exc:
         rprint("[red]ClickHouse unreachable.[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 async def _ch_existing_tables(
@@ -494,8 +529,8 @@ async def _ch_existing_tables(
     password: str,
 ) -> set[str]:
     """Query system.tables to discover which tables exist on target ClickHouse."""
-    sql = f"SELECT name FROM system.tables WHERE database = '{db}' FORMAT JSON"
-    resp = await _ch_query(http_url, db, user, password, sql)
+    sql = "SELECT name FROM system.tables WHERE database = {db:String} FORMAT JSON"
+    resp = await _ch_query(http_url, db, user, password, sql, extra_params={"param_db": db})
     return {r["name"] for r in resp.json().get("data", [])}
 
 
@@ -504,13 +539,19 @@ async def _ch_partition_has_data(
     db: str,
     user: str,
     password: str,
-    table_cfg: dict,
+    table_cfg: TableCfg,
     yyyymm: int,
 ) -> bool:
-    """Check if a MergeTree table already has data in a given month partition."""
+    """Check if a table already has data in a given month partition."""
     name = table_cfg["name"]
     time_col = table_cfg["time_col"]
-    sql = f"SELECT 1 AS has_data FROM {name} WHERE toYYYYMM({time_col}) = {yyyymm} LIMIT 1 FORMAT JSON"
+    if table_cfg["engine"] == "replacing":
+        sql = (
+            f"SELECT 1 AS has_data FROM {name} FINAL "
+            f"WHERE is_deleted = 0 AND toYYYYMM({time_col}) = {yyyymm} LIMIT 1 FORMAT JSON"
+        )
+    else:
+        sql = f"SELECT 1 AS has_data FROM {name} WHERE toYYYYMM({time_col}) = {yyyymm} LIMIT 1 FORMAT JSON"
     resp = await _ch_query(http_url, db, user, password, sql)
     return len(resp.json().get("data", [])) > 0
 
@@ -518,34 +559,46 @@ async def _ch_partition_has_data(
 # ── Phase 2: Query builders and utilities ────────────────
 
 
-def _build_ch_export_query(table_cfg: dict, yyyymm: int) -> str:
+def _build_ch_export_query(table_cfg: TableCfg, yyyymm: int, *, cutoff: str | None = None) -> str:
     """Build a ClickHouse export query for a monthly partition."""
     name = table_cfg["name"]
     time_col = table_cfg["time_col"]
+    where_parts: list[str] = []
     if table_cfg["engine"] == "replacing":
-        return f"SELECT * FROM {name} FINAL WHERE is_deleted = 0 AND toYYYYMM({time_col}) = {yyyymm} FORMAT Parquet"
-    return f"SELECT * FROM {name} WHERE toYYYYMM({time_col}) = {yyyymm} FORMAT Parquet"
+        final = " FINAL"
+        where_parts.append("is_deleted = 0")
+    else:
+        final = ""
+    where_parts.append(f"toYYYYMM({time_col}) = {yyyymm}")
+    if cutoff:
+        where_parts.append(f"{time_col} < {{cutoff:String}}")
+    where = " AND ".join(where_parts)
+    return f"SELECT * FROM {name}{final} WHERE {where} FORMAT Parquet"
 
 
-def _build_ch_count_query(table_cfg: dict, yyyymm: int) -> str:
+def _build_ch_count_query(table_cfg: TableCfg, yyyymm: int, *, cutoff: str | None = None) -> str:
     """Build a row count query for a monthly partition."""
     name = table_cfg["name"]
     time_col = table_cfg["time_col"]
+    where_parts: list[str] = []
     if table_cfg["engine"] == "replacing":
-        return (
-            f"SELECT count() AS cnt FROM {name} FINAL "
-            f"WHERE is_deleted = 0 AND toYYYYMM({time_col}) = {yyyymm} "
-            f"FORMAT JSON"
-        )
-    return f"SELECT count() AS cnt FROM {name} WHERE toYYYYMM({time_col}) = {yyyymm} FORMAT JSON"
+        final = " FINAL"
+        where_parts.append("is_deleted = 0")
+    else:
+        final = ""
+    where_parts.append(f"toYYYYMM({time_col}) = {yyyymm}")
+    if cutoff:
+        where_parts.append(f"{time_col} < {{cutoff:String}}")
+    where = " AND ".join(where_parts)
+    return f"SELECT count() AS cnt FROM {name}{final} WHERE {where} FORMAT JSON"
 
 
-def _read_count(resp: object) -> int:
+def _read_count(resp: httpx.Response) -> int:
     """Parse a count query response."""
     return int(resp.json().get("data", [{}])[0].get("cnt", 0))
 
 
-def _build_ch_time_range_query(table_cfg: dict) -> str:
+def _build_ch_time_range_query(table_cfg: TableCfg) -> str:
     """Build a time range query to discover partition months."""
     name = table_cfg["name"]
     time_col = table_cfg["time_col"]
@@ -576,11 +629,12 @@ def _is_empty_parquet(path: Path) -> bool:
     if path.stat().st_size == 0:
         return True
     try:
+        import pyarrow as pa
         import pyarrow.parquet as pq
 
         meta = pq.read_metadata(path)
         return meta.num_rows == 0
-    except Exception:
+    except (pa.lib.ArrowInvalid, pa.lib.ArrowIOError):
         return True
 
 
@@ -601,7 +655,7 @@ async def _import_archive(db_url: str, archive_path: Path) -> ImportResult:
         if not manifest_path.exists():
             rprint("[red]Archive does not contain manifest.json[/red]")
             raise typer.Exit(1)
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         migration_id = manifest["migration_id"]
 
         # Verify checksums BEFORE any DB operations
@@ -692,7 +746,7 @@ async def _validate_archive(archive_path: Path, db_url: str | None) -> Validatio
         if not manifest_path.exists():
             rprint("[red]Archive does not contain manifest.json[/red]")
             raise typer.Exit(1)
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
         # Verify checksums
         checksum_results: list[ChecksumResult] = []
@@ -779,7 +833,7 @@ async def _export_database(db_url: str, output_path: Path) -> ExportResult:
                     if table not in existing_tables:
                         rprint(f"[dim]  Skipping {table} (table does not exist)[/dim]")
                         # Write empty JSONL file so archive structure is consistent
-                        dest.write_text("")
+                        dest.write_text("", encoding="utf-8")
                         table_counts[table] = 0
                         file_hashes[table] = _sha256_file(dest)
                         continue
@@ -831,7 +885,7 @@ async def _export_database(db_url: str, output_path: Path) -> ExportResult:
             },
         }
         manifest_path = staging_dir / "manifest.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
         # Write migration_manifest.json
         db_url_hash = hashlib.sha256(db_url.encode()).hexdigest()
@@ -843,7 +897,7 @@ async def _export_database(db_url: str, output_path: Path) -> ExportResult:
             "uuid_ranges": uuid_ranges,
         }
         migration_manifest_path = staging_dir / "migration_manifest.json"
-        migration_manifest_path.write_text(json.dumps(migration_manifest, indent=2) + "\n")
+        migration_manifest_path.write_text(json.dumps(migration_manifest, indent=2) + "\n", encoding="utf-8")
 
         # Ensure output parent directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -851,7 +905,6 @@ async def _export_database(db_url: str, output_path: Path) -> ExportResult:
         # Write sidecar manifest for Phase 2 consumption
         sidecar_stem = output_path.name.removesuffix(".tar.gz").removesuffix(".tgz")
         sidecar_path = output_path.parent / f"{sidecar_stem}.manifest.json"
-        sidecar_path.write_text(json.dumps(migration_manifest, indent=2) + "\n")
 
         # Pack archive
         with tarfile.open(output_path, "w:gz") as tar:
@@ -860,6 +913,11 @@ async def _export_database(db_url: str, output_path: Path) -> ExportResult:
             for table in INSERT_ORDER:
                 jsonl_file = pg_dir / f"{table}.jsonl"
                 tar.add(str(jsonl_file), arcname=f"pg/{table}.jsonl")
+
+        # Compute archive hash and write sidecar
+        archive_hash = _sha256_file(output_path)
+        migration_manifest["archive_sha256"] = archive_hash
+        sidecar_path.write_text(json.dumps(migration_manifest, indent=2) + "\n", encoding="utf-8")
 
         elapsed = time.monotonic() - t0
         total_rows = sum(table_counts.values())
@@ -894,15 +952,15 @@ async def _export_telemetry(
     if not manifest_path.exists():
         rprint(f"[red]Phase 1 manifest not found:[/red] {manifest_path}")
         raise typer.Exit(1)
-    p1_manifest = json.loads(manifest_path.read_text())
+    p1_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if not p1_manifest.get("phase1_completed_at"):
         rprint("[red]Phase 1 has not completed.[/red]")
         rprint("[dim]  Run 'observal migrate export' and 'observal migrate import' first.[/dim]")
         raise typer.Exit(1)
     migration_id = p1_manifest["migration_id"]
 
-    # Record cutoff before any queries
-    export_time_cutoff = datetime.now(UTC).isoformat()
+    # Record cutoff before any queries — use ClickHouse-compatible DateTime64 format
+    export_time_cutoff = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
     # Parse ClickHouse URL
     http_url, db, user, password = _parse_clickhouse_url(clickhouse_url)
@@ -912,29 +970,30 @@ async def _export_telemetry(
         await _ch_query(http_url, db, user, password, "SELECT 1")
     except typer.Exit:
         raise
-    except Exception:
+    except Exception as exc:
         rprint("[red]ClickHouse health check failed.[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     # Create output directory
     if output_dir.exists() and any(output_dir.iterdir()):
         rprint(f"[red]Output directory is not empty:[/red] {output_dir}")
         raise typer.Exit(1)
+    dir_existed = output_dir.exists()
     os.makedirs(output_dir, mode=0o700, exist_ok=True)
+    os.chmod(output_dir, 0o700)
 
-    dir_created = True
     try:
         table_meta: dict[str, dict] = {}
         total_rows = 0
         total_size = 0
 
-        async with _httpx.AsyncClient(timeout=_httpx.Timeout(300.0, connect=10.0)) as client:
+        async with _httpx.AsyncClient(timeout=_httpx.Timeout(300.0, connect=10.0)) as http_client:
             for table_cfg in CLICKHOUSE_TABLES:
                 table_name = table_cfg["name"]
 
                 # Query time range
                 tr_sql = _build_ch_time_range_query(table_cfg)
-                tr_resp = await _ch_query(http_url, db, user, password, tr_sql, client=client)
+                tr_resp = await _ch_query(http_url, db, user, password, tr_sql, http_client=http_client)
                 tr_data = tr_resp.json().get("data", [{}])[0]
                 min_t = tr_data.get("min_t")
                 max_t = tr_data.get("max_t")
@@ -953,13 +1012,25 @@ async def _export_telemetry(
                 checksums: dict[str, str] = {}
                 table_row_count = 0
 
+                cutoff_params: dict[str, str] | None = (
+                    {"param_cutoff": export_time_cutoff} if export_time_cutoff else None
+                )
+
                 for yyyymm in months:
                     filename = f"{table_name}_{yyyymm // 100}-{yyyymm % 100:02d}.parquet"
                     filepath = output_dir / filename
 
                     # Get row count first for progress display
-                    count_sql = _build_ch_count_query(table_cfg, yyyymm)
-                    count_resp = await _ch_query(http_url, db, user, password, count_sql, client=client)
+                    count_sql = _build_ch_count_query(table_cfg, yyyymm, cutoff=export_time_cutoff)
+                    count_resp = await _ch_query(
+                        http_url,
+                        db,
+                        user,
+                        password,
+                        count_sql,
+                        http_client=http_client,
+                        extra_params=cutoff_params,
+                    )
                     partition_count = _read_count(count_resp)
 
                     if partition_count == 0:
@@ -968,8 +1039,17 @@ async def _export_telemetry(
                     rprint(f"  Exporting {filename} ({partition_count:,} rows)...")
 
                     # Stream Parquet to disk
-                    export_sql = _build_ch_export_query(table_cfg, yyyymm)
-                    await _ch_query(http_url, db, user, password, export_sql, stream_to=filepath, client=client)
+                    export_sql = _build_ch_export_query(table_cfg, yyyymm, cutoff=export_time_cutoff)
+                    await _ch_query(
+                        http_url,
+                        db,
+                        user,
+                        password,
+                        export_sql,
+                        stream_to=filepath,
+                        http_client=http_client,
+                        extra_params=cutoff_params,
+                    )
 
                     # Check if file is actually empty (edge case)
                     if _is_empty_parquet(filepath):
@@ -1012,7 +1092,7 @@ async def _export_telemetry(
             },
         }
         manifest_out = output_dir / "telemetry_manifest.json"
-        manifest_out.write_text(json.dumps(telemetry_manifest, indent=2) + "\n")
+        manifest_out.write_text(json.dumps(telemetry_manifest, indent=2) + "\n", encoding="utf-8")
 
         elapsed = time.monotonic() - t0
         return TelemetryExportResult(
@@ -1026,7 +1106,7 @@ async def _export_telemetry(
 
     except Exception:
         # Clean up on failure only if we created the directory
-        if dir_created and output_dir.exists():
+        if not dir_existed and output_dir.exists():
             shutil.rmtree(output_dir, ignore_errors=True)
         raise
 
@@ -1044,7 +1124,7 @@ async def _import_telemetry(
     if not manifest_path.exists():
         rprint("[red]Telemetry manifest not found in input directory.[/red]")
         raise typer.Exit(1)
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     migration_id = manifest["migration_id"]
 
     # Verify checksums before any imports
@@ -1073,13 +1153,21 @@ async def _import_telemetry(
         await _ch_query(http_url, db, user, password, "SELECT 1")
     except typer.Exit:
         raise
-    except Exception:
+    except Exception as exc:
         rprint("[red]ClickHouse health check failed.[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     existing = await _ch_existing_tables(http_url, db, user, password)
     rows_imported: dict[str, int] = {}
     tables_skipped: list[str] = []
+
+    # Resume state
+    state_path = input_dir / ".import_state.json"
+    if state_path.exists():
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        completed_tables: set[str] = set(state.get("completed", []))
+    else:
+        completed_tables = set()
 
     for table_cfg in CLICKHOUSE_TABLES:
         table_name = table_cfg["name"]
@@ -1093,22 +1181,28 @@ async def _import_telemetry(
         if table_name not in existing:
             rprint(f"  [yellow]Skipping {table_name} (table does not exist on target)[/yellow]")
             tables_skipped.append(table_name)
+            warnings.append(f"{table_name}: table does not exist on target")
             rows_imported[table_name] = 0
+            continue
+
+        if table_name in completed_tables:
+            rprint(f"  [dim]Skipping {table_name} (already imported)[/dim]")
+            rows_imported[table_name] = table_info.get("row_count", 0)
             continue
 
         for filename in files:
             filepath = input_dir / filename
 
-            # MergeTree idempotency: check if partition already has data
-            if table_cfg["engine"] == "mergetree":
-                # Extract YYYYMM from filename like "traces_2025-01.parquet"
-                parts = filename.replace(".parquet", "").split("_")
-                date_part = parts[-1]  # "2025-01"
-                year, month = date_part.split("-")
-                yyyymm = int(year) * 100 + int(month)
-                if await _ch_partition_has_data(http_url, db, user, password, table_cfg, yyyymm):
-                    rprint(f"  [dim]Skipping {filename} (partition already has data)[/dim]")
-                    continue
+            # Idempotency: check if partition already has data
+            # Extract YYYYMM from filename like "traces_2025-01.parquet"
+            parts = filename.replace(".parquet", "").split("_")
+            date_part = parts[-1]  # "2025-01"
+            year, month = date_part.split("-")
+            yyyymm = int(year) * 100 + int(month)
+            if await _ch_partition_has_data(http_url, db, user, password, table_cfg, yyyymm):
+                rprint(f"  [dim]Skipping {filename} (partition already has data)[/dim]")
+                warnings.append(f"{filename}: partition already has data")
+                continue
 
             rprint(f"  Importing {filename}...")
             await _ch_import(http_url, db, user, password, table_name, filepath)
@@ -1116,10 +1210,17 @@ async def _import_telemetry(
         rows_imported[table_name] = table_info.get("row_count", 0)
         rprint(f"  [green]✓[/green] {table_name}: {rows_imported[table_name]:,} rows")
 
+        # Persist resume state after each successful table
+        completed_tables.add(table_name)
+        state_path.write_text(
+            json.dumps({"completed": sorted(completed_tables)}, indent=2),
+            encoding="utf-8",
+        )
+
     elapsed = time.monotonic() - t0
     return TelemetryImportResult(
         migration_id=migration_id,
-        tables_imported=len([t for t in rows_imported if rows_imported[t] > 0]),
+        tables_imported=sum(1 for v in rows_imported.values() if v > 0),
         tables_skipped=tables_skipped,
         rows_imported=rows_imported,
         duration_seconds=round(elapsed, 2),
@@ -1169,9 +1270,9 @@ async def _validate_fk_references(
 
     # Filter to valid UUIDs only — ClickHouse stores these as String,
     # so non-UUID values like "filesystem" or "default" can appear.
-    _uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+    # Normalize to lowercase to match PostgreSQL's canonical form.
     for key in list(fk_values):
-        fk_values[key] = {v for v in fk_values[key] if _uuid_re.match(v)}
+        fk_values[key] = {v.lower() for v in fk_values[key] if _UUID_RE.match(v)}
 
     # Check against PostgreSQL
     conn = await _connect(db_url)
@@ -1211,7 +1312,7 @@ async def _validate_telemetry(
     if not manifest_path.exists():
         rprint("[red]Telemetry manifest not found.[/red]")
         raise typer.Exit(1)
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     # Checksum verification
     checksum_results: dict[str, bool] = {}
@@ -1236,9 +1337,9 @@ async def _validate_telemetry(
             await _ch_query(http_url, db, user, password, "SELECT 1")
         except typer.Exit:
             raise
-        except Exception:
+        except Exception as exc:
             rprint("[red]ClickHouse health check failed.[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
         existing = await _ch_existing_tables(http_url, db, user, password)
         row_count_results = {}
@@ -1263,7 +1364,7 @@ async def _validate_telemetry(
         fk_results = await _validate_fk_references(input_dir, manifest, target_db_url)
         # Update manifest with FK results
         manifest["fk_validation"] = {**fk_results, "validated_at": datetime.now(UTC).isoformat()}
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     return TelemetryValidationResult(
         checksums_valid=checksums_valid,
@@ -1418,6 +1519,7 @@ def export_telemetry_cmd(
 ) -> None:
     """Export ClickHouse telemetry data to Parquet files."""
     _require_admin()
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     rprint(f"[bold]Exporting telemetry to:[/bold] {output_dir}")
     result = asyncio.run(_export_telemetry(clickhouse_url, Path(manifest), Path(output_dir)))
@@ -1441,6 +1543,7 @@ def import_telemetry_cmd(
 ) -> None:
     """Import Parquet telemetry files into target ClickHouse."""
     _require_admin()
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     input_path = Path(input_dir)
     if not input_path.exists():
@@ -1458,6 +1561,10 @@ def import_telemetry_cmd(
     rprint(f"  Duration:   {result.duration_seconds:.1f}s")
     if result.tables_skipped:
         rprint(f"  Skipped:    {', '.join(result.tables_skipped)}")
+    if result.warnings:
+        rprint("\n[yellow]Warnings:[/yellow]")
+        for w in result.warnings:
+            rprint(f"  [yellow]⚠[/yellow]  {w}")
 
 
 @migrate_app.command("validate-telemetry")
@@ -1470,6 +1577,7 @@ def validate_telemetry_cmd(
 ) -> None:
     """Validate telemetry Parquet files and optionally check FK references."""
     _require_admin()
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     input_path = Path(input_dir)
     if not input_path.exists():
