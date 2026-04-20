@@ -25,6 +25,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRegistryList, useMyAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useSubmitDraft } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
@@ -87,17 +88,24 @@ function DeleteAgentButton({ agent }: { agent: RegistryItem }) {
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-        onClick={(e) => {
-          e.stopPropagation();
-          setConfirmOpen(true);
-        }}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmOpen(true);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent onClick={(e) => e.stopPropagation()}>
@@ -128,17 +136,24 @@ function ArchiveAgentButton({ agent }: { agent: RegistryItem }) {
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0 text-muted-foreground hover:text-orange-600"
-        onClick={(e) => {
-          e.stopPropagation();
-          setConfirmOpen(true);
-        }}
-      >
-        <Archive className="h-3.5 w-3.5" />
-      </Button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-orange-600"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmOpen(true);
+              }}
+            >
+              <Archive className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Archive</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent onClick={(e) => e.stopPropagation()}>
@@ -178,17 +193,24 @@ function UnarchiveAgentButton({ agent }: { agent: RegistryItem }) {
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0 text-muted-foreground hover:text-green-600"
-        onClick={(e) => {
-          e.stopPropagation();
-          setConfirmOpen(true);
-        }}
-      >
-        <ArchiveRestore className="h-3.5 w-3.5" />
-      </Button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-green-600"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmOpen(true);
+              }}
+            >
+              <ArchiveRestore className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Restore</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent onClick={(e) => e.stopPropagation()}>
