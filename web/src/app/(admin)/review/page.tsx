@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { CheckCircle2, X, Trash2, LayoutGrid, TableProperties, AlertTriangle, ShieldCheck, ShieldX, AlertCircle } from "lucide-react";
 import { useReviewAgents, useReviewComponents, useReviewAction, useReviewDelete } from "@/hooks/use-api";
 import type { ReviewItem, McpValidationResult } from "@/lib/types";
@@ -13,6 +14,13 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { CardSkeleton, TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
+
+/** Build a detail-page URL for a review item. */
+function reviewItemHref(item: ReviewItem): string {
+  if (item.type === "agent") return `/agents/${item.id}`;
+  const plural = item.type ? `${item.type}s` : "mcps";
+  return `/components/${item.id}?type=${plural}`;
+}
 
 type ViewMode = "list" | "grid";
 
@@ -132,9 +140,11 @@ function ReviewCard({ item, onApprove, onReject, onDelete, disableApprove }: {
     <div className="rounded-md border border-border bg-card p-4 space-y-3 hover:bg-muted/20 transition-colors">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h4 className="text-sm font-[family-name:var(--font-display)] font-semibold truncate">
-            {item.name ?? "Unnamed"}
-          </h4>
+          <Link href={reviewItemHref(item)} className="hover:underline">
+            <h4 className="text-sm font-[family-name:var(--font-display)] font-semibold truncate">
+              {item.name ?? "Unnamed"}
+            </h4>
+          </Link>
           {item.submitted_by && (
             <p className="text-xs text-muted-foreground mt-0.5">
               by {item.submitted_by}
@@ -286,9 +296,9 @@ function ReviewRow({ item, onApprove, onReject, onDelete, disableApprove }: {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2.5">
-            <span className="text-sm font-[family-name:var(--font-display)] font-semibold truncate">
+            <Link href={reviewItemHref(item)} className="text-sm font-[family-name:var(--font-display)] font-semibold truncate hover:underline">
               {item.name ?? "Unnamed"}
-            </span>
+            </Link>
             {item.type && (
               <Badge variant="outline" className="text-[10px] shrink-0">
                 {item.type ?? item.listing_type ?? "-"}
