@@ -15,7 +15,12 @@ _pool: aioredis.ConnectionPool | None = None
 def get_pool() -> aioredis.ConnectionPool:
     global _pool
     if _pool is None:
-        _pool = aioredis.ConnectionPool.from_url(settings.REDIS_URL, decode_responses=True)
+        _pool = aioredis.ConnectionPool.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=settings.REDIS_SOCKET_TIMEOUT,
+            socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
+        )
     return _pool
 
 

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from redis.exceptions import RedisError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func, select
@@ -114,6 +115,26 @@ app = FastAPI(
 # Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.middleware("http")
+async def _set_rate_limit_defaults(request: Request, call_next):
+    """Workaround for slowapi 0.1.9 bug: when swallow_errors swallows a Redis
+    failure, request.state.view_rate_limit is never set, causing an
+    AttributeError in the post-response header injection."""
+    request.state.view_rate_limit = None
+    return await call_next(request)
+
+
+logger = logging.getLogger("observal")
+
+
+async def _redis_error_handler(request: Request, exc: RedisError):
+    logger.error("Unhandled RedisError on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=503, content={"detail": "Service temporarily unavailable"})
+
+
+app.add_exception_handler(RedisError, _redis_error_handler)
 
 # Add SessionMiddleware for Authlib (OAuth state)
 app.add_middleware(
