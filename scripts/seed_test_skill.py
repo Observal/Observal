@@ -6,7 +6,6 @@ Usage:
 Requires the server to be running at localhost:8000 with demo accounts enabled.
 """
 
-import json
 import sys
 
 import requests
@@ -23,7 +22,7 @@ if r.status_code != 200:
     print(f"   FAILED to login: {r.status_code} {r.text}")
     sys.exit(1)
 admin_token = r.json()["access_token"]
-print(f"   OK — got token")
+print("   OK — got token")
 
 # Use admin token for everything (user account may not exist)
 user_token = admin_token
@@ -76,9 +75,9 @@ r = requests.post(
     headers={"Authorization": f"Bearer {admin_token}"},
 )
 if r.status_code == 200:
-    print(f"   OK — approved!")
+    print("   OK — approved!")
 elif "already" in r.text.lower() or r.status_code == 400:
-    print(f"   Already approved (or status doesn't allow re-approve)")
+    print("   Already approved (or status doesn't allow re-approve)")
 else:
     print(f"   Warning: {r.status_code} {r.text}")
 

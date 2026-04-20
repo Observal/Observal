@@ -168,7 +168,6 @@ def skill_install(
     # Write the skill file to disk unless --no-write
     skill_file = snippet.get("skill_file")
     if skill_file and not no_write:
-        import os
         from pathlib import Path
 
         file_path = skill_file["path"]
