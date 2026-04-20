@@ -85,6 +85,12 @@ export function RegistrySidebar() {
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
+    if (pathname === href) return true;
+    // Only treat as active if no *more-specific* sibling nav item matches.
+    // e.g. /agents should NOT be active when /agents/leaderboard matches.
+    const allHrefs = [...registryNav, ...reviewNav, ...userNav, ...adminNav].map((n) => n.href);
+    const moreSpecific = allHrefs.some((h) => h !== href && h.startsWith(href + "/") && pathname.startsWith(h));
+    if (moreSpecific) return false;
     return pathname.startsWith(href);
   }
 
