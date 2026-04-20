@@ -607,6 +607,17 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
             _framework = "python"
         _setup = ""
         _changelog = "Initial release"
+        # Detect $VAR patterns in args and merge into env vars
+        dollar_vars = _extract_dollar_vars(_args or [], {})
+        existing_names = {
+            (ev.get("name", ev) if isinstance(ev, dict) else ev) for ev in detected_env_vars
+        }
+        for var_name in dollar_vars:
+            if var_name not in existing_names:
+                detected_env_vars.append({"name": var_name, "description": "", "required": True})
+                existing_names.add(var_name)
+        if dollar_vars:
+            rprint(f"\n[dim]Auto-detected {len(dollar_vars)} input variable(s) from $VAR patterns in args.[/dim]")
         env_vars = detected_env_vars
     else:
         # Show config preview if command was detected
@@ -695,6 +706,25 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
 
         _setup = typer.prompt("Setup instructions (optional, press Enter to skip)", default="")
         _changelog = typer.prompt("Changelog", default="Initial release")
+
+        # Detect $VAR patterns in final args and merge into detected env vars
+        dollar_vars = _extract_dollar_vars(_args or [], {})
+        existing_names = {
+            (ev.get("name", ev) if isinstance(ev, dict) else ev) for ev in detected_env_vars
+        }
+        for var_name in dollar_vars:
+            if var_name not in existing_names:
+                detected_env_vars.append({"name": var_name, "description": "", "required": True})
+                existing_names.add(var_name)
+        if dollar_vars:
+            rprint("\n[bold yellow]Input variables detected in args:[/bold yellow]")
+            rprint(
+                "[dim]Dollar-sign variables will become install-time"
+                " dependencies — users will be prompted for these values.[/dim]\n"
+            )
+            for var in dollar_vars:
+                rprint(f"  [cyan]$[/cyan]{var}")
+            rprint()
 
         # Interactive env var configuration — developer reviews, edits,
         # or provides env vars instead of blindly including auto-detected ones.
