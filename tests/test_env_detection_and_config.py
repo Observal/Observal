@@ -822,3 +822,155 @@ class TestGenerateConfigSSE:
         cfg = generate_config(listing, "cursor")
         server = cfg["mcpServers"]["my-sse-server"]
         assert "headers" not in server
+
+
+# ═══════════════════════════════════════════════════════════
+# 11. Dollar-sign variable detection (CLI)
+# ═══════════════════════════════════════════════════════════
+
+
+class TestDollarVarDetection:
+    def test_extract_from_args(self):
+        from observal_cli.cmd_mcp import _extract_dollar_vars
+
+        result = _extract_dollar_vars(
+            ["-v", "$USER_VOLUME_PATH:/data", "--host", "$SERVER_HOST"], {}
+        )
+        assert "USER_VOLUME_PATH" in result
+        assert "SERVER_HOST" in result
+
+    def test_extract_from_env_values(self):
+        from observal_cli.cmd_mcp import _extract_dollar_vars
+
+        result = _extract_dollar_vars(
+            [], {"JIRA_URL": "$JIRA_BASE_URL", "TOKEN": "$JIRA_TOKEN"}
+        )
+        assert "JIRA_BASE_URL" in result
+        assert "JIRA_TOKEN" in result
+
+    def test_extract_braces_form(self):
+        from observal_cli.cmd_mcp import _extract_dollar_vars
+
+        result = _extract_dollar_vars(["${MY_VAR}"], {})
+        assert "MY_VAR" in result
+
+    def test_filters_system_vars(self):
+        from observal_cli.cmd_mcp import _extract_dollar_vars
+
+        result = _extract_dollar_vars(["$HOME/path", "$MY_CUSTOM"], {})
+        assert "MY_CUSTOM" in result
+        assert "HOME" not in result
+
+    def test_dedup_across_args_and_env(self):
+        from observal_cli.cmd_mcp import _extract_dollar_vars
+
+        result = _extract_dollar_vars(
+            ["$JIRA_URL"], {"URL": "$JIRA_URL"}
+        )
+        assert result.count("JIRA_URL") == 1
+
+    def test_ignores_lowercase(self):
+        from observal_cli.cmd_mcp import _extract_dollar_vars
+
+        result = _extract_dollar_vars(["$lowercase_var"], {})
+        assert result == []
+
+    def test_multiple_vars_in_one_arg(self):
+        from observal_cli.cmd_mcp import _extract_dollar_vars
+
+        result = _extract_dollar_vars(["$USER_PATH:/data/$SUBDIR"], {})
+        assert "USER_PATH" in result
+        assert "SUBDIR" in result
+
+
+# ═══════════════════════════════════════════════════════════
+# 12. Dollar-sign variable substitution (server)
+# ═══════════════════════════════════════════════════════════
+
+
+class TestDollarVarSubstitution:
+    def test_substitute_in_stored_args(self):
+        from services.config_generator import _build_run_command
+
+        cmd = _build_run_command(
+            "my-mcp",
+            "docker",
+            server_env={"VOL": "/tmp/vol"},
+            stored_command="docker",
+            stored_args=["run", "-v", "$VOL:/data", "image"],
+        )
+        assert cmd == ["docker", "run", "-v", "/tmp/vol:/data", "image"]
+
+    def test_preserves_unmatched(self):
+        from services.config_generator import _substitute_dollar_vars
+
+        result = _substitute_dollar_vars(["$UNKNOWN_VAR"], {"OTHER": "val"})
+        assert result == ["$UNKNOWN_VAR"]
+
+    def test_substitute_braces_form(self):
+        from services.config_generator import _substitute_dollar_vars
+
+        result = _substitute_dollar_vars(["${MY_VAR}"], {"MY_VAR": "replaced"})
+        assert result == ["replaced"]
+
+    def test_no_substitution_without_env(self):
+        from services.config_generator import _substitute_dollar_vars
+
+        result = _substitute_dollar_vars(["$VAR"], None)
+        assert result == ["$VAR"]
+
+    def test_multiple_vars_in_one_arg(self):
+        from services.config_generator import _substitute_dollar_vars
+
+        result = _substitute_dollar_vars(
+            ["$USER_PATH:/data/$SUBDIR"], {"USER_PATH": "/home/u", "SUBDIR": "out"}
+        )
+        assert result == ["/home/u:/data/out"]
+
+
+# ═══════════════════════════════════════════════════════════
+# 13. _parse_direct_config with dollar-sign vars
+# ═══════════════════════════════════════════════════════════
+
+
+class TestParseDirectConfigDollarVars:
+    def test_detects_dollar_vars_in_args(self):
+        from observal_cli.cmd_mcp import _parse_direct_config
+
+        cfg = {
+            "command": "docker",
+            "args": ["run", "-v", "$USER_PATH:/data", "myimage"],
+        }
+        parsed = _parse_direct_config(cfg)
+        names = {ev["name"] for ev in parsed.get("environment_variables", [])}
+        assert "USER_PATH" in names
+        assert parsed.get("_dollar_vars_detected")
+        assert "USER_PATH" in parsed["_dollar_vars_detected"]
+
+    def test_merges_env_keys_and_dollar_vars(self):
+        from observal_cli.cmd_mcp import _parse_direct_config
+
+        cfg = {
+            "command": "docker",
+            "args": ["run", "myimage"],
+            "env": {"API_KEY": "sk-xxx", "URL": "$BASE_URL"},
+        }
+        parsed = _parse_direct_config(cfg)
+        names = [ev["name"] for ev in parsed.get("environment_variables", [])]
+        # API_KEY from env key, URL from env key, BASE_URL from dollar-sign in value
+        assert "API_KEY" in names
+        assert "URL" in names
+        assert "BASE_URL" in names
+        # No duplicates
+        assert len(names) == len(set(names))
+
+    def test_no_flag_when_no_dollar_vars(self):
+        from observal_cli.cmd_mcp import _parse_direct_config
+
+        cfg = {
+            "command": "python",
+            "args": ["-m", "my_server"],
+            "env": {"API_KEY": "sk-xxx"},
+        }
+        parsed = _parse_direct_config(cfg)
+        assert "_dollar_vars_detected" not in parsed
