@@ -833,18 +833,14 @@ class TestDollarVarDetection:
     def test_extract_from_args(self):
         from observal_cli.cmd_mcp import _extract_dollar_vars
 
-        result = _extract_dollar_vars(
-            ["-v", "$USER_VOLUME_PATH:/data", "--host", "$SERVER_HOST"], {}
-        )
+        result = _extract_dollar_vars(["-v", "$USER_VOLUME_PATH:/data", "--host", "$SERVER_HOST"], {})
         assert "USER_VOLUME_PATH" in result
         assert "SERVER_HOST" in result
 
     def test_extract_from_env_values(self):
         from observal_cli.cmd_mcp import _extract_dollar_vars
 
-        result = _extract_dollar_vars(
-            [], {"JIRA_URL": "$JIRA_BASE_URL", "TOKEN": "$JIRA_TOKEN"}
-        )
+        result = _extract_dollar_vars([], {"JIRA_URL": "$JIRA_BASE_URL", "TOKEN": "$JIRA_TOKEN"})
         assert "JIRA_BASE_URL" in result
         assert "JIRA_TOKEN" in result
 
@@ -864,9 +860,7 @@ class TestDollarVarDetection:
     def test_dedup_across_args_and_env(self):
         from observal_cli.cmd_mcp import _extract_dollar_vars
 
-        result = _extract_dollar_vars(
-            ["$JIRA_URL"], {"URL": "$JIRA_URL"}
-        )
+        result = _extract_dollar_vars(["$JIRA_URL"], {"URL": "$JIRA_URL"})
         assert result.count("JIRA_URL") == 1
 
     def test_ignores_lowercase(self):
@@ -922,9 +916,7 @@ class TestDollarVarSubstitution:
     def test_multiple_vars_in_one_arg(self):
         from services.config_generator import _substitute_dollar_vars
 
-        result = _substitute_dollar_vars(
-            ["$USER_PATH:/data/$SUBDIR"], {"USER_PATH": "/home/u", "SUBDIR": "out"}
-        )
+        result = _substitute_dollar_vars(["$USER_PATH:/data/$SUBDIR"], {"USER_PATH": "/home/u", "SUBDIR": "out"})
         assert result == ["/home/u:/data/out"]
 
 

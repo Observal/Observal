@@ -419,9 +419,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
             # Let creator review/confirm input dependencies
             if dollar_vars:
                 rprint("\n[bold]Confirm input dependencies:[/bold]")
-                parsed["environment_variables"] = _review_env_vars(
-                    parsed.get("environment_variables", [])
-                )
+                parsed["environment_variables"] = _review_env_vars(parsed.get("environment_variables", []))
 
             _name = name or typer.prompt("Server name", default=_name)
             _desc = typer.prompt("Description (what does this server do?)", default="")
@@ -609,9 +607,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
         _changelog = "Initial release"
         # Detect $VAR patterns in args and merge into env vars
         dollar_vars = _extract_dollar_vars(_args or [], {})
-        existing_names = {
-            (ev.get("name", ev) if isinstance(ev, dict) else ev) for ev in detected_env_vars
-        }
+        existing_names = {(ev.get("name", ev) if isinstance(ev, dict) else ev) for ev in detected_env_vars}
         for var_name in dollar_vars:
             if var_name not in existing_names:
                 detected_env_vars.append({"name": var_name, "description": "", "required": True})
@@ -709,9 +705,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
 
         # Detect $VAR patterns in final args and merge into detected env vars
         dollar_vars = _extract_dollar_vars(_args or [], {})
-        existing_names = {
-            (ev.get("name", ev) if isinstance(ev, dict) else ev) for ev in detected_env_vars
-        }
+        existing_names = {(ev.get("name", ev) if isinstance(ev, dict) else ev) for ev in detected_env_vars}
         for var_name in dollar_vars:
             if var_name not in existing_names:
                 detected_env_vars.append({"name": var_name, "description": "", "required": True})
