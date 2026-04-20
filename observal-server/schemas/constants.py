@@ -24,6 +24,32 @@ VALID_IDES: list[str] = [
     "copilot",
 ]
 
+# ── IDE feature capabilities ──────────────────────────────────
+# Each IDE supports a subset of agent features. This matrix is the
+# single source of truth used by the inference engine, config
+# generator, and frontend.  Mirrored in observal_cli/constants.py
+# and web/src/lib/ide-features.ts.
+
+IDE_FEATURES: list[str] = [
+    "skills",
+    "superpowers",
+    "hook_bridge",
+    "mcp_servers",
+    "rules",
+    "steering_files",
+    "otlp_telemetry",
+]
+
+IDE_FEATURE_MATRIX: dict[str, set[str]] = {
+    "claude-code": {"skills", "hook_bridge", "mcp_servers", "rules", "otlp_telemetry"},
+    "kiro": {"superpowers", "hook_bridge", "mcp_servers", "rules", "steering_files", "otlp_telemetry"},
+    "cursor": {"mcp_servers", "rules"},
+    "gemini-cli": {"mcp_servers", "rules"},
+    "codex": {"rules"},
+    "copilot": {"rules"},
+    "vscode": {"mcp_servers", "rules"},
+}
+
 # ── MCP servers ─────────────────────────────────────────────
 VALID_MCP_CATEGORIES: list[str] = [
     "browser-automation",

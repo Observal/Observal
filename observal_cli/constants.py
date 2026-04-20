@@ -22,6 +22,30 @@ VALID_IDES: list[str] = [
     "copilot",
 ]
 
+# ── IDE feature capabilities ──────────────────────────────────
+# Mirror of observal-server/schemas/constants.py — kept in sync by
+# tests/test_constants_sync.py.
+
+IDE_FEATURES: list[str] = [
+    "skills",
+    "superpowers",
+    "hook_bridge",
+    "mcp_servers",
+    "rules",
+    "steering_files",
+    "otlp_telemetry",
+]
+
+IDE_FEATURE_MATRIX: dict[str, set[str]] = {
+    "claude-code": {"skills", "hook_bridge", "mcp_servers", "rules", "otlp_telemetry"},
+    "kiro": {"superpowers", "hook_bridge", "mcp_servers", "rules", "steering_files", "otlp_telemetry"},
+    "cursor": {"mcp_servers", "rules"},
+    "gemini-cli": {"mcp_servers", "rules"},
+    "codex": {"rules"},
+    "copilot": {"rules"},
+    "vscode": {"mcp_servers", "rules"},
+}
+
 # ── MCP servers ─────────────────────────────────────────────
 VALID_MCP_CATEGORIES: list[str] = [
     "browser-automation",
