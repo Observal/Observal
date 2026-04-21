@@ -36,10 +36,19 @@ review_app = typer.Typer(help="Admin review commands")
 
 
 @review_app.command(name="list")
-def review_list(output: str = typer.Option("table", "--output", "-o")):
+def review_list(
+    type_filter: str = typer.Option(None, "--type", "-t", help="Filter by type (mcp, skill, hook, prompt, sandbox)"),
+    tab: str = typer.Option(None, "--tab", help="Filter tab (agents, components)"),
+    output: str = typer.Option("table", "--output", "-o"),
+):
     """List pending submissions."""
+    params = {}
+    if type_filter:
+        params["type"] = type_filter
+    if tab:
+        params["tab"] = tab
     with spinner("Fetching reviews..."):
-        data = client.get("/api/v1/review")
+        data = client.get("/api/v1/review", params=params or None)
     if data:
         config.save_last_results(data)
     if output == "json":
@@ -50,60 +59,113 @@ def review_list(output: str = typer.Option("table", "--output", "-o")):
         return
     table = Table(title=f"Pending Reviews ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
+    table.add_column("Type", style="cyan", width=8)
     table.add_column("Name", style="bold")
+    table.add_column("Version", style="dim")
     table.add_column("Submitted By")
-    table.add_column("Status")
-    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Submitted", style="dim")
+    table.add_column("ID", style="dim", no_wrap=True, max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
+            item.get("type", item.get("listing_type", "")),
             item.get("name", ""),
+            item.get("version", ""),
             item.get("submitted_by", ""),
-            status_badge(item.get("status", "")),
-            str(item["id"]),
+            relative_time(item.get("created_at") or item.get("submitted_at")),
+            str(item["id"])[:12],
         )
     console.print(table)
 
 
 @review_app.command(name="show")
-def review_show(review_id: str = typer.Argument(...), output: str = typer.Option("table", "--output", "-o")):
-    """Show review details."""
+def review_show(review_id: str = typer.Argument(..., help="Name, row #, @alias, or UUID"), output: str = typer.Option("table", "--output", "-o")):
+    """Show review details for a component or agent."""
+    resolved = config.resolve_alias(review_id)
     with spinner():
-        item = client.get(f"/api/v1/review/{review_id}")
+        item = client.get(f"/api/v1/review/{resolved}")
     if output == "json":
         output_json(item)
         return
-    console.print(
-        kv_panel(
-            item.get("name", "Review"),
-            [
-                ("Status", status_badge(item.get("status", ""))),
-                ("Submitted By", item.get("submitted_by", "N/A")),
-                ("Git URL", item.get("git_url", "N/A")),
-                ("Description", item.get("description", "")),
-                ("ID", f"[dim]{item['id']}[/dim]"),
-            ],
-        )
-    )
+    fields = [
+        ("Type", item.get("type", "N/A")),
+        ("Status", status_badge(item.get("status", ""))),
+        ("Version", item.get("version", "N/A")),
+        ("Owner", item.get("owner", "N/A")),
+        ("Submitted By", item.get("submitted_by", "N/A")),
+        ("Created", relative_time(item.get("created_at"))),
+        ("Git URL", item.get("git_url", "N/A")),
+        ("Description", item.get("description", "") or "[dim]none[/dim]"),
+        ("ID", f"[dim]{item['id']}[/dim]"),
+    ]
+    if item.get("rejection_reason"):
+        fields.append(("Rejection Reason", f"[red]{item['rejection_reason']}[/red]"))
+    if item.get("mcp_validated") is not None:
+        badge = "[green]✓ Validated[/green]" if item["mcp_validated"] else "[red]✗ Not validated[/red]"
+        fields.append(("MCP Validation", badge))
+    if item.get("validation_results"):
+        for vr in item["validation_results"]:
+            passed = "[green]pass[/green]" if vr.get("passed") else "[red]fail[/red]"
+            fields.append((f"  {vr.get('stage', '?')}", passed))
+    console.print(kv_panel(item.get("name", "Review"), fields))
 
 
 @review_app.command(name="approve")
-def review_approve(review_id: str = typer.Argument(...)):
-    """Approve a submission."""
+def review_approve(
+    review_id: str = typer.Argument(..., help="Name, row #, @alias, or UUID"),
+    agent: bool = typer.Option(False, "--agent", "-a", help="Approve an agent (not a component)"),
+    bundle: bool = typer.Option(False, "--bundle", "-b", help="Approve an entire bundle atomically"),
+):
+    """Approve a submission (component, agent, or bundle).
+
+    After `observal admin review list`, use a row number (e.g. 1),
+    the component/agent name, or a UUID prefix.
+    """
+    resolved = config.resolve_alias(review_id)
+    if agent:
+        path = f"/api/v1/review/agents/{resolved}/approve"
+    elif bundle:
+        path = f"/api/v1/review/bundles/{resolved}/approve"
+    else:
+        path = f"/api/v1/review/{resolved}/approve"
     with spinner("Approving..."):
-        result = client.post(f"/api/v1/review/{review_id}/approve")
-    rprint(f"[green]✓ Approved: {result.get('name', review_id)}[/green]")
+        result = client.post(path)
+    name = result.get("name", review_id)
+    if bundle:
+        rprint(f"[green]✓ Bundle approved: {name} ({result.get('approved_count', '?')} components)[/green]")
+    else:
+        rprint(f"[green]✓ Approved: {name}[/green]")
 
 
 @review_app.command(name="reject")
 def review_reject(
-    review_id: str = typer.Argument(...),
+    review_id: str = typer.Argument(..., help="Name, row #, @alias, or UUID"),
     reason: str = typer.Option(..., "--reason", "-r", help="Rejection reason"),
+    agent: bool = typer.Option(False, "--agent", "-a", help="Reject an agent (not a component)"),
+    bundle: bool = typer.Option(False, "--bundle", "-b", help="Reject an entire bundle atomically"),
 ):
-    """Reject a submission."""
+    """Reject a submission (component, agent, or bundle).
+
+    After `observal admin review list`, use a row number (e.g. 1),
+    the component/agent name, or a UUID prefix.
+    """
+    resolved = config.resolve_alias(review_id)
+    if not reason.strip():
+        rprint("[red]Rejection reason cannot be empty.[/red]")
+        raise typer.Exit(1)
+    if agent:
+        path = f"/api/v1/review/agents/{resolved}/reject"
+    elif bundle:
+        path = f"/api/v1/review/bundles/{resolved}/reject"
+    else:
+        path = f"/api/v1/review/{resolved}/reject"
     with spinner("Rejecting..."):
-        result = client.post(f"/api/v1/review/{review_id}/reject", {"reason": reason})
-    rprint(f"[yellow]✗ Rejected: {result.get('name', review_id)}[/yellow]")
+        result = client.post(path, {"reason": reason})
+    name = result.get("name", review_id)
+    if bundle:
+        rprint(f"[yellow]✗ Bundle rejected: {name} ({result.get('rejected_count', '?')} components)[/yellow]")
+    else:
+        rprint(f"[yellow]✗ Rejected: {name}[/yellow]")
 
 
 # ── Telemetry ────────────────────────────────────────────
