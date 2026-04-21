@@ -41,6 +41,8 @@ IDE_FILE_MAP = {
     ".github/copilot-instructions.md": None,  # project-level
     # OpenCode
     ".config/opencode/opencode.json": Path.home() / ".config" / "opencode" / "opencode.json",
+    # Codex
+    ".codex/config.toml": Path.home() / ".codex" / "config.toml",
     "AGENTS.md": None,  # project-level
 }
 
