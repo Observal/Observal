@@ -244,10 +244,12 @@ def _parse_direct_config(cfg: dict) -> dict:
         parsed["transport"] = transport
         parsed["url"] = inner["url"]
 
-        # Convert headers dict {name: value} → list of {name, description, required}
+        # Convert headers dict {name: value} → list of {name, value, description, required}
         raw_headers = inner.get("headers") or {}
         if isinstance(raw_headers, dict):
-            parsed["headers"] = [{"name": k, "description": "", "required": True} for k in raw_headers]
+            parsed["headers"] = [
+                {"name": k, "value": v, "description": "", "required": True} for k, v in raw_headers.items()
+            ]
         elif isinstance(raw_headers, list):
             parsed["headers"] = raw_headers
 
@@ -259,8 +261,8 @@ def _parse_direct_config(cfg: dict) -> dict:
         if isinstance(raw_env, dict):
             parsed["environment_variables"] = [{"name": k, "description": "", "required": True} for k in raw_env]
 
-        # Detect $VAR references in env values
-        dollar_vars = _extract_dollar_vars([], raw_env)
+        # Detect $VAR references in header values and env values
+        dollar_vars = _extract_dollar_vars([], {**raw_headers, **raw_env})
         existing_names = {ev["name"] for ev in parsed.get("environment_variables", [])}
         for var_name in dollar_vars:
             if var_name not in existing_names:
@@ -326,7 +328,7 @@ def _build_config_preview(server_name: str, parsed: dict) -> dict:
         preview["type"] = parsed.get("transport", "sse")
         preview["url"] = parsed["url"]
         if parsed.get("headers"):
-            preview["headers"] = {h["name"]: f"<{h['name']}>" for h in parsed["headers"]}
+            preview["headers"] = {h["name"]: h.get("value", f"<{h['name']}>") for h in parsed["headers"]}
         env_vars = parsed.get("environment_variables") or []
         if env_vars:
             preview["env"] = {ev["name"]: f"<{ev['name']}>" for ev in env_vars}
