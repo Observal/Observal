@@ -81,11 +81,7 @@ async def _load_agent(
             return mine
 
     # Fall back to global name lookup — only active, org-scoped agents
-    stmt = (
-        select(Agent)
-        .where(Agent.name == agent_id, Agent.status == AgentStatus.active)
-        .options(*_agent_load_options)
-    )
+    stmt = select(Agent).where(Agent.name == agent_id, Agent.status == AgentStatus.active).options(*_agent_load_options)
     if extra_conditions:
         stmt = stmt.where(*extra_conditions)
     if org_id is not None:

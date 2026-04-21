@@ -80,11 +80,26 @@ def _agent_mock(status=AgentStatus.active, created_by=None, **extra):
     m.components = extra.get("components", [])
     m.goal_template = extra.get("goal_template")
     col_keys = [
-        "id", "name", "version", "description", "owner", "git_url",
-        "prompt", "model_name", "model_config_json", "external_mcps",
-        "supported_ides", "is_private", "owner_org_id", "status",
-        "rejection_reason", "download_count", "unique_users",
-        "created_by", "created_at", "updated_at",
+        "id",
+        "name",
+        "version",
+        "description",
+        "owner",
+        "git_url",
+        "prompt",
+        "model_name",
+        "model_config_json",
+        "external_mcps",
+        "supported_ides",
+        "is_private",
+        "owner_org_id",
+        "status",
+        "rejection_reason",
+        "download_count",
+        "unique_users",
+        "created_by",
+        "created_at",
+        "updated_at",
     ]
     cols = []
     for key in col_keys:
