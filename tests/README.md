@@ -18,7 +18,7 @@ Python tests live in `tests/` at the repo root. The eval subsystem has its own s
 tests/
 ├── conftest.py           # Adds observal-server to sys.path
 ├── mock_mcp.py           # Minimal MCP v2024-11-05 server for protocol tests
-├── eval/                 # Evaluation pipeline tests (see docs/eval.md)
+├── eval/                 # Evaluation pipeline tests (see docs/concepts/evaluation.md)
 │   ├── test_phase8*.py   # Scoring pipeline (sanitizer, matching, adversarial, canary)
 │   ├── test_eval_*.py    # Eval engine and completeness meta-tests
 │   ├── test_score_aggregator.py

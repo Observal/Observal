@@ -19,435 +19,87 @@
 
 Observal is a **self-hosted AI agent registry with built-in observability**. Think Docker Hub, but for AI coding agents.
 
-Browse agents created by others, publish your own, and pull complete agent configurations, all defined in a portable YAML format that templates out to **Claude Code**, **Codex CLI**, **Gemini CLI**, and more. Every agent bundles its MCP servers, skills, hooks, prompts, and sandboxes into a single installable package. One command to install, zero manual config.
+Browse agents created by others, publish your own, and pull complete agent configurations — all defined in a portable YAML format that templates out to **Claude Code**, **Kiro CLI**, **Cursor**, **Gemini CLI**, and more. Every agent bundles its MCP servers, skills, hooks, prompts, and sandboxes into a single installable package. One command to install, zero manual config.
 
-Every interaction generates traces, spans, and sessions that flow into a telemetry pipeline, giving you full observability, traceability, and real-time metrics for your agents in production. The built-in eval engine (WIP) scores agent sessions so you can measure performance and make your agents better over time.
+Every interaction generates traces, spans, and sessions that flow into a telemetry pipeline. The built-in eval engine scores agent sessions so you can measure performance and make your agents better over time.
 
-**Supported tools:**
+## Documentation
 
-| IDE / Tool | Support Level |
-|------------|--------------|
-| Claude Code | Fully supported |
-| Kiro CLI | Supported (next most tested). See [setup guide](docs/kiro-setup.md). |
-| Codex CLI, Gemini CLI, Cursor, VS Code | Untested |
+**Full docs live at [observal.gitbook.io](https://observal.gitbook.io/observal)** (sourced from [`/docs`](docs/) in this repo).
 
-See the [Changelog](CHANGELOG.md) for recent updates.
+| Start here | Go to |
+| --- | --- |
+| 5-minute install and first trace | [Quickstart](docs/getting-started/quickstart.md) |
+| Understand the data model | [Core Concepts](docs/getting-started/core-concepts.md) |
+| Instrument your existing MCP servers | [Observe MCP traffic](docs/use-cases/observe-mcp-traffic.md) |
+| Run Observal on your infrastructure | [Self-Hosting](docs/self-hosting/README.md) |
+| Look up a CLI command | [CLI Reference](docs/cli/README.md) |
 
-## Quick Start
+See [CHANGELOG.md](CHANGELOG.md) for recent updates.
 
-Everything works out of the box with defaults. No configuration needed for local development.
+## Quick start
 
 ```bash
 git clone https://github.com/BlazeUp-AI/Observal.git
 cd Observal
 cp .env.example .env
 
-cd docker && docker compose up --build -d && cd ..
+docker compose -f docker/docker-compose.yml up --build -d
 uv tool install --editable .
 observal auth login            # auto-creates admin on fresh server
 ```
 
-That's it. The `.env.example` ships with working defaults for every setting. The server starts 8 services (API, web UI, PostgreSQL, ClickHouse, Redis, background worker, OpenTelemetry collector, Grafana) and creates all database tables on first boot.
-
-
-> **Port conflicts?** If `docker compose up` fails with `port is already allocated`, another service is using the default ports. Check and resolve before starting:
-> ```bash
-> # Check for occupied default ports (macOS/Linux)
-> lsof -nP -iTCP:5432 -sTCP:LISTEN   # PostgreSQL
-> lsof -nP -iTCP:6379 -sTCP:LISTEN   # Redis
->
-> # Windows (PowerShell)
-> netstat -ano | findstr :5432
-> netstat -ano | findstr :6379
-> ```
-> Either stop the conflicting services, or remap Observal's host ports:
-> ```bash
-> POSTGRES_HOST_PORT=5433 REDIS_HOST_PORT=6380 docker compose up --build -d
-> ```
-> If you already started with a port conflict, fully recreate the stack:
-> ```bash
-> docker compose down && docker compose up -d
-> ```
-> See `.env.example` for all configurable port variables.
-
+Eight services start (API, web UI, Postgres, ClickHouse, Redis, worker, OTEL collector, Grafana). Full walkthrough in [Quickstart](docs/getting-started/quickstart.md); operator guide in [Self-Hosting → Docker Compose setup](docs/self-hosting/docker-compose.md).
 
 Already have MCP servers in your IDE? Instrument them in one command:
 
 ```bash
-observal scan                  # auto-detect, register, and instrument everything
+observal scan                       # auto-detect, register, and instrument everything
 observal pull <agent> --ide cursor  # install a complete agent
 ```
 
-This detects MCP servers from your IDE config files, registers them with Observal, and wraps them with `observal-shim` for telemetry without breaking your existing setup. A timestamped backup is created automatically.
+## Supported IDEs
 
-## The Problem
+| IDE | Support |
+| --- | --- |
+| Claude Code | Full — skills, hooks, MCP, rules, OTLP telemetry |
+| Kiro CLI | Full — superpowers, hooks, MCP, steering files, OTLP telemetry |
+| Cursor | MCP + rules |
+| Gemini CLI | MCP + rules |
+| VS Code | MCP + rules |
+| Codex CLI | Rules |
 
-AI coding agents today are hard to share and impossible to measure. Components (MCP servers, skills, hooks, prompts) are scattered across repos with no standard way to package them together. There's no visibility into what's actually working, and no way to compare one version of an agent against another on real workflows.
+Compatibility matrix and per-IDE setup: [Integrations](docs/integrations/README.md).
 
-Observal solves this by giving you a registry to package and distribute complete agents, and a telemetry pipeline to measure them.
-
-## How It Works
-
-Agents in the registry are defined in YAML. Each agent bundles its components (MCP servers, skills, hooks, prompts, sandboxes) into a single configuration. When you run `observal pull <agent>`, it installs everything and generates the right config files for your tool.
-
-A transparent shim (`observal-shim` for stdio, `observal-proxy` for HTTP) sits between your tool and the MCP server. It never modifies traffic, it only observes. Every request/response pair becomes a span, spans group into traces, and traces form sessions. All of this streams into ClickHouse for analysis.
-
-```
-Tool  <-->  observal-shim  <-->  MCP Server / Sandbox
-                |
-                v (fire-and-forget)
-          Observal API  -->  ClickHouse (traces, spans, scores)
-                |
-                v
-          Eval Engine (SLM-as-a-Judge / Deductive Penalty Scoring)  -->  Scorecards
-```
-
-The eval engine runs on collected traces after the fact. It scores agent sessions across five dimensions: Goal Completion, Tool Call Efficiency, Tool Call Failures, Factual Grounding, and Thought Process. Scorecards let you compare agent versions, identify bottlenecks, and track improvements over time.
-
-## The Registry
-
-Observal manages 6 component types that agents bundle together:
-
-| Component | Description |
-|-----------|-------------|
-| **Agents** | Complete configurations that bundle all the components below |
-| **MCP Servers** | Model Context Protocol servers that expose tools to agents |
-| **Skills** | Portable instruction packages that agents load on demand |
-| **Hooks** | Lifecycle callbacks that fire during agent sessions |
-| **Prompts** | Managed templates with variable substitution |
-| **Sandboxes** | Docker execution environments for code running and testing |
-
-Anyone can publish components to the registry. Admin review controls visibility in the public listing, but your own items are usable immediately without approval. Browse the web UI or CLI to discover agents and components shared by others.
-
-## CLI Reference
-
-The CLI is organized into command groups. Run `observal --help` or `observal <group> --help` for full details. See [docs/cli.md](docs/cli.md) for the complete command reference.
-
-### Primary Workflows
-
-```bash
-observal pull <agent> --ide <ide>    # install a complete agent with all dependencies
-observal scan [--ide <ide>]          # detect and instrument existing IDE configs
-observal use <git-url|path>          # swap IDE configs to a git-hosted profile
-observal profile                     # show active profile and backup info
-```
-
-<details>
-<summary><strong>Authentication</strong> - <code>observal auth</code></summary>
-
-```bash
-observal auth login            # auto-creates admin on fresh server, or login with key/password
-observal auth register         # self-register a new account with email + password
-observal auth logout           # clear saved credentials
-observal auth whoami           # show current user
-observal auth status           # check server connectivity and health
-observal auth reset-password   # reset a forgotten password (uses server-logged code)
-```
-
-**Forgot your password?** If you've lost access to an account (e.g. an admin account created before passwords were set up), use the reset flow:
-
-```bash
-observal auth reset-password --email admin@localhost
-```
-
-This requests a 6-character reset code that gets logged to the server console. Check the server logs (`make logs` or `docker logs <container>`) for a line like:
-
-```
-WARNING - PASSWORD RESET CODE for admin@localhost: A7X9B2 (expires in 15 minutes)
-```
-
-Enter the code and your new password to regain access. The same flow is available from the web UI via the "Forgot password?" link on the login page.
-
-For CI/scripts, use environment variables:
-```bash
-export OBSERVAL_SERVER_URL=http://localhost:8000
-export OBSERVAL_API_KEY=<your-key>
-```
-
-</details>
-
-<details>
-<summary><strong>Component Registry</strong> - <code>observal registry &lt;type&gt;</code></summary>
-
-All 5 component types (mcp, skill, hook, prompt, sandbox) support the same core commands:
-
-```bash
-observal registry <type> submit [<git-url> | --from-file <path>]
-observal registry <type> list [--search <term>]
-observal registry <type> show <id-or-name>
-observal registry <type> install <id-or-name> --ide <ide>
-observal registry <type> delete <id-or-name>
-```
-
-Prompts also have `observal registry prompt render <id> --var key=value`.
-
-</details>
-
-<details>
-<summary><strong>Agent Authoring</strong> - <code>observal agent</code></summary>
-
-```bash
-# Browse and manage
-observal agent create              # interactive agent creation
-observal agent list [--search <term>]
-observal agent show <id>
-observal agent install <id> --ide <ide>
-observal agent delete <id>
-
-# Local YAML workflow
-observal agent init                # scaffold observal-agent.yaml
-observal agent add <type> <id>     # add component (mcp, skill, hook, prompt, sandbox)
-observal agent build               # validate against server (dry-run)
-observal agent publish             # submit to registry
-```
-
-</details>
-
-<details>
-<summary><strong>Observability</strong> - <code>observal ops</code></summary>
-
-```bash
-observal ops overview              # dashboard stats
-observal ops metrics <id> [--type mcp|agent] [--watch]
-observal ops top [--type mcp|agent]
-observal ops traces [--type <type>] [--mcp <id>] [--agent <id>]
-observal ops spans <trace-id>
-observal ops rate <id> --stars 5 [--type mcp|agent] [--comment "..."]
-observal ops feedback <id> [--type mcp|agent]
-observal ops telemetry status
-observal ops telemetry test
-```
-
-</details>
-
-<details>
-<summary><strong>Admin</strong> - <code>observal admin</code></summary>
-
-```bash
-# Settings and users
-observal admin settings
-observal admin set <key> <value>
-observal admin users
-
-# Review workflow
-observal admin review list
-observal admin review show <id>
-observal admin review approve <id>
-observal admin review reject <id> --reason "..."
-
-# Evaluation engine
-observal admin eval run <agent-id> [--trace <trace-id>]
-observal admin eval scorecards <agent-id> [--version "1.0.0"]
-observal admin eval show <scorecard-id>
-observal admin eval compare <agent-id> --a "1.0.0" --b "2.0.0"
-observal admin eval aggregate <agent-id> [--window 50]
-
-# Penalty and weight tuning
-observal admin penalties
-observal admin penalty-set <name> [--amount 10] [--active]
-observal admin weights
-observal admin weight-set <dimension> <weight>
-```
-
-</details>
-
-<details>
-<summary><strong>Configuration</strong> - <code>observal config</code></summary>
-
-```bash
-observal config show               # show current config
-observal config set <key> <value>  # set a config value
-observal config path               # show config file path
-observal config alias <name> <id>  # create @alias for an ID
-observal config aliases            # list all aliases
-```
-
-</details>
-
-<details>
-<summary><strong>Self-Management &amp; Diagnostics</strong></summary>
-
-```bash
-observal self upgrade              # upgrade CLI to latest version
-observal self downgrade            # downgrade to previous version
-observal doctor [--ide <ide>] [--fix]  # diagnose IDE settings compatibility
-```
-
-</details>
-
-## Tech Stack
+## Tech stack
 
 | Component | Technology |
-|-----------|------------|
+| --- | --- |
 | Frontend | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, Recharts |
-| Backend API | Python, FastAPI, Uvicorn |
-| Database | PostgreSQL 16 (primary), ClickHouse (telemetry) |
-| ORM | SQLAlchemy (async) + AsyncPG |
+| Backend | Python 3.11+, FastAPI, Strawberry GraphQL, Uvicorn |
+| Databases | PostgreSQL 16 (registry), ClickHouse (telemetry) |
+| Queue | Redis + arq |
 | CLI | Python, Typer, Rich |
-| Eval Engine | AWS Bedrock / OpenAI-compatible LLMs |
-| Background Jobs | arq + Redis |
-| Real-time | GraphQL subscriptions (Strawberry + WebSocket) |
-| Dependency Management | uv |
-| Telemetry Pipeline | OpenTelemetry Collector |
-| Monitoring | Grafana + ClickHouse dashboards |
+| Eval engine | AWS Bedrock / OpenAI-compatible LLMs |
+| Telemetry | OpenTelemetry Collector |
 | Deployment | Docker Compose (8 services) |
 
-## Setup & Configuration
+## Contributing
 
-See [SETUP.md](SETUP.md) for local development setup, eval engine configuration, and troubleshooting. For the web UI reference (pages, auth flows, RBAC), see [web/README.md](web/README.md). For enterprise deployment (SSO, SCIM, audit logging), see [ee/docs/cli.md](ee/docs/cli.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
 
-<details>
-<summary><strong>API Endpoints</strong></summary>
+1. Fork and clone
+2. `make hooks` to install pre-commit hooks
+3. Create a feature branch
+4. Run `make lint` and `make test`
+5. Open a PR
 
-### Auth
+See [AGENTS.md](AGENTS.md) for internal codebase context.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/auth/bootstrap` | Auto-create admin on fresh server (localhost only) |
-| `POST` | `/api/v1/auth/register` | Self-registration with email + password |
-| `POST` | `/api/v1/auth/login` | Login with API key or email+password |
-| `POST` | `/api/v1/auth/exchange` | Exchange one-time OAuth code for credentials |
-| `GET` | `/api/v1/auth/whoami` | Current user info |
-| `POST` | `/api/v1/auth/token` | Exchange credentials for JWT access + refresh tokens |
-| `POST` | `/api/v1/auth/token/refresh` | Rotate refresh token for new access token |
-| `POST` | `/api/v1/auth/token/revoke` | Revoke a refresh token |
-| `POST` | `/api/v1/auth/request-reset` | Request password reset (code logged to server console) |
-| `POST` | `/api/v1/auth/reset-password` | Reset password with code + new password |
-| `GET` | `/api/v1/auth/oauth/login` | Initiate OAuth SSO flow |
-| `GET` | `/api/v1/auth/oauth/callback` | OAuth callback handler |
-
-### Registry (per type: mcps, agents, skills, hooks, prompts, sandboxes)
-
-All `{id}` parameters accept either a UUID or a name.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/{type}` | Submit / create |
-| `GET` | `/api/v1/{type}` | List approved items |
-| `GET` | `/api/v1/{type}/{id}` | Get details |
-| `POST` | `/api/v1/{type}/{id}/install` | Get IDE config snippet |
-| `DELETE` | `/api/v1/{type}/{id}` | Delete |
-| `GET` | `/api/v1/{type}/{id}/metrics` | Metrics |
-| `POST` | `/api/v1/agents/{id}/pull` | Pull agent (installs all components) |
-
-### Scan
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/scan` | Bulk register items from IDE config scan |
-
-### Review
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/review` | List pending submissions |
-| `GET` | `/api/v1/review/{id}` | Submission details |
-| `POST` | `/api/v1/review/{id}/approve` | Approve |
-| `POST` | `/api/v1/review/{id}/reject` | Reject |
-
-### Telemetry
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/telemetry/ingest` | Batch ingest traces, spans, scores |
-| `POST` | `/api/v1/telemetry/events` | Legacy event ingestion |
-| `GET` | `/api/v1/telemetry/status` | Data flow status |
-| `GET` | `/api/v1/otel/crypto/public-key` | Server public key for payload encryption |
-
-### Alerts
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/alerts` | List alert rules |
-| `POST` | `/api/v1/alerts` | Create alert rule |
-| `PATCH` | `/api/v1/alerts/{id}` | Update alert rule |
-| `DELETE` | `/api/v1/alerts/{id}` | Delete alert rule |
-| `GET` | `/api/v1/alerts/{id}/history` | Alert firing history |
-
-### Evaluation
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/eval/agents/{id}` | Run evaluation |
-| `GET` | `/api/v1/eval/agents/{id}/scorecards` | List scorecards |
-| `GET` | `/api/v1/eval/scorecards/{id}` | Scorecard details |
-| `GET` | `/api/v1/eval/agents/{id}/compare` | Compare versions |
-| `GET` | `/api/v1/eval/agents/{id}/aggregate` | Aggregate scoring stats |
-
-### Feedback
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/feedback` | Submit rating |
-| `GET` | `/api/v1/feedback/{type}/{id}` | Get feedback |
-| `GET` | `/api/v1/feedback/summary/{id}` | Rating summary |
-
-### Admin
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/admin/settings` | List settings |
-| `PUT` | `/api/v1/admin/settings/{key}` | Set a value |
-| `GET` | `/api/v1/admin/users` | List users |
-| `POST` | `/api/v1/admin/users` | Create user |
-| `PUT` | `/api/v1/admin/users/{id}/role` | Change role |
-| `PUT` | `/api/v1/admin/users/{id}/password` | Reset user password (admin) |
-| `GET` | `/api/v1/admin/penalties` | List penalty catalog |
-| `PUT` | `/api/v1/admin/penalties/{id}` | Modify penalty |
-| `GET` | `/api/v1/admin/weights` | Get dimension weights |
-| `PUT` | `/api/v1/admin/weights` | Set dimension weights |
-| `GET` | `/api/v1/admin/canaries/{agent_id}` | List canary configs |
-| `POST` | `/api/v1/admin/canaries` | Create canary config |
-| `DELETE` | `/api/v1/admin/canaries/{id}` | Delete canary config |
-| `GET` | `/api/v1/admin/canaries/{agent_id}/reports` | Canary detection reports |
-
-### GraphQL
-
-| Endpoint | Description |
-|----------|-------------|
-| `/api/v1/graphql` | Traces, spans, scores, metrics (query + subscription) |
-
-### Health
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Health check |
-
-</details>
-
-<details>
-<summary><strong>Environment Variables</strong></summary>
-
-All settings have sensible defaults that work for local development. Just `cp .env.example .env` and you are good to go. Override what you need for production.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql+asyncpg://postgres:postgres@localhost:5432/observal` | PostgreSQL connection string |
-| `CLICKHOUSE_URL` | `clickhouse://localhost:8123/observal` | ClickHouse connection string |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
-| `SECRET_KEY` | `change-me-to-a-random-string` | Session signing key. Generate a real one for production: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
-| `POSTGRES_USER` | `postgres` | PostgreSQL container user |
-| `POSTGRES_PASSWORD` | `postgres` | PostgreSQL container password |
-| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL (used for OAuth redirects and CORS) |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated allowed CORS origins |
-| `OAUTH_CLIENT_ID` | disabled | OAuth/OIDC client ID (SSO is disabled when unset) |
-| `OAUTH_CLIENT_SECRET` | disabled | OAuth/OIDC client secret |
-| `OAUTH_SERVER_METADATA_URL` | disabled | OIDC discovery URL |
-| `EVAL_MODEL_URL` | | OpenAI-compatible endpoint for the eval engine |
-| `EVAL_MODEL_API_KEY` | | API key for the eval model |
-| `EVAL_MODEL_NAME` | | Model name (e.g. `us.anthropic.claude-3-5-haiku-20241022-v1:0`) |
-| `EVAL_MODEL_PROVIDER` | | `bedrock`, `openai`, or empty for auto-detect |
-| `AWS_REGION` | `us-east-1` | AWS region for Bedrock |
-| `DEPLOYMENT_MODE` | `local` | `local` (self-registration, bootstrap) or `enterprise` (SSO-only, SCIM) |
-| `DATA_RETENTION_DAYS` | `90` | ClickHouse data retention TTL in days (0 to disable) |
-| `RATE_LIMIT_AUTH` | `10/minute` | Rate limit for auth endpoints |
-
-</details>
-
-## Running Tests
+## Running tests
 
 ```bash
-make test      # quick (526 tests)
+make test      # quick
 make test-v    # verbose
 ```
 
@@ -455,29 +107,19 @@ All tests mock external services. No Docker needed.
 
 ## Community
 
-Have a question, idea, or want to share what you've built? Head to [GitHub Discussions](https://github.com/BlazeUp-AI/Observal/discussions). Please use Discussions for questions instead of opening issues. Issues are reserved for bug reports and feature requests.
+Have a question, idea, or want to share what you've built? Head to [GitHub Discussions](https://github.com/BlazeUp-AI/Observal/discussions). Please use Discussions for questions; open Issues for confirmed bugs and concrete feature requests.
 
 Join the [Observal Discord](https://discord.observal.io) to chat directly with the maintainers and other community members.
 
 ## Security
 
-To report a vulnerability, please use [GitHub Private Vulnerability Reporting](https://github.com/BlazeUp-AI/Observal/security/advisories) or email contact@blazeup.app. **Do not open a public issue.** See [SECURITY.md](SECURITY.md) for full details.
+To report a vulnerability, please use [GitHub Private Vulnerability Reporting](https://github.com/BlazeUp-AI/Observal/security/advisories) or email contact@blazeup.app. **Do not open a public issue.** See [SECURITY.md](SECURITY.md).
 
-## Contributing
+## License
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. The short version:
+GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
 
-1. Fork and clone
-2. `make hooks` to install pre-commit hooks
-3. Create a feature branch
-4. Make changes, run `make lint` and `make test`
-5. Open a PR
-
-See [AGENTS.md](AGENTS.md) for internal codebase context useful when working with AI coding agents.
-
-## Star History
-
-If you find Observal useful, please star the repo. It helps others discover the project and motivates continued development.
+## Star history
 
 <a href="https://www.star-history.com/?repos=BlazeUp-AI%2FObserval&type=date&legend=top-left">
  <picture>
@@ -486,7 +128,3 @@ If you find Observal useful, please star the repo. It helps others discover the 
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=BlazeUp-AI/Observal&type=date&legend=top-left" />
  </picture>
 </a>
-
-## License
-
-GNU Affero General Public License v3.0. See [LICENSE](LICENSE).

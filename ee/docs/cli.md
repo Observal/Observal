@@ -2,7 +2,7 @@
 
 Enterprise features are enabled by setting `DEPLOYMENT_MODE=enterprise` in your `.env`. These features require the [Observal Enterprise License](../LICENSE).
 
-For the core CLI reference, see [docs/cli.md](../../docs/cli.md). For setup instructions, see [SETUP.md](../../SETUP.md).
+For the core CLI reference, see [docs/cli/README.md](../../docs/cli/README.md). For setup instructions, see [docs/self-hosting/README.md](../../docs/self-hosting/README.md).
 
 ---
 

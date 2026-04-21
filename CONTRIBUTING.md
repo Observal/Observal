@@ -226,7 +226,7 @@ Describe the use case clearly. Explain the problem you are trying to solve, not 
 
 ## Codebase Context
 
-See [AGENTS.md](AGENTS.md) for internal architecture notes, file layout, and conventions. See [docs/cli.md](docs/cli.md) for the full CLI command reference. Both are useful for new contributors and AI coding agents alike.
+See [AGENTS.md](AGENTS.md) for internal architecture notes, file layout, and conventions. See [docs/cli/README.md](docs/cli/README.md) for the full CLI command reference. Both are useful for new contributors and AI coding agents alike.
 
 ## License
 

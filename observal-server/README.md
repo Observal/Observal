@@ -28,7 +28,7 @@ observal-server/
 ├── models/              # SQLAlchemy ORM models (22 tables)
 ├── schemas/             # Pydantic request/response schemas
 ├── services/            # Business logic (32 modules)
-│   └── eval/            # Evaluation subsystem (see docs/eval.md)
+│   └── eval/            # Evaluation subsystem (see docs/concepts/evaluation.md)
 └── alembic/             # Database migrations
 ```
 

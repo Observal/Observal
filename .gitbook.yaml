@@ -1,0 +1,11 @@
+root: ./docs/
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md
+
+redirects:
+  cli: cli/README.md
+  eval: concepts/evaluation.md
+  kiro-setup: integrations/kiro.md
+  kiro-compatibility-matrix: integrations/kiro.md
