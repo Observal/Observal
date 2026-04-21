@@ -705,9 +705,7 @@ async def apply_resources(
     """Re-apply resource tuning settings to ClickHouse without restart."""
     from services.clickhouse import RESOURCE_SETTINGS_MAP, apply_resource_settings
 
-    result = await db.execute(
-        select(EnterpriseConfig).where(EnterpriseConfig.key.like("resource.%"))
-    )
+    result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key.like("resource.%")))
     current = {cfg.key: cfg.value for cfg in result.scalars().all()}
 
     await apply_resource_settings(overrides=current)

@@ -354,11 +354,7 @@ async def apply_resource_settings(overrides: dict[str, str] | None = None):
             from models.enterprise_config import EnterpriseConfig
 
             async with async_session() as db:
-                result = await db.execute(
-                    select(EnterpriseConfig).where(
-                        EnterpriseConfig.key.like("resource.%")
-                    )
-                )
+                result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key.like("resource.%")))
                 for cfg in result.scalars().all():
                     resource_values[cfg.key] = cfg.value
         except Exception as e:
