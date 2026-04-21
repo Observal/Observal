@@ -42,9 +42,9 @@ async def publish(channel: str, data: dict):
         except (ConnectionError, OSError) as e:
             attempts += 1
             if attempts >= max_attempts:
-                logger.warning(f"Redis publish failed after {max_attempts} attempts: {e}")
+                logger.warning("redis_publish_failed", attempts=max_attempts, error=str(e))
                 return
-            logger.debug(f"Redis publish attempt {attempts} failed, retrying: {e}")
+            logger.debug("redis_publish_retry", attempt=attempts, error=str(e))
             await asyncio.sleep(0.5 * attempts)
 
 
@@ -68,7 +68,7 @@ async def subscribe(channel: str):
                         continue
         except (ConnectionError, OSError) as e:
             reconnect_count += 1
-            logger.warning(f"Redis subscribe reconnecting ({reconnect_count}/{max_reconnects}): {e}")
+            logger.warning("redis_subscribe_reconnecting", attempt=reconnect_count, max_attempts=max_reconnects, error=str(e))
             await asyncio.sleep(1.0 * reconnect_count)
         finally:
             try:
@@ -76,7 +76,7 @@ async def subscribe(channel: str):
                 await pubsub.close()
             except Exception:
                 pass
-    logger.error(f"Redis subscribe gave up after {max_reconnects} reconnects on channel {channel}")
+    logger.error("redis_subscribe_gave_up", max_reconnects=max_reconnects, channel=channel)
 
 
 async def enqueue_eval(agent_id: str, trace_id: str | None = None):
@@ -84,6 +84,15 @@ async def enqueue_eval(agent_id: str, trace_id: str | None = None):
     r = get_redis()
     job = json.dumps({"function": "run_eval", "agent_id": agent_id, "trace_id": trace_id})
     await r.rpush("arq:queue", job)
+
+
+async def ping() -> bool:
+    """Check Redis connectivity. Returns True if healthy."""
+    try:
+        r = get_redis()
+        return await r.ping()
+    except Exception:
+        return False
 
 
 async def close():
