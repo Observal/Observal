@@ -147,7 +147,7 @@ async def _call_bedrock(prompt: str, model_id: str) -> dict:
     try:
         return await asyncio.get_event_loop().run_in_executor(None, _sync)
     except Exception as e:
-        logger.error(f"Bedrock eval failed: {e}")
+        logger.error("bedrock_eval_failed", error=str(e))
         return {}
 
 
@@ -167,7 +167,7 @@ async def _call_openai(prompt: str, model: str) -> dict:
             r.raise_for_status()
             return _extract_json(r.json()["choices"][0]["message"]["content"])
     except Exception as e:
-        logger.error(f"OpenAI eval failed: {e}")
+        logger.error("openai_eval_failed", error=str(e))
         return {}
 
 
@@ -194,7 +194,7 @@ async def run_eval_on_trace(
     backend = get_backend()
     trace = await query_trace_by_id(project_id, trace_id)
     if not trace:
-        logger.warning(f"Trace {trace_id} not found")
+        logger.warning("trace_not_found", trace_id=trace_id)
         return []
 
     spans = await query_spans(project_id, trace_id, limit=500)
@@ -231,13 +231,13 @@ async def run_eval_on_trace(
                     }
                 )
             except Exception as e:
-                logger.error(f"Eval template {tpl_name} failed on span {span.get('span_id')}: {e}")
+                logger.error("eval_template_failed", template=tpl_name, span_id=span.get("span_id"), error=str(e))
 
     if scores_to_insert:
         try:
             await insert_scores(scores_to_insert)
         except Exception as e:
-            logger.error(f"Failed to insert eval scores: {e}")
+            logger.error("eval_insert_scores_failed", error=str(e))
 
     return scores_to_insert
 

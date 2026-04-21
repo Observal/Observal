@@ -215,7 +215,7 @@ async def run_ragas_on_graphrag(
         r.raise_for_status()
         spans = r.json().get("data", [])
     except Exception as e:
-        logger.error(f"Failed to fetch retrieval spans: {e}")
+        logger.error("ragas_fetch_retrieval_spans_failed", error=str(e))
         return {"spans_evaluated": 0, "scores": [], "averages": {}}
 
     if not spans:
@@ -262,7 +262,7 @@ async def run_ragas_on_graphrag(
         try:
             await insert_scores(scores_to_insert)
         except Exception as e:
-            logger.error(f"Failed to insert RAGAS scores: {e}")
+            logger.error("ragas_insert_scores_failed", error=str(e))
 
     # Compute averages
     averages = {}

@@ -87,7 +87,7 @@ async def fetch_traces(agent_id: str, limit: int = 20, trace_id: str | None = No
         if r.status_code == 200:
             return r.json().get("data", [])
     except Exception as e:
-        logger.warning(f"Failed to fetch traces: {e}")
+        logger.warning("eval_fetch_traces_failed", error=str(e))
     return []
 
 
@@ -128,7 +128,7 @@ async def _call_bedrock(prompt: str, model_id: str) -> dict:
     try:
         return await asyncio.get_event_loop().run_in_executor(None, _sync_call)
     except Exception as e:
-        logger.error(f"Bedrock eval call failed: {e}")
+        logger.error("bedrock_eval_call_failed", error=str(e))
         return {}
 
 
@@ -157,7 +157,7 @@ async def _call_openai_compatible(prompt: str, model: str) -> dict:
             content = r.json()["choices"][0]["message"]["content"]
             return json.loads(content)
         except Exception as e:
-            logger.error(f"Eval model call failed: {e}")
+            logger.error("eval_model_call_failed", error=str(e))
             return {}
 
 
@@ -318,7 +318,7 @@ async def run_structured_eval(
             slm_penalties += await slm_scorer.score_factual_grounding(sanitized_trace, spans)
             slm_penalties += await slm_scorer.score_thought_process(spans)
         except Exception as e:
-            logger.error(f"SLM scoring failed, skipping SLM dimensions: {e}")
+            logger.error("slm_scoring_failed", error=str(e))
             slm_penalties = []
             skipped_dimensions = ["goal_completion", "factual_grounding", "thought_process"]
 
@@ -476,7 +476,7 @@ async def run_agent_scoped_eval(
             slm_penalties += await slm_scorer.score_factual_grounding(sanitized_trace, full_spans)
             slm_penalties += await slm_scorer.score_thought_process(full_spans)
         except Exception as e:
-            logger.error(f"SLM scoring failed for agent-scoped eval: {e}")
+            logger.error("slm_scoring_failed", scope="agent", error=str(e))
             slm_penalties = []
             skipped_dimensions = ["goal_completion", "factual_grounding", "thought_process"]
 

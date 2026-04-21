@@ -67,7 +67,7 @@ async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
         if r.status_code == 200:
             return r.json().get("data", [])
     except Exception as e:
-        logger.warning(f"ClickHouse query failed: {e}")
+        logger.warning("clickhouse_query_failed", error=str(e))
     return []
 
 
@@ -1142,10 +1142,10 @@ async def ingest_hook(request: Request):
     try:
         r = await _query(sql, data=json.dumps(row, default=str))
         if r.status_code != 200:
-            logger.warning(f"Hook insert failed: {r.status_code} {r.text[:200]}")
+            logger.warning("hook_insert_failed", status_code=r.status_code, response=r.text[:200])
             return {"ingested": 0, "error": "insert failed"}
     except Exception as e:
-        logger.warning(f"Hook insert failed: {e}")
+        logger.warning("hook_insert_failed", error=str(e))
         return {"ingested": 0, "error": str(e)}
 
     # Notify subscribers (fire-and-forget — don't block the response)

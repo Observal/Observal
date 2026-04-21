@@ -286,7 +286,7 @@ class SLMScorer:
             if result:
                 return result
         except Exception as e:
-            logger.error(f"SLM scorer model call failed: {e}")
+            logger.error("slm_scorer_model_call_failed", error=str(e))
         return {}
 
 

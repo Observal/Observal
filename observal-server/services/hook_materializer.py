@@ -106,7 +106,7 @@ async def _fetch_session_events(session_id: str) -> list[dict]:
         r.raise_for_status()
         events = r.json().get("data", [])
     except Exception as e:
-        logger.error(f"Failed to fetch hook events for session {session_id}: {e}")
+        logger.error("hook_events_fetch_failed", session_id=session_id, error=str(e))
         return []
 
     if not events:

@@ -393,7 +393,7 @@ async def init_clickhouse():
         try:
             await _query(stmt)
         except Exception as e:
-            logger.warning(f"ClickHouse init statement failed: {e}")
+            logger.warning("clickhouse_init_failed", error=str(e))
 
     # Apply admin-configured resource tuning from enterprise_config
     await apply_resource_settings()
@@ -414,7 +414,7 @@ async def init_clickhouse():
                 await _query(stmt)
                 applied += 1
             except Exception as e:
-                logger.warning(f"ClickHouse TTL configuration failed: {e}")
+                logger.warning("clickhouse_ttl_failed", error=str(e))
         if applied == len(ttl_stmts):
             logger.info("ClickHouse retention set to %d days", retention_days)
         else:
@@ -447,7 +447,7 @@ async def insert_tool_call(event: dict):
         r.raise_for_status()
         await _invalidate_cache()
     except Exception as e:
-        logger.error(f"ClickHouse insert_tool_call failed: {e}")
+        logger.error("clickhouse_insert_tool_call_failed", error=str(e))
         raise
 
 
@@ -472,7 +472,7 @@ async def insert_agent_interaction(event: dict):
         r.raise_for_status()
         await _invalidate_cache()
     except Exception as e:
-        logger.error(f"ClickHouse insert_agent_interaction failed: {e}")
+        logger.error("clickhouse_insert_agent_interaction_failed", error=str(e))
         raise
 
 
@@ -527,7 +527,7 @@ async def insert_traces(traces: list[dict]):
         r.raise_for_status()
         await _invalidate_cache()
     except Exception as e:
-        logger.error(f"ClickHouse insert_traces failed: {e}")
+        logger.error("clickhouse_insert_traces_failed", error=str(e))
         raise
 
 
@@ -612,7 +612,7 @@ async def insert_spans(spans: list[dict]):
         r.raise_for_status()
         await _invalidate_cache()
     except Exception as e:
-        logger.error(f"ClickHouse insert_spans failed: {e}")
+        logger.error("clickhouse_insert_spans_failed", error=str(e))
         raise
 
 
@@ -658,7 +658,7 @@ async def insert_scores(scores: list[dict]):
         r.raise_for_status()
         await _invalidate_cache()
     except Exception as e:
-        logger.error(f"ClickHouse insert_scores failed: {e}")
+        logger.error("clickhouse_insert_scores_failed", error=str(e))
         raise
 
 
@@ -692,7 +692,7 @@ async def insert_otel_logs(rows: list[dict]):
         r.raise_for_status()
         await _invalidate_cache()
     except Exception as e:
-        logger.error(f"ClickHouse insert_otel_logs failed: {e}")
+        logger.error("clickhouse_insert_otel_logs_failed", error=str(e))
         raise
 
 
@@ -710,7 +710,7 @@ async def query_recent_events(minutes: int = 60) -> dict:
         if r.status_code == 200:
             tool_count = int(r.json().get("data", [{}])[0].get("cnt", 0))
     except Exception as e:
-        logger.warning(f"ClickHouse query tool_calls failed: {e}")
+        logger.warning("clickhouse_query_tool_calls_failed", error=str(e))
 
     try:
         r = await _query(
@@ -720,7 +720,7 @@ async def query_recent_events(minutes: int = 60) -> dict:
         if r.status_code == 200:
             agent_count = int(r.json().get("data", [{}])[0].get("cnt", 0))
     except Exception as e:
-        logger.warning(f"ClickHouse query agent_interactions failed: {e}")
+        logger.warning("clickhouse_query_agent_interactions_failed", error=str(e))
 
     return {"tool_call_events": tool_count, "agent_interaction_events": agent_count}
 
@@ -763,7 +763,7 @@ async def query_traces(
         r.raise_for_status()
         return r.json().get("data", [])
     except Exception as e:
-        logger.error(f"ClickHouse query_traces failed: {e}")
+        logger.error("clickhouse_query_traces_failed", error=str(e))
         return []
 
 
@@ -786,7 +786,7 @@ async def query_trace_by_id(project_id: str, trace_id: str, *, user_id: str | No
         data = r.json().get("data", [])
         return data[0] if data else None
     except Exception as e:
-        logger.error(f"ClickHouse query_trace_by_id failed: {e}")
+        logger.error("clickhouse_query_trace_by_id_failed", error=str(e))
         return None
 
 
@@ -818,7 +818,7 @@ async def query_spans(
         r.raise_for_status()
         return r.json().get("data", [])
     except Exception as e:
-        logger.error(f"ClickHouse query_spans failed: {e}")
+        logger.error("clickhouse_query_spans_failed", error=str(e))
         return []
 
 
@@ -841,7 +841,7 @@ async def query_span_by_id(project_id: str, span_id: str, *, user_id: str | None
         data = r.json().get("data", [])
         return data[0] if data else None
     except Exception as e:
-        logger.error(f"ClickHouse query_span_by_id failed: {e}")
+        logger.error("clickhouse_query_span_by_id_failed", error=str(e))
         return None
 
 
@@ -890,7 +890,7 @@ async def query_shim_spans_for_window(
         r.raise_for_status()
         return r.json().get("data", [])
     except Exception as e:
-        logger.error(f"ClickHouse query_shim_spans_for_window failed: {e}")
+        logger.error("clickhouse_query_shim_spans_failed", error=str(e))
         return []
 
 
@@ -925,7 +925,7 @@ async def query_scores(
         r.raise_for_status()
         return r.json().get("data", [])
     except Exception as e:
-        logger.error(f"ClickHouse query_scores failed: {e}")
+        logger.error("clickhouse_query_scores_failed", error=str(e))
         return []
 
 
@@ -955,7 +955,7 @@ async def insert_audit_log(events: list[dict]):
         r.raise_for_status()
         await _invalidate_cache()
     except Exception as exc:
-        logger.error(f"ClickHouse insert_audit_log failed: {exc}")
+        logger.error("clickhouse_insert_audit_log_failed", error=str(exc))
 
 
 async def _insert_webhook_deliveries(records: list[dict]):
@@ -988,4 +988,4 @@ async def _insert_webhook_deliveries(records: list[dict]):
         r = await _query(sql, data=body)
         r.raise_for_status()
     except Exception as exc:
-        logger.error(f"ClickHouse _insert_webhook_deliveries failed: {exc}")
+        logger.error("clickhouse_insert_webhook_deliveries_failed", error=str(exc))
