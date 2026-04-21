@@ -103,6 +103,7 @@ def login(
             _configure_kiro(server_url)
             _configure_gemini_cli(server_url)
             _configure_codex(server_url)
+            _configure_copilot(server_url)
             _configure_opencode(server_url)
             _post_auth_onboarding()
 
@@ -172,6 +173,7 @@ def register(
         _configure_kiro(server_url)
         _configure_gemini_cli(server_url)
         _configure_codex(server_url)
+        _configure_copilot(server_url)
         _configure_opencode(server_url)
         _post_auth_onboarding()
 
@@ -338,6 +340,7 @@ def _do_password_login(server_url: str, email: str, password: str):
         _configure_kiro(server_url)
         _configure_gemini_cli(server_url)
         _configure_codex(server_url)
+        _configure_copilot(server_url)
         _configure_opencode(server_url)
         _post_auth_onboarding()
 
@@ -809,6 +812,27 @@ protocol = "http"
     except Exception as e:
         rprint(f"\n[yellow]Could not configure Codex automatically: {e}[/yellow]")
         rprint("Add OTLP settings manually to ~/.codex/config.toml.")
+
+
+def _configure_copilot(server_url: str):
+    """Check for GitHub Copilot (VS Code) and surface install instructions.
+
+    Copilot uses .vscode/mcp.json for MCP servers; telemetry collection
+    requires wrapping individual MCP servers with observal-shim at install time.
+    """
+    try:
+        vscode_mcp = Path.cwd() / ".vscode" / "mcp.json"
+        has_copilot = vscode_mcp.exists() or shutil.which("code")
+        if not has_copilot:
+            return
+
+        rprint(
+            "\n[bold]Detected VS Code / GitHub Copilot.[/bold] "
+            "Install MCPs via [bold]observal install <id> --ide copilot[/bold] to enable telemetry."
+        )
+
+    except Exception:
+        pass
 
 
 def _configure_opencode(server_url: str):
