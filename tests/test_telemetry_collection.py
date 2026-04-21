@@ -208,7 +208,7 @@ class TestInstallRouteWiring:
 
     @pytest.mark.asyncio
     async def test_sandbox_install_uses_config_generator(self):
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         from api.routes.sandbox import install_sandbox
         from schemas.sandbox import SandboxInstallRequest
@@ -231,18 +231,24 @@ class TestInstallRouteWiring:
         mock_user = MagicMock()
         mock_user.id = uuid.uuid4()
 
-        mock_request = MagicMock()
-        mock_request.base_url = "http://localhost:8000/"
-
         req = SandboxInstallRequest(ide="cursor")
-        resp = await install_sandbox(listing.id, req, mock_request, mock_db, mock_user)
+        with patch(
+            "api.routes.config.derive_endpoints",
+            return_value={
+                "api": "http://localhost:8000",
+                "otlp_http": "http://localhost:4318",
+                "otlp_grpc": "http://localhost:4317",
+                "web": "http://localhost:3000",
+            },
+        ):
+            resp = await install_sandbox(listing.id, req, MagicMock(), mock_db, mock_user)
         config = resp.config_snippet
         assert "sandbox" in config
         assert config["sandbox"]["command"] == "observal-sandbox-run"
 
     @pytest.mark.asyncio
     async def test_skill_install_uses_config_generator(self):
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         from api.routes.skill import install_skill
         from schemas.skill import SkillInstallRequest
@@ -264,11 +270,17 @@ class TestInstallRouteWiring:
         mock_user = MagicMock()
         mock_user.id = uuid.uuid4()
 
-        mock_request = MagicMock()
-        mock_request.base_url = "http://localhost:8000/"
-
         req = SkillInstallRequest(ide="claude-code")
-        resp = await install_skill(listing.id, req, mock_request, mock_db, mock_user)
+        with patch(
+            "api.routes.config.derive_endpoints",
+            return_value={
+                "api": "http://localhost:8000",
+                "otlp_http": "http://localhost:4318",
+                "otlp_grpc": "http://localhost:4317",
+                "web": "http://localhost:3000",
+            },
+        ):
+            resp = await install_skill(listing.id, req, MagicMock(), mock_db, mock_user)
         config = resp.config_snippet
         assert "hooks" in config
         assert "SessionStart" in config["hooks"]
