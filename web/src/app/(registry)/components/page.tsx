@@ -386,7 +386,7 @@ export default function ComponentsPage() {
                         </p>
                       )}
                       {item.status === "rejected" && item.rejection_reason && (
-                        <p className="text-xs text-destructive mt-0.5 truncate max-w-xs">
+                        <p className="text-xs text-destructive mt-0.5 line-clamp-2" title={item.rejection_reason}>
                           Rejected: {item.rejection_reason}
                         </p>
                       )}

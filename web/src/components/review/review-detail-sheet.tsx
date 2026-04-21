@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -239,13 +239,11 @@ function RelatedSkillsSection({
   onApproveWithSkills: (mcpId: string, skillIds: string[]) => void;
 }) {
   const { data: skills, isLoading } = useRelatedSkills(mcpId);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const approveWithSkills = useApproveWithSkills();
+  const [deselected, setDeselected] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (skills?.length) {
-      setSelected(new Set(skills.map((s) => s.id)));
-    }
-  }, [skills]);
+  const allIds = useMemo(() => new Set(skills?.map((s) => s.id) ?? []), [skills]);
+  const selected = useMemo(() => new Set([...allIds].filter((id) => !deselected.has(id))), [allIds, deselected]);
 
   if (isLoading) {
     return (
@@ -259,7 +257,7 @@ function RelatedSkillsSection({
   if (!skills?.length) return null;
 
   const toggleSkill = (id: string) => {
-    setSelected((prev) => {
+    setDeselected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -296,6 +294,7 @@ function RelatedSkillsSection({
         <Button
           size="sm"
           className="w-full h-8 text-xs bg-success/10 hover:bg-success/20 text-success border border-success/25 shadow-none"
+          disabled={approveWithSkills.isPending}
           onClick={() => onApproveWithSkills(mcpId, Array.from(selected))}
         >
           <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
@@ -323,16 +322,55 @@ export function ReviewDetailSheet({
   onReject,
   onDelete,
 }: ReviewDetailSheetProps) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="sm:max-w-2xl overflow-y-auto">
+        {item ? (
+          <SheetBody
+            key={item.id}
+            item={item}
+            open={open}
+            onOpenChange={onOpenChange}
+            onApprove={onApprove}
+            onReject={onReject}
+            onDelete={onDelete}
+          />
+        ) : (
+          <div className="space-y-4 pt-6">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function SheetBody({
+  item,
+  open,
+  onOpenChange,
+  onApprove,
+  onReject,
+  onDelete,
+}: {
+  item: ReviewItem;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onApprove: (id: string, type?: string) => void;
+  onReject: (id: string, reason: string, type?: string) => void;
+  onDelete: (id: string, type?: string) => void;
+}) {
   const { data: detail, isLoading } = useReviewDetail(
-    open && item ? item.id : undefined,
+    open ? item.id : undefined,
   );
   const approveWithSkills = useApproveWithSkills();
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const merged = useMemo<ReviewItem | null>(() => {
-    if (!item) return null;
+  const merged = useMemo<ReviewItem>(() => {
     if (detail) return { ...item, ...detail };
     return item;
   }, [item, detail]);
@@ -342,6 +380,7 @@ export function ReviewDetailSheet({
       setShowRejectInput(true);
       return;
     }
+    if (!rejectReason.trim()) return;
     if (merged) {
       onReject(merged.id, rejectReason, merged.type);
       setShowRejectInput(false);
@@ -375,18 +414,9 @@ export function ReviewDetailSheet({
     [approveWithSkills, onOpenChange],
   );
 
-  const disableApprove = merged?.type === "agent" && merged?.components_ready === false;
+  const disableApprove = merged.type === "agent" && merged.components_ready === false;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="sm:max-w-2xl overflow-y-auto">
-        {!merged ? (
-          <div className="space-y-4 pt-6">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/4" />
-          </div>
-        ) : (
           <div className="flex flex-col gap-6">
             {/* Header */}
             <SheetHeader>
@@ -581,6 +611,7 @@ export function ReviewDetailSheet({
                     variant="ghost"
                     size="sm"
                     className="h-8 w-8 p-0"
+                    aria-label="Cancel rejection"
                     onClick={() => {
                       setShowRejectInput(false);
                       setRejectReason("");
@@ -673,8 +704,5 @@ export function ReviewDetailSheet({
               </div>
             </div>
           </div>
-        )}
-      </SheetContent>
-    </Sheet>
   );
 }

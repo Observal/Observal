@@ -340,7 +340,7 @@ const columns: ColumnDef<RegistryItem>[] = [
         <div>
           <StatusBadge status={status} />
           {status === "rejected" && reason && (
-            <p className="text-xs text-destructive mt-0.5 truncate max-w-[200px]">
+            <p className="text-xs text-destructive mt-0.5 line-clamp-2 max-w-[300px]" title={reason}>
               {reason}
             </p>
           )}
