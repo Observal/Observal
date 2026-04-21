@@ -773,7 +773,10 @@ def _configure_codex(server_url: str):
         if codex_config.exists():
             existing_content = codex_config.read_text()
             # Consider configured if both OTLP exporter sections are present.
-            if "[otel.exporter.otlp-http]" in existing_content and "[otel.trace_exporter.otlp-http]" in existing_content:
+            if (
+                "[otel.exporter.otlp-http]" in existing_content
+                and "[otel.trace_exporter.otlp-http]" in existing_content
+            ):
                 already_configured = True
 
         if already_configured:

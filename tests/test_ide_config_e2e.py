@@ -1602,13 +1602,7 @@ class TestDoctorCodexTomlHandling:
 
         issues: list = []
         warnings: list = []
-        data = {
-            "mcp": {
-                "servers": {
-                    "my-server": {"command": "npx", "args": ["-y", "my-mcp"]}
-                }
-            }
-        }
+        data = {"mcp": {"servers": {"my-server": {"command": "npx", "args": ["-y", "my-mcp"]}}}}
         _check_codex(data, issues, warnings)
         # Should warn that server is not wrapped with observal-shim
         assert len(warnings) > 0
@@ -1619,13 +1613,7 @@ class TestDoctorCodexTomlHandling:
 
         issues: list = []
         warnings: list = []
-        data = {
-            "mcp": {
-                "servers": {
-                    "shimmed": {"command": "observal-shim", "args": ["--mcp-id", "abc"]}
-                }
-            }
-        }
+        data = {"mcp": {"servers": {"shimmed": {"command": "observal-shim", "args": ["--mcp-id", "abc"]}}}}
         _check_codex(data, issues, warnings)
         # Should NOT warn about observal-shim for shimmed server
         shim_warnings = [w for w in warnings if "observal-shim" in w and "shimmed" in w]
