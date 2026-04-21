@@ -172,6 +172,17 @@ def _enter_env_vars_manually() -> list[dict]:
 _DOLLAR_VAR_RE = re.compile(r"\$\{?([A-Z][A-Z0-9_]+)\}?")
 
 
+def _dollar_to_placeholder(value: str) -> str:
+    """Replace $VAR / ${VAR} references with <VAR> placeholders.
+
+    Examples:
+        "Bearer $TOKEN"           → "Bearer <TOKEN>"
+        "Bearer $TOKEN1 $TOKEN2"  → "Bearer <TOKEN1> <TOKEN2>"
+        "$API_KEY"                → "<API_KEY>"
+    """
+    return _DOLLAR_VAR_RE.sub(lambda m: f"<{m.group(1)}>", value)
+
+
 def _extract_dollar_vars(args: list[str], env: dict[str, str]) -> list[str]:
     """Extract unique $VAR / ${VAR} references from args and env values.
 
@@ -328,7 +339,12 @@ def _build_config_preview(server_name: str, parsed: dict) -> dict:
         preview["type"] = parsed.get("transport", "sse")
         preview["url"] = parsed["url"]
         if parsed.get("headers"):
-            preview["headers"] = {h["name"]: h.get("value", f"<{h['name']}>") for h in parsed["headers"]}
+            preview["headers"] = {
+                h["name"]: _dollar_to_placeholder(h["value"])
+                if _DOLLAR_VAR_RE.search(h.get("value", ""))
+                else h.get("value", f"<{h['name']}>")
+                for h in parsed["headers"]
+            }
         env_vars = parsed.get("environment_variables") or []
         if env_vars:
             preview["env"] = {ev["name"]: f"<{ev['name']}>" for ev in env_vars}
@@ -338,7 +354,7 @@ def _build_config_preview(server_name: str, parsed: dict) -> dict:
     else:
         # stdio preview
         command = parsed.get("command", "")
-        args = list(parsed.get("args") or [])
+        args = [_dollar_to_placeholder(a) if _DOLLAR_VAR_RE.search(a) else a for a in (parsed.get("args") or [])]
 
         # Inject -e flags for docker env vars
         env_vars = parsed.get("environment_variables") or []
@@ -399,20 +415,19 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
         parsed = _parse_direct_config(cfg)
         _name = name or parsed.pop("_server_name", None) or "my-mcp-server"
 
-        # Notify about dollar-sign input variables
+        # Extract dollar-sign input variables before preview
         dollar_vars = parsed.pop("_dollar_vars_detected", None)
-        if dollar_vars:
-            rprint("\n[bold yellow]Input variables detected:[/bold yellow]")
-            rprint(
-                "[dim]Dollar-sign variables in args/env will become install-time"
-                " dependencies — users will be prompted for these values.[/dim]\n"
-            )
-            for var in dollar_vars:
-                rprint(f"  [cyan]$[/cyan]{var}")
-            rprint()
 
         rprint("\n[bold]Config preview:[/bold]")
         console.print_json(json.dumps(_build_config_preview(_name, parsed), indent=2))
+
+        if dollar_vars:
+            placeholders = " ".join(f"<{v}>" for v in dollar_vars)
+            rprint(f"\n[bold]The user variables are:[/bold] [cyan]{placeholders}[/cyan]")
+            rprint(
+                "[dim]These will become install-time prompts — users must supply"
+                " values before the server can run.[/dim]"
+            )
 
         if not yes:
             if not typer.confirm("\nSubmit this config?", default=True):
