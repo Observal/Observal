@@ -552,7 +552,7 @@ async def _resolve_user_context_from_request(request) -> dict:
     from database import async_session
     from models.user import User
 
-    default = {"project_id": _DEFAULT_PROJECT, "user_id": None, "user_role": None}
+    default = {"project_id": _DEFAULT_PROJECT, "user_id": None, "user_role": None, "trace_privacy": False}
 
     auth: str | None = None
     if request is not None:
@@ -575,16 +575,26 @@ async def _resolve_user_context_from_request(request) -> dict:
         return default
 
     try:
+        from models.organization import Organization
+
         async with async_session() as session:
             result = await session.execute(select(User.org_id, User.role).where(User.id == uid))
             row = result.one_or_none()
             if not row:
                 return default
             org_id, role = row
+
+            # Check if the org has trace privacy enabled
+            trace_privacy = False
+            if org_id:
+                tp_result = await session.execute(select(Organization.trace_privacy).where(Organization.id == org_id))
+                trace_privacy = bool(tp_result.scalar_one_or_none())
+
             return {
                 "project_id": str(org_id) if org_id else _DEFAULT_PROJECT,
                 "user_id": str(uid),
                 "user_role": role.value if role else None,
+                "trace_privacy": trace_privacy,
             }
     except Exception:
         logger.debug("Failed to resolve user context for GraphQL", exc_info=True)
@@ -595,11 +605,13 @@ def get_context(
     project_id: str = _DEFAULT_PROJECT,
     user_id: str | None = None,
     user_role: str | None = None,
+    trace_privacy: bool = False,
 ) -> dict:
     return {
         "project_id": project_id,
         "user_id": user_id,
         "user_role": user_role,
+        "trace_privacy": trace_privacy,
         "span_loader": DataLoader(load_fn=_make_span_loader(project_id)),
         "score_by_trace_loader": DataLoader(load_fn=_make_score_by_trace_loader(project_id)),
         "score_by_span_loader": DataLoader(load_fn=_make_score_by_span_loader(project_id)),
@@ -607,13 +619,15 @@ def get_context(
 
 
 def _is_admin(ctx: dict) -> bool:
+    if ctx.get("trace_privacy"):
+        return False
     return ctx.get("user_role") in ("admin", "super_admin")
 
 
 async def get_context_dep(request: Request = None) -> dict:
     """Strawberry FastAPI context getter — receives the incoming ``Request``."""
     uctx = await _resolve_user_context_from_request(request)
-    return get_context(uctx["project_id"], uctx["user_id"], uctx["user_role"])
+    return get_context(uctx["project_id"], uctx["user_id"], uctx["user_role"], uctx.get("trace_privacy", False))
 
 
 schema = strawberry.Schema(query=Query, subscription=Subscription)

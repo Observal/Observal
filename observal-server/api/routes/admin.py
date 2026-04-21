@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.deps import get_db, get_or_create_default_org, require_role
 from config import settings
 from models.enterprise_config import EnterpriseConfig
+from models.organization import Organization
 from models.user import User, UserRole
 from schemas.admin import (
     AdminResetPasswordRequest,
@@ -729,6 +730,64 @@ async def apply_resources(
         "applied": {k: current[k] for k in applied_keys},
         "message": "ClickHouse resource settings applied",
     }
+
+
+# ── Trace Privacy ──────────────────────────────────────────
+
+
+@router.get("/org/trace-privacy")
+async def get_trace_privacy(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.super_admin)),
+):
+    """Get the trace privacy setting for the current user's organization."""
+    if not current_user.org_id:
+        return {"trace_privacy": False}
+    result = await db.execute(select(Organization).where(Organization.id == current_user.org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        return {"trace_privacy": False}
+    return {"trace_privacy": org.trace_privacy}
+
+
+@router.put("/org/trace-privacy")
+async def set_trace_privacy(
+    req: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.super_admin)),
+):
+    """Toggle trace privacy for the current user's organization.
+
+    When enabled, admins can only see their own traces instead of all
+    traces in the organization.
+    """
+    enabled = bool(req.get("trace_privacy", False))
+
+    if not current_user.org_id:
+        raise HTTPException(status_code=400, detail="User has no organization")
+
+    result = await db.execute(select(Organization).where(Organization.id == current_user.org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    org.trace_privacy = enabled
+    await db.commit()
+    await db.refresh(org)
+    await emit_security_event(
+        SecurityEvent(
+            event_type=EventType.SETTING_CHANGED,
+            severity=Severity.WARNING,
+            outcome="success",
+            actor_id=str(current_user.id),
+            actor_email=current_user.email,
+            actor_role=current_user.role.value,
+            target_id=str(org.id),
+            target_type="organization",
+            detail=f"Trace privacy {'enabled' if enabled else 'disabled'}",
+        )
+    )
+    return {"trace_privacy": org.trace_privacy}
 
 
 @router.post("/cache/clear")

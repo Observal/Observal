@@ -13,6 +13,7 @@ from sqlalchemy import or_, select
 from api.deps import require_role
 from config import settings
 from database import async_session
+from models.organization import Organization
 from models.user import User, UserRole
 from services.clickhouse import _query, query_shim_spans_for_window
 from services.redis import publish
@@ -75,6 +76,22 @@ def _is_admin_user(user: User) -> bool:
     return user.role in (UserRole.admin, UserRole.super_admin)
 
 
+async def _is_admin_with_trace_access(user: User) -> bool:
+    """Check if user is admin AND their org has not enabled trace privacy.
+
+    When trace privacy is on, admins are treated like regular users for
+    trace visibility — they can only see their own traces.
+    """
+    if not _is_admin_user(user):
+        return False
+    if not user.org_id:
+        return True
+    async with async_session() as db:
+        result = await db.execute(select(Organization.trace_privacy).where(Organization.id == user.org_id))
+        trace_privacy = result.scalar_one_or_none()
+        return not trace_privacy
+
+
 @router.get("/sessions")
 async def list_sessions(
     status: str | None = Query(None),
@@ -82,7 +99,7 @@ async def list_sessions(
     days: int | None = Query(None),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    is_admin = _is_admin_user(current_user)
+    is_admin = await _is_admin_with_trace_access(current_user)
     uid_str = str(current_user.id)
     capped_days = min(days, 365) if days is not None and days > 0 else days
     rows = await _list_sessions_query(
@@ -247,7 +264,7 @@ async def _list_sessions_query(
 async def sessions_summary(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    is_admin = _is_admin_user(current_user)
+    is_admin = await _is_admin_with_trace_access(current_user)
     session_filter = ""
     params: dict[str, str] = {}
     if not is_admin:
@@ -556,7 +573,7 @@ async def _sideload_shim_spans(events: list[dict]) -> list[dict]:
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
-    is_admin = _is_admin_user(current_user)
+    is_admin = await _is_admin_with_trace_access(current_user)
     params: dict[str, str] = {"param_sid": session_id}
 
     if not is_admin:
