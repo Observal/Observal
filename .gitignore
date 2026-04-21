@@ -40,3 +40,4 @@ docker/clickhouse/users.d/default-user.xml
 CLAUDE.md
 graphify-out/
 observal-web/tsconfig.tsbuildinfo
+.worktrees/
