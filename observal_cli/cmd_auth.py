@@ -425,7 +425,7 @@ def _find_hook_script(name: str) -> str | None:
 
 
 def _post_auth_onboarding():
-    """Detect local IDE configs and offer to scan+register components."""
+    """Detect local IDE configs and show what was found."""
     try:
         _ide_dirs = {
             "Claude Code": (Path.home() / ".claude", "claude-code"),
@@ -433,7 +433,6 @@ def _post_auth_onboarding():
             "Cursor": (Path.home() / ".cursor", "cursor"),
         }
 
-        # Quick local scan: count components per IDE (no API calls)
         found: list[tuple[str, str, int, int]] = []  # (label, ide_key, agents, mcps)
         for label, (dir_path, ide_key) in _ide_dirs.items():
             if not dir_path.is_dir():
@@ -450,7 +449,6 @@ def _post_auth_onboarding():
                 m, _s, _h, a = _scan_kiro_home(dir_path)
                 agents, mcps = len(a), len(m)
             else:
-                # Cursor: just check for mcp.json
                 mcp_file = dir_path / "mcp.json"
                 if mcp_file.exists():
                     try:
@@ -466,10 +464,8 @@ def _post_auth_onboarding():
         if not found:
             return
 
-        # Show what we found
         rprint()
-        rprint("[bold]\N{ELECTRIC LIGHT BULB} You have local agent configs that aren't in Observal.[/bold]")
-        rprint("[dim]Upload them to track usage, share with your team, and enable telemetry.[/dim]")
+        rprint("[bold]Detected local IDE components:[/bold]")
         rprint()
         for label, _key, agents, mcps in found:
             parts = []
@@ -479,115 +475,15 @@ def _post_auth_onboarding():
                 parts.append(f"{mcps} MCP{'s' if mcps != 1 else ''}")
             rprint(f"  [bold]{label}[/bold] — {', '.join(parts)} found")
         rprint()
-
-        if not typer.confirm("Upload these to Observal?", default=True):
-            rprint("[dim]Tip: run `observal scan --home --all-ides` anytime to upload agents from your IDEs.[/dim]")
-            return
-
-        # Run scan for each selected IDE using the existing scan machinery
-        from observal_cli import client
-        from observal_cli.cmd_scan import _scan_claude_home, _scan_kiro_home
-        from observal_cli.render import spinner
-
-        all_mcps: list = []
-        all_skills: list = []
-        all_hooks: list = []
-        all_agents: list = []
-
-        for _label, ide_key, _a, _m in found:
-            if ide_key == "claude-code":
-                m, s, h, a = _scan_claude_home(Path.home() / ".claude")
-                all_mcps.extend(m)
-                all_skills.extend(s)
-                all_hooks.extend(h)
-                all_agents.extend(a)
-            elif ide_key == "kiro":
-                m, s, h, a = _scan_kiro_home(Path.home() / ".kiro")
-                all_mcps.extend(m)
-                all_skills.extend(s)
-                all_hooks.extend(h)
-                all_agents.extend(a)
-
-        total = len(all_mcps) + len(all_skills) + len(all_hooks) + len(all_agents)
-        if total == 0:
-            return
-
-        def _ide_from_source(source: str) -> str:
-            if source.startswith("kiro:"):
-                return "kiro"
-            if source.startswith("plugin:") or source.startswith("claude:"):
-                return "claude-code"
-            return "auto"
-
-        scan_payload = {
-            "ide": "multi",
-            "mcps": [
-                {
-                    "name": m.name,
-                    "command": m.command,
-                    "args": m.args,
-                    "url": m.url,
-                    "description": m.description,
-                    "source_plugin": m.source,
-                    "source_ide": _ide_from_source(m.source),
-                }
-                for m in all_mcps
-            ],
-            "skills": [
-                {
-                    "name": s.name,
-                    "description": s.description,
-                    "source_plugin": s.source,
-                    "task_type": getattr(s, "task_type", "general"),
-                    "source_ide": _ide_from_source(s.source),
-                }
-                for s in all_skills
-            ],
-            "hooks": [
-                {
-                    "name": h.name,
-                    "event": h.event,
-                    "handler_type": h.handler_type,
-                    "handler_config": h.handler_config,
-                    "description": h.description,
-                    "source_plugin": h.source,
-                    "source_ide": _ide_from_source(h.source),
-                }
-                for h in all_hooks
-            ],
-            "agents": [
-                {
-                    "name": a.name,
-                    "description": a.description,
-                    "model_name": a.model_name or "",
-                    "prompt": a.prompt,
-                    "source_file": a.source_file,
-                    "source_ide": _ide_from_source(
-                        f"kiro:{a.source_file}" if a.source_file and ".kiro" in a.source_file else a.source_file or ""
-                    ),
-                }
-                for a in all_agents
-            ],
-        }
-
-        with spinner(f"Registering {total} components..."):
-            try:
-                result = client.post("/api/v1/scan", scan_payload)
-            except Exception as e:
-                rprint(f"[yellow]Registration failed: {e}[/yellow]")
-                rprint("[dim]Tip: run `observal scan --home --all-ides` to retry.[/dim]")
-                return
-
-        summary = result.get("summary", {})
-        parts = [f"{v} {k}" for k, v in summary.items() if v]
-        if parts:
-            rprint(f"[green]Registered: {', '.join(parts)}[/green]")
-        else:
-            rprint("[dim]All components already registered.[/dim]")
+        rprint("[dim]Telemetry hooks are now configured. Your IDE sessions will be tracked.[/dim]")
+        rprint("[dim]Tip: Run 'observal scan --shim' in a project dir to wrap MCP configs with telemetry shims.[/dim]")
+        rprint(
+            "[dim]Tip: Run 'observal registry <type> submit <git_url>' to publish a component."
+            " Only submit if you are the creator or point-of-contact.[/dim]"
+        )
 
     except Exception as e:
         rprint(f"[yellow]Onboarding skipped: {e}[/yellow]")
-        rprint("[dim]Tip: run `observal scan --home --all-ides` anytime to upload agents from your IDEs.[/dim]")
 
 
 def _configure_kiro(server_url: str):

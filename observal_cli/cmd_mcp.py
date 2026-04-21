@@ -985,7 +985,10 @@ def submit(
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (MCP ID)"),
 ):
-    """Submit an MCP server for review."""
+    """Submit an MCP server for review.
+
+    Only submit servers you created or are the point-of-contact for.
+    """
     if draft and submit_draft:
         rprint(
             "[red]Cannot use --draft and --submit together.[/red] Use --draft to save a new draft, or --submit to submit an existing draft."
@@ -1002,6 +1005,7 @@ def submit(
     if not git_url and not config:
         rprint("[red]Provide a git URL or use --config[/red]")
         raise typer.Exit(1)
+    rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
     _submit_impl(git_url, name, category, yes, config, draft=draft)
 
 

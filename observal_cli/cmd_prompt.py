@@ -28,7 +28,11 @@ def prompt_submit(
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (prompt ID)"),
 ):
-    """Submit a new prompt for review."""
+    """Submit a new prompt for review.
+
+    Only submit prompts you created or are the point-of-contact for.
+    """
+    rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
     if draft and submit_draft:
         rprint(
             "[red]Cannot use --draft and --submit together.[/red] Use --draft to save a new draft, or --submit to submit an existing draft."

@@ -547,12 +547,17 @@ async def token_stats(
     mcp_ids = [r["mcp_id"] for r in by_mcp_rows if r.get("mcp_id")]
     mcp_names: dict[str, str] = {}
     if mcp_ids:
-        rows = (
-            await db.execute(
-                select(McpListing.id, McpListing.name).where(McpListing.id.in_([uuid.UUID(m) for m in mcp_ids]))
-            )
-        ).all()
-        mcp_names = {str(r.id): r.name for r in rows}
+        valid_uuids = []
+        for m in mcp_ids:
+            try:
+                valid_uuids.append(uuid.UUID(m))
+            except (ValueError, AttributeError):
+                pass
+        if valid_uuids:
+            rows = (
+                await db.execute(select(McpListing.id, McpListing.name).where(McpListing.id.in_(valid_uuids)))
+            ).all()
+            mcp_names = {str(r.id): r.name for r in rows}
     by_mcp = [
         TokenByEntity(
             id=r["mcp_id"],

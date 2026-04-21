@@ -1,10 +1,11 @@
-"""observal scan: auto-detect IDE configs, register items, wrap with telemetry shims."""
+"""observal scan: auto-detect IDE configs, discover components, and instrument for telemetry."""
 
 from __future__ import annotations
 
 import json
 import re
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -12,8 +13,14 @@ import typer
 from rich import print as rprint
 from rich.table import Table
 
-from observal_cli import client
 from observal_cli.render import console, spinner
+
+_OBSERVAL_NS = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+
+
+def _deterministic_mcp_id(name: str) -> str:
+    """Generate a stable UUID for an MCP based on its name."""
+    return str(uuid.uuid5(_OBSERVAL_NS, name))
 
 # ── IDE config file locations (relative to project root) ────
 
@@ -543,14 +550,14 @@ def register_scan(app: typer.Typer):
             False, "--all-ides", help="Scan home directories for ALL IDEs (Claude Code, Kiro, Cursor)"
         ),
         dry_run: bool = typer.Option(
-            False, "--dry-run", "-n", help="Show what would be registered without making changes"
+            False, "--dry-run", "-n", help="Show discovered components without instrumenting"
         ),
         yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
         shim: bool = typer.Option(
             False, "--shim", help="Rewrite project IDE configs to route MCPs through observal-shim"
         ),
     ):
-        """Scan IDE configs and register discovered components with Observal.
+        """Discover IDE components and instrument for telemetry.
 
         By default, scans the current project directory for Cursor, VS Code, Kiro,
         and Gemini CLI MCP configs.
@@ -560,6 +567,9 @@ def register_scan(app: typer.Typer):
 
         With --all-ides, scans ~/.claude, ~/.kiro, and ~/.cursor to discover
         all agents, MCP servers, skills, and hooks across every IDE you use.
+
+        Components are NOT published to the registry. Use 'observal registry <type>
+        submit' to explicitly publish when ready.
         """
         all_mcps: list[DiscoveredMcp] = []
         all_skills: list[DiscoveredSkill] = []
@@ -679,119 +689,40 @@ def register_scan(app: typer.Typer):
 
         if dry_run:
             rprint("[yellow]Dry run — no changes made.[/yellow]")
+            rprint(
+                "[dim]Tip: Use 'observal registry <type> submit <git_url>' to publish components."
+                " Only submit if you are the creator or point-of-contact.[/dim]"
+            )
             return
-
-        if not yes and not typer.confirm("Register these components with Observal?"):
-            raise typer.Abort()
-
-        # ── Register via bulk scan API ──────────────
-        def _ide_from_source(source: str) -> str:
-            """Infer source IDE from component source string."""
-            if source.startswith("kiro:"):
-                return "kiro"
-            if source.startswith("plugin:") or source.startswith("claude:"):
-                return "claude-code"
-            return ide or "auto"
-
-        scan_payload = {
-            "ide": ide or ("multi" if all_ides else ("claude-code" if home else "auto")),
-            "mcps": [
-                {
-                    "name": m.name,
-                    "command": m.command,
-                    "args": m.args,
-                    "url": m.url,
-                    "description": m.description,
-                    "source_plugin": m.source,
-                    "source_ide": _ide_from_source(m.source),
-                }
-                for m in all_mcps
-            ],
-            "skills": [
-                {
-                    "name": s.name,
-                    "description": s.description,
-                    "source_plugin": s.source,
-                    "task_type": s.task_type,
-                    "source_ide": _ide_from_source(s.source),
-                }
-                for s in all_skills
-            ],
-            "hooks": [
-                {
-                    "name": h.name,
-                    "event": h.event,
-                    "handler_type": h.handler_type,
-                    "handler_config": h.handler_config,
-                    "description": h.description,
-                    "source_plugin": h.source,
-                    "source_ide": _ide_from_source(h.source),
-                }
-                for h in all_hooks
-            ],
-            "agents": [
-                {
-                    "name": a.name,
-                    "description": a.description,
-                    "model_name": a.model_name,
-                    "prompt": a.prompt,
-                    "source_file": a.source_file,
-                    "source_ide": _ide_from_source(
-                        f"kiro:{a.source_file}" if a.source_file and ".kiro" in a.source_file else a.source_file or ""
-                    ),
-                }
-                for a in all_agents
-            ],
-        }
-
-        with spinner(f"Registering {total} components..."):
-            try:
-                result = client.post("/api/v1/scan", scan_payload)
-            except (Exception, SystemExit) as e:
-                rprint(f"[red]Failed to register: {e}[/red]")
-                raise typer.Exit(1) from None
-
-        # Show registration results
-        new_count = 0
-        existing_count = 0
-        for reg in result.get("registered", []):
-            if reg["status"] == "created":
-                rprint(f"  [green]+ new[/green] [{reg['type']}] {reg['name']} -> {reg['id'][:8]}...")
-                new_count += 1
-            else:
-                rprint(f"  [dim]= existing[/dim] [{reg['type']}] {reg['name']}")
-                existing_count += 1
-
-        rprint(f"\n[green]Done![/green] {new_count} new, {existing_count} existing.")
 
         # ── Optionally shim project MCP configs ─────
         if shim and project_mcp_entries:
-            id_map = {r["name"]: r["id"] for r in result.get("registered", []) if r["type"] == "mcp"}
-            shimmed_count = 0
-            configs_to_update: dict[str, dict] = {}
+            if not yes and not typer.confirm("Rewrite project MCP configs to add telemetry shims?"):
+                rprint("[dim]Skipped shimming.[/dim]")
+            else:
+                shimmed_count = 0
+                configs_to_update: dict[str, dict] = {}
 
-            for ide_name, name, _mcp, config_path in project_mcp_entries:
-                mcp_id = id_map.get(name)
-                if not mcp_id:
-                    continue
-                path_str = str(config_path)
-                if path_str not in configs_to_update:
-                    configs_to_update[path_str] = json.loads(config_path.read_text())
+                for ide_name, name, _mcp, config_path in project_mcp_entries:
+                    mcp_id = _deterministic_mcp_id(name)
+                    path_str = str(config_path)
+                    if path_str not in configs_to_update:
+                        configs_to_update[path_str] = json.loads(config_path.read_text())
 
-                config = configs_to_update[path_str]
-                servers = _parse_project_mcp_servers(config, ide_name)
-                if name in servers and not _is_already_shimmed(servers[name]):
-                    servers[name] = _wrap_with_shim(servers[name], mcp_id)
-                    shimmed_count += 1
+                    config = configs_to_update[path_str]
+                    servers = _parse_project_mcp_servers(config, ide_name)
+                    if name in servers and not _is_already_shimmed(servers[name]):
+                        servers[name] = _wrap_with_shim(servers[name], mcp_id)
+                        shimmed_count += 1
 
-            for path_str, config in configs_to_update.items():
-                config_path = Path(path_str)
-                backup = _backup_config(config_path)
-                config_path.write_text(json.dumps(config, indent=2) + "\n")
-                rprint(f"  [dim]Backup: {backup.name}[/dim]")
+                for path_str, config in configs_to_update.items():
+                    config_path = Path(path_str)
+                    backup = _backup_config(config_path)
+                    config_path.write_text(json.dumps(config, indent=2) + "\n")
+                    rprint(f"  [dim]Backup: {backup.name}[/dim]")
 
-            if shimmed_count:
-                rprint(f"[green]Shimmed {shimmed_count} MCP entries for telemetry.[/green]")
+                if shimmed_count:
+                    rprint(f"[green]Shimmed {shimmed_count} MCP entries for telemetry.[/green]")
 
         # ── Auto-inject hooks into ~/.claude/settings.json ─────
         if scan_claude:
@@ -1054,3 +985,9 @@ def register_scan(app: typer.Typer):
                 rprint("[dim]These capture all Kiro sessions, including agentless chat.[/dim]")
             else:
                 rprint("[dim]Global Kiro hooks already configured.[/dim]")
+
+        rprint()
+        rprint(
+            "[dim]Tip: Use 'observal registry <type> submit <git_url>' to publish components to the shared registry."
+            " Only submit if you are the creator or point-of-contact.[/dim]"
+        )

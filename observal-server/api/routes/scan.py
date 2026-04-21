@@ -1,6 +1,13 @@
-"""Bulk scan endpoint: register multiple component types in one call."""
+"""Bulk scan endpoint: register multiple component types in one call.
 
-from fastapi import APIRouter, Depends
+DEPRECATED: The CLI no longer calls this endpoint as of the scan redesign.
+Kept for backwards compatibility with older CLI versions. Use
+'observal registry <type> submit' for explicit component publishing.
+"""
+
+import warnings
+
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,12 +90,15 @@ class ScanResponse(BaseModel):
 # ── Endpoint ────────────────────────────────────────────────
 
 
-@router.post("", response_model=ScanResponse)
+@router.post("", response_model=ScanResponse, deprecated=True)
 async def bulk_scan(
     req: ScanRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    response.headers["X-Deprecated"] = "Use 'observal registry <type> submit' instead"
+    warnings.warn("POST /api/v1/scan is deprecated; use explicit submit endpoints", DeprecationWarning, stacklevel=1)
     registered = []
     counts: dict[str, int] = {"mcp": 0, "skill": 0, "hook": 0, "agent": 0}
 
