@@ -10,10 +10,15 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
-# Mirror directory — use tempdir for tests, configurable for production
-DEFAULT_MIRROR_BASE = Path(tempfile.gettempdir()) / "observal_mirrors"
+DEFAULT_MIRROR_BASE = (
+    Path(settings.GIT_MIRROR_BASE_PATH)
+    if settings.GIT_MIRROR_BASE_PATH
+    else Path(tempfile.gettempdir()) / "observal_mirrors"
+)
 
 
 @dataclass

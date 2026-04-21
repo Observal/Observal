@@ -1,9 +1,12 @@
 """Redis client and pub/sub helpers for background jobs and subscriptions."""
 
 import json
+from urllib.parse import urlparse
 
 import redis.asyncio as aioredis
 import structlog
+from arq import create_pool as arq_create_pool
+from arq.connections import ArqRedis, RedisSettings
 
 from config import settings
 
@@ -18,6 +21,7 @@ def get_pool() -> aioredis.ConnectionPool:
         _pool = aioredis.ConnectionPool.from_url(
             settings.REDIS_URL,
             decode_responses=True,
+            max_connections=settings.REDIS_MAX_CONNECTIONS,
             socket_connect_timeout=settings.REDIS_SOCKET_TIMEOUT,
             socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
         )
@@ -81,11 +85,36 @@ async def subscribe(channel: str):
     logger.error("redis_subscribe_gave_up", max_reconnects=max_reconnects, channel=channel)
 
 
+def parse_redis_settings() -> RedisSettings:
+    """Parse REDIS_URL into arq RedisSettings."""
+    parsed = urlparse(settings.REDIS_URL)
+    return RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        password=parsed.password,
+        database=int(parsed.path.lstrip("/") or 0),
+    )
+
+
+_arq_pool: ArqRedis | None = None
+
+
+async def _get_arq_pool() -> ArqRedis:
+    global _arq_pool
+    if _arq_pool is None:
+        _arq_pool = await arq_create_pool(parse_redis_settings())
+    return _arq_pool
+
+
 async def enqueue_eval(agent_id: str, trace_id: str | None = None):
-    """Push an eval job onto the arq queue."""
-    r = get_redis()
-    job = json.dumps({"function": "run_eval", "agent_id": agent_id, "trace_id": trace_id})
-    await r.rpush("arq:queue", job)
+    """Enqueue an eval job via arq with dedup."""
+    pool = await _get_arq_pool()
+    await pool.enqueue_job(
+        "run_eval",
+        agent_id,
+        trace_id,
+        _job_id=f"eval:{agent_id}:{trace_id or 'all'}",
+    )
 
 
 async def ping() -> bool:
@@ -98,7 +127,10 @@ async def ping() -> bool:
 
 
 async def close():
-    global _pool
+    global _pool, _arq_pool
+    if _arq_pool:
+        await _arq_pool.close()
+        _arq_pool = None
     if _pool:
         await _pool.disconnect()
         _pool = None

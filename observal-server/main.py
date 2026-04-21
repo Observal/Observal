@@ -78,10 +78,11 @@ async def _ensure_columns(conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await _ensure_columns(conn)
-    await init_clickhouse()
+    if not settings.SKIP_DDL_ON_STARTUP:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await _ensure_columns(conn)
+        await init_clickhouse()
     await init_cache()
     # Initialize asymmetric key manager for JWT signing
     init_key_manager(

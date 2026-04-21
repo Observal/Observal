@@ -43,23 +43,28 @@ class TestPublish:
 
 class TestEnqueueEval:
     @pytest.mark.asyncio
-    async def test_pushes_to_queue(self):
-        mock_redis = AsyncMock()
-        with patch("services.redis.get_redis", return_value=mock_redis):
+    async def test_enqueues_via_arq(self):
+        mock_pool = AsyncMock()
+        with patch("services.redis._get_arq_pool", return_value=mock_pool):
             await enqueue_eval("agent-1", "trace-1")
-            mock_redis.rpush.assert_called_once()
-            job = json.loads(mock_redis.rpush.call_args[0][1])
-            assert job["function"] == "run_eval"
-            assert job["agent_id"] == "agent-1"
-            assert job["trace_id"] == "trace-1"
+            mock_pool.enqueue_job.assert_called_once_with(
+                "run_eval",
+                "agent-1",
+                "trace-1",
+                _job_id="eval:agent-1:trace-1",
+            )
 
     @pytest.mark.asyncio
-    async def test_no_trace_id(self):
-        mock_redis = AsyncMock()
-        with patch("services.redis.get_redis", return_value=mock_redis):
+    async def test_no_trace_id_dedup_key(self):
+        mock_pool = AsyncMock()
+        with patch("services.redis._get_arq_pool", return_value=mock_pool):
             await enqueue_eval("agent-1")
-            job = json.loads(mock_redis.rpush.call_args[0][1])
-            assert job["trace_id"] is None
+            mock_pool.enqueue_job.assert_called_once_with(
+                "run_eval",
+                "agent-1",
+                None,
+                _job_id="eval:agent-1:all",
+            )
 
 
 # --- Close ---
@@ -153,10 +158,24 @@ class TestDockerCompose:
             compose = yaml.safe_load(f)
         assert "redisdata" in compose["volumes"]
 
-    def test_api_depends_on_redis(self):
+    def test_api_depends_on_init(self):
         import yaml
 
         with open(COMPOSE_PATH) as f:
             compose = yaml.safe_load(f)
         deps = compose["services"]["observal-api"]["depends_on"]
-        assert "observal-redis" in deps
+        assert "observal-init" in deps
+
+    def test_init_service_exists(self):
+        import yaml
+
+        with open(COMPOSE_PATH) as f:
+            compose = yaml.safe_load(f)
+        assert "observal-init" in compose["services"]
+
+    def test_lb_service_exists(self):
+        import yaml
+
+        with open(COMPOSE_PATH) as f:
+            compose = yaml.safe_load(f)
+        assert "observal-lb" in compose["services"]

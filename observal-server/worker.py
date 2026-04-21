@@ -1,29 +1,14 @@
 """arq background worker for eval jobs and async tasks."""
 
 import structlog
-from arq.connections import RedisSettings
 from arq.cron import cron
 
-from config import settings
 from logging_config import setup_logging
 from services.alert_evaluator import evaluate_alerts
-from services.redis import publish
+from services.redis import parse_redis_settings, publish
 
 setup_logging()
 logger = structlog.get_logger(__name__)
-
-
-def _redis_settings() -> RedisSettings:
-    """Parse REDIS_URL into arq RedisSettings."""
-    from urllib.parse import urlparse
-
-    parsed = urlparse(settings.REDIS_URL)
-    return RedisSettings(
-        host=parsed.hostname or "localhost",
-        port=parsed.port or 6379,
-        password=parsed.password,
-        database=int(parsed.path.lstrip("/") or 0),
-    )
 
 
 async def run_eval(ctx: dict, agent_id: str, trace_id: str | None = None, project_id: str = "default"):
@@ -158,6 +143,6 @@ class WorkerSettings:
     ]
     on_startup = startup
     on_shutdown = shutdown
-    redis_settings = _redis_settings()
+    redis_settings = parse_redis_settings()
     max_jobs = 5
     job_timeout = 300  # 5 min per eval job

@@ -33,7 +33,13 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(timeout=10)
+        _client = httpx.AsyncClient(
+            timeout=settings.CLICKHOUSE_TIMEOUT,
+            limits=httpx.Limits(
+                max_connections=settings.CLICKHOUSE_MAX_CONNECTIONS,
+                max_keepalive_connections=settings.CLICKHOUSE_MAX_KEEPALIVE,
+            ),
+        )
     return _client
 
 

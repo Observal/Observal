@@ -1,11 +1,10 @@
 
 services:
-  observal-api:
+  observal-init:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    ports:
-      - "${API_HOST_PORT:-8000}:8000"
+    command: ["/app/entrypoint.sh"]
     env_file:
       - ../.env
     environment:
@@ -13,12 +12,40 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
       - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
       - AWS_REGION=${AWS_REGION:-us-east-1}
-      # Enterprise deployment mode
       - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
-      # ClickHouse data retention
+      - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-90}
+    depends_on:
+      observal-db:
+        condition: service_healthy
+      observal-clickhouse:
+        condition: service_healthy
+      observal-redis:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observal-net
+
+  observal-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    command: ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    env_file:
+      - ../.env
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
       - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-90}
       - JWT_KEY_DIR=/data/keys
-      # Demo accounts (seeded on first startup when no real users exist)
+      - SKIP_DDL_ON_STARTUP=true
       - DEMO_SUPER_ADMIN_EMAIL=${DEMO_SUPER_ADMIN_EMAIL:-super@demo.example}
       - DEMO_SUPER_ADMIN_PASSWORD=${DEMO_SUPER_ADMIN_PASSWORD:-super-changeme}
       - DEMO_ADMIN_EMAIL=${DEMO_ADMIN_EMAIL:-admin@demo.example}
@@ -30,10 +57,8 @@ services:
     volumes:
       - apidata:/data
     depends_on:
-      observal-db:
-        condition: service_healthy
-      observal-clickhouse:
-        condition: service_healthy
+      observal-init:
+        condition: service_completed_successfully
       observal-redis:
         condition: service_healthy
     restart: unless-stopped
@@ -49,6 +74,7 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
+      replicas: ${API_REPLICAS:-1}
       resources:
         limits:
           memory: 512M
@@ -85,6 +111,7 @@ services:
       - ../.env
     environment:
       CLICKHOUSE_DB: observal
+      MAX_SERVER_MEMORY_USAGE_RATIO: "0.8"
     volumes:
       - chdata:/var/lib/clickhouse
       - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
@@ -133,11 +160,9 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
     depends_on:
-      observal-db:
-        condition: service_healthy
+      observal-init:
+        condition: service_completed_successfully
       observal-redis:
-        condition: service_healthy
-      observal-clickhouse:
         condition: service_healthy
     restart: unless-stopped
     read_only: true
@@ -146,6 +171,7 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
+      replicas: ${WORKER_REPLICAS:-1}
       resources:
         limits:
           memory: 512M
@@ -159,10 +185,10 @@ services:
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://observal-api:8000
+      - NEXT_PUBLIC_API_URL=http://observal-lb:80
     depends_on:
-      observal-api:
-        condition: service_healthy
+      observal-lb:
+        condition: service_started
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -173,6 +199,23 @@ services:
       resources:
         limits:
           memory: 256M
+    networks:
+      - observal-net
+
+  observal-lb:
+    image: nginx:alpine
+    ports:
+      - "${API_HOST_PORT:-8000}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      observal-api:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
     networks:
       - observal-net
 

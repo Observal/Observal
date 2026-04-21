@@ -38,6 +38,20 @@ class Settings(BaseSettings):
     # Long-lived JWT for OTEL hooks (30 days default)
     JWT_HOOKS_TOKEN_EXPIRE_MINUTES: int = 43200
 
+    # Connection pool sizing (tune for N-replica deployments)
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    REDIS_MAX_CONNECTIONS: int = 50
+    CLICKHOUSE_MAX_CONNECTIONS: int = 20
+    CLICKHOUSE_MAX_KEEPALIVE: int = 10
+    CLICKHOUSE_TIMEOUT: float = 10.0
+
+    # Git mirror storage (empty = system tempdir; set to shared path for multi-instance)
+    GIT_MIRROR_BASE_PATH: str = ""
+
+    # Multi-instance startup: skip DDL when using a dedicated init container
+    SKIP_DDL_ON_STARTUP: bool = False
+
     # Rate limiting
     RATE_LIMIT_AUTH: str = "10/minute"
     RATE_LIMIT_AUTH_STRICT: str = "5/minute"
