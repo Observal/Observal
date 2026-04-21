@@ -2,9 +2,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from redis.exceptions import RedisError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -21,6 +23,7 @@ from api.graphql import get_context_dep, schema
 from api.middleware.content_type import ContentTypeMiddleware
 from api.middleware.request_id import RequestIDMiddleware
 from api.ratelimit import limiter
+from logging_config import setup_logging
 from api.routes.admin import router as admin_router
 from api.routes.agent import router as agent_router
 from api.routes.alert import router as alert_router
@@ -50,6 +53,8 @@ from services.cache import close_cache, init_cache
 from services.clickhouse import init_clickhouse
 from services.crypto import init_key_manager
 from services.redis import close as close_redis
+
+setup_logging()
 
 
 async def _ensure_columns(conn):
@@ -93,14 +98,14 @@ async def lifespan(app: FastAPI):
         await seed_demo_accounts(db)
 
     # Load enterprise module when in enterprise mode
-    _logger = logging.getLogger("observal")
+    _logger = structlog.get_logger("observal")
     if settings.DEPLOYMENT_MODE == "enterprise":
         try:
             from ee import register_enterprise
 
             register_enterprise(app, settings)
         except ImportError:
-            _logger.error("DEPLOYMENT_MODE=enterprise but ee/ module not found")
+            _logger.error("enterprise_module_missing", detail="DEPLOYMENT_MODE=enterprise but ee/ module not found")
             app.state.enterprise_issues = ["ee/ module not installed"]
 
     yield
@@ -130,11 +135,11 @@ async def _set_rate_limit_defaults(request: Request, call_next):
     return await call_next(request)
 
 
-logger = logging.getLogger("observal")
+logger = structlog.get_logger("observal")
 
 
 async def _redis_error_handler(request: Request, exc: RedisError):
-    logger.error("Unhandled RedisError on %s %s: %s", request.method, request.url.path, exc)
+    logger.error("redis_error", method=request.method, path=request.url.path, error=str(exc))
     return JSONResponse(status_code=503, content={"detail": "Service temporarily unavailable"})
 
 
@@ -264,26 +269,36 @@ app.include_router(component_source_router)
 app.include_router(bulk_router)
 app.include_router(config_router)
 
+# --- Prometheus metrics ---
+Instrumentator(
+    excluded_handlers=["/livez", "/healthz", "/readyz", "/metrics"],
+).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
+
+@app.get("/livez", include_in_schema=False)
 @app.get("/healthz", include_in_schema=False)
 async def liveness():
     """K8s liveness probe. Returns 200 if the process is alive. No I/O."""
     return {"status": "alive"}
 
 
+@app.get("/readyz", include_in_schema=False)
 @app.get("/health")
 async def readiness(db: AsyncSession = Depends(get_db)):
-    """K8s readiness probe. Checks DB connectivity, ClickHouse, and enterprise config."""
+    """K8s readiness probe. Checks Postgres, ClickHouse, and Redis connectivity."""
     checks: dict[str, object] = {"status": "ok"}
 
+    # Postgres
     try:
         count = await db.scalar(select(func.count()).select_from(User))
+        checks["postgres"] = "ok"
         checks["initialized"] = (count or 0) > 0
     except Exception:
+        checks["postgres"] = "unreachable"
         checks["status"] = "unhealthy"
         return JSONResponse(content=checks, status_code=503)
 
-    # ClickHouse health
+    # ClickHouse
     from services.clickhouse import clickhouse_health
 
     if not await clickhouse_health():
@@ -291,6 +306,15 @@ async def readiness(db: AsyncSession = Depends(get_db)):
         checks["status"] = "degraded"
     else:
         checks["clickhouse"] = "ok"
+
+    # Redis
+    from services.redis import ping as redis_ping
+
+    if not await redis_ping():
+        checks["redis"] = "unreachable"
+        checks["status"] = "degraded"
+    else:
+        checks["redis"] = "ok"
 
     if settings.DEPLOYMENT_MODE == "enterprise":
         issues = getattr(app.state, "enterprise_issues", [])
