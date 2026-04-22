@@ -182,7 +182,7 @@ export default function ErrorsPage() {
           { label: "Errors" },
         ]}
       />
-      <div className="p-6 w-full max-w-5xl mx-auto space-y-4">
+      <div className="p-6 w-full mx-auto space-y-4">
         {isLoading ? (
           <TableSkeleton rows={6} cols={4} />
         ) : isError ? (

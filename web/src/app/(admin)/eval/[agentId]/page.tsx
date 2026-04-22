@@ -70,7 +70,7 @@ export default function EvalDetailPage({ params }: { params: Promise<{ agentId: 
           </Button>
         }
       />
-      <div className="p-6 w-full max-w-6xl mx-auto space-y-6">
+      <div className="p-6 w-full mx-auto space-y-6">
         {/* 2-column layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: 2/3 — Chart + History */}

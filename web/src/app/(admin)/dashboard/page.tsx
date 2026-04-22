@@ -78,7 +78,7 @@ export default function DashboardPage() {
           { label: "Dashboard" },
         ]}
       />
-      <div className="p-6 w-full max-w-6xl mx-auto space-y-8">
+      <div className="p-6 w-full mx-auto space-y-8">
         {/* Stats row */}
         {statsLoading ? (
           <CardSkeleton count={4} />

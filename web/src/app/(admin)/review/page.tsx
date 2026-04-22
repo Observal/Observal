@@ -544,7 +544,7 @@ export default function ReviewPage() {
           </div>
         }
       />
-      <div className="p-6 w-full max-w-6xl mx-auto space-y-4">
+      <div className="p-6 w-full mx-auto space-y-4">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="agents">

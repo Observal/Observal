@@ -771,7 +771,7 @@ function AgentBuilderInner() {
         ]}
       />
 
-      <div className="p-6 lg:p-8 w-full max-w-[1400px] mx-auto">
+      <div className="p-6 lg:p-8 w-full mx-auto">
         {/* Restore draft banner */}
         {showRestoreBanner && (
           <div className="mb-4 flex items-center gap-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3">

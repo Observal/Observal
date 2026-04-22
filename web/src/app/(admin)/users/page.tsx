@@ -117,7 +117,7 @@ export default function UsersPage() {
           </Button>
         }
       />
-      <div className="p-6 w-full max-w-6xl mx-auto space-y-4">
+      <div className="p-6 w-full mx-auto space-y-4">
         {isLoading ? (
           <TableSkeleton rows={5} cols={4} />
         ) : isError ? (

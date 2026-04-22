@@ -280,7 +280,7 @@ export default function SettingsPage() {
           </Button>
         }
       />
-      <div className="p-6 w-full max-w-4xl mx-auto space-y-6">
+      <div className="p-6 w-full mx-auto space-y-6">
         {/* System Overview */}
         <section className="animate-in">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">

@@ -91,7 +91,7 @@ export default function EvalPage() {
           { label: "Eval" },
         ]}
       />
-      <div className="p-6 w-full max-w-6xl mx-auto space-y-4">
+      <div className="p-6 w-full mx-auto space-y-4">
         {!configLoading && !evalConfigured && (
           <div className="animate-in flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3">
             <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />

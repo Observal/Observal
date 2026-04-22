@@ -311,7 +311,7 @@ export default function TracesPage() {
         title="Traces"
         breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Traces" }]}
       />
-      <div className="p-6 w-full max-w-7xl mx-auto space-y-5">
+      <div className="p-6 w-full mx-auto space-y-5">
         {isLoading ? (
           <TableSkeleton rows={8} cols={8} />
         ) : isError ? (

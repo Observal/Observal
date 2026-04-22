@@ -71,7 +71,7 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
           </Button>
         }
       />
-      <div className="p-6 w-full max-w-6xl mx-auto space-y-6">
+      <div className="p-6 w-full mx-auto space-y-6">
         {isLoading ? (
           <DetailSkeleton />
         ) : isError ? (
