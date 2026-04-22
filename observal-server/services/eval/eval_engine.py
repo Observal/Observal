@@ -126,6 +126,8 @@ async def _call_model(prompt: str) -> dict:
         return {}
     if provider == "bedrock" or (not provider and "anthropic" in model):
         return await _call_bedrock(prompt, model)
+    if provider == "moonshot" or (not provider and "kimi" in model.lower()):
+        return await _call_openai(prompt, model, provider="moonshot")
     return await _call_openai(prompt, model)
 
 
@@ -151,19 +153,22 @@ async def _call_bedrock(prompt: str, model_id: str) -> dict:
         return {}
 
 
-async def _call_openai(prompt: str, model: str) -> dict:
-    url = getattr(settings, "EVAL_MODEL_URL", "") or "http://localhost:11434/v1"
+async def _call_openai(prompt: str, model: str, provider: str = "") -> dict:
+    default_url = "https://api.moonshot.ai/v1" if provider == "moonshot" else "http://localhost:11434/v1"
+    url = getattr(settings, "EVAL_MODEL_URL", "") or default_url
     key = getattr(settings, "EVAL_MODEL_API_KEY", "") or ""
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = f"Bearer {key}"
+    body: dict = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1}
+    if provider == "moonshot":
+        # Kimi defaults to Thinking Mode; disable it for deterministic JSON scoring.
+        # Moonshot Instant Mode requires temperature=0.6 — API rejects anything else.
+        body["thinking"] = {"type": "disabled"}
+        body["temperature"] = 0.6
     try:
         async with httpx.AsyncClient(timeout=60) as client:
-            r = await client.post(
-                f"{url}/chat/completions",
-                headers=headers,
-                json={"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
-            )
+            r = await client.post(f"{url}/chat/completions", headers=headers, json=body)
             r.raise_for_status()
             return _extract_json(r.json()["choices"][0]["message"]["content"])
     except Exception as e:

@@ -44,9 +44,21 @@ EVAL_MODEL_NAME=llama3
 EVAL_MODEL_PROVIDER=openai
 ```
 
+### Moonshot / Kimi
+
+Kimi K2.5 (and K2) are accessible through Moonshot's OpenAI-compatible API. Set `EVAL_MODEL_PROVIDER=moonshot` and the base URL defaults to `https://api.moonshot.ai/v1`; the server also injects `{"thinking": {"type": "disabled"}}` into the request so the model returns a single deterministic JSON response instead of streaming reasoning tokens.
+
+```
+EVAL_MODEL_PROVIDER=moonshot
+EVAL_MODEL_API_KEY=sk-...
+EVAL_MODEL_NAME=kimi-k2.5-preview
+```
+
+Override `EVAL_MODEL_URL` only if you're using a third-party Moonshot-compatible gateway.
+
 ### Auto-detect
 
-If `EVAL_MODEL_PROVIDER` is empty and `EVAL_MODEL_NAME` contains `anthropic`, Bedrock is used. Otherwise the OpenAI-compatible path is used.
+If `EVAL_MODEL_PROVIDER` is empty: model names containing `anthropic` route to Bedrock, names containing `kimi` route to Moonshot, everything else uses the generic OpenAI-compatible path.
 
 ## Choosing the judge model
 

@@ -92,7 +92,7 @@ async def fetch_traces(agent_id: str, limit: int = 20, trace_id: str | None = No
 
 
 async def call_eval_model(prompt: str) -> dict:
-    """Call the evaluation model. Supports Bedrock and OpenAI-compatible APIs."""
+    """Call the evaluation model. Supports Bedrock, Moonshot, and OpenAI-compatible APIs."""
     provider = getattr(settings, "EVAL_MODEL_PROVIDER", "") or ""
     eval_model = getattr(settings, "EVAL_MODEL_NAME", "") or ""
 
@@ -101,6 +101,8 @@ async def call_eval_model(prompt: str) -> dict:
 
     if provider == "bedrock" or (not provider and "anthropic" in eval_model):
         return await _call_bedrock(prompt, eval_model)
+    if provider == "moonshot" or (not provider and "kimi" in eval_model.lower()):
+        return await _call_openai_compatible(prompt, eval_model, provider="moonshot")
     return await _call_openai_compatible(prompt, eval_model)
 
 
@@ -132,27 +134,31 @@ async def _call_bedrock(prompt: str, model_id: str) -> dict:
         return {}
 
 
-async def _call_openai_compatible(prompt: str, model: str) -> dict:
+async def _call_openai_compatible(prompt: str, model: str, provider: str = "") -> dict:
     """Call an OpenAI-compatible API."""
-    eval_url = getattr(settings, "EVAL_MODEL_URL", "") or "http://localhost:11434/v1"
+    default_url = "https://api.moonshot.ai/v1" if provider == "moonshot" else "http://localhost:11434/v1"
+    eval_url = getattr(settings, "EVAL_MODEL_URL", "") or default_url
     eval_key = getattr(settings, "EVAL_MODEL_API_KEY", "") or ""
 
     headers = {"Content-Type": "application/json"}
     if eval_key:
         headers["Authorization"] = f"Bearer {eval_key}"
 
+    body: dict = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"},
+    }
+    if provider == "moonshot":
+        # Kimi defaults to Thinking Mode; disable for deterministic JSON scoring.
+        # Moonshot Instant Mode requires temperature=0.6 — API rejects anything else.
+        body["thinking"] = {"type": "disabled"}
+        body["temperature"] = 0.6
+
     async with httpx.AsyncClient(timeout=120) as client:
         try:
-            r = await client.post(
-                f"{eval_url}/chat/completions",
-                headers=headers,
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
-                    "response_format": {"type": "json_object"},
-                },
-            )
+            r = await client.post(f"{eval_url}/chat/completions", headers=headers, json=body)
             r.raise_for_status()
             content = r.json()["choices"][0]["message"]["content"]
             return json.loads(content)
