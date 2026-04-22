@@ -85,6 +85,26 @@ class AgentLifecycleEvent(Event):
     actor_email: str
 
 
+@dataclass(frozen=True, slots=True)
+class AuditableAction(Event):
+    """Generic audit event for HIPAA-level logging.
+
+    Covers all reads and writes across every endpoint. The ``action``
+    field uses dotted strings like ``"trace.view"`` or ``"review.approve"``.
+    HTTP context (IP, user agent, method, path) is injected by the
+    ee/ audit handler via contextvars — not carried on this event.
+    """
+
+    actor_id: str
+    actor_email: str
+    actor_role: str = ""
+    action: str = ""
+    resource_type: str = ""
+    resource_id: str = ""
+    resource_name: str = ""
+    detail: str = ""
+
+
 # ── Event bus ────────────────────────────────────────────────
 
 

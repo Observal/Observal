@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from services.request_context import set_request_context
+
 if TYPE_CHECKING:
     from starlette.requests import Request
 
@@ -40,6 +42,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
+        set_request_context(request)
 
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id

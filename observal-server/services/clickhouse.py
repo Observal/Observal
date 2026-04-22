@@ -965,6 +965,11 @@ async def insert_audit_log(events: list[dict]):
             "resource_type": e.get("resource_type", ""),
             "resource_id": e.get("resource_id", ""),
             "resource_name": e.get("resource_name", ""),
+            "http_method": e.get("http_method", ""),
+            "http_path": e.get("http_path", ""),
+            "status_code": e.get("status_code", 0),
+            "ip_address": e.get("ip_address", ""),
+            "user_agent": e.get("user_agent", ""),
             "detail": e.get("detail", ""),
         }
         lines.append(json.dumps(row, default=str))
