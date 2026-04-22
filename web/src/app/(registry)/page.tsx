@@ -83,7 +83,7 @@ export default function RegistryHome() {
         breadcrumbs={[{ label: "Registry" }]}
       />
 
-      <div className="p-6 lg:p-8 w-full max-w-[1200px] mx-auto space-y-12">
+      <div className="p-6 lg:p-8 w-full mx-auto space-y-12">
         {/* Hero section */}
         <section className="animate-in space-y-6 pt-2">
           <div className="space-y-3 max-w-2xl">
@@ -204,7 +204,7 @@ export default function RegistryHome() {
               </h2>
             </div>
             <Link
-              href="/agents/leaderboard"
+              href="/leaderboard"
               className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               View all <ArrowRight className="h-3 w-3" />
