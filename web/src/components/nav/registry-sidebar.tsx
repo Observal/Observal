@@ -31,6 +31,9 @@ import {
   Users,
   Settings,
   AlertTriangle,
+  ScrollText,
+  ShieldAlert,
+  Stethoscope,
 } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { getUserRole, getUserName, getUserEmail } from "@/lib/api";
@@ -41,7 +44,7 @@ type NavItem = { title: string; href: string; icon: typeof Home; requiresAuth?: 
 const registryNav: NavItem[] = [
   { title: "Home", href: "/", icon: Home },
   { title: "Agents", href: "/agents", icon: Bot },
-  { title: "Leaderboard", href: "/agents/leaderboard", icon: Trophy },
+  { title: "Leaderboard", href: "/leaderboard", icon: Trophy },
   { title: "Components", href: "/components", icon: Blocks },
   { title: "Builder", href: "/agents/builder", icon: Hammer, requiresAuth: true },
 ];
@@ -59,6 +62,9 @@ const adminNav: NavItem[] = [
   { title: "Errors", href: "/errors", icon: AlertTriangle, minRole: "admin" },
   { title: "Evals", href: "/eval", icon: FlaskConical, minRole: "admin" },
   { title: "Users", href: "/users", icon: Users, minRole: "admin" },
+  { title: "Audit Log", href: "/audit-log", icon: ScrollText, minRole: "admin" },
+  { title: "Security", href: "/security-events", icon: ShieldAlert, minRole: "admin" },
+  { title: "Diagnostics", href: "/diagnostics", icon: Stethoscope, minRole: "admin" },
   { title: "Settings", href: "/settings", icon: Settings, minRole: "admin" },
 ];
 
@@ -87,7 +93,7 @@ export function RegistrySidebar() {
     if (href === "/") return pathname === "/";
     if (pathname === href) return true;
     // Only treat as active if no *more-specific* sibling nav item matches.
-    // e.g. /agents should NOT be active when /agents/leaderboard matches.
+    // e.g. /agents should NOT be active when /agents/builder matches.
     const allHrefs = [...registryNav, ...reviewNav, ...userNav, ...adminNav].map((n) => n.href);
     const moreSpecific = allHrefs.some((h) => h !== href && h.startsWith(href + "/") && pathname.startsWith(h));
     if (moreSpecific) return false;
