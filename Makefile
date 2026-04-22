@@ -59,6 +59,7 @@ rebuild:  ## Rebuild and restart Docker stack (runs migrations automatically)
 	cd docker && docker compose up --build -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
+	cd docker && docker compose restart observal-lb
 	@echo "API is healthy."
 
 reset:  ## Nuke all Docker volumes and rebuild from scratch (fresh app, no file changes)
@@ -66,12 +67,14 @@ reset:  ## Nuke all Docker volumes and rebuild from scratch (fresh app, no file 
 	cd docker && docker compose up --build -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
+	cd docker && docker compose restart observal-lb
 	@echo "API is healthy — all data has been reset."
 
 rebuild-clean:  ## Rebuild from scratch (no Docker cache) and restart
 	cd docker && docker compose build --no-cache && docker compose up -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
+	cd docker && docker compose restart observal-lb
 	@echo "API is healthy."
 
 logs:  ## Tail Docker logs
