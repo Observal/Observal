@@ -1071,14 +1071,14 @@ def register_scan(app: typer.Typer):
                     servers[name] = _wrap_with_shim(servers[name], name)
                     shimmed_count += 1
 
-                for path_str, config in configs_to_update.items():
-                    config_path = Path(path_str)
-                    backup = _backup_config(config_path)
-                    config_path.write_text(json.dumps(config, indent=2) + "\n")
-                    rprint(f"  [dim]Backup: {backup.name}[/dim]")
+            for path_str, config in configs_to_update.items():
+                config_path = Path(path_str)
+                backup = _backup_config(config_path)
+                config_path.write_text(json.dumps(config, indent=2) + "\n")
+                rprint(f"  [dim]Backup: {backup.name}[/dim]")
 
-                if shimmed_count:
-                    rprint(f"[green]Shimmed {shimmed_count} MCP entries for telemetry.[/green]")
+            if shimmed_count:
+                rprint(f"[green]Shimmed {shimmed_count} MCP entries for telemetry.[/green]")
 
         # ── Auto-inject hooks into ~/.claude/settings.json ─────
         if scan_claude:
