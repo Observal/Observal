@@ -797,11 +797,12 @@ def register_scan(app: typer.Typer):
     ):
         """Discover IDE components and instrument for telemetry.
 
-        By default, scans the current project directory for Cursor, VS Code, Kiro,
-        Gemini CLI, Codex, Copilot, and OpenCode MCP configs.
+        By default, scans the current project directory. If nothing is found,
+        automatically falls back to scanning IDE home directories (~/.claude,
+        ~/.kiro, ~/.gemini, etc.).
 
-        With --home, scans your IDE home directory. Use --ide to target a specific
-        IDE (e.g. --home --ide kiro), or --all-ides to scan all IDEs at once.
+        Use --home to explicitly scan home directories, --ide to target a
+        specific IDE (e.g. --home --ide kiro), or --all-ides to scan all at once.
 
         With --all-ides, scans ~/.claude, ~/.kiro, ~/.gemini, ~/.codex,
         ~/.vscode, and ~/.config/opencode to discover all agents, MCP servers,
@@ -959,10 +960,41 @@ def register_scan(app: typer.Typer):
             _do_project_scan(Path.home())
 
         total = len(all_mcps) + len(all_skills) + len(all_hooks) + len(all_agents)
+
+        if total == 0 and not home:
+            rprint("[dim]No components in project directory. Scanning IDE home dirs...[/dim]")
+            home = True
+            scan_claude = True
+            scan_kiro = True
+            scan_gemini = True
+            scan_codex = True
+            scan_copilot = True
+            scan_opencode = True
+
+            for _ide_name, _dir_path, _scan_fn, _label in [
+                ("claude-code", Path.home() / ".claude", _scan_claude_home, "~/.claude"),
+                ("kiro", Path.home() / ".kiro", _scan_kiro_home, "~/.kiro"),
+                ("gemini-cli", Path.home() / ".gemini", _scan_gemini_home, "~/.gemini"),
+                ("codex", Path.home() / ".codex", _scan_codex_home, "~/.codex"),
+                ("copilot", Path.home() / ".vscode", _scan_copilot_home, "~/.vscode"),
+                ("opencode", Path.home() / ".config" / "opencode", _scan_opencode_home, "~/.config/opencode"),
+            ]:
+                if _dir_path.is_dir():
+                    with spinner(f"Scanning {_label}..."):
+                        h_mcps, h_skills, h_hooks, h_agents = _scan_fn(_dir_path)
+                    all_mcps.extend(h_mcps)
+                    all_skills.extend(h_skills)
+                    all_hooks.extend(h_hooks)
+                    all_agents.extend(h_agents)
+                    scanned_ides.append(_ide_name)
+
+            if root != Path.home():
+                _do_project_scan(Path.home())
+
+            total = len(all_mcps) + len(all_skills) + len(all_hooks) + len(all_agents)
+
         if total == 0:
             rprint("[yellow]No components found.[/yellow]")
-            if not home:
-                rprint("[dim]Tip: use --home to scan IDE home dirs, or --all-ides to scan all IDEs.[/dim]")
             raise typer.Exit(1)
 
         # ── Display discovery results ───────────────
