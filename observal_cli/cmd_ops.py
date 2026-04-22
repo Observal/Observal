@@ -923,6 +923,43 @@ def admin_users(output: str = typer.Option("table", "--output", "-o")):
     console.print(table)
 
 
+@admin_app.command(name="create-user")
+def admin_create_user(
+    email: str = typer.Argument(..., help="Email address for the new user"),
+    name: str = typer.Argument(..., help="Full name of the user"),
+    username: str = typer.Option(None, "--username", "-u", help="Username (optional)"),
+    role: str = typer.Option("reviewer", "--role", "-r", help="Role: admin, reviewer, or user"),
+    password: str = typer.Option(None, "--password", "-p", help="Password (auto-generated if omitted)"),
+    output: str = typer.Option("table", "--output", "-o"),
+):
+    """Create a new user account. Requires admin privileges.
+
+    If no password is provided, a secure random password will be generated.
+    """
+    body: dict = {"email": email, "name": name, "role": role}
+    if username:
+        body["username"] = username
+    if password:
+        body["password"] = password
+
+    with spinner("Creating user..."):
+        data = client.post("/api/v1/admin/users", body)
+
+    if output == "json":
+        output_json(data)
+        return
+
+    rprint(f"\n[green]User created successfully.[/green]\n")
+    rprint(f"  [bold]Name:[/bold]     {data['name']}")
+    rprint(f"  [bold]Email:[/bold]    {data['email']}")
+    if data.get("username"):
+        rprint(f"  [bold]Username:[/bold] {data['username']}")
+    rprint(f"  [bold]Role:[/bold]     {data['role']}")
+    rprint(f"  [bold]ID:[/bold]       {data['id']}")
+    rprint(f"\n[yellow]Password:[/yellow] {data['password']}")
+    rprint("[dim]Save this — it will not be shown again.[/dim]")
+
+
 @admin_app.command(name="reset-password")
 def admin_reset_password(
     email: str = typer.Argument(..., help="Email of the user to reset"),
