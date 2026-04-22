@@ -96,18 +96,25 @@ async def lifespan(app: FastAPI):
     async with _session_factory() as db:
         await seed_demo_accounts(db)
 
-    # Load enterprise module when in enterprise mode
-    _logger = structlog.get_logger("observal")
+    # Register audit event bus handlers during startup
     if settings.DEPLOYMENT_MODE == "enterprise":
         try:
-            from ee import register_enterprise
+            from ee.observal_server.services.audit import register_audit_handlers
 
-            register_enterprise(app, settings)
+            register_audit_handlers()
         except ImportError:
-            _logger.error("enterprise_module_missing", detail="DEPLOYMENT_MODE=enterprise but ee/ module not found")
-            app.state.enterprise_issues = ["ee/ module not installed"]
+            pass
 
     yield
+
+    if settings.DEPLOYMENT_MODE == "enterprise":
+        try:
+            from ee.observal_server.services.audit import shutdown_audit
+
+            await shutdown_audit()
+        except ImportError:
+            pass
+
     await close_cache()
     await close_redis()
 
@@ -238,6 +245,19 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(CacheControlMiddleware)
+
+# Enterprise routes + middleware (must be registered before startup)
+if settings.DEPLOYMENT_MODE == "enterprise":
+    try:
+        from ee import register_enterprise_middleware
+        from ee.observal_server.routes import mount_ee_routes
+
+        register_enterprise_middleware(app, settings)
+        mount_ee_routes(app)
+    except ImportError:
+        _logger = structlog.get_logger("observal")
+        _logger.error("enterprise_module_missing", detail="DEPLOYMENT_MODE=enterprise but ee/ module not found")
+        app.state.enterprise_issues = ["ee/ module not installed"]
 
 # GraphQL (replaces REST dashboard endpoints)
 graphql_app = GraphQLRouter(schema, context_getter=get_context_dep)

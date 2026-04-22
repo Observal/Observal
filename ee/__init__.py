@@ -17,39 +17,38 @@ if TYPE_CHECKING:
 logger = logging.getLogger("observal.ee")
 
 
-def register_enterprise(app: FastAPI, settings: Settings) -> list[str]:
-    """Bootstrap enterprise features.  Returns a list of config issues (empty = healthy).
+def register_enterprise_middleware(app: FastAPI, settings: Settings) -> list[str]:
+    """Register enterprise middleware (must be called before app startup).
 
-    Called once during app startup from main.py.  Responsibilities:
-    1. Validate enterprise config
-    2. Mount EE routes (SAML, SCIM, audit log)
-    3. Add EnterpriseGuardMiddleware (503 on misconfigured EE routes)
-    4. Register audit logging event bus handlers
-    5. Store issues for diagnostics endpoint
+    Returns a list of config issues (empty = healthy).
     """
     from ee.observal_server.middleware.enterprise_guard import EnterpriseGuardMiddleware
-    from ee.observal_server.routes import mount_ee_routes
     from ee.observal_server.services.config_validator import validate_enterprise_config
 
-    # 1. Validate config
     issues = validate_enterprise_config(settings)
 
-    # 2. Mount EE routes
-    mount_ee_routes(app)
-
-    # 3. Add middleware that returns 503 on EE routes when misconfigured
     if issues:
         app.add_middleware(EnterpriseGuardMiddleware, issues=issues)
         logger.warning("Enterprise mode has config issues: %s", issues)
     else:
         logger.info("Enterprise mode initialized successfully")
 
-    # 4. Register audit logging handlers
+    app.state.enterprise_issues = issues
+    return issues
+
+
+def register_enterprise(app: FastAPI, settings: Settings) -> list[str]:
+    """Bootstrap all enterprise features.  Returns a list of config issues (empty = healthy).
+
+    Called once during app startup from main.py.  Responsibilities:
+    1. Validate enterprise config + add middleware (before startup)
+    2. Mount EE routes (SAML, SCIM, audit log)
+    3. Register audit logging event bus handlers
+    """
+    from ee.observal_server.routes import mount_ee_routes
     from ee.observal_server.services.audit import register_audit_handlers
 
+    issues = register_enterprise_middleware(app, settings)
+    mount_ee_routes(app)
     register_audit_handlers()
-
-    # 5. Store issues for diagnostics endpoint
-    app.state.enterprise_issues = issues
-
     return issues

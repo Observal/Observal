@@ -10,6 +10,7 @@ COPY observal-server/pyproject.toml observal-server/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY observal-server/ .
+COPY ee/ ./ee/
 COPY docker/entrypoint.sh /app/entrypoint.sh
 RUN sed -i 's/\r$//' /app/entrypoint.sh
 
