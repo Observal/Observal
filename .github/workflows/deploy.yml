@@ -29,29 +29,34 @@ jobs:
             cd docker
             docker compose up -d --build --remove-orphans
 
-            # Wait for the API process to be alive (no dependency checks).
-            # /livez returns 200 as soon as uvicorn is serving; /health
-            # checks Postgres+ClickHouse+Redis and returns 503 while they
-            # warm up, which caused false negatives on slow cold-starts.
+            # Phase 1: Wait for API container to be alive (bypasses nginx).
+            # Uses direct container exec because curl through nginx fails
+            # when nginx caches a stale upstream IP from the old container.
+            echo "Waiting for API container to start..."
             for i in $(seq 1 60); do
-              if curl -sf http://localhost:8000/livez > /dev/null 2>&1; then
-                echo "API is alive (livez ok)"
+              if docker compose exec -T observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/livez')" 2>/dev/null; then
+                echo "API process is alive"
                 break
               fi
               echo "Waiting for API process... ($i/60)"
               sleep 5
             done
 
-            # Now wait for full readiness (dependencies healthy)
+            # Nginx caches upstream container IPs — after rebuild the API
+            # gets a new IP but nginx still routes to the old one.
+            docker compose restart observal-lb
+            sleep 3
+
+            # Phase 2: Verify health through nginx (the path clients use)
             for i in $(seq 1 30); do
               if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-                echo "API is healthy (all dependencies up)"
+                echo "API is healthy (full stack verified)"
                 exit 0
               fi
-              echo "Waiting for dependencies... ($i/30)"
+              echo "Waiting for health check... ($i/30)"
               sleep 5
             done
 
             echo "API failed health check"
-            docker compose logs observal-api observal-init observal-db observal-clickhouse --tail 20
+            docker compose logs observal-api observal-init observal-lb observal-db observal-clickhouse --tail 20
             exit 1

@@ -150,7 +150,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    command: ["/app/.venv/bin/python", "-m", "arq", "worker.WorkerSettings"]
+    command: ["/app/.venv/bin/python", "-c", "import asyncio; asyncio.set_event_loop(asyncio.new_event_loop()); from arq import run_worker; from worker import WorkerSettings; run_worker(WorkerSettings)"]
     env_file:
       - ../.env
     environment:
