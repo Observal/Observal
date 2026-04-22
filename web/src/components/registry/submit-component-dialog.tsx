@@ -204,13 +204,18 @@ export function SubmitComponentDialog({
         if (setupInstructions) body.setup_instructions = setupInstructions;
         return body;
       }
-      case "skills":
-        return {
+      case "skills": {
+        const skillBody: Record<string, unknown> = {
           ...base,
           task_type: taskType,
           git_url: skillGitUrl || undefined,
           skill_path: skillPath || "/",
         };
+        if (mcpServerName) {
+          skillBody.mcp_server_config = { server: mcpServerName };
+        }
+        return skillBody;
+      }
       case "hooks": {
         const body: Record<string, unknown> = {
           ...base,
