@@ -15,8 +15,8 @@
 ---
 
 ## 1. Environment Setup
-- [ ] `make up`
-- [ ] `uv install`
+- [ ] `make rebuild-clean`
+- [ ] `uv sync`
 
 ## 2. Super Admin — User Management
 - [ ] Log in as super admin
