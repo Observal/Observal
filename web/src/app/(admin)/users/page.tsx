@@ -21,12 +21,19 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
-import { ROLE_LABELS, type Role } from "@/hooks/use-role-guard";
+import { ROLE_LABELS, hasMinRole, type Role } from "@/hooks/use-role-guard";
+import { getUserRole } from "@/lib/api";
 
-const ROLES: Role[] = ["super_admin", "admin", "reviewer", "user"];
+const ALL_ROLES: Role[] = ["super_admin", "admin", "reviewer", "user"];
+
+function useAssignableRoles(): Role[] {
+  const myRole = getUserRole();
+  return ALL_ROLES.filter((r) => hasMinRole(myRole, r));
+}
 
 function RoleSelect({ userId, currentRole }: { userId: string; currentRole: string }) {
   const mutation = useUpdateUserRole();
+  const assignable = useAssignableRoles();
 
   return (
     <Select
@@ -40,7 +47,7 @@ function RoleSelect({ userId, currentRole }: { userId: string; currentRole: stri
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {ROLES.map((r) => (
+        {assignable.map((r) => (
           <SelectItem key={r} value={r} className="text-xs">
             {ROLE_LABELS[r]}
           </SelectItem>
@@ -54,6 +61,7 @@ export default function UsersPage() {
   const { data: users, isLoading, isError, error, refetch } = useAdminUsers();
   const createUser = useCreateUser();
   const deleteUser = useDeleteUser();
+  const assignableRoles = useAssignableRoles();
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [name, setName] = useState("");
@@ -236,7 +244,7 @@ export default function UsersPage() {
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLES.map((r) => (
+                    {assignableRoles.map((r) => (
                       <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
                     ))}
                   </SelectContent>

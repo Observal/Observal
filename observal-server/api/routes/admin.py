@@ -8,7 +8,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, get_or_create_default_org, require_role
+from api.deps import ROLE_HIERARCHY, get_db, get_or_create_default_org, require_role
 from config import settings
 from models.enterprise_config import EnterpriseConfig
 from models.organization import Organization
@@ -200,6 +200,9 @@ async def create_user(
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid role. Must be one of: {[r.value for r in UserRole]}")
 
+    if ROLE_HIERARCHY.get(role, 999) < ROLE_HIERARCHY[current_user.role]:
+        raise HTTPException(status_code=403, detail="Cannot assign a role higher than your own")
+
     password = req.password or await _generate_unique_password(db)
 
     org_id = current_user.org_id
@@ -252,8 +255,13 @@ async def update_user_role(
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid role. Must be one of: {[r.value for r in UserRole]}")
 
-    if user_id == current_user.id and new_role != UserRole.admin:
-        raise HTTPException(status_code=400, detail="Cannot demote yourself")
+    from api.deps import ROLE_HIERARCHY
+
+    if ROLE_HIERARCHY.get(new_role, 999) < ROLE_HIERARCHY[current_user.role]:
+        raise HTTPException(status_code=403, detail="Cannot assign a role higher than your own")
+
+    if user_id == current_user.id and new_role != current_user.role:
+        raise HTTPException(status_code=400, detail="Cannot change your own role")
 
     stmt = select(User).where(User.id == user_id)
     if current_user.org_id is not None:
