@@ -45,7 +45,7 @@ jobs:
         id: version
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%s)
-          if [[ "$COMMIT_MSG" =~ ^bump\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          if [[ "$COMMIT_MSG" =~ ^bump\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             VERSION="${BASH_REMATCH[1]}"
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
