@@ -10,14 +10,17 @@ from pathlib import Path
 
 block_cipher = None
 
-cli_dir = Path("observal_cli")
+spec_dir = Path(SPECPATH)
+repo_root = spec_dir.parent
+
+cli_dir = spec_dir
 
 # Collect all CLI modules
 cli_modules = [str(p) for p in cli_dir.glob("*.py") if p.name != "__pycache__"]
 
 a = Analysis(
-    ["observal_cli/main.py"],
-    pathex=["."],
+    [str(spec_dir / "main.py")],
+    pathex=[str(repo_root)],
     binaries=[],
     datas=[],
     hiddenimports=[
