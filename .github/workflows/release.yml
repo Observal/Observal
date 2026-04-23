@@ -1,14 +1,21 @@
 # Automated release pipeline for Observal.
 #
-# Triggered when a release PR merges to main (detected by bump(release) commit).
-# Creates the git tag, then builds: CLI binaries (6 platforms), Docker images (GHCR),
-# server tarball, PyPI package. All releases require approval.
+# Triggered automatically when a release PR merges to main (detected by
+# bump(release) commit), or manually via workflow_dispatch with a version input.
+# Creates the git tag, then builds: CLI binaries (6 platforms), Docker images
+# (GHCR), server tarball, PyPI package. All releases require approval.
 
 name: Release
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.3.2). Leave empty to auto-detect from commit."
+        required: false
+        type: string
 
 concurrency:
   group: release
@@ -34,48 +41,64 @@ jobs:
       bump_type: ${{ steps.version.outputs.bump_type }}
       is_release: ${{ steps.version.outputs.is_release }}
     steps:
+      - name: Generate release app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
-      - name: Detect release commit
+      - name: Detect release version
         id: version
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%s)
-          if [[ "$COMMIT_MSG" =~ ^bump\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-            VERSION="${BASH_REMATCH[1]}"
+          # Manual dispatch with explicit version takes priority
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-            # Validate version matches pyproject.toml
-            PKG_VERSION=$(python3 -c "import re, pathlib; m = re.search(r'^version\s*=\s*\"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(), re.M); print(m.group(1))")
-            if [ "$VERSION" != "$PKG_VERSION" ]; then
-              echo "::error::Commit says v$VERSION but pyproject.toml says $PKG_VERSION"
-              exit 1
-            fi
-
-            # Detect bump type by comparing to previous tag
-            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "v0.0.0")
-            PREV="${PREV_TAG#v}"
-            IFS='.' read -r PM PMI PP <<< "$PREV"
-            IFS='.' read -r CM CMI CP <<< "$VERSION"
-            if [ "$CM" != "$PM" ]; then
-              echo "bump_type=major" >> "$GITHUB_OUTPUT"
-            elif [ "$CMI" != "$PMI" ]; then
-              echo "bump_type=feature" >> "$GITHUB_OUTPUT"
-            else
-              echo "bump_type=patch" >> "$GITHUB_OUTPUT"
-            fi
           else
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            COMMIT_MSG=$(git log -1 --pretty=%s)
+            if [[ "$COMMIT_MSG" =~ ^bump\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+              VERSION="${BASH_REMATCH[1]}"
+              echo "is_release=true" >> "$GITHUB_OUTPUT"
+              echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            else
+              echo "is_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          # Validate version matches pyproject.toml
+          PKG_VERSION=$(python3 -c "import re, pathlib; m = re.search(r'^version\s*=\s*\"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(), re.M); print(m.group(1))")
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Release version v$VERSION does not match pyproject.toml ($PKG_VERSION)"
+            exit 1
+          fi
+
+          # Detect bump type by comparing to previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "v0.0.0")
+          PREV="${PREV_TAG#v}"
+          IFS='.' read -r PM PMI PP <<< "$PREV"
+          IFS='.' read -r CM CMI CP <<< "$VERSION"
+          if [ "$CM" != "$PM" ]; then
+            echo "bump_type=major" >> "$GITHUB_OUTPUT"
+          elif [ "$CMI" != "$PMI" ]; then
+            echo "bump_type=feature" >> "$GITHUB_OUTPUT"
+          else
+            echo "bump_type=patch" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create release tag
         if: steps.version.outputs.is_release == 'true'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           VERSION="v${{ steps.version.outputs.version }}"
+          git config user.name "observal-release[bot]"
+          git config user.email "observal-release[bot]@users.noreply.github.com"
           git tag -a "$VERSION" -m "Release $VERSION"
           git push origin "$VERSION"
 
