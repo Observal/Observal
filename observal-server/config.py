@@ -88,6 +88,18 @@ class Settings(BaseSettings):
     # Blocks: login, token, register, admin user create, admin password reset.
     SSO_ONLY: bool = False
 
+    # SAML 2.0 SSO
+    SAML_IDP_ENTITY_ID: str = ""
+    SAML_IDP_SSO_URL: str = ""
+    SAML_IDP_SLO_URL: str = ""
+    SAML_IDP_X509_CERT: str = ""
+    SAML_IDP_METADATA_URL: str = ""
+    SAML_SP_ENTITY_ID: str = ""
+    SAML_SP_ACS_URL: str = ""
+    SAML_JIT_PROVISIONING: bool = True
+    SAML_DEFAULT_ROLE: str = "user"
+    SAML_SP_KEY_ENCRYPTION_PASSWORD: str = ""
+
     # Demo accounts (seeded on first startup if set and no real users exist)
     DEMO_SUPER_ADMIN_EMAIL: str | None = None
     DEMO_SUPER_ADMIN_PASSWORD: str | None = None
