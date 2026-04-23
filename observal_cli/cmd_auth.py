@@ -34,7 +34,7 @@ def login(
     server: str = typer.Option(None, "--server", "-s", help="Server URL"),
     email: str = typer.Option(None, "--email", "-e", help="Email"),
     password: str = typer.Option(None, "--password", "-p", help="Password"),
-    name: str = typer.Option(None, "--name", "-n", help="Your name (used with register)"),
+    name: str = typer.Option(None, "--name", "-n", help="Your name (used for admin setup)"),
     sso: bool = typer.Option(False, "--sso", help="Authenticate via browser SSO"),
 ):
     """Connect to Observal.
@@ -162,16 +162,6 @@ def login(
     login_email = email or typer.prompt("Email or username")
     login_password = password or typer.prompt("Password", hide_input=True)
     _do_password_login(server_url, login_email, login_password)
-
-
-@auth_app.command()
-def register():
-    """[Removed] Users are created by admins. Use 'observal auth login' instead."""
-    rprint("[yellow]'observal auth register' has been removed.[/yellow]")
-    rprint()
-    rprint("Users are created by admins in the web UI (Users page).")
-    rprint("Use [bold]observal auth login[/bold] to sign in with your credentials.")
-    raise typer.Exit(1)
 
 
 @auth_app.command()

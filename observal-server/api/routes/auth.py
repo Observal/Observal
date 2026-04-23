@@ -22,7 +22,6 @@ from schemas.auth import (
     InitResponse,
     LoginRequest,
     RefreshRequest,
-    RegisterRequest,
     RevokeRequest,
     TokenRequest,
     TokenResponse,
@@ -146,53 +145,6 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
         resource_id=str(user.id),
         detail="Bootstrap admin created from localhost",
     )
-    return InitResponse(
-        user=UserResponse.model_validate(user),
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=expires_in,
-    )
-
-
-@router.post("/register", response_model=InitResponse, dependencies=[Depends(require_local_mode)])
-@limiter.limit("3/minute")
-async def register(request: Request, req: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Create a new account with email + password."""
-    source_ip, user_agent = _extract_request_info(request)
-    existing = await db.execute(select(User).where(User.email == req.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
-
-    default_org = await get_or_create_default_org(db)
-    user = User(
-        email=req.email,
-        username=req.username,
-        name=req.name,
-        role=UserRole.user,
-        org_id=default_org.id,
-    )
-    user.set_password(req.password)
-    db.add(user)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(status_code=409, detail="Email or username already registered")
-    await db.refresh(user)
-
-    await emit_security_event(
-        SecurityEvent(
-            event_type=EventType.REGISTRATION,
-            severity=Severity.INFO,
-            outcome="success",
-            actor_id=str(user.id),
-            actor_email=user.email,
-            source_ip=source_ip,
-            user_agent=user_agent,
-        )
-    )
-    access_token, refresh_token, expires_in = await _issue_tokens(user)
-    await audit(user, "auth.register", resource_type="auth", resource_id=str(user.id), detail="New user registered")
     return InitResponse(
         user=UserResponse.model_validate(user),
         access_token=access_token,
