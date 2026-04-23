@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.0] - 2026-04-23
+## [0.3.1] - 2026-04-23
 
 ### Added
 
@@ -96,6 +96,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- inline python version check to avoid indentation error (**ci**) ([65322f0](https://github.com/BlazeUp-AI/Observal/commit/65322f0ee2351dc5e89062f4c7c3ea4892f03d19))
 - allow PR number suffix in release commit detection (**ci**) ([9fb4617](https://github.com/BlazeUp-AI/Observal/commit/9fb461736d8fb37e237919baeddd50db82efd69c))
 - remove register endpoint from deployment guard tests (**tests**) ([d14fea0](https://github.com/BlazeUp-AI/Observal/commit/d14fea0b63bac810d76147eac55c88a65e22c91f))
 - surface unexpected errors in enterprise mode check (**cli**) ([02f864e](https://github.com/BlazeUp-AI/Observal/commit/02f864e6f1b377669857710d494087dc2574c2e0))
