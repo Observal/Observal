@@ -35,12 +35,12 @@ def _require_enterprise():
                 rprint("[yellow]This feature requires enterprise mode.[/yellow]")
                 rprint("[dim]Set DEPLOYMENT_MODE=enterprise on the server to enable.[/dim]")
                 raise typer.Exit(1)
-    except httpx.ConnectError:
+    except (httpx.ConnectError, httpx.TimeoutException):
         pass
     except typer.Exit:
         raise
-    except Exception:
-        pass
+    except Exception as exc:
+        rprint(f"[dim]Warning: could not verify enterprise mode: {exc}[/dim]")
 
 
 # ═══════════════════════════════════════════════════════════
