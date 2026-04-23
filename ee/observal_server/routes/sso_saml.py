@@ -210,7 +210,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
         )
         raise HTTPException(status_code=401, detail="SAML authentication failed")
 
-    # --- SAML assertion replay protection ---
+    # --- SAML assertion replay protection (fail closed) ---
     response_id = auth.get_last_message_id() if hasattr(auth, "get_last_message_id") else None
     if not response_id:
         response_xml = auth.get_last_response_xml() if hasattr(auth, "get_last_response_xml") else None
@@ -218,7 +218,11 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
             raw = response_xml.encode() if isinstance(response_xml, str) else response_xml
             response_id = hashlib.sha256(raw).hexdigest()
 
-    if response_id:
+    if not response_id:
+        logger.error("SAML replay protection: unable to extract response ID")
+        raise HTTPException(status_code=400, detail="Unable to verify SAML assertion uniqueness")
+
+    try:
         redis = get_redis()
         replay_key = f"saml_assertion:{response_id}"
         existing = await redis.get(replay_key)
@@ -239,6 +243,11 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
                 detail="SAML assertion has already been processed",
             )
         await redis.setex(replay_key, 300, "1")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error("SAML replay protection: Redis unavailable, rejecting assertion")
+        raise HTTPException(status_code=503, detail="Unable to verify SAML assertion -- try again")
 
     email, attributes = extract_name_id_and_attrs(auth)
     if not email:
