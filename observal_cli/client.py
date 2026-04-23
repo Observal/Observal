@@ -240,6 +240,8 @@ def delete(path: str) -> dict:
     base, headers = _client()
     try:
         r = _request_with_retry("delete", f"{base}{path}", headers)
+        if r.status_code == 204 or not r.content:
+            return {}
         return r.json()
     except httpx.HTTPStatusError as e:
         _handle_error(e, path)
