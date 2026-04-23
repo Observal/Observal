@@ -46,12 +46,15 @@ def _gemini_otlp_env(observal_url: str) -> dict:
 
 
 def _gemini_settings(observal_url: str) -> dict:
-    """Gemini CLI .gemini/settings.json telemetry block."""
+    """Gemini CLI .gemini/settings.json telemetry block.
+
+    Native OTLP is disabled because Gemini CLI hardcodes gRPC export
+    which is incompatible with Observal's HTTP/JSON endpoint.
+    Telemetry is captured via the hook bridge instead.
+    """
     return {
         "telemetry": {
-            "enabled": True,
-            "target": "custom",
-            "otlpEndpoint": observal_url,
+            "enabled": False,
             "logPrompts": True,
         }
     }

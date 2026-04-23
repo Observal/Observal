@@ -1257,6 +1257,11 @@ def _extract_gemini(body: dict, hook_event: str, attrs: dict[str, str]) -> None:
     if body.get("model"):
         attrs["model"] = str(body["model"])
 
+    # Token usage from gemini_hook.py AfterModel extraction
+    for enriched_field in ("input_tokens", "output_tokens", "total_tokens"):
+        if body.get(enriched_field):
+            attrs[enriched_field] = str(body[enriched_field])
+
 
 def _extract_cursor(body: dict, hook_event: str, attrs: dict[str, str]) -> None:
     """Extract Cursor-specific fields into *attrs*.

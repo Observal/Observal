@@ -479,9 +479,7 @@ def _generate_gemini_cli(manifest: AgentManifest) -> IdeAgentConfig:
 
     settings: dict = {
         "telemetry": {
-            "enabled": True,
-            "target": "custom",
-            "otlpEndpoint": otlp_url,
+            "enabled": False,
             "logPrompts": True,
         },
     }
