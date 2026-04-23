@@ -92,8 +92,7 @@ class TestConstants:
 
     def test_gemini_cli_feature_matrix(self):
         assert "gemini-cli" in IDE_FEATURE_MATRIX
-        assert "mcp_servers" in IDE_FEATURE_MATRIX["gemini-cli"]
-        assert "rules" in IDE_FEATURE_MATRIX["gemini-cli"]
+        assert IDE_FEATURE_MATRIX["gemini-cli"] == {"hook_bridge", "mcp_servers", "rules", "otlp_telemetry"}
 
     def test_opencode_feature_matrix(self):
         assert "opencode" in IDE_FEATURE_MATRIX
@@ -1315,17 +1314,19 @@ class TestPullOpenCodeScope:
 
 
 class TestGeminiConfigGenerator:
-    def test_gemini_settings_uses_observal_url(self):
+    def test_gemini_settings_disables_native_otlp(self):
         from services.config_generator import _gemini_settings
 
         settings = _gemini_settings("http://custom-host:4318")
-        assert settings["telemetry"]["otlpEndpoint"] == "http://custom-host:4318"
+        assert settings["telemetry"]["enabled"] is False
+        assert settings["telemetry"]["logPrompts"] is True
 
-    def test_gemini_settings_default_localhost(self):
+    def test_gemini_settings_no_target(self):
         from services.config_generator import _gemini_settings
 
         settings = _gemini_settings("http://localhost:4318")
-        assert settings["telemetry"]["otlpEndpoint"] == "http://localhost:4318"
+        assert "target" not in settings["telemetry"]
+        assert "otlpEndpoint" not in settings["telemetry"]
 
     def test_gemini_otlp_env_uses_observal_url(self):
         from services.config_generator import _gemini_otlp_env
@@ -1338,9 +1339,10 @@ class TestGeminiConfigGenerator:
         cfg = generate_agent_config(agent, "gemini-cli")
         assert "gemini_settings_snippet" in cfg
         snippet = cfg["gemini_settings_snippet"]
-        assert snippet["telemetry"]["enabled"] is True
-        assert snippet["telemetry"]["target"] == "custom"
-        assert "otlpEndpoint" in snippet["telemetry"]
+        assert snippet["telemetry"]["enabled"] is False
+        assert snippet["telemetry"]["logPrompts"] is True
+        assert "target" not in snippet["telemetry"]
+        assert "otlpEndpoint" not in snippet["telemetry"]
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1383,13 +1385,66 @@ class TestDoctorGemini:
 
         from observal_cli.cmd_doctor import _check_gemini
 
-        data = {"mcpServers": {"my-srv": {"command": "observal-shim", "args": ["--mcp-id", "test", "--", "npx"]}}}
+        data = {
+            "mcpServers": {"my-srv": {"command": "observal-shim", "args": ["--mcp-id", "test", "--", "npx"]}},
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": "python3 /path/to/gemini_hook.py"}]}],
+            },
+        }
         issues = []
         warnings = []
         _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
         assert len(warnings) == 0
 
-    def test_check_gemini_warns_on_disabled_telemetry(self):
+    def test_check_gemini_warns_on_enabled_native_otlp(self):
+        """Native OTLP uses gRPC which is incompatible — doctor should warn."""
+        from pathlib import Path
+
+        from observal_cli.cmd_doctor import _check_gemini
+
+        data = {
+            "telemetry": {"enabled": True, "target": "local"},
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": "python3 /path/to/gemini_hook.py"}]}],
+            },
+        }
+        issues = []
+        warnings = []
+        _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
+        assert any("gRPC" in w or "native OTLP" in w.lower() for w in warnings)
+
+    def test_check_gemini_no_warning_on_disabled_native_otlp(self):
+        from pathlib import Path
+
+        from observal_cli.cmd_doctor import _check_gemini
+
+        data = {
+            "telemetry": {"enabled": False, "logPrompts": True},
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": "python3 /path/to/gemini_hook.py"}]}],
+            },
+        }
+        issues = []
+        warnings = []
+        _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
+        assert len(warnings) == 0
+
+    def test_check_gemini_no_telemetry_block_means_no_otlp_warning(self):
+        """No telemetry block = no OTLP warning (but still hooks warning if missing)."""
+        from pathlib import Path
+
+        from observal_cli.cmd_doctor import _check_gemini
+
+        data = {}
+        issues = []
+        warnings = []
+        _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
+        # No OTLP warning
+        assert not any("gRPC" in w or "native OTLP" in w.lower() for w in warnings)
+        # But hooks warning because no hooks block
+        assert any("hooks" in w.lower() for w in warnings)
+
+    def test_check_gemini_warns_on_missing_hooks(self):
         from pathlib import Path
 
         from observal_cli.cmd_doctor import _check_gemini
@@ -1398,55 +1453,35 @@ class TestDoctorGemini:
         issues = []
         warnings = []
         _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
-        assert any("telemetry" in w and "disabled" in w for w in warnings)
+        assert any("hooks" in w.lower() for w in warnings)
 
-    def test_check_gemini_warns_on_missing_custom_target(self):
-        from pathlib import Path
-
-        from observal_cli.cmd_doctor import _check_gemini
-
-        data = {"telemetry": {"enabled": True, "target": "default"}}
-        issues = []
-        warnings = []
-        _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
-        assert any("not configured" in w for w in warnings)
-
-    def test_check_gemini_warns_on_missing_otlp_endpoint(self):
-        from pathlib import Path
-
-        from observal_cli.cmd_doctor import _check_gemini
-
-        data = {"telemetry": {"enabled": True, "target": "custom"}}
-        issues = []
-        warnings = []
-        _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
-        assert any("not configured" in w for w in warnings)
-
-    def test_check_gemini_no_warning_on_proper_telemetry(self):
+    def test_check_gemini_warns_on_non_observal_hooks(self):
         from pathlib import Path
 
         from observal_cli.cmd_doctor import _check_gemini
 
         data = {
-            "telemetry": {
-                "enabled": True,
-                "target": "custom",
-                "otlpEndpoint": "http://localhost:4318",
-                "logPrompts": True,
-            }
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": "echo hello"}]}],
+            },
         }
         issues = []
         warnings = []
         _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
-        assert len(warnings) == 0
+        assert any("no Observal hooks found" in w for w in warnings)
 
-    def test_check_gemini_no_telemetry_block_means_no_warning(self):
-        """If there's no telemetry block at all, don't warn — user hasn't configured Observal yet."""
+    def test_check_gemini_no_warning_on_valid_hooks(self):
         from pathlib import Path
 
         from observal_cli.cmd_doctor import _check_gemini
 
-        data = {}
+        data = {
+            "telemetry": {"enabled": False, "logPrompts": True},
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": "python3 /path/to/gemini_hook.py"}]}],
+                "AfterAgent": [{"hooks": [{"type": "command", "command": "python3 /path/to/gemini_stop_hook.py"}]}],
+            },
+        }
         issues = []
         warnings = []
         _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
@@ -1457,7 +1492,12 @@ class TestDoctorGemini:
 
         from observal_cli.cmd_doctor import _check_gemini
 
-        data = {"mcpServers": {"my-srv": {"url": "http://localhost:3000/sse"}}}
+        data = {
+            "mcpServers": {"my-srv": {"url": "http://localhost:3000/sse"}},
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": "python3 /path/to/gemini_hook.py"}]}],
+            },
+        }
         issues = []
         warnings = []
         _check_gemini(Path(".gemini/settings.json"), data, issues, warnings)
