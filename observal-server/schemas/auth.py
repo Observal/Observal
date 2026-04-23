@@ -41,13 +41,13 @@ class InitRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
     @field_validator("email", mode="before")
     @classmethod
     def _normalize(cls, v: str) -> str:
-        return _normalize_email(v)
+        return v.strip().lower() if isinstance(v, str) else v
 
 
 class RegisterRequest(BaseModel):
@@ -90,13 +90,13 @@ class CodeExchangeRequest(BaseModel):
 
 
 class TokenRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
     @field_validator("email", mode="before")
     @classmethod
     def _normalize(cls, v: str) -> str:
-        return _normalize_email(v)
+        return v.strip().lower() if isinstance(v, str) else v
 
 
 class TokenResponse(BaseModel):
@@ -112,6 +112,18 @@ class RefreshRequest(BaseModel):
 
 class RevokeRequest(BaseModel):
     refresh_token: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
 
 
 class UsernameUpdateRequest(BaseModel):

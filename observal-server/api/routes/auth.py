@@ -7,7 +7,7 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from redis.exceptions import RedisError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from api.ratelimit import limiter
 from config import settings
 from models.user import User, UserRole
 from schemas.auth import (
+    ChangePasswordRequest,
     CodeExchangeRequest,
     InitRequest,
     InitResponse,
@@ -203,9 +204,14 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
 @router.post("/login", response_model=InitResponse, dependencies=[Depends(require_password_auth)])
 @limiter.limit("5/minute")
 async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Login with email + password. Returns user info and JWT tokens."""
+    """Login with email/username + password. Returns user info and JWT tokens."""
     source_ip, user_agent = _extract_request_info(request)
-    result = await db.execute(select(User).where(User.email == req.email))
+    identifier = req.email
+    if "@" in identifier:
+        stmt = select(User).where(User.email == identifier)
+    else:
+        stmt = select(User).where(or_(User.username == identifier, User.email == identifier))
+    result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user or not user.verify_password(req.password):
         await emit_security_event(
@@ -213,10 +219,10 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
                 event_type=EventType.LOGIN_FAILURE,
                 severity=Severity.WARNING,
                 outcome="failure",
-                actor_email=req.email,
+                actor_email=identifier,
                 source_ip=source_ip,
                 user_agent=user_agent,
-                detail="Invalid email or password",
+                detail="Invalid credentials",
             )
         )
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -235,12 +241,23 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
         )
     )
     await audit(user, "auth.login", resource_type="session", resource_id=str(user.id))
-    return InitResponse(
-        user=UserResponse.model_validate(user),
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=expires_in,
-    )
+
+    must_change = False
+    try:
+        redis = get_redis()
+        must_change = bool(await redis.get(f"must_change_password:{user.id}"))
+    except RedisError:
+        pass
+
+    return {
+        **InitResponse(
+            user=UserResponse.model_validate(user),
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=expires_in,
+        ).model_dump(),
+        "must_change_password": must_change,
+    }
 
 
 @router.get("/oauth/login")
@@ -430,9 +447,14 @@ async def whoami(current_user: User = Depends(get_current_user)):
 @router.post("/token", response_model=TokenResponse, dependencies=[Depends(require_password_auth)])
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def issue_token(request: Request, req: TokenRequest, db: AsyncSession = Depends(get_db)):
-    """Exchange email+password for JWT access + refresh tokens."""
+    """Exchange email/username + password for JWT access + refresh tokens."""
     source_ip, user_agent = _extract_request_info(request)
-    result = await db.execute(select(User).where(User.email == req.email))
+    identifier = req.email
+    if "@" in identifier:
+        stmt = select(User).where(User.email == identifier)
+    else:
+        stmt = select(User).where(or_(User.username == identifier, User.email == identifier))
+    result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user or not user.verify_password(req.password):
         await emit_security_event(
@@ -440,10 +462,10 @@ async def issue_token(request: Request, req: TokenRequest, db: AsyncSession = De
                 event_type=EventType.LOGIN_FAILURE,
                 severity=Severity.WARNING,
                 outcome="failure",
-                actor_email=req.email,
+                actor_email=identifier,
                 source_ip=source_ip,
                 user_agent=user_agent,
-                detail="Invalid email or password (token endpoint)",
+                detail="Invalid credentials (token endpoint)",
             )
         )
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -545,6 +567,35 @@ async def revoke_token(request: Request, req: RevokeRequest):
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     return {"detail": "Token revoked"}
+
+
+@router.put("/profile/password")
+async def change_password(
+    request: Request,
+    req: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change the current user's password. Clears forced-change flag if set."""
+    if not current_user.verify_password(req.current_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    current_user.set_password(req.new_password)
+    await db.commit()
+
+    try:
+        redis = get_redis()
+        await redis.delete(f"must_change_password:{current_user.id}")
+    except RedisError:
+        pass
+
+    await audit(
+        current_user,
+        "auth.change_password",
+        resource_type="user",
+        resource_id=str(current_user.id),
+    )
+    return {"message": "Password changed"}
 
 
 @router.put("/profile/username", response_model=UserResponse)

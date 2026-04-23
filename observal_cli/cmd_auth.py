@@ -140,11 +140,13 @@ def login(
         pass
 
     # If SSO available but not required, offer a choice (unless flags already decide)
-    if sso_available and not sso_mode and not (email or password):
-        rprint("  [1] Email + password")
-        rprint("  [2] SSO (opens browser)")
+    if not sso_mode and not (email or password):
+        rprint("  [1] Email/username + password")
+        if sso_available:
+            rprint("  [2] SSO (opens browser)")
+        rprint("  [3] Sign in via browser")
         choice = typer.prompt("Login method", default="1")
-        if choice == "2":
+        if (choice == "2" and sso_available) or choice == "3":
             sso_mode = True
 
     if sso_mode:
@@ -156,75 +158,20 @@ def login(
         _do_password_login(server_url, email, password)
         return
 
-    # 5. Interactive: prompt for email + password
-    login_email = email or typer.prompt("Email")
+    # 5. Interactive: prompt for email/username + password
+    login_email = email or typer.prompt("Email or username")
     login_password = password or typer.prompt("Password", hide_input=True)
     _do_password_login(server_url, login_email, login_password)
 
 
 @auth_app.command()
-def register(
-    server: str = typer.Option(None, "--server", "-s", help="Server URL"),
-    email: str = typer.Option(None, "--email", "-e", help="Email"),
-    password: str = typer.Option(None, "--password", "-p", help="Password"),
-    name: str = typer.Option(None, "--name", "-n", help="Your name"),
-):
-    """Create a new account with email + password."""
-    server_url = server or typer.prompt("Server URL", default="http://localhost:8000")
-    server_url = server_url.rstrip("/")
-    reg_email = email or typer.prompt("Email")
-    reg_name = name or typer.prompt("Name")
-    reg_password = password or typer.prompt("Password", hide_input=True)
-
-    try:
-        with spinner("Creating account..."):
-            r = httpx.post(
-                f"{server_url}/api/v1/auth/register",
-                json={"email": reg_email, "name": reg_name, "password": reg_password},
-                timeout=30,
-            )
-            r.raise_for_status()
-            data = r.json()
-
-        user = data["user"]
-        endpoints = _fetch_endpoints(server_url)
-        cfg_data = {
-            "server_url": server_url,
-            "access_token": data["access_token"],
-            "refresh_token": data["refresh_token"],
-            "user_id": user.get("id", ""),
-            "user_name": user.get("name", ""),
-        }
-        if endpoints:
-            cfg_data["otlp_http_url"] = endpoints.get("otlp_http", "")
-            cfg_data["otlp_grpc_url"] = endpoints.get("otlp_grpc", "")
-            cfg_data["web_url"] = endpoints.get("web", "")
-        config.save(cfg_data)
-        rprint(
-            f"[green]Account created! Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]"
-        )
-        rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
-
-        _fetch_server_public_key(server_url)
-        _configure_claude_code(server_url, data["access_token"])
-        _configure_kiro(server_url)
-        _configure_gemini_cli(server_url)
-        _configure_codex(server_url)
-        _configure_copilot(server_url)
-        _configure_opencode(server_url)
-        _post_auth_onboarding()
-
-    except httpx.HTTPStatusError as e:
-        detail = ""
-        try:
-            detail = e.response.json().get("detail", e.response.text)
-        except Exception:
-            detail = e.response.text
-        rprint(f"[red]Registration failed:[/red] {detail}")
-        raise typer.Exit(1)
-    except httpx.ConnectError:
-        rprint(f"[red]Connection failed.[/red] Is the server running at {server_url}?")
-        raise typer.Exit(1)
+def register():
+    """[Removed] Users are created by admins. Use 'observal auth login' instead."""
+    rprint("[yellow]'observal auth register' has been removed.[/yellow]")
+    rprint()
+    rprint("Users are created by admins in the web UI (Users page).")
+    rprint("Use [bold]observal auth login[/bold] to sign in with your credentials.")
+    raise typer.Exit(1)
 
 
 @auth_app.command()
@@ -363,7 +310,7 @@ def _fetch_server_public_key(server_url: str):
 
 
 def _do_password_login(server_url: str, email: str, password: str):
-    """Authenticate with email + password."""
+    """Authenticate with email/username + password."""
     try:
         with spinner("Authenticating..."):
             r = httpx.post(
@@ -375,6 +322,28 @@ def _do_password_login(server_url: str, email: str, password: str):
             data = r.json()
 
         user = data["user"]
+
+        if data.get("must_change_password"):
+            rprint("[yellow]Your admin has required a password change.[/yellow]\n")
+            access_token = data["access_token"]
+            new_pw = typer.prompt("New password", hide_input=True)
+            confirm = typer.prompt("Confirm new password", hide_input=True)
+            if new_pw != confirm:
+                rprint("[red]Passwords do not match.[/red]")
+                raise typer.Exit(1)
+            if len(new_pw) < 8:
+                rprint("[red]Password must be at least 8 characters.[/red]")
+                raise typer.Exit(1)
+            with spinner("Changing password..."):
+                cr = httpx.put(
+                    f"{server_url}/api/v1/auth/profile/password",
+                    json={"current_password": password, "new_password": new_pw},
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=30,
+                )
+                cr.raise_for_status()
+            rprint("[green]Password changed.[/green]\n")
+
         endpoints = _fetch_endpoints(server_url)
         cfg_data = {
             "server_url": server_url,

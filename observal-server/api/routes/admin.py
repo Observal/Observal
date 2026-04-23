@@ -5,6 +5,7 @@ import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from redis.exceptions import RedisError
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -346,6 +347,15 @@ async def reset_user_password(
 
     user.set_password(new_password)
     await db.commit()
+
+    try:
+        from services.redis import get_redis
+
+        redis = get_redis()
+        await redis.setex(f"must_change_password:{user.id}", 86400, "1")
+    except (RedisError, Exception):
+        pass
+
     await emit_security_event(
         SecurityEvent(
             event_type=EventType.ADMIN_PASSWORD_RESET,
@@ -371,6 +381,7 @@ async def reset_user_password(
     resp: dict[str, str] = {"message": f"Password reset for {user.email}"}
     if req.generate:
         resp["generated_password"] = new_password
+        resp["must_change_password"] = "true"
     return resp
 
 

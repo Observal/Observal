@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Users, Plus, Copy, Check, Loader2, Key, Trash2 } from "lucide-react";
+import { Users, Plus, Copy, Check, Loader2, Key, Trash2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
-import { useAdminUsers, useCreateUser, useUpdateUserRole, useDeleteUser } from "@/hooks/use-api";
+import { useAdminUsers, useCreateUser, useUpdateUserRole, useDeleteUser, useResetPassword } from "@/hooks/use-api";
 import type { AdminUser } from "@/lib/types";
 import { copyToClipboard } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -62,15 +62,19 @@ export default function UsersPage() {
   const { data: users, isLoading, isError, error, refetch } = useAdminUsers();
   const createUser = useCreateUser();
   const deleteUser = useDeleteUser();
+  const resetPassword = useResetPassword();
   const assignableRoles = useAssignableRoles();
   const { ssoOnly } = useDeploymentConfig();
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [resetResult, setResetResult] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<string>("user");
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [resetCopied, setResetCopied] = useState(false);
 
   const handleCreate = useCallback(async () => {
     if (!name.trim() || !email.trim()) return;
@@ -94,6 +98,23 @@ export default function UsersPage() {
     toast.success("Password copied");
     setTimeout(() => setCopied(false), 2000);
   }, [createdPassword]);
+
+  const handleResetPassword = useCallback((user: AdminUser) => {
+    resetPassword.mutate(user.id, {
+      onSuccess: (data) => {
+        setResetResult(data.generated_password ?? null);
+        toast.success(`Password reset for ${user.email}`);
+      },
+    });
+  }, [resetPassword]);
+
+  const handleCopyResetPassword = useCallback(() => {
+    if (!resetResult) return;
+    copyToClipboard(resetResult);
+    setResetCopied(true);
+    toast.success("Password copied");
+    setTimeout(() => setResetCopied(false), 2000);
+  }, [resetResult]);
 
   const closeDialog = useCallback(() => {
     setShowCreate(false);
@@ -165,7 +186,18 @@ export default function UsersPage() {
                       <TableCell className="py-1.5 text-xs text-muted-foreground text-right tabular-nums">
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}
                       </TableCell>
-                      <TableCell className="py-1.5 text-right">
+                      <TableCell className="py-1.5 text-right space-x-1">
+                        {!ssoOnly && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            title="Reset password"
+                            onClick={() => setResetTarget(u)}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -269,6 +301,57 @@ export default function UsersPage() {
                 </Button>
               </DialogFooter>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={!!resetTarget} onOpenChange={(open) => { if (!open) { setResetTarget(null); setResetResult(null); setResetCopied(false); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{resetResult ? "Password Reset" : "Reset Password"}</DialogTitle>
+            <DialogDescription>
+              {resetResult
+                ? "Save this temporary password. The user will be required to change it on next login."
+                : <>Generate a temporary password for <strong>{resetTarget?.name}</strong> ({resetTarget?.email}). They will be required to change it on next login.</>}
+            </DialogDescription>
+          </DialogHeader>
+
+          {resetResult ? (
+            <div className="space-y-4">
+              <div className="rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Key className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Temporary Password</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs font-[family-name:var(--font-mono)] text-foreground break-all flex-1 select-all">
+                    {resetResult}
+                  </code>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleCopyResetPassword}>
+                    {resetCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button size="sm" onClick={() => { setResetTarget(null); setResetResult(null); setResetCopied(false); }}>Done</Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <DialogFooter>
+              <Button variant="ghost" size="sm" onClick={() => setResetTarget(null)}>Cancel</Button>
+              <Button
+                size="sm"
+                onClick={() => { if (resetTarget) handleResetPassword(resetTarget); }}
+                disabled={resetPassword.isPending}
+              >
+                {resetPassword.isPending ? (
+                  <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Resetting...</>
+                ) : (
+                  "Reset Password"
+                )}
+              </Button>
+            </DialogFooter>
           )}
         </DialogContent>
       </Dialog>

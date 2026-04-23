@@ -282,6 +282,15 @@ export function useDeleteUser() {
   });
 }
 
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: (id: string) => admin.resetPassword(id, { generate: true }),
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to reset password");
+    },
+  });
+}
+
 export function useAdminSettings() {
   return useQuery({ queryKey: ["admin", "settings"], queryFn: admin.settings });
 }

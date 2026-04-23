@@ -213,15 +213,15 @@ type AuthResponse = {
 export const auth = {
   init: (body: { email: string; name: string; password?: string }) =>
     post<AuthResponse>("/auth/init", body),
-  register: (body: { email: string; name: string; password: string }) =>
-    post<AuthResponse>("/auth/register", body),
   login: (body: { email: string; password: string }) =>
-    post<AuthResponse>("/auth/login", body),
+    post<AuthResponse & { must_change_password?: boolean }>("/auth/login", body),
   whoami: () => get<{ id: string; email: string; username?: string | null; name: string; role: string }>("/auth/whoami"),
   exchangeCode: (body: { code: string }) =>
     post<AuthResponse>("/auth/exchange", body),
   deviceConfirm: (userCode: string) =>
     post<{ message: string }>("/auth/device/confirm", { user_code: userCode }),
+  changePassword: (body: { current_password: string; new_password: string }) =>
+    put<{ message: string }>("/auth/profile/password", body),
 };
 
 // ── Registry (all 8 types) ─────────────────────────────────────────
@@ -381,8 +381,8 @@ export const admin = {
     post<{ id: string; email: string; name: string; role: string; password: string }>("/admin/users", body),
   updateRole: (id: string, body: { role: string }) =>
     put<AdminUser>(`/admin/users/${id}/role`, body),
-  resetPassword: (id: string, body: { new_password: string }) =>
-    put<{ message: string }>(`/admin/users/${id}/password`, body),
+  resetPassword: (id: string, body: { new_password?: string; generate?: boolean }) =>
+    put<{ message: string; generated_password?: string; must_change_password?: string }>(`/admin/users/${id}/password`, body),
   deleteUser: (id: string) => del(`/admin/users/${id}`),
   applyResources: () =>
     post<{ applied: Record<string, string>; message: string }>("/admin/resources/apply", {}),

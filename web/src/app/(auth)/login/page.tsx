@@ -10,20 +10,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type Mode = "login" | "register";
-
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { ssoEnabled, ssoOnly, samlEnabled } = useDeploymentConfig();
-  const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -34,12 +34,10 @@ function LoginContent() {
   }, [router]);
 
   useEffect(() => {
-    // Handle one-time auth code from OAuth callback
     const ssoCode = searchParams.get("code");
 
     if (ssoCode) {
       setLoading(true);
-      // Strip the code from the URL immediately to prevent leakage
       window.history.replaceState({}, "", "/login");
 
       fetch("/api/v1/auth/exchange", {
@@ -67,7 +65,7 @@ function LoginContent() {
         .catch((err) => {
           const msg = err instanceof Error ? err.message : "SSO sign-in failed";
           setError(msg);
-          toast.error("SSO sign-in failed — the code may have expired. Please try again.");
+          toast.error("SSO sign-in failed -- the code may have expired. Please try again.");
           setLoading(false);
         });
     } else if (searchParams.get("error")) {
@@ -75,7 +73,6 @@ function LoginContent() {
     }
   }, [searchParams, router]);
 
-  // Show toast when redirected due to session expiry
   useEffect(() => {
     const reason = searchParams.get("reason");
     if (reason === "session_expired") {
@@ -84,23 +81,19 @@ function LoginContent() {
     }
   }, [searchParams]);
 
-  // In enterprise mode, force login mode (SSO only)
-  useEffect(() => {
-    if (ssoOnly && mode !== "login") {
-      setMode("login");
-    }
-  }, [ssoOnly, mode]);
-
-  function switchMode(next: Mode) {
-    setMode(next);
-    setError("");
-  }
-
   async function handlePasswordLogin() {
     setError("");
     setLoading(true);
     try {
       const res = await auth.login({ email, password });
+
+      if (res.must_change_password) {
+        setTokens(res.access_token, res.refresh_token);
+        setMustChangePassword(true);
+        setLoading(false);
+        return;
+      }
+
       setTokens(res.access_token, res.refresh_token);
       setUserRole(res.user.role);
       setUserName(res.user.name);
@@ -116,19 +109,27 @@ function LoginContent() {
     }
   }
 
-  async function handleRegister() {
+  async function handleChangePassword() {
     setError("");
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
     setLoading(true);
     try {
-      const res = await auth.register({ email, name, password });
-      setTokens(res.access_token, res.refresh_token);
-      setUserRole(res.user.role);
-      setUserName(res.user.name);
-      setUserEmail(res.user.email);
-      toast.success("Account created");
+      await auth.changePassword({ current_password: password, new_password: newPassword });
+      toast.success("Password changed successfully");
+      const res = await auth.whoami();
+      setUserRole(res.role);
+      setUserName(res.name);
+      setUserEmail(res.email);
       router.push("/");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Registration failed";
+      const msg = e instanceof Error ? e.message : "Failed to change password";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -138,71 +139,132 @@ function LoginContent() {
 
   function handleSsoLogin() {
     setSsoLoading(true);
-    // Redirects to backend SSO endpoint which initializes OAuth flow
     window.location.href = "/api/v1/auth/oauth/login";
   }
 
-  const onSubmit = mode === "login" ? handlePasswordLogin : handleRegister;
+  if (mustChangePassword) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
+        <div className="w-full max-w-md">
+          <div className="rounded-lg border bg-card shadow-sm">
+            <div className="flex flex-col items-center gap-2 border-b px-8 pb-6 pt-8 animate-in">
+              <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
+                Observal
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                You must change your password before continuing
+              </p>
+            </div>
+            <div className="px-8 py-6">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleChangePassword();
+                }}
+                className="space-y-4"
+              >
+                <div className="space-y-2 animate-in">
+                  <Label htmlFor="new-password">New Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="new-password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter new password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      autoFocus
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2 animate-in stagger-1">
+                  <Label htmlFor="confirm-password">Confirm Password</Label>
+                  <Input
+                    id="confirm-password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Confirm new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {error && (
+                  <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2.5 text-sm text-destructive animate-in">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <Button type="submit" disabled={loading} className="w-full">
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      Change Password
+                      <ArrowRight className="ml-1 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
       <div className="w-full max-w-md">
         <div className="rounded-lg border bg-card shadow-sm">
-          {/* Brand header */}
           <div className="flex flex-col items-center gap-2 border-b px-8 pb-6 pt-8 animate-in">
             <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
               Observal
             </h1>
             <p className="text-sm text-muted-foreground">
-              {mode === "register"
-                ? "Create your account"
-                : "Sign in to your account"}
+              Sign in to your account
             </p>
           </div>
 
-          {/* Form */}
           <div className="px-8 py-6">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                onSubmit();
+                handlePasswordLogin();
               }}
               className="space-y-4"
             >
-              {/* Email + Password mode (login & register) — hidden in enterprise mode */}
-              {(mode === "login" || mode === "register") && !ssoOnly && (
+              {!ssoOnly && (
                 <>
                   <div className="space-y-2 animate-in">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email">Email or username</Label>
                     <Input
                       id="email"
-                      type="email"
-                      placeholder="you@company.com"
+                      type="text"
+                      placeholder="you@company.com or username"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       autoFocus
                     />
                   </div>
-                  {mode === "register" && (
-                    <div className="space-y-2 animate-in stagger-1">
-                      <Label htmlFor="name">Name</Label>
-                      <Input
-                        id="name"
-                        placeholder="Your Name"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        required
-                      />
-                    </div>
-                  )}
                   <div className="space-y-2 animate-in stagger-1">
                     <Label htmlFor="password">Password</Label>
                     <div className="relative">
                       <Input
                         id="password"
                         type={showPassword ? "text" : "password"}
-                        placeholder={mode === "register" ? "Create a password" : "Enter password"}
+                        placeholder="Enter password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
@@ -221,7 +283,6 @@ function LoginContent() {
                 </>
               )}
 
-              {/* Error */}
               {error && (
                 <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2.5 text-sm text-destructive animate-in">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -229,23 +290,21 @@ function LoginContent() {
                 </div>
               )}
 
-              {/* Submit */}
               <div className="animate-in stagger-2 space-y-3">
-                {/* In enterprise mode, hide all non-SSO submit buttons */}
                 {!ssoOnly && (
                   <Button type="submit" disabled={loading || ssoLoading} className="w-full">
                     {loading && !ssoLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
-                        {mode === "register" ? "Create Account" : "Sign in"}
+                        Sign in
                         <ArrowRight className="ml-1 h-4 w-4" />
                       </>
                     )}
                   </Button>
                 )}
 
-                {mode === "login" && !ssoOnly && (
+                {!ssoOnly && (ssoEnabled || samlEnabled) && (
                   <div className="relative py-2">
                     <div className="absolute inset-0 flex items-center">
                       <span className="w-full border-t" />
@@ -256,7 +315,7 @@ function LoginContent() {
                   </div>
                 )}
 
-                {mode === "login" && (ssoOnly || ssoEnabled) && (
+                {(ssoOnly || ssoEnabled) && (
                   <Button
                     type="button"
                     variant={ssoOnly ? "default" : "outline"}
@@ -273,7 +332,7 @@ function LoginContent() {
                   </Button>
                 )}
 
-                {mode === "login" && samlEnabled && (
+                {samlEnabled && (
                   <Button
                     type="button"
                     variant={ssoOnly ? "default" : "outline"}
@@ -292,32 +351,13 @@ function LoginContent() {
                 )}
               </div>
 
-              {/* Mode switches */}
-              <div className="animate-in stagger-3 space-y-2 text-center">
-                {mode === "login" && !ssoOnly && (
-                  <>
-                    <p className="text-sm text-muted-foreground/60">
-                      Forgot password? Contact your admin.
-                    </p>
-                    <button
-                      type="button"
-                      className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
-                      onClick={() => switchMode("register")}
-                    >
-                      Don&apos;t have an account? Register
-                    </button>
-                  </>
-                )}
-                {mode === "register" && !ssoOnly && (
-                  <button
-                    type="button"
-                    className="block w-full text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    onClick={() => switchMode("login")}
-                  >
-                    Already have an account? Sign in
-                  </button>
-                )}
-              </div>
+              {!ssoOnly && (
+                <div className="animate-in stagger-3 text-center">
+                  <p className="text-sm text-muted-foreground/60">
+                    Forgot password? Contact your admin.
+                  </p>
+                </div>
+              )}
             </form>
           </div>
         </div>
