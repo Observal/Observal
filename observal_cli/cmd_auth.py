@@ -35,11 +35,13 @@ def login(
     email: str = typer.Option(None, "--email", "-e", help="Email"),
     password: str = typer.Option(None, "--password", "-p", help="Password"),
     name: str = typer.Option(None, "--name", "-n", help="Your name (used with register)"),
+    sso: bool = typer.Option(False, "--sso", help="Authenticate via browser SSO"),
 ):
     """Connect to Observal.
 
     On a fresh server: prompts for email, name, and password to create admin.
     With email+password: logs in with credentials.
+    With --sso: authenticates via browser-based SSO using the device flow.
     """
     welcome_banner()
     server_url = server or typer.prompt("Server URL", default="http://localhost:8000")
@@ -122,12 +124,39 @@ def login(
 
     rprint("[green]Connected.[/green]\n")
 
-    # 3. Email+password provided via flags → password login
+    # 3. Check if we should use device flow (SSO)
+    sso_mode = False
+    sso_available = False
+    try:
+        config_r = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
+        if config_r.status_code == 200:
+            pub_config = config_r.json()
+            sso_available = pub_config.get("sso_enabled") or pub_config.get("saml_enabled")
+            sso_only = pub_config.get("sso_only", False)
+            # Use device flow if --sso flag passed, or if sso_only mode (no password option)
+            if sso or sso_only:
+                sso_mode = True
+    except Exception:
+        pass
+
+    # If SSO available but not required, offer a choice (unless flags already decide)
+    if sso_available and not sso_mode and not (email or password):
+        rprint("  [1] Email + password")
+        rprint("  [2] SSO (opens browser)")
+        choice = typer.prompt("Login method", default="1")
+        if choice == "2":
+            sso_mode = True
+
+    if sso_mode:
+        _do_device_flow_login(server_url)
+        return
+
+    # 4. Email+password provided via flags -> password login
     if email and password:
         _do_password_login(server_url, email, password)
         return
 
-    # 4. Interactive: prompt for email + password
+    # 5. Interactive: prompt for email + password
     login_email = email or typer.prompt("Email")
     login_password = password or typer.prompt("Password", hide_input=True)
     _do_password_login(server_url, login_email, login_password)
@@ -379,6 +408,132 @@ def _do_password_login(server_url: str, email: str, password: str):
             detail = e.response.text
         rprint(f"[red]Login failed:[/red] {detail}")
         raise typer.Exit(1)
+
+
+def _do_device_flow_login(server_url: str):
+    """Authenticate via browser-based SSO using the device authorization flow."""
+    import time
+    import webbrowser
+
+    # 1. Request device authorization
+    try:
+        with spinner("Requesting device authorization..."):
+            r = httpx.post(
+                f"{server_url}/api/v1/auth/device/authorize",
+                json={},
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPStatusError as e:
+        rprint(f"[red]Device authorization failed ({e.response.status_code}):[/red] {e.response.text}")
+        raise typer.Exit(1)
+
+    device_code = data["device_code"]
+    user_code = data["user_code"]
+    verification_uri = data["verification_uri"]
+    verification_uri_complete = data["verification_uri_complete"]
+    expires_in = data["expires_in"]
+    interval = data.get("interval", 5)
+
+    # 2. Display instructions
+    rprint()
+    rprint("[bold]To sign in, open this URL in your browser:[/bold]")
+    rprint()
+    rprint(f"  [link={verification_uri_complete}]{verification_uri}[/link]")
+    rprint()
+    rprint(f"  Then enter code: [bold cyan]{user_code}[/bold cyan]")
+    rprint()
+
+    # Try to open browser automatically
+    try:
+        webbrowser.open(verification_uri_complete)
+        rprint("[dim]Browser opened automatically.[/dim]")
+    except Exception:
+        rprint("[dim]Could not open browser automatically. Please open the URL manually.[/dim]")
+
+    rprint()
+    rprint("[dim]Waiting for authorization...[/dim]", end="")
+
+    # 3. Poll for token
+    deadline = time.monotonic() + expires_in
+    while time.monotonic() < deadline:
+        time.sleep(interval)
+        try:
+            r = httpx.post(
+                f"{server_url}/api/v1/auth/device/token",
+                json={
+                    "device_code": device_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                },
+                timeout=10,
+            )
+
+            if r.status_code == 200:
+                # Success!
+                token_data = r.json()
+                rprint(" [green]authorized![/green]")
+                rprint()
+
+                user = token_data.get("user", {})
+                endpoints = _fetch_endpoints(server_url)
+                cfg_data = {
+                    "server_url": server_url,
+                    "access_token": token_data["access_token"],
+                    "refresh_token": token_data["refresh_token"],
+                    "user_id": user.get("id", ""),
+                    "user_name": user.get("name", ""),
+                }
+                if endpoints:
+                    cfg_data["otlp_http_url"] = endpoints.get("otlp_http", "")
+                    cfg_data["otlp_grpc_url"] = endpoints.get("otlp_grpc", "")
+                    cfg_data["web_url"] = endpoints.get("web", "")
+                config.save(cfg_data)
+
+                rprint(
+                    f"[green]Logged in as {user.get('name', 'unknown')}[/green]"
+                    f" ({user.get('email', '')}) [{user.get('role', '')}]"
+                )
+                rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
+
+                _fetch_server_public_key(server_url)
+                _configure_claude_code(server_url, token_data["access_token"])
+                _configure_kiro(server_url)
+                _configure_gemini_cli(server_url)
+                _configure_codex(server_url)
+                _configure_copilot(server_url)
+                _configure_opencode(server_url)
+                _post_auth_onboarding()
+                return
+
+            if r.status_code == 428:
+                # Still pending, keep polling
+                rprint(".", end="", flush=True)
+                continue
+
+            # Error response
+            error_data = r.json()
+            error = error_data.get("error", "unknown_error")
+            if error == "expired_token":
+                rprint(" [red]expired[/red]")
+                rprint("[red]Device code expired. Please try again.[/red]")
+                raise typer.Exit(1)
+            elif error == "access_denied":
+                rprint(" [red]denied[/red]")
+                rprint("[red]Authorization was denied.[/red]")
+                raise typer.Exit(1)
+            else:
+                rprint(f" [red]error: {error}[/red]")
+                raise typer.Exit(1)
+
+        except httpx.RequestError:
+            # Network error, keep trying
+            rprint(".", end="", flush=True)
+            continue
+
+    rprint(" [red]timed out[/red]")
+    rprint("[red]Authorization timed out. Please try again.[/red]")
+    raise typer.Exit(1)
 
 
 def register_config(app: typer.Typer):

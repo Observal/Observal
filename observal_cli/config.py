@@ -34,6 +34,9 @@ def load() -> dict:
     # Backward compat: OBSERVAL_API_KEY env var maps to access_token
     if env_key := os.environ.get("OBSERVAL_API_KEY"):
         cfg["access_token"] = env_key
+    # CI/CD convenience: OBSERVAL_TOKEN env var (e.g. from SSO service tokens)
+    if env_ci_token := os.environ.get("OBSERVAL_TOKEN"):
+        cfg["access_token"] = env_ci_token
 
     return cfg
 
@@ -76,7 +79,7 @@ def get_or_exit() -> dict:
         from rich import print as rprint
 
         rprint(
-            "[red]Not configured.[/red] Run [bold]observal auth login[/bold] or set the [bold]OBSERVAL_ACCESS_TOKEN[/bold] environment variable."
+            "[red]Not configured.[/red] Run [bold]observal auth login[/bold] or set the [bold]OBSERVAL_TOKEN[/bold] / [bold]OBSERVAL_ACCESS_TOKEN[/bold] environment variable."
         )
         raise typer.Exit(1)
     return cfg
