@@ -6,11 +6,13 @@ Maps between SCIM Core User schema (RFC 7643) and our User model.
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any
 
 SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
 SCIM_LIST_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 SCIM_ERROR_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:Error"
+SCIM_PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 
 
 def hash_scim_token(token: str) -> str:
@@ -90,3 +92,38 @@ def format_scim_error(status: int, detail: str) -> dict[str, Any]:
         "status": str(status),
         "detail": detail,
     }
+
+
+SUPPORTED_FILTER_OPS = {"eq", "ne", "sw", "co"}
+_FILTER_RE = re.compile(
+    r'^(\w+(?:\.\w+)?)\s+(eq|ne|sw|co)\s+"([^"]*)"$',
+    re.IGNORECASE,
+)
+
+MAX_SCIM_PAGE_SIZE = 500
+
+
+class ScimFilter:
+    """Parsed SCIM filter expression."""
+
+    def __init__(self, attr: str, op: str, value: str):
+        self.attr = attr.lower()
+        self.op = op.lower()
+        self.value = value
+
+
+def parse_scim_filter(raw: str) -> ScimFilter | None:
+    """Parse a simple SCIM filter expression. Returns None if unparseable."""
+    if not raw or not raw.strip():
+        return None
+    m = _FILTER_RE.match(raw.strip())
+    if not m:
+        return None
+    return ScimFilter(attr=m.group(1), op=m.group(2), value=m.group(3))
+
+
+def validate_scim_pagination(start_index: int, count: int) -> tuple[int, int]:
+    """Clamp SCIM pagination params to safe values."""
+    start_index = max(1, start_index)
+    count = max(0, min(count, MAX_SCIM_PAGE_SIZE))
+    return start_index, count
