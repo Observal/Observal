@@ -404,10 +404,7 @@ async def saml_sls(request: Request, db: AsyncSession = Depends(get_db)):
         logger.warning("SAML SLO failed: %s", errors)
 
     login_url = f"{settings.FRONTEND_URL}/login"
-    if url and url.startswith(settings.FRONTEND_URL):
-        redirect_target = url
-    else:
-        redirect_target = login_url
+    redirect_target = url if url and url.startswith(settings.FRONTEND_URL) else login_url
     return RedirectResponse(url=redirect_target, status_code=302)
 
 
