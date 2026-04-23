@@ -427,14 +427,14 @@ function AgentListContent() {
   const qc = useQueryClient();
 
   const drafts = useMemo(() => {
-    return (myAgents ?? []).filter((a) => a.status === "draft");
+    return (myAgents ?? []).filter((a) => a.status === "draft" || a.status === "rejected");
   }, [myAgents]);
 
   const { filtered, pendingCount } = useMemo(() => {
     const active = agents ?? [];
     const activeIds = new Set(active.map((a) => a.id));
     const pending = (myAgents ?? []).filter(
-      (a) => a.status !== "active" && a.status !== "draft" && !activeIds.has(a.id),
+      (a) => a.status !== "active" && a.status !== "draft" && a.status !== "rejected" && !activeIds.has(a.id),
     );
     return { filtered: [...pending, ...active], pendingCount: pending.length };
   }, [agents, myAgents]);
@@ -529,7 +529,7 @@ function AgentListContent() {
               ) : (
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               )}
-              My Drafts
+              My Drafts & Rejected
               <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
                 {drafts.length}
               </span>
@@ -539,7 +539,15 @@ function AgentListContent() {
                 {drafts.map((draft) => (
                   <div key={draft.id} className="flex items-center gap-4 px-4 py-3">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{draft.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-medium">{draft.name}</p>
+                        {draft.status === "rejected" && <StatusBadge status="rejected" />}
+                      </div>
+                      {draft.status === "rejected" && draft.rejection_reason && (
+                        <p className="text-xs text-destructive mt-0.5">
+                          Reason: {draft.rejection_reason as string}
+                        </p>
+                      )}
                       {draft.description && (
                         <p className="truncate text-xs text-muted-foreground mt-0.5">
                           {draft.description}
@@ -569,7 +577,7 @@ function AgentListContent() {
                         onClick={() => submitDraft.mutate(draft.id)}
                       >
                         <Send className="mr-1 h-3 w-3" />
-                        Submit for Review
+                        {draft.status === "rejected" ? "Resubmit" : "Submit for Review"}
                       </Button>
                       <Button
                         variant="ghost"

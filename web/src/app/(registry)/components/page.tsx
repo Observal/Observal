@@ -14,6 +14,7 @@ import {
   Plus,
   Send,
   Trash2,
+  FileEdit,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import {
   useComponentSubmit,
   useComponentSaveDraft,
   useComponentSubmitDraft,
+  useComponentUpdateDraft,
   useComponentDelete,
 } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
@@ -157,6 +159,7 @@ export default function ComponentsPage() {
   const [view, setView] = useState<ViewMode>("table");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [editItem, setEditItem] = useState<RegistryItem | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
@@ -182,6 +185,7 @@ export default function ComponentsPage() {
   const submitMutation = useComponentSubmit(activeType);
   const saveDraftMutation = useComponentSaveDraft(activeType);
   const submitDraftMutation = useComponentSubmitDraft(activeType);
+  const updateDraftMutation = useComponentUpdateDraft(activeType);
   const deleteMutation = useComponentDelete(activeType);
 
   const items = useMemo(() => data ?? [], [data]);
@@ -227,7 +231,7 @@ export default function ComponentsPage() {
             />
           </div>
           {authReady && role && (
-            <Button size="sm" className="h-9" onClick={() => setSubmitOpen(true)}>
+            <Button size="sm" className="h-9" onClick={() => { setEditItem(null); setSubmitOpen(true); }}>
               <Plus className="h-4 w-4 mr-1.5" />
               Create
             </Button>
@@ -393,17 +397,28 @@ export default function ComponentsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {item.status === "draft" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => submitDraftMutation.mutate(item.id)}
-                        disabled={submitDraftMutation.isPending}
-                      >
-                        <Send className="h-3 w-3 mr-1" />
-                        Submit
-                      </Button>
+                    {(item.status === "draft" || item.status === "rejected") && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => { setEditItem(item); setSubmitOpen(true); }}
+                        >
+                          <FileEdit className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => submitDraftMutation.mutate(item.id)}
+                          disabled={submitDraftMutation.isPending}
+                        >
+                          <Send className="h-3 w-3 mr-1" />
+                          {item.status === "rejected" ? "Resubmit" : "Submit"}
+                        </Button>
+                      </>
                     )}
                     <Button
                       variant="ghost"
@@ -423,21 +438,34 @@ export default function ComponentsPage() {
       </div>
 
       <SubmitComponentDialog
+        key={editItem?.id ?? "new"}
         open={submitOpen}
-        onOpenChange={setSubmitOpen}
+        onOpenChange={(v) => { setSubmitOpen(v); if (!v) setEditItem(null); }}
         type={activeType}
+        editItem={editItem as Record<string, unknown> | null}
         onSubmit={(body) => {
-          submitMutation.mutate(body, {
-            onSuccess: () => setSubmitOpen(false),
-          });
+          if (editItem) {
+            submitDraftMutation.mutate(editItem.id, {
+              onSuccess: () => { setSubmitOpen(false); setEditItem(null); },
+            });
+          } else {
+            submitMutation.mutate(body, {
+              onSuccess: () => setSubmitOpen(false),
+            });
+          }
         }}
         onSaveDraft={(body) => {
           saveDraftMutation.mutate(body, {
             onSuccess: () => setSubmitOpen(false),
           });
         }}
-        isSubmitting={submitMutation.isPending}
-        isSavingDraft={saveDraftMutation.isPending}
+        onUpdateDraft={(id, body) => {
+          updateDraftMutation.mutate({ id, body }, {
+            onSuccess: () => { setSubmitOpen(false); setEditItem(null); },
+          });
+        }}
+        isSubmitting={submitMutation.isPending || submitDraftMutation.isPending}
+        isSavingDraft={saveDraftMutation.isPending || updateDraftMutation.isPending}
       />
     </>
   );

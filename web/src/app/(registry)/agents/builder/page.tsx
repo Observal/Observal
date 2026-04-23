@@ -728,9 +728,16 @@ function AgentBuilderInner() {
     setPublishing(true);
     try {
       const body = buildRequestBody();
-      const created = await registry.create("agents", body);
-      toast.success("Agent submitted for review. An admin must approve it before it becomes visible.");
-      router.push(`/agents/${created.id}`);
+      if (draftId) {
+        await updateDraft.mutateAsync({ id: draftId, body });
+        await registry.submitDraft(draftId);
+        toast.success("Agent resubmitted for review.");
+        router.push(`/agents/${draftId}`);
+      } else {
+        const created = await registry.create("agents", body);
+        toast.success("Agent submitted for review. An admin must approve it before it becomes visible.");
+        router.push(`/agents/${created.id}`);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to publish agent";
       toast.error(msg);
