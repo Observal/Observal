@@ -12,11 +12,14 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.x509.oid import NameOID
 
 logger = logging.getLogger("observal.ee.saml")
 
-_ENCRYPTION_PREFIX = "enc:aesgcm:"
+_ENCRYPTION_PREFIX_LEGACY = "enc:aesgcm:"
+_ENCRYPTION_PREFIX = "enc:aesgcm:v2:"
+_PBKDF2_ITERATIONS = 600_000
 
 
 def generate_sp_key_pair(
@@ -50,33 +53,58 @@ def generate_sp_key_pair(
     return private_key_pem, cert_pem
 
 
+def _derive_key(password: str, salt: bytes) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=_PBKDF2_ITERATIONS,
+    )
+    return kdf.derive(password.encode())
+
+
 def encrypt_private_key(private_key_pem: str, password: str) -> str:
     if not password:
         return private_key_pem
-    h = hashes.Hash(hashes.SHA256())
-    h.update(password.encode())
-    aes_key = h.finalize()
+    salt = os.urandom(16)
+    aes_key = _derive_key(password, salt)
     aesgcm = AESGCM(aes_key)
     nonce = os.urandom(12)
     ciphertext = aesgcm.encrypt(nonce, private_key_pem.encode(), None)
-    payload = nonce + ciphertext
+    payload = salt + nonce + ciphertext
     return _ENCRYPTION_PREFIX + base64.b64encode(payload).decode()
 
 
-def decrypt_private_key(encrypted: str, password: str) -> str:
-    if not encrypted.startswith(_ENCRYPTION_PREFIX):
-        return encrypted
-    if not password:
-        return encrypted
-    payload = base64.b64decode(encrypted[len(_ENCRYPTION_PREFIX) :])
+def _decrypt_legacy(encrypted: str, password: str) -> str:
+    """Decrypt keys encrypted with the v1 format (plain SHA-256 KDF)."""
+    payload = base64.b64decode(encrypted[len(_ENCRYPTION_PREFIX_LEGACY) :])
     nonce = payload[:12]
     ciphertext = payload[12:]
     h = hashes.Hash(hashes.SHA256())
     h.update(password.encode())
     aes_key = h.finalize()
     aesgcm = AESGCM(aes_key)
-    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-    return plaintext.decode()
+    return aesgcm.decrypt(nonce, ciphertext, None).decode()
+
+
+def decrypt_private_key(encrypted: str, password: str) -> str:
+    if encrypted.startswith(_ENCRYPTION_PREFIX):
+        if not password:
+            return encrypted
+        payload = base64.b64decode(encrypted[len(_ENCRYPTION_PREFIX) :])
+        salt = payload[:16]
+        nonce = payload[16:28]
+        ciphertext = payload[28:]
+        aes_key = _derive_key(password, salt)
+        aesgcm = AESGCM(aes_key)
+        return aesgcm.decrypt(nonce, ciphertext, None).decode()
+
+    if encrypted.startswith(_ENCRYPTION_PREFIX_LEGACY):
+        if not password:
+            return encrypted
+        return _decrypt_legacy(encrypted, password)
+
+    return encrypted
 
 
 def build_saml_settings(
