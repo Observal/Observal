@@ -743,7 +743,12 @@ def _auto_shim_home_config(config_path: Path, ide: str):
 
 
 def inject_gemini_telemetry(otlp_endpoint: str) -> bool:
-    """Inject Observal OTLP telemetry settings into ~/.gemini/settings.json.
+    """Disable Gemini CLI's native OTLP telemetry (uses gRPC, incompatible).
+
+    Gemini CLI hardcodes GrpcExporterTransport which can't connect to
+    Observal's HTTP/JSON OTLP endpoint. Telemetry is captured via the
+    hook bridge instead. This disables native OTLP to suppress gRPC
+    error noise.
 
     Non-destructive: preserves all existing keys, only updates the `telemetry`
     block. Creates a timestamped backup before any write.
@@ -759,10 +764,11 @@ def inject_gemini_telemetry(otlp_endpoint: str) -> bool:
     if not isinstance(telemetry, dict):
         telemetry = {}
 
+    # Disable native OTLP (gRPC-only, can't reach Observal HTTP endpoint).
+    # Keep logPrompts=true so hook payloads include prompt content.
     needs_update = (
-        not telemetry.get("enabled")
-        or telemetry.get("target") != "custom"
-        or telemetry.get("otlpEndpoint") != otlp_endpoint
+        telemetry.get("enabled") is not False
+        or telemetry.get("logPrompts") is not True
     )
 
     if not needs_update:
@@ -771,10 +777,11 @@ def inject_gemini_telemetry(otlp_endpoint: str) -> bool:
     if gemini_settings.exists():
         _backup_config(gemini_settings)
     gemini_data.setdefault("telemetry", {})
-    gemini_data["telemetry"]["enabled"] = True
-    gemini_data["telemetry"]["target"] = "custom"
-    gemini_data["telemetry"]["otlpEndpoint"] = otlp_endpoint
+    gemini_data["telemetry"]["enabled"] = False
     gemini_data["telemetry"]["logPrompts"] = True
+    # Remove stale OTLP fields that would only apply if native OTLP worked
+    gemini_data["telemetry"].pop("target", None)
+    gemini_data["telemetry"].pop("otlpEndpoint", None)
     gemini_settings.parent.mkdir(parents=True, exist_ok=True)
     gemini_settings.write_text(json.dumps(gemini_data, indent=2) + "\n")
     return True
@@ -994,9 +1001,11 @@ def register_scan(app: typer.Typer):
 
             total = len(all_mcps) + len(all_skills) + len(all_hooks) + len(all_agents)
 
-        if total == 0:
+        if total == 0 and not home:
             rprint("[yellow]No components found.[/yellow]")
             raise typer.Exit(1)
+        elif total == 0:
+            rprint("[dim]No MCP/skill/hook components found, but configuring IDE telemetry...[/dim]")
 
         # ── Display discovery results ───────────────
         rprint(f"\n[bold]Discovered {total} components[/bold]\n")
@@ -1052,7 +1061,7 @@ def register_scan(app: typer.Typer):
             )
             return
 
-        if not yes and not typer.confirm("Instrument these components for telemetry?"):
+        if total > 0 and not yes and not typer.confirm("Instrument these components for telemetry?"):
             raise typer.Abort()
 
         # ── Optionally shim project MCP configs ─────
@@ -1357,14 +1366,94 @@ def register_scan(app: typer.Typer):
             try:
                 written = inject_gemini_telemetry(otlp_endpoint)
                 if written:
-                    rprint(f"\n[green]Configured Gemini CLI telemetry in {gemini_settings}[/green]")
-                    rprint(f"[dim]OTLP endpoint: {otlp_endpoint}[/dim]")
-                    rprint("[dim]Telemetry will be sent to Observal via OTLP.[/dim]")
+                    rprint(f"\n[green]Disabled native OTLP in {gemini_settings} (gRPC incompatible)[/green]")
+                    rprint("[dim]Telemetry is captured via hooks instead.[/dim]")
                 else:
-                    rprint(f"\n[dim]Gemini CLI telemetry already configured -> {otlp_endpoint}[/dim]")
+                    rprint(f"\n[dim]Gemini CLI native OTLP already disabled.[/dim]")
             except Exception as e:
                 rprint(f"\n[yellow]Could not configure Gemini CLI telemetry: {e}[/yellow]")
                 rprint("[dim]Add telemetry settings manually to ~/.gemini/settings.json.[/dim]")
+
+        # ── Auto-inject hooks into ~/.gemini/settings.json ─────
+        if scan_gemini:
+            from observal_cli.config import load as _load_gemini_hooks_config
+
+            ghcfg = _load_gemini_hooks_config()
+            gemini_server_url = ghcfg.get("server_url", "http://localhost:8000").rstrip("/")
+            gemini_hooks_url = f"{gemini_server_url}/api/v1/otel/hooks"
+
+            gemini_hooks_dir = Path(__file__).parent / "hooks"
+            gemini_hook_script = gemini_hooks_dir / "gemini_hook.py"
+            gemini_stop_script = gemini_hooks_dir / "gemini_stop_hook.py"
+
+            def _gemini_hook_cmd(script: Path) -> str:
+                """Build the Gemini hook command string for a given script."""
+                if sys.platform == "win32":
+                    return f"python {script.resolve().as_posix()}"
+                return f"python3 {script.resolve().as_posix()}"
+
+            def _gemini_hook_entry(script: Path) -> list:
+                return [{"hooks": [{"type": "command", "command": _gemini_hook_cmd(script)}]}]
+
+            cmd_hook = _gemini_hook_entry(gemini_hook_script)
+            stop_hook = _gemini_hook_entry(gemini_stop_script)
+
+            gemini_hooks_block = {
+                "SessionStart": cmd_hook,
+                "BeforeAgent": cmd_hook,
+                "AfterAgent": stop_hook,
+                "AfterModel": cmd_hook,
+                "BeforeTool": cmd_hook,
+                "AfterTool": cmd_hook,
+                "SessionEnd": stop_hook,
+                "Notification": cmd_hook,
+            }
+
+            gemini_settings = Path.home() / ".gemini" / "settings.json"
+            try:
+                gdata: dict = {}
+                if gemini_settings.exists():
+                    gdata = json.loads(gemini_settings.read_text())
+
+                existing_ghooks = gdata.get("hooks", {})
+                ghooks_needs_update = False
+
+                for event_name, entry in gemini_hooks_block.items():
+                    if event_name not in existing_ghooks:
+                        ghooks_needs_update = True
+                        break
+                    # Check if command matches
+                    existing_cmd = ""
+                    try:
+                        existing_cmd = existing_ghooks[event_name][0]["hooks"][0].get("command", "")
+                    except (KeyError, IndexError, TypeError):
+                        pass
+                    expected_cmd = entry[0]["hooks"][0].get("command", "")
+                    if existing_cmd != expected_cmd:
+                        ghooks_needs_update = True
+                        break
+
+                if ghooks_needs_update:
+                    _backup_config(gemini_settings)
+                    gdata["hooks"] = {**existing_ghooks, **gemini_hooks_block}
+                    # Set env vars so hook scripts can resolve the endpoint
+                    if "env" not in gdata:
+                        gdata["env"] = {}
+                    gdata["env"]["OBSERVAL_HOOKS_URL"] = gemini_hooks_url
+                    if ghcfg.get("user_id"):
+                        gdata["env"]["OBSERVAL_USER_ID"] = ghcfg["user_id"]
+                    if ghcfg.get("user_name"):
+                        gdata["env"]["OBSERVAL_USERNAME"] = ghcfg["user_name"]
+                    gemini_settings.parent.mkdir(parents=True, exist_ok=True)
+                    gemini_settings.write_text(json.dumps(gdata, indent=2) + "\n")
+                    rprint(f"\n[green]Injected hooks config into {gemini_settings}[/green]")
+                    rprint(f"[dim]Hooks endpoint: {gemini_hooks_url}[/dim]")
+                    rprint("[dim]Captures: prompts, tool I/O, agent responses, session lifecycle[/dim]")
+                else:
+                    rprint(f"\n[dim]Gemini hooks already configured -> {gemini_hooks_url}[/dim]")
+            except Exception as e:
+                rprint(f"\n[yellow]Could not auto-inject Gemini hooks: {e}[/yellow]")
+                rprint("[dim]Add hooks manually to ~/.gemini/settings.json — see docs.[/dim]")
 
         # ── Auto-shim Codex home MCP servers ──
         if scan_codex:

@@ -267,28 +267,43 @@ def _check_gemini(path: Path, data: dict, issues: list, warnings: list):
                 "Install via `observal install <id> --ide gemini-cli` to enable telemetry."
             )
 
-    # Check telemetry configuration — only warn if a telemetry block exists
-    # but is misconfigured. If there's no telemetry block at all, the user
-    # may not have configured Observal yet (observal scan will set it up).
+    # Native OTLP telemetry: Gemini CLI hardcodes gRPC which is incompatible
+    # with Observal's HTTP/JSON endpoint. We intentionally disable it and use
+    # hooks instead. Only warn if telemetry is enabled (causes gRPC errors).
     telemetry = data.get("telemetry", {})
-    if not isinstance(telemetry, dict) or not telemetry:
-        return
-
-    if not telemetry.get("enabled", False):
+    if isinstance(telemetry, dict) and telemetry.get("enabled", False):
         warnings.append(
-            f"{path}: Gemini telemetry is disabled. "
-            "Set `telemetry.enabled` to `true` in .gemini/settings.json to enable Observal telemetry."
+            f"{path}: Gemini native OTLP telemetry is enabled but uses gRPC (incompatible with Observal). "
+            "Run `observal scan --ide gemini-cli --home` to disable it — hooks handle telemetry instead."
+        )
+
+    # Check hooks configuration
+    hooks = data.get("hooks", {})
+    if not isinstance(hooks, dict) or not hooks:
+        warnings.append(
+            f"{path}: No Observal hooks configured for Gemini CLI. "
+            "Run `observal scan --ide gemini-cli --home` to inject hook bridge for telemetry collection."
         )
     else:
-        target = telemetry.get("target", "")
-        otlp_endpoint = telemetry.get("otlpEndpoint", "")
-        if target != "custom" or not otlp_endpoint:
-            cfg = config.load()
-            otlp_url = cfg.get("otlp_http_url", "http://localhost:4318")
+        # Verify hooks point to Observal scripts
+        has_observal_hook = False
+        for _evt, handlers in hooks.items():
+            if not isinstance(handlers, list):
+                continue
+            for handler_group in handlers:
+                for h in (handler_group.get("hooks") or []):
+                    cmd = h.get("command", "")
+                    if "gemini_hook" in cmd or "gemini_stop_hook" in cmd:
+                        has_observal_hook = True
+                        break
+                if has_observal_hook:
+                    break
+            if has_observal_hook:
+                break
+        if not has_observal_hook:
             warnings.append(
-                f"{path}: Gemini telemetry is enabled but not configured for Observal. "
-                "Set `telemetry.target` to `custom` and `telemetry.otlpEndpoint` to your Observal OTLP endpoint "
-                f"(e.g. `{otlp_url}`)."
+                f"{path}: Hooks block exists but no Observal hooks found. "
+                "Run `observal scan --ide gemini-cli --home` to inject hook bridge for telemetry collection."
             )
 
 
@@ -632,16 +647,8 @@ def doctor(
                 rprint("  Run: observal scan --ide kiro --home")
             elif "observal-shim" in issue and "Kiro" in issue:
                 rprint("  Run: observal scan --ide kiro")
-            elif "Gemini telemetry" in issue and "disabled" in issue:
-                rprint(
-                    "  Set `telemetry.enabled` to `true` and `telemetry.target` to `custom` in .gemini/settings.json"
-                )
-            elif "Gemini telemetry" in issue and "not configured" in issue:
-                cfg = config.load()
-                otlp = cfg.get("otlp_http_url", "http://localhost:4318")
-                rprint(
-                    f'  Add telemetry config to .gemini/settings.json:\n  {{"telemetry": {{"enabled": true, "target": "custom", "otlpEndpoint": "{otlp}", "logPrompts": true}}}}'
-                )
+            elif "native OTLP" in issue and "gRPC" in issue:
+                rprint("  Run: observal scan --ide gemini-cli --home")
             elif "observal-shim" in issue and "gemini-cli" in issue:
                 rprint("  Run: observal install <id> --ide gemini-cli")
 
@@ -913,28 +920,28 @@ def doctor_sli(
                     pass
 
             telemetry = gemini_data.get("telemetry", {})
+            # Native OTLP should be disabled (gRPC incompatible), hooks handle telemetry
             needs_update = (
                 not isinstance(telemetry, dict)
-                or not telemetry.get("enabled")
-                or telemetry.get("target") != "custom"
-                or telemetry.get("otlpEndpoint") != otlp_endpoint
+                or telemetry.get("enabled") is not False
+                or telemetry.get("logPrompts") is not True
             )
 
             if needs_update:
                 if dry_run:
-                    rprint("  [yellow]Would update telemetry config in ~/.gemini/settings.json[/yellow]")
+                    rprint("  [yellow]Would disable native OTLP in ~/.gemini/settings.json[/yellow]")
                 else:
                     gemini_data.setdefault("telemetry", {})
-                    gemini_data["telemetry"]["enabled"] = True
-                    gemini_data["telemetry"]["target"] = "custom"
-                    gemini_data["telemetry"]["otlpEndpoint"] = otlp_endpoint
+                    gemini_data["telemetry"]["enabled"] = False
                     gemini_data["telemetry"]["logPrompts"] = True
+                    gemini_data["telemetry"].pop("target", None)
+                    gemini_data["telemetry"].pop("otlpEndpoint", None)
                     gemini_settings.parent.mkdir(parents=True, exist_ok=True)
                     gemini_settings.write_text(json.dumps(gemini_data, indent=2) + "\n")
-                    rprint(f"  + Configured telemetry in {gemini_settings}")
+                    rprint(f"  + Disabled native OTLP in {gemini_settings} (hooks handle telemetry)")
                     any_changes = True
             else:
-                rprint("  [dim]Gemini telemetry already configured[/dim]")
+                rprint("  [dim]Gemini native OTLP already disabled[/dim]")
 
         else:
             rprint(f"[yellow]Unknown IDE: {target}. Use 'claude-code', 'kiro', or 'gemini-cli'.[/yellow]")

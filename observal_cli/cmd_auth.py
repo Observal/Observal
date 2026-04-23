@@ -891,12 +891,14 @@ def _configure_kiro(server_url: str):
 
 
 def _configure_gemini_cli(server_url: str):
-    """Check for Gemini CLI and offer to configure its OTLP telemetry.
+    """Check for Gemini CLI and configure hooks + disable native OTLP.
 
-    Writes the `telemetry` block in ~/.gemini/settings.json.  Non-destructive:
-    all existing keys are preserved; only the telemetry sub-block is updated.
-    A timestamped backup is created before any write.
+    Gemini CLI hardcodes gRPC for OTLP export (incompatible with Observal's
+    HTTP/JSON endpoint). We disable native OTLP and inject command-type hooks
+    into ~/.gemini/settings.json for telemetry capture.
     """
+    import sys
+
     gemini_dir = Path.home() / ".gemini"
 
     try:
@@ -913,21 +915,81 @@ def _configure_gemini_cli(server_url: str):
         from observal_cli.cmd_scan import inject_gemini_telemetry
 
         cfg = config.load()
-        otlp_endpoint = cfg.get("otlp_http_url", "")
-        if not otlp_endpoint:
-            from urllib.parse import urlparse
-
-            parsed = urlparse(server_url)
-            scheme = "http" if parsed.hostname in ("localhost", "127.0.0.1") else "https"
-            otlp_endpoint = f"{scheme}://{parsed.hostname}:4318"
-
         gemini_settings = gemini_dir / "settings.json"
-        written = inject_gemini_telemetry(otlp_endpoint)
+        changes = 0
+
+        # 1. Disable native OTLP (gRPC-only, incompatible with Observal)
+        written = inject_gemini_telemetry("")
         if written:
-            rprint(f"[green]Configured Gemini CLI telemetry in {gemini_settings}[/green]")
-            rprint(f"[dim]OTLP endpoint: {otlp_endpoint}[/dim]")
-        else:
-            rprint("[dim]Gemini CLI telemetry already configured.[/dim]")
+            rprint(f"[green]Disabled native OTLP in {gemini_settings} (gRPC incompatible)[/green]")
+            changes += 1
+
+        # 2. Inject hooks for telemetry capture
+        hooks_url = f"{server_url.rstrip('/')}/api/v1/otel/hooks"
+        hooks_dir = Path(__file__).parent / "hooks"
+        hook_script = hooks_dir / "gemini_hook.py"
+        stop_script = hooks_dir / "gemini_stop_hook.py"
+
+        def _hook_cmd(script: Path) -> str:
+            if sys.platform == "win32":
+                return f"python {script.resolve().as_posix()}"
+            return f"python3 {script.resolve().as_posix()}"
+
+        def _hook_entry(script: Path) -> list:
+            return [{"hooks": [{"type": "command", "command": _hook_cmd(script)}]}]
+
+        cmd_hook = _hook_entry(hook_script)
+        stop_hook = _hook_entry(stop_script)
+
+        gemini_hooks_block = {
+            "SessionStart": cmd_hook,
+            "BeforeAgent": cmd_hook,
+            "AfterAgent": stop_hook,
+            "AfterModel": cmd_hook,
+            "BeforeTool": cmd_hook,
+            "AfterTool": cmd_hook,
+            "SessionEnd": stop_hook,
+            "Notification": cmd_hook,
+        }
+
+        gdata: dict = {}
+        if gemini_settings.exists():
+            gdata = _json.loads(gemini_settings.read_text())
+
+        existing_hooks = gdata.get("hooks", {})
+        hooks_need_update = False
+
+        for event_name, entry in gemini_hooks_block.items():
+            if event_name not in existing_hooks:
+                hooks_need_update = True
+                break
+            existing_cmd = ""
+            try:
+                existing_cmd = existing_hooks[event_name][0]["hooks"][0].get("command", "")
+            except (KeyError, IndexError, TypeError):
+                pass
+            expected_cmd = entry[0]["hooks"][0].get("command", "")
+            if existing_cmd != expected_cmd:
+                hooks_need_update = True
+                break
+
+        if hooks_need_update:
+            gdata["hooks"] = {**existing_hooks, **gemini_hooks_block}
+            if "env" not in gdata:
+                gdata["env"] = {}
+            gdata["env"]["OBSERVAL_HOOKS_URL"] = hooks_url
+            if cfg.get("user_id"):
+                gdata["env"]["OBSERVAL_USER_ID"] = cfg["user_id"]
+            if cfg.get("user_name"):
+                gdata["env"]["OBSERVAL_USERNAME"] = cfg["user_name"]
+            gemini_settings.parent.mkdir(parents=True, exist_ok=True)
+            gemini_settings.write_text(_json.dumps(gdata, indent=2) + "\n")
+            rprint(f"[green]Injected hooks into {gemini_settings}[/green]")
+            rprint(f"[dim]Hooks endpoint: {hooks_url}[/dim]")
+            changes += 1
+
+        if changes == 0:
+            rprint("[dim]Gemini CLI already configured for Observal.[/dim]")
 
     except Exception as e:
         rprint(f"\n[yellow]Could not configure Gemini CLI automatically: {e}[/yellow]")
