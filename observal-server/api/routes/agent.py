@@ -1159,7 +1159,7 @@ async def update_draft(
         raise HTTPException(status_code=404, detail="Agent not found")
     if agent.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="Not the agent owner")
-    if agent.status != AgentStatus.draft:
+    if agent.status not in (AgentStatus.draft, AgentStatus.rejected):
         raise HTTPException(status_code=400, detail="Agent is not a draft")
 
     for field in (
@@ -1239,7 +1239,7 @@ async def submit_draft(
         raise HTTPException(status_code=404, detail="Agent not found")
     if agent.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="Not the agent owner")
-    if agent.status != AgentStatus.draft:
+    if agent.status not in (AgentStatus.draft, AgentStatus.rejected):
         raise HTTPException(status_code=400, detail="Agent is not a draft")
     if not agent.description:
         raise HTTPException(status_code=400, detail="Description is required before submitting")

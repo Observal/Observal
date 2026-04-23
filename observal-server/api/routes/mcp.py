@@ -306,7 +306,7 @@ async def update_mcp_draft(
         raise HTTPException(status_code=404, detail="Listing not found")
     if listing.submitted_by != current_user.id:
         raise HTTPException(status_code=403, detail="Not the listing owner")
-    if listing.status != ListingStatus.draft:
+    if listing.status not in (ListingStatus.draft, ListingStatus.rejected):
         raise HTTPException(status_code=400, detail="Listing is not a draft")
 
     for field in (
@@ -355,7 +355,7 @@ async def submit_mcp_draft(
         raise HTTPException(status_code=404, detail="Listing not found")
     if listing.submitted_by != current_user.id:
         raise HTTPException(status_code=403, detail="Not the listing owner")
-    if listing.status != ListingStatus.draft:
+    if listing.status not in (ListingStatus.draft, ListingStatus.rejected):
         raise HTTPException(status_code=400, detail="Listing is not a draft")
 
     if not listing.description:
