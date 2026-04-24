@@ -80,7 +80,7 @@ def _has_admin_trace_access(user: User) -> bool:
     return not getattr(user, "_trace_privacy", False)
 
 
-@router.get("/sessions")
+@router.get("")
 async def list_sessions(
     status: str | None = Query(None),
     platform: str | None = Query(None),
@@ -259,7 +259,7 @@ async def _list_sessions_query(
     )
 
 
-@router.get("/sessions/summary")
+@router.get("/summary")
 async def sessions_summary(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
@@ -616,7 +616,7 @@ async def _sideload_shim_spans(events: list[dict]) -> list[dict]:
     return events + synthetic
 
 
-@router.get("/sessions/{session_id}")
+@router.get("/{session_id}")
 async def get_session(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
     is_admin = _has_admin_trace_access(current_user)
     params: dict[str, str] = {"param_sid": session_id}
@@ -674,7 +674,7 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
     return {"session_id": session_id, "service_name": svc, "events": events, "traces": traces}
 
 
-@router.get("/sessions/{session_id}/efficiency")
+@router.get("/{session_id}/efficiency")
 async def get_session_efficiency(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
     """Run kernel efficiency analysis on a session's hook events."""
     is_admin = _is_admin_user(current_user)
