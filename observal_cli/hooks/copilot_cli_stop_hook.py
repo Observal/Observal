@@ -20,6 +20,50 @@ import os
 import sys
 from pathlib import Path
 
+# Copilot CLI sends camelCase fields; normalize to snake_case for the server.
+_FIELD_MAP = {
+    "sessionId": "session_id",
+    "conversationId": "session_id",
+    "threadId": "session_id",
+    "hookEventName": "hook_event_name",
+    "serviceName": "service_name",
+    "userId": "user_id",
+    "userName": "user_name",
+}
+
+
+def _normalize(payload: dict) -> dict:
+    """Map camelCase Copilot CLI fields to the snake_case the server expects."""
+    for camel, snake in _FIELD_MAP.items():
+        if camel in payload and snake not in payload:
+            payload[snake] = payload[camel]
+    return payload
+
+
+def _stable_session_id() -> str:
+    """Derive a session ID that stays the same across all hooks in one session.
+
+    Hook commands run as:  copilot (stable) → bash (new per hook) → python3
+    os.getppid() returns the bash PID which differs per hook invocation.
+    We walk up one level to the grandparent (the copilot process) for stability.
+    """
+    ppid = os.getppid()
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["ps", "-o", "ppid=", "-p", str(ppid)],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        gppid = result.stdout.strip()
+        if gppid and gppid not in ("0", "1"):
+            return f"copilot-cli-{gppid}"
+    except Exception:
+        pass
+    return f"copilot-cli-{ppid}"
+
 
 def _resolve_hooks_url() -> str:
     """Read hooks URL from config file when no --url is provided."""
@@ -49,12 +93,15 @@ def main():
 
     url = ""
     model = ""
+    event_name = ""
     args = sys.argv[1:]
     for i, arg in enumerate(args):
         if arg == "--url" and i + 1 < len(args):
             url = args[i + 1]
         elif arg == "--model" and i + 1 < len(args):
             model = args[i + 1]
+        elif arg == "--event-name" and i + 1 < len(args):
+            event_name = args[i + 1]
     if not url:
         url = _resolve_hooks_url()
 
@@ -64,10 +111,33 @@ def main():
     except (json.JSONDecodeError, ValueError):
         sys.exit(0)
 
-    payload.setdefault("service_name", "copilot-cli")
+    _normalize(payload)
+
+    # Map Copilot CLI fields to what the server expects.
+    if not payload.get("tool_name") and "toolName" in payload:
+        payload["tool_name"] = payload["toolName"]
+
+    if not payload.get("tool_input"):
+        for key in ("prompt", "initialPrompt", "toolArgs"):
+            if key in payload:
+                val = payload[key]
+                payload["tool_input"] = json.dumps(val) if isinstance(val, dict) else str(val)
+                break
+
+    if not payload.get("tool_response"):
+        tr = payload.get("toolResult")
+        if isinstance(tr, dict):
+            payload["tool_response"] = tr.get("textResultForLlm", json.dumps(tr))
+        elif isinstance(tr, str):
+            payload["tool_response"] = tr
+
+    payload["service_name"] = "copilot-cli"
+
+    if event_name:
+        payload["hook_event_name"] = event_name
 
     if not payload.get("session_id"):
-        payload["session_id"] = f"copilot-cli-{os.getppid()}"
+        payload["session_id"] = _stable_session_id()
 
     # Inject user_id and user_name from Observal config if not already present
     if not payload.get("user_id") or not payload.get("user_name"):
