@@ -1967,7 +1967,7 @@ class TestOtlpIdeDetection:
         """Read _IDE_HINTS and _detect_ide directly from source to avoid heavy server deps."""
         import pathlib
 
-        src_path = pathlib.Path(__file__).parent.parent / "observal-server" / "api" / "routes" / "otlp.py"
+        src_path = pathlib.Path(__file__).parent.parent / "observal-server" / "api" / "routes" / "telemetry.py"
         source = src_path.read_text()
         return source
 

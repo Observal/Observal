@@ -26,8 +26,19 @@ def _import_derive_endpoints(settings_mock):
     fastapi_mod.APIRouter = MagicMock()
     fastapi_mod.Request = type("Request", (), {})
 
+    # Fake sqlalchemy
+    sqlalchemy_mod = MagicMock()
+
+    # Fake api.deps
+    api_deps_mod = MagicMock()
+
     saved_modules = {}
-    to_mock = {"fastapi": fastapi_mod, "config": config_mod}
+    to_mock = {
+        "fastapi": fastapi_mod,
+        "config": config_mod,
+        "sqlalchemy": sqlalchemy_mod,
+        "api.deps": api_deps_mod,
+    }
     for name, mod in to_mock.items():
         saved_modules[name] = sys.modules.get(name)
         sys.modules[name] = mod

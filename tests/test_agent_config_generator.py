@@ -671,11 +671,13 @@ class TestBuilderCodex:
         paths = [f.path for f in result.files]
         assert "AGENTS.md" in paths
 
-    def test_includes_codex_config_toml(self):
+    def test_codex_only_agents_md_without_otlp_url(self):
         manifest = _make_manifest()
         result = generate_ide_agent_files(manifest, "codex")
         paths = [f.path for f in result.files]
-        assert any("config.toml" in p for p in paths)
+        # Without explicit OTLP URL, only AGENTS.md is generated
+        assert "AGENTS.md" in paths
+        assert len(paths) == 1
 
 
 class TestBuilderCopilot:

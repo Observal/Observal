@@ -1185,7 +1185,7 @@ class TestGenerateIdeAgentFiles:
         manifest = self._make_manifest()
         config = generate_ide_agent_files(manifest, "claude-code")
         assert "CLAUDE_CODE_ENABLE_TELEMETRY" in config.env
-        assert "OTEL_EXPORTER_OTLP_ENDPOINT" in config.env
+        assert config.env["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/json"
 
     def test_claude_code_underscore_alias(self):
         from services.agent_builder import generate_ide_agent_files
@@ -1240,7 +1240,7 @@ class TestGenerateIdeAgentFiles:
 
         manifest = self._make_manifest()
         config = generate_ide_agent_files(manifest, "gemini-cli")
-        assert "OTEL_EXPORTER_OTLP_ENDPOINT" in config.env
+        assert config.env["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/json"
 
     def test_gemini_cli_underscore_alias(self):
         from services.agent_builder import generate_ide_agent_files
@@ -1270,18 +1270,15 @@ class TestGenerateIdeAgentFiles:
 
     # ── Codex ──────────────────────────────────────────────────
 
-    def test_codex_generates_agents_md_and_config_toml(self):
+    def test_codex_generates_agents_md(self):
         from services.agent_builder import generate_ide_agent_files
 
         manifest = self._make_manifest()
         config = generate_ide_agent_files(manifest, "codex")
         assert config.ide == "codex"
-        assert len(config.files) == 2
+        assert len(config.files) >= 1
         md_file = next(f for f in config.files if f.format == "markdown")
-        toml_file = next(f for f in config.files if f.format == "toml")
         assert md_file.path == "AGENTS.md"
-        assert toml_file.path == "~/.codex/config.toml"
-        assert "[otel]" in toml_file.content
 
     # ── GitHub Copilot ─────────────────────────────────────────
 
