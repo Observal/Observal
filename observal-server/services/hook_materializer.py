@@ -91,7 +91,7 @@ async def _fetch_session_events(session_id: str) -> list[dict]:
     sql = (
         "SELECT "
         "Timestamp AS timestamp, "
-        "EventName AS event_name, "
+        "LogAttributes['event.name'] AS event_name, "
         "Body AS body, "
         "LogAttributes AS attributes, "
         "ServiceName AS service_name "

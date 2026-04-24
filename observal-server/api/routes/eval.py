@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +13,7 @@ from models.eval import EvalRun, EvalRunStatus, Scorecard
 from models.user import User, UserRole
 from schemas.eval import EvalRequest, EvalRunDetailResponse, EvalRunResponse, ScorecardResponse
 from services.audit_helpers import audit
-from services.clickhouse import query_spans
+from services.clickhouse import _query, query_spans
 from services.eval.eval_service import (
     evaluate_trace,
     fetch_traces,
@@ -22,6 +23,8 @@ from services.eval.eval_service import (
 )
 from services.eval.score_aggregator import ScoreAggregator
 from services.hook_materializer import build_agent_eval_context, materialize_agent_eval, materialize_session_spans
+
+_log = structlog.get_logger("eval.route")
 
 router = APIRouter(prefix="/api/v1/eval", tags=["eval"])
 
@@ -62,6 +65,56 @@ async def run_evaluation(
         mat_trace, mat_spans = await materialize_session_spans(session_id)
         if mat_trace and mat_spans:
             traces = [mat_trace]
+
+    # Fallback: find sessions in otel_logs by agent name, prompt mention, or substring match
+    if not traces:
+        agent_name = agent.name
+        _log.info("eval_fallback_start", agent_name=agent_name, agent_id=str(agent.id))
+        sql = (
+            "SELECT DISTINCT sid, latest FROM ("
+            "  SELECT LogAttributes['session.id'] AS sid, max(Timestamp) AS latest "
+            "  FROM otel_logs "
+            "  WHERE LogAttributes['agent_name'] = {aname:String} "
+            "  AND LogAttributes['session.id'] != '' "
+            "  GROUP BY sid "
+            "  UNION ALL "
+            "  SELECT LogAttributes['session.id'] AS sid, max(Timestamp) AS latest "
+            "  FROM otel_logs "
+            "  WHERE LogAttributes['session.id'] != '' "
+            "  AND (LogAttributes['tool_input'] LIKE {prompt_pattern:String} "
+            "       OR LogAttributes['agent_name'] LIKE {name_pattern:String}) "
+            "  GROUP BY sid "
+            ") "
+            "ORDER BY latest DESC "
+            "LIMIT 5 "
+        )
+        try:
+            r = await _query(
+                f"{sql} FORMAT JSON",
+                {
+                    "param_aname": agent_name,
+                    "param_prompt_pattern": f"%@agent-{agent_name}%",
+                    "param_name_pattern": f"%{agent_name}%",
+                },
+            )
+            _log.info("eval_fallback_ch_response", status=r.status_code, body=r.text[:500])
+            if r.status_code == 200:
+                sessions = r.json().get("data", [])
+                _log.info("eval_fallback_sessions", count=len(sessions))
+                for row in sessions:
+                    sid = row.get("sid", "")
+                    if sid:
+                        mat_trace, mat_spans = await materialize_session_spans(sid)
+                        _log.info(
+                            "eval_materialize_result",
+                            sid=sid,
+                            has_trace=bool(mat_trace),
+                            span_count=len(mat_spans) if mat_spans else 0,
+                        )
+                        if mat_trace and mat_spans:
+                            traces.append(mat_trace)
+        except Exception as e:
+            _log.exception("eval_fallback_error", error=str(e))
 
     if not traces:
         eval_run.status = EvalRunStatus.completed
