@@ -856,4 +856,8 @@ async def get_session_efficiency(session_id: str, current_user: User = Depends(r
 
     from services.eval.kernel_bridge import analyze_session_efficiency
 
-    return analyze_session_efficiency(events)
+    try:
+        return analyze_session_efficiency(events)
+    except Exception:
+        logger.exception("Session efficiency analysis failed for %s", session_id)
+        return {"error": "Analysis failed", "session_id": session_id}

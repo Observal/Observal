@@ -945,9 +945,9 @@ async def ingest_hook(request: Request):
         if r.status_code != 200:
             logger.warning("hook_insert_failed", extra={"status_code": r.status_code, "response": r.text[:200]})
             return {"ingested": 0, "error": "insert failed"}
-    except Exception as e:
-        logger.warning("hook_insert_failed", extra={"error": str(e)})
-        return {"ingested": 0, "error": str(e)}
+    except Exception:
+        logger.exception("hook_insert_failed")
+        return {"ingested": 0, "error": "insert failed"}
 
     # Notify subscribers (fire-and-forget — don't block the response)
     if session_id:

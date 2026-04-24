@@ -66,9 +66,9 @@ _RE_JWT = re.compile(r"eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_
 # ---------------------------------------------------------------------------
 
 _RE_PRIVATE_KEY = re.compile(
-    r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ED25519 )?PRIVATE KEY-----"
-    r"[\s\S]*?"
-    r"-----END (?:RSA |EC |DSA |OPENSSH |ED25519 )?PRIVATE KEY-----"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+    r"[^-]+"
+    r"-----END [A-Z ]*PRIVATE KEY-----"
 )
 
 # ---------------------------------------------------------------------------
