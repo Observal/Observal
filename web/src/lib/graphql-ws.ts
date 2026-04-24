@@ -4,7 +4,7 @@ function getWsUrl(): string {
   const api =
     process.env.NEXT_PUBLIC_API_URL ||
     (typeof window !== "undefined"
-      ? `http://${window.location.hostname}:8000`
+      ? `${window.location.protocol}//${window.location.hostname}:8000`
       : "http://localhost:8000");
   return api.replace(/^http/, "ws") + "/api/v1/graphql";
 }

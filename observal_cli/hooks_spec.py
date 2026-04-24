@@ -117,7 +117,7 @@ def get_desired_env(
         from urllib.parse import urlparse
 
         parsed = urlparse(server_url)
-        scheme = "http" if parsed.hostname in ("localhost", "127.0.0.1") else "https"
+        scheme = parsed.scheme or ("http" if parsed.hostname in ("localhost", "127.0.0.1") else "https")
         otel_endpoint = f"{scheme}://{parsed.hostname}:4317"
 
     env: dict[str, str] = {

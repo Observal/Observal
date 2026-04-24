@@ -26,8 +26,10 @@ def _import_derive_endpoints(settings_mock):
     fastapi_mod.APIRouter = MagicMock()
     fastapi_mod.Request = type("Request", (), {})
 
+    api_deps_mod = MagicMock()
+
     saved_modules = {}
-    to_mock = {"fastapi": fastapi_mod, "config": config_mod}
+    to_mock = {"fastapi": fastapi_mod, "config": config_mod, "api.deps": api_deps_mod}
     for name, mod in to_mock.items():
         saved_modules[name] = sys.modules.get(name)
         sys.modules[name] = mod
@@ -123,6 +125,25 @@ class TestDeriveEndpoints:
         assert result["otlp_grpc"] == "https://otel.io:4317"
         assert result["web"] == "https://dash.io"
 
+    def test_http_non_localhost_preserves_scheme(self):
+        """HTTP on a non-localhost host should stay HTTP, not upgrade to HTTPS."""
+        settings = _make_settings(public_url="http://intranet.corp:8000")
+        fn = _import_derive_endpoints(settings)
+        result = fn()
+        assert result["api"] == "http://intranet.corp:8000"
+        assert result["otlp_http"] == "http://intranet.corp:4318"
+        assert result["otlp_grpc"] == "http://intranet.corp:4317"
+        assert result["web"] == "http://intranet.corp:3000"
+
+    def test_https_localhost_preserves_scheme(self):
+        """HTTPS on localhost (local dev with TLS) should stay HTTPS."""
+        settings = _make_settings(public_url="https://localhost:8000")
+        fn = _import_derive_endpoints(settings)
+        result = fn()
+        assert result["otlp_http"] == "https://localhost:4318"
+        assert result["otlp_grpc"] == "https://localhost:4317"
+        assert result["web"] == "https://localhost:3000"
+
 
 class TestHooksSpecOtlpGrpc:
     def test_uses_passed_otlp_grpc_url(self):
@@ -142,3 +163,9 @@ class TestHooksSpecOtlpGrpc:
 
         env = get_desired_env("https://observal.company.com", "token123")
         assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://observal.company.com:4317"
+
+    def test_http_non_localhost_preserves_scheme(self):
+        from observal_cli.hooks_spec import get_desired_env
+
+        env = get_desired_env("http://intranet.corp:8000", "token123")
+        assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://intranet.corp:4317"

@@ -99,6 +99,7 @@ class AgentManifest(BaseModel):
     model_name: str = ""
     components: ManifestComponents = Field(default_factory=ManifestComponents)
     errors: list[ManifestError] = Field(default_factory=list)
+    otlp_http_url: str = ""
 
     def model_dump_compact(self) -> dict:
         """Clean manifest output (no empty lists, no None values)."""
@@ -410,7 +411,7 @@ def _generate_claude_code(manifest: AgentManifest) -> IdeAgentConfig:
         mcp_servers=mcp_entries,
         env={
             "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-            "OTEL_EXPORTER_OTLP_ENDPOINT": getattr(manifest, "_otlp_http_url", "") or "http://localhost:4318",
+            "OTEL_EXPORTER_OTLP_ENDPOINT": manifest.otlp_http_url or "http://localhost:4318",
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
         },
         setup_commands=setup_commands,
@@ -475,7 +476,7 @@ def _generate_gemini_cli(manifest: AgentManifest) -> IdeAgentConfig:
     """Generate Gemini CLI agent config (GEMINI.md + .gemini/settings.json)."""
     mcp_entries = _build_mcp_entries(manifest)
     rules_content = _build_rules_markdown(manifest)
-    otlp_url = getattr(manifest, "_otlp_http_url", "") or "http://localhost:4318"
+    otlp_url = manifest.otlp_http_url or "http://localhost:4318"
 
     settings: dict = {
         "telemetry": {
@@ -543,7 +544,7 @@ def _generate_kiro(manifest: AgentManifest) -> IdeAgentConfig:
 def _generate_codex(manifest: AgentManifest) -> IdeAgentConfig:
     """Generate Codex agent config (AGENTS.md + ~/.codex/config.toml)."""
     rules_content = _build_rules_markdown(manifest)
-    otlp_url = getattr(manifest, "_otlp_http_url", "") or "http://localhost:4318"
+    otlp_url = manifest.otlp_http_url or "http://localhost:4318"
 
     toml_snippet = (
         "[otel]\n"
@@ -727,5 +728,5 @@ def generate_ide_agent_files(manifest: AgentManifest, ide: str, otlp_http_url: s
         raise ValueError(f"Unsupported IDE: {ide!r}. Supported: {', '.join(SUPPORTED_IDES)}")
     # Thread the OTLP URL to generators that need it
     if otlp_http_url:
-        manifest._otlp_http_url = otlp_http_url  # type: ignore[attr-defined]
+        manifest.otlp_http_url = otlp_http_url
     return generator(manifest)
