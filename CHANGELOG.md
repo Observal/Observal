@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-04-24
+
+### Fixed
+
+- filter release artifact download to skip Docker metadata (**ci**) ([dbd6a1b](https://github.com/BlazeUp-AI/Observal/commit/dbd6a1b66ec1dd3a6db067ecc9bc41a17174a329))
+- rename package to observal-cli to match PyPI project (**pypi**) ([9e27f7a](https://github.com/BlazeUp-AI/Observal/commit/9e27f7a4645022356f9fcf02358449664f38c250))
+- disable provenance on per-arch Docker builds (**ci**) ([50a8853](https://github.com/BlazeUp-AI/Observal/commit/50a88535f84b488b87afad4749f908d6d9cf2c9c))
+- native multi-arch Docker builds, drop deprecated macos-13 (**ci**) ([d8232c8](https://github.com/BlazeUp-AI/Observal/commit/d8232c85bdc1a43fb524858ac7ded001ed3a5544))
+- broaden session matching for Claude Code telemetry (**eval**) ([ab6f61d](https://github.com/BlazeUp-AI/Observal/commit/ab6f61d9f4098d06804db7980dfe191759d4ff21))
+- add production compose override for SSL and frontend routing (**deploy**) ([9309f5d](https://github.com/BlazeUp-AI/Observal/commit/9309f5d2128a3593faad326ef9148df5be3a9a9a))
+- broaden session matching for Claude Code telemetry (**eval**) ([3613d22](https://github.com/BlazeUp-AI/Observal/commit/3613d22729ec05f825f9dec925eb5126a4690dff))
+- use SPECPATH for absolute paths in pyinstaller spec (**cli**) ([46de03c](https://github.com/BlazeUp-AI/Observal/commit/46de03c3dde3a950670609696ada45246cd9bb64))
 ## [0.3.2] - 2026-04-23
 
 ### Added
@@ -73,6 +85,7 @@ All notable changes to this project will be documented in this file.
 
 ### CI
 
+- use GitHub App token for release tag push ([0c9c696](https://github.com/BlazeUp-AI/Observal/commit/0c9c69635a6c9f0772d3bf465e4956b577d02c16))
 - automated release pipeline for CLI, Docker, and server packages ([877e4e1](https://github.com/BlazeUp-AI/Observal/commit/877e4e1705f900f88c6c03582fcd39569aec8268))
 
 ### Changed
