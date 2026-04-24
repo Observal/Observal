@@ -28,10 +28,9 @@ class Settings(BaseSettings):
 
     # Public-facing URLs for endpoint discovery.
     # PUBLIC_URL: the base API URL clients use (derived from Request.base_url if empty).
-    # OTLP_HTTP_URL / OTLP_GRPC_URL: OTLP collector endpoints (derived from PUBLIC_URL if empty).
+    # OTLP_HTTP_URL: optional override for OTLP collector endpoint (defaults to PUBLIC_URL).
     PUBLIC_URL: str = ""
     OTLP_HTTP_URL: str = ""
-    OTLP_GRPC_URL: str = ""
 
     # JWT Settings
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
