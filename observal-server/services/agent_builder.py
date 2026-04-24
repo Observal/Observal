@@ -18,6 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from services.agent_config_generator import _wrap_kiro_prompt
 from services.agent_resolver import ResolvedAgent, ResolvedComponent
 
 logger = logging.getLogger(__name__)
@@ -517,12 +518,21 @@ def _generate_kiro(manifest: AgentManifest) -> IdeAgentConfig:
     kiro_agent = {
         "name": safe_name,
         "description": manifest.description[:200] if manifest.description else "",
-        "prompt": manifest.prompt,
+        "prompt": _wrap_kiro_prompt(manifest.prompt, safe_name),
         "mcpServers": mcp_entries,
-        "tools": [f"@{n}" for n in mcp_entries] + ["read", "write", "shell"],
+        "tools": ["*"],
+        "toolAliases": {},
+        "allowedTools": [],
+        "resources": [
+            "file://AGENTS.md",
+            "file://README.md",
+            "skill://.kiro/skills/*/SKILL.md",
+            "skill://~/.kiro/skills/*/SKILL.md",
+        ],
         "hooks": {},
+        "toolsSettings": {},
         "includeMcpJson": True,
-        "model": manifest.model_name or "default",
+        "model": None,  # Kiro uses "auto" model selection; actual model captured via SQLite in hooks
     }
 
     skill_files = _build_skill_files(manifest, "kiro")

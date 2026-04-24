@@ -43,6 +43,24 @@ def _sanitize_name(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "-", name)
 
 
+def _wrap_kiro_prompt(prompt: str, agent_name: str) -> str:
+    """Wrap a user prompt in Kiro-compatible framing.
+
+    Kiro's model guardrails reject prompts that appear to override its
+    identity or restrict its behaviour (e.g. "You are X", "Say only Y").
+    Wrapping the prompt as *agent specialization* avoids false-positive
+    prompt-injection detection while preserving the user's intent.
+    """
+    if not prompt:
+        return prompt
+    return (
+        f"# {agent_name} — Agent Specialization\n\n"
+        f"You are a Kiro agent with the following specialization.\n\n"
+        f"## Instructions\n\n"
+        f"{prompt}"
+    )
+
+
 def _inject_agent_id(mcp_config: dict, agent_id: str):
     """Add OBSERVAL_AGENT_ID env var to all MCP server entries."""
     for _name, cfg in mcp_config.items():
@@ -268,45 +286,33 @@ def generate_agent_config(
     if ide == "kiro":
         # Kiro agent JSON: drop into ~/.kiro/agents/<name>.json
         # Telemetry collected via observal-shim + hook bridge
-        model_field = f',\\"model\\":\\"{agent.model_name}\\"' if agent.model_name else ""
-
         if platform == "win32":
             # PowerShell-compatible: pipe stdin through the Python hook script.
             # No cat/sed/curl/$PPID/$TERM/$SHELL — those don't exist in PowerShell.
-            model_arg = f" --model {agent.model_name}" if agent.model_name else ""
             hook_cmd = (
                 f"python -m observal_cli.hooks.kiro_hook "
                 f"--url {observal_url}/api/v1/otel/hooks "
-                f"--agent-name {safe_name}{model_arg}"
+                f"--agent-name {safe_name}"
             )
             stop_cmd = (
                 f"python -m observal_cli.hooks.kiro_stop_hook "
                 f"--url {observal_url}/api/v1/otel/hooks "
-                f"--agent-name {safe_name}{model_arg}"
+                f"--agent-name {safe_name}"
             )
             spawn_cmd = hook_cmd  # Windows: Python script handles session IDs
         else:
-            # Unix: stable UUID session IDs instead of $PPID.
-            # agentSpawn creates a new UUID; other events read the existing one.
-            _sf = "/tmp/observal-kiro-session"  # nosec B108
-            _sid_create = f'$(python3 -c "import uuid; print(uuid.uuid4())" | tee {_sf})'
-            _sid_read = f'$(cat {_sf} 2>/dev/null || echo "kiro-$PPID")'
-
-            def _sed_cmd(sid_expr, pipe_to):
-                return (
-                    'cat | sed \'s/^{{/{{"session_id":"\'"' + sid_expr + '"\'",'
-                    f'"service_name":"kiro","agent_name":"{safe_name}"{model_field},/\' ' + pipe_to
-                )
-
-            _curl_pipe = (
-                f'| curl -sf -X POST {observal_url}/api/v1/otel/hooks -H "Content-Type: application/json" -d @-'
+            # Unix: use the same Python hook scripts as Windows.
+            hook_cmd = (
+                f"python3 -m observal_cli.hooks.kiro_hook "
+                f"--url {observal_url}/api/v1/otel/hooks "
+                f"--agent-name {safe_name}"
             )
-            spawn_cmd = _sed_cmd(_sid_create, _curl_pipe)
-            hook_cmd = _sed_cmd(_sid_read, _curl_pipe)
-            stop_cmd = _sed_cmd(
-                _sid_read,
-                f"| python3 -m observal_cli.hooks.kiro_stop_hook --url {observal_url}/api/v1/otel/hooks",
+            stop_cmd = (
+                f"python3 -m observal_cli.hooks.kiro_stop_hook "
+                f"--url {observal_url}/api/v1/otel/hooks "
+                f"--agent-name {safe_name}"
             )
+            spawn_cmd = hook_cmd  # Python script handles session IDs
         hooks = {
             "agentSpawn": [{"command": spawn_cmd}],
             "userPromptSubmit": [{"command": hook_cmd}],
@@ -322,12 +328,21 @@ def generate_agent_config(
                 "content": {
                     "name": safe_name,
                     "description": agent.description[:200] if agent.description else "",
-                    "prompt": agent.prompt,
+                    "prompt": _wrap_kiro_prompt(agent.prompt, safe_name),
                     "mcpServers": mcp_configs,
-                    "tools": [f"@{n}" for n in mcp_configs] + ["read", "write", "shell"],
+                    "tools": ["*"],
+                    "toolAliases": {},
+                    "allowedTools": [],
+                    "resources": [
+                        "file://AGENTS.md",
+                        "file://README.md",
+                        "skill://.kiro/skills/*/SKILL.md",
+                        "skill://~/.kiro/skills/*/SKILL.md",
+                    ],
                     "hooks": hooks,
+                    "toolsSettings": {},
                     "includeMcpJson": True,
-                    "model": agent.model_name,
+                    "model": None,  # Kiro uses "auto" model selection; actual model captured via SQLite in hooks
                 },
             },
             "scope": kiro_scope,
@@ -339,7 +354,7 @@ def generate_agent_config(
                 "content": (
                     f"---\ninclusion: always\nname: {safe_name}\n"
                     f"description: {(agent.description or safe_name)[:100]}\n---\n\n"
-                    f"{agent.prompt}"
+                    f"{_wrap_kiro_prompt(agent.prompt, safe_name)}"
                 ),
             }
         skill_files = [_generate_skill_file(s, "kiro") for s in skill_configs]
