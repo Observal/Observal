@@ -82,6 +82,7 @@ async def run_evaluation(
             "  FROM otel_logs "
             "  WHERE LogAttributes['session.id'] != '' "
             "  AND (LogAttributes['tool_input'] LIKE {prompt_pattern:String} "
+            "       OR LogAttributes['tool_input'] LIKE {name_pattern:String} "
             "       OR LogAttributes['agent_name'] LIKE {name_pattern:String}) "
             "  GROUP BY sid "
             ") "
