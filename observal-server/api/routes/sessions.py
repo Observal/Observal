@@ -1,7 +1,7 @@
 import json
+import logging
 import uuid as _uuid
 
-import logging
 from fastapi import APIRouter, Depends, Query
 from fastapi_cache.decorator import cache
 from sqlalchemy import or_, select
@@ -616,105 +616,6 @@ async def _sideload_shim_spans(events: list[dict]) -> list[dict]:
     return events + synthetic
 
 
-@router.get("/{session_id}")
-async def get_session(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
-    is_admin = _has_admin_trace_access(current_user)
-    params: dict[str, str] = {"param_sid": session_id}
-
-    if not is_admin:
-        # Verify the user owns this session (any event with their UUID/email)
-        params["param_uid"] = str(current_user.id)
-        params["param_uemail"] = current_user.email
-        ownership = await _ch_json(
-            "SELECT 1 FROM otel_logs "
-            "WHERE LogAttributes['session.id'] = {sid:String} "
-            "AND (LogAttributes['user.id'] = {uid:String} "
-            "     OR LogAttributes['user.id'] = {uemail:String}) "
-            "LIMIT 1",
-            params,
-        )
-        if not ownership:
-            return {"session_id": session_id, "service_name": "", "events": [], "traces": []}
-
-    # Fetch all events for the session (both hook and native telemetry)
-    events = await _ch_json(
-        "SELECT "
-        "Timestamp AS timestamp, "
-        "LogAttributes['event.name'] AS event_name, "
-        "Body AS body, "
-        "LogAttributes AS attributes, "
-        "ServiceName AS service_name "
-        "FROM otel_logs "
-        "WHERE LogAttributes['session.id'] = {sid:String} "
-        "ORDER BY Timestamp ASC",
-        params,
-    )
-    traces = await _ch_json(
-        "SELECT "
-        "TraceId AS trace_id, "
-        "SpanId AS span_id, "
-        "ParentSpanId AS parent_span_id, "
-        "SpanName AS span_name, "
-        "Duration AS duration_ns, "
-        "StatusCode AS status_code, "
-        "SpanAttributes AS span_attributes, "
-        "Timestamp AS timestamp "
-        "FROM otel_traces "
-        "WHERE SpanAttributes['session.id'] = {sid:String} "
-        "ORDER BY Timestamp ASC",
-        {"param_sid": session_id},
-    )
-    # Side-load shim spans that lack session_id (query-time resolution)
-    events = await _sideload_shim_spans(events)
-    # Merge events from multiple sources (hook + shim + collector)
-    events = _merge_session_events(events)
-    events = _annotate_agent_scope(events)
-    svc = _normalize_service(events[0]["service_name"]) if events else ""
-    await audit(current_user, "session.view", "session", resource_id=session_id)
-    return {"session_id": session_id, "service_name": svc, "events": events, "traces": traces}
-
-
-@router.get("/{session_id}/efficiency")
-async def get_session_efficiency(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
-    """Run kernel efficiency analysis on a session's hook events."""
-    is_admin = _is_admin_user(current_user)
-    params: dict[str, str] = {"param_sid": session_id}
-
-    if not is_admin:
-        params["param_uid"] = str(current_user.id)
-        params["param_uemail"] = current_user.email
-        ownership = await _ch_json(
-            "SELECT 1 FROM otel_logs "
-            "WHERE LogAttributes['session.id'] = {sid:String} "
-            "AND (LogAttributes['user.id'] = {uid:String} "
-            "     OR LogAttributes['user.id'] = {uemail:String}) "
-            "LIMIT 1",
-            params,
-        )
-        if not ownership:
-            return {"error": "Session not found or access denied"}
-
-    events = await _ch_json(
-        "SELECT "
-        "Timestamp AS timestamp, "
-        "LogAttributes['event.name'] AS event_name, "
-        "Body AS body, "
-        "LogAttributes AS attributes, "
-        "ServiceName AS service_name "
-        "FROM otel_logs "
-        "WHERE LogAttributes['session.id'] = {sid:String} "
-        "ORDER BY Timestamp ASC",
-        params,
-    )
-
-    if not events:
-        return {"error": "No events found for session", "session_id": session_id}
-
-    from services.eval.kernel_bridge import analyze_session_efficiency
-
-    return analyze_session_efficiency(events)
-
-
 @router.get("/traces")
 @cache(expire=settings.CACHE_TTL_OTEL, namespace="otel")
 async def list_traces(current_user: User = Depends(require_role(UserRole.admin))):
@@ -813,7 +714,7 @@ async def list_errors(current_user: User = Depends(require_role(UserRole.admin))
 
 @router.get("/stats")
 @cache(expire=settings.CACHE_TTL_DEFAULT, namespace="otel")
-async def otel_stats(current_user: User = Depends(require_role(UserRole.admin))):
+async def sessions_stats(current_user: User = Depends(require_role(UserRole.admin))):
     log_rows = await _ch_json(
         "SELECT "
         "count() AS total_sessions, "
@@ -857,3 +758,102 @@ async def otel_stats(current_user: User = Depends(require_role(UserRole.admin)))
         "total_traces": int(tr.get("total_traces", 0)),
         "total_spans": int(tr.get("total_spans", 0)),
     }
+
+
+@router.get("/{session_id}")
+async def get_session(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
+    is_admin = _has_admin_trace_access(current_user)
+    params: dict[str, str] = {"param_sid": session_id}
+
+    if not is_admin:
+        # Verify the user owns this session (any event with their UUID/email)
+        params["param_uid"] = str(current_user.id)
+        params["param_uemail"] = current_user.email
+        ownership = await _ch_json(
+            "SELECT 1 FROM otel_logs "
+            "WHERE LogAttributes['session.id'] = {sid:String} "
+            "AND (LogAttributes['user.id'] = {uid:String} "
+            "     OR LogAttributes['user.id'] = {uemail:String}) "
+            "LIMIT 1",
+            params,
+        )
+        if not ownership:
+            return {"session_id": session_id, "service_name": "", "events": [], "traces": []}
+
+    # Fetch all events for the session (both hook and native telemetry)
+    events = await _ch_json(
+        "SELECT "
+        "Timestamp AS timestamp, "
+        "LogAttributes['event.name'] AS event_name, "
+        "Body AS body, "
+        "LogAttributes AS attributes, "
+        "ServiceName AS service_name "
+        "FROM otel_logs "
+        "WHERE LogAttributes['session.id'] = {sid:String} "
+        "ORDER BY Timestamp ASC",
+        params,
+    )
+    traces = await _ch_json(
+        "SELECT "
+        "TraceId AS trace_id, "
+        "SpanId AS span_id, "
+        "ParentSpanId AS parent_span_id, "
+        "SpanName AS span_name, "
+        "Duration AS duration_ns, "
+        "StatusCode AS status_code, "
+        "SpanAttributes AS span_attributes, "
+        "Timestamp AS timestamp "
+        "FROM otel_traces "
+        "WHERE SpanAttributes['session.id'] = {sid:String} "
+        "ORDER BY Timestamp ASC",
+        {"param_sid": session_id},
+    )
+    # Side-load shim spans that lack session_id (query-time resolution)
+    events = await _sideload_shim_spans(events)
+    # Merge events from multiple sources (hook + shim + collector)
+    events = _merge_session_events(events)
+    events = _annotate_agent_scope(events)
+    svc = _normalize_service(events[0]["service_name"]) if events else ""
+    await audit(current_user, "session.view", "session", resource_id=session_id)
+    return {"session_id": session_id, "service_name": svc, "events": events, "traces": traces}
+
+
+@router.get("/{session_id}/efficiency")
+async def get_session_efficiency(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
+    """Run kernel efficiency analysis on a session's hook events."""
+    is_admin = _is_admin_user(current_user)
+    params: dict[str, str] = {"param_sid": session_id}
+
+    if not is_admin:
+        params["param_uid"] = str(current_user.id)
+        params["param_uemail"] = current_user.email
+        ownership = await _ch_json(
+            "SELECT 1 FROM otel_logs "
+            "WHERE LogAttributes['session.id'] = {sid:String} "
+            "AND (LogAttributes['user.id'] = {uid:String} "
+            "     OR LogAttributes['user.id'] = {uemail:String}) "
+            "LIMIT 1",
+            params,
+        )
+        if not ownership:
+            return {"error": "Session not found or access denied"}
+
+    events = await _ch_json(
+        "SELECT "
+        "Timestamp AS timestamp, "
+        "LogAttributes['event.name'] AS event_name, "
+        "Body AS body, "
+        "LogAttributes AS attributes, "
+        "ServiceName AS service_name "
+        "FROM otel_logs "
+        "WHERE LogAttributes['session.id'] = {sid:String} "
+        "ORDER BY Timestamp ASC",
+        params,
+    )
+
+    if not events:
+        return {"error": "No events found for session", "session_id": session_id}
+
+    from services.eval.kernel_bridge import analyze_session_efficiency
+
+    return analyze_session_efficiency(events)
