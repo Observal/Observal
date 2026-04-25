@@ -110,6 +110,7 @@ def login(
             _configure_gemini_cli(server_url)
             _configure_codex(server_url)
             _configure_copilot(server_url)
+            _configure_copilot_cli(server_url)
             _configure_opencode(server_url)
             _post_auth_onboarding()
 
@@ -412,6 +413,7 @@ def _do_password_login(server_url: str, email: str, password: str):
         _configure_gemini_cli(server_url)
         _configure_codex(server_url)
         _configure_copilot(server_url)
+        _configure_copilot_cli(server_url)
         _configure_opencode(server_url)
         _post_auth_onboarding()
 
@@ -517,6 +519,7 @@ def _do_device_flow_login(server_url: str):
                 _configure_gemini_cli(server_url)
                 _configure_codex(server_url)
                 _configure_copilot(server_url)
+                _configure_copilot_cli(server_url)
                 _configure_opencode(server_url)
                 _post_auth_onboarding()
                 return
@@ -1058,32 +1061,64 @@ protocol = "http"
 
 
 def _configure_copilot(server_url: str):
-    """Check for GitHub Copilot (VS Code) and surface install instructions.
+    """Check for GitHub Copilot (VS Code) and auto-shim existing MCP servers.
 
     Copilot uses .vscode/mcp.json for MCP servers; telemetry collection
     requires wrapping individual MCP servers with observal-shim at install time.
+    This function detects existing configs and auto-shims un-shimmed servers.
     """
     try:
-        vscode_mcp = Path.cwd() / ".vscode" / "mcp.json"
-        has_copilot = vscode_mcp.exists() or shutil.which("code")
+        vscode_dir = Path.home() / ".vscode"
+        home_mcp = vscode_dir / "mcp.json"
+        project_mcp = Path.cwd() / ".vscode" / "mcp.json"
+        has_copilot = vscode_dir.is_dir() or home_mcp.exists() or project_mcp.exists() or shutil.which("code")
         if not has_copilot:
             return
 
-        rprint(
-            "\n[bold]Detected VS Code / GitHub Copilot.[/bold] "
-            "Install MCPs via [bold]observal install <id> --ide copilot[/bold] to enable telemetry."
-        )
+        from observal_cli.cmd_scan import _auto_shim_home_config
+
+        shimmed_any = False
+        for mcp_path in (home_mcp, project_mcp):
+            if mcp_path.exists():
+                _auto_shim_home_config(mcp_path, "copilot")
+                shimmed_any = True
+
+        if not shimmed_any:
+            rprint(
+                "\n[bold]Detected VS Code / GitHub Copilot.[/bold] "
+                "Install MCPs via [bold]observal install <id> --ide copilot[/bold] to enable telemetry."
+            )
+
+    except Exception:
+        pass
+
+
+def _configure_copilot_cli(server_url: str):
+    """Check for Copilot CLI and auto-shim existing MCP servers.
+
+    Copilot CLI uses ~/.copilot/mcp-config.json for MCP servers; telemetry
+    collection requires wrapping servers with observal-shim at install time.
+    """
+    copilot_cli_config = Path.home() / ".copilot" / "mcp-config.json"
+
+    try:
+        if not copilot_cli_config.exists():
+            return
+
+        from observal_cli.cmd_scan import _auto_shim_home_config
+
+        _auto_shim_home_config(copilot_cli_config, "copilot-cli")
 
     except Exception:
         pass
 
 
 def _configure_opencode(server_url: str):
-    """Check for OpenCode and surface install instructions.
+    """Check for OpenCode and auto-shim existing MCP servers.
 
     OpenCode has no global telemetry/OTLP settings block; telemetry collection
     requires wrapping individual MCP servers with observal-shim at install time.
-    This function detects OpenCode and prints actionable guidance.
+    This function detects existing configs and auto-shims un-shimmed servers.
     """
     opencode_config = Path.home() / ".config" / "opencode" / "opencode.json"
 
@@ -1092,10 +1127,15 @@ def _configure_opencode(server_url: str):
         if not opencode_exists:
             return
 
-        rprint(
-            "\n[bold]Detected OpenCode.[/bold] "
-            "Install MCPs via [bold]observal install <id> --ide opencode[/bold] to enable telemetry."
-        )
+        if opencode_config.exists():
+            from observal_cli.cmd_scan import _auto_shim_home_config
+
+            _auto_shim_home_config(opencode_config, "opencode")
+        else:
+            rprint(
+                "\n[bold]Detected OpenCode.[/bold] "
+                "Install MCPs via [bold]observal install <id> --ide opencode[/bold] to enable telemetry."
+            )
 
     except Exception:
         pass  # Detection is best-effort; never block login
