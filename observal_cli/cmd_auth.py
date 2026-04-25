@@ -1098,7 +1098,7 @@ def _configure_opencode(server_url: str):
 def _configure_claude_code(server_url: str, access_token: str):
     """Check for Claude Code and offer to configure its telemetry.
 
-    Uses declarative reconciliation: computes desired state from claude_code_spec,
+    Uses declarative reconciliation: computes desired state from claude_code_hooks_spec,
     diffs against current ~/.claude/settings.json, and applies minimal changes.
     Non-Observal hooks and env vars are preserved untouched.
     """

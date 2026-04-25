@@ -1,6 +1,6 @@
 """Tests for the endpoint discovery system.
 
-Tests derive_endpoints logic and the claude_code_spec env generation.
+Tests derive_endpoints logic and the claude_code_hooks_spec env generation.
 The derive_endpoints tests mock enough of the module chain to avoid
 needing FastAPI, pydantic_settings, etc.
 """

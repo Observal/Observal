@@ -2,7 +2,7 @@
 
 Implements a Terraform-style declarative reconciliation:
   1. Read current state from ~/.claude/settings.json
-  2. Compare against desired state from claude_code_spec
+  2. Compare against desired state from claude_code_hooks_spec
   3. Apply minimal diff: add missing, update stale, preserve foreign
 
 Never deletes non-Observal hooks or env vars.  Identifies Observal
