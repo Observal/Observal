@@ -2,14 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.4] - 2026-04-25
 
-### Changed
+### Added
 
-- multi-stage API Dockerfile reduces image from 923MB to 532MB (42%) (**docker**)
-- expand .dockerignore to exclude non-build files for faster builds (**docker**)
-- enable nginx gzip compression for JSON API responses (**docker**)
+- add copilot-cli doctor checks and SLI repair ([fe8f91a](https://github.com/BlazeUp-AI/Observal/commit/fe8f91af37c6e3d354906c022aaba2e12eb4b816))
+- add copilot-cli scan and hook injection ([8956644](https://github.com/BlazeUp-AI/Observal/commit/8956644008e824ba59675be52448880170a544e8))
+- add copilot-cli server-side config generation ([7c71b94](https://github.com/BlazeUp-AI/Observal/commit/7c71b94b2bdeb3827ecfb48bda0180b065d4de8f))
+- add copilot-cli hook scripts ([4e22c5c](https://github.com/BlazeUp-AI/Observal/commit/4e22c5cf5907c30488e9cb73137495e057463535))
+- add copilot-cli to IDE constants and feature matrix ([065900b](https://github.com/BlazeUp-AI/Observal/commit/065900b63c6f7fd60c1c6d11d9e730d51732293e))
 
+### Documentation
+
+- add copilot-cli integration guide ([c459254](https://github.com/BlazeUp-AI/Observal/commit/c459254ee837e396e9d8dc3a9fc8b3c40d7c4cb6))
+
+### Fixed
+
+- add missing event name mappings for prompt counting (**copilot**) ([0a3acf7](https://github.com/BlazeUp-AI/Observal/commit/0a3acf7c0f135e79291915a9d5081996a7d54762))
+- auto-shim copilot/opencode MCP servers during login (**auth**) ([3d12220](https://github.com/BlazeUp-AI/Observal/commit/3d1222013fd0c2907ae82f5b346949c4bf673795))
+- match native agent config schema and fix prompt injection (**kiro**) ([cb773cc](https://github.com/BlazeUp-AI/Observal/commit/cb773cc090540150bc1284063d06b6b243c5e5fc))
+- replace fragile cat|sed|curl Unix pipelines with Python hook scripts (**kiro**) ([c304172](https://github.com/BlazeUp-AI/Observal/commit/c304172d8a96ed48e56b9f92d73fa5f876effe29))
+- use LB URL as Dockerfile build-time default for API rewrites (**docker**) ([af54ebd](https://github.com/BlazeUp-AI/Observal/commit/af54ebd826ea4789b88894d51136644c25a4e683))
+- preserve URL scheme in endpoint derivation and fix port issues (**config**) ([ef28cfe](https://github.com/BlazeUp-AI/Observal/commit/ef28cfe33e801c816ce529d6b827d84e14979340))
+- reformat test_ide_config_e2e.py to satisfy ruff (**lint**) ([4c065ba](https://github.com/BlazeUp-AI/Observal/commit/4c065ba732c07dd43326eb3d84bbe12be2b040d8))
+- rename camelCase test function to satisfy ruff N802 (**test**) ([77a57d4](https://github.com/BlazeUp-AI/Observal/commit/77a57d47a276495b8898dd2706fd6321cfda02ae))
+- add Copilot CLI platform detection and hide unsupported fields (**web**) ([2259794](https://github.com/BlazeUp-AI/Observal/commit/22597942a864c521e61d3d3f0d5fbf2cf97552c1))
+- add JSONC parsing and per-event hook names for Copilot CLI (**cli**) ([096fd3c](https://github.com/BlazeUp-AI/Observal/commit/096fd3c5092d0fa0e4d6e439d0e7c86ad85540a3))
+- normalize Copilot CLI payloads and inject event names (**hooks**) ([a9d47fa](https://github.com/BlazeUp-AI/Observal/commit/a9d47faa3e327c64bb8ba5cb7be34c9c212ae50e))
+- respect --ide filter in fallback home scan (**scan**) ([cf379dd](https://github.com/BlazeUp-AI/Observal/commit/cf379ddeaca9b24ab6b2f158e3711da433903520))
+- only trace registered Kiro agents, skip kiro_default (**scan**) ([db39514](https://github.com/BlazeUp-AI/Observal/commit/db3951494f61f3e724c6dfc3fb659badd6e916ba))
+- only trace registered Kiro agents, skip kiro_default (**scan**) ([63d2b5d](https://github.com/BlazeUp-AI/Observal/commit/63d2b5dc21b608e7039ddfbd8794afff5de58943))
+- only trace registered Kiro agents, skip kiro_default (**scan**) ([9cdc9c5](https://github.com/BlazeUp-AI/Observal/commit/9cdc9c5cd7b451c968696fd0dda288c7db8f97d1))
+- preserve host port in proxy headers to fix Kiro agent tracing (**nginx**) ([60dcda9](https://github.com/BlazeUp-AI/Observal/commit/60dcda95124b5e0e06307c66a43db2fde8056907))
+
+### Other
+
+- update dependency ruff to v0.15.12 (#575) (**deps**) ([a8a406d](https://github.com/BlazeUp-AI/Observal/commit/a8a406df83a1978b157c0c8d6aac359d70a2da7b))
+
+### Performance
+
+- multi-stage API build, expand dockerignore, add nginx gzip (**docker**) ([21fd2a4](https://github.com/BlazeUp-AI/Observal/commit/21fd2a461bd01709df7775655aedc91a07e608e6))
+
+### Testing
+
+- update assertions for new config format (**kiro**) ([550ade5](https://github.com/BlazeUp-AI/Observal/commit/550ade505fa9eb1658799bdce050cd140927a2d4))
+- add copilot-cli e2e tests ([dfabf02](https://github.com/BlazeUp-AI/Observal/commit/dfabf0215d6bdbb9bc1d0f0e2fb50e36dbe6f6d4))
 ## [0.3.3] - 2026-04-24
 
 ### Fixed
