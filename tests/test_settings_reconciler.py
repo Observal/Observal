@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 import pytest
 
-from observal_cli.hooks_spec import (
+from observal_cli.claude_code_spec import (
     HOOKS_SPEC_VERSION,
     get_desired_env,
     get_desired_hooks,

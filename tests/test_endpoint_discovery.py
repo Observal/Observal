@@ -1,6 +1,6 @@
 """Tests for the endpoint discovery system.
 
-Tests derive_endpoints logic and the hooks_spec env generation.
+Tests derive_endpoints logic and the claude_code_spec env generation.
 The derive_endpoints tests mock enough of the module chain to avoid
 needing FastAPI, pydantic_settings, etc.
 """
@@ -134,25 +134,25 @@ class TestDeriveEndpoints:
 
 class TestHooksSpecEnv:
     def test_uses_server_url_for_endpoint(self):
-        from observal_cli.hooks_spec import get_desired_env
+        from observal_cli.claude_code_spec import get_desired_env
 
         env = get_desired_env("http://localhost:8000", "token123")
         assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://localhost:8000"
 
     def test_uses_remote_server_url(self):
-        from observal_cli.hooks_spec import get_desired_env
+        from observal_cli.claude_code_spec import get_desired_env
 
         env = get_desired_env("https://observal.company.com", "token123")
         assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://observal.company.com"
 
     def test_protocol_is_http_json(self):
-        from observal_cli.hooks_spec import get_desired_env
+        from observal_cli.claude_code_spec import get_desired_env
 
         env = get_desired_env("http://localhost:8000", "token123")
         assert env["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/json"
 
     def test_hooks_url_uses_telemetry_path(self):
-        from observal_cli.hooks_spec import get_desired_env
+        from observal_cli.claude_code_spec import get_desired_env
 
         env = get_desired_env("http://localhost:8000", "token123")
         assert env["OBSERVAL_HOOKS_URL"] == "http://localhost:8000/api/v1/telemetry/hooks"

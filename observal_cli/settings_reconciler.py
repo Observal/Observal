@@ -2,7 +2,7 @@
 
 Implements a Terraform-style declarative reconciliation:
   1. Read current state from ~/.claude/settings.json
-  2. Compare against desired state from hooks_spec
+  2. Compare against desired state from claude_code_spec
   3. Apply minimal diff: add missing, update stale, preserve foreign
 
 Never deletes non-Observal hooks or env vars.  Identifies Observal
@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 
 from observal_cli import config
-from observal_cli.hooks_spec import (
+from observal_cli.claude_code_spec import (
     HOOKS_SPEC_VERSION,
     MANAGED_ENV_KEYS,
     is_observal_matcher_group,

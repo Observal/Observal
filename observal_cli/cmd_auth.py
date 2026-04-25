@@ -13,7 +13,7 @@ from rich import print as rprint
 
 from observal_cli import client, config, settings_reconciler
 from observal_cli.branding import welcome_banner
-from observal_cli.hooks_spec import get_desired_env, get_desired_hooks
+from observal_cli.claude_code_spec import get_desired_env, get_desired_hooks
 from observal_cli.render import console, kv_panel, spinner, status_badge
 
 # ── Auth subgroup ───────────────────────────────────────────
@@ -1125,7 +1125,7 @@ def _configure_opencode(server_url: str):
 def _configure_claude_code(server_url: str, access_token: str):
     """Check for Claude Code and offer to configure its telemetry.
 
-    Uses declarative reconciliation: computes desired state from hooks_spec,
+    Uses declarative reconciliation: computes desired state from claude_code_spec,
     diffs against current ~/.claude/settings.json, and applies minimal changes.
     Non-Observal hooks and env vars are preserved untouched.
     """

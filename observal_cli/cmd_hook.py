@@ -10,8 +10,8 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config, settings_reconciler
+from observal_cli.claude_code_spec import get_desired_env, get_desired_hooks
 from observal_cli.constants import VALID_HOOK_EVENTS, VALID_HOOK_HANDLER_TYPES
-from observal_cli.hooks_spec import get_desired_env, get_desired_hooks
 from observal_cli.prompts import select_one
 from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
 
@@ -228,7 +228,7 @@ def hook_sync(
     desired_env = get_desired_env(server_url, access_token, user_id)
 
     applied = settings_reconciler.get_applied_version()
-    from observal_cli.hooks_spec import HOOKS_SPEC_VERSION
+    from observal_cli.claude_code_spec import HOOKS_SPEC_VERSION
 
     if dry_run:
         changes = settings_reconciler.reconcile(desired_hooks, desired_env, dry_run=True)

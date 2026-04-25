@@ -10,7 +10,7 @@ import typer
 from rich import print as rprint
 
 from observal_cli import config, settings_reconciler
-from observal_cli.hooks_spec import MANAGED_ENV_KEYS, OBSERVAL_METADATA_KEY, get_desired_env, get_desired_hooks
+from observal_cli.claude_code_spec import MANAGED_ENV_KEYS, OBSERVAL_METADATA_KEY, get_desired_env, get_desired_hooks
 
 doctor_app = typer.Typer(help="Diagnose IDE settings for Observal compatibility")
 
