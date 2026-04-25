@@ -86,7 +86,7 @@ test.describe("Kiro Full Lifecycle E2E", () => {
     const apiKey = await getApiKey();
 
     // Check OTEL sessions
-    const sessions = await fetch(`${API_BASE}/api/v1/otel/sessions`, {
+    const sessions = await fetch(`${API_BASE}/api/v1/sessions`, {
       headers: { "Authorization": `Bearer ${apiKey}` },
     }).then((r) => r.json());
 

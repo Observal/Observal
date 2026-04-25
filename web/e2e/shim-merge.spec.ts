@@ -28,7 +28,7 @@ function jwtUserId(token: string): string {
 
 /** Send a hook event with user_id header so it matches JWT-authenticated shim data. */
 async function sendHookWithUser(payload: object, userId: string) {
-  const res = await fetch(`${API_BASE}/api/v1/otel/hooks`, {
+  const res = await fetch(`${API_BASE}/api/v1/telemetry/hooks`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -191,7 +191,7 @@ test.describe("Shim + Hook Merge (Query-Time Side-Load)", () => {
 
   test("API: session detail contains merged hook+shim events", async () => {
     const session = await fetch(
-      `${API_BASE}/api/v1/otel/sessions/${SESSION_ID}`,
+      `${API_BASE}/api/v1/sessions/${SESSION_ID}`,
       { headers: { Authorization: `Bearer ${apiKey}` } },
     ).then((r) => r.json());
 
@@ -234,7 +234,7 @@ test.describe("Shim + Hook Merge (Query-Time Side-Load)", () => {
     // The tool_list span was sent in beforeAll alongside the tool_call.
     // It has no corresponding hook event, so it should appear as a standalone shim event.
     const session = await fetch(
-      `${API_BASE}/api/v1/otel/sessions/${SESSION_ID}`,
+      `${API_BASE}/api/v1/sessions/${SESSION_ID}`,
       { headers: { Authorization: `Bearer ${apiKey}` } },
     ).then((r) => r.json());
 
@@ -317,7 +317,7 @@ test.describe("Shim + Hook Merge (Query-Time Side-Load)", () => {
 
     // Session 2 should NOT contain the Read shim data from session 1
     const session2 = await fetch(
-      `${API_BASE}/api/v1/otel/sessions/${SESSION_2}`,
+      `${API_BASE}/api/v1/sessions/${SESSION_2}`,
       { headers: { Authorization: `Bearer ${apiKey}` } },
     ).then((r) => r.json());
 

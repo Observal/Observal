@@ -343,7 +343,7 @@ def _fetch_server_public_key(server_url: str):
     yet (older server versions) or if connectivity fails.
     """
     try:
-        r = httpx.get(f"{server_url.rstrip('/')}/api/v1/otel/crypto/public-key", timeout=5)
+        r = httpx.get(f"{server_url.rstrip('/')}/api/v1/sessions/crypto/public-key", timeout=5)
         if r.status_code == 200:
             data = r.json()
             pub_pem = data.get("public_key_pem")

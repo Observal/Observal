@@ -26,7 +26,7 @@ test.describe("Live Kiro CLI Sessions", () => {
     // After running a Kiro session, check if any telemetry arrived
     const apiKey = await getApiKey();
 
-    const sessions = await fetch(`${API_BASE}/api/v1/otel/sessions`, {
+    const sessions = await fetch(`${API_BASE}/api/v1/sessions`, {
       headers: { "Authorization": `Bearer ${apiKey}` },
     }).then((r) => r.json());
 

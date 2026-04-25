@@ -112,7 +112,7 @@ test.describe("Kiro OTLP Log Ingestion", () => {
     await new Promise((r) => setTimeout(r, 2000));
 
     const apiKey = await getApiKey();
-    const sessions = await fetch(`${API_BASE}/api/v1/otel/sessions`, {
+    const sessions = await fetch(`${API_BASE}/api/v1/sessions`, {
       headers: { "Authorization": `Bearer ${apiKey}` },
     }).then((r) => r.json());
 

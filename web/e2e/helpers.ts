@@ -80,7 +80,7 @@ export async function sendKiroOTLPLog(payload: object) {
 
 /** Send a hook event payload to simulate Kiro hook firing */
 export async function sendKiroHookEvent(payload: object) {
-  const res = await fetch(`${API_BASE}/api/v1/otel/hooks`, {
+  const res = await fetch(`${API_BASE}/api/v1/telemetry/hooks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

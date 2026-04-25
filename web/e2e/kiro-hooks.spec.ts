@@ -118,7 +118,7 @@ test.describe("Kiro Hook Event Ingestion", () => {
 
     // Check sessions list (requires auth)
     const token = await getAccessToken();
-    const sessions = await fetch(`${API_BASE}/api/v1/otel/sessions`, {
+    const sessions = await fetch(`${API_BASE}/api/v1/sessions`, {
       headers: { Authorization: `Bearer ${token}` },
     }).then((r) => r.json());
     const kiroSession = sessions.find(
