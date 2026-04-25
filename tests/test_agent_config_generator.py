@@ -322,15 +322,9 @@ class TestGenerateKiro:
         for event in ("agentSpawn", "userPromptSubmit", "preToolUse", "postToolUse", "stop"):
             assert event in hooks
 
-    def test_steering_file_generated_when_prompt_present(self):
+    def test_no_steering_file_generated(self):
+        """Prompt lives in agent JSON only — no redundant steering file."""
         agent = _make_agent(prompt="Do the thing")
-        cfg = generate_agent_config(agent, "kiro")
-        assert "steering_file" in cfg
-        assert cfg["steering_file"]["path"] == ".kiro/steering/test-agent.md"
-        assert "Do the thing" in cfg["steering_file"]["content"]
-
-    def test_no_steering_file_when_no_prompt(self):
-        agent = _make_agent(prompt="")
         cfg = generate_agent_config(agent, "kiro")
         assert "steering_file" not in cfg
 

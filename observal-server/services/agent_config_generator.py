@@ -347,16 +347,6 @@ def generate_agent_config(
             },
             "scope": kiro_scope,
         }
-        # Also generate a Steering file for richer instruction support
-        if agent.prompt:
-            result["steering_file"] = {
-                "path": f".kiro/steering/{safe_name}.md",
-                "content": (
-                    f"---\ninclusion: always\nname: {safe_name}\n"
-                    f"description: {(agent.description or safe_name)[:100]}\n---\n\n"
-                    f"{_wrap_kiro_prompt(agent.prompt, safe_name)}"
-                ),
-            }
         skill_files = [_generate_skill_file(s, "kiro") for s in skill_configs]
         skill_files = [f for f in skill_files if f]
         if skill_files:
