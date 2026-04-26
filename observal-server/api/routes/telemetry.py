@@ -8,9 +8,8 @@ from datetime import UTC, datetime
 
 import jwt
 from fastapi import APIRouter, Depends, Header, Request, Response
-from redis.exceptions import RedisError
-from sqlalchemy import select
 from prometheus_client import Counter
+from sqlalchemy import select
 
 from api.deps import get_project_id, require_role
 from database import async_session
@@ -591,7 +590,7 @@ async def ingest(
                     token_usage.labels(type="input").inc(s.token_count_input)
                 if s.token_count_output:
                     token_usage.labels(type="output").inc(s.token_count_output)
-                
+
                 rows.append(
                     {
                         "span_id": s.span_id,

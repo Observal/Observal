@@ -77,7 +77,7 @@ async def _query(sql: str, params: dict | None = None, *, data: str | None = Non
     """
     start_time = time.time()
     operation = "insert" if "INSERT" in sql.upper() else "select"
-    
+
     try:
         client = _get_client()
         query_params = {
@@ -92,14 +92,14 @@ async def _query(sql: str, params: dict | None = None, *, data: str | None = Non
             query_params.update(params)
         body = f"{sql}\n{data}" if data else sql
         response = await client.post(CLICKHOUSE_HTTP, content=body, params=query_params)
-        
+
         # Record duration
         duration = time.time() - start_time
         # Observe query latency by operation type.
         clickhouse_query_duration.labels(operation=operation).observe(duration)
-        
+
         return response
-    except Exception as e:
+    except Exception:
         # Record error
         clickhouse_query_errors.labels(operation=operation).inc()
         raise
