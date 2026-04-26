@@ -129,6 +129,9 @@ class Settings(BaseSettings):
     DEMO_USER_EMAIL: str | None = None
     DEMO_USER_PASSWORD: str | None = None
 
+    # Prometheus metrics
+    METRICS_ENABLED: bool = True
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

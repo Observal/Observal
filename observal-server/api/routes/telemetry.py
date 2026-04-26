@@ -10,6 +10,7 @@ import jwt
 from fastapi import APIRouter, Depends, Header, Request, Response
 from redis.exceptions import RedisError
 from sqlalchemy import select
+from prometheus_client import Counter
 
 from api.deps import get_project_id, require_role
 from database import async_session
@@ -39,6 +40,27 @@ from services.security_events import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/telemetry", tags=["telemetry"])
+
+# Prometheus metrics for telemetry ingestion
+traces_ingested = Counter(
+    "observal_traces_ingested_total",
+    "Total number of traces ingested",
+)
+spans_ingested = Counter(
+    "observal_spans_ingested_total",
+    "Total number of spans ingested",
+)
+ingestion_errors = Counter(
+    "observal_ingestion_errors_total",
+    "Total number of ingestion errors",
+    ["type"],
+)
+token_usage = Counter(
+    "observal_token_usage_total",
+    "Total token usage",
+    ["type"],
+)
+
 otlp_router = APIRouter(prefix="", tags=["otlp"])
 
 # Background tasks that must survive until completion (prevent GC)
@@ -552,15 +574,24 @@ async def ingest(
                 )
             await insert_traces(rows)
             ingested += len(rows)
+            # Count successfully persisted trace rows.
+            traces_ingested.inc(len(rows))
         except Exception:
             logger.exception("Failed to insert traces")
             errors += len(batch.traces)
+            ingestion_errors.labels(type="traces").inc(len(batch.traces))
 
     # --- Spans ---
     if batch.spans:
         try:
             rows = []
             for s in batch.spans:
+                # Track token usage
+                if s.token_count_input:
+                    token_usage.labels(type="input").inc(s.token_count_input)
+                if s.token_count_output:
+                    token_usage.labels(type="output").inc(s.token_count_output)
+                
                 rows.append(
                     {
                         "span_id": s.span_id,
@@ -617,9 +648,12 @@ async def ingest(
                 )
             await insert_spans(rows)
             ingested += len(rows)
+            # Count successfully persisted span rows.
+            spans_ingested.inc(len(rows))
         except Exception:
             logger.exception("Failed to insert spans")
             errors += len(batch.spans)
+            ingestion_errors.labels(type="spans").inc(len(batch.spans))
 
     # --- Mirror shim spans into otel_logs for unified session view ---
     if batch.spans and batch.traces:
@@ -736,6 +770,8 @@ async def ingest(
             ingested += len(rows)
         except Exception:
             logger.exception("Failed to insert scores")
+            errors += len(batch.scores)
+            ingestion_errors.labels(type="scores").inc(len(batch.scores))
             errors += len(batch.scores)
 
     return IngestResponse(ingested=ingested, errors=errors)

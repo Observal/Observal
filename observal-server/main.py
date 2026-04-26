@@ -255,6 +255,14 @@ app.add_middleware(RequestIDMiddleware)
 # --- GZip compression for responses >= 500 bytes ---
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+# --- Prometheus instrumentation ---
+if settings.METRICS_ENABLED:
+    # Expose /metrics only when monitoring is enabled.
+    Instrumentator(
+        excluded_handlers=["/livez", "/healthz", "/readyz", "/metrics"],
+    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+
+
 
 class CacheControlMiddleware(BaseHTTPMiddleware):
     """Set Cache-Control headers on responses served from cache."""
@@ -312,11 +320,6 @@ app.include_router(sessions_router)
 app.include_router(component_source_router)
 app.include_router(bulk_router)
 app.include_router(config_router)
-
-# --- Prometheus metrics ---
-Instrumentator(
-    excluded_handlers=["/livez", "/healthz", "/readyz", "/metrics"],
-).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.get("/livez", include_in_schema=False)

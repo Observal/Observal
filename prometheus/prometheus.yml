@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'observal'
+    environment: 'production'
+
+
+# Load alerting rules
+rule_files:
+  - '/etc/prometheus/alerting-rules.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Observal API metrics
+  - job_name: 'observal-api'
+    static_configs:
+      - targets: ['observal-api:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+ 

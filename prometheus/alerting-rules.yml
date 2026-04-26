@@ -1,0 +1,133 @@
+groups:
+  - name: observal_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Ingestion stall alert
+      - alert: IngestionStall
+        expr: |
+          rate(observal_spans_ingested_total[10m]) == 0
+          and
+          rate(observal_spans_ingested_total[1h] offset 1h) > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: ingestion
+        annotations:
+          summary: "Telemetry ingestion has stalled"
+          description: "No spans have been ingested in the last 10 minutes, but there was activity in the previous hour"
+
+      # ClickHouse query latency alert
+      - alert: ClickHouseSlowQueries
+        expr: |
+          histogram_quantile(0.99, 
+            sum(rate(clickhouse_query_duration_seconds_bucket[5m])) by (le, operation)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: clickhouse
+        annotations:
+          summary: "ClickHouse queries are slow"
+          description: "P99 query latency for {{ $labels.operation }} is {{ $value }}s (threshold: 2s)"
+
+      # Health endpoint down alert
+      - alert: HealthEndpointDown
+        expr: up{job="observal-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Observal API health check failing"
+          description: "The /health endpoint has been unreachable for 2 minutes"
+
+      # High ingestion error rate
+      - alert: HighIngestionErrorRate
+        expr: |
+          (
+            sum(rate(observal_ingestion_errors_total[5m]))
+            /
+            (sum(rate(observal_traces_ingested_total[5m])) + sum(rate(observal_spans_ingested_total[5m])))
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: ingestion
+        annotations:
+          summary: "High ingestion error rate"
+          description: "Ingestion error rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # ClickHouse connection errors
+      - alert: ClickHouseConnectionErrors
+        expr: rate(clickhouse_query_errors_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: critical
+          component: clickhouse
+        annotations:
+          summary: "ClickHouse connection errors detected"
+          description: "ClickHouse query errors at {{ $value }} errors/sec"
+
+      # Low ingestion throughput (compared to historical baseline)
+      - alert: LowIngestionThroughput
+        expr: |
+          (
+            sum(rate(observal_spans_ingested_total[5m]))
+            <
+            sum(rate(observal_spans_ingested_total[1h] offset 1d)) * 0.2
+          )
+          and
+          sum(rate(observal_spans_ingested_total[1h] offset 1d)) > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: ingestion
+        annotations:
+          summary: "Ingestion throughput significantly lower than baseline"
+          description: "Current ingestion rate is less than 20% of yesterday's rate at this time"
+
+      # API request latency
+      - alert: HighAPILatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API request latency"
+          description: "P95 latency for {{ $labels.handler }} is {{ $value }}s (threshold: 5s)"
+
+      # Memory pressure (requires node_exporter)
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            container_memory_usage_bytes{container="observal-api"}
+            /
+            container_spec_memory_limit_bytes{container="observal-api"}
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High memory usage in API container"
+          description: "Memory usage is {{ $value | humanizePercentage }} of limit"
