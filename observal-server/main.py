@@ -263,7 +263,6 @@ if settings.METRICS_ENABLED:
     ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
-
 class CacheControlMiddleware(BaseHTTPMiddleware):
     """Set Cache-Control headers on responses served from cache."""
 
