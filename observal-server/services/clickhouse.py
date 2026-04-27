@@ -57,6 +57,15 @@ def _get_client() -> httpx.AsyncClient:
     return _client
 
 
+def _query_operation(sql: str) -> str:
+    statement = sql.lstrip().upper()
+    if statement.startswith("INSERT"):
+        return "insert"
+    if statement.startswith(("CREATE", "ALTER", "DROP", "TRUNCATE", "OPTIMIZE", "RENAME", "ATTACH", "DETACH")):
+        return "ddl"
+    return "select"
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=0.5, min=0.5, max=5),
@@ -75,8 +84,8 @@ async def _query(sql: str, params: dict | None = None, *, data: str | None = Non
             newline.  Used for ``INSERT ... FORMAT JSONEachRow`` where each
             line in *data* is a JSON object.
     """
-    start_time = time.time()
-    operation = "insert" if "INSERT" in sql.upper() else "select"
+    start_time = time.monotonic()
+    operation = _query_operation(sql)
 
     try:
         client = _get_client()
@@ -92,17 +101,12 @@ async def _query(sql: str, params: dict | None = None, *, data: str | None = Non
             query_params.update(params)
         body = f"{sql}\n{data}" if data else sql
         response = await client.post(CLICKHOUSE_HTTP, content=body, params=query_params)
-
-        # Record duration
-        duration = time.time() - start_time
-        # Observe query latency by operation type.
-        clickhouse_query_duration.labels(operation=operation).observe(duration)
-
         return response
     except Exception:
-        # Record error
         clickhouse_query_errors.labels(operation=operation).inc()
         raise
+    finally:
+        clickhouse_query_duration.labels(operation=operation).observe(time.monotonic() - start_time)
 
 
 async def clickhouse_health() -> bool:

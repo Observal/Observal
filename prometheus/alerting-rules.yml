@@ -6,7 +6,7 @@ groups:
       - alert: HighErrorRate
         expr: |
           (
-            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            sum(rate(http_requests_total{status=~"5xx"}[5m]))
             /
             sum(rate(http_requests_total[5m]))
           ) > 0.05
@@ -19,6 +19,7 @@ groups:
           description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
 
       # Ingestion stall alert
+      # NOTE: offset guard requires ~2h of history will not fire on fresh deployments.
       - alert: IngestionStall
         expr: |
           rate(observal_spans_ingested_total[10m]) == 0
@@ -116,7 +117,7 @@ groups:
           summary: "High API request latency"
           description: "P95 latency for {{ $labels.handler }} is {{ $value }}s (threshold: 5s)"
 
-      # Memory pressure (requires node_exporter)
+      # Memory pressure — requires cAdvisor scrape job (observal-cadvisor in docker-compose.yml).
       - alert: HighMemoryUsage
         expr: |
           (
