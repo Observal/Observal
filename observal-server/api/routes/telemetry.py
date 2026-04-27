@@ -771,7 +771,6 @@ async def ingest(
             logger.exception("Failed to insert scores")
             errors += len(batch.scores)
             ingestion_errors.labels(type="scores").inc(len(batch.scores))
-            errors += len(batch.scores)
 
     return IngestResponse(ingested=ingested, errors=errors)
 

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     PUBLIC_URL: str = ""
     OTLP_HTTP_URL: str = ""
 
+    # Prometheus metrics
+    METRICS_ENABLED: bool = True
+
     # JWT Settings
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -128,9 +131,6 @@ class Settings(BaseSettings):
     DEMO_REVIEWER_PASSWORD: str | None = None
     DEMO_USER_EMAIL: str | None = None
     DEMO_USER_PASSWORD: str | None = None
-
-    # Prometheus metrics
-    METRICS_ENABLED: bool = True
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

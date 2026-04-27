@@ -3,7 +3,7 @@ apiVersion: 1
 datasources:
   - name: Prometheus
     type: prometheus
-    uid: prometheus
+    uid: observal-prometheus
     access: proxy
     url: http://observal-prometheus:9090
     isDefault: false

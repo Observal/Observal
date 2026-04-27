@@ -11,11 +11,11 @@
       "id": 1,
       "title": "HTTP Request Rate",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "sum(rate(http_requests_total[5m])) by (status)",
           "legendFormat": "{{status}}",
           "refId": "A"
@@ -26,11 +26,11 @@
       "id": 2,
       "title": "Error Rate",
       "type": "gauge",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "sum(rate(http_requests_total{status=\"4xx\"}[5m])) / sum(rate(http_requests_total[5m]))",
           "refId": "A"
         }
@@ -52,23 +52,23 @@
       "id": 3,
       "title": "Request Latency Percentiles",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
           "legendFormat": "p99",
           "refId": "C"
@@ -79,17 +79,17 @@
       "id": 4,
       "title": "Ingestion Throughput",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "rate(observal_traces_ingested_total[5m])",
           "legendFormat": "Traces",
           "refId": "A"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "rate(observal_spans_ingested_total[5m])",
           "legendFormat": "Spans",
           "refId": "B"
@@ -100,11 +100,11 @@
       "id": 5,
       "title": "ClickHouse Query Duration",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "histogram_quantile(0.99, sum(rate(clickhouse_query_duration_seconds_bucket[5m])) by (le, operation))",
           "legendFormat": "{{operation}} p99",
           "refId": "A"
@@ -115,17 +115,17 @@
       "id": 6,
       "title": "Token Usage Rate",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "rate(observal_token_usage_total{type=\"input\"}[5m])",
           "legendFormat": "Input Tokens",
           "refId": "A"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "datasource": {"type": "prometheus", "uid": "observal-prometheus"},
           "expr": "rate(observal_token_usage_total{type=\"output\"}[5m])",
           "legendFormat": "Output Tokens",
           "refId": "B"

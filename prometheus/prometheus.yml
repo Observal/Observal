@@ -3,7 +3,6 @@ global:
   evaluation_interval: 15s
   external_labels:
     cluster: 'observal'
-    environment: 'production'
 
 
 # Load alerting rules
