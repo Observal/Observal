@@ -97,28 +97,28 @@ function StatPills({ stats, crossCount, errorCount }: { stats: DagData["stats"];
   return (
     <div className="flex items-center gap-1.5">
       {[
-        { l: "effective", c: stats.effective_nodes, color: "#10b981" },
-        { l: "reverted", c: stats.reverted_nodes, color: "#ef4444" },
-        { l: "waste", c: stats.waste_nodes, color: "#f59e0b" },
-      ].map(({ l, c, color }) => (
+        { l: "effective", c: stats.effective_nodes, color: "#10b981", textColor: "var(--color-success)" },
+        { l: "reverted", c: stats.reverted_nodes, color: "#ef4444", textColor: "var(--color-destructive)" },
+        { l: "waste", c: stats.waste_nodes, color: "#f59e0b", textColor: "var(--color-warning)" },
+      ].map(({ l, c, color, textColor }) => (
         <div key={l} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
-          style={{ background: color + "0d", border: `1px solid ${color}25`, color }}>
+          style={{ background: color + "0d", border: `1px solid ${color}25`, color: textColor }}>
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />{c}
         </div>
       ))}
       {errorCount > 0 && (
         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
-          style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)", color: "#dc2626" }}>
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#dc2626" }} />{errorCount} err
+          style={{ background: "color-mix(in oklch, var(--color-destructive) 8%, transparent)", border: "1px solid color-mix(in oklch, var(--color-destructive) 20%, transparent)", color: "var(--color-destructive)" }}>
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--color-destructive)" }} />{errorCount} err
         </div>
       )}
       <div className="px-2 py-0.5 rounded-full text-[10px] text-muted-foreground"
-        style={{ background: "rgba(100,116,139,0.06)", border: "1px solid rgba(100,116,139,0.12)" }}>
+        style={{ background: "color-mix(in oklch, var(--color-muted-foreground) 8%, transparent)", border: "1px solid var(--color-border)" }}>
         {stats.total_nodes}
       </div>
       {crossCount > 0 && (
         <div className="px-2 py-0.5 rounded-full text-[10px] font-medium"
-          style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", color: "#60a5fa" }}>
+          style={{ background: "color-mix(in oklch, var(--color-info) 8%, transparent)", border: "1px solid color-mix(in oklch, var(--color-info) 20%, transparent)", color: "var(--color-info)" }}>
           {crossCount} cross
         </div>
       )}
@@ -191,36 +191,36 @@ function GraphHoverCard({ node, screenX, screenY, containerW }: { node: DagNode;
   const flipLeft = screenX + cardW + 24 > containerW;
   return (
     <div className="absolute pointer-events-none z-50" style={{ left: flipLeft ? screenX - cardW - 16 : screenX + 20, top: screenY - 50, width: cardW }}>
-      <div className="rounded-xl border backdrop-blur-xl overflow-hidden" style={{ background: "rgba(15,23,42,0.95)", borderColor: s.stroke + "50", boxShadow: `0 0 30px ${s.glow}, 0 16px 40px rgba(0,0,0,0.5)` }}>
+      <div className="rounded-xl border backdrop-blur-xl overflow-hidden" style={{ background: "var(--color-popover)", borderColor: s.stroke + "50", boxShadow: `0 0 30px ${s.glow}, 0 16px 40px rgba(0,0,0,0.5)` }}>
         <div className="px-3 py-2 flex items-center gap-2" style={{ borderBottom: `1px solid ${s.stroke}25` }}>
           <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black" style={{ background: accent + "22", color: accent, border: `1.5px solid ${accent}55` }}>{ACTION_LETTER[node.action_type] || "?"}</div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5"><span className="font-semibold text-[11px] text-slate-100">{ACTION_WORD[node.action_type] || node.action_type}</span><span className="text-[8px] font-mono text-slate-500">#{node.id}</span></div>
-            {detail && <span className="text-[9px] font-mono text-slate-400 block truncate">{truncate(detail, 45)}</span>}
+            <div className="flex items-center gap-1.5"><span className="font-semibold text-[11px] text-popover-foreground">{ACTION_WORD[node.action_type] || node.action_type}</span><span className="text-[8px] font-mono text-muted-foreground">#{node.id}</span></div>
+            {detail && <span className="text-[9px] font-mono text-muted-foreground block truncate">{truncate(detail, 45)}</span>}
           </div>
           <div className="flex items-center gap-1">
             <div className="px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-wider" style={{ background: s.fill + "18", color: s.stroke, border: `1px solid ${s.stroke}35` }}>{node.status}</div>
             {node.error && (
-              <div className="px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-wider" style={{ background: "rgba(220,38,38,0.15)", color: "#f87171", border: "1px solid rgba(220,38,38,0.3)" }}>FAIL</div>
+              <div className="px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-wider" style={{ background: "color-mix(in oklch, var(--color-destructive) 15%, transparent)", color: "var(--color-destructive)", border: "1px solid color-mix(in oklch, var(--color-destructive) 30%, transparent)" }}>FAIL</div>
             )}
           </div>
         </div>
         <div className="px-3 py-2 space-y-1.5">
           {node.error && (
-            <div className="rounded px-2 py-1 text-[9px] text-red-400 flex items-center gap-1.5" style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.15)" }}>
-              <span className="w-3 h-3 rounded-full flex items-center justify-center text-[7px] font-black shrink-0" style={{ background: "rgba(220,38,38,0.2)", color: "#f87171" }}>!</span>
+            <div className="rounded px-2 py-1 text-[9px] text-destructive flex items-center gap-1.5" style={{ background: "color-mix(in oklch, var(--color-destructive) 8%, transparent)", border: "1px solid color-mix(in oklch, var(--color-destructive) 15%, transparent)" }}>
+              <span className="w-3 h-3 rounded-full flex items-center justify-center text-[7px] font-black shrink-0" style={{ background: "color-mix(in oklch, var(--color-destructive) 20%, transparent)", color: "var(--color-destructive)" }}>!</span>
               Tool call failed
             </div>
           )}
-          {node.files_touched.length > 0 && <div><span className="text-[8px] font-semibold uppercase tracking-wider text-slate-500 block mb-0.5">Files</span>{node.files_touched.slice(0, 3).map((f, i) => <div key={i} className="text-[9px] font-mono text-slate-300 truncate pl-1.5" style={{ borderLeft: `2px solid ${accent}35` }}>{f.split(/[/\\]/).pop() || f}</div>)}</div>}
+          {node.files_touched.length > 0 && <div><span className="text-[8px] font-semibold uppercase tracking-wider text-muted-foreground block mb-0.5">Files</span>{node.files_touched.slice(0, 3).map((f, i) => <div key={i} className="text-[9px] font-mono text-popover-foreground truncate pl-1.5" style={{ borderLeft: `2px solid ${accent}35` }}>{f.split(/[/\\]/).pop() || f}</div>)}</div>}
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            {node.latency_ms > 0 && <div><span className="text-[8px] text-slate-500 block">Latency</span><span className="text-[9px] font-mono text-slate-200">{formatLatency(node.latency_ms)}</span></div>}
-            {node.trace_id && <div><span className="text-[8px] text-slate-500 block">Trace</span><span className="text-[9px] font-mono text-blue-400">{node.trace_id.slice(0, 10)}</span></div>}
-            {node.parent_ids.length > 0 && <div><span className="text-[8px] text-slate-500 block">Parents</span><span className="text-[9px] font-mono text-slate-300">{node.parent_ids.map(p => `#${p}`).join(", ")}</span></div>}
-            {node.reverted_by !== null && <div><span className="text-[8px] text-slate-500 block">Reverted by</span><span className="text-[9px] font-mono text-red-400">#{node.reverted_by}</span></div>}
+            {node.latency_ms > 0 && <div><span className="text-[8px] text-muted-foreground block">Latency</span><span className="text-[9px] font-mono text-popover-foreground">{formatLatency(node.latency_ms)}</span></div>}
+            {node.trace_id && <div><span className="text-[8px] text-muted-foreground block">Trace</span><span className="text-[9px] font-mono text-info">{node.trace_id.slice(0, 10)}</span></div>}
+            {node.parent_ids.length > 0 && <div><span className="text-[8px] text-muted-foreground block">Parents</span><span className="text-[9px] font-mono text-popover-foreground">{node.parent_ids.map(p => `#${p}`).join(", ")}</span></div>}
+            {node.reverted_by !== null && <div><span className="text-[8px] text-muted-foreground block">Reverted by</span><span className="text-[9px] font-mono text-destructive">#{node.reverted_by}</span></div>}
           </div>
-          {node.status === "reverted" && <div className="rounded px-2 py-1 text-[9px] text-red-400" style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.12)" }}>Reverted{node.reverted_by !== null ? ` by #${node.reverted_by}` : ""}</div>}
-          {node.status === "waste" && <div className="rounded px-2 py-1 text-[9px] text-amber-400" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.12)" }}>Did not contribute to final state</div>}
+          {node.status === "reverted" && <div className="rounded px-2 py-1 text-[9px] text-destructive" style={{ background: "color-mix(in oklch, var(--color-destructive) 6%, transparent)", border: "1px solid color-mix(in oklch, var(--color-destructive) 12%, transparent)" }}>Reverted{node.reverted_by !== null ? ` by #${node.reverted_by}` : ""}</div>}
+          {node.status === "waste" && <div className="rounded px-2 py-1 text-[9px] text-warning" style={{ background: "color-mix(in oklch, var(--color-warning) 6%, transparent)", border: "1px solid color-mix(in oklch, var(--color-warning) 12%, transparent)" }}>Did not contribute to final state</div>}
         </div>
       </div>
     </div>
@@ -294,10 +294,10 @@ function GraphView({ dag, criticalSet, criticalEdgeSet }: { dag: DagData; critic
     <div
       ref={containerRef}
       className="relative rounded-xl select-none"
-      style={{ height: 520, background: "radial-gradient(ellipse at center, rgba(15,23,42,0.6) 0%, rgba(2,6,23,0.85) 100%)", border: "1px solid rgba(100,116,139,0.08)", cursor: isPanning ? "grabbing" : "grab", overflow: "hidden", touchAction: "none" }}
+      style={{ height: 520, background: "radial-gradient(ellipse at center, var(--color-surface-sunken) 0%, var(--color-background) 100%)", border: "1px solid var(--color-border)", cursor: isPanning ? "grabbing" : "grab", overflow: "hidden", touchAction: "none" }}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}
     >
-      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(rgba(148,163,184,0.04) 1px, transparent 1px)", backgroundSize: `${24 * zoom}px ${24 * zoom}px`, backgroundPosition: `${pan.x % (24 * zoom)}px ${pan.y % (24 * zoom)}px` }} />
+      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(color-mix(in oklch, var(--color-muted-foreground) 8%, transparent) 1px, transparent 1px)", backgroundSize: `${24 * zoom}px ${24 * zoom}px`, backgroundPosition: `${pan.x % (24 * zoom)}px ${pan.y % (24 * zoom)}px` }} />
       <svg ref={svgRef} className="absolute inset-0 w-full h-full" style={{ overflow: "visible" }}>
         <defs>
           <marker id="ac" viewBox="0 0 6 4" refX="5" refY="2" markerWidth="5" markerHeight="4" orient="auto-start-reverse"><path d="M0 0L6 2L0 4z" fill="rgba(100,116,139,0.25)" /></marker>
@@ -321,7 +321,7 @@ function GraphView({ dag, criticalSet, criticalEdgeSet }: { dag: DagData; critic
             const nx = -(ty - sy); const ny = tx - sx;
             const bend = isCross ? 0.15 : 0.05;
 
-            let stroke = isCross ? "rgba(59,130,246,0.3)" : "rgba(100,116,139,0.12)";
+            let stroke = isCross ? "color-mix(in oklch, var(--color-info) 30%, transparent)" : "color-mix(in oklch, var(--color-border) 50%, transparent)";
             let strokeW = isCross ? 0.9 : 0.6;
             let marker = isCross ? "url(#ax)" : "url(#ac)";
 
@@ -364,11 +364,11 @@ function GraphView({ dag, criticalSet, criticalEdgeSet }: { dag: DagData; critic
         </g>
       </svg>
       {hoveredData && hoveredScreenPos && <GraphHoverCard node={hoveredData} screenX={hoveredScreenPos.x} screenY={hoveredScreenPos.y} containerW={containerWidth} />}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] pointer-events-none flex items-center gap-3" style={{ background: "rgba(15,23,42,0.85)", border: "1px solid rgba(100,116,139,0.15)", color: "rgba(148,163,184,0.5)" }}>
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] pointer-events-none flex items-center gap-3" style={{ background: "var(--color-surface-sunken)", border: "1px solid var(--color-border)", color: "var(--color-muted-foreground)" }}>
         <span>scroll to zoom &middot; drag to pan &middot; hover for details</span>
         {criticalSet.size > 0 && (
           <>
-            <span style={{ color: "rgba(100,116,139,0.2)" }}>|</span>
+            <span style={{ color: "var(--color-border)" }}>|</span>
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full" style={{ background: CRITICAL_PATH_COLOR, boxShadow: `0 0 4px ${CRITICAL_PATH_GLOW}` }} />
               <span style={{ color: CRITICAL_PATH_COLOR + "aa" }}>critical path</span>
@@ -410,7 +410,7 @@ function TimelineView({ dag, criticalSet }: { dag: DagData; criticalSet: Set<num
   return (
     <div
       className="relative rounded-xl overflow-hidden"
-      style={{ background: "linear-gradient(180deg, rgba(15,23,42,0.4) 0%, rgba(15,23,42,0.2) 100%)", border: "1px solid rgba(100,116,139,0.08)" }}
+      style={{ background: "linear-gradient(180deg, var(--color-surface-sunken) 0%, var(--color-background) 100%)", border: "1px solid var(--color-border)" }}
     >
       <div ref={listRef} className="max-h-[560px] overflow-y-auto p-4 space-y-0">
         {dag.nodes.map((node, idx) => {
@@ -427,24 +427,24 @@ function TimelineView({ dag, criticalSet }: { dag: DagData; criticalSet: Set<num
               {/* Trace boundary */}
               {showBoundary && (
                 <div className="flex items-center gap-3 py-2.5 px-2">
-                  <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(59,130,246,0.2), transparent)" }} />
-                  <span className="text-[9px] font-mono font-semibold uppercase tracking-widest px-2 py-0.5 rounded shrink-0" style={{ color: "rgba(96,165,250,0.6)", background: "rgba(59,130,246,0.05)" }}>
+                  <div className="flex-1 h-px" style={{ background: `linear-gradient(90deg, transparent, color-mix(in oklch, var(--color-info) 20%, transparent), transparent)` }} />
+                  <span className="text-[9px] font-mono font-semibold uppercase tracking-widest px-2 py-0.5 rounded shrink-0" style={{ color: "var(--color-info)", opacity: 0.6, background: "color-mix(in oklch, var(--color-info) 5%, transparent)" }}>
                     trace {node.trace_id?.slice(0, 8)}
                   </span>
-                  <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(59,130,246,0.2), transparent)" }} />
+                  <div className="flex-1 h-px" style={{ background: `linear-gradient(90deg, transparent, color-mix(in oklch, var(--color-info) 20%, transparent), transparent)` }} />
                 </div>
               )}
 
               <div className="flex">
                 {/* Timeline spine */}
                 <div className="flex flex-col items-center shrink-0" style={{ width: 28 }}>
-                  {idx > 0 && !showBoundary && <div className="w-px flex-1 min-h-[6px]" style={{ background: isCrit ? CRITICAL_PATH_COLOR + "40" : "rgba(100,116,139,0.12)" }} />}
+                  {idx > 0 && !showBoundary && <div className="w-px flex-1 min-h-[6px]" style={{ background: isCrit ? CRITICAL_PATH_COLOR + "40" : "color-mix(in oklch, var(--color-border) 50%, transparent)" }} />}
                   {(idx === 0 || showBoundary) && <div className="flex-1" />}
                   <div className="relative shrink-0">
                     <div className="absolute -inset-1 rounded-full" style={{ background: isCrit ? CRITICAL_PATH_GLOW : s.glow, opacity: isCrit ? 0.25 : 0.12 }} />
                     <div className="w-3 h-3 rounded-full relative" style={{ background: s.fill, border: `1.5px solid ${isCrit ? CRITICAL_PATH_COLOR : s.stroke}`, boxShadow: `0 0 6px ${isCrit ? CRITICAL_PATH_GLOW : s.glow}` }} />
                   </div>
-                  {!isLast && <div className="w-px flex-1 min-h-[6px]" style={{ background: isCrit ? CRITICAL_PATH_COLOR + "40" : "rgba(100,116,139,0.12)" }} />}
+                  {!isLast && <div className="w-px flex-1 min-h-[6px]" style={{ background: isCrit ? CRITICAL_PATH_COLOR + "40" : "color-mix(in oklch, var(--color-border) 50%, transparent)" }} />}
                   {isLast && <div className="flex-1" />}
                 </div>
 
@@ -453,14 +453,14 @@ function TimelineView({ dag, criticalSet }: { dag: DagData; criticalSet: Set<num
                   <div
                     className="rounded-lg flex items-center gap-2.5 px-3 py-2"
                     style={{
-                      background: node.error ? "rgba(220,38,38,0.06)" : s.fill + "08",
-                      border: `1px solid ${node.error ? "rgba(220,38,38,0.2)" : isCrit ? CRITICAL_PATH_COLOR + "30" : s.stroke + "20"}`,
+                      background: node.error ? "color-mix(in oklch, var(--color-destructive) 6%, transparent)" : s.fill + "08",
+                      border: `1px solid ${node.error ? "color-mix(in oklch, var(--color-destructive) 20%, transparent)" : isCrit ? CRITICAL_PATH_COLOR + "30" : s.stroke + "20"}`,
                     }}
                   >
                     {/* Action icon */}
                     <div
                       className="w-6 h-6 rounded flex items-center justify-center shrink-0 font-mono text-[9px] font-black"
-                      style={{ background: node.error ? "rgba(220,38,38,0.15)" : accent + "15", color: node.error ? "#f87171" : accent, border: `1px solid ${node.error ? "rgba(220,38,38,0.3)" : accent + "30"}` }}
+                      style={{ background: node.error ? "color-mix(in oklch, var(--color-destructive) 15%, transparent)" : accent + "15", color: node.error ? "var(--color-destructive)" : accent, border: `1px solid ${node.error ? "color-mix(in oklch, var(--color-destructive) 30%, transparent)" : accent + "30"}` }}
                     >
                       {node.error ? "!" : ACTION_LETTER[node.action_type] || "?"}
                     </div>
@@ -468,10 +468,10 @@ function TimelineView({ dag, criticalSet }: { dag: DagData; criticalSet: Set<num
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-semibold" style={{ color: node.error ? "rgba(248,113,113,0.9)" : "rgba(226,232,240,0.85)" }}>
+                        <span className="text-[11px] font-semibold" style={{ color: node.error ? "var(--color-destructive)" : "var(--color-foreground)" }}>
                           {ACTION_WORD[node.action_type] || node.action_type}
                         </span>
-                        <span className="text-[9px] font-mono" style={{ color: "rgba(148,163,184,0.4)" }}>#{node.id}</span>
+                        <span className="text-[9px] font-mono text-muted-foreground opacity-60">#{node.id}</span>
                         {isCrit && (
                           <span className="text-[8px] font-bold px-1.5 py-0.5 rounded" style={{ color: CRITICAL_PATH_COLOR, background: CRITICAL_PATH_COLOR + "12", border: `1px solid ${CRITICAL_PATH_COLOR}25` }}>
                             CRIT
@@ -479,7 +479,7 @@ function TimelineView({ dag, criticalSet }: { dag: DagData; criticalSet: Set<num
                         )}
                       </div>
                       {detail && (
-                        <span className="text-[10px] font-mono block truncate" style={{ color: "rgba(148,163,184,0.5)" }}>
+                        <span className="text-[10px] font-mono block truncate text-muted-foreground opacity-70">
                           {truncate(detail, 60)}
                         </span>
                       )}
@@ -493,13 +493,13 @@ function TimelineView({ dag, criticalSet }: { dag: DagData; criticalSet: Set<num
                     {/* Right side */}
                     <div className="flex items-center gap-1.5 shrink-0">
                       {node.latency_ms > 0 && (
-                        <span className="text-[9px] font-mono tabular-nums px-1.5 py-0.5 rounded" style={{ color: "rgba(148,163,184,0.45)", background: "rgba(148,163,184,0.05)" }}>
+                        <span className="text-[9px] font-mono tabular-nums px-1.5 py-0.5 rounded text-muted-foreground" style={{ background: "color-mix(in oklch, var(--color-muted-foreground) 5%, transparent)" }}>
                           {formatLatency(node.latency_ms)}
                         </span>
                       )}
                       {node.error && (
-                        <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                          style={{ color: "#f87171", background: "rgba(220,38,38,0.12)", border: "1px solid rgba(220,38,38,0.25)" }}>
+                        <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-destructive"
+                          style={{ background: "color-mix(in oklch, var(--color-destructive) 12%, transparent)", border: "1px solid color-mix(in oklch, var(--color-destructive) 25%, transparent)" }}>
                           FAIL
                         </span>
                       )}
@@ -512,7 +512,7 @@ function TimelineView({ dag, criticalSet }: { dag: DagData; criticalSet: Set<num
                         </span>
                       )}
                       {node.reverted_by !== null && (
-                        <span className="text-[8px] font-mono" style={{ color: "rgba(239,68,68,0.5)" }}>
+                        <span className="text-[8px] font-mono text-destructive opacity-60">
                           by #{node.reverted_by}
                         </span>
                       )}
@@ -573,7 +573,7 @@ export function SessionDAG({ dag }: { dag: DagData }) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
             <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-black"
-              style={{ background: "rgba(59,130,246,0.1)", color: "#60a5fa", border: "1px solid rgba(59,130,246,0.2)" }}>
+              style={{ background: "color-mix(in oklch, var(--color-primary-accent) 10%, transparent)", color: "var(--color-primary-accent)", border: "1px solid color-mix(in oklch, var(--color-primary-accent) 20%, transparent)" }}>
               {mode === "graph" ? "G" : "T"}
             </span>
             {mode === "graph" ? "Causal DAG" : "Timeline"}
@@ -583,16 +583,16 @@ export function SessionDAG({ dag }: { dag: DagData }) {
             {/* Mode toggle */}
             <div
               className="flex items-center rounded-full p-0.5"
-              style={{ background: "rgba(100,116,139,0.08)", border: "1px solid rgba(100,116,139,0.12)" }}
+              style={{ background: "color-mix(in oklch, var(--color-muted-foreground) 8%, transparent)", border: "1px solid var(--color-border)" }}
             >
               <button
                 type="button"
                 onClick={() => setMode("graph")}
                 className="px-2.5 py-1 rounded-full text-[10px] font-medium transition-all"
                 style={{
-                  background: mode === "graph" ? "rgba(59,130,246,0.15)" : "transparent",
-                  color: mode === "graph" ? "#60a5fa" : "rgba(148,163,184,0.5)",
-                  border: mode === "graph" ? "1px solid rgba(59,130,246,0.25)" : "1px solid transparent",
+                  background: mode === "graph" ? "color-mix(in oklch, var(--color-primary-accent) 15%, transparent)" : "transparent",
+                  color: mode === "graph" ? "var(--color-primary-accent)" : "var(--color-muted-foreground)",
+                  border: mode === "graph" ? "1px solid color-mix(in oklch, var(--color-primary-accent) 25%, transparent)" : "1px solid transparent",
                 }}
               >
                 Graph
@@ -602,9 +602,9 @@ export function SessionDAG({ dag }: { dag: DagData }) {
                 onClick={() => setMode("timeline")}
                 className="px-2.5 py-1 rounded-full text-[10px] font-medium transition-all"
                 style={{
-                  background: mode === "timeline" ? "rgba(59,130,246,0.15)" : "transparent",
-                  color: mode === "timeline" ? "#60a5fa" : "rgba(148,163,184,0.5)",
-                  border: mode === "timeline" ? "1px solid rgba(59,130,246,0.25)" : "1px solid transparent",
+                  background: mode === "timeline" ? "color-mix(in oklch, var(--color-primary-accent) 15%, transparent)" : "transparent",
+                  color: mode === "timeline" ? "var(--color-primary-accent)" : "var(--color-muted-foreground)",
+                  border: mode === "timeline" ? "1px solid color-mix(in oklch, var(--color-primary-accent) 25%, transparent)" : "1px solid transparent",
                 }}
               >
                 Timeline
