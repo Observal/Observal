@@ -39,6 +39,7 @@ def _make_agent(owner_id: uuid.UUID | None = None):
     agent.id = uuid.uuid4()
     agent.name = "my-agent"
     agent.created_by = owner_id or uuid.uuid4()
+    agent.co_maintainers = []
     agent.latest_version_id = None
     agent.latest_version = None
     return agent
@@ -300,11 +301,13 @@ async def test_create_version_happy_path():
         goal_template=None,
     )
 
-    # DB: dup check returns None, then flush/commit succeed
+    # DB: dup check returns None, pending count returns 0
     db = AsyncMock()
     dup_result = MagicMock()
     dup_result.scalar_one_or_none.return_value = None
-    db.execute = AsyncMock(return_value=dup_result)
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+    db.execute = AsyncMock(side_effect=[dup_result, count_result])
     db.commit = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
@@ -314,6 +317,7 @@ async def test_create_version_happy_path():
         patch("api.routes.agent_versions.validate_component_ids", new=AsyncMock(return_value=[])),
         patch("api.routes.agent_versions.infer_required_features", return_value=["rules"]),
         patch("api.routes.agent_versions.compute_supported_ides", return_value=["claude-code"]),
+        patch("api.routes.agent_versions.generate_agent_config", return_value={"mcpServers": {}}),
         patch("api.routes.agent_versions.audit", new=AsyncMock()),
     ):
         result = await _create_agent_version(
@@ -428,6 +432,105 @@ async def test_create_version_not_owner_403():
         )
 
     assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_version_co_maintainer_allowed():
+    """create_agent_version succeeds for a co-maintainer (not just owner)."""
+    from api.routes.agent_versions import _create_agent_version
+    from schemas.agent import AgentVersionCreateRequest
+
+    owner_id = uuid.uuid4()
+    co_maintainer_id = uuid.uuid4()
+    agent = _make_agent(owner_id)
+    agent.co_maintainers = [str(co_maintainer_id)]
+
+    co_user = _make_user()
+    co_user.id = co_maintainer_id
+
+    req = AgentVersionCreateRequest(
+        version=SEMVER_VALID,
+        description="Co-maintainer release",
+        prompt="You are helpful",
+        model_name="claude-3-5-sonnet",
+    )
+
+    # DB: dup check returns None, pending count returns 0, flush/commit succeed
+    db = AsyncMock()
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+    db.execute = AsyncMock(side_effect=[dup_result, count_result])
+    db.commit = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+
+    with (
+        patch("api.routes.agent_versions._load_agent", new=AsyncMock(return_value=agent)),
+        patch("api.routes.agent_versions.validate_component_ids", new=AsyncMock(return_value=[])),
+        patch("api.routes.agent_versions.infer_required_features", return_value=[]),
+        patch("api.routes.agent_versions.compute_supported_ides", return_value=[]),
+        patch("api.routes.agent_versions.generate_agent_config", return_value={}),
+        patch("api.routes.agent_versions.audit", new=AsyncMock()),
+    ):
+        result = await _create_agent_version(
+            agent_id=str(agent.id),
+            req=req,
+            db=db,
+            current_user=co_user,
+        )
+
+    assert result["version"] == SEMVER_VALID
+    assert result["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_create_version_warns_multiple_pending():
+    """create_agent_version includes warning when other pending versions exist."""
+    from api.routes.agent_versions import _create_agent_version
+    from schemas.agent import AgentVersionCreateRequest
+
+    owner_id = uuid.uuid4()
+    agent = _make_agent(owner_id)
+    user = _make_user()
+    user.id = owner_id
+
+    req = AgentVersionCreateRequest(
+        version=SEMVER_VALID,
+        description="Another release",
+        prompt="You are helpful",
+        model_name="claude-3-5-sonnet",
+    )
+
+    # DB: dup check returns None, pending count returns 2
+    db = AsyncMock()
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    count_result = MagicMock()
+    count_result.scalar.return_value = 2
+    db.execute = AsyncMock(side_effect=[dup_result, count_result])
+    db.commit = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+
+    with (
+        patch("api.routes.agent_versions._load_agent", new=AsyncMock(return_value=agent)),
+        patch("api.routes.agent_versions.validate_component_ids", new=AsyncMock(return_value=[])),
+        patch("api.routes.agent_versions.infer_required_features", return_value=[]),
+        patch("api.routes.agent_versions.compute_supported_ides", return_value=[]),
+        patch("api.routes.agent_versions.generate_agent_config", return_value={}),
+        patch("api.routes.agent_versions.audit", new=AsyncMock()),
+    ):
+        result = await _create_agent_version(
+            agent_id=str(agent.id),
+            req=req,
+            db=db,
+            current_user=user,
+        )
+
+    assert "warnings" in result
+    assert "2 pending" in result["warnings"][0]
 
 
 # ---------------------------------------------------------------------------
@@ -600,21 +703,22 @@ async def test_get_ide_config_from_cache():
 
 
 @pytest.mark.asyncio
-async def test_get_ide_config_generated_on_the_fly():
-    """get_agent_ide_config calls generate_agent_config when ide_configs is empty."""
+async def test_get_ide_config_404_when_not_cached():
+    """get_agent_ide_config raises 404 when IDE config is not pre-generated."""
+    from fastapi import HTTPException
+
     from api.routes.agent_versions import _get_agent_ide_config
 
     agent = _make_agent()
     ver = _make_version(agent.id)
-    ver.ide_configs = {}  # no cached config
-    generated_cfg = {"mcpServers": {"test": {}}}
+    ver.ide_configs = {}  # no cached config for requested IDE
     db = _db_returning_one(ver)
 
     with (
         patch("api.routes.agent_versions._load_agent", new=AsyncMock(return_value=agent)),
-        patch("api.routes.agent_versions.generate_agent_config", return_value=generated_cfg),
+        pytest.raises(HTTPException) as exc,
     ):
-        result = await _get_agent_ide_config(
+        await _get_agent_ide_config(
             agent_id=str(agent.id),
             version=SEMVER_VALID,
             ide="claude-code",
@@ -622,7 +726,8 @@ async def test_get_ide_config_generated_on_the_fly():
             current_user=_make_user(),
         )
 
-    assert result == generated_cfg
+    assert exc.value.status_code == 404
+    assert "claude-code" in exc.value.detail
 
 
 # ---------------------------------------------------------------------------
@@ -631,24 +736,19 @@ async def test_get_ide_config_generated_on_the_fly():
 
 
 @pytest.mark.asyncio
-async def test_diff_versions_returns_diff_lines():
-    """get_version_diff returns unified diff lines between two version snapshots."""
+async def test_diff_versions_returns_yaml_diff():
+    """get_version_diff returns unified diff and component_changes."""
     from api.routes.agent_versions import _get_version_diff
 
     agent = _make_agent()
     ver1 = _make_version(agent.id, ver="1.0.0")
     ver1.yaml_snapshot = "prompt: hello\nmodel: claude\n"
+    ver1.components = []
     ver2 = _make_version(agent.id, ver="1.1.0")
     ver2.yaml_snapshot = "prompt: hello world\nmodel: claude\n"
+    ver2.components = []
 
     db = AsyncMock()
-
-    def _side_effect(stmt):
-        """Return ver1 on first call, ver2 on second."""
-        mock = MagicMock()
-        mock.scalar_one_or_none.return_value = None
-        return mock
-
     calls = [0]
 
     async def _execute(stmt):
@@ -668,11 +768,12 @@ async def test_diff_versions_returns_diff_lines():
             current_user=_make_user(),
         )
 
-    assert result["v1"] == "1.0.0"
-    assert result["v2"] == "1.1.0"
-    assert isinstance(result["diff"], list)
-    # Should contain diff output (at least some lines changed)
-    assert len(result["diff"]) > 0
+    assert result["agent_id"] == str(agent.id)
+    assert result["version_a"] == "1.0.0"
+    assert result["version_b"] == "1.1.0"
+    assert isinstance(result["yaml_diff"], str)
+    assert len(result["yaml_diff"]) > 0
+    assert isinstance(result["component_changes"], list)
 
 
 @pytest.mark.asyncio
@@ -689,6 +790,7 @@ async def test_diff_versions_structural_when_no_snapshot():
     ver1.model_config_json = {}
     ver1.supported_ides = ["claude-code"]
     ver1.external_mcps = []
+    ver1.components = []
 
     ver2 = _make_version(agent.id, ver="1.1.0")
     ver2.yaml_snapshot = None
@@ -698,6 +800,7 @@ async def test_diff_versions_structural_when_no_snapshot():
     ver2.model_config_json = {}
     ver2.supported_ides = ["claude-code"]
     ver2.external_mcps = []
+    ver2.components = []
 
     calls = [0]
 
@@ -719,6 +822,8 @@ async def test_diff_versions_structural_when_no_snapshot():
             current_user=_make_user(),
         )
 
-    assert result["v1"] == "1.0.0"
-    assert result["v2"] == "1.1.0"
-    assert isinstance(result["diff"], list)
+    assert result["agent_id"] == str(agent.id)
+    assert result["version_a"] == "1.0.0"
+    assert result["version_b"] == "1.1.0"
+    assert isinstance(result["yaml_diff"], str)
+    assert isinstance(result["component_changes"], list)

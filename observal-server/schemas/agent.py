@@ -246,6 +246,8 @@ class AgentVersionCreateRequest(BaseModel):
     supported_ides: list[str] = []
     components: list[ComponentRef] = []
     goal_template: GoalTemplateRequest | None = None
+    yaml_snapshot: str | None = None
+    is_prerelease: bool = False
 
     @field_validator("version")
     @classmethod

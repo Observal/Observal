@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -37,6 +38,8 @@ from services.agent_resolver import validate_component_ids
 from services.audit_helpers import audit
 from services.ide_feature_inference import compute_supported_ides, infer_required_features
 from services.versioning import parse_semver, validate_semver
+
+logger = logging.getLogger(__name__)
 
 agent_version_router = APIRouter()
 
@@ -170,8 +173,10 @@ async def _create_agent_version(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    if agent.created_by != current_user.id:
-        raise HTTPException(status_code=403, detail="Only the agent owner can publish versions")
+    is_owner = agent.created_by == current_user.id
+    is_co_maintainer = str(current_user.id) in [str(uid) for uid in (agent.co_maintainers or [])]
+    if not is_owner and not is_co_maintainer:
+        raise HTTPException(status_code=403, detail="Not authorized to release versions")
 
     # Duplicate check
     dup_stmt = select(AgentVersion).where(
@@ -196,6 +201,13 @@ async def _create_agent_version(
                 ],
             )
 
+    # Check for existing pending versions to warn the caller
+    pending_stmt = select(func.count(AgentVersion.id)).where(
+        AgentVersion.agent_id == agent.id,
+        AgentVersion.status == AgentStatus.pending,
+    )
+    pending_count = (await db.execute(pending_stmt)).scalar() or 0
+
     now = datetime.now(UTC)
     ver = AgentVersion(
         agent_id=agent.id,
@@ -206,6 +218,8 @@ async def _create_agent_version(
         model_config_json=req.model_config_json,
         external_mcps=[m.model_dump() for m in req.external_mcps] if req.external_mcps else [],
         supported_ides=req.supported_ides,
+        yaml_snapshot=req.yaml_snapshot,
+        is_prerelease=req.is_prerelease,
         status=AgentStatus.pending,
         released_by=current_user.id,
         released_at=now,
@@ -259,6 +273,28 @@ async def _create_agent_version(
     ver.required_ide_features = infer_required_features(_VersionProxy(), skill_listings=skill_listings_map)
     ver.inferred_supported_ides = compute_supported_ides(ver.required_ide_features)
 
+    # Pre-generate IDE configs at release time (spec: no generation at request time)
+    mcp_comp_ids = [c.component_id for c in req.components if c.component_type == "mcp"]
+    mcp_listings_map: dict = {}
+    if mcp_comp_ids:
+        rows = (await db.execute(select(McpListing).where(McpListing.id.in_(mcp_comp_ids)))).scalars().all()
+        mcp_listings_map = {row.id: row for row in rows}
+
+    # Pre-generate IDE configs for supported_ides (the user-declared list).
+    # inferred_supported_ides is a compatibility analysis result used for display/filtering,
+    # but supported_ides is authoritative for which configs to generate.
+    ide_configs: dict = {}
+    failed_ides: list[str] = []
+    for ide in ver.supported_ides or []:
+        try:
+            ide_configs[ide] = generate_agent_config(ver, ide, mcp_listings=mcp_listings_map)
+        except Exception:
+            logger.exception(
+                "IDE config generation failed for agent=%s version=%s ide=%s", agent.name, req.version, ide
+            )
+            failed_ides.append(ide)
+    ver.ide_configs = ide_configs or {}
+
     # Do NOT update latest_version_id — that happens on approval
     await db.commit()
 
@@ -271,7 +307,15 @@ async def _create_agent_version(
         detail=req.version,
     )
 
-    return {
+    warnings: list[str] = []
+    if pending_count > 0:
+        warnings.append(f"This agent already has {pending_count} pending version(s)")
+    if failed_ides:
+        warnings.append(
+            f"IDE config generation failed for: {', '.join(failed_ides)}. These will 404 until regenerated."
+        )
+
+    result = {
         "id": str(ver.id),
         "agent_id": str(ver.agent_id),
         "version": ver.version,
@@ -283,6 +327,9 @@ async def _create_agent_version(
         "released_at": ver.released_at,
         "created_at": ver.created_at,
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 async def _review_agent_version(
@@ -368,18 +415,14 @@ async def _get_agent_ide_config(
     if not ver:
         raise HTTPException(status_code=404, detail="Version not found")
 
-    # Return cached config if available
-    if ver.ide_configs and ide in ver.ide_configs:
-        return ver.ide_configs[ide]
+    # Serve pre-generated config only — no generation at request time (spec requirement #8)
+    if not ver.ide_configs or ide not in ver.ide_configs:
+        raise HTTPException(
+            status_code=404,
+            detail=f"IDE '{ide}' not supported by this agent version. Available: {list(ver.ide_configs or {})}",
+        )
 
-    # Generate on the fly — load MCP listings for components
-    mcp_comp_ids = [c.component_id for c in (ver.components or []) if c.component_type == "mcp"]
-    mcp_listings_map = {}
-    if mcp_comp_ids:
-        rows = (await db.execute(select(McpListing).where(McpListing.id.in_(mcp_comp_ids)))).scalars().all()
-        mcp_listings_map = {row.id: row for row in rows}
-
-    return generate_agent_config(ver, ide, mcp_listings=mcp_listings_map)
+    return ver.ide_configs[ide]
 
 
 async def _get_version_diff(
@@ -407,26 +450,22 @@ async def _get_version_diff(
     if not ver2:
         raise HTTPException(status_code=404, detail=f"Version {v2!r} not found")
 
-    if ver1.yaml_snapshot is not None and ver2.yaml_snapshot is not None:
-        text1 = ver1.yaml_snapshot
-        text2 = ver2.yaml_snapshot
-    else:
-        # Fall back to a structural comparison of key fields
-        def _structural_text(ver: AgentVersion) -> str:
-            data = {
-                "description": ver.description,
-                "prompt": ver.prompt,
-                "model_name": ver.model_name,
-                "model_config_json": ver.model_config_json,
-                "supported_ides": ver.supported_ides,
-                "external_mcps": ver.external_mcps,
-            }
-            return json.dumps(data, indent=2, default=str)
+    # Build YAML diff text
+    def _structural_text(ver: AgentVersion) -> str:
+        data = {
+            "description": ver.description,
+            "prompt": ver.prompt,
+            "model_name": ver.model_name,
+            "model_config_json": ver.model_config_json,
+            "supported_ides": ver.supported_ides,
+            "external_mcps": ver.external_mcps,
+        }
+        return json.dumps(data, indent=2, default=str)
 
-        text1 = _structural_text(ver1)
-        text2 = _structural_text(ver2)
+    text1 = ver1.yaml_snapshot if ver1.yaml_snapshot is not None else _structural_text(ver1)
+    text2 = ver2.yaml_snapshot if ver2.yaml_snapshot is not None else _structural_text(ver2)
 
-    diff_lines = [
+    yaml_diff = "\n".join(
         line.rstrip("\n")
         for line in difflib.unified_diff(
             text1.splitlines(keepends=True),
@@ -434,9 +473,50 @@ async def _get_version_diff(
             fromfile=f"v{v1}",
             tofile=f"v{v2}",
         )
-    ]
+    )
 
-    return {"v1": v1, "v2": v2, "diff": diff_lines}
+    # Compute component changes between versions
+    comp1 = {(c.component_type, str(c.component_id)): c for c in (ver1.components or [])}
+    comp2 = {(c.component_type, str(c.component_id)): c for c in (ver2.components or [])}
+    component_changes = []
+    for key, c in comp2.items():
+        if key not in comp1:
+            component_changes.append(
+                {
+                    "type": c.component_type,
+                    "name": c.component_name or "",
+                    "change": "added",
+                    "version": c.resolved_version or "",
+                }
+            )
+        elif comp1[key].resolved_version != c.resolved_version:
+            component_changes.append(
+                {
+                    "type": c.component_type,
+                    "name": c.component_name or "",
+                    "change": "updated",
+                    "from": comp1[key].resolved_version or "",
+                    "to": c.resolved_version or "",
+                }
+            )
+    for key, c in comp1.items():
+        if key not in comp2:
+            component_changes.append(
+                {
+                    "type": c.component_type,
+                    "name": c.component_name or "",
+                    "change": "removed",
+                    "version": c.resolved_version or "",
+                }
+            )
+
+    return {
+        "agent_id": str(agent.id),
+        "version_a": v1,
+        "version_b": v2,
+        "yaml_diff": yaml_diff,
+        "component_changes": component_changes,
+    }
 
 
 # ---------------------------------------------------------------------------
