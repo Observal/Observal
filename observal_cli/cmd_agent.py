@@ -781,3 +781,165 @@ def agent_publish(
         status = result.get("status", "pending")
         rprint(f"[green]✓ Agent submitted for review![/green] ID: [bold]{result['id']}[/bold]")
         rprint(f"[yellow]Status: {status} — an admin must approve it before it becomes visible.[/yellow]")
+
+
+@agent_app.command(name="release")
+def agent_release(
+    name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
+    bump: str = typer.Option(..., "--bump", help="Version bump type: patch, minor, or major"),
+    directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+):
+    """Bump version and push a versioned release to the registry."""
+    if bump not in ("patch", "minor", "major"):
+        rprint("[red]Error:[/red] --bump must be one of: patch, minor, major")
+        raise typer.Exit(code=1)
+
+    dir_path = Path(directory)
+    data = _load_agent_yaml(dir_path)
+
+    # Resolve agent by name search (same pattern as agent_publish --update)
+    with spinner("Looking up agent..."):
+        results = client.get("/api/v1/agents", params={"search": data["name"]})
+    match = next((a for a in results if a["name"] == data["name"]), None)
+    if not match:
+        rprint(f"[red]Error:[/red] No agent found with name '{data['name']}'")
+        raise typer.Exit(code=1)
+    agent_id = match["id"]
+
+    # Fetch version suggestions
+    with spinner("Fetching version suggestions..."):
+        suggestions = client.get(f"/api/v1/agents/{agent_id}/version-suggestions")
+
+    current = suggestions.get("current", data.get("version", "1.0.0"))
+    new_version = suggestions.get("suggestions", {}).get(bump)
+    if not new_version:
+        rprint(f"[red]Error:[/red] Could not determine new version for bump type '{bump}'")
+        raise typer.Exit(code=1)
+
+    rprint(f"[dim]→[/dim] Bumping version: [bold]{current}[/bold] → [bold cyan]{new_version}[/bold cyan]")
+
+    # Build release payload from YAML
+    raw_yaml = (dir_path / YAML_FILE).read_text()
+    payload = {
+        "version": new_version,
+        "description": data.get("description", ""),
+        "prompt": data.get("prompt", ""),
+        "model_name": data.get("model_name", "claude-sonnet-4"),
+        "model_config_json": data.get("model_config_json"),
+        "external_mcps": data.get("external_mcps"),
+        "supported_ides": data.get("supported_ides", []),
+        "components": data.get("components", []),
+        "goal_template": data.get("goal_template"),
+        "yaml_snapshot": raw_yaml,
+    }
+
+    rprint("[dim]→[/dim] Pushing definition to registry...")
+    with spinner("Creating version..."):
+        result = client.post(f"/api/v1/agents/{agent_id}/versions", payload)
+
+    rprint(f"[green]✓ Version {new_version} submitted for review[/green]")
+
+    pending_count = result.get("pending_version_count", 0)
+    if pending_count and pending_count > 0:
+        rprint(f"[yellow]⚠ This agent already has {pending_count} pending version(s)[/yellow]")
+
+    # Update local YAML version field
+    data["version"] = new_version
+    _save_agent_yaml(dir_path, data)
+
+
+@agent_app.command(name="versions")
+def agent_versions(
+    name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
+    output: str = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+):
+    """List all versions for an agent."""
+    resolved = config.resolve_alias(name)
+
+    with spinner("Fetching versions..."):
+        data = client.get(f"/api/v1/agents/{resolved}/versions", params={"page": 1, "page_size": 50})
+
+    items = data.get("items", [])
+
+    if output == "json":
+        output_json(data)
+        return
+
+    if not items:
+        rprint("[dim]No versions found.[/dim]")
+        return
+
+    table = Table(show_lines=False, padding=(0, 1))
+    table.add_column("VERSION", style="bold cyan", no_wrap=True)
+    table.add_column("STATUS")
+    table.add_column("DATE")
+    table.add_column("RELEASED BY", style="dim")
+    table.add_column("COMPONENTS")
+
+    for item in items:
+        table.add_row(
+            item.get("version", ""),
+            status_badge(item.get("status", "")),
+            relative_time(item.get("created_at")),
+            item.get("created_by_email", "") or item.get("created_by_username", ""),
+            str(item.get("component_count", "")),
+        )
+
+    console.print(table)
+
+
+@agent_app.command(name="pull")
+def agent_pull(
+    name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
+    version: str | None = typer.Option(None, "--version", "-v", help="Version to pull (default: latest approved)"),
+    ide: str | None = typer.Option(None, "--ide", "-i", help="Target IDE (auto-detected if not set)"),
+    directory: str = typer.Option(".", "--dir", "-d", help="Directory to write files into"),
+):
+    """Fetch the IDE config for an agent version and write files to disk."""
+    resolved = config.resolve_alias(name)
+    dir_path = Path(directory)
+
+    # Get agent detail to find latest version
+    with spinner("Fetching agent..."):
+        agent = client.get(f"/api/v1/agents/{resolved}")
+
+    target_version = version or agent.get("latest_approved_version") or agent.get("latest_version")
+    if not target_version:
+        rprint("[red]Error:[/red] Could not determine a version to pull. Use --version to specify one.")
+        raise typer.Exit(code=1)
+
+    # Detect IDE
+    if not ide:
+        from observal_cli.ide_registry import get_scope_aware_ides
+
+        detected = get_scope_aware_ides()
+        ide = detected[0][0] if detected else None
+    if not ide:
+        rprint("[red]Error:[/red] Could not detect IDE. Use --ide to specify one.")
+        raise typer.Exit(code=1)
+
+    rprint(
+        f"[dim]→[/dim] Pulling [bold]{agent.get('name', resolved)}[/bold] v[bold]{target_version}[/bold] for [cyan]{ide}[/cyan]..."
+    )
+
+    with spinner("Fetching IDE config..."):
+        config_data = client.get(f"/api/v1/agents/{resolved}/versions/{target_version}/ide/{ide}")
+
+    files: dict[str, str] = config_data.get("files", {}) if isinstance(config_data, dict) else {}
+
+    if files:
+        written = 0
+        for rel_path, content in files.items():
+            abs_path = dir_path / rel_path
+            abs_path.parent.mkdir(parents=True, exist_ok=True)
+            abs_path.write_text(content if isinstance(content, str) else _json.dumps(content, indent=2))
+            rprint(f"  [green]✓[/green] created {rel_path}")
+            written += 1
+        rprint(f"[green]✓ Agent config written to {written} file(s)[/green]")
+    else:
+        # Fallback: write the entire config as a single JSON file
+        fallback_path = dir_path / f"{agent.get('name', resolved)}-config.json"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_text(_json.dumps(config_data, indent=2))
+        rprint(f"  [green]✓[/green] created {fallback_path.name}")
+        rprint("[green]✓ Agent config written to 1 file[/green]")
