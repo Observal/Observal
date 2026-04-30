@@ -6,9 +6,24 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.deps import ROLE_HIERARCHY, get_db, optional_current_user, require_role, resolve_prefix_id, get_effective_agent_permission, get_user_groups
+from api.deps import (
+    ROLE_HIERARCHY,
+    get_db,
+    get_effective_agent_permission,
+    get_user_groups,
+    optional_current_user,
+    require_role,
+    resolve_prefix_id,
+)
 from api.sanitize import escape_like
-from models.agent import Agent, AgentGoalSection, AgentGoalTemplate, AgentStatus, AgentTeamAccess, AgentVisibility
+from models.agent import (
+    Agent,
+    AgentGoalSection,
+    AgentGoalTemplate,
+    AgentStatus,
+    AgentTeamAccess,
+    AgentVisibility,
+)
 from models.agent_component import AgentComponent
 from models.download import AgentDownloadRecord
 from models.mcp import ListingStatus, McpListing
@@ -574,7 +589,7 @@ async def update_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
     if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
-    
+
     perm = get_effective_agent_permission(agent, current_user)
     if perm not in ("owner", "edit"):
         raise HTTPException(status_code=403, detail="Not the agent owner or editor")
@@ -598,7 +613,7 @@ async def update_agent(
         val = getattr(req, field)
         if val is not None:
             setattr(agent, field, val)
-            
+
     if req.team_accesses is not None:
         old_accesses = (await db.execute(select(AgentTeamAccess).where(AgentTeamAccess.agent_id == agent.id))).scalars().all()
         for old_acc in old_accesses:

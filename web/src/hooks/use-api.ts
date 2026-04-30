@@ -572,7 +572,7 @@ export function useUpdateAgent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { id: string; body: unknown }) => registry.updateAgent(vars.id, vars.body),
-    onSuccess: (data: any, vars: { id: string }) => {
+    onSuccess: (_data: unknown, vars: { id: string; body: unknown }) => {
       qc.invalidateQueries({ queryKey: ["registry", "agents"] });
       qc.invalidateQueries({ queryKey: ["registry", "agents", vars.id] });
       toast.success("Agent updated successfully");
