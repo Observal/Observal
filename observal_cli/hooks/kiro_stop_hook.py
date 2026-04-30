@@ -21,6 +21,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from observal_cli.hooks._kiro_utils import _find_kiro_cli_pid, _resolve_hooks_url
+
 
 def _get_kiro_db() -> Path | None:
     """Return the first existing Kiro SQLite database across standard data dirs."""
@@ -147,20 +149,6 @@ def _enrich(payload: dict) -> dict:
     return payload
 
 
-def _resolve_hooks_url() -> str:
-    """Read hooks URL from config file when no --url is provided."""
-    cfg_path = Path.home() / ".observal" / "config.json"
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text())
-            server = cfg.get("server_url", "")
-            if server:
-                return f"{server.rstrip('/')}/api/v1/telemetry/hooks"
-        except Exception:
-            pass
-    return ""
-
-
 def main():
     import urllib.request
 
@@ -189,11 +177,16 @@ def main():
 
     payload.setdefault("service_name", "kiro")
 
-    # Ensure session_id is set. The sed $PPID injection in the hook command
-    # may fail (Kiro may not expand shell vars, or duplicate JSON keys cause
-    # last-key-wins). Generate a stable kiro-<ppid> ID in Python as fallback.
     if not payload.get("session_id"):
-        payload["session_id"] = f"kiro-{os.getppid()}"
+        env_pid = os.environ.get("KIRO_CLI_PID")
+        if env_pid:
+            payload["session_id"] = f"kiro-cli-{env_pid}"
+        else:
+            kiro_pid = _find_kiro_cli_pid()
+            if kiro_pid:
+                payload["session_id"] = f"kiro-cli-{kiro_pid}"
+            else:
+                payload["session_id"] = f"kiro-{os.getppid()}"
 
     # Inject user_id and user_name from Observal config if not already present
     if not payload.get("user_id") or not payload.get("user_name"):

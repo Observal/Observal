@@ -814,7 +814,9 @@ async def ingest_hook(request: Request):
     tool_name = body.get("tool_name", "")
 
     # ── Kiro IDE session correlation ──
-    # $PPID differs per hook invocation in IDE context. Correlate by cwd.
+    # Legacy $PPID sessions (kiro-{PPID}) need cwd-based correlation because
+    # PPID differs per hook invocation. Modern sessions (kiro-cli-{PID}) have
+    # a stable PID per kiro-cli run, so they skip the cache.
     cwd = body.get("cwd", "")
     is_kiro = service_name == "kiro"
     is_kiro_ppid = bool(re.match(r"^kiro-\d+$", session_id))
@@ -826,7 +828,9 @@ async def ingest_hook(request: Request):
         session_id = f"kiro-{hashlib.sha256(cwd.encode()).hexdigest()[:12]}"
         is_kiro_ppid = True  # treat it like a PPID session for caching below
 
-    if is_kiro_ppid and cwd:
+    # Only apply cwd-based cache to legacy kiro-{PPID} format.
+    # Modern kiro-cli-{PID}-{startms} format has stable PID per session, no cache needed.
+    if is_kiro_ppid and cwd and not session_id.startswith("kiro-cli-"):
         now_ts = _time.monotonic()
         cached = _kiro_session_cache.get(cwd)
         if cached and (now_ts - cached[1]) < _KIRO_SESSION_WINDOW:

@@ -18,6 +18,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from observal_cli.hooks._kiro_utils import _find_kiro_cli_pid, _resolve_hooks_url
+
 
 def _get_kiro_db() -> Path | None:
     """Return the first existing Kiro SQLite database across standard data dirs."""
@@ -121,8 +123,12 @@ def _auto_inject_hooks(url: str):
             data = json.loads(af.read_text())
             hooks = data.get("hooks", {})
             name = data.get("name") or af.stem
-            cmd = f"{sys.executable} -m observal_cli.hooks.kiro_hook --url {url} --agent-name {name}"
-            stop_cmd = f"{sys.executable} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
+            if sys.platform == "win32":
+                cmd = f"{sys.executable} -m observal_cli.hooks.kiro_hook --url {url} --agent-name {name}"
+                stop_cmd = f"{sys.executable} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
+            else:
+                cmd = f"KIRO_CLI_PID=$PPID {sys.executable} -m observal_cli.hooks.kiro_hook --url {url} --agent-name {name}"
+                stop_cmd = f"KIRO_CLI_PID=$PPID {sys.executable} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
             desired = {
                 "agentSpawn": [{"command": cmd}],
                 "userPromptSubmit": [{"command": cmd}],
@@ -138,20 +144,6 @@ def _auto_inject_hooks(url: str):
             af.write_text(json.dumps(data, indent=2) + "\n")
         except Exception:
             pass
-
-
-def _resolve_hooks_url() -> str:
-    """Read hooks URL from config file when no --url is provided."""
-    cfg_path = Path.home() / ".observal" / "config.json"
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text())
-            server = cfg.get("server_url", "")
-            if server:
-                return f"{server.rstrip('/')}/api/v1/telemetry/hooks"
-        except Exception:
-            pass
-    return ""
 
 
 def main():
@@ -183,11 +175,16 @@ def main():
     # native fields due to JSON duplicate-key semantics — last key wins).
     payload.setdefault("service_name", "kiro")
 
-    # Ensure session_id is set. The sed $PPID injection in the hook command
-    # may fail (Kiro may not expand shell vars, or duplicate JSON keys cause
-    # last-key-wins). Generate a stable kiro-<ppid> ID in Python as fallback.
     if not payload.get("session_id"):
-        payload["session_id"] = f"kiro-{os.getppid()}"
+        env_pid = os.environ.get("KIRO_CLI_PID")
+        if env_pid:
+            payload["session_id"] = f"kiro-cli-{env_pid}"
+        else:
+            kiro_pid = _find_kiro_cli_pid()
+            if kiro_pid:
+                payload["session_id"] = f"kiro-cli-{kiro_pid}"
+            else:
+                payload["session_id"] = f"kiro-{os.getppid()}"
 
     # Inject user_id and user_name from Observal config if not already present
     if not payload.get("user_id") or not payload.get("user_name"):
