@@ -11,7 +11,9 @@ from models.user import UserRole
 ALGORITHM = "HS256"
 
 
-def create_access_token(user_id: uuid.UUID, role: UserRole, expires_in_minutes: int | None = None, groups: list[str] | None = None) -> tuple[str, int]:
+def create_access_token(
+    user_id: uuid.UUID, role: UserRole, expires_in_minutes: int | None = None, groups: list[str] | None = None
+) -> tuple[str, int]:
     """Create a short-lived access token.
 
     Returns (encoded_token, expires_in_seconds).

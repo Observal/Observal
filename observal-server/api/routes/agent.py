@@ -157,8 +157,7 @@ def _agent_to_response(
     agent_dict["goal_template"] = goal_template
     agent_dict["visibility"] = agent.visibility
     agent_dict["team_accesses"] = [
-        {"group_name": acc.group_name, "permission": acc.permission}
-        for acc in getattr(agent, "team_accesses", [])
+        {"group_name": acc.group_name, "permission": acc.permission} for acc in getattr(agent, "team_accesses", [])
     ]
     agent_dict["created_by_email"] = created_by_email
     agent_dict["created_by_username"] = created_by_username
@@ -262,13 +261,7 @@ async def create_agent(
     await db.flush()
 
     for acc in req.team_accesses:
-        db.add(
-            AgentTeamAccess(
-                agent_id=agent.id,
-                group_name=acc.group_name,
-                permission=acc.permission
-            )
-        )
+        db.add(AgentTeamAccess(agent_id=agent.id, group_name=acc.group_name, permission=acc.permission))
 
     # Legacy: mcp_server_ids → AgentComponent(type=mcp)
     order = 0
@@ -386,7 +379,9 @@ async def list_agents(
             user_groups = get_user_groups(current_user)
             visibility_filter = visibility_filter | (Agent.created_by == current_user.id)
             if user_groups:
-                visibility_filter = visibility_filter | Agent.team_accesses.any(AgentTeamAccess.group_name.in_(user_groups))
+                visibility_filter = visibility_filter | Agent.team_accesses.any(
+                    AgentTeamAccess.group_name.in_(user_groups)
+                )
 
     base_filter = Agent.status == AgentStatus.active
     if not is_admin:
@@ -615,17 +610,13 @@ async def update_agent(
             setattr(agent, field, val)
 
     if req.team_accesses is not None:
-        old_accesses = (await db.execute(select(AgentTeamAccess).where(AgentTeamAccess.agent_id == agent.id))).scalars().all()
+        old_accesses = (
+            (await db.execute(select(AgentTeamAccess).where(AgentTeamAccess.agent_id == agent.id))).scalars().all()
+        )
         for old_acc in old_accesses:
             await db.delete(old_acc)
         for acc in req.team_accesses:
-            db.add(
-                AgentTeamAccess(
-                    agent_id=agent.id,
-                    group_name=acc.group_name,
-                    permission=acc.permission
-                )
-            )
+            db.add(AgentTeamAccess(agent_id=agent.id, group_name=acc.group_name, permission=acc.permission))
 
     if req.external_mcps is not None:
         agent.external_mcps = [m.model_dump() for m in req.external_mcps]
