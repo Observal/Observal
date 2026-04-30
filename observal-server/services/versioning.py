@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+
+
+def compute_integrity_hash(content: str) -> str:
+    """Compute sha256 integrity hash for lock file entries."""
+    digest = hashlib.sha256(content.encode()).hexdigest()
+    return f"sha256-{digest}"
 
 
 def parse_semver(version: str) -> tuple[int, int, int] | None:

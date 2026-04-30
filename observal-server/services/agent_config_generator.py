@@ -1,8 +1,13 @@
-import re
+from __future__ import annotations
 
-from models.agent import Agent
+import re
+from typing import TYPE_CHECKING
+
 from schemas.constants import IDE_FEATURE_MATRIX
 from schemas.ide_registry import IDE_REGISTRY
+
+if TYPE_CHECKING:
+    from models.agent import Agent, AgentVersion
 from services.config_generator import (
     _build_run_command,
     _claude_otlp_env,
@@ -526,4 +531,76 @@ def generate_agent_config(
         result["skill_files"] = skill_files
     if compatibility_warnings:
         result["_warnings"] = compatibility_warnings
+    return result
+
+
+async def generate_all_ide_configs(
+    agent_version: AgentVersion,
+    agent: Agent,
+    target_ides: list[str] | None = None,
+    observal_url: str = "http://localhost:8000",
+    mcp_listings: dict | None = None,
+    skill_listings: dict | None = None,
+    component_names: dict | None = None,
+    env_values: dict | None = None,
+    otlp_http_url: str = "",
+) -> dict[str, dict[str, str]]:
+    """Generate IDE config files for all target IDEs from an AgentVersion.
+
+    This is the publish-time generation function. Results are stored in
+    agent_versions.ide_configs JSONB column and served at pull time.
+
+    Args:
+        agent_version: The AgentVersion being published.
+        agent: The parent Agent (identity-only, needed for name/owner).
+        target_ides: List of IDE names to generate for. None = all from agent_version.supported_ides.
+        mcp_listings: Pre-loaded {component_id: McpListing} map.
+        skill_listings: Pre-loaded {component_id: SkillListing} map.
+        component_names: {component_id_str: display_name} map.
+        env_values: {mcp_listing_id_str: {VAR: value}} map.
+        otlp_http_url: OTLP collector URL.
+
+    Returns:
+        {ide_name: {"files": {file_path: content, ...}}}
+        Stored directly in agent_versions.ide_configs.
+    """
+    import json as _json
+
+    ides = target_ides or agent_version.supported_ides or list(IDE_REGISTRY.keys())
+    result = {}
+
+    for ide in ides:
+        if ide not in IDE_REGISTRY:
+            continue
+        config = generate_agent_config(
+            agent=agent,
+            ide=ide,
+            observal_url=observal_url,
+            mcp_listings=mcp_listings,
+            skill_listings=skill_listings,
+            component_names=component_names,
+            env_values=env_values,
+            otlp_http_url=otlp_http_url,
+        )
+
+        files = {}
+        if "rules_file" in config:
+            rf = config["rules_file"]
+            files[rf["path"]] = rf["content"]
+        if "agent_file" in config:
+            af = config["agent_file"]
+            content = af["content"]
+            files[af["path"]] = _json.dumps(content, indent=2) if isinstance(content, dict) else content
+        if "mcp_config" in config:
+            mc = config["mcp_config"]
+            if isinstance(mc, dict) and "path" in mc:
+                content = mc["content"]
+                files[mc["path"]] = _json.dumps(content, indent=2) if isinstance(content, dict) else content
+        if "skill_files" in config:
+            for sf in config["skill_files"]:
+                files[sf["path"]] = sf["content"]
+
+        if files:
+            result[ide] = {"files": files}
+
     return result
