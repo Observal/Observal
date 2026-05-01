@@ -137,7 +137,7 @@ async def resolve_user_org(user_id: str) -> uuid.UUID | None:
         async with async_session() as session:
             result = await session.execute(select(User.org_id).where(User.id == uid))
             org_id = result.scalar_one_or_none()
-    except (ValueError, Exception):
+    except Exception:
         pass
 
     # Cache in Redis (5 min TTL) and in-memory

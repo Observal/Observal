@@ -259,8 +259,10 @@ def _cleanup_gemini(dry_run: bool) -> bool:
         rprint(f"  {verb} hooks: {', '.join(removed_events)}")
 
     if changed and not dry_run:
-        data.pop("env", None) if not data.get("env") else None
-        data.pop("hooks", None) if not data.get("hooks") else None
+        if not data.get("env"):
+            data.pop("env", None)
+        if not data.get("hooks"):
+            data.pop("hooks", None)
         settings_path.write_text(json.dumps(data, indent=2) + "\n")
         rprint(f"  [green]Written {settings_path}[/green]")
 
