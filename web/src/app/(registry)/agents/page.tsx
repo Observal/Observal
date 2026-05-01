@@ -427,7 +427,7 @@ function AgentListContent() {
   const qc = useQueryClient();
 
   const drafts = useMemo(() => {
-    return (myAgents ?? []).filter((a) => a.status === "draft" || a.status === "rejected");
+    return (myAgents ?? []).filter((a) => a.status === "draft" || a.status === "rejected" || a.status === "pending");
   }, [myAgents]);
 
   const { filtered, pendingCount } = useMemo(() => {
@@ -529,7 +529,7 @@ function AgentListContent() {
               ) : (
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               )}
-              My Drafts & Rejected
+              My Submissions
               <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
                 {drafts.length}
               </span>
@@ -541,7 +541,9 @@ function AgentListContent() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium">{draft.name}</p>
-                        {draft.status === "rejected" && <StatusBadge status="rejected" />}
+                        {(draft.status === "rejected" || draft.status === "pending") && (
+                          <StatusBadge status={draft.status} />
+                        )}
                       </div>
                       {draft.status === "rejected" && draft.rejection_reason && (
                         <p className="text-xs text-destructive mt-0.5">
@@ -569,16 +571,18 @@ function AgentListContent() {
                         <FileEdit className="mr-1 h-3 w-3" />
                         Edit
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={submitDraft.isPending}
-                        onClick={() => submitDraft.mutate(draft.id)}
-                      >
-                        <Send className="mr-1 h-3 w-3" />
-                        {draft.status === "rejected" ? "Resubmit" : "Submit for Review"}
-                      </Button>
+                      {(draft.status === "draft" || draft.status === "rejected") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={submitDraft.isPending}
+                          onClick={() => submitDraft.mutate(draft.id)}
+                        >
+                          <Send className="mr-1 h-3 w-3" />
+                          {draft.status === "rejected" ? "Resubmit" : "Submit for Review"}
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

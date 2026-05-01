@@ -170,6 +170,47 @@ def hook_install(
     console.print_json(_json.dumps(snippet, indent=2))
 
 
+@hook_app.command(name="edit")
+def hook_edit(
+    hook_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
+    from_file: str | None = typer.Option(None, "--from-file", "-f", help="Load updates from JSON file"),
+    name: str | None = typer.Option(None, "--name", "-n", help="New listing name"),
+    description: str | None = typer.Option(None, "--description", "-d", help="New description"),
+    version: str | None = typer.Option(None, "--version", "-v", help="New version string"),
+    event: str | None = typer.Option(None, "--event", "-e", help="New event type"),
+):
+    """Edit a draft, rejected, or pending hook submission."""
+    resolved = config.resolve_alias(hook_id)
+    if from_file:
+        try:
+            with open(from_file) as f:
+                updates = _json.load(f)
+        except _json.JSONDecodeError as e:
+            rprint(f"[red]Invalid JSON in {from_file}:[/red] {e}")
+            raise typer.Exit(code=1)
+        except FileNotFoundError:
+            rprint(f"[red]File not found:[/red] {from_file}")
+            raise typer.Exit(code=1)
+    else:
+        updates = {}
+        if name is not None:
+            updates["name"] = name
+        if description is not None:
+            updates["description"] = description
+        if version is not None:
+            updates["version"] = version
+        if event is not None:
+            updates["event"] = event
+
+    if not updates:
+        rprint("[yellow]No changes specified.[/yellow] Use --from-file or field options (--name, --description, etc.)")
+        raise typer.Exit(code=1)
+
+    with spinner("Saving changes..."):
+        result = client.put(f"/api/v1/hooks/{resolved}/draft", updates)
+    rprint(f"[green]✓ Updated {result['name']}[/green] (status: {result.get('status', 'unknown')})")
+
+
 @hook_app.command(name="delete")
 def hook_delete(
     hook_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),

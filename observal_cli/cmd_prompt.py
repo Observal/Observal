@@ -187,6 +187,50 @@ def prompt_install(
     console.print_json(_json.dumps(snippet, indent=2))
 
 
+@prompt_app.command(name="edit")
+def prompt_edit(
+    prompt_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
+    from_file: str | None = typer.Option(None, "--from-file", "-f", help="Load updates from JSON file"),
+    name: str | None = typer.Option(None, "--name", "-n", help="New listing name"),
+    description: str | None = typer.Option(None, "--description", "-d", help="New description"),
+    version: str | None = typer.Option(None, "--version", "-v", help="New version string"),
+    category: str | None = typer.Option(None, "--category", "-c", help="New category"),
+    template: str | None = typer.Option(None, "--template", "-t", help="New template text"),
+):
+    """Edit a draft, rejected, or pending prompt submission."""
+    resolved = config.resolve_alias(prompt_id)
+    if from_file:
+        try:
+            with open(from_file) as f:
+                updates = _json.load(f)
+        except _json.JSONDecodeError as e:
+            rprint(f"[red]Invalid JSON in {from_file}:[/red] {e}")
+            raise typer.Exit(code=1)
+        except FileNotFoundError:
+            rprint(f"[red]File not found:[/red] {from_file}")
+            raise typer.Exit(code=1)
+    else:
+        updates = {}
+        if name is not None:
+            updates["name"] = name
+        if description is not None:
+            updates["description"] = description
+        if version is not None:
+            updates["version"] = version
+        if category is not None:
+            updates["category"] = category
+        if template is not None:
+            updates["template"] = template
+
+    if not updates:
+        rprint("[yellow]No changes specified.[/yellow] Use --from-file or field options (--name, --description, etc.)")
+        raise typer.Exit(code=1)
+
+    with spinner("Saving changes..."):
+        result = client.put(f"/api/v1/prompts/{resolved}/draft", updates)
+    rprint(f"[green]✓ Updated {result['name']}[/green] (status: {result.get('status', 'unknown')})")
+
+
 @prompt_app.command(name="delete")
 def prompt_delete(
     prompt_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),

@@ -744,8 +744,11 @@ function AgentBuilderInner() {
       const body = buildRequestBody();
       if (draftId) {
         await updateDraft.mutateAsync({ id: draftId, body });
-        await registry.submitDraft(draftId);
-        toast.success("Agent resubmitted for review.");
+        const agentStatus = existingAgent?.status;
+        if (agentStatus && agentStatus !== "pending") {
+          await registry.submitDraft(draftId);
+        }
+        toast.success(!agentStatus || agentStatus === "pending" ? "Changes saved." : "Agent resubmitted for review.");
         router.push(`/agents/${draftId}`);
       } else {
         const created = await registry.create("agents", body);
@@ -1230,7 +1233,7 @@ function AgentBuilderInner() {
                 ) : (
                   <ArrowRight className="mr-2 h-4 w-4" />
                 )}
-                {isEditMode ? "Update Agent" : "Submit for Review"}
+                {isEditMode ? "Update Agent" : existingAgent?.status === "pending" ? "Save Changes" : "Submit for Review"}
               </Button>
             </div>
           </div>

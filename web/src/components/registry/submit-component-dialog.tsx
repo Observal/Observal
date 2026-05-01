@@ -185,6 +185,7 @@ export function SubmitComponentDialog({
   }
 
   const isEditMode = !!editItem;
+  const isPendingEdit = isEditMode && d?.status === "pending";
 
   function buildBody(): Record<string, unknown> {
     const base: Record<string, unknown> = {
@@ -757,30 +758,47 @@ export function SubmitComponentDialog({
           <div className="flex justify-end gap-2 pt-2">
             {isEditMode ? (
               <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (!name) { toast.error("Name is required"); return; }
-                    onUpdateDraft?.((editItem as Record<string, unknown>).id as string, buildBody());
-                  }}
-                  disabled={busy || !name}
-                >
-                  {isSavingDraft && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
-                  Save Changes
-                </Button>
-                <Button
-                  onClick={() => {
-                    const err = validateForSubmit();
-                    if (err) { toast.error(err); return; }
-                    onUpdateDraft?.((editItem as Record<string, unknown>).id as string, buildBody());
-                    onSubmit(buildBody());
-                  }}
-                  disabled={busy || !!submitError}
-                  title={submitError ?? undefined}
-                >
-                  {isSubmitting && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
-                  Save & Resubmit
-                </Button>
+                {isPendingEdit ? (
+                  <Button
+                    onClick={() => {
+                      const err = validateForSubmit();
+                      if (err) { toast.error(err); return; }
+                      onUpdateDraft?.((editItem as Record<string, unknown>).id as string, buildBody());
+                    }}
+                    disabled={busy || !!submitError}
+                    title={submitError ?? undefined}
+                  >
+                    {isSavingDraft && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
+                    Save Changes
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!name) { toast.error("Name is required"); return; }
+                        onUpdateDraft?.((editItem as Record<string, unknown>).id as string, buildBody());
+                      }}
+                      disabled={busy || !name}
+                    >
+                      {isSavingDraft && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
+                      Save Changes
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        const err = validateForSubmit();
+                        if (err) { toast.error(err); return; }
+                        onUpdateDraft?.((editItem as Record<string, unknown>).id as string, buildBody());
+                        onSubmit(buildBody());
+                      }}
+                      disabled={busy || !!submitError}
+                      title={submitError ?? undefined}
+                    >
+                      {isSubmitting && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
+                      Save & Resubmit
+                    </Button>
+                  </>
+                )}
               </>
             ) : (
               <>

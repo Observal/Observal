@@ -397,28 +397,28 @@ export default function ComponentsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    {(item.status === "draft" || item.status === "rejected" || item.status === "pending") && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => { setEditItem(item); setSubmitOpen(true); }}
+                      >
+                        <FileEdit className="h-3 w-3 mr-1" />
+                        Edit
+                      </Button>
+                    )}
                     {(item.status === "draft" || item.status === "rejected") && (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => { setEditItem(item); setSubmitOpen(true); }}
-                        >
-                          <FileEdit className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => submitDraftMutation.mutate(item.id)}
-                          disabled={submitDraftMutation.isPending}
-                        >
-                          <Send className="h-3 w-3 mr-1" />
-                          {item.status === "rejected" ? "Resubmit" : "Submit"}
-                        </Button>
-                      </>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => submitDraftMutation.mutate(item.id)}
+                        disabled={submitDraftMutation.isPending}
+                      >
+                        <Send className="h-3 w-3 mr-1" />
+                        {item.status === "rejected" ? "Resubmit" : "Submit"}
+                      </Button>
                     )}
                     <Button
                       variant="ghost"
@@ -445,9 +445,15 @@ export default function ComponentsPage() {
         editItem={editItem as Record<string, unknown> | null}
         onSubmit={(body) => {
           if (editItem) {
-            submitDraftMutation.mutate(editItem.id, {
-              onSuccess: () => { setSubmitOpen(false); setEditItem(null); },
-            });
+            if (editItem.status === "pending") {
+              updateDraftMutation.mutate({ id: editItem.id, body }, {
+                onSuccess: () => { setSubmitOpen(false); setEditItem(null); },
+              });
+            } else {
+              submitDraftMutation.mutate(editItem.id, {
+                onSuccess: () => { setSubmitOpen(false); setEditItem(null); },
+              });
+            }
           } else {
             submitMutation.mutate(body, {
               onSuccess: () => setSubmitOpen(false),
