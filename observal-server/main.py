@@ -113,6 +113,11 @@ async def lifespan(app: FastAPI):
         except ImportError:
             pass
 
+    # Start agent registry cache for registered-agents-only filtering
+    from services.agent_registry_cache import start as start_registry_cache
+
+    await start_registry_cache()
+
     yield
 
     if settings.DEPLOYMENT_MODE == "enterprise":
@@ -123,6 +128,9 @@ async def lifespan(app: FastAPI):
         except ImportError:
             pass
 
+    from services.agent_registry_cache import stop as stop_registry_cache
+
+    await stop_registry_cache()
     await close_cache()
     await close_redis()
 

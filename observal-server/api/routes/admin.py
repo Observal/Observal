@@ -905,6 +905,78 @@ async def set_trace_privacy(
     return {"trace_privacy": org.trace_privacy}
 
 
+# ── Registered Agents Only ─────────────────────────────────
+
+
+@router.get("/org/registered-agents-only")
+async def get_registered_agents_only(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Get the registered-agents-only setting for the current user's organization."""
+    if not current_user.org_id:
+        await audit(current_user, "admin.registered_agents_only.view", "registered_agents_only")
+        return {"registered_agents_only": False}
+    result = await db.execute(select(Organization).where(Organization.id == current_user.org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        await audit(current_user, "admin.registered_agents_only.view", "registered_agents_only")
+        return {"registered_agents_only": False}
+    await audit(current_user, "admin.registered_agents_only.view", "registered_agents_only", resource_id=str(org.id))
+    return {"registered_agents_only": org.registered_agents_only}
+
+
+@router.put("/org/registered-agents-only")
+async def set_registered_agents_only(
+    req: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.super_admin)),
+):
+    """Toggle registered-agents-only mode for the current user's organization.
+
+    When enabled, only registered (active) agents are traced.
+    Unregistered agent telemetry is stored as metadata-only (no content).
+    """
+    enabled = bool(req.get("registered_agents_only", False))
+
+    if not current_user.org_id:
+        raise HTTPException(status_code=400, detail="User has no organization")
+
+    result = await db.execute(select(Organization).where(Organization.id == current_user.org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    org.registered_agents_only = enabled
+    await db.commit()
+    await db.refresh(org)
+    await emit_security_event(
+        SecurityEvent(
+            event_type=EventType.SETTING_CHANGED,
+            severity=Severity.WARNING,
+            outcome="success",
+            actor_id=str(current_user.id),
+            actor_email=current_user.email,
+            actor_role=current_user.role.value,
+            target_id=str(org.id),
+            target_type="organization",
+            detail=f"Registered-agents-only {'enabled' if enabled else 'disabled'}",
+        )
+    )
+    await audit(
+        current_user,
+        "admin.registered_agents_only.update",
+        "registered_agents_only",
+        resource_id=str(org.id),
+        detail=json.dumps({"enabled": enabled}),
+    )
+    # Invalidate registry cache so all server instances pick up the change immediately
+    from services.agent_registry_cache import invalidate as invalidate_registry_cache
+
+    await invalidate_registry_cache()
+    return {"registered_agents_only": org.registered_agents_only}
+
+
 @router.post("/cache/clear")
 async def clear_cache(current_user: User = Depends(require_role(UserRole.admin))):
     """Clear all cached dashboard and OTEL responses."""
