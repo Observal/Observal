@@ -1,6 +1,7 @@
 import json
 import logging
 import secrets
+from datetime import UTC, datetime
 
 import jwt as pyjwt
 from authlib.integrations.starlette_client import OAuth
@@ -21,6 +22,7 @@ from schemas.auth import (
     InitRequest,
     InitResponse,
     LoginRequest,
+    LogoutRequest,
     RefreshRequest,
     RevokeRequest,
     TokenRequest,
@@ -29,7 +31,7 @@ from schemas.auth import (
     UserResponse,
 )
 from services.audit_helpers import audit
-from services.jwt_service import create_access_token, create_refresh_token, decode_refresh_token
+from services.jwt_service import create_access_token, create_refresh_token, decode_access_token, decode_refresh_token
 from services.redis import get_redis
 from services.security_events import (
     EventType,
@@ -70,6 +72,8 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
         redis = get_redis()
         refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400
         await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
+        # Clear any logout revocation so hooks resume after re-login
+        await redis.delete(f"revoked_user:{user.id}")
     except RedisError as e:
         logger.warning("Redis unavailable when storing refresh JTI, failing open: %s", e)
 
@@ -386,6 +390,73 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
 async def whoami(current_user: User = Depends(get_current_user)):
     await audit(current_user, "auth.whoami", resource_type="auth", resource_id=str(current_user.id))
     return UserResponse.model_validate(current_user)
+
+
+@router.post("/logout")
+async def logout(
+    request: Request,
+    req: LogoutRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Revoke the current access token and optionally a refresh token.
+
+    Blacklists the access token JTI in Redis so it can no longer be used,
+    and marks the user_id as revoked so hook scripts stop sending telemetry.
+    """
+    # Extract the raw token from the Authorization header so we can get jti/exp
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+
+    try:
+        payload = decode_access_token(token)
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+    except Exception:
+        jti = None
+        exp = None
+
+    try:
+        redis = get_redis()
+        if jti and exp:
+            now_ts = int(datetime.now(UTC).timestamp())
+            ttl = max(exp - now_ts, 1)
+            await redis.setex(f"revoked_jti:{jti}", ttl, "1")
+
+        # Mark the user as revoked for 30 days (max hooks token lifetime)
+        hooks_ttl = 30 * 86400
+        await redis.setex(f"revoked_user:{current_user.id}", hooks_ttl, "1")
+    except RedisError as e:
+        logger.warning("Redis unavailable during logout: %s", e)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+    # Optionally revoke the refresh token
+    if req.refresh_token:
+        try:
+            refresh_payload = decode_refresh_token(req.refresh_token)
+            refresh_jti = refresh_payload.get("jti")
+            if refresh_jti:
+                try:
+                    await redis.delete(f"refresh_jti:{refresh_jti}")
+                except RedisError:
+                    pass
+        except Exception:
+            pass  # Best-effort
+
+    source_ip, user_agent = _extract_request_info(request)
+    await emit_security_event(
+        SecurityEvent(
+            event_type=EventType.LOGOUT,
+            severity=Severity.INFO,
+            outcome="success",
+            actor_id=str(current_user.id),
+            actor_email=current_user.email,
+            actor_role=current_user.role.value,
+            source_ip=source_ip,
+            user_agent=user_agent,
+        )
+    )
+    await audit(current_user, "auth.logout", resource_type="session", resource_id=str(current_user.id))
+    return {"detail": "Logged out"}
 
 
 # ── JWT Token Endpoints ────────────────────────────────────

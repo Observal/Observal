@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import jwt
 from fastapi import APIRouter, Depends, Header, Request, Response
+from redis.exceptions import RedisError
 from sqlalchemy import select
 
 from api.deps import get_project_id, require_role
@@ -27,7 +28,7 @@ from services.clickhouse import (
     query_recent_events,
 )
 from services.jwt_service import decode_access_token
-from services.redis import publish
+from services.redis import get_redis, publish
 from services.secrets_redactor import get_and_reset_redaction_count, redact_secrets
 from services.security_events import (
     EventType,
@@ -860,6 +861,18 @@ async def ingest_hook(request: Request):
 
     # ── User identity (from Observal login, injected by CLI) ──
     user_id = body.get("user_id") or request.headers.get("x-observal-user-id") or ""
+
+    # Drop events silently for revoked users (post-logout).
+    # Return 200 so hook scripts don't break on error responses.
+    if user_id:
+        try:
+            redis = get_redis()
+            if await redis.get(f"revoked_user:{user_id}"):
+                logger.debug("hooks: dropping event for revoked user %s", user_id)
+                return {}
+        except RedisError:
+            pass  # Fail open if Redis is down
+
     if user_id:
         attrs["user.id"] = user_id
 
@@ -1095,6 +1108,15 @@ async def _resolve_project_id(request: Request) -> str:
         payload = decode_access_token(token)
     except jwt.InvalidTokenError:
         return _DEFAULT_PROJECT
+
+    jti = payload.get("jti")
+    if jti:
+        try:
+            redis = get_redis()
+            if await redis.get(f"revoked_jti:{jti}"):
+                return _DEFAULT_PROJECT
+        except RedisError:
+            pass  # Fail open if Redis is down
 
     user_id = payload.get("sub")
     if not user_id:

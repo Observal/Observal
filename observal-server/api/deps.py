@@ -38,6 +38,15 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
     except jwt.InvalidTokenError:
         return None
 
+    jti = payload.get("jti")
+    if jti:
+        try:
+            redis = get_redis()
+            if await redis.get(f"revoked_jti:{jti}"):
+                return None
+        except RedisError:
+            pass  # Fail open if Redis is down
+
     user_id = payload.get("sub")
 
     if not user_id:

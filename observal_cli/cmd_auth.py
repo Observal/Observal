@@ -180,16 +180,37 @@ def init():
 @auth_app.command()
 def logout():
     """Clear saved credentials."""
+    # Best-effort: revoke tokens on the server before clearing locally
     if config.CONFIG_FILE.exists():
         import json
 
         raw_cfg = json.loads(config.CONFIG_FILE.read_text())
+
+        access_token = raw_cfg.get("access_token")
+        refresh_token = raw_cfg.get("refresh_token")
+        server_url = raw_cfg.get("server_url", "").rstrip("/")
+
+        if access_token and server_url:
+            try:
+                resp = httpx.post(
+                    f"{server_url}/api/v1/auth/logout",
+                    json={"refresh_token": refresh_token or None},
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=5,
+                )
+                resp.raise_for_status()
+            except Exception:
+                pass  # Best-effort — proceed with local cleanup regardless
 
         for key in ("access_token", "refresh_token", "api_key"):
             raw_cfg.pop(key, None)
         config.CONFIG_FILE.write_text(json.dumps(raw_cfg, indent=2))
 
         rprint("[green]Logged out.[/green]")
+        rprint(
+            "[dim]Note: IDE hooks will stop sending telemetry. "
+            "To remove hook scripts from your IDE, run [bold]observal doctor unpatch[/bold].[/dim]"
+        )
     else:
         rprint("[dim]No config to clear.[/dim]")
 

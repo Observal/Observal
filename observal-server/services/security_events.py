@@ -30,6 +30,7 @@ class EventType(str, Enum):
     # Auth
     LOGIN_SUCCESS = "auth.login.success"
     LOGIN_FAILURE = "auth.login.failure"
+    LOGOUT = "auth.logout"
     SSO_SUCCESS = "auth.sso.success"
     SSO_FAILURE = "auth.sso.failure"
     API_KEY_CREATED = "auth.api_key.created"

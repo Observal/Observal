@@ -144,3 +144,7 @@ class DeviceTokenRequest(BaseModel):
 
 class DeviceConfirmRequest(BaseModel):
     user_code: str
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = None

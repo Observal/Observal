@@ -76,7 +76,25 @@ export function NavUser({ user }: NavUserProps) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={() => {
+          onClick={async () => {
+            try {
+              const token = localStorage.getItem("observal_access_token");
+              const refreshToken = localStorage.getItem("observal_refresh_token");
+              if (token) {
+                await fetch("/api/v1/auth/logout", {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    refresh_token: refreshToken || undefined,
+                  }),
+                });
+              }
+            } catch {
+              // Best-effort — proceed with client-side cleanup regardless
+            }
             clearSession();
             router.push("/login");
           }}
