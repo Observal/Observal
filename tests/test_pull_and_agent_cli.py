@@ -181,7 +181,9 @@ def _copilot_snippet() -> dict:
 class TestPullCursor:
     def test_writes_rules_and_mcp(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_cursor_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
 
@@ -197,7 +199,9 @@ class TestPullCursor:
 
     def test_output_lists_written_files(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_cursor_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert "Pulled cursor config" in result.output
         # Rich may wrap long absolute paths; strip all whitespace for path checks
@@ -209,7 +213,9 @@ class TestPullCursor:
 class TestPullVSCode:
     def test_writes_rules_and_mcp(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_vscode_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "vscode", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "vscode", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         assert (tmp_path / ".vscode" / "rules" / "my-agent.md").exists()
@@ -224,7 +230,9 @@ class TestPullVSCode:
 class TestPullClaudeCode:
     def test_writes_agent_file(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_claude_code_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         agent_file = tmp_path / ".claude" / "agents" / "my-agent.md"
@@ -237,14 +245,17 @@ class TestPullClaudeCode:
 
     def test_auto_runs_setup_commands(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_claude_code_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert "Registering MCP servers" in result.output
 
     def test_dry_run_shows_setup_commands_without_running(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_claude_code_snippet()):
             result = runner.invoke(
-                cli_app, ["pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path), "--dry-run"]
+                cli_app,
+                ["agent", "pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path), "--dry-run", "--no-prompt"],
             )
 
         assert "Would run these setup commands" in result.output
@@ -252,7 +263,9 @@ class TestPullClaudeCode:
 
     def test_shows_otlp_env(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_claude_code_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert "OTEL_EXPORTER_OTLP_ENDPOINT" in result.output
         assert "OTEL_SERVICE_NAME" in result.output
@@ -260,7 +273,9 @@ class TestPullClaudeCode:
     def test_mcp_config_without_path_not_written(self, tmp_path: Path):
         """Claude Code mcp_config has no 'path' key — should not write a file for it."""
         with _patch_config(), _patch_get_agent(), _patch_post(_claude_code_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "claude-code", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0
         # Only the agent file should be written, not an mcp_config file
@@ -277,7 +292,9 @@ class TestPullClaudeCode:
 class TestPullGemini:
     def test_writes_rules_and_mcp(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_gemini_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "gemini-cli", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "gemini-cli", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         rules = tmp_path / "GEMINI.md"
@@ -298,7 +315,9 @@ class TestPullGemini:
 class TestPullKiro:
     def test_writes_agent_file(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_kiro_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "kiro", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "kiro", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         agent = tmp_path / ".kiro" / "agents" / "my-agent.json"
@@ -316,7 +335,9 @@ class TestPullKiro:
 class TestPullCodex:
     def test_writes_agents_md(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_codex_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "codex", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "codex", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         rules = tmp_path / "AGENTS.md"
@@ -332,7 +353,9 @@ class TestPullCodex:
 class TestPullCopilot:
     def test_writes_copilot_instructions(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_copilot_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "copilot", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "copilot", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         rules = tmp_path / ".github" / "copilot-instructions.md"
@@ -355,7 +378,9 @@ class TestPullMcpMerge:
         )
 
         with _patch_config(), _patch_get_agent(), _patch_post(_cursor_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         data = json.loads(mcp_path.read_text())
@@ -372,7 +397,9 @@ class TestPullMcpMerge:
         mcp_path.write_text(json.dumps({"mcpServers": {"my-server": {"command": "old", "args": []}}}, indent=2))
 
         with _patch_config(), _patch_get_agent(), _patch_post(_cursor_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         data = json.loads(mcp_path.read_text())
@@ -385,7 +412,9 @@ class TestPullMcpMerge:
         mcp_path.write_text(json.dumps({"mcpServers": {}}, indent=2))
 
         with _patch_config(), _patch_get_agent(), _patch_post(_cursor_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert "merged" in result.output
 
@@ -398,7 +427,10 @@ class TestPullMcpMerge:
 class TestPullDryRun:
     def test_dry_run_does_not_write_files(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_cursor_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--dry-run"])
+            result = runner.invoke(
+                cli_app,
+                ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--dry-run", "--no-prompt"],
+            )
 
         assert result.exit_code == 0, result.output
         assert "Dry run" in result.output
@@ -410,7 +442,10 @@ class TestPullDryRun:
 
     def test_dry_run_still_shows_paths(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_cursor_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--dry-run"])
+            result = runner.invoke(
+                cli_app,
+                ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--dry-run", "--no-prompt"],
+            )
 
         # Rich may wrap long absolute paths; strip all whitespace for path checks
         flat = result.output.replace("\n", "").replace(" ", "")
@@ -419,7 +454,10 @@ class TestPullDryRun:
 
     def test_dry_run_kiro(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_kiro_snippet()):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "kiro", "--dir", str(tmp_path), "--dry-run"])
+            result = runner.invoke(
+                cli_app,
+                ["agent", "pull", "abc123", "--ide", "kiro", "--dir", str(tmp_path), "--dry-run", "--no-prompt"],
+            )
 
         assert result.exit_code == 0
         assert "would write" in result.output
@@ -435,19 +473,21 @@ class TestPullEdgeCases:
     def test_missing_ide_flag_fails(self):
         """--ide is required; omitting it should exit non-zero."""
         with _patch_config():
-            result = runner.invoke(cli_app, ["pull", "abc123"])
+            result = runner.invoke(cli_app, ["agent", "pull", "abc123"])
         assert result.exit_code != 0
 
     def test_missing_agent_id_fails(self):
         """Agent ID is a required argument."""
         with _patch_config():
-            result = runner.invoke(cli_app, ["pull", "--ide", "cursor"])
+            result = runner.invoke(cli_app, ["agent", "pull", "--ide", "cursor"])
         assert result.exit_code != 0
 
     def test_empty_snippet_exits(self, tmp_path: Path):
         """An empty config_snippet from the server should exit non-zero."""
         with _patch_config(), _patch_get_agent(), _patch_post({"config_snippet": {}}):
-            result = runner.invoke(cli_app, ["pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--no-prompt"]
+            )
         assert result.exit_code != 0
         assert "empty config snippet" in result.output.lower()
 
@@ -459,7 +499,9 @@ class TestPullEdgeCases:
             _patch_post(_codex_snippet()),
             patch("observal_cli.cmd_pull.config.resolve_alias", return_value="real-uuid") as mock_resolve,
         ):
-            result = runner.invoke(cli_app, ["pull", "@myagent", "--ide", "codex", "--dir", str(tmp_path)])
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "@myagent", "--ide", "codex", "--dir", str(tmp_path), "--no-prompt"]
+            )
 
         assert result.exit_code == 0, result.output
         mock_resolve.assert_called_once_with("@myagent")
@@ -503,7 +545,7 @@ class TestPullEnvVarPrompting:
         ):
             result = runner.invoke(
                 cli_app,
-                ["pull", "agent-uuid", "--ide", "cursor", "--dir", str(tmp_path)],
+                ["agent", "pull", "agent-uuid", "--ide", "cursor", "--dir", str(tmp_path)],
                 input="sk-test-123\nus-east-1\n",
             )
 
@@ -535,7 +577,7 @@ class TestPullEnvVarPrompting:
         with _patch_config(), patch("observal_cli.client.get", side_effect=mock_get), _patch_post(_cursor_snippet()):
             result = runner.invoke(
                 cli_app,
-                ["pull", "agent-uuid", "--ide", "cursor", "--dir", str(tmp_path)],
+                ["agent", "pull", "agent-uuid", "--ide", "cursor", "--dir", str(tmp_path), "--no-prompt"],
             )
 
         assert result.exit_code == 0, result.output
@@ -549,7 +591,7 @@ class TestPullEnvVarPrompting:
 
 class TestPullHelp:
     def test_help_flag(self):
-        result = runner.invoke(cli_app, ["pull", "--help"])
+        result = runner.invoke(cli_app, ["agent", "pull", "--help"])
         assert result.exit_code == 0
         out = _plain(result.output)
         assert "Fetch agent config" in out

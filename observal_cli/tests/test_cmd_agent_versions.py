@@ -213,131 +213,118 @@ def test_agent_versions_json_output() -> None:
 # ── agent pull ─────────────────────────────────────────────────
 
 
-def test_agent_pull_writes_files(tmp_path: Path) -> None:
-    """pull writes each entry in the files dict to disk."""
+def test_agent_pull_writes_rules_and_mcp(tmp_path: Path) -> None:
+    """pull writes rules_file and mcp_config from install endpoint."""
     agent_id = "agent-uuid-pull"
     agent_detail = {
         "id": agent_id,
         "name": "my-agent",
-        "latest_version": "1.2.0",
-        "latest_approved_version": "1.2.0",
+        "mcp_links": [],
+        "component_links": [],
     }
-    ide_config = {
-        "files": {
-            ".claude/agents/my-agent/settings.json": '{"key": "value"}',
-            ".claude/agents/my-agent/AGENTS.md": "# My Agent\n",
+    install_result = {
+        "config_snippet": {
+            "rules_file": {
+                "path": ".claude/rules.md",
+                "content": "# Rules\nBe helpful.",
+            },
+            "mcp_config": {
+                "path": ".claude/mcp.json",
+                "content": {"mcpServers": {"my-server": {"command": "npx"}}},
+            },
         }
     }
 
     with (
         patch("observal_cli.config.resolve_alias", return_value=agent_id),
-        patch("observal_cli.client.get") as mock_get,
+        patch("observal_cli.client.get", return_value=agent_detail),
+        patch("observal_cli.client.post", return_value=install_result),
     ):
-        mock_get.side_effect = [agent_detail, ide_config]
-
         result = runner.invoke(
             app,
-            ["agent", "pull", "my-agent", "--ide", "claude-code", "--dir", str(tmp_path)],
+            ["agent", "pull", agent_id, "--ide", "claude-code", "--dir", str(tmp_path), "--no-prompt"],
         )
 
     assert result.exit_code == 0, result.output
 
-    settings_path = tmp_path / ".claude" / "agents" / "my-agent" / "settings.json"
-    agents_md_path = tmp_path / ".claude" / "agents" / "my-agent" / "AGENTS.md"
-    assert settings_path.exists(), f"Expected {settings_path} to exist"
-    assert agents_md_path.exists(), f"Expected {agents_md_path} to exist"
-    assert settings_path.read_text() == '{"key": "value"}'
-    assert agents_md_path.read_text() == "# My Agent\n"
-
-    # Output should mention the written files
-    assert "settings.json" in result.output or ".claude" in result.output
+    rules_path = tmp_path / ".claude" / "rules.md"
+    mcp_path = tmp_path / ".claude" / "mcp.json"
+    assert rules_path.exists()
+    assert "Be helpful" in rules_path.read_text()
+    assert mcp_path.exists()
+    assert "my-server" in mcp_path.read_text()
 
 
-def test_agent_pull_explicit_version(tmp_path: Path) -> None:
-    """pull --version uses the specified version instead of latest."""
-    agent_id = "agent-uuid-ver"
-    agent_detail = {
-        "id": agent_id,
-        "name": "my-agent",
-        "latest_version": "1.3.0",
-        "latest_approved_version": "1.3.0",
-    }
-    ide_config = {
-        "files": {
-            ".claude/agents/my-agent/AGENTS.md": "# pinned version\n",
+def test_agent_pull_dry_run(tmp_path: Path) -> None:
+    """pull --dry-run previews files without writing."""
+    agent_id = "agent-uuid-dry"
+    agent_detail = {"id": agent_id, "name": "my-agent", "mcp_links": [], "component_links": []}
+    install_result = {
+        "config_snippet": {
+            "rules_file": {"path": ".claude/rules.md", "content": "# Rules"},
         }
     }
 
     with (
         patch("observal_cli.config.resolve_alias", return_value=agent_id),
-        patch("observal_cli.client.get") as mock_get,
+        patch("observal_cli.client.get", return_value=agent_detail),
+        patch("observal_cli.client.post", return_value=install_result),
     ):
-        mock_get.side_effect = [agent_detail, ide_config]
-
         result = runner.invoke(
             app,
-            ["agent", "pull", "my-agent", "--ide", "claude-code", "--version", "1.2.0", "--dir", str(tmp_path)],
+            ["agent", "pull", agent_id, "--ide", "claude-code", "--dir", str(tmp_path), "--dry-run", "--no-prompt"],
         )
 
     assert result.exit_code == 0, result.output
-
-    # Second GET call must use the explicit version, not latest
-    second_call = mock_get.call_args_list[1]
-    called_path = second_call[0][0]
-    assert "1.2.0" in called_path
+    assert "dry run" in result.output.lower() or "would write" in result.output.lower()
+    # File should NOT be written
+    assert not (tmp_path / ".claude" / "rules.md").exists()
 
 
-def test_agent_pull_raw_config_fallback(tmp_path: Path) -> None:
-    """pull handles a raw config dict (no 'files' key) by writing a single file."""
-    agent_id = "agent-uuid-raw"
-    agent_detail = {
-        "id": agent_id,
-        "name": "my-agent",
-        "latest_version": "1.0.0",
-        "latest_approved_version": "1.0.0",
+def test_agent_pull_steering_file(tmp_path: Path) -> None:
+    """pull writes steering_file (Kiro) from install endpoint."""
+    agent_id = "agent-uuid-kiro"
+    agent_detail = {"id": agent_id, "name": "my-agent", "mcp_links": [], "component_links": []}
+    install_result = {
+        "config_snippet": {
+            "steering_file": {"path": ".kiro/steering.md", "content": "# Steering"},
+        }
     }
-    # No 'files' key — just a plain config dict
-    ide_config = {"mcpServers": {"my-agent": {"command": "npx", "args": ["-y", "@my-agent"]}}}
 
     with (
         patch("observal_cli.config.resolve_alias", return_value=agent_id),
-        patch("observal_cli.client.get") as mock_get,
+        patch("observal_cli.client.get", return_value=agent_detail),
+        patch("observal_cli.client.post", return_value=install_result),
     ):
-        mock_get.side_effect = [agent_detail, ide_config]
-
         result = runner.invoke(
             app,
-            ["agent", "pull", "my-agent", "--ide", "claude-code", "--dir", str(tmp_path)],
+            ["agent", "pull", agent_id, "--ide", "kiro", "--dir", str(tmp_path), "--no-prompt"],
         )
 
     assert result.exit_code == 0, result.output
-    # A fallback file should have been written
-    written = list(tmp_path.rglob("*"))
-    assert any(f.is_file() for f in written), "Expected at least one file to be written"
+    assert (tmp_path / ".kiro" / "steering.md").exists()
 
 
 def test_agent_pull_path_traversal_rejected(tmp_path: Path) -> None:
-    """pull rejects file paths containing directory traversal."""
+    """pull rejects file paths that escape target directory."""
     agent_id = "agent-uuid-evil"
-    agent_detail = {"id": agent_id, "name": "evil-agent", "latest_approved_version": "1.0.0"}
-    ide_config = {
-        "files": {
-            "../../etc/evil.txt": "pwned",
-            ".claude/safe.json": '{"ok": true}',
+    agent_detail = {"id": agent_id, "name": "evil-agent", "mcp_links": [], "component_links": []}
+    install_result = {
+        "config_snippet": {
+            "rules_file": {"path": "../../etc/evil.txt", "content": "pwned"},
         }
     }
+
     with (
         patch("observal_cli.config.resolve_alias", return_value=agent_id),
-        patch("observal_cli.client.get") as mock_get,
+        patch("observal_cli.client.get", return_value=agent_detail),
+        patch("observal_cli.client.post", return_value=install_result),
     ):
-        mock_get.side_effect = [agent_detail, ide_config]
         result = runner.invoke(
             app,
-            ["agent", "pull", "evil-agent", "--ide", "claude-code", "--dir", str(tmp_path)],
+            ["agent", "pull", agent_id, "--ide", "claude-code", "--dir", str(tmp_path), "--no-prompt"],
         )
-    assert result.exit_code == 0
-    # The traversal path must NOT exist outside tmp_path
+
+    # Should fail due to path escape
+    assert result.exit_code == 1
     assert not (tmp_path / ".." / ".." / "etc" / "evil.txt").resolve().exists()
-    # Safe file should exist
-    assert (tmp_path / ".claude" / "safe.json").exists()
-    assert "unsafe" in result.output.lower() or "Skipping" in result.output

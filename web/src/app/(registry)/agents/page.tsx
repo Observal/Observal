@@ -268,7 +268,7 @@ const columns: ColumnDef<RegistryItem>[] = [
           >
             {row.original.name}
           </Link>
-          {row.original.status && row.original.status !== "active" && (
+          {row.original.status && row.original.status !== "approved" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning ring-1 ring-warning/20">
               <Clock className="h-2.5 w-2.5" />
               Pending Review
@@ -434,7 +434,7 @@ function AgentListContent() {
     const active = agents ?? [];
     const activeIds = new Set(active.map((a) => a.id));
     const pending = (myAgents ?? []).filter(
-      (a) => a.status !== "active" && a.status !== "draft" && a.status !== "rejected" && !activeIds.has(a.id),
+      (a) => a.status !== "approved" && a.status !== "draft" && a.status !== "rejected" && !activeIds.has(a.id),
     );
     return { filtered: [...pending, ...active], pendingCount: pending.length };
   }, [agents, myAgents]);

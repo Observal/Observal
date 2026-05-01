@@ -165,12 +165,12 @@ def login(
 
 @auth_app.command()
 def init():
-    """[Removed] Use 'observal auth login' + 'observal pull' instead."""
+    """[Removed] Use 'observal auth login' + 'observal agent pull' instead."""
     rprint("[yellow]'observal auth init' has been removed.[/yellow]")
     rprint()
     rprint("Use these commands instead:")
     rprint("  [bold]observal auth login[/bold]   — connect to your server")
-    rprint("  [bold]observal pull[/bold]          — pull your configuration")
+    rprint("  [bold]observal agent pull[/bold]   — pull agent config to your IDE")
     raise typer.Exit(1)
 
 

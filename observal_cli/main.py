@@ -86,10 +86,12 @@ app.add_typer(auth_app, name="auth")
 
 # ── Primary user workflows (root) ─────────────────────────
 register_config(app)
-register_pull(app)
 register_scan(app)
 register_uninstall(app)
 register_use(app)
+
+# ── Agent pull (full-featured, lives under `observal agent pull`) ──
+register_pull(agent_app)
 
 # ── Subgroups ─────────────────────────────────────────────
 app.add_typer(registry_app, name="registry")
