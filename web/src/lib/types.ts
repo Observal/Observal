@@ -184,6 +184,25 @@ export interface ValidationResult {
   issues: ValidationIssue[];
 }
 
+// ── Version Diff ────────────────────────────────────────────────────
+
+export interface ComponentChange {
+  type: string;
+  name: string;
+  change: "added" | "removed" | "updated";
+  version?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface VersionDiff {
+  agent_id: string;
+  version_a: string;
+  version_b: string;
+  yaml_diff: string;
+  component_changes: ComponentChange[];
+}
+
 // ── Review ──────────────────────────────────────────────────────────
 
 export interface McpValidationResult {

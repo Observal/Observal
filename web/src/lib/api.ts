@@ -26,6 +26,7 @@ import type {
   ValidationResult,
   VersionSuggestions,
   AgentVersionsResponse,
+  VersionDiff,
   BulkResult,
   ComponentLeaderboardItem,
   AuditLogEntry,
@@ -273,6 +274,8 @@ export const registry = {
     get<unknown>(`/agents/${agentId}/versions/${version}`),
   createVersion: (agentId: string, body: unknown) =>
     post<unknown>(`/agents/${agentId}/versions`, body),
+  getVersionDiff: (agentId: string, v1: string, v2: string) =>
+    get<VersionDiff>(`/agents/${agentId}/versions/${v1}/diff/${v2}`),
 };
 
 // ── Review ──────────────────────────────────────────────────────────

@@ -137,6 +137,18 @@ export function useAgentVersionDetail(agentId: string | undefined, version: stri
   });
 }
 
+export function useVersionDiff(
+  agentId: string | undefined,
+  v1: string | undefined,
+  v2: string | undefined,
+) {
+  return useQuery({
+    queryKey: ["version-diff", agentId, v1, v2],
+    enabled: !!agentId && !!v1 && !!v2,
+    queryFn: () => registry.getVersionDiff(agentId!, v1!, v2!),
+  });
+}
+
 // ── Review ──────────────────────────────────────────────────────────
 
 export function useReviewList(typeFilter?: string) {

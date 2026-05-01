@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { CheckCircle2, X, Trash2, LayoutGrid, TableProperties } from "lucide-react";
 import { useReviewAgents, useReviewComponents, useReviewAction, useReviewDelete } from "@/hooks/use-api";
+import { useAuthGuard } from "@/hooks/use-auth";
 import type { ReviewItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,16 +16,18 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ValidationBadge, ValidationDetails, ComponentReadinessBadge } from "@/components/review/validation-badges";
 import { ReviewDetailSheet } from "@/components/review/review-detail-sheet";
+import { ReviewDiffSheet } from "@/components/review/review-diff-sheet";
 
 type ViewMode = "list" | "grid";
 
-function ReviewCard({ item, onApprove, onReject, onDelete, onItemClick, disableApprove }: {
+function ReviewCard({ item, onApprove, onReject, onDelete, onItemClick, disableApprove, isAdmin }: {
   item: ReviewItem;
   onApprove: (id: string, type?: string) => void;
   onReject: (id: string, reason: string, type?: string) => void;
   onDelete: (id: string, type?: string) => void;
   onItemClick: (item: ReviewItem) => void;
   disableApprove?: boolean;
+  isAdmin?: boolean;
 }) {
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -152,36 +155,39 @@ function ReviewCard({ item, onApprove, onReject, onDelete, onItemClick, disableA
         >
           {showRejectInput ? "Confirm" : "Reject"}
         </Button>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                onClick={() => setConfirmDelete(true)}
-                aria-label="Delete submission"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Withdraw / delete submission</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {isAdmin && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => setConfirmDelete(true)}
+                  aria-label="Delete submission"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Permanently delete (admin only)</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
     </div>
   );
 }
 
-function ReviewRow({ item, onApprove, onReject, onDelete, onItemClick, disableApprove }: {
+function ReviewRow({ item, onApprove, onReject, onDelete, onItemClick, disableApprove, isAdmin }: {
   item: ReviewItem;
   onApprove: (id: string, type?: string) => void;
   onReject: (id: string, reason: string, type?: string) => void;
   onDelete: (id: string, type?: string) => void;
   onItemClick: (item: ReviewItem) => void;
   disableApprove?: boolean;
+  isAdmin?: boolean;
 }) {
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -314,24 +320,26 @@ function ReviewRow({ item, onApprove, onReject, onDelete, onItemClick, disableAp
             >
               Reject
             </Button>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => setConfirmDelete(true)}
-                    aria-label="Delete submission"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Withdraw / delete submission</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {isAdmin && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => setConfirmDelete(true)}
+                      aria-label="Delete submission"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Permanently delete (admin only)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
         )}
       </div>
@@ -346,6 +354,7 @@ function AgentItemList({
   onReject,
   onDelete,
   onItemClick,
+  isAdmin,
 }: {
   items: ReviewItem[];
   view: ViewMode;
@@ -353,6 +362,7 @@ function AgentItemList({
   onReject: (id: string, reason: string, type?: string) => void;
   onDelete: (id: string, type?: string) => void;
   onItemClick: (item: ReviewItem) => void;
+  isAdmin?: boolean;
 }) {
   const grouped = useMemo(() => {
     const bundles = new Map<string, { name: string; items: ReviewItem[] }>();
@@ -384,6 +394,7 @@ function AgentItemList({
             onDelete={onDelete}
             onItemClick={onItemClick}
             disableApprove={item.components_ready === false}
+            isAdmin={isAdmin}
           />
         ))}
       </div>
@@ -398,6 +409,7 @@ function AgentItemList({
             onDelete={onDelete}
             onItemClick={onItemClick}
             disableApprove={item.components_ready === false}
+            isAdmin={isAdmin}
           />
         ))}
       </div>
@@ -436,6 +448,7 @@ function ReviewItemList({
   onReject,
   onDelete,
   onItemClick,
+  isAdmin,
 }: {
   items: ReviewItem[];
   view: ViewMode;
@@ -443,6 +456,7 @@ function ReviewItemList({
   onReject: (id: string, reason: string, type?: string) => void;
   onDelete: (id: string, type?: string) => void;
   onItemClick: (item: ReviewItem) => void;
+  isAdmin?: boolean;
 }) {
   return view === "list" ? (
     <div className="animate-in rounded-md border border-border overflow-hidden">
@@ -454,6 +468,7 @@ function ReviewItemList({
           onReject={onReject}
           onDelete={onDelete}
           onItemClick={onItemClick}
+          isAdmin={isAdmin}
         />
       ))}
     </div>
@@ -467,6 +482,7 @@ function ReviewItemList({
           onReject={onReject}
           onDelete={onDelete}
           onItemClick={onItemClick}
+          isAdmin={isAdmin}
         />
       ))}
     </div>
@@ -474,6 +490,8 @@ function ReviewItemList({
 }
 
 export default function ReviewPage() {
+  const { role } = useAuthGuard();
+  const isAdmin = role === "admin" || role === "super_admin";
   const { data: agents, isLoading: agentsLoading, isError: agentsError, error: agentsErr, refetch: refetchAgents } = useReviewAgents();
   const { data: components, isLoading: componentsLoading, isError: componentsError, error: componentsErr, refetch: refetchComponents } = useReviewComponents();
   const reviewAction = useReviewAction();
@@ -481,6 +499,7 @@ export default function ReviewPage() {
   const [view, setView] = useState<ViewMode>("grid");
   const [activeTab, setActiveTab] = useState("agents");
   const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
+  const [diffItem, setDiffItem] = useState<ReviewItem | null>(null);
 
   const agentCount = (agents ?? []).length;
   const componentCount = (components ?? []).length;
@@ -502,7 +521,13 @@ export default function ReviewPage() {
   );
 
   const handleItemClick = useCallback(
-    (item: ReviewItem) => setSelectedItem(item),
+    (item: ReviewItem) => {
+      if (item.type === "agent") {
+        setDiffItem(item);
+      } else {
+        setSelectedItem(item);
+      }
+    },
     [],
   );
 
@@ -578,6 +603,7 @@ export default function ReviewPage() {
                 onReject={handleReject}
                 onDelete={handleDelete}
                 onItemClick={handleItemClick}
+                isAdmin={isAdmin}
               />
             )}
           </TabsContent>
@@ -605,6 +631,7 @@ export default function ReviewPage() {
                 onReject={handleReject}
                 onDelete={handleDelete}
                 onItemClick={handleItemClick}
+                isAdmin={isAdmin}
               />
             )}
           </TabsContent>
@@ -618,6 +645,14 @@ export default function ReviewPage() {
         onApprove={handleApprove}
         onReject={handleReject}
         onDelete={handleDelete}
+      />
+
+      <ReviewDiffSheet
+        item={diffItem}
+        open={!!diffItem}
+        onOpenChange={(open) => { if (!open) setDiffItem(null); }}
+        onApprove={handleApprove}
+        onReject={handleReject}
       />
     </>
   );
