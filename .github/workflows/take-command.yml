@@ -1,0 +1,59 @@
+name: /take Command
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  take:
+    if: >-
+      github.event.issue.pull_request == null &&
+      github.event.comment.body == '/take'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check labels and assign
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const commenter = context.payload.comment.user.login;
+
+            const labels = issue.labels.map(l => l.name.toLowerCase());
+            const eligible = labels.includes('good first issue') || labels.includes('help wanted');
+
+            if (!eligible) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `@${commenter} This issue is not open for community assignment. The \`/take\` command only works on issues labeled \`good first issue\` or \`help wanted\`.`
+              });
+              return;
+            }
+
+            if (issue.assignees.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `@${commenter} This issue is already assigned to @${issue.assignees[0].login}.`
+              });
+              return;
+            }
+
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              assignees: [commenter]
+            });
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `@${commenter} You've been assigned to this issue. Welcome aboard! 🎉\n\nPlease read our [contributing guide](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md) before submitting a PR.`
+            });
