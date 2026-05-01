@@ -76,23 +76,13 @@ async def record_component_download(
 
 
 async def _update_agent_counts(agent_id: uuid.UUID, db: AsyncSession) -> None:
-    """Recompute download_count and unique_users for an agent."""
+    """Recompute download_count for an agent's latest version."""
     total = (
         await db.scalar(select(func.count(AgentDownloadRecord.id)).where(AgentDownloadRecord.agent_id == agent_id)) or 0
     )
-    unique = (
-        await db.scalar(
-            select(func.count(func.distinct(AgentDownloadRecord.user_id))).where(
-                AgentDownloadRecord.agent_id == agent_id,
-                AgentDownloadRecord.user_id.isnot(None),
-            )
-        )
-        or 0
-    )
     agent = await db.get(Agent, agent_id)
-    if agent:
-        agent.download_count = total
-        agent.unique_users = unique
+    if agent and agent.latest_version:
+        agent.latest_version.download_count = total
 
 
 async def get_download_stats(agent_id: uuid.UUID, db: AsyncSession) -> dict:

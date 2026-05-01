@@ -182,6 +182,11 @@ def _agent_to_response(
     agent_dict["created_by_email"] = created_by_email
     agent_dict["created_by_username"] = created_by_username
     agent_dict["user_permission"] = user_permission
+    # Populate version fields for CLI pull resolution
+    approved_versions = [v for v in getattr(agent, "versions", []) if getattr(v, "status", None) == AgentStatus.approved]
+    latest_approved = max(approved_versions, key=lambda v: v.created_at) if approved_versions else None
+    agent_dict["latest_approved_version"] = latest_approved.version if latest_approved else None
+    agent_dict["latest_version"] = agent.version if agent.version != "0.0.0" else None
     return AgentResponse(**agent_dict)
 
 
@@ -812,6 +817,8 @@ async def install_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to install this agent")
+    if not agent.latest_version:
+        raise HTTPException(status_code=400, detail="Agent has no published version available for install")
 
     # Pre-load MCP listings for config generation
     mcp_comp_ids = [c.component_id for c in agent.components if c.component_type == "mcp"]
@@ -1068,19 +1075,41 @@ async def delete_agent(
         .all()
     ):
         await db.delete(r)
-    for r in (await db.execute(select(Scorecard).where(Scorecard.agent_id == agent.id))).scalars().all():
+    for r in (
+        await db.execute(
+            select(Scorecard)
+            .where(Scorecard.agent_id == agent.id)
+            .options(selectinload(Scorecard.penalties))
+        )
+    ).scalars().all():
         await db.delete(r)
-    for r in (await db.execute(select(EvalRun).where(EvalRun.agent_id == agent.id))).scalars().all():
+    for r in (
+        await db.execute(
+            select(EvalRun)
+            .where(EvalRun.agent_id == agent.id)
+            .options(selectinload(EvalRun.scorecards).selectinload(Scorecard.penalties))
+        )
+    ).scalars().all():
         await db.delete(r)
     for r in (
         (await db.execute(select(AgentDownloadRecord).where(AgentDownloadRecord.agent_id == agent.id))).scalars().all()
     ):
         await db.delete(r)
-    # AgentComponent, AgentGoalTemplate, AgentGoalSection handled by cascade="all, delete-orphan"
+    # Break circular FK (Agent.latest_version_id ↔ AgentVersion.agent_id)
+    # then delete via raw SQL to avoid ORM cascade circular dependency.
+    from sqlalchemy import delete as sql_delete
 
     agent_id_str = str(agent.id)
     agent_name = agent.name
-    await db.delete(agent)
+
+    # Null out the self-referential FK first
+    agent.latest_version_id = None
+    await db.flush()
+
+    # Delete versions via SQL (DB-level CASCADE handles children: components, goals)
+    await db.execute(sql_delete(AgentVersion).where(AgentVersion.agent_id == agent.id))
+    # Delete agent via SQL (avoids ORM cascade re-triggering on stale identity map)
+    await db.execute(sql_delete(Agent).where(Agent.id == agent.id))
     await db.commit()
 
     emit_registry_event(
