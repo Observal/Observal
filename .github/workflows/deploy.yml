@@ -2,7 +2,7 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 concurrency:
@@ -23,8 +23,8 @@ jobs:
           script: |
             set -e
             cd ~/Observal
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch origin --tags
+            git checkout ${{ github.ref_name }}
 
             cd docker
             docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build --remove-orphans
