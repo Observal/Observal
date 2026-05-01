@@ -129,21 +129,46 @@ class Agent(Base):
     def version(self) -> str:
         return self.latest_version.version if self.latest_version else "0.0.0"
 
+    @version.setter
+    def version(self, value: str) -> None:
+        if self.latest_version:
+            self.latest_version.version = value
+
     @property
     def description(self) -> str:
         return self.latest_version.description if self.latest_version else ""
+
+    @description.setter
+    def description(self, value: str) -> None:
+        if self.latest_version:
+            self.latest_version.description = value
 
     @property
     def prompt(self) -> str:
         return self.latest_version.prompt if self.latest_version else ""
 
+    @prompt.setter
+    def prompt(self, value: str) -> None:
+        if self.latest_version:
+            self.latest_version.prompt = value
+
     @property
     def model_name(self) -> str:
         return self.latest_version.model_name if self.latest_version else ""
 
+    @model_name.setter
+    def model_name(self, value: str) -> None:
+        if self.latest_version:
+            self.latest_version.model_name = value
+
     @property
     def model_config_json(self) -> dict:
         return self.latest_version.model_config_json if self.latest_version else {}
+
+    @model_config_json.setter
+    def model_config_json(self, value: dict) -> None:
+        if self.latest_version:
+            self.latest_version.model_config_json = value
 
     @property
     def external_mcps(self) -> list:
@@ -157,6 +182,11 @@ class Agent(Base):
     @property
     def supported_ides(self) -> list:
         return self.latest_version.supported_ides if self.latest_version else []
+
+    @supported_ides.setter
+    def supported_ides(self, value: list) -> None:
+        if self.latest_version:
+            self.latest_version.supported_ides = value
 
     @property
     def required_ide_features(self) -> list:

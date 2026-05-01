@@ -306,11 +306,15 @@ async def delete_hook(
     for r in (await db.execute(select(HookDownload).where(HookDownload.listing_id == listing.id))).scalars().all():
         await db.delete(r)
 
-    # Clear the circular FK reference before deleting to avoid constraint violation
-    listing.latest_version_id = None
-    await db.flush()
-
+    # Break the circular FK (listing → latest_version → listing) before delete
     listing_name = listing.name
+    listing.latest_version_id = None
+    listing.latest_version = None
+    await db.flush()
+    # Delete versions explicitly to avoid SQLAlchemy circular dependency detection
+    for ver in list(listing.versions):
+        await db.delete(ver)
+    await db.flush()
     await db.delete(listing)
     await db.commit()
     await audit(

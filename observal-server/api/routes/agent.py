@@ -673,6 +673,9 @@ async def update_agent(
         # New components field replaces ALL components (type validated by Pydantic Literal)
         from services.agent_resolver import validate_component_ids
 
+        if not agent.latest_version:
+            raise HTTPException(status_code=400, detail="Agent has no version to update components on")
+
         errors = await validate_component_ids(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
             db,
@@ -685,31 +688,37 @@ async def update_agent(
                     for e in errors
                 ],
             )
-        # Remove ALL old components
+        # Remove ALL old components on the latest version
+        version_id = agent.latest_version.id
         old_comps = (
-            (await db.execute(select(AgentComponent).where(AgentComponent.agent_id == agent.id))).scalars().all()
+            (await db.execute(select(AgentComponent).where(AgentComponent.agent_version_id == version_id))).scalars().all()
         )
         for comp in old_comps:
             await db.delete(comp)
         for i, cref in enumerate(req.components):
             db.add(
                 AgentComponent(
-                    agent_id=agent.id,
+                    agent_version_id=version_id,
                     component_type=cref.component_type,
                     component_id=cref.component_id,
-                    version_ref="latest",
+                    component_name="",
+                    resolved_version="latest",
                     order_index=i,
                     config_override=cref.config_override,
                 )
             )
     elif req.mcp_server_ids is not None:
         # Legacy: only update MCP components
+        if not agent.latest_version:
+            raise HTTPException(status_code=400, detail="Agent has no version to update components on")
+
         mcp_listings = await _validate_mcp_ids(req.mcp_server_ids, db)
+        version_id = agent.latest_version.id
         old_comps = (
             (
                 await db.execute(
                     select(AgentComponent).where(
-                        AgentComponent.agent_id == agent.id,
+                        AgentComponent.agent_version_id == version_id,
                         AgentComponent.component_type == "mcp",
                     )
                 )
@@ -722,15 +731,19 @@ async def update_agent(
         for i, (mid, listing) in enumerate(zip(req.mcp_server_ids, mcp_listings, strict=False)):
             db.add(
                 AgentComponent(
-                    agent_id=agent.id,
+                    agent_version_id=version_id,
                     component_type="mcp",
                     component_id=mid,
-                    version_ref=listing.version,
+                    component_name="",
+                    resolved_version=listing.version,
                     order_index=i,
                 )
             )
 
     if req.goal_template is not None:
+        if not agent.latest_version:
+            raise HTTPException(status_code=400, detail="Agent has no version to update goal template on")
+        version_id = agent.latest_version.id
         if agent.goal_template:
             old_sections = (
                 (
@@ -745,7 +758,7 @@ async def update_agent(
                 await db.delete(sec)
             await db.delete(agent.goal_template)
             await db.flush()
-        goal = AgentGoalTemplate(agent_id=agent.id, description=req.goal_template.description)
+        goal = AgentGoalTemplate(agent_version_id=version_id, description=req.goal_template.description)
         db.add(goal)
         await db.flush()
         for i, sec in enumerate(req.goal_template.sections):
@@ -761,8 +774,10 @@ async def update_agent(
 
     # Re-infer IDE features only when components or external_mcps changed
     if req.components is not None or req.mcp_server_ids is not None or req.external_mcps is not None:
+        if not agent.latest_version:
+            raise HTTPException(status_code=400, detail="Agent has no version to update features on")
         current_comps = (
-            (await db.execute(select(AgentComponent).where(AgentComponent.agent_id == agent.id))).scalars().all()
+            (await db.execute(select(AgentComponent).where(AgentComponent.agent_version_id == agent.latest_version.id))).scalars().all()
         )
         skill_comp_ids = [c.component_id for c in current_comps if c.component_type == "skill"]
         skill_listings_map_update: dict = {}
