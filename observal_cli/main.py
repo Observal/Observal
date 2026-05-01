@@ -1,10 +1,41 @@
 """Observal CLI: MCP Server & Agent Registry."""
 
 import logging
+import sys
 
 import typer
 
 from observal_cli.cmd_auth import version_callback
+
+
+def _check_package_conflict() -> None:
+    """Warn if the legacy 'observal' package is installed alongside 'observal-cli'."""
+    from importlib.metadata import PackageNotFoundError, metadata
+
+    try:
+        meta = metadata("observal")
+    except PackageNotFoundError:
+        return
+
+    # If we get here, a package literally named "observal" exists.
+    # Check it's not just our own package under a different dist name.
+    pkg_name = meta.get("Name", "")
+    if pkg_name.lower() == "observal-cli":
+        return
+
+    from rich import print as rprint
+
+    rprint(
+        "[bold yellow]⚠ Package conflict detected:[/bold yellow] "
+        "Both [bold]observal[/bold] and [bold]observal-cli[/bold] are installed.\n"
+        "  The legacy [dim]observal[/dim] package is no longer maintained and conflicts with the CLI.\n"
+        "  Please uninstall it:\n\n"
+        "    [cyan]uv pip uninstall observal[/cyan]    [dim]# or: pip uninstall observal[/dim]\n"
+    )
+    sys.exit(1)
+
+
+_check_package_conflict()
 
 # ── Version callback for --version flag ───────────────────
 
