@@ -77,8 +77,19 @@ def upgrade() -> None:
         END $$;
     """)
 
-    # Index on agents.status for review queries
-    op.execute("CREATE INDEX IF NOT EXISTS ix_agents_status ON agents(status)")
+    # Index on agents.status for review queries (guard: column may not exist if
+    # create_all ran with newer models that moved status to agent_versions)
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'agents' AND column_name = 'status'
+            ) THEN
+                EXECUTE 'CREATE INDEX IF NOT EXISTS ix_agents_status ON agents(status)';
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:
