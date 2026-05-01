@@ -47,7 +47,7 @@ from schemas.agent import (
 )
 from services.agent_config_generator import generate_agent_config
 from services.audit_helpers import audit
-from services.editing_lock import acquire_edit_lock, release_edit_lock
+from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 from services.ide_feature_inference import compute_supported_ides, infer_required_features
 from services.registry_telemetry import emit_registry_event
 
@@ -1401,6 +1401,16 @@ async def update_draft(
         )
         version.inferred_supported_ides = compute_supported_ides(version.required_ide_features)
 
+    # Don't allow saving over another user's active lock
+    if (
+        version.is_editing
+        and version.editing_by != current_user.id
+        and not _is_lock_expired(version.editing_since)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="This item is currently being edited by another user. Please try again later.",
+        )
     release_edit_lock(version, current_user.id, force=True)
     await db.flush()
 
@@ -1438,6 +1448,12 @@ async def start_edit_agent(
         raise HTTPException(status_code=400, detail="Agent has no version")
     if version.status not in (AgentStatus.pending, AgentStatus.draft, AgentStatus.rejected):
         raise HTTPException(status_code=400, detail=f"Cannot edit: agent version is '{version.status.value}'")
+    # Re-fetch with row-level lock to prevent TOCTOU race
+    version = (
+        await db.execute(
+            select(AgentVersion).where(AgentVersion.id == version.id).with_for_update()
+        )
+    ).scalar_one()
     acquire_edit_lock(version, current_user.id)
     await db.commit()
     return {"status": "locked"}

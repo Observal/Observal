@@ -22,7 +22,7 @@ from schemas.prompt import (
     PromptUpdateRequest,
 )
 from services.audit_helpers import audit
-from services.editing_lock import acquire_edit_lock, release_edit_lock
+from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 
 router = APIRouter(prefix="/api/v1/prompts", tags=["prompts"])
 
@@ -300,6 +300,16 @@ async def update_prompt_draft(
         if val is not None:
             setattr(ver, field, val)
 
+    # Don't allow saving over another user's active lock
+    if (
+        ver.is_editing
+        and ver.editing_by != current_user.id
+        and not _is_lock_expired(ver.editing_since)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="This item is currently being edited by another user. Please try again later.",
+        )
     release_edit_lock(ver, current_user.id, force=True)
     await db.flush()
 
@@ -342,6 +352,12 @@ async def start_edit_prompt(
         raise HTTPException(status_code=400, detail="Listing has no version")
     if ver.status not in (ListingStatus.pending, ListingStatus.draft, ListingStatus.rejected):
         raise HTTPException(status_code=400, detail=f"Cannot edit: listing is '{ver.status.value}'")
+    # Re-fetch with row-level lock to prevent TOCTOU race
+    ver = (
+        await db.execute(
+            select(PromptVersion).where(PromptVersion.id == ver.id).with_for_update()
+        )
+    ).scalar_one()
     acquire_edit_lock(ver, current_user.id)
     await db.commit()
     return {"status": "locked"}

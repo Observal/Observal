@@ -567,9 +567,14 @@ async def approve_agent(
         )
 
     now = datetime.now(UTC)
-    for pv in pending_versions:
-        pv.status = AgentStatus.approved
-        pv.rejection_reason = None
+    # Approve only the newest pending version; mark older ones as superseded
+    newest_pending.status = AgentStatus.approved
+    newest_pending.rejection_reason = None
+    newest_pending.reviewed_by = current_user.id
+    newest_pending.reviewed_at = now
+    for pv in pending_versions[1:]:
+        pv.status = AgentStatus.rejected
+        pv.rejection_reason = "Superseded by newer version"
         pv.reviewed_by = current_user.id
         pv.reviewed_at = now
 
@@ -617,10 +622,7 @@ async def reject_agent(
     )
 
     if not pending_versions:
-        if agent.status not in (AgentStatus.pending, AgentStatus.approved):
-            raise HTTPException(status_code=400, detail=f"Agent is '{agent.status.value}', cannot reject")
-        agent.status = AgentStatus.rejected
-        agent.rejection_reason = req.reason
+        raise HTTPException(status_code=400, detail=f"Agent has no pending versions (latest is '{agent.status.value}')")
     else:
         for pv in pending_versions:
             if is_actively_editing(pv):

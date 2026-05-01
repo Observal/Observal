@@ -1105,8 +1105,10 @@ def edit_mcp(
 
     try:
         client.post(f"/api/v1/mcps/{resolved}/start-edit")
-    except Exception:
-        pass
+    except Exception as exc:
+        if "409" in str(exc) or "currently being edited" in str(exc):
+            rprint(f"[red]✗ Cannot edit:[/red] {exc}")
+            raise typer.Exit(code=1)
     try:
         with spinner("Saving changes..."):
             result = client.put(f"/api/v1/mcps/{resolved}/draft", updates)
