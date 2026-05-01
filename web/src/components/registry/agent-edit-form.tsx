@@ -125,14 +125,6 @@ const REVERSE_TYPE_MAP: Record<string, string> = {
   sandbox: "sandboxes",
 };
 
-const IDE_OPTIONS = [
-  { value: "claude-code", label: "Claude Code" },
-  { value: "cursor", label: "Cursor" },
-  { value: "windsurf", label: "Windsurf" },
-  { value: "cline", label: "Cline" },
-  { value: "roo-code", label: "Roo Code" },
-  { value: "kilo-code", label: "Kilo Code" },
-] as const;
 
 // ── Utilities ─────────────────────────────────────────────────────
 
@@ -356,12 +348,10 @@ export function AgentEditForm({
   const initialDescription = (vd?.description as string) ?? agent.description ?? "";
   const initialModelName = (vd?.model_name as string) ?? agent.model_name ?? "";
   const initialPrompt = (vd?.prompt as string) ?? agent.prompt ?? "";
-  const initialSupportedIdes = (vd?.supported_ides as string[]) ?? agent.supported_ides ?? [];
 
   // ── Form state ───────────────────────────────────────────────
   const [description, setDescription] = useState(initialDescription);
   const [modelName, setModelName] = useState(initialModelName);
-  const [supportedIdes, setSupportedIdes] = useState<string[]>(initialSupportedIdes);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
   const [selectedComponents, setSelectedComponents] = useState<
     Record<string, RegistryItem[]>
@@ -381,7 +371,6 @@ export function AgentEditForm({
   const initialStateRef = useRef({
     description: initialDescription,
     modelName: initialModelName,
-    supportedIdes: initialSupportedIdes,
     customPrompts: [] as CustomPrompt[],
     goalSections: [] as GoalSection[],
     selectedComponents: {} as Record<string, RegistryItem[]>,
@@ -463,12 +452,11 @@ export function AgentEditForm({
     const dirty =
       description !== init.description ||
       modelName !== init.modelName ||
-      JSON.stringify(supportedIdes) !== JSON.stringify(init.supportedIdes) ||
       JSON.stringify(customPrompts) !== JSON.stringify(init.customPrompts) ||
       JSON.stringify(goalSections) !== JSON.stringify(init.goalSections) ||
       JSON.stringify(selectedComponents) !== JSON.stringify(init.selectedComponents);
     setIsDirty(dirty);
-  }, [description, modelName, supportedIdes, customPrompts, goalSections, selectedComponents]);
+  }, [description, modelName, customPrompts, goalSections, selectedComponents]);
 
   // ── Debounced validation ──────────────────────────────────────
   useEffect(() => {
@@ -584,11 +572,6 @@ export function AgentEditForm({
     [],
   );
 
-  const toggleIde = useCallback((ide: string) => {
-    setSupportedIdes((prev) =>
-      prev.includes(ide) ? prev.filter((i) => i !== ide) : [...prev, ide],
-    );
-  }, []);
 
   function buildVersionBody(version: string) {
     const components: { component_type: string; component_id: string }[] = [];
@@ -621,7 +604,7 @@ export function AgentEditForm({
       model_name: modelName,
       model_config_json: {},
       external_mcps: [],
-      supported_ides: supportedIdes,
+      supported_ides: agent.supported_ides ?? [],
       components: components.length > 0 ? components : [],
       goal_template: {
         description: description.trim() || agent.name,
@@ -643,7 +626,6 @@ export function AgentEditForm({
       initialStateRef.current = {
         description,
         modelName,
-        supportedIdes,
         customPrompts,
         goalSections,
         selectedComponents,
@@ -665,12 +647,10 @@ export function AgentEditForm({
         body: {
           description: description.trim(),
           model_name: modelName,
-          supported_ides: supportedIdes,
         },
       });
       initialStateRef.current.description = description;
       initialStateRef.current.modelName = modelName;
-      initialStateRef.current.supportedIdes = supportedIdes;
       setIsDirty(false);
     } catch {
       // toast handled by mutation
@@ -689,7 +669,6 @@ export function AgentEditForm({
     const init = initialStateRef.current;
     setDescription(init.description);
     setModelName(init.modelName);
-    setSupportedIdes(init.supportedIdes);
     setCustomPrompts(init.customPrompts);
     setGoalSections(
       init.goalSections.length > 0
@@ -884,39 +863,6 @@ export function AgentEditForm({
         />
       </section>
 
-      <Separator />
-
-      {/* Supported IDEs */}
-      <section className="space-y-4">
-        <div>
-          <h3 className="text-sm font-medium font-[family-name:var(--font-display)]">
-            Supported IDEs
-          </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Select which IDEs this agent is compatible with.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {IDE_OPTIONS.map((ide) => (
-            <label
-              key={ide.value}
-              className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-                supportedIdes.includes(ide.value)
-                  ? "border-primary bg-primary/5 text-foreground"
-                  : "border-border hover:bg-muted/50 text-muted-foreground"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={supportedIdes.includes(ide.value)}
-                onChange={() => toggleIde(ide.value)}
-                className="h-3.5 w-3.5 accent-primary"
-              />
-              {ide.label}
-            </label>
-          ))}
-        </div>
-      </section>
 
       <Separator />
 
