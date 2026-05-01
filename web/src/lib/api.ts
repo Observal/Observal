@@ -271,6 +271,8 @@ export const registry = {
     get<AgentVersionsResponse>(`/agents/${agentId}/versions?page=${page}&page_size=${pageSize}`),
   getVersion: (agentId: string, version: string) =>
     get<unknown>(`/agents/${agentId}/versions/${version}`),
+  createVersion: (agentId: string, body: unknown) =>
+    post<unknown>(`/agents/${agentId}/versions`, body),
 };
 
 // ── Review ──────────────────────────────────────────────────────────

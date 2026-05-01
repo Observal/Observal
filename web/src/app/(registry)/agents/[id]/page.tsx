@@ -54,6 +54,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { DetailSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
+import { AgentEditForm, type AgentEditFormProps } from "@/components/registry/agent-edit-form";
 import { compactNumber, copyToClipboard } from "@/lib/utils";
 import { DIMENSION_META } from "@/components/dashboard/score-overview";
 
@@ -847,10 +848,11 @@ export default function AgentDetailPage({
 
                 {canEdit && (
                   <TabsContent value="edit" className="mt-6">
-                    <EmptyState
-                      icon={Edit}
-                      title="Agent Editor"
-                      description="Form-based editing coming soon. Use the CLI to make changes: observal agent release"
+                    <AgentEditForm
+                      agentId={id}
+                      agent={a as unknown as AgentEditFormProps["agent"]}
+                      versionDetail={vd}
+                      currentVersion={effectiveVersion ?? "1.0.0"}
                     />
                   </TabsContent>
                 )}

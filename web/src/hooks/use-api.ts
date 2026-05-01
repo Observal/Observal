@@ -698,6 +698,22 @@ export function useComponentDelete(type: RegistryType) {
 
 // ── Version ────────────────────────────────────────────────────────
 
+export function useCreateAgentVersion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { agentId: string; body: unknown }) =>
+      registry.createVersion(vars.agentId, vars.body),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["agent-versions", vars.agentId] });
+      qc.invalidateQueries({ queryKey: ["registry", "agents", vars.agentId] });
+      toast.success("New version released successfully");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to release version");
+    },
+  });
+}
+
 export function useVersionSuggestions(id: string | undefined) {
   return useQuery({
     queryKey: ["version-suggestions", id],
