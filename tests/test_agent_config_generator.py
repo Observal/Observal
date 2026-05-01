@@ -270,7 +270,7 @@ class TestGenerateClaudeCode:
         content = cfg["rules_file"]["content"]
         parts = content.split("---", 2)
         fm = yaml.safe_load(parts[1])
-        assert fm["model"] == "claude-sonnet-4-6"
+        assert fm["model"] == "sonnet"
 
     def test_model_fallback_from_agent_when_inherit(self):
         agent = _make_agent(model_name="claude-opus-4-6-20250725")
@@ -278,7 +278,7 @@ class TestGenerateClaudeCode:
         content = cfg["rules_file"]["content"]
         parts = content.split("---", 2)
         fm = yaml.safe_load(parts[1])
-        assert fm["model"] == "claude-opus-4-6"
+        assert fm["model"] == "opus"
 
     def test_explicit_model_option_overrides_agent(self):
         agent = _make_agent(model_name="claude-sonnet-4-6-20250725")
@@ -303,14 +303,14 @@ class TestGenerateClaudeCode:
 
 
 class TestModelNameToFrontmatter:
-    def test_strips_date_suffix(self):
-        assert _model_name_to_frontmatter("claude-sonnet-4-6-20250725") == "claude-sonnet-4-6"
+    def test_sonnet_with_date(self):
+        assert _model_name_to_frontmatter("claude-sonnet-4-6-20250725") == "sonnet"
 
-    def test_no_date_suffix_unchanged(self):
-        assert _model_name_to_frontmatter("claude-opus-4-6") == "claude-opus-4-6"
+    def test_opus_without_date(self):
+        assert _model_name_to_frontmatter("claude-opus-4-6") == "opus"
 
     def test_haiku_with_date(self):
-        assert _model_name_to_frontmatter("claude-haiku-4-5-20251001") == "claude-haiku-4-5"
+        assert _model_name_to_frontmatter("claude-haiku-4-5-20251001") == "haiku"
 
     def test_empty(self):
         assert _model_name_to_frontmatter("") == ""

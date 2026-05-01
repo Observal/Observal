@@ -18,17 +18,31 @@ from services.config_generator import (
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
-_DATE_SUFFIX = re.compile(r"-\d{8}$")
+_MODEL_SHORT_NAMES: dict[str, str] = {
+    "sonnet": "sonnet",
+    "opus": "opus",
+    "haiku": "haiku",
+}
 
 
 def _model_name_to_frontmatter(model_name: str) -> str:
-    """Strip the date suffix from a stored model_name, keeping the full model ID.
+    """Convert a stored model_name to a Claude Code frontmatter short name.
 
-    e.g. 'claude-sonnet-4-6-20250725' -> 'claude-sonnet-4-6'
+    Claude Code frontmatter accepts short names (sonnet, opus, haiku)
+    or full API model IDs (claude-sonnet-4-6-20250725). The intermediate
+    form (claude-sonnet-4-6) is NOT valid and causes API errors.
+
+    e.g. 'claude-sonnet-4-6-20250725' -> 'sonnet'
+         'claude-opus-4-6-20250725'   -> 'opus'
+         'gpt-4o'                     -> 'gpt-4o'  (passthrough)
     """
     if not model_name:
         return ""
-    return _DATE_SUFFIX.sub("", model_name)
+    lower = model_name.lower()
+    for keyword, short in _MODEL_SHORT_NAMES.items():
+        if keyword in lower:
+            return short
+    return model_name
 
 
 _FEATURE_LABELS: dict[str, str] = {
