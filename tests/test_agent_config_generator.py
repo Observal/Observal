@@ -470,7 +470,7 @@ class TestGenerateCopilot:
     def test_rules_path(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "copilot")
-        assert cfg["rules_file"]["path"] == ".github/copilot-instructions.md"
+        assert cfg["rules_file"]["path"] == ".github/agents/test-agent.agent.md"
 
     def test_mcp_config_present(self):
         agent = _make_agent()
