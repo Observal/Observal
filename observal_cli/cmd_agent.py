@@ -327,7 +327,7 @@ def agent_bulk_create(
             if status == "created"
             else ("[yellow]skipped[/yellow]" if status == "skipped" else f"[red]{status}[/red]")
         )
-        agent_id = str(item["agent_id"])[:8] + "…" if item.get("agent_id") else ""
+        agent_id = f"{str(item['agent_id'])[:8]}…" if item.get("agent_id") else ""
         results_table.add_row(str(i), item.get("name", ""), badge, agent_id, item.get("error", "") or "")
     console.print(results_table)
 
@@ -407,7 +407,7 @@ def agent_list(
         creator = item.get("created_by_username") or item.get("created_by_email", "")
         row = [str(i), item["name"], item.get("version", ""), item.get("model_name", ""), creator]
         if include_id:
-            row.append(str(item["id"]) if full_id else str(item["id"])[:8] + "…")
+            row.append(str(item["id"]) if full_id else f"{str(item['id'])[:8]}…")
         table.add_row(*row)
     console.print(table)
 
