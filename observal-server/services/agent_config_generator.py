@@ -466,9 +466,7 @@ def generate_agent_config(
             frontmatter_lines.append("mcpServers:")
             for mcp_name in claude_mcps:
                 frontmatter_lines.append(f"  - {mcp_name}")
-        frontmatter_lines.extend(
-            _claude_code_hooks_frontmatter_lines("observal-hook.sh", "observal-stop-hook.sh")
-        )
+        frontmatter_lines.extend(_claude_code_hooks_frontmatter_lines("observal-hook.sh", "observal-stop-hook.sh"))
         frontmatter_lines.append("---")
         agent_content = "\n".join(frontmatter_lines) + "\n\n" + rules_content
 
