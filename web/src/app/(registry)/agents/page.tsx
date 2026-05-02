@@ -541,7 +541,7 @@ function AgentListContent() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium">{draft.name}</p>
-                        {(draft.status === "rejected" || draft.status === "pending") && (
+                        {(draft.status === "rejected" || draft.status === "pending" || draft.status === "archived") && (
                           <StatusBadge status={draft.status} />
                         )}
                       </div>
@@ -562,15 +562,19 @@ function AgentListContent() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => handleEditDraft(draft)}
-                      >
-                        <FileEdit className="mr-1 h-3 w-3" />
-                        Edit
-                      </Button>
+                      {draft.status === "archived" ? (
+                        <UnarchiveAgentButton agent={draft} />
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => handleEditDraft(draft)}
+                        >
+                          <FileEdit className="mr-1 h-3 w-3" />
+                          Edit
+                        </Button>
+                      )}
                       {(draft.status === "draft" || draft.status === "rejected") && (
                         <Button
                           variant="outline"
