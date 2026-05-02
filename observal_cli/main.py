@@ -1,7 +1,12 @@
 """Observal CLI: MCP Server & Agent Registry."""
 
 import logging
+import os
 import sys
+
+if sys.platform == "win32" and not os.environ.get("PYTHONIOENCODING"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import typer
 

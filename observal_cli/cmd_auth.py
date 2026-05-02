@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as _json
+import os
 import shutil
 from pathlib import Path
 
@@ -742,11 +743,15 @@ def _run_doctor_patch(ide_name: str):
     import sys
 
     try:
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         result = subprocess.run(
             [sys.executable, "-m", "observal_cli.main", "doctor", "patch", "--all", "--ide", ide_name],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
+            env=env,
         )
         if result.stdout:
             rprint(result.stdout.rstrip())
