@@ -176,3 +176,112 @@ class TestGenerateAllIdeConfigs:
             if path.endswith(".json"):
                 parsed = json.loads(content)
                 assert "name" in parsed
+
+
+# ── _build_rules_content prompt injection tests ──────────────────
+
+
+class TestBuildRulesContentPromptInjection:
+    """Tests for prompt template injection via prompt_listings parameter."""
+
+    def _make_agent_with_prompt_component(self, prompt_comp_id=None):
+        """Build a mock agent with one prompt component."""
+        comp_id = prompt_comp_id or uuid.uuid4()
+        agent = MagicMock()
+        agent.id = uuid.uuid4()
+        agent.name = "my-agent"
+        agent.description = "An agent"
+        agent.prompt = ""
+
+        comp = MagicMock()
+        comp.component_id = comp_id
+        comp.component_type = "prompt"
+        agent.components = [comp]
+        agent.external_mcps = []
+        return agent, comp_id
+
+    def _make_prompt_listing(self, listing_id, name="Test Prompt", template="Do something useful."):
+        listing = MagicMock()
+        listing.id = listing_id
+        listing.name = name
+        listing.template = template
+        return listing
+
+    def test_prompt_template_injected_when_listings_provided(self):
+        from services.agent_config_generator import _build_rules_content
+
+        agent, comp_id = self._make_agent_with_prompt_component()
+        listing = self._make_prompt_listing(comp_id, name="Test", template="Do something useful.")
+        names = {str(comp_id): "Test"}
+
+        result = _build_rules_content(agent, component_names=names, prompt_listings={comp_id: listing})
+
+        assert "Do something useful." in result
+        assert "### Test" in result
+        # Should NOT produce bullet-point format
+        assert "- **Test**" not in result
+
+    def test_prompt_bullet_fallback_without_listings(self):
+        from services.agent_config_generator import _build_rules_content
+
+        agent, comp_id = self._make_agent_with_prompt_component()
+        names = {str(comp_id): "Test"}
+
+        result = _build_rules_content(agent, component_names=names, prompt_listings=None)
+
+        assert "- **Test**" in result
+        assert "Do something useful." not in result
+
+    def test_prompt_bullet_fallback_when_listing_has_empty_template(self):
+        from services.agent_config_generator import _build_rules_content
+
+        agent, comp_id = self._make_agent_with_prompt_component()
+        listing = self._make_prompt_listing(comp_id, name="Test", template="")
+        names = {str(comp_id): "Test"}
+
+        result = _build_rules_content(agent, component_names=names, prompt_listings={comp_id: listing})
+
+        assert "- **Test**" in result
+
+    def test_non_prompt_components_still_use_bullets(self):
+        from services.agent_config_generator import _build_rules_content
+
+        mcp_id = uuid.uuid4()
+        agent = MagicMock()
+        agent.id = uuid.uuid4()
+        agent.name = "my-agent"
+        agent.description = "desc"
+        agent.prompt = ""
+        mcp_comp = MagicMock()
+        mcp_comp.component_id = mcp_id
+        mcp_comp.component_type = "mcp"
+        agent.components = [mcp_comp]
+        agent.external_mcps = []
+
+        names = {str(mcp_id): "my-mcp"}
+
+        # Even with a prompt_listings dict, mcp components use bullets
+        result = _build_rules_content(agent, component_names=names, prompt_listings={})
+
+        assert "- **my-mcp**" in result
+
+    def test_generate_agent_config_accepts_prompt_listings(self):
+        """Ensure generate_agent_config passes prompt_listings through to rules content."""
+        from services.agent_config_generator import generate_agent_config
+
+        agent, comp_id = self._make_agent_with_prompt_component()
+        agent.prompt = ""
+        agent.required_ide_features = []
+        agent.model_name = ""
+        listing = self._make_prompt_listing(comp_id, name="Test", template="My prompt template content.")
+        names = {str(comp_id): "Test"}
+
+        result = generate_agent_config(
+            agent,
+            ide="claude-code",
+            prompt_listings={comp_id: listing},
+            component_names=names,
+        )
+
+        rules_content = result["rules_file"]["content"]
+        assert "My prompt template content." in rules_content

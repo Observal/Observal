@@ -497,11 +497,15 @@ def _build_hook_configs(
     return hooks
 
 
-def _build_rules_content(agent: Agent, component_names: dict | None = None) -> str:
+def _build_rules_content(agent: Agent, component_names: dict | None = None, prompt_listings: dict | None = None) -> str:
     """Build markdown rules content from the agent and its components.
 
     Assembles the agent prompt (if any), description, and a summary of
     all bundled components so the rules file is never empty.
+
+    Args:
+        prompt_listings: optional {component_id: PromptListing} map. When provided,
+            prompt components inject their full template content instead of a bullet name.
     """
     sections: list[str] = []
 
@@ -529,10 +533,30 @@ def _build_rules_content(agent: Agent, component_names: dict | None = None) -> s
         comp_names = by_type.get(comp_type)
         if not comp_names:
             continue
-        lines = [f"## {heading}", ""]
-        for n in comp_names:
-            lines.append(f"- **{n}**")
-        sections.append("\n".join(lines))
+        if comp_type == "prompt" and prompt_listings:
+            # Inject full prompt template content instead of bullet names
+            lines = [f"## {heading}", ""]
+            for comp in agent.components:
+                if comp.component_type != "prompt":
+                    continue
+                listing = prompt_listings.get(comp.component_id)
+                if not listing:
+                    continue
+                pname = names.get(str(comp.component_id), str(comp.component_id)[:8])
+                template = getattr(listing, "template", "") or ""
+                if template:
+                    lines.append(f"### {pname}")
+                    lines.append("")
+                    lines.append(template)
+                    lines.append("")
+                else:
+                    lines.append(f"- **{pname}**")
+            sections.append("\n".join(lines))
+        else:
+            lines = [f"## {heading}", ""]
+            for n in comp_names:
+                lines.append(f"- **{n}**")
+            sections.append("\n".join(lines))
 
     return "\n\n".join(sections) if sections else f"# {agent.name}\n\n{agent.description or ''}"
 
@@ -549,6 +573,7 @@ def generate_agent_config(
     skill_listings: dict | None = None,
     hook_listings: dict | None = None,
     otlp_http_url: str = "",
+    prompt_listings: dict | None = None,
 ) -> dict:
     """Generate IDE-specific config for an agent.
 
@@ -559,11 +584,12 @@ def generate_agent_config(
         platform: client platform string (e.g. "win32", "darwin", "linux"). Empty = Unix default.
         skill_listings: optional {component_id: SkillListing} map pre-loaded by caller.
         hook_listings: optional {component_id: HookListing} map pre-loaded by caller.
+        prompt_listings: optional {component_id: PromptListing} map pre-loaded by caller.
     """
     safe_name = _sanitize_name(agent.name)
     effective_otlp_http = otlp_http_url or observal_url
     mcp_configs = _build_mcp_configs(agent, ide, effective_otlp_http, mcp_listings=mcp_listings, env_values=env_values)
-    rules_content = _build_rules_content(agent, component_names)
+    rules_content = _build_rules_content(agent, component_names, prompt_listings)
     skill_configs = _build_skill_configs(agent, skill_listings)
     hook_configs = _build_hook_configs(agent, hook_listings)
     options = options or {}

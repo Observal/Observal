@@ -948,6 +948,27 @@ async def install_agent(
         )
         hook_listings_map = {row.id: row for row in hook_rows}
 
+    # Pre-load prompt listings for template injection
+    prompt_comp_ids = [c.component_id for c in agent.components if c.component_type == "prompt"]
+    prompt_listings_map = {}
+    if prompt_comp_ids:
+        from sqlalchemy.orm import selectinload as _sel2
+
+        from models.prompt import PromptListing
+
+        prompt_rows = (
+            (
+                await db.execute(
+                    select(PromptListing)
+                    .options(_sel2(PromptListing.latest_version))
+                    .where(PromptListing.id.in_(prompt_comp_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        prompt_listings_map = {row.id: row for row in prompt_rows}
+
     # Resolve all component names for rules file content
     name_map = await _resolve_component_names(agent.components, db)
 
@@ -966,6 +987,7 @@ async def install_agent(
         skill_listings=skill_listings_map,
         hook_listings=hook_listings_map,
         otlp_http_url=endpoints["otlp_http"],
+        prompt_listings=prompt_listings_map,
     )
 
     # Capture agent.id before any DB operations that might expire the ORM
