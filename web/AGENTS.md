@@ -21,7 +21,7 @@ src/app/
 │   ├── agents/page.tsx         #   Agent list with search + filters
 │   ├── agents/[id]/page.tsx    #   Agent detail with pull command box
 │   ├── agents/builder/page.tsx #   Agent builder (two-column, component selector, YAML preview)
-│   ├── agents/leaderboard/     #   Agent leaderboard
+│   ├── agents/leaderboard/page.tsx #   Agent leaderboard rankings
 │   ├── components/page.tsx     #   Tabbed component browser (MCPs, skills, hooks, prompts, sandboxes)
 │   └── components/[id]/page.tsx#   Component detail
 ├── (admin)/                    # Admin dashboard (requires admin role)
@@ -45,7 +45,7 @@ src/components/
 ├── dashboard/     # Stat cards, trend charts, bar lists, heatmap, time range select
 ├── layouts/       # AuthGuard, AdminGuard, RoleGuard, DashboardShell, PageHeader
 ├── nav/           # RegistrySidebar, CommandMenu (Cmd+K), NavUser, GitHubStarBanner
-├── registry/      # AgentCard, ComponentCard, PullCommand, InstallDialog, StatusBadge, SubmitComponentDialog, RegistryTable, RegistryDetail, ReviewForm
+├── registry/      # AgentCard, AgentEditForm, ComponentCard, ComponentEditForm, PullCommand, InstallDialog, StatusBadge, SubmitComponentDialog, RegistryTable, RegistryDetail, ReviewForm, MetricsPanel, FeedbackList, IdeBadges, VersionBumpDialog, VersionDropdown
 ├── review/        # ReviewDetailSheet, ValidationBadges
 ├── shared/        # SkeletonLayouts, ErrorState, EmptyState
 ├── traces/        # TraceList, TraceDetail, SpanTree
@@ -67,6 +67,10 @@ src/components/
 - `src/hooks/use-role-guard.ts` : Generic role check hook
 - `src/hooks/use-deployment-config.ts` : Deployment config fetcher (endpoint discovery)
 - `src/hooks/use-mobile.ts` : Mobile viewport detection
+- `src/components/registry/component-edit-form.tsx` : Unified component editor (hook, skill, prompt, MCP, sandbox type-specific forms)
+- `src/components/registry/version-bump-dialog.tsx` : Semver version bump dialog for publishing new versions
+- `src/components/registry/version-dropdown.tsx` : Version selector dropdown with status badges
+- `src/components/registry/agent-edit-form.tsx` : Agent editor with goal template and component selector
 - `next.config.ts` : API rewrites, standalone output
 - `playwright.config.ts` : E2E test config (Chromium, port 3000)
 
@@ -77,6 +81,7 @@ pnpm dev          # dev server on :3000
 pnpm build        # production build
 pnpm lint         # ESLint
 pnpm test:e2e     # Playwright e2e tests (requires running API + Docker stack)
+# E2E specs live in web/e2e/*.spec.ts (16 spec files)
 ```
 
 ## Enterprise feature gating

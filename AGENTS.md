@@ -71,11 +71,11 @@ make format              # ruff format + ruff fix
 make check               # pre-commit on all files
 make hooks               # install pre-commit hooks
 
-# Tests (1429 tests across 52 files, run from observal-server/)
+# Tests (~1500 tests across 89 files: 74 in tests/, 13 in observal-server/tests/, 2 in observal_cli/tests/)
 make test                # quick
 make test-v              # verbose
 # or manually:
-cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich --with docker pytest ../tests/ -q
+cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich --with docker pytest ../tests/ tests/ ../observal_cli/tests/ -q
 ```
 
 ## Important files
@@ -96,7 +96,7 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `api/routes/prompt.py` : Prompt CRUD + `/render` endpoint that emits prompt_render spans
 - `api/routes/sandbox.py` : Sandbox CRUD; install generates observal-sandbox-run config
 - `api/routes/review.py` : Admin approve/reject workflow (unified across all component types)
-- `api/routes/telemetry.py` : `POST /ingest` (batch traces/spans/scores) + legacy `/events` + `POST /hooks` (raw IDE hook JSON)
+- `api/routes/telemetry.py` : `POST /ingest` (batch traces/spans/scores) + legacy `/events` + `POST /hooks` (raw IDE hook JSON) + OTLP HTTP receiver (`/v1/traces`, `/v1/logs`, `/v1/metrics` → ClickHouse)
 - `api/routes/dashboard.py` : MCP metrics, agent metrics, overview stats, top items, trends
 - `api/routes/feedback.py` : Ratings with dual-write to PostgreSQL + ClickHouse scores table
 - `api/routes/eval.py` : Run evals, list scorecards, compare versions, aggregate stats
@@ -104,10 +104,12 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `api/routes/alert.py` : Alert rule CRUD (metric threshold alerts with webhook URLs)
 - `api/routes/bulk.py` : Bulk agent creation from scan results
 - `api/routes/jwks.py` : JWKS discovery endpoint for JWT public key distribution
-- `api/routes/otlp.py` : OTLP HTTP receiver; accepts standard `/v1/traces`, `/v1/logs`, `/v1/metrics` and converts to ClickHouse format
-- `api/routes/otel_dashboard.py` : OpenTelemetry-native dashboard queries
 - `api/routes/component_source.py` : Component source CRUD and sync endpoints for git mirror origins
 - `api/routes/config.py` : Server endpoint discovery and public config (eliminates hardcoded URLs)
+- `api/routes/component_versions.py` : Factory for component version CRUD (list, get, publish, review, suggestions); shared across all 5 component types
+- `api/routes/agent_versions.py` : Agent-specific version publish, review, and listing endpoints
+- `api/routes/device_auth.py` : Device authorization flow for CLI login (OAuth device code grant)
+- `api/routes/sessions.py` : Session management (list active sessions, revoke)
 
 ### Models (`observal-server/models/`)
 
@@ -125,6 +127,8 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `feedback.py` : Feedback (polymorphic on listing_type across all component types)
 - `enterprise_config.py` : Key-value enterprise settings
 - `organization.py` : Organization (id, name, slug, created_at, updated_at)
+- `saml_config.py` : SamlConfig (IDP metadata, certificates, attribute mapping)
+- `scim_token.py` : ScimToken (bearer tokens for SCIM provisioning endpoint)
 - `component_source.py` : ComponentSource, Git mirror origins for component discovery
 - `component_bundle.py` : ComponentBundle, bundled component snapshots for portable sharing
 - `agent_component.py` : AgentComponent, polymorphic junction table (agent_id, component_type, component_id); NO FK on component_id
@@ -165,6 +169,12 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `versioning.py` : Component versioning and compatibility checks
 - `webhook_delivery.py` : Webhook HTTP delivery with retry logic and SSRF protection
 - `webhook_signer.py` : HMAC signing for outbound webhook payloads
+- `component_version_extras.py` : Type-aware validation and field extraction for component version `extra` payloads
+- `editing_lock.py` : Optimistic locking for concurrent component editing (lock acquire, release, timeout)
+- `audit_helpers.py` : Lightweight audit logging utility (writes to security events)
+- `agent_lock_file.py` : Agent lock file generation for reproducible installs
+- `agent_registry_cache.py` : Registry query cache for agent resolution
+- `request_context.py` : Request-scoped context (current user, request ID) for services
 
 ### Schemas (`observal-server/schemas/`)
 
@@ -181,6 +191,7 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `cmd_hook.py` : `hook_app` subgroup: submit, list, show, install, delete
 - `cmd_prompt.py` : `prompt_app` subgroup: submit, list, show, install, render, delete
 - `cmd_sandbox.py` : `sandbox_app` subgroup: submit, list, show, install, delete
+- `cmd_component.py` : `component_app` subgroup: version commands (list-versions, publish, show-version) shared across all component types
 - `cmd_scan.py` : `observal scan`: read-only discovery of IDE configs (Claude Code, Cursor, Kiro, VS Code, Gemini CLI, Codex CLI); `--ide` filter flag. Shows what's installed without modifying files.
 - `cmd_pull.py` : `observal pull`: fetch agent config from server, write IDE files (rules, MCP config, agent files) to disk; `--dry-run`, `--dir` flags; merges MCP configs with existing files
 - `cmd_profile.py` : `observal use` + `observal profile`: swap IDE configs from git-hosted profiles; clones/caches profiles, backs up current config, restores via `observal use default`
@@ -262,6 +273,27 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `test_webhook_delivery.py` : Webhook delivery and retry
 - `test_webhook_signer_properties.py` : Webhook signer property tests
 - `test_webhook_signer.py` : Webhook HMAC signing
+
+### Additional tests (`observal-server/tests/`)
+
+- `test_component_versions_api.py` : Component version API route tests
+- `test_component_version_extras.py` : Version extras validation tests
+- `test_agent_versions_api.py` : Agent version API route tests
+- `test_agent_config_gen_versioned.py` : Versioned agent config generation
+- `test_agent_delete.py` : Agent deletion cascade
+- `test_agent_pull.py` : Agent pull command logic
+- `test_config.py` : Config service tests
+- `test_crypto.py` : Crypto utilities tests
+- `test_jwt.py` : JWT service tests
+- `test_multi_tenancy.py` : Multi-tenancy isolation tests
+- `test_payload_protection.py` : Payload protection tests
+- `test_rbac.py` : RBAC enforcement tests
+- `test_security_events.py` : Security event logging tests
+
+### CLI tests (`observal_cli/tests/`)
+
+- `test_cmd_component_versions.py` : Component version CLI commands
+- `test_cmd_agent_versions.py` : Agent version CLI commands
 
 ### Web Frontend (`web/`)
 
