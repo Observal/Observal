@@ -357,6 +357,15 @@ def register_pull(app: typer.Typer):
                 status = _write_file(p, steering_file["content"])
                 written.append((str(p), status))
 
+        # ── skill_files (Claude Code, Kiro, Cursor) ──────────
+        for sf in snippet.get("skill_files") or []:
+            p = _resolve_path(sf["path"], target_dir, allow_home=is_user_scope)
+            if dry_run:
+                written.append((str(p), "would write"))
+            else:
+                status = _write_file(p, sf["content"])
+                written.append((str(p), status))
+
         # ── Output summary ──────────────────────────────────
         if not written:
             rprint("[yellow]No files to write from the config snippet.[/yellow]")
