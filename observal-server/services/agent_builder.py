@@ -48,6 +48,8 @@ class ManifestComponent(BaseModel):
     event: str | None = None
     execution_mode: str | None = None
     priority: int | None = None
+    handler_type: str | None = None
+    handler_config: dict | None = None
     # Prompt-specific
     template: str | None = None
     variables: list[str] | None = None
@@ -185,6 +187,8 @@ def _resolved_to_manifest_component(comp: ResolvedComponent) -> ManifestComponen
         kwargs["event"] = comp.extra.get("event", "")
         kwargs["execution_mode"] = comp.extra.get("execution_mode", "async")
         kwargs["priority"] = comp.extra.get("priority", 100)
+        kwargs["handler_type"] = comp.extra.get("handler_type", "")
+        kwargs["handler_config"] = comp.extra.get("handler_config", {})
     elif comp.component_type == "prompt":
         if comp.extra.get("template"):
             kwargs["template"] = comp.extra["template"]
@@ -513,6 +517,15 @@ def _generate_gemini_cli(manifest: AgentManifest) -> IdeAgentConfig:
     )
 
 
+_KIRO_EVENT_MAP = {
+    "SessionStart": "agentSpawn",
+    "UserPromptSubmit": "userPromptSubmit",
+    "PreToolUse": "preToolUse",
+    "PostToolUse": "postToolUse",
+    "Stop": "stop",
+}
+
+
 def _build_kiro_hooks(safe_name: str, observal_url: str, platform: str = "") -> dict:
     """Build Kiro hook commands for telemetry collection."""
     if not observal_url:
@@ -528,6 +541,31 @@ def _build_kiro_hooks(safe_name: str, observal_url: str, platform: str = "") -> 
         "postToolUse": [{"matcher": "*", "command": hook_cmd}],
         "stop": [{"command": stop_cmd}],
     }
+
+
+def _materialize_kiro_hook_components(hooks_dict: dict, manifest: AgentManifest) -> None:
+    """Merge hook components from the agent manifest into the Kiro hooks dict."""
+    for hook in manifest.components.hooks:
+        if not hook.event or not hook.handler_config:
+            continue
+        kiro_event = _KIRO_EVENT_MAP.get(hook.event, hook.event)
+        handler_type = hook.handler_type or "command"
+        if handler_type == "command":
+            cmd = hook.handler_config.get("command", "")
+            if not cmd:
+                continue
+            entry: dict = {"command": cmd}
+            if kiro_event in ("preToolUse", "postToolUse"):
+                entry["matcher"] = hook.handler_config.get("matcher", "*")
+            hooks_dict.setdefault(kiro_event, []).append(entry)
+        elif handler_type == "http":
+            url = hook.handler_config.get("url", "")
+            if not url:
+                continue
+            entry = {"command": f"curl -s -X POST -H 'Content-Type: application/json' -d @- {url}"}
+            if kiro_event in ("preToolUse", "postToolUse"):
+                entry["matcher"] = hook.handler_config.get("matcher", "*")
+            hooks_dict.setdefault(kiro_event, []).append(entry)
 
 
 def _generate_kiro(manifest: AgentManifest) -> IdeAgentConfig:
@@ -556,6 +594,9 @@ def _generate_kiro(manifest: AgentManifest) -> IdeAgentConfig:
         "includeMcpJson": True,
         "model": None,
     }
+
+    # Materialize hook components from the agent manifest into the hooks dict
+    _materialize_kiro_hook_components(kiro_agent["hooks"], manifest)
 
     skill_files = _build_skill_files(manifest, "kiro")
 

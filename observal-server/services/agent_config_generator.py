@@ -18,6 +18,15 @@ from services.config_generator import (
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
+# Map from internal PascalCase event names to Kiro camelCase event names.
+_KIRO_EVENT_MAP = {
+    "SessionStart": "agentSpawn",
+    "UserPromptSubmit": "userPromptSubmit",
+    "PreToolUse": "preToolUse",
+    "PostToolUse": "postToolUse",
+    "Stop": "stop",
+}
+
 # Hook events that send to the generic observal-hook.sh handler.
 _GENERIC_HOOK_EVENTS = [
     "SessionStart",
@@ -604,6 +613,30 @@ def generate_agent_config(
             "postToolUse": [{"matcher": "*", "command": hook_cmd}],
             "stop": [{"command": stop_cmd}],
         }
+        # Merge hook components (e.g. tester1) into the Kiro hooks dict
+        for hc in hook_configs:
+            event = hc.get("event")
+            if not event:
+                continue
+            kiro_event = _KIRO_EVENT_MAP.get(event, event)
+            handler_type = hc.get("handler_type", "command")
+            handler_config = hc.get("handler_config", {})
+            if handler_type == "command":
+                cmd = handler_config.get("command", "")
+                if not cmd:
+                    continue
+                entry: dict = {"command": cmd}
+                if kiro_event in ("preToolUse", "postToolUse"):
+                    entry["matcher"] = handler_config.get("matcher", "*")
+                hooks.setdefault(kiro_event, []).append(entry)
+            elif handler_type == "http":
+                url = handler_config.get("url", "")
+                if not url:
+                    continue
+                entry = {"command": f"curl -s -X POST -H 'Content-Type: application/json' -d @- {url}"}
+                if kiro_event in ("preToolUse", "postToolUse"):
+                    entry["matcher"] = handler_config.get("matcher", "*")
+                hooks.setdefault(kiro_event, []).append(entry)
         kiro_spec = IDE_REGISTRY["kiro"]
         kiro_scope = options.get("scope", kiro_spec["default_scope"])
         agent_path = kiro_spec["rules_file"][kiro_scope].format(name=safe_name)
