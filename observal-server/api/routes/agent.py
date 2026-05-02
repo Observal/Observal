@@ -16,6 +16,7 @@ from api.deps import (
     resolve_prefix_id,
 )
 from api.sanitize import escape_like
+from config import settings
 from models.agent import (
     Agent,
     AgentGoalSection,
@@ -411,22 +412,23 @@ async def list_agents(
 ):
     from models.feedback import Feedback
 
-    visibility_filter = Agent.visibility == AgentVisibility.public
     is_admin = False
+    skip_visibility = settings.DEPLOYMENT_MODE == "local"
     if current_user:
         user_role_level = ROLE_HIERARCHY.get(current_user.role, 999)
         if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:
             is_admin = True
-        else:
+
+    base_filter = AgentVersion.status == AgentStatus.approved
+    if not is_admin and not skip_visibility:
+        visibility_filter = Agent.visibility == AgentVisibility.public
+        if current_user:
             user_groups = get_user_groups(current_user)
             visibility_filter = visibility_filter | (Agent.created_by == current_user.id)
             if user_groups:
                 visibility_filter = visibility_filter | Agent.team_accesses.any(
                     AgentTeamAccess.group_name.in_(user_groups)
                 )
-
-    base_filter = AgentVersion.status == AgentStatus.approved
-    if not is_admin:
         base_filter = base_filter & visibility_filter
     search_filter = None
     if search:

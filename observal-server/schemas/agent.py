@@ -4,9 +4,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from config import settings
 from models.agent import AgentStatus, AgentVisibility
 from schemas.constants import AGENT_NAME_REGEX, make_name_validator
 from services.versioning import validate_semver
+
+_DEFAULT_VISIBILITY = AgentVisibility.public if settings.DEPLOYMENT_MODE == "local" else AgentVisibility.private
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
 
@@ -65,7 +68,7 @@ class AgentCreateRequest(BaseModel):
     components: list[ComponentRef] = []  # new: all component types
     external_mcps: list[ExternalMcp] = []
     goal_template: GoalTemplateRequest
-    visibility: AgentVisibility = AgentVisibility.private
+    visibility: AgentVisibility = _DEFAULT_VISIBILITY
     team_accesses: list[TeamAccessRequest] = []
 
     _validate_name = field_validator("name")(make_name_validator("name"))
