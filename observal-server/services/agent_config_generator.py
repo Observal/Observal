@@ -103,20 +103,13 @@ def _custom_hook_matcher_lines(hook: dict) -> list[str]:
         timeout = handler_config.get("timeout", 10)
         lines = [
             "    - hooks:",
-            f"        - type: http",
+            "        - type: http",
             f'          url: "{url}"',
             f"          timeout: {timeout}",
         ]
     else:
         command = handler_config.get("command", "")
-        if command:
-            lines = [
-                "    - hooks:",
-                "        - type: command",
-                f'          command: "{command}"',
-            ]
-        else:
-            lines = []
+        lines = ["    - hooks:", "        - type: command", f'          command: "{command}"'] if command else []
     return lines
 
 
