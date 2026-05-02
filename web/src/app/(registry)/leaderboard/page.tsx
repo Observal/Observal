@@ -307,6 +307,7 @@ export default function LeaderboardPage() {
                       <span className="w-8 text-right">#</span>
                       <span className="flex-1">Component</span>
                       <span className="w-20 text-right">Type</span>
+                      <span className="w-20 text-right">Rating</span>
                       <span className="w-28 text-right">Downloads</span>
                     </div>
 
@@ -331,6 +332,16 @@ export default function LeaderboardPage() {
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                             {item.component_type}
                           </Badge>
+                        </span>
+                        <span className="w-20 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground">
+                          {item.average_rating != null ? (
+                            <>
+                              <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                              {item.average_rating.toFixed(1)}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground/40">-</span>
+                          )}
                         </span>
                         <span className="w-28 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground font-mono">
                           <ArrowDownToLine className="h-3 w-3" />

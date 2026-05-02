@@ -13,7 +13,12 @@ from api.sanitize import escape_like
 from config import settings
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.download import AgentDownloadRecord
+from models.feedback import Feedback
+from models.hook import HookDownload, HookListing, HookVersion
 from models.mcp import ListingStatus, McpDownload, McpListing, McpVersion
+from models.prompt import PromptDownload, PromptListing, PromptVersion
+from models.sandbox import SandboxDownload, SandboxListing, SandboxVersion
+from models.skill import SkillDownload, SkillListing, SkillVersion
 from models.user import User, UserRole
 from schemas.dashboard import (
     AgentMetrics,
@@ -252,8 +257,6 @@ async def top_agents(
     agent_ids = [r.agent_id for r in rows]
     rating_map: dict[uuid.UUID, float] = {}
     if agent_ids:
-        from models.feedback import Feedback
-
         rating_rows = await db.execute(
             select(Feedback.listing_id, func.avg(Feedback.rating))
             .where(Feedback.listing_id.in_(agent_ids), Feedback.listing_type == "agent")
@@ -284,8 +287,6 @@ async def agent_leaderboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Public leaderboard of agents ranked by downloads within a time window."""
-    from models.feedback import Feedback
-
     stmt = (
         select(
             AgentDownloadRecord.agent_id,
@@ -400,48 +401,100 @@ async def component_leaderboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Public leaderboard of components ranked by downloads within a time window."""
-    stmt = (
-        select(
-            McpDownload.listing_id,
-            func.count(McpDownload.id).label("cnt"),
-            McpListing.name,
-            McpVersion.description,
-            McpListing.submitted_by,
-        )
-        .join(McpListing, McpDownload.listing_id == McpListing.id)
-        .join(McpVersion, McpListing.latest_version_id == McpVersion.id)
-        .where(McpVersion.status == ListingStatus.approved)
-    )
-    if user:
-        stmt = stmt.join(User, McpListing.submitted_by == User.id).where(User.email.ilike(f"%{escape_like(user)}%"))
-    if window != "all":
-        days = _RANGE_MAP.get(window, 7)
-        stmt = stmt.where(McpDownload.downloaded_at >= dt.now(UTC) - timedelta(days=days))
-    stmt = (
-        stmt.group_by(McpDownload.listing_id, McpListing.name, McpVersion.description, McpListing.submitted_by)
-        .order_by(func.count(McpDownload.id).desc())
-        .limit(limit)
-    )
-    result = await db.execute(stmt)
-    rows = result.all()
+    # Define all component types: (DownloadModel, ListingModel, VersionModel, type_label)
+    component_types = [
+        (McpDownload, McpListing, McpVersion, "mcp"),
+        (SkillDownload, SkillListing, SkillVersion, "skill"),
+        (HookDownload, HookListing, HookVersion, "hook"),
+        (PromptDownload, PromptListing, PromptVersion, "prompt"),
+        (SandboxDownload, SandboxListing, SandboxVersion, "sandbox"),
+    ]
 
-    user_ids = {r.submitted_by for r in rows}
+    all_items: list[ComponentLeaderboardItem] = []
+    all_user_ids: set[uuid.UUID] = set()
+
+    # Collect raw rows from each component type
+    raw_results: list[tuple[str, list]] = []
+    for download_model, listing_model, version_model, type_label in component_types:
+        stmt = (
+            select(
+                download_model.listing_id,
+                func.count(download_model.id).label("cnt"),
+                listing_model.name,
+                version_model.description,
+                listing_model.submitted_by,
+            )
+            .join(listing_model, download_model.listing_id == listing_model.id)
+            .join(version_model, listing_model.latest_version_id == version_model.id)
+            .where(version_model.status == ListingStatus.approved)
+        )
+        if user:
+            stmt = stmt.join(User, listing_model.submitted_by == User.id).where(
+                User.email.ilike(f"%{escape_like(user)}%")
+            )
+        if window != "all":
+            days = _RANGE_MAP.get(window, 7)
+            stmt = stmt.where(download_model.downloaded_at >= dt.now(UTC) - timedelta(days=days))
+        stmt = (
+            stmt.group_by(
+                download_model.listing_id, listing_model.name, version_model.description, listing_model.submitted_by
+            )
+            .order_by(func.count(download_model.id).desc())
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        raw_results.append((type_label, rows))
+
+    # Collect all listing IDs across component types for feedback lookup
+    all_listing_ids: list[uuid.UUID] = []
+    for _type_label, rows in raw_results:
+        for r in rows:
+            all_listing_ids.append(r.listing_id)
+            all_user_ids.add(r.submitted_by)
+
+    # Batch-fetch average ratings and review counts for all listings
+    rating_map: dict[uuid.UUID, tuple[float | None, int]] = {}
+    if all_listing_ids:
+        fb_result = await db.execute(
+            select(
+                Feedback.listing_id,
+                func.avg(Feedback.rating).label("avg_rating"),
+                func.count(Feedback.id).label("total_reviews"),
+            )
+            .where(Feedback.listing_id.in_(all_listing_ids))
+            .group_by(Feedback.listing_id)
+        )
+        for fb_row in fb_result.all():
+            avg_r = round(float(fb_row.avg_rating), 2) if fb_row.avg_rating is not None else None
+            rating_map[fb_row.listing_id] = (avg_r, fb_row.total_reviews)
+
+    # Resolve user emails
     email_map: dict[uuid.UUID, str] = {}
-    if user_ids:
-        email_rows = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
+    if all_user_ids:
+        email_rows = await db.execute(select(User.id, User.email).where(User.id.in_(all_user_ids)))
         email_map = {r[0]: r[1] for r in email_rows.all()}
 
-    return [
-        ComponentLeaderboardItem(
-            id=row.listing_id,
-            name=row.name,
-            component_type="mcp",
-            description=row.description or "",
-            download_count=row.cnt,
-            created_by_email=email_map.get(row.submitted_by, ""),
-        )
-        for row in rows
-    ]
+    # Build leaderboard items
+    for type_label, rows in raw_results:
+        for row in rows:
+            avg_rating, total_reviews = rating_map.get(row.listing_id, (None, 0))
+            all_items.append(
+                ComponentLeaderboardItem(
+                    id=row.listing_id,
+                    name=row.name,
+                    component_type=type_label,
+                    description=row.description or "",
+                    download_count=row.cnt,
+                    created_by_email=email_map.get(row.submitted_by, ""),
+                    average_rating=avg_rating,
+                    total_reviews=total_reviews,
+                )
+            )
+
+    # Sort by download count descending, then by total_reviews descending as tiebreaker
+    all_items.sort(key=lambda x: (x.download_count, x.total_reviews), reverse=True)
+    return all_items[:limit]
 
 
 @router.get("/overview/trends", response_model=list[TrendPoint])

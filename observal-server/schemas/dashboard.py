@@ -72,6 +72,8 @@ class ComponentLeaderboardItem(BaseModel):
     description: str = ""
     download_count: int = 0
     created_by_email: str = ""
+    average_rating: float | None = None
+    total_reviews: int = 0
 
 
 class TrendPoint(BaseModel):
