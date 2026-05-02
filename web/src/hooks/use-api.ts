@@ -468,6 +468,14 @@ export function useMyAgents() {
   });
 }
 
+export function useArchivedAgents(enabled = true) {
+  return useQuery({
+    queryKey: ["registry", "agents", "archived"],
+    queryFn: () => registry.archived(),
+    enabled,
+  });
+}
+
 export function useAgentResolve(id: string) {
   return useQuery({
     queryKey: ["agent-resolve", id],

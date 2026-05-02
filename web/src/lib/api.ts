@@ -271,6 +271,7 @@ export const registry = {
   validate: (body: { components: { component_type: string; component_id: string }[] }) =>
     post<ValidationResult>("/agents/validate", body),
   my: (type?: RegistryType) => get<RegistryItem[]>(`/${type ?? "agents"}/my`),
+  archived: () => get<RegistryItem[]>("/agents/archived"),
   archive: (id: string) => patch(`/agents/${id}/archive`),
   unarchive: (id: string) => patch(`/agents/${id}/unarchive`),
   draft: (body: unknown, type?: RegistryType) =>

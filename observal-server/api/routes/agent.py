@@ -507,6 +507,7 @@ async def list_agents(
             download_count=a.download_count,
             average_rating=rating_map.get(a.id),
             component_count=len(a.components),
+            created_by=a.created_by,
             created_by_email=email_map.get(a.created_by, ""),
             created_by_username=username_map.get(a.created_by),
             created_at=a.created_at,
@@ -558,8 +559,72 @@ async def my_agents(
             download_count=a.download_count,
             average_rating=rating_map.get(a.id),
             component_count=len(a.components),
+            created_by=a.created_by,
             created_by_email=current_user.email,
             created_by_username=current_user.username,
+            created_at=a.created_at,
+            updated_at=a.updated_at,
+            visibility=a.visibility,
+        )
+        for a in agents
+    ]
+
+
+@router.get("/archived", response_model=list[AgentSummary])
+async def archived_agents(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    from models.feedback import Feedback
+
+    stmt = (
+        select(Agent)
+        .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
+        .where(AgentVersion.status == AgentStatus.archived)
+        .options(*_agent_load_options)
+        .order_by(Agent.created_at.desc())
+    )
+    if current_user.org_id is not None:
+        stmt = stmt.where(Agent.owner_org_id == current_user.org_id)
+
+    agents = (await db.execute(stmt)).scalars().all()
+
+    agent_ids = [a.id for a in agents]
+    rating_map: dict[uuid.UUID, float] = {}
+    if agent_ids:
+        rows = await db.execute(
+            select(Feedback.listing_id, func.avg(Feedback.rating))
+            .where(Feedback.listing_id.in_(agent_ids), Feedback.listing_type == "agent")
+            .group_by(Feedback.listing_id)
+        )
+        rating_map = {r[0]: round(float(r[1]), 2) for r in rows.all()}
+
+    user_ids = {a.created_by for a in agents}
+    email_map: dict[uuid.UUID, str] = {}
+    username_map: dict[uuid.UUID, str | None] = {}
+    if user_ids:
+        rows = await db.execute(select(User.id, User.email, User.username).where(User.id.in_(user_ids)))
+        for r in rows.all():
+            email_map[r[0]] = r[1]
+            username_map[r[0]] = r[2]
+
+    return [
+        AgentSummary(
+            id=a.id,
+            name=a.name,
+            version=a.version,
+            description=a.description,
+            owner=a.owner,
+            model_name=a.model_name,
+            supported_ides=a.supported_ides,
+            status=a.status,
+            rejection_reason=a.rejection_reason,
+            download_count=a.download_count,
+            average_rating=rating_map.get(a.id),
+            component_count=len(a.components),
+            created_by=a.created_by,
+            created_by_email=email_map.get(a.created_by, ""),
+            created_by_username=username_map.get(a.created_by),
             created_at=a.created_at,
             updated_at=a.updated_at,
             visibility=a.visibility,
@@ -1188,13 +1253,16 @@ async def delete_agent(
 async def archive_agent(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
+    is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
+    if agent.created_by != current_user.id and not is_admin:
+        raise HTTPException(status_code=403, detail="Only the owner or an admin can archive this agent")
     if agent.status != AgentStatus.approved:
         raise HTTPException(status_code=400, detail="Only approved agents can be archived")
     if not agent.latest_version_id:

@@ -200,6 +200,7 @@ class AgentSummary(BaseModel):
     download_count: int = 0
     average_rating: float | None = None
     component_count: int = 0
+    created_by: uuid.UUID | None = None
     created_by_email: str = ""
     created_by_username: str | None = None
     created_at: datetime | None = None

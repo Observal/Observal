@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRegistryList, useMyAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useSubmitDraft } from "@/hooks/use-api";
+import { useRegistryList, useMyAgents, useArchivedAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useSubmitDraft } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import {
@@ -130,9 +130,11 @@ function DeleteAgentButton({ agent }: { agent: RegistryItem }) {
 function ArchiveAgentButton({ agent }: { agent: RegistryItem }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const isAdmin = useSyncExternalStore(roleSub, () => hasMinRole(getUserRole(), "admin"), () => false);
+  const { data: whoami } = useWhoami();
   const archiveMutation = useArchiveAgent();
+  const isOwner = whoami?.id && agent.created_by && whoami.id === String(agent.created_by);
 
-  if (!isAdmin || agent.status === "archived") return null;
+  if ((!isAdmin && !isOwner) || agent.status === "archived") return null;
 
   return (
     <>
@@ -420,14 +422,24 @@ function AgentListContent() {
   );
 
   const { data: myAgents } = useMyAgents();
+  const isAdmin = useSyncExternalStore(roleSub, () => hasMinRole(getUserRole(), "admin"), () => false);
+  const { data: allArchivedAgents } = useArchivedAgents(isAdmin);
   const submitDraft = useSubmitDraft();
   const [draftsExpanded, setDraftsExpanded] = useState(true);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const drafts = useMemo(() => {
-    return (myAgents ?? []).filter((a) => a.status === "draft" || a.status === "rejected" || a.status === "pending" || a.status === "archived");
+    return (myAgents ?? []).filter((a) => a.status === "draft" || a.status === "rejected" || a.status === "pending");
   }, [myAgents]);
+
+  const archivedAgents = useMemo(() => {
+    if (isAdmin && allArchivedAgents) {
+      return allArchivedAgents;
+    }
+    return (myAgents ?? []).filter((a) => a.status === "archived");
+  }, [isAdmin, allArchivedAgents, myAgents]);
 
   const { filtered, pendingCount } = useMemo(() => {
     const active = agents ?? [];
@@ -540,7 +552,7 @@ function AgentListContent() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium">{draft.name}</p>
-                        {(draft.status === "rejected" || draft.status === "pending" || draft.status === "archived") && (
+                        {(draft.status === "rejected" || draft.status === "pending") && (
                           <StatusBadge status={draft.status} />
                         )}
                       </div>
@@ -561,19 +573,15 @@ function AgentListContent() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {draft.status === "archived" ? (
-                        <UnarchiveAgentButton agent={draft} />
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => handleEditDraft(draft)}
-                        >
-                          <FileEdit className="mr-1 h-3 w-3" />
-                          Edit
-                        </Button>
-                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => handleEditDraft(draft)}
+                      >
+                        <FileEdit className="mr-1 h-3 w-3" />
+                        Edit
+                      </Button>
                       {(draft.status === "draft" || draft.status === "rejected") && (
                         <Button
                           variant="outline"
@@ -595,6 +603,63 @@ function AgentListContent() {
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Archived */}
+        {archivedAgents.length > 0 && (
+          <div className="rounded-lg border border-border bg-card">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-accent/40 transition-colors rounded-t-lg"
+              onClick={() => setArchivedExpanded((prev) => !prev)}
+            >
+              {archivedExpanded ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+              <Archive className="h-4 w-4 text-muted-foreground" />
+              Archived
+              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+                {archivedAgents.length}
+              </span>
+            </button>
+            {archivedExpanded && (
+              <div className="divide-y divide-border border-t">
+                {archivedAgents.map((agent) => (
+                  <div key={agent.id} className="flex items-center gap-4 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-medium">{agent.name}</p>
+                        <StatusBadge status="archived" />
+                      </div>
+                      {agent.description && (
+                        <p className="truncate text-xs text-muted-foreground mt-0.5">
+                          {agent.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        {isAdmin && ((agent.created_by_email as string) || (agent.created_by_username as string)) && (
+                          <p className="text-[11px] text-muted-foreground">
+                            by {(agent.created_by_username as string) || (agent.created_by_email as string)}
+                          </p>
+                        )}
+                        {agent.updated_at && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {new Date(agent.updated_at).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <UnarchiveAgentButton agent={agent} />
+                      <DeleteAgentButton agent={agent} />
                     </div>
                   </div>
                 ))}
