@@ -240,7 +240,7 @@ async def _list_sessions_query(
         "groupUniqArrayIf(LogAttributes['user.id'], LogAttributes['user.id'] != '') AS user_ids, "
         "anyIf(LogAttributes['user.name'], LogAttributes['user.name'] != '') AS user_name, "
         "anyIf(LogAttributes['terminal.type'], LogAttributes['terminal.type'] != '') AS terminal_type, "
-        "anyIf(LogAttributes['credits'], LogAttributes['credits'] != '') AS credits, "
+        "sumIf(toFloat64OrZero(LogAttributes['credits']), LogAttributes['credits'] != '') AS credits, "
         "anyIf(LogAttributes['tools_used'], LogAttributes['tools_used'] != '') AS tools_used, "
         "multiIf("
         "  any(ServiceName) IN ('kiro', 'kiro-cli'), 'kiro',"

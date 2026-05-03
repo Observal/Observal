@@ -19,6 +19,7 @@ def _python_cmd() -> str:
     """Return '{python}' or 'PYTHONPATH=... {python}' so observal_cli is always importable."""
     try:
         import importlib.util
+
         if importlib.util.find_spec("observal_cli") is not None:
             return sys.executable
     except Exception:

@@ -131,7 +131,9 @@ def _auto_inject_hooks(url: str):
             else:
                 _py = f"PYTHONPATH={_pkg_root} {sys.executable}"
                 cmd = f"KIRO_CLI_PID=$PPID {_py} -m observal_cli.hooks.kiro_hook --url {url} --agent-name {name}"
-                stop_cmd = f"KIRO_CLI_PID=$PPID {_py} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
+                stop_cmd = (
+                    f"KIRO_CLI_PID=$PPID {_py} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
+                )
             desired = {
                 "agentSpawn": [{"command": cmd}],
                 "userPromptSubmit": [{"command": cmd}],
@@ -194,10 +196,14 @@ def main():
     try:
         session_file = Path.home() / ".observal" / ".kiro-session"
         session_file.parent.mkdir(parents=True, exist_ok=True)
-        session_file.write_text(json.dumps({
-            "session_id": payload["session_id"],
-            "cwd": payload.get("cwd", ""),
-        }))
+        session_file.write_text(
+            json.dumps(
+                {
+                    "session_id": payload["session_id"],
+                    "cwd": payload.get("cwd", ""),
+                }
+            )
+        )
     except Exception:
         pass
 

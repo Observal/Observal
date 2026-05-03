@@ -88,13 +88,13 @@ def _read_session_file(session_id: str, retries: tuple = (0.5, 1.0, 2.0)) -> dic
     candidates = [session_id]
     for prefix in ("kiro-cli-", "kiro-"):
         if session_id.startswith(prefix):
-            candidates.append(session_id[len(prefix):])
+            candidates.append(session_id[len(prefix) :])
 
     sessions_dir = Path.home() / ".kiro" / "sessions" / "cli"
     if not sessions_dir.is_dir():
         return None
 
-    for attempt, delay in enumerate((-1,) + retries):
+    for _attempt, delay in enumerate((-1, *retries)):
         if delay >= 0:
             time.sleep(delay)
         for sid in candidates:
@@ -124,10 +124,6 @@ def _enrich(payload: dict) -> dict:
     if not session:
         sessions_dir = Path.home() / ".kiro" / "sessions" / "cli"
         if sessions_dir.is_dir() and cwd:
-            matches = [
-                f for f in sessions_dir.glob("*.json")
-                if json.loads(f.read_text()).get("cwd") == cwd
-            ] if False else []  # avoid double-parse; use stat-based sort below
             try:
                 candidates = sorted(sessions_dir.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
                 for f in candidates[:10]:
@@ -188,21 +184,15 @@ def _enrich(payload: dict) -> dict:
                 conv_meta = session.get("session_state", {}).get("conversation_metadata", {})
                 turn_metadatas = conv_meta.get("user_turn_metadatas", [])
             if _has_credits(turn_metadatas):
-                _debug(f"metering_usage found after retry")
+                _debug("metering_usage found after retry")
                 break
 
     turn_count = len(turn_metadatas)
     # Only report the latest turn's credits — the stop hook fires after every
     # prompt, so sending the cumulative total causes double-counting on the server.
     latest_turn = turn_metadatas[-1] if turn_metadatas else {}
-    total_credits = sum(
-        u.get("value", 0.0)
-        for u in latest_turn.get("metering_usage", [])
-        if u.get("unit") == "credit"
-    )
-    models_used = {
-        t.get("model_id", "") for t in turn_metadatas if t.get("model_id", "")
-    }
+    total_credits = sum(u.get("value", 0.0) for u in latest_turn.get("metering_usage", []) if u.get("unit") == "credit")
+    models_used = {t.get("model_id", "") for t in turn_metadatas if t.get("model_id", "")}
     tools_used: list[str] = []
     for t in turn_metadatas:
         for tool in t.get("builtin_tool_uses_detail", []):
