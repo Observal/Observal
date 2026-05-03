@@ -100,6 +100,7 @@ from observal_cli.cmd_pull import register_pull
 from observal_cli.cmd_sandbox import sandbox_app
 from observal_cli.cmd_scan import register_scan
 from observal_cli.cmd_skill import skill_app
+from observal_cli.cmd_reconcile import reconcile_app
 from observal_cli.cmd_uninstall import register_uninstall
 
 # ═══════════════════════════════════════════════════════════
@@ -144,6 +145,7 @@ app.add_typer(admin_app, name="admin")
 app.add_typer(self_app, name="self")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(migrate_app, name="migrate")
+app.add_typer(reconcile_app, name="reconcile")
 
 
 if __name__ == "__main__":
