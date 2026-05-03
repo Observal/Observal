@@ -123,12 +123,15 @@ def _auto_inject_hooks(url: str):
             data = json.loads(af.read_text())
             hooks = data.get("hooks", {})
             name = data.get("name") or af.stem
+            _pkg_root = str(Path(__file__).resolve().parent.parent.parent)
             if sys.platform == "win32":
-                cmd = f"{sys.executable} -m observal_cli.hooks.kiro_hook --url {url} --agent-name {name}"
-                stop_cmd = f"{sys.executable} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
+                _py = f'set "PYTHONPATH={_pkg_root}" && {sys.executable}'
+                cmd = f"{_py} -m observal_cli.hooks.kiro_hook --url {url} --agent-name {name}"
+                stop_cmd = f"{_py} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
             else:
-                cmd = f"KIRO_CLI_PID=$PPID {sys.executable} -m observal_cli.hooks.kiro_hook --url {url} --agent-name {name}"
-                stop_cmd = f"KIRO_CLI_PID=$PPID {sys.executable} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
+                _py = f"PYTHONPATH={_pkg_root} {sys.executable}"
+                cmd = f"KIRO_CLI_PID=$PPID {_py} -m observal_cli.hooks.kiro_hook --url {url} --agent-name {name}"
+                stop_cmd = f"KIRO_CLI_PID=$PPID {_py} -m observal_cli.hooks.kiro_stop_hook --url {url} --agent-name {name}"
             desired = {
                 "agentSpawn": [{"command": cmd}],
                 "userPromptSubmit": [{"command": cmd}],
