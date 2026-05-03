@@ -18,6 +18,7 @@ import {
   telemetry,
   bulk,
   graphql,
+  insights,
   type RegistryType,
 } from "@/lib/api";
 import type { LeaderboardWindow } from "@/lib/types";
@@ -923,6 +924,43 @@ export function useReviewDelete() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to delete submission");
+    },
+  });
+}
+
+// ── Insights ───────────────────────────────────────────────────────
+
+export function useInsightReports(agentId: string | undefined) {
+  return useQuery({
+    queryKey: ["insights", "reports", agentId],
+    queryFn: () => insights.listReports(agentId!),
+    enabled: !!agentId,
+  });
+}
+
+export function useInsightReport(reportId: string) {
+  return useQuery({
+    queryKey: ["insights", "report", reportId],
+    queryFn: () => insights.getReport(reportId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === "pending" || status === "running") return 3000;
+      return false;
+    },
+  });
+}
+
+export function useGenerateInsight() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { agentId: string; periodDays?: number }) =>
+      insights.generate(vars.agentId, vars.periodDays),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["insights", "reports", vars.agentId] });
+      toast.success("Insight report queued");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to generate insight");
     },
   });
 }

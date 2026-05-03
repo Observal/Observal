@@ -34,6 +34,8 @@ import type {
   AuditLogEntry,
   SecurityEvent,
   DiagnosticsResponse,
+  InsightReportListItem,
+  InsightReport,
 } from "./types";
 
 const API = "/api/v1";
@@ -504,6 +506,16 @@ export const config = {
 export const bulk = {
   createAgents: (body: { agents: unknown[]; dry_run?: boolean }) =>
     post<BulkResult>("/bulk/agents", body),
+};
+
+// ── Insights ───────────────────────────────────────────────────────
+export const insights = {
+  generate: (agentId: string, periodDays?: number) =>
+    post<InsightReportListItem>(`/insights/agents/${agentId}/generate`, periodDays ? { period_days: periodDays } : {}),
+  listReports: (agentId: string) =>
+    get<InsightReportListItem[]>(`/insights/agents/${agentId}/reports`),
+  getReport: (reportId: string) =>
+    get<InsightReport>(`/insights/reports/${reportId}`),
 };
 
 // ── Health ──────────────────────────────────────────────────────────

@@ -553,6 +553,111 @@ export interface SessionErrorEvent {
   user_id: string;
 }
 
+// ── Insights ───────────────────────────────────────────────────────
+
+export interface InsightReportListItem {
+  id: string;
+  agent_id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  period_start: string;
+  period_end: string;
+  sessions_analyzed: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface InsightCostMetrics {
+  total_cost_usd: number;
+  avg_cost_per_session: number;
+  p50_session_cost: number;
+  p90_session_cost: number;
+  p99_session_cost: number;
+  cache_efficiency_ratio: number;
+  most_expensive_model: string;
+  cost_by_model: { model: string; total_cost_usd: number }[];
+}
+
+export interface InsightToolErrors {
+  total_categorized: number;
+  categories: Record<string, number>;
+  by_tool: Record<string, Record<string, number>>;
+}
+
+export interface InsightInterruptions {
+  stop_reasons: Record<string, number>;
+  user_interruptions: number;
+  total_stops: number;
+}
+
+export interface InsightMetrics {
+  overview: {
+    total_sessions: string;
+    unique_users: string;
+    first_session: string;
+    last_session: string;
+  };
+  tokens: {
+    total_input_tokens: string;
+    total_output_tokens: string;
+    total_tokens: string;
+    total_cache_read_tokens: string;
+    total_cache_write_tokens: string;
+  };
+  cost?: InsightCostMetrics;
+  duration: {
+    session_count: string;
+    avg_duration_seconds: string;
+    p50_duration_seconds: string;
+    p90_duration_seconds: string;
+  };
+  errors: {
+    total_events: string;
+    total_tool_calls: string;
+    failure_stops: string;
+    error_events: string;
+    error_rate: number;
+  };
+  tool_errors?: InsightToolErrors;
+  interruptions?: InsightInterruptions;
+  tools: {
+    name: string;
+    invocations: string;
+    errors: string;
+  }[];
+  sessions: {
+    session_id: string;
+    duration_seconds: string;
+    prompt_count: string;
+    tool_call_count: string;
+    input_tokens: string;
+    output_tokens: string;
+  }[];
+}
+
+export interface InsightNarrative {
+  at_a_glance: string;
+  usage_patterns: string[];
+  friction_analysis: string[];
+  suggestions: string[];
+}
+
+export interface InsightReport {
+  id: string;
+  agent_id: string;
+  triggered_by: string | null;
+  status: "pending" | "running" | "completed" | "failed";
+  period_start: string;
+  period_end: string;
+  metrics: InsightMetrics | null;
+  narrative: InsightNarrative | null;
+  sessions_analyzed: number;
+  llm_model_used: string | null;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+}
+
 // ── Telemetry ───────────────────────────────────────────────────────
 
 export interface TelemetryStatus {
