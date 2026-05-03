@@ -409,6 +409,31 @@ class TestApprove:
         assert "id" in data
 
     @pytest.mark.asyncio
+    async def test_approves_pending_version_and_updates_latest(self):
+        """When a listing has a pending version, approve targets the version
+        and updates latest_version_id (with flush before to avoid CircularDependencyError)."""
+        app, db, user = _app_with()
+        listing = _listing_mock(status=ListingStatus.approved)
+        pending_ver = _version_mock(listing.id, status=ListingStatus.pending, version="2.0.0")
+        listing.versions = [pending_ver]
+        listing.latest_version_id = uuid.uuid4()  # points to old approved version
+        db.execute = AsyncMock(side_effect=[_result_with(listing)] + [_empty_result() for _ in range(4)])
+        db.refresh = AsyncMock(side_effect=lambda obj: None)
+        db.flush = AsyncMock()
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.post(f"/api/v1/review/{listing.id}/approve")
+
+        assert r.status_code == 200
+        assert pending_ver.status == ListingStatus.approved
+        assert pending_ver.rejection_reason is None
+        assert pending_ver.reviewed_by == user.id
+        assert listing.latest_version_id == pending_ver.id
+        # flush must be called before commit to avoid CircularDependencyError
+        db.flush.assert_awaited_once()
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_not_found(self):
         app, db, _ = _app_with()
         db.execute = AsyncMock(return_value=_empty_result())

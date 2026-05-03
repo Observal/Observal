@@ -548,6 +548,8 @@ async def approve(
         pending_ver.rejection_reason = None
         pending_ver.reviewed_by = current_user.id
         pending_ver.reviewed_at = datetime.now(UTC)
+        # Flush version changes first to avoid CircularDependencyError
+        await db.flush()
         # Update latest_version_id to point to newly approved version
         listing.latest_version_id = pending_ver.id
     else:
