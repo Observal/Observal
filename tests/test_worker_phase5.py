@@ -95,7 +95,7 @@ class TestWorkerSettings:
     def test_job_timeout(self):
         from worker import WorkerSettings
 
-        assert WorkerSettings.job_timeout == 300
+        assert WorkerSettings.job_timeout == 600
 
     def test_max_jobs(self):
         from worker import WorkerSettings

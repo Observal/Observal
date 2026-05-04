@@ -158,7 +158,14 @@ async def shutdown(ctx: dict):
 class WorkerSettings:
     """arq worker configuration."""
 
-    functions = [run_eval, sync_component_sources, evaluate_alerts, maintain_clickhouse, generate_insight_report, batch_generate_insights]
+    functions = [
+        run_eval,
+        sync_component_sources,
+        evaluate_alerts,
+        maintain_clickhouse,
+        generate_insight_report,
+        batch_generate_insights,
+    ]
     cron_jobs = [
         cron(sync_component_sources, hour={0, 6, 12, 18}),  # Every 6 hours
         cron(evaluate_alerts, second={0}, timeout=55),  # Every minute

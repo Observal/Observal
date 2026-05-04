@@ -40,7 +40,7 @@ def render_report_html(report: dict) -> str:
     """
     metrics = report.get("metrics") or {}
     narrative = report.get("narrative") or {}
-    agent_id = report.get("agent_id", "Unknown")
+    report.get("agent_id", "Unknown")
     period_start = report.get("period_start", "")
     period_end = report.get("period_end", "")
     sessions_analyzed = report.get("sessions_analyzed", 0)
@@ -76,7 +76,7 @@ def render_report_html(report: dict) -> str:
     duration = metrics.get("duration", {})
     tools = metrics.get("tools", [])
     tool_errors = metrics.get("tool_errors", {})
-    interruptions = metrics.get("interruptions", {})
+    metrics.get("interruptions", {})
 
     # Build HTML sections
     sections_html = []
@@ -167,7 +167,7 @@ def render_report_html(report: dict) -> str:
                   <div class="tool-bar" style="width: {pct}%"></div>
                 </div>
                 <span class="tool-calls">{calls}</span>
-                <span class="tool-err" style="color: {'#dc2626' if err_rate > 5 else '#6b7280'}">{err_rate:.1f}%</span>
+                <span class="tool-err" style="color: {"#dc2626" if err_rate > 5 else "#6b7280"}">{err_rate:.1f}%</span>
               </div>"""
             tool_dist_html = f'<div class="tool-distribution"><h4>Tool Distribution</h4>{tool_rows}</div>'
 
@@ -307,11 +307,15 @@ def render_report_html(report: dict) -> str:
       <h2>User Experience</h2>
       <p class="narrative">{_esc(user_exp.get("narrative", ""))}</p>
       {f'<div class="signals"><h4>Signals</h4>{signals_html}</div>' if signals_html else ""}
-      {f'''<div class="satisfaction-indicators">
+      {
+            f'''<div class="satisfaction-indicators">
         <span>Completion: <strong>{_esc(str(indicators.get("completion_rate", "N/A")))}</strong></span>
         <span>Interruptions: <strong>{_esc(str(indicators.get("interruption_rate", "N/A")))}</strong></span>
         <span>Retries: <strong>{_esc(str(indicators.get("retry_patterns", "none")))}</strong></span>
-      </div>''' if indicators else ""}
+      </div>'''
+            if indicators
+            else ""
+        }
     </section>""")
 
     # ── Regression Detection ──
@@ -323,7 +327,9 @@ def render_report_html(report: dict) -> str:
                 if isinstance(ch, dict):
                     direction = ch.get("direction", "stable")
                     arrow = "↑" if direction == "improved" else "↓" if direction == "degraded" else "→"
-                    color = "#16a34a" if direction == "improved" else "#dc2626" if direction == "degraded" else "#6b7280"
+                    color = (
+                        "#16a34a" if direction == "improved" else "#dc2626" if direction == "degraded" else "#6b7280"
+                    )
                     change_rows += f"""
               <tr>
                 <td>{_esc(ch.get("metric", ""))}</td>
@@ -355,7 +361,7 @@ def render_report_html(report: dict) -> str:
             <td><code>{_esc(t.get("name", ""))}</code></td>
             <td>{invocations}</td>
             <td>{errs}</td>
-            <td style="color: {'#dc2626' if err_rate > 10 else '#6b7280'}">{err_rate:.1f}%</td>
+            <td style="color: {"#dc2626" if err_rate > 10 else "#6b7280"}">{err_rate:.1f}%</td>
           </tr>"""
         sections_html.append(f"""
     <section class="tools-table">

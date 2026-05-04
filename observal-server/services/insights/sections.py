@@ -26,6 +26,7 @@ def _get_synthesis_model() -> str | None:
     """Get the model for synthesis/aggregation (Sonnet by default)."""
     return getattr(settings, "INSIGHT_MODEL_SYNTHESIS", "") or None
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Section prompt templates — designed to produce structured JSON output
 # ──────────────────────────────────────────────────────────────────────────────
@@ -55,7 +56,6 @@ Produce a JSON object with this EXACT structure:
 }}
 
 Base everything on the actual data. Do not invent numbers. If data is limited, say so in the narrative.""",
-
     "what_works": """You are producing ONE section of a developer-facing insight report for an AI coding agent. This section highlights genuine strengths.
 
 {data_block}
@@ -78,7 +78,6 @@ Rules:
 - Each must be backed by a specific metric (name the number)
 - Don't stretch thin data — if you only have 1 session, you can only have 1-2 strengths
 - Focus on what would matter to the agent owner (reliability, cost efficiency, user satisfaction)""",
-
     "friction_analysis": """You are producing ONE section of a developer-facing insight report for an AI coding agent. This section identifies WHERE things go wrong.
 
 {data_block}
@@ -105,7 +104,6 @@ Rules:
 - Each MUST include a specific metric as evidence
 - Focus on patterns that actually hurt users, not one-off errors in tiny samples
 - If error counts are very low (1-2 total), note that statistical confidence is low""",
-
     "suggestions": """You are producing ONE section of a developer-facing insight report for an AI coding agent. This section provides SPECIFIC, IMPLEMENTABLE suggestions.
 
 {data_block}
@@ -134,7 +132,6 @@ Rules:
 - LOW priority: optimization opportunity
 - NEVER suggest "improve reliability" — say EXACTLY what to change
 - Suggestions should be things the agent OWNER can do (system prompt changes, tool config, workflow adjustments)""",
-
     "token_optimization": """You are producing ONE section of a developer-facing insight report for an AI coding agent. Focus on cost and token efficiency.
 
 {data_block}
@@ -164,7 +161,6 @@ Rules:
 - If cache efficiency is >70%, acknowledge it's good
 - Only suggest model downgrades if there's clear evidence simpler tasks don't need the expensive model
 - Maximum 3 opportunities""",
-
     "user_experience": """You are producing ONE section of a developer-facing insight report for an AI coding agent. Focus on the end-user experience.
 
 {data_block}
@@ -191,7 +187,6 @@ Rules:
 - Maximum 4 signals
 - Base satisfaction assessment on actual data (stop reasons, error rates, session completion)
 - Don't assume user satisfaction from limited data — say confidence is low if sample is small""",
-
     "regression_detection": """You are comparing current and previous period metrics for an AI coding agent.
 
 {data_block}
@@ -218,7 +213,6 @@ Produce a JSON object with this EXACT structure:
 
 If no previous period data is available, return:
 {{"regression_detection": {{"has_previous_data": false, "summary": "No previous period data available for comparison.", "changes": []}}}}""",
-
     "fun_ending": """You are producing the final section of a developer-facing insight report for an AI coding agent. Find ONE genuinely interesting or memorable observation from the data.
 
 {data_block}
@@ -337,13 +331,9 @@ async def generate_sections(
             narrative[name] = {} if name != "fun_ending" else {"headline": "", "detail": ""}
 
     # Run synthesis with all section outputs using synthesis model (Sonnet)
-    synthesis_prompt = SYNTHESIS_PROMPT.format(
-        sections_json=json.dumps(narrative, indent=2, default=str)
-    )
+    synthesis_prompt = SYNTHESIS_PROMPT.format(sections_json=json.dumps(narrative, indent=2, default=str))
     try:
-        synthesis_result = await call_eval_model(
-            synthesis_prompt, model_override=synthesis_model, max_tokens=4096
-        )
+        synthesis_result = await call_eval_model(synthesis_prompt, model_override=synthesis_model, max_tokens=4096)
         if synthesis_result and "at_a_glance" in synthesis_result:
             narrative["at_a_glance"] = synthesis_result["at_a_glance"]
         elif synthesis_result:

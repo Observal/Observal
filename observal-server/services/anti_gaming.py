@@ -10,11 +10,11 @@ from dataclasses import asdict, dataclass
 
 @dataclass
 class GamingFlag:
-    pattern: str           # The regex that matched
-    matched_text: str      # What was matched
-    context: str           # Up to 50 chars surrounding context on each side
-    severity: str          # "warning" — never auto-reject
-    category: str          # "eval_manipulation" | "metric_inflation" | "telemetry_awareness"
+    pattern: str  # The regex that matched
+    matched_text: str  # What was matched
+    context: str  # Up to 50 chars surrounding context on each side
+    severity: str  # "warning" — never auto-reject
+    category: str  # "eval_manipulation" | "metric_inflation" | "telemetry_awareness"
 
 
 GAMING_PATTERNS: dict[str, list[str]] = {

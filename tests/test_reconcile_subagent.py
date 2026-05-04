@@ -2,11 +2,9 @@
 
 import json
 import time
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ─── CLI: _find_recent_sessions ──────────────────────────────────────────────
 
@@ -56,6 +54,7 @@ def test_find_recent_sessions_respects_cutoff_for_subagents(tmp_path):
     # Set mtime to 30 days ago
     old_time = time.time() - (30 * 24 * 3600)
     import os
+
     os.utime(old_subagent, (old_time, old_time))
 
     with patch("observal_cli.cmd_reconcile._find_claude_sessions_dir", return_value=tmp_path):
@@ -172,10 +171,14 @@ def test_parse_session_file_reads_meta_json(tmp_path):
         "message": {"content": []},
     }
     subagent_file.write_text(json.dumps(record) + "\n")
-    meta_file.write_text(json.dumps({
-        "agentType": "superpowers:code-reviewer",
-        "description": "Review PR #472",
-    }))
+    meta_file.write_text(
+        json.dumps(
+            {
+                "agentType": "superpowers:code-reviewer",
+                "description": "Review PR #472",
+            }
+        )
+    )
 
     enrichment = _parse_session_file(subagent_file)
 

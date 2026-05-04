@@ -42,7 +42,7 @@ def get_pricing(model_name: str) -> dict[str, float]:
     normalized = model_name
     for prefix in ("us.", "eu.", "ap.", "us.anthropic.", "eu.anthropic.", "anthropic."):
         if normalized.startswith(prefix):
-            normalized = normalized[len(prefix):]
+            normalized = normalized[len(prefix) :]
             break
 
     # Strip Bedrock version suffixes like ":0", "-v1:0"
@@ -129,11 +129,7 @@ def compute_cost_summary(sessions: list[dict]) -> dict:
 
     # Cache efficiency: how much of total "input" came from cache reads
     total_billable_input = total_input + total_cache_read + total_cache_write
-    cache_efficiency = (
-        round(total_cache_read / total_billable_input, 4)
-        if total_billable_input > 0
-        else 0.0
-    )
+    cache_efficiency = round(total_cache_read / total_billable_input, 4) if total_billable_input > 0 else 0.0
 
     # Percentiles
     p50 = sorted_costs[n // 2] if n > 0 else 0.0
@@ -144,8 +140,7 @@ def compute_cost_summary(sessions: list[dict]) -> dict:
     most_expensive_model = max(model_costs, key=model_costs.get) if model_costs else "unknown"
 
     cost_by_model = [
-        {"model": m, "total_cost_usd": round(c, 4)}
-        for m, c in sorted(model_costs.items(), key=lambda x: -x[1])
+        {"model": m, "total_cost_usd": round(c, 4)} for m, c in sorted(model_costs.items(), key=lambda x: -x[1])
     ]
 
     return {

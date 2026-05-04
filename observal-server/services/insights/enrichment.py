@@ -55,10 +55,7 @@ def enrich_session_meta(meta: dict) -> dict:
 
     enriched["completeness_score"] = compute_completeness(meta)
     enriched["has_errors"] = int(meta.get("error_count", 0)) > 0
-    enriched["is_substantive"] = (
-        int(meta.get("tool_call_count", 0)) >= 3
-        and int(meta.get("duration_seconds", 0)) >= 60
-    )
+    enriched["is_substantive"] = int(meta.get("tool_call_count", 0)) >= 3 and int(meta.get("duration_seconds", 0)) >= 60
 
     return enriched
 

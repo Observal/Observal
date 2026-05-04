@@ -58,9 +58,7 @@ def _merge_events(existing: dict, new: dict) -> dict:
     for field in ("input_tokens", "output_tokens", "cache_read", "cache_creation"):
         existing_val = existing.get(field)
         new_val = new.get(field)
-        if new_val and not existing_val:
-            merged[field] = new_val
-        elif new_val and existing_val == 0:
+        if (new_val and not existing_val) or (new_val and existing_val == 0):
             merged[field] = new_val
 
     # tool_input / tool_response: prefer non-empty (hooks carry these)

@@ -69,11 +69,13 @@ async def discover_and_queue_reports() -> int:
                     select(InsightReport)
                     .where(
                         InsightReport.agent_id == agent.id,
-                        InsightReport.status.in_([
-                            InsightReportStatus.completed,
-                            InsightReportStatus.running,
-                            InsightReportStatus.pending,
-                        ]),
+                        InsightReport.status.in_(
+                            [
+                                InsightReportStatus.completed,
+                                InsightReportStatus.running,
+                                InsightReportStatus.pending,
+                            ]
+                        ),
                     )
                     .order_by(InsightReport.created_at.desc())
                     .limit(1)

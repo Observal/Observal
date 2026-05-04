@@ -43,9 +43,9 @@ def _resolve_hook_paths(content: str) -> str:
             if not found:
                 continue
             path = Path(found).resolve().as_posix()
-        # Match script name inside quotes with optional trailing args, replace only the script name
-        pattern = rf'"{re.escape(name)}(?:\s+[^"]*)?'
-        replacement = f'"{path}'
+        # Match script name inside quotes with optional trailing args, replace script name but preserve args
+        pattern = rf'"({re.escape(name)})(\s+[^"]*)?'
+        replacement = rf'"{path}\2'
         content = re.sub(pattern, replacement, content)
     return content
 

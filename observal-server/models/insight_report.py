@@ -22,9 +22,7 @@ class InsightReport(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=False)
     triggered_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    status: Mapped[InsightReportStatus] = mapped_column(
-        Enum(InsightReportStatus), default=InsightReportStatus.pending
-    )
+    status: Mapped[InsightReportStatus] = mapped_column(Enum(InsightReportStatus), default=InsightReportStatus.pending)
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

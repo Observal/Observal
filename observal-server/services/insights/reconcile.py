@@ -103,9 +103,7 @@ def parse_claude_code_jsonl(lines: list[str], session_id: str) -> SessionEnrichm
                 models_seen.add(turn.model)
 
             if turn.stop_reason:
-                enrichment.stop_reasons[turn.stop_reason] = (
-                    enrichment.stop_reasons.get(turn.stop_reason, 0) + 1
-                )
+                enrichment.stop_reasons[turn.stop_reason] = enrichment.stop_reasons.get(turn.stop_reason, 0) + 1
 
             if turn.has_thinking:
                 enrichment.thinking_turns += 1

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.insight_session_meta import InsightSessionMeta
 from services.clickhouse import _query
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -71,23 +74,25 @@ async def store_metas(db: AsyncSession, agent_id: uuid.UUID, metas: dict[str, di
 
     now = datetime.now(UTC)
     for session_id, meta in metas.items():
-        stmt = pg_insert(InsightSessionMeta).values(
-            id=uuid.uuid4(),
-            agent_id=agent_id,
-            session_id=session_id,
-            computed_at=now,
-            meta=meta,
-        ).on_conflict_do_update(
-            constraint="uq_session_meta_agent_session",
-            set_={"meta": meta, "computed_at": now},
+        stmt = (
+            pg_insert(InsightSessionMeta)
+            .values(
+                id=uuid.uuid4(),
+                agent_id=agent_id,
+                session_id=session_id,
+                computed_at=now,
+                meta=meta,
+            )
+            .on_conflict_do_update(
+                constraint="uq_session_meta_agent_session",
+                set_={"meta": meta, "computed_at": now},
+            )
         )
         await db.execute(stmt)
     await db.flush()
 
 
-async def compute_session_metas_from_clickhouse(
-    session_ids: list[str], start: str, end: str
-) -> dict[str, dict]:
+async def compute_session_metas_from_clickhouse(session_ids: list[str], start: str, end: str) -> dict[str, dict]:
     """Query ClickHouse for session-level metadata for given session IDs."""
     if not session_ids:
         return {}
@@ -134,9 +139,7 @@ async def get_or_compute_metas(
             # The shim spans table is keyed by metadata['session.id'], so agent_name
             # is only used for the sessions subquery which we skip here; we query
             # directly by session_id instead via get_shim_spans_for_sessions.
-            shim_by_session = await get_shim_spans_for_sessions(
-                "", session_ids, start, end
-            )
+            shim_by_session = await get_shim_spans_for_sessions("", session_ids, start, end)
             for sid, spans in shim_by_session.items():
                 if not spans or sid not in cached:
                     continue
