@@ -1,4 +1,3 @@
----
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/logo.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/logo-light.svg">
