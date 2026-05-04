@@ -97,34 +97,17 @@ uv tool install --editable . --force   # upgrades CLI to this branch
 observal auth login --server https://dev.observal.io
 ```
 
-**3. Install hooks (registers the stop hook with reconciliation):**
-
-```bash
-observal hook install
-```
-
-**4. Clean up any stale hook state from previous installs:**
+**3. Clean up stale state and install hooks:**
 
 ```bash
 observal doctor cleanup
+observal doctor patch --all --all-ides
 ```
 
-**5. Start using Claude Code normally.** Traces flow automatically via hooks. To backfill historical sessions:
+**4. Start using Claude Code normally.** Traces flow automatically via hooks. To backfill historical sessions:
 
 ```bash
 observal reconcile batch --since 30d
-```
-
-### Running the server locally (optional)
-
-If you want to run the full stack locally instead of connecting to dev.observal.io:
-
-```bash
-cp .env.example .env
-# Edit .env with your model keys if you want insight generation
-docker compose -f docker/docker-compose.yml up --build -d
-observal auth login   # connects to localhost:8000 by default
-observal hook install
 ```
 
 ---
