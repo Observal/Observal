@@ -39,14 +39,21 @@ hooks:  ## Install pre-commit hooks
 
 # ── Docker ───────────────────────────────────────────────
 
+# Auto-detect enterprise mode: if observal-insights/ exists, use enterprise override
+COMPOSE_FILES := -f docker-compose.yml
+ifneq (,$(wildcard observal-insights/pyproject.toml))
+  COMPOSE_FILES += -f docker-compose.enterprise.yml
+  $(info [enterprise mode] observal-insights/ detected)
+endif
+
 up:  ## Start Docker stack
-	cd docker && docker compose up -d
+	cd docker && docker compose $(COMPOSE_FILES) up -d
 
 down:  ## Stop Docker stack
-	cd docker && docker compose down
+	cd docker && docker compose $(COMPOSE_FILES) down
 
 migrate:  ## Run database migrations
-	docker compose -f docker/docker-compose.yml exec observal-api /app/.venv/bin/python -m alembic upgrade head
+	cd docker && docker compose $(COMPOSE_FILES) exec observal-api /app/.venv/bin/python -m alembic upgrade head
 
 check-migrations:  ## Validate alembic migration chain (no duplicates, no forks)
 	python3 scripts/check_migrations.py
@@ -56,25 +63,25 @@ new-migration:  ## Create a new migration: make new-migration MSG="add foo to ba
 	./scripts/new_migration.sh "$(MSG)"
 
 rebuild:  ## Rebuild and restart Docker stack (runs migrations automatically)
-	cd docker && docker compose up --build -d
+	cd docker && docker compose $(COMPOSE_FILES) up --build -d
 	@echo "Waiting for API to be healthy..."
-	@cd docker && until docker compose exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
-	cd docker && docker compose restart observal-lb
+	@cd docker && until docker compose $(COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
+	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy."
 
 reset:  ## Nuke all Docker volumes and rebuild from scratch (fresh app, no file changes)
-	cd docker && docker compose down -v
-	cd docker && docker compose up --build -d
+	cd docker && docker compose $(COMPOSE_FILES) down -v
+	cd docker && docker compose $(COMPOSE_FILES) up --build -d
 	@echo "Waiting for API to be healthy..."
-	@cd docker && until docker compose exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
-	cd docker && docker compose restart observal-lb
+	@cd docker && until docker compose $(COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
+	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy — all data has been reset."
 
 rebuild-clean:  ## Rebuild from scratch (no Docker cache), remove volumes, and restart
-	cd docker && docker compose down -v && docker compose build --no-cache && docker compose up -d
+	cd docker && docker compose $(COMPOSE_FILES) down -v && docker compose $(COMPOSE_FILES) build --no-cache && docker compose $(COMPOSE_FILES) up -d
 	@echo "Waiting for API to be healthy..."
-	@cd docker && until docker compose exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
-	cd docker && docker compose restart observal-lb
+	@cd docker && until docker compose $(COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
+	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy."
 
 logs:  ## Tail Docker logs

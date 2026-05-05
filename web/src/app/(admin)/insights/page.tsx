@@ -84,15 +84,23 @@ function AgentInsightCard({ agent }: { agent: RegistryItem }) {
         {latest?.status === "completed" && (
           <Link href={`/insights/${latest.id}`} className="flex-1">
             <Button variant="outline" size="sm" className="w-full h-7 text-xs">
-              View Latest
+              View Report
             </Button>
           </Link>
+        )}
+        {(latest?.status === "pending" || latest?.status === "running") && (
+          <div className="flex-1 flex items-center gap-2 px-2 py-1 rounded bg-muted/50 border border-border">
+            <Loader2 className="h-3 w-3 animate-spin text-info" />
+            <span className="text-xs text-muted-foreground">
+              {latest.status === "pending" ? "Queued..." : "Generating report..."}
+            </span>
+          </div>
         )}
         <Button
           variant="ghost"
           size="sm"
           className="h-7 text-xs gap-1"
-          disabled={generateInsight.isPending}
+          disabled={generateInsight.isPending || latest?.status === "pending" || latest?.status === "running"}
           onClick={() => generateInsight.mutate({ agentId: agent.id })}
         >
           <Play className="h-3 w-3" />

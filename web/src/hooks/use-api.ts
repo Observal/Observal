@@ -935,6 +935,13 @@ export function useInsightReports(agentId: string | undefined) {
     queryKey: ["insights", "reports", agentId],
     queryFn: () => insights.listReports(agentId!),
     enabled: !!agentId,
+    refetchInterval: (query) => {
+      const reports = query.state.data;
+      if (Array.isArray(reports) && reports.some((r: { status: string }) => r.status === "pending" || r.status === "running")) {
+        return 3000;
+      }
+      return false;
+    },
   });
 }
 
