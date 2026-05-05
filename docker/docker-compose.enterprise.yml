@@ -1,0 +1,15 @@
+# Enterprise override — swaps public images for private enterprise images
+# that include the observal-insights package.
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.enterprise.yml up -d
+services:
+  observal-init:
+    image: ghcr.io/blazeup-ai/observal-api-enterprise:latest
+  observal-api:
+    image: ghcr.io/blazeup-ai/observal-api-enterprise:latest
+    environment:
+      - DEPLOYMENT_MODE=enterprise
+  observal-worker:
+    image: ghcr.io/blazeup-ai/observal-api-enterprise:latest
+    environment:
+      - DEPLOYMENT_MODE=enterprise

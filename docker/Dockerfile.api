@@ -10,6 +10,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends git xmlsec1 lib
 COPY observal-server/pyproject.toml observal-server/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+# Optional: install observal-insights private package if present in build context.
+# To enable: symlink or clone observal-insights/ at the repo root.
+COPY docker/Dockerfile.api observal-insight[s] /tmp/_opt_insights/
+RUN if [ -f /tmp/_opt_insights/pyproject.toml ]; then \
+      uv pip install --no-deps --python /app/.venv/bin/python /tmp/_opt_insights && \
+      echo "✓ observal-insights installed"; \
+    else \
+      echo "· observal-insights not found, skipping"; \
+    fi && rm -rf /tmp/_opt_insights
+
 # Runtime stage
 FROM python:3.14-slim
 

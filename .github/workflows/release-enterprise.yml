@@ -1,0 +1,136 @@
+# Enterprise Docker image release pipeline.
+#
+# Builds and pushes a private Docker image that includes the observal-insights
+# package (compiled to .pyc, no source). Triggered alongside the public release
+# when a version tag is created.
+
+name: Release Enterprise
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to build (e.g. v0.3.2)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-enterprise
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/blazeup-ai/observal-api-enterprise
+
+jobs:
+  build:
+    name: Enterprise API (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Clone observal-insights private repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.INSIGHTS_REPO_PAT }}@github.com/BlazeUp-AI/observal-insights.git observal-insights
+
+      - name: Compile to bytecode and strip source
+        run: |
+          cd observal-insights
+          python3 -m compileall -b src/
+          find src/ -name '*.py' -not -name '__init__.py' -delete
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=enterprise-${{ matrix.arch }}
+          cache-to: type=gha,scope=enterprise-${{ matrix.arch }},mode=max
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: enterprise-digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifest:
+    name: Enterprise manifest
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: enterprise-digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create manifest list and push
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_NAME }}:${VERSION#v}" \
+            -t "${{ env.IMAGE_NAME }}:latest" \
+            $(printf "${{ env.IMAGE_NAME }}@sha256:%s " $(ls /tmp/digests/))
+
+      - name: Set package visibility to private
+        run: |
+          gh api \
+            --method PUT \
+            /orgs/BlazeUp-AI/packages/container/observal-api-enterprise/visibility \
+            -f visibility=private || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

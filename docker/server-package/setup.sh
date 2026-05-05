@@ -89,27 +89,42 @@ rm -f "$ENV_FILE.bak"
 
 chmod 600 "$ENV_FILE"
 
+# ── Enterprise: authenticate to private registry ────────────
+
+COMPOSE_FILES="-f docker/docker-compose.yml"
+
+if [ "$DEPLOYMENT_MODE" = "enterprise" ]; then
+  echo ""
+  prompt_secret ENTERPRISE_TOKEN "Enterprise license token (leave blank to skip)" ""
+  if [ -n "$ENTERPRISE_TOKEN" ]; then
+    info "Authenticating with enterprise registry..."
+    echo "$ENTERPRISE_TOKEN" | docker login ghcr.io -u observal-customer --password-stdin
+    COMPOSE_FILES="-f docker/docker-compose.yml -f docker/docker-compose.enterprise.yml"
+    info "Enterprise images will be used."
+  fi
+fi
+
 # ── Start services ───────────────────────────────────────────
 
 info "Starting Observal services..."
 
 cd "$INSTALL_DIR"
-docker compose -f docker/docker-compose.yml --env-file .env up -d
+docker compose $COMPOSE_FILES --env-file .env up -d
 
 info "Waiting for API to be healthy..."
 for i in $(seq 1 60); do
-  if docker compose -f docker/docker-compose.yml exec -T observal-api \
+  if docker compose $COMPOSE_FILES exec -T observal-api \
     python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')" 2>/dev/null; then
     break
   fi
   if [ "$i" -eq 60 ]; then
-    die "API did not become healthy in 5 minutes. Check logs: docker compose -f $COMPOSE_FILE logs"
+    die "API did not become healthy in 5 minutes. Check logs: docker compose $COMPOSE_FILES logs"
   fi
   sleep 5
 done
 
 # Restart LB to pick up new API container IP
-docker compose -f docker/docker-compose.yml restart observal-lb
+docker compose $COMPOSE_FILES restart observal-lb
 sleep 2
 
 info ""
