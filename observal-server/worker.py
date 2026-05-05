@@ -159,6 +159,8 @@ async def batch_generate_insights(ctx: dict):
 
 
 async def startup(ctx: dict):
+    from services.insights import configure_insights
+    configure_insights()
     logger.info("arq worker started")
 
 
