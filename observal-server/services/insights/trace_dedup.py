@@ -123,9 +123,7 @@ def _merge_spans(base: dict, incoming: dict) -> dict:
     merged = dict(base)
 
     for field in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens"):
-        if not merged.get(field) and incoming.get(field):
-            merged[field] = incoming[field]
-        elif merged.get(field) == 0 and incoming.get(field):
+        if (not merged.get(field) or merged.get(field) == 0) and incoming.get(field):
             merged[field] = incoming[field]
 
     for field in ("tool_input", "tool_response"):

@@ -53,9 +53,7 @@ async def run_single_report(report_id: str) -> None:
             # Load previous metrics for regression detection
             previous_metrics = None
             if report.previous_report_id:
-                prev_stmt = select(InsightReport).where(
-                    InsightReport.id == report.previous_report_id
-                )
+                prev_stmt = select(InsightReport).where(InsightReport.id == report.previous_report_id)
                 prev_result = await db.execute(prev_stmt)
                 prev_report = prev_result.scalar_one_or_none()
                 if prev_report and prev_report.aggregated_data:
@@ -154,11 +152,13 @@ async def discover_and_queue_reports() -> int:
                     select(InsightReport)
                     .where(
                         InsightReport.agent_id == agent.id,
-                        InsightReport.status.in_([
-                            InsightReportStatus.completed,
-                            InsightReportStatus.running,
-                            InsightReportStatus.pending,
-                        ]),
+                        InsightReport.status.in_(
+                            [
+                                InsightReportStatus.completed,
+                                InsightReportStatus.running,
+                                InsightReportStatus.pending,
+                            ]
+                        ),
                     )
                     .order_by(InsightReport.created_at.desc())
                     .limit(1)

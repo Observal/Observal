@@ -15,10 +15,7 @@ except ImportError:
 
 
 def _not_available():
-    raise RuntimeError(
-        "Insights package is not installed. "
-        "Install observal-insights to enable this feature."
-    )
+    raise RuntimeError("Insights package is not installed. Install observal-insights to enable this feature.")
 
 
 async def generate_report_content(*args, **kwargs):

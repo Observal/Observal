@@ -632,7 +632,7 @@ def _collapse_trace_events(events: list[dict]) -> list[dict]:
     """
     from services.insights.trace_dedup import collapse_duplicate_tool_spans
 
-    _TOOL_CALL_EVENTS = frozenset(
+    _tool_call_events = frozenset(
         {
             "hook_posttooluse",
             "hook_posttoolusefailure",
@@ -654,7 +654,7 @@ def _collapse_trace_events(events: list[dict]) -> list[dict]:
             except Exception:
                 attrs = {}
         event_name = attrs.get("event.name", e.get("event_name", ""))
-        if event_name in _TOOL_CALL_EVENTS:
+        if event_name in _tool_call_events:
             tool_events.append(e)
         else:
             other_events.append(e)

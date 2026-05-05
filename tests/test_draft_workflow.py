@@ -81,6 +81,7 @@ def _agent_mock(status=AgentStatus.draft, created_by=None, **extra):
     m.latest_version.is_editing = False
     m.latest_version.editing_by = None
     m.latest_version.editing_since = None
+    m.latest_version.prompt = extra.get("prompt", "Test prompt")
     # Make __table__.columns iterable for _agent_to_response
     col_keys = [
         "id",

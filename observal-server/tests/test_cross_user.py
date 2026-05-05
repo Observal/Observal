@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-prod")
+
+import pytest
 
 from services.insights.cross_user import (
     compute_cost_distribution,
@@ -22,8 +22,8 @@ from services.insights.cross_user import (
     detect_user_friction_clusters,
 )
 
-
 # ─── helpers ─────────────────────────────────────────────────────────────────
+
 
 def _make_session(
     session_id: str = "s1",
@@ -55,6 +55,7 @@ def _make_session(
 
 # ─── detect_user_friction_clusters ───────────────────────────────────────────
 
+
 class TestDetectUserFrictionClusters:
     def test_empty_sessions_returns_zeros(self):
         result = detect_user_friction_clusters([])
@@ -73,10 +74,7 @@ class TestDetectUserFrictionClusters:
 
     def test_identifies_high_friction_user(self):
         # 1 high-friction user out of 10 total (10%) → friction_concentrated is True
-        low_friction = [
-            _make_session(f"s{i}", f"u{i}", error_count=0)
-            for i in range(9)
-        ]
+        low_friction = [_make_session(f"s{i}", f"u{i}", error_count=0) for i in range(9)]
         high_friction = [
             _make_session("s9", "u_bad", error_count=20),
             _make_session("s10", "u_bad", error_count=20),
@@ -89,10 +87,7 @@ class TestDetectUserFrictionClusters:
 
     def test_spread_friction_not_concentrated(self):
         # All users have the same error rate → not concentrated
-        sessions = [
-            _make_session(f"s{i}", f"u{i}", error_count=2)
-            for i in range(10)
-        ]
+        sessions = [_make_session(f"s{i}", f"u{i}", error_count=2) for i in range(10)]
         result = detect_user_friction_clusters(sessions)
         assert result["friction_concentrated"] is False
 
@@ -127,6 +122,7 @@ class TestDetectUserFrictionClusters:
 
 
 # ─── compute_time_of_day_distribution ────────────────────────────────────────
+
 
 class TestComputeTimeOfDayDistribution:
     def test_empty_returns_zero_counts(self):
@@ -176,6 +172,7 @@ class TestComputeTimeOfDayDistribution:
 
 # ─── compute_session_length_trends ───────────────────────────────────────────
 
+
 class TestComputeSessionLengthTrends:
     def test_empty_returns_zeros(self):
         result = compute_session_length_trends([])
@@ -201,7 +198,7 @@ class TestComputeSessionLengthTrends:
         assert result["p99_duration_seconds"] == 99
 
     def test_outlier_detection_gt_3x_p50(self):
-        # p50 = 100s, outlier at 400s (> 3×100)
+        # p50 = 100s, outlier at 400s (> 3x100)
         sessions = [_make_session(f"s{i}", duration_seconds=100) for i in range(10)]
         sessions.append(_make_session("s_outlier", duration_seconds=400))
         result = compute_session_length_trends(sessions)
@@ -210,27 +207,23 @@ class TestComputeSessionLengthTrends:
 
     def test_trend_increasing(self):
         # First half: short sessions, second half: longer sessions
-        early = [
-            _make_session(f"s{i}", duration_seconds=100, first_event=f"2024-01-01 0{i}:00:00")
-            for i in range(5)
-        ]
+        early = [_make_session(f"s{i}", duration_seconds=100, first_event=f"2024-01-01 0{i}:00:00") for i in range(5)]
         late = [
-            _make_session(f"s{i+5}", duration_seconds=300, first_event=f"2024-01-31 0{i}:00:00")
-            for i in range(5)
+            _make_session(f"s{i + 5}", duration_seconds=300, first_event=f"2024-01-31 0{i}:00:00") for i in range(5)
         ]
         result = compute_session_length_trends(early + late)
         assert result["trend_direction"] == "increasing"
 
     def test_trend_stable_when_consistent(self):
         sessions = [
-            _make_session(f"s{i}", duration_seconds=200, first_event=f"2024-01-{i+1:02d} 10:00:00")
-            for i in range(10)
+            _make_session(f"s{i}", duration_seconds=200, first_event=f"2024-01-{i + 1:02d} 10:00:00") for i in range(10)
         ]
         result = compute_session_length_trends(sessions)
         assert result["trend_direction"] == "stable"
 
 
 # ─── compute_cost_distribution ───────────────────────────────────────────────
+
 
 class TestComputeCostDistribution:
     def test_empty_returns_zeros(self):
@@ -249,12 +242,9 @@ class TestComputeCostDistribution:
 
     def test_outlier_detection_gt_3x_p50(self):
         # 10 cheap sessions, 1 expensive session
-        cheap = [
-            _make_session(f"s{i}", input_tokens=100, output_tokens=50)
-            for i in range(10)
-        ]
+        cheap = [_make_session(f"s{i}", input_tokens=100, output_tokens=50) for i in range(10)]
         expensive = _make_session("s_expensive", input_tokens=100_000, output_tokens=50_000)
-        result = compute_cost_distribution(cheap + [expensive])
+        result = compute_cost_distribution([*cheap, expensive])
         outlier_ids = [s.get("session_id") for s in result["outlier_sessions"]]
         assert "s_expensive" in outlier_ids
 
@@ -265,9 +255,7 @@ class TestComputeCostDistribution:
         ]
         result = compute_cost_distribution(sessions)
         individual = compute_cost_distribution([sessions[0]])
-        assert result["total_cost_usd"] == pytest.approx(
-            individual["total_cost_usd"] * 2, rel=1e-4
-        )
+        assert result["total_cost_usd"] == pytest.approx(individual["total_cost_usd"] * 2, rel=1e-4)
 
     def test_percentile_keys_present(self):
         sessions = [_make_session(f"s{i}") for i in range(5)]
@@ -277,6 +265,7 @@ class TestComputeCostDistribution:
 
 
 # ─── compute_ide_distribution ────────────────────────────────────────────────
+
 
 class TestComputeIdeDistribution:
     def test_empty_sessions(self):
@@ -326,6 +315,7 @@ class TestComputeIdeDistribution:
 
 
 # ─── compute_cross_user_patterns (orchestrator) ───────────────────────────────
+
 
 class TestComputeCrossUserPatterns:
     @pytest.mark.asyncio

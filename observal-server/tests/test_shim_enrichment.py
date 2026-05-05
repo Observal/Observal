@@ -5,15 +5,15 @@ TDD: these tests define the expected behavior before implementation.
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from services.insights.shim_enrichment import (
+    compute_mcp_metrics,
     enrich_session_with_shim,
     get_shim_spans_for_sessions,
-    compute_mcp_metrics,
 )
-
 
 # ---------------------------------------------------------------------------
 # enrich_session_with_shim — pure logic, no I/O
@@ -23,17 +23,13 @@ from services.insights.shim_enrichment import (
 class TestEnrichSessionWithShim:
     @pytest.mark.asyncio
     async def test_returns_events_unchanged_when_no_shim_spans(self):
-        events = [
-            {"tool_name": "Read", "timestamp": "2026-01-01 00:00:01.000", "latency_ms": 50}
-        ]
+        events = [{"tool_name": "Read", "timestamp": "2026-01-01 00:00:01.000", "latency_ms": 50}]
         result = await enrich_session_with_shim("sess-1", events, [])
         assert result == events
 
     @pytest.mark.asyncio
     async def test_enriches_matching_event_with_shim_latency(self):
-        events = [
-            {"tool_name": "Read", "timestamp": "2026-01-01 00:00:01.000", "latency_ms": 50}
-        ]
+        events = [{"tool_name": "Read", "timestamp": "2026-01-01 00:00:01.000", "latency_ms": 50}]
         spans = [
             {
                 "tool_name": "Read",
@@ -54,9 +50,7 @@ class TestEnrichSessionWithShim:
 
     @pytest.mark.asyncio
     async def test_does_not_match_events_outside_2_second_window(self):
-        events = [
-            {"tool_name": "Read", "timestamp": "2026-01-01 00:00:01.000", "latency_ms": 50}
-        ]
+        events = [{"tool_name": "Read", "timestamp": "2026-01-01 00:00:01.000", "latency_ms": 50}]
         spans = [
             {
                 "tool_name": "Read",
@@ -73,9 +67,7 @@ class TestEnrichSessionWithShim:
 
     @pytest.mark.asyncio
     async def test_does_not_match_different_tool_name(self):
-        events = [
-            {"tool_name": "Read", "timestamp": "2026-01-01 00:00:01.000", "latency_ms": 50}
-        ]
+        events = [{"tool_name": "Read", "timestamp": "2026-01-01 00:00:01.000", "latency_ms": 50}]
         spans = [
             {
                 "tool_name": "Write",
@@ -172,9 +164,7 @@ class TestGetShimSpansForSessions:
         mock_response.json = lambda: {"data": mock_rows}
 
         with patch("services.insights.shim_enrichment._query", new=AsyncMock(return_value=mock_response)):
-            result = await get_shim_spans_for_sessions(
-                "my-agent", ["sess-a", "sess-b"], "2026-01-01", "2026-01-31"
-            )
+            result = await get_shim_spans_for_sessions("my-agent", ["sess-a", "sess-b"], "2026-01-01", "2026-01-31")
 
         assert set(result.keys()) == {"sess-a", "sess-b"}
         assert len(result["sess-a"]) == 1
@@ -184,9 +174,7 @@ class TestGetShimSpansForSessions:
     @pytest.mark.asyncio
     async def test_returns_empty_dict_on_query_failure(self):
         with patch("services.insights.shim_enrichment._query", new=AsyncMock(side_effect=Exception("db error"))):
-            result = await get_shim_spans_for_sessions(
-                "my-agent", ["sess-x"], "2026-01-01", "2026-01-31"
-            )
+            result = await get_shim_spans_for_sessions("my-agent", ["sess-x"], "2026-01-01", "2026-01-31")
         assert result == {}
 
 
@@ -217,16 +205,18 @@ class TestComputeMcpMetrics:
             m.json = lambda: {"data": data}
             return m
 
-        mock_agg = make_mock([
-            {
-                "total_mcp_calls": "10",
-                "latency_p50_ms": "50",
-                "latency_p95_ms": "200",
-                "latency_p99_ms": "500",
-                "schema_violations": "2",
-                "tools_available_count": "15",
-            }
-        ])
+        mock_agg = make_mock(
+            [
+                {
+                    "total_mcp_calls": "10",
+                    "latency_p50_ms": "50",
+                    "latency_p95_ms": "200",
+                    "latency_p99_ms": "500",
+                    "schema_violations": "2",
+                    "tools_available_count": "15",
+                }
+            ]
+        )
         mock_slowest = make_mock([])
         mock_errors = make_mock([])
 
