@@ -493,6 +493,7 @@ export type PublicConfig = {
   sso_only: boolean;
   saml_enabled: boolean;
   eval_configured: boolean;
+  insights_available: boolean;
   branding_logo: string | null;
   branding_app_name: string | null;
   branding_wordmark: string | null;

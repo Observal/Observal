@@ -42,7 +42,7 @@ import { getUserRole, getUserName, getUserEmail, getUserUsername } from "@/lib/a
 import { hasMinRole, type Role } from "@/hooks/use-role-guard";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
-type NavItem = { title: string; href: string; icon: typeof Home; requiresAuth?: boolean; minRole?: Role; enterpriseOnly?: boolean };
+type NavItem = { title: string; href: string; icon: typeof Home; requiresAuth?: boolean; minRole?: Role; enterpriseOnly?: boolean; requiresInsights?: boolean };
 
 const registryNav: NavItem[] = [
   { title: "Home", href: "/", icon: Home },
@@ -64,7 +64,7 @@ const adminNav: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, minRole: "admin" },
   { title: "Errors", href: "/errors", icon: AlertTriangle, minRole: "admin" },
   { title: "Evals", href: "/eval", icon: FlaskConical, minRole: "admin" },
-  { title: "Insights", href: "/insights", icon: Lightbulb, minRole: "admin" },
+  { title: "Insights", href: "/insights", icon: Lightbulb, minRole: "admin", requiresInsights: true },
   { title: "Users", href: "/users", icon: Users, minRole: "admin" },
   { title: "Audit Log", href: "/audit-log", icon: ScrollText, minRole: "admin", enterpriseOnly: true },
   { title: "Security", href: "/security-events", icon: ShieldAlert, minRole: "admin", enterpriseOnly: true },
@@ -93,7 +93,7 @@ export function RegistrySidebar() {
   const snap = useSyncExternalStore(storeSub, getAuthSnap, getServerSnap);
   const [token, role, userName, userEmail, userUsername] = snap.split("|");
   const isAuthenticated = !!token;
-  const { deploymentMode, brandingLogo, brandingAppName, brandingWordmark } = useDeploymentConfig();
+  const { deploymentMode, insightsAvailable, brandingLogo, brandingAppName, brandingWordmark } = useDeploymentConfig();
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
@@ -122,7 +122,8 @@ export function RegistrySidebar() {
     ? adminNav.filter(
         (item) =>
           (!item.minRole || hasMinRole(role, item.minRole)) &&
-          (!item.enterpriseOnly || deploymentMode === "enterprise"),
+          (!item.enterpriseOnly || deploymentMode === "enterprise") &&
+          (!item.requiresInsights || insightsAvailable),
       )
     : [];
 
