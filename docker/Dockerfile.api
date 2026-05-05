@@ -13,9 +13,18 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Optional: install observal-insights private package if present in build context.
 # To enable: symlink or clone observal-insights/ at the repo root.
 COPY docker/Dockerfile.api observal-insight[s] /tmp/_opt_insights/
+ARG STRIP_INSIGHTS_SOURCE=false
 RUN if [ -f /tmp/_opt_insights/pyproject.toml ]; then \
       uv pip install --no-deps --python /app/.venv/bin/python /tmp/_opt_insights && \
       echo "✓ observal-insights installed"; \
+      if [ "$STRIP_INSIGHTS_SOURCE" = "true" ]; then \
+        SITE_PKG=$(find /app/.venv/lib -type d -name "observal_insights" | head -1) && \
+        if [ -n "$SITE_PKG" ]; then \
+          python3 -m compileall -b "$SITE_PKG" && \
+          find "$SITE_PKG" -name '*.py' -not -name '__init__.py' -delete && \
+          echo "✓ Source stripped to .pyc only"; \
+        fi; \
+      fi; \
     else \
       echo "· observal-insights not found, skipping"; \
     fi && rm -rf /tmp/_opt_insights
