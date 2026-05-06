@@ -19,8 +19,8 @@ class AgentMetrics(BaseModel):
     agent_id: uuid.UUID
     total_interactions: int
     total_downloads: int
-    acceptance_rate: float
-    avg_tool_calls: float
+    acceptance_rate: float | None = None
+    avg_tool_calls: float | None = None
     avg_latency_ms: float
     # New structured scoring fields
     dimension_averages: dict | None = None

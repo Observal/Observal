@@ -90,7 +90,7 @@ async def mcp_metrics(
         "quantile(0.5)(latency_ms) as p50, "
         "quantile(0.9)(latency_ms) as p90, "
         "quantile(0.99)(latency_ms) as p99 "
-        "FROM mcp_tool_calls WHERE mcp_server_id = {sid:String}",
+        "FROM spans WHERE mcp_id = {sid:String} AND is_deleted = 0",
         {"param_sid": str(listing_id)},
     )
     r = rows[0] if rows else {}
@@ -128,15 +128,12 @@ async def agent_metrics(
     rows = await _ch_json(
         "SELECT "
         "count() as total, "
-        "countIf(user_action='accepted') as accepted, "
-        "round(avg(tool_calls),1) as avg_tools, "
         "round(avg(latency_ms),1) as avg_latency "
-        "FROM agent_interactions WHERE agent_id = {aid:String}",
+        "FROM spans WHERE agent_id = {aid:String} AND is_deleted = 0",
         {"param_aid": str(agent_id)},
     )
     r = rows[0] if rows else {}
     total = int(r.get("total", 0))
-    accepted = int(r.get("accepted", 0))
 
     # Fetch recent scorecards for dimension breakdown
     sc_result = await db.execute(
@@ -165,8 +162,8 @@ async def agent_metrics(
         agent_id=agent_id,
         total_interactions=total,
         total_downloads=dl_count,
-        acceptance_rate=round(accepted / total, 4) if total else 0,
-        avg_tool_calls=float(r.get("avg_tools", 0)),
+        acceptance_rate=None,
+        avg_tool_calls=None,
         avg_latency_ms=float(r.get("avg_latency", 0)),
         dimension_averages=dimension_averages,
         weakest_dimension=weakest_dimension,
@@ -200,11 +197,15 @@ async def overview_stats(
 
     days = _range_days(range_)
     tool_rows = await _ch_json(
-        "SELECT count() as cnt FROM mcp_tool_calls WHERE timestamp > now() - INTERVAL {days:UInt32} DAY",
+        "SELECT count() as cnt FROM spans "
+        "WHERE start_time > now() - INTERVAL {days:UInt32} DAY "
+        "AND is_deleted = 0",
         {"param_days": str(days)},
     )
     agent_rows = await _ch_json(
-        "SELECT count() as cnt FROM agent_interactions WHERE timestamp > now() - INTERVAL {days:UInt32} DAY",
+        "SELECT count() as cnt FROM traces "
+        "WHERE start_time > now() - INTERVAL {days:UInt32} DAY "
+        "AND is_deleted = 0",
         {"param_days": str(days)},
     )
 

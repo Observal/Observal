@@ -465,58 +465,6 @@ async def init_clickhouse():
         logger.info("ClickHouse data retention disabled (DATA_RETENTION_DAYS=0)")
 
 
-async def insert_tool_call(event: dict):
-    sql = """INSERT INTO mcp_tool_calls
-        (event_id, timestamp, mcp_server_id, tool_name, input_params, response, latency_ms, status, user_action, session_id, user_id, ide)
-        VALUES
-        ({event_id:String}, {ts:String}, {mcp_server_id:String}, {tool_name:String}, {input_params:String}, {response:String}, {latency_ms:UInt32}, {status:String}, {user_action:String}, {session_id:String}, {user_id:String}, {ide:String})"""
-    params = {
-        "param_event_id": event["event_id"],
-        "param_ts": event["timestamp"],
-        "param_mcp_server_id": event.get("mcp_server_id", ""),
-        "param_tool_name": event.get("tool_name", ""),
-        "param_input_params": event.get("input_params", ""),
-        "param_response": event.get("response", ""),
-        "param_latency_ms": str(event.get("latency_ms", 0)),
-        "param_status": event.get("status", ""),
-        "param_user_action": event.get("user_action", ""),
-        "param_session_id": event.get("session_id", ""),
-        "param_user_id": event.get("user_id", ""),
-        "param_ide": event.get("ide", ""),
-    }
-    try:
-        r = await _query(sql, params)
-        r.raise_for_status()
-        await _invalidate_cache()
-    except Exception as e:
-        logger.error("clickhouse_insert_tool_call_failed", error=str(e))
-        raise
-
-
-async def insert_agent_interaction(event: dict):
-    sql = """INSERT INTO agent_interactions
-        (event_id, timestamp, agent_id, session_id, tool_calls, user_action, latency_ms, user_id, ide)
-        VALUES
-        ({event_id:String}, {ts:String}, {agent_id:String}, {session_id:String}, {tool_calls:UInt32}, {user_action:String}, {latency_ms:UInt32}, {user_id:String}, {ide:String})"""
-    params = {
-        "param_event_id": event["event_id"],
-        "param_ts": event["timestamp"],
-        "param_agent_id": event.get("agent_id", ""),
-        "param_session_id": event.get("session_id", ""),
-        "param_tool_calls": str(event.get("tool_calls", 0)),
-        "param_user_action": event.get("user_action", ""),
-        "param_latency_ms": str(event.get("latency_ms", 0)),
-        "param_user_id": event.get("user_id", ""),
-        "param_ide": event.get("ide", ""),
-    }
-    try:
-        r = await _query(sql, params)
-        r.raise_for_status()
-        await _invalidate_cache()
-    except Exception as e:
-        logger.error("clickhouse_insert_agent_interaction_failed", error=str(e))
-        raise
-
 
 def _now_ms() -> str:
     """Current UTC timestamp as ISO string with millisecond precision."""
@@ -758,30 +706,36 @@ async def insert_otel_logs(rows: list[dict]):
 
 
 async def query_recent_events(minutes: int = 60) -> dict:
-    """Get event counts from the last N minutes."""
+    """Get event counts from the last N minutes from the active telemetry tables."""
     minutes = int(minutes)
     tool_count = 0
     agent_count = 0
 
     try:
         r = await _query(
-            "SELECT count() as cnt FROM mcp_tool_calls WHERE timestamp > now() - INTERVAL {minutes:UInt32} MINUTE FORMAT JSON",
+            "SELECT count() as cnt FROM spans "
+            "WHERE start_time > now() - INTERVAL {minutes:UInt32} MINUTE "
+            "AND is_deleted = 0 "
+            "FORMAT JSON",
             {"param_minutes": str(minutes)},
         )
         if r.status_code == 200:
             tool_count = int(r.json().get("data", [{}])[0].get("cnt", 0))
     except Exception as e:
-        logger.warning("clickhouse_query_tool_calls_failed", error=str(e))
+        logger.warning("clickhouse_query_spans_failed", error=str(e))
 
     try:
         r = await _query(
-            "SELECT count() as cnt FROM agent_interactions WHERE timestamp > now() - INTERVAL {minutes:UInt32} MINUTE FORMAT JSON",
+            "SELECT count() as cnt FROM traces "
+            "WHERE start_time > now() - INTERVAL {minutes:UInt32} MINUTE "
+            "AND is_deleted = 0 "
+            "FORMAT JSON",
             {"param_minutes": str(minutes)},
         )
         if r.status_code == 200:
             agent_count = int(r.json().get("data", [{}])[0].get("cnt", 0))
     except Exception as e:
-        logger.warning("clickhouse_query_agent_interactions_failed", error=str(e))
+        logger.warning("clickhouse_query_traces_failed", error=str(e))
 
     return {"tool_call_events": tool_count, "agent_interaction_events": agent_count}
 
