@@ -1,7 +1,7 @@
-"""Kiro IDE hook specification.
+"""Kiro IDE hook specification for session JSONL push.
 
-Kiro has no global hooks -- hooks must be injected per-agent into
-~/.kiro/agents/<name>.json. Each agent gets 5 hook events.
+Kiro hooks are per-agent in ~/.kiro/agents/<name>.json.
+Only 2 events needed: userPromptSubmit and stop (reads JSONL incrementally).
 """
 
 from __future__ import annotations
@@ -9,14 +9,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-KIRO_HOOK_EVENTS = ("agentSpawn", "userPromptSubmit", "preToolUse", "postToolUse", "stop")
+KIRO_HOOK_EVENTS = ("userPromptSubmit", "stop")
 
 # Parent of the observal_cli package directory
 _PKG_ROOT = str(Path(__file__).resolve().parent.parent.parent)
 
 
 def _python_cmd() -> str:
-    """Return '{python}' or 'PYTHONPATH=... {python}' so observal_cli is always importable."""
+    """Return python command with PYTHONPATH set if needed."""
     try:
         import importlib.util
 
@@ -29,30 +29,14 @@ def _python_cmd() -> str:
     return f"PYTHONPATH={_PKG_ROOT} {sys.executable}"
 
 
-def build_kiro_hook_cmd(hooks_url: str, agent_name: str, model: str = "") -> str:
-    """Build the command string for the Kiro telemetry hook."""
-    args = f"--url {hooks_url} --agent-name {agent_name}"
-    if model:
-        args += f" --model {model}"
-    return f"{_python_cmd()} -m observal_cli.hooks.kiro_hook {args}"
+def build_kiro_hooks(*_args, **_kwargs) -> dict:
+    """Build the complete hooks dict for a Kiro agent config.
 
-
-def build_kiro_stop_cmd(hooks_url: str, agent_name: str, model: str = "") -> str:
-    """Build the command string for the Kiro stop hook."""
-    args = f"--url {hooks_url} --agent-name {agent_name}"
-    if model:
-        args += f" --model {model}"
-    return f"{_python_cmd()} -m observal_cli.hooks.kiro_stop_hook {args}"
-
-
-def build_kiro_hooks(hooks_url: str, agent_name: str, model: str = "") -> dict:
-    """Build the complete hooks dict for a Kiro agent config."""
-    cmd = build_kiro_hook_cmd(hooks_url, agent_name, model)
-    stop = build_kiro_stop_cmd(hooks_url, agent_name, model)
+    Only 2 events: userPromptSubmit and stop.
+    Legacy callers may pass (hooks_url, agent_name) — ignored.
+    """
+    cmd = f"{_python_cmd()} -m observal_cli.hooks.kiro_session_push"
     return {
-        "agentSpawn": [{"command": cmd}],
         "userPromptSubmit": [{"command": cmd}],
-        "preToolUse": [{"matcher": "*", "command": cmd}],
-        "postToolUse": [{"matcher": "*", "command": cmd}],
-        "stop": [{"command": stop}],
+        "stop": [{"command": cmd}],
     }

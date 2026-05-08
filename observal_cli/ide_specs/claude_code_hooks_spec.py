@@ -2,135 +2,101 @@
 
 Defines the desired state of Observal-managed hooks. The reconciler
 compares this spec against the user's current ~/.claude/settings.json
-and applies non-destructive updates: adding missing hooks, upgrading
-stale ones, and preserving any non-Observal hooks the user has added.
+and applies non-destructive updates.
 
-Bump HOOKS_SPEC_VERSION whenever the hook definitions change so the
-reconciler knows to re-apply.
+Session JSONL strategy: only 2 events are needed (UserPromptSubmit + Stop)
+since we read the JSONL file incrementally rather than parsing individual
+hook events.
+
+Bump HOOKS_SPEC_VERSION whenever the hook definitions change.
 """
 
 from __future__ import annotations
 
-# Bump this when hook definitions change (new events, different scripts,
-# additional handlers, etc.).  Stored in ~/.observal/config.json so we
-# can detect when an upgrade is needed without re-reading all hooks.
-HOOKS_SPEC_VERSION = "7"
+import sys
+from pathlib import Path
+
+# Bump this when hook definitions change.
+HOOKS_SPEC_VERSION = "10"
 
 # Metadata key injected into every Observal matcher group.
-# Primary identification method — the reconciler checks this first.
 OBSERVAL_METADATA_KEY = "_observal"
 
-# Legacy marker substrings used as a fallback for matcher groups
-# created before metadata injection was added (pre-v3 upgrades).
-_LEGACY_HOOK_MARKERS = ("observal-hook", "observal-stop-hook", "/api/v1/otel/hooks")
+# Parent of the observal_cli package directory
+_PKG_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+
+# Legacy marker substrings used to detect old-style hooks for cleanup.
+_LEGACY_HOOK_MARKERS = (
+    "observal-hook",
+    "observal-stop-hook",
+    "/api/v1/otel/hooks",
+    "/api/v1/telemetry/hooks",
+    "observal_cli.hooks.kiro_hook",
+    "observal_cli.hooks.kiro_stop_hook",
+    "observal_cli.hooks.gemini_hook",
+    "observal_cli.hooks.gemini_stop_hook",
+    "observal_cli.hooks.copilot_cli_hook",
+    "observal_cli.hooks.copilot_cli_stop_hook",
+    "observal_cli.hooks.buffer_event",
+    "observal_cli.hooks.flush_buffer",
+)
 
 
 def is_observal_hook_entry(hook_entry: dict) -> bool:
-    """Return True if a single hook handler dict belongs to Observal (legacy path check)."""
+    """Return True if a single hook handler dict belongs to Observal."""
     cmd = hook_entry.get("command", "")
     url = hook_entry.get("url", "")
-    return any(m in cmd or m in url for m in _LEGACY_HOOK_MARKERS)
+    return any(m in cmd or m in url for m in _LEGACY_HOOK_MARKERS) or "observal_cli.hooks.session_push" in cmd
 
 
 def is_observal_matcher_group(matcher_group: dict) -> bool:
-    """Return True if a matcher group is Observal-managed.
-
-    Checks the _observal metadata key first (preferred), then falls
-    back to legacy path-based detection for pre-metadata installations.
-    """
-    # Primary: metadata marker
+    """Return True if a matcher group is Observal-managed."""
     if OBSERVAL_METADATA_KEY in matcher_group:
         return True
-    # Fallback: legacy path matching
-    return any(is_observal_hook_entry(hook_entry) for hook_entry in matcher_group.get("hooks", []))
+    return any(is_observal_hook_entry(h) for h in matcher_group.get("hooks", []))
 
 
-def get_desired_hooks(
-    hook_script: str | None,
-    stop_script: str | None,
-    hooks_url: str,
-    user_id: str = "",
-) -> dict[str, list[dict]]:
-    """Return the full desired hooks spec for Claude Code settings.
+def _python_cmd() -> str:
+    """Return python command with PYTHONPATH set if needed."""
+    try:
+        import importlib.util
 
-    Each event maps to a list of matcher groups.  The Stop event gets
-    two handlers: the generic hook (for basic hook_stop events) and the
-    stop-specific hook (for transcript-based response/thinking capture).
+        if importlib.util.find_spec("observal_cli") is not None:
+            return sys.executable
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        return f'set "PYTHONPATH={_PKG_ROOT}" && {sys.executable}'
+    return f"PYTHONPATH={_PKG_ROOT} {sys.executable}"
+
+
+def get_desired_hooks() -> dict[str, list[dict]]:
+    """Return the desired hooks spec for Claude Code settings.
+
+    Only 2 events: UserPromptSubmit and Stop.  Both invoke the session
+    push hook which reads the JSONL file incrementally.
     """
     meta = {OBSERVAL_METADATA_KEY: {"version": HOOKS_SPEC_VERSION}}
+    cmd = f"{_python_cmd()} -m observal_cli.hooks.session_push"
 
-    if hook_script is None:
-        raise ValueError("hook_script is required — hooks must use shell commands, not HTTP")
-
-    generic = {"type": "command", "command": hook_script}
-
-    generic_group: list[dict] = [{**meta, "hooks": [generic]}]
-
-    # Stop event: generic hook first (always fires), then stop-specific
-    # hook for transcript parsing (response + thinking capture).
-    # Each must be in its own matcher group so they receive independent
-    # copies of stdin (a single group shares one stdin pipe).
-    if stop_script:
-        stop_group: list[dict] = [
-            {**meta, "hooks": [generic]},
-            {**meta, "hooks": [{"type": "command", "command": stop_script}]},
-        ]
-    else:
-        stop_group = generic_group
+    hook_group: list[dict] = [{**meta, "hooks": [{"type": "command", "command": cmd}]}]
 
     return {
-        "SessionStart": generic_group,
-        "UserPromptSubmit": generic_group,
-        "PreToolUse": generic_group,
-        "PostToolUse": generic_group,
-        "PostToolUseFailure": generic_group,
-        "SubagentStart": generic_group,
-        "SubagentStop": generic_group,
-        "Stop": stop_group,
-        "StopFailure": generic_group,
-        "Notification": generic_group,
-        "TaskCreated": generic_group,
-        "TaskCompleted": generic_group,
-        "PreCompact": generic_group,
-        "PostCompact": generic_group,
-        "WorktreeCreate": generic_group,
-        "WorktreeRemove": generic_group,
-        "Elicitation": generic_group,
-        "ElicitationResult": generic_group,
+        "UserPromptSubmit": hook_group,
+        "Stop": hook_group,
     }
 
 
-def get_desired_env(
-    server_url: str,
-    hooks_token: str,
-    user_id: str = "",
-    user_name: str = "",
-    agent_name: str = "",
-) -> dict[str, str]:
-    """Return the desired Observal env vars for Claude Code settings."""
-    env: dict[str, str] = {
-        "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-        "OTEL_METRICS_EXPORTER": "otlp",
-        "OTEL_LOGS_EXPORTER": "otlp",
-        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
-        "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {hooks_token}",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": server_url.rstrip("/"),
-        "OBSERVAL_HOOKS_URL": f"{server_url.rstrip('/')}/api/v1/telemetry/hooks",
-    }
-    env["OBSERVAL_HOOKS_SPEC_VERSION"] = HOOKS_SPEC_VERSION
-    if user_id:
-        env["OBSERVAL_USER_ID"] = user_id
-        env["OTEL_RESOURCE_ATTRIBUTES"] = f"user.id={user_id}"
-    if user_name:
-        env["OBSERVAL_USERNAME"] = user_name
-    if agent_name:
-        env["OBSERVAL_AGENT_NAME"] = agent_name
+def get_desired_env(*_args, **_kwargs) -> dict[str, str]:
+    """Legacy stub — no env vars needed for session JSONL push.
 
-    return env
+    Old callers pass (server_url, hooks_token, ...) — ignored.
+    Config now lives in ~/.observal/config.json.
+    """
+    return {}
 
 
-# Keys in settings.env that Observal manages.  Used by the reconciler
-# to know which env vars it can safely update without touching others.
+# Keys in settings.env that Observal manages (for cleanup).
 MANAGED_ENV_KEYS = frozenset(
     {
         "CLAUDE_CODE_ENABLE_TELEMETRY",
