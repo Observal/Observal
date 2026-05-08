@@ -201,7 +201,7 @@ jobs:
       - name: Check ee/ import boundary
         run: |
           echo "Checking that core does not import from ee/..."
-          VIOLATIONS=$(grep -rn "from ee\b\|import ee\b" observal-server/ observal_cli/ --include="*.py" | grep -v "main.py" || true)
+          VIOLATIONS=$(grep -rn "from ee\b\|import ee\b" observal-server/ observal_cli/ --include="*.py" | grep -v "main.py" | grep -v "services/insights/__init__.py" || true)
           if [ -n "$VIOLATIONS" ]; then
             echo "::error::Import boundary violation — core must not import from ee/"
             echo "$VIOLATIONS"

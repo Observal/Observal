@@ -26,10 +26,7 @@ else:
 
 
 def _not_available():
-    raise RuntimeError(
-        "Insights is an enterprise feature. "
-        "Set DEPLOYMENT_MODE=enterprise to enable."
-    )
+    raise RuntimeError("Insights is an enterprise feature. Set DEPLOYMENT_MODE=enterprise to enable.")
 
 
 async def generate_report_content(*args, **kwargs):

@@ -161,11 +161,7 @@ async def store_cached_metas(
     from sqlalchemy import select
 
     for session_id, meta in session_metas.items():
-        stmt = (
-            select(MetaModel)
-            .where(MetaModel.agent_id == agent_id)
-            .where(MetaModel.session_id == session_id)
-        )
+        stmt = select(MetaModel).where(MetaModel.agent_id == agent_id).where(MetaModel.session_id == session_id)
         result = await db.execute(stmt)
         existing = result.scalar_one_or_none()
 

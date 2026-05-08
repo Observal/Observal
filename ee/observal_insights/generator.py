@@ -133,7 +133,14 @@ async def _run_pipeline(
         logger.warning("insight_no_sessions", agent_id=agent_id)
         return {
             "metrics": {},
-            "narrative": {"at_a_glance": {"health": "unknown", "whats_working": "No session data available.", "whats_hindering": "N/A", "quick_win": "N/A"}},
+            "narrative": {
+                "at_a_glance": {
+                    "health": "unknown",
+                    "whats_working": "No session data available.",
+                    "whats_hindering": "N/A",
+                    "quick_win": "N/A",
+                }
+            },
             "sessions_analyzed": 0,
             "models_used": [],
             "report_version": REPORT_VERSION,
@@ -155,10 +162,7 @@ async def _run_pipeline(
     cross_user_patterns = await compute_cross_user_patterns(enriched_metas)
 
     # -- Step 4: Build transcripts for substantive sessions --
-    substantive_sessions = [
-        (sid, meta) for sid, meta in enriched_metas.items()
-        if meta.get("is_substantive", False)
-    ]
+    substantive_sessions = [(sid, meta) for sid, meta in enriched_metas.items() if meta.get("is_substantive", False)]
     # Sort by duration descending, take top N
     substantive_sessions.sort(key=lambda x: int(x[1].get("duration_seconds", 0)), reverse=True)
     substantive_sessions = substantive_sessions[:MAX_TRANSCRIPT_SESSIONS]
@@ -226,9 +230,7 @@ async def _run_pipeline(
     )
 
     # Collect models used
-    models_used = list({
-        s.get("model", "") for s in enriched_sessions if s.get("model")
-    })
+    models_used = list({s.get("model", "") for s in enriched_sessions if s.get("model")})
 
     logger.info(
         "insight_generation_complete",
@@ -300,48 +302,56 @@ def _build_data_block(
     # Add MCP shim metrics if available (Claude Code + Observal shim only)
     mcp = metrics.get("mcp", {})
     if mcp and int(mcp.get("total_mcp_calls", 0)) > 0:
-        sections.extend([
-            "",
-            "## MCP Shim Metrics (precise latency + schema compliance)",
-            json.dumps(
-                {
-                    "mcp_latency": {
-                        "p50": mcp.get("latency_p50_ms", 0),
-                        "p95": mcp.get("latency_p95_ms", 0),
-                        "p99": mcp.get("latency_p99_ms", 0),
+        sections.extend(
+            [
+                "",
+                "## MCP Shim Metrics (precise latency + schema compliance)",
+                json.dumps(
+                    {
+                        "mcp_latency": {
+                            "p50": mcp.get("latency_p50_ms", 0),
+                            "p95": mcp.get("latency_p95_ms", 0),
+                            "p99": mcp.get("latency_p99_ms", 0),
+                        },
+                        "schema_violations": mcp.get("schema_violations", 0),
+                        "schema_violation_rate": mcp.get("schema_violation_rate", 0.0),
+                        "tools_available_count": mcp.get("tools_available_count", 0),
+                        "slowest_tools": mcp.get("slowest_tools", []),
+                        "error_tools": mcp.get("error_tools", []),
                     },
-                    "schema_violations": mcp.get("schema_violations", 0),
-                    "schema_violation_rate": mcp.get("schema_violation_rate", 0.0),
-                    "tools_available_count": mcp.get("tools_available_count", 0),
-                    "slowest_tools": mcp.get("slowest_tools", []),
-                    "error_tools": mcp.get("error_tools", []),
-                },
-                indent=2,
-            ),
-        ])
+                    indent=2,
+                ),
+            ]
+        )
 
     # Add facet summary if available
     if facet_summary:
-        sections.extend([
-            "",
-            "## Qualitative Facet Summary (from LLM analysis of individual sessions)",
-            json.dumps(facet_summary, indent=2),
-        ])
+        sections.extend(
+            [
+                "",
+                "## Qualitative Facet Summary (from LLM analysis of individual sessions)",
+                json.dumps(facet_summary, indent=2),
+            ]
+        )
 
     # Add cross-user patterns if available
     if cross_user_patterns:
-        sections.extend([
-            "",
-            "## Cross-User Patterns",
-            json.dumps(cross_user_patterns, indent=2),
-        ])
+        sections.extend(
+            [
+                "",
+                "## Cross-User Patterns",
+                json.dumps(cross_user_patterns, indent=2),
+            ]
+        )
 
     # Add regression flags if available
     if regressions:
-        sections.extend([
-            "",
-            "## Regression Flags (vs previous period)",
-            json.dumps(regressions, indent=2),
-        ])
+        sections.extend(
+            [
+                "",
+                "## Regression Flags (vs previous period)",
+                json.dumps(regressions, indent=2),
+            ]
+        )
 
     return "\n".join(sections)

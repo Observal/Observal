@@ -42,25 +42,24 @@ def detect_user_friction_clusters(sessions: list[dict]) -> dict:
     per_user_summary = []
     for uid, errs in user_errors.items():
         avg = sum(errs) / len(errs)
-        per_user_summary.append({
-            "user_id": uid,
-            "session_count": len(errs),
-            "avg_error_rate": round(avg, 4),
-        })
+        per_user_summary.append(
+            {
+                "user_id": uid,
+                "session_count": len(errs),
+                "avg_error_rate": round(avg, 4),
+            }
+        )
 
     total_users = len(user_errors)
     avg_user_error_rate = overall_error_rate  # same as global avg by definition
 
     high_friction_users = sum(
-        1 for entry in per_user_summary
+        1
+        for entry in per_user_summary
         if avg_user_error_rate > 0 and entry["avg_error_rate"] >= 2 * avg_user_error_rate
     )
 
-    friction_concentrated = (
-        total_users > 0
-        and high_friction_users > 0
-        and (high_friction_users / total_users) <= 0.20
-    )
+    friction_concentrated = total_users > 0 and high_friction_users > 0 and (high_friction_users / total_users) <= 0.20
 
     return {
         "total_users": total_users,
@@ -150,10 +149,7 @@ def compute_session_length_trends(sessions: list[dict]) -> dict:
     p99 = sorted_durations[int((n - 1) * 0.99)] if n > 1 else sorted_durations[-1]
 
     # Outliers: sessions with duration > 3x p50
-    outlier_sessions = [
-        s for s, d in zip(sessions, durations)
-        if p50 > 0 and d > 3 * p50
-    ]
+    outlier_sessions = [s for s, d in zip(sessions, durations) if p50 > 0 and d > 3 * p50]
 
     # Trend: compare first half avg vs second half avg (sorted by first_event if possible)
     try:
@@ -231,10 +227,7 @@ def compute_cost_distribution(sessions: list[dict]) -> dict:
     p99 = costs_sorted[int(n * 0.99)][1] if n > 1 else costs_sorted[-1][1]
     total = sum(c for _, c in session_costs)
 
-    outlier_sessions = [
-        s for s, c in session_costs
-        if p50 > 0 and c > 3 * p50
-    ]
+    outlier_sessions = [s for s, c in session_costs if p50 > 0 and c > 3 * p50]
 
     return {
         "p50_cost_usd": round(p50, 6),

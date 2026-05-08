@@ -108,9 +108,7 @@ def _parse_ts_ms(ts: str) -> float | None:
     return None
 
 
-async def enrich_session_with_shim(
-    session_id: str, hook_events: list[dict], shim_spans: list[dict]
-) -> list[dict]:
+async def enrich_session_with_shim(session_id: str, hook_events: list[dict], shim_spans: list[dict]) -> list[dict]:
     """Join shim spans with hook events for a single session.
 
     Match by: tool_name + timestamp proximity (within 2 seconds).

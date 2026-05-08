@@ -60,6 +60,9 @@
     "vaul": "^1.1.2",
     "zod": "^4.3.6"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  },
   "devDependencies": {
     "@eslint/compat": "^2.0.5",
     "@playwright/test": "^1.59.1",

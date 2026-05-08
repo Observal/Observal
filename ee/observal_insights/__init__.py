@@ -52,9 +52,11 @@ def configure(
 # Lazy imports for public API — avoids import-time dependency checks
 def generate_report_content(*args, **kwargs):
     from .generator import generate_report_content as _impl
+
     return _impl(*args, **kwargs)
 
 
 def render_report_html(*args, **kwargs):
     from .html_export import render_report_html as _impl
+
     return _impl(*args, **kwargs)

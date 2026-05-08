@@ -142,11 +142,7 @@ async def store_facets(
     from sqlalchemy import select
 
     # Check if already exists (unique on agent_id + session_id)
-    stmt = (
-        select(FacetsModel)
-        .where(FacetsModel.agent_id == agent_id)
-        .where(FacetsModel.session_id == session_id)
-    )
+    stmt = select(FacetsModel).where(FacetsModel.agent_id == agent_id).where(FacetsModel.session_id == session_id)
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
 
