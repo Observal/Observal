@@ -38,6 +38,7 @@ from api.routes.ingest import router as ingest_router
 from api.routes.insights import router as insights_router
 from api.routes.jwks import router as jwks_router
 from api.routes.mcp import router as mcp_router
+from api.routes.preview import router as preview_router
 from api.routes.prompt import router as prompt_router
 from api.routes.reconcile import router as reconcile_router
 from api.routes.review import router as review_router
@@ -293,6 +294,7 @@ app.include_router(jwks_router)
 app.include_router(mcp_router)
 app.include_router(review_router)
 app.include_router(agent_router)
+app.include_router(preview_router)
 app.include_router(skill_router)
 app.include_router(hook_router)
 app.include_router(prompt_router)
