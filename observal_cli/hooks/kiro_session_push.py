@@ -120,7 +120,11 @@ def _run(home: Path | None = None) -> None:
     except Exception:
         event = {}
 
-    hook_event: str = event.get("hook_event_name", "")
+    hook_event: str = (
+        event.get("hook_event_name", "")
+        or event.get("hookEventName", "")
+        or event.get("event", "")
+    )
     if not hook_event:
         _h = home if home is not None else Path.home()
         _sf = _h / ".observal" / ".kiro-session"
@@ -152,9 +156,28 @@ def _run(home: Path | None = None) -> None:
     lines, bytes_read = read_new_lines(jsonl_path, offset=offset)
 
     if not lines:
-        # Nothing new -- still mark finalized on Stop so recovery skips it
-        if hook_event.lower() == "stop":
+        # Nothing new — still mark finalized on Stop so recovery skips it.
+        # Even with no new lines, send credits if this is a Stop event.
+        is_stop = hook_event.lower() == "stop"
+        if is_stop:
             write_cursor(session_id, offset, line_count, finalized=True, home=home)
+            credits = _read_kiro_credits(session_id, home=home)
+            if credits is not None:
+                payload_credits = build_payload(
+                    session_id=session_id,
+                    lines=[],
+                    start_offset=line_count,
+                    hook_event=hook_event,
+                    line_count_before=line_count,
+                    new_offset=offset,
+                )
+                payload_credits["ide"] = "kiro"
+                payload_credits["total_credits"] = credits
+                post_to_server(
+                    server_url=config["server_url"],
+                    access_token=config["access_token"],
+                    payload=payload_credits,
+                )
         return
 
     new_offset = offset + bytes_read
