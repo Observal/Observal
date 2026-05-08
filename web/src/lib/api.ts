@@ -284,6 +284,14 @@ export const registry = {
     get<{ total: number; unique_users: number; recent_7d: number }>(`/agents/${id}/downloads`),
   validate: (body: { components: { component_type: string; component_id: string }[] }) =>
     post<ValidationResult>("/agents/validate", body),
+  previewConfig: (body: {
+    name: string;
+    description: string;
+    prompt: string;
+    model_name: string;
+    components: { component_type: string; component_id: string }[];
+    target_ides?: string[];
+  }) => post<{ configs: Record<string, Record<string, string>> }>("/agents/preview-config", body),
   my: (type?: RegistryType) => get<RegistryItem[]>(`/${type ?? "agents"}/my`),
   archived: () => get<RegistryItem[]>("/agents/archived"),
   archive: (id: string) => patch(`/agents/${id}/archive`),
