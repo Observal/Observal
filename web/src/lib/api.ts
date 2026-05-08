@@ -510,6 +510,12 @@ export const config = {
   public: () => get<PublicConfig>("/config/public"),
 };
 
+// ── Models ─────────────────────────────────────────────────────────
+export const models = {
+  list: () => get<import("./types").ModelCatalog>("/models"),
+  refresh: () => post<import("./types").ModelRefreshResult>("/admin/models/refresh"),
+};
+
 // ── Bulk ───────────────────────────────────────────────────────────
 export const bulk = {
   createAgents: (body: { agents: unknown[]; dry_run?: boolean }) =>

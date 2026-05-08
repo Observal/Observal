@@ -63,6 +63,7 @@ class AgentCreateRequest(BaseModel):
     prompt: str = ""
     model_name: str
     model_config_json: dict = {}
+    models_by_ide: dict[str, str] = {}
     supported_ides: list[str] = []
     mcp_server_ids: list[uuid.UUID] = []  # kept for backwards compat
     components: list[ComponentRef] = []  # new: all component types
@@ -90,6 +91,7 @@ class AgentUpdateRequest(BaseModel):
     prompt: str | None = None
     model_name: str | None = None
     model_config_json: dict | None = None
+    models_by_ide: dict[str, str] | None = None
     supported_ides: list[str] | None = None
     mcp_server_ids: list[uuid.UUID] | None = None  # kept for backwards compat
     components: list[ComponentRef] | None = None  # new: all component types
@@ -162,6 +164,7 @@ class AgentResponse(BaseModel):
     prompt: str
     model_name: str
     model_config_json: dict
+    models_by_ide: dict[str, str] = {}
     external_mcps: list = []
     supported_ides: list[str]
     required_ide_features: list[str] = []
@@ -248,6 +251,7 @@ class AgentVersionCreateRequest(BaseModel):
     prompt: str = ""
     model_name: str
     model_config_json: dict = {}
+    models_by_ide: dict[str, str] = {}
     external_mcps: list[ExternalMcp] = []
     supported_ides: list[str] = []
     components: list[ComponentRef] = []

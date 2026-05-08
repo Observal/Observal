@@ -1,0 +1,89 @@
+{
+  "$schema": "Cases that drive parity tests across services/model_display.py + web/src/lib/model-display.ts + observal_cli/render.format_model.",
+  "cases": [
+    {
+      "name": "rolling_pointer_no_date",
+      "display_name": "Claude Sonnet 4.5 (latest)",
+      "model_id": "claude-sonnet-4-5",
+      "release_date": "2025-09-29",
+      "disambiguate": false,
+      "expected": {
+        "primary": "Claude Sonnet 4.5",
+        "secondary": "latest",
+        "is_rolling": true
+      }
+    },
+    {
+      "name": "dated_snapshot_solo_no_secondary",
+      "display_name": "Claude Opus 4.5",
+      "model_id": "claude-opus-4-5-20251101",
+      "release_date": "2025-11-01",
+      "disambiguate": false,
+      "expected": {
+        "primary": "Claude Opus 4.5",
+        "secondary": null,
+        "is_rolling": false
+      }
+    },
+    {
+      "name": "dated_snapshot_collides_shows_date",
+      "display_name": "Claude 3.5 Sonnet (2024-10-22)",
+      "model_id": "claude-3-5-sonnet-20241022",
+      "release_date": "2024-10-22",
+      "disambiguate": true,
+      "expected": {
+        "primary": "Claude 3.5 Sonnet",
+        "secondary": "Oct 22, 2024",
+        "is_rolling": false
+      }
+    },
+    {
+      "name": "rolling_pointer_collides_shows_latest",
+      "display_name": "Claude Sonnet 4.5",
+      "model_id": "claude-sonnet-4-5",
+      "release_date": "2025-09-29",
+      "disambiguate": true,
+      "expected": {
+        "primary": "Claude Sonnet 4.5",
+        "secondary": "latest",
+        "is_rolling": true
+      }
+    },
+    {
+      "name": "compact_date_strip",
+      "display_name": "GPT-4o Snapshot 2024-05-13",
+      "model_id": "gpt-4o-2024-05-13",
+      "release_date": "2024-05-13",
+      "disambiguate": true,
+      "expected": {
+        "primary": "GPT-4o Snapshot",
+        "secondary": "May 13, 2024",
+        "is_rolling": false
+      }
+    },
+    {
+      "name": "missing_display_name_falls_back_to_id",
+      "display_name": "",
+      "model_id": "gemini-1.5-pro-latest",
+      "release_date": null,
+      "disambiguate": false,
+      "expected": {
+        "primary": "gemini-1.5-pro",
+        "secondary": "latest",
+        "is_rolling": true
+      }
+    },
+    {
+      "name": "no_date_no_disambig",
+      "display_name": "Claude Haiku 4.5",
+      "model_id": "claude-haiku-4-5",
+      "release_date": "2025-10-01",
+      "disambiguate": false,
+      "expected": {
+        "primary": "Claude Haiku 4.5",
+        "secondary": null,
+        "is_rolling": true
+      }
+    }
+  ]
+}

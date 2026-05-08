@@ -170,6 +170,7 @@ def _agent_to_response(
         "prompt",
         "model_name",
         "model_config_json",
+        "models_by_ide",
         "external_mcps",
         "supported_ides",
         "required_ide_features",
@@ -178,6 +179,10 @@ def _agent_to_response(
         "rejection_reason",
     ):
         agent_dict[field] = getattr(agent, field)
+    # Defensive: tests sometimes pass MagicMock agents that don't return real
+    # dicts for new fields. Fall back to an empty dict so AgentResponse parses.
+    if not isinstance(agent_dict.get("models_by_ide"), dict):
+        agent_dict["models_by_ide"] = {}
     agent_dict["mcp_links"] = mcp_links
     agent_dict["component_links"] = component_links
     agent_dict["goal_template"] = goal_template
@@ -298,6 +303,7 @@ async def create_agent(
         prompt=req.prompt,
         model_name=req.model_name,
         model_config_json=req.model_config_json,
+        models_by_ide=req.models_by_ide,
         external_mcps=[m.model_dump() for m in req.external_mcps],
         supported_ides=req.supported_ides,
         status=AgentStatus.pending,
@@ -726,6 +732,7 @@ async def update_agent(
         "prompt",
         "model_name",
         "model_config_json",
+        "models_by_ide",
         "supported_ides",
         "visibility",
     ):
@@ -975,8 +982,23 @@ async def install_agent(
     name_map = await _resolve_component_names(agent.components, db)
 
     from api.routes.config import derive_endpoints
+    from services.model_resolver import resolve_model_for_ide
 
     endpoints = derive_endpoints(request)
+
+    install_options: dict = dict(req.options or {})
+    raw_override = install_options.get("model") or None
+    if isinstance(raw_override, str) and raw_override.strip().lower() == "inherit":
+        raw_override = None
+    resolved_model, model_warnings = await resolve_model_for_ide(
+        req.ide,
+        model_name=getattr(agent, "model_name", "") or "",
+        models_by_ide=getattr(agent, "models_by_ide", {}) or {},
+        override=raw_override,
+    )
+    install_options["_resolved_model"] = resolved_model
+    install_options["_model_warnings"] = model_warnings
+
     snippet = generate_agent_config(
         agent,
         req.ide,
@@ -984,7 +1006,7 @@ async def install_agent(
         mcp_listings=mcp_listings_map,
         component_names=name_map,
         env_values=req.env_values,
-        options=req.options,
+        options=install_options,
         platform=req.platform,
         skill_listings=skill_listings_map,
         hook_listings=hook_listings_map,
@@ -1382,6 +1404,7 @@ async def save_draft(
         prompt=req.prompt,
         model_name=req.model_name,
         model_config_json=req.model_config_json,
+        models_by_ide=req.models_by_ide,
         external_mcps=[m.model_dump() for m in req.external_mcps],
         supported_ides=req.supported_ides,
         status=AgentStatus.draft,
@@ -1484,7 +1507,15 @@ async def update_draft(
     if not version:
         raise HTTPException(status_code=400, detail="Agent has no version to update")
 
-    for field in ("version", "description", "prompt", "model_name", "model_config_json", "supported_ides"):
+    for field in (
+        "version",
+        "description",
+        "prompt",
+        "model_name",
+        "model_config_json",
+        "models_by_ide",
+        "supported_ides",
+    ):
         val = getattr(req, field)
         if val is not None:
             setattr(version, field, val)

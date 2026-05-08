@@ -62,3 +62,36 @@ def test_ide_registry_match():
             assert server_spec[key] == cli_spec[key], (
                 f"IDE_REGISTRY[{ide!r}][{key!r}] mismatch: server={server_spec[key]!r}, cli={cli_spec[key]!r}"
             )
+
+
+def test_ide_registry_model_choice_fields():
+    """Every IDE must declare accepts_model_choice + auto_sentinel."""
+    server_reg = importlib.import_module("schemas.ide_registry")
+    cli_reg = importlib.import_module("observal_cli.ide_registry")
+    expected_accepts = {
+        "claude-code": True,
+        "kiro": True,
+        "codex": True,
+        "gemini-cli": True,
+        "opencode": True,
+        "cursor": False,
+        "vscode": False,
+        "copilot": False,
+        "copilot-cli": False,
+    }
+    for reg_name, reg in (("server", server_reg.IDE_REGISTRY), ("cli", cli_reg.IDE_REGISTRY)):
+        for ide, accepts in expected_accepts.items():
+            spec = reg[ide]
+            assert "accepts_model_choice" in spec, f"{reg_name}: {ide} missing accepts_model_choice"
+            assert "auto_sentinel" in spec, f"{reg_name}: {ide} missing auto_sentinel"
+            assert spec["accepts_model_choice"] is accepts, (
+                f"{reg_name}: {ide}.accepts_model_choice={spec['accepts_model_choice']!r}, expected {accepts!r}"
+            )
+            if accepts:
+                assert isinstance(spec["auto_sentinel"], dict), (
+                    f"{reg_name}: {ide} accepts_model_choice but auto_sentinel is not a dict"
+                )
+            else:
+                assert spec["auto_sentinel"] is None, (
+                    f"{reg_name}: {ide} does not accept_model_choice; auto_sentinel must be None"
+                )

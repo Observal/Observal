@@ -75,6 +75,7 @@ def _version_to_detail(ver: AgentVersion) -> dict:
             "prompt": ver.prompt,
             "model_name": ver.model_name,
             "model_config_json": ver.model_config_json,
+            "models_by_ide": ver.models_by_ide or {},
             "external_mcps": ver.external_mcps,
             "yaml_snapshot": ver.yaml_snapshot,
             "ide_configs": ver.ide_configs,
@@ -226,6 +227,7 @@ async def _create_agent_version(
         prompt=req.prompt,
         model_name=req.model_name,
         model_config_json=req.model_config_json,
+        models_by_ide=req.models_by_ide,
         external_mcps=[m.model_dump() for m in req.external_mcps] if req.external_mcps else [],
         supported_ides=req.supported_ides,
         yaml_snapshot=req.yaml_snapshot,
@@ -295,9 +297,22 @@ async def _create_agent_version(
     # but supported_ides is authoritative for which configs to generate.
     ide_configs: dict = {}
     failed_ides: list[str] = []
+    from services.model_resolver import resolve_model_for_ide
+
     for ide in ver.supported_ides or []:
         try:
-            ide_configs[ide] = generate_agent_config(ver, ide, mcp_listings=mcp_listings_map)
+            resolved_model, model_warnings = await resolve_model_for_ide(
+                ide,
+                model_name=ver.model_name or "",
+                models_by_ide=ver.models_by_ide or {},
+                override=None,
+            )
+            ide_configs[ide] = generate_agent_config(
+                ver,
+                ide,
+                mcp_listings=mcp_listings_map,
+                options={"_resolved_model": resolved_model, "_model_warnings": model_warnings},
+            )
         except Exception:
             logger.exception(
                 "IDE config generation failed for agent=%s version=%s ide=%s", agent.name, req.version, ide
@@ -504,6 +519,7 @@ async def _get_version_diff(
             "prompt": ver.prompt,
             "model_name": ver.model_name,
             "model_config_json": ver.model_config_json,
+            "models_by_ide": ver.models_by_ide or {},
             "supported_ides": ver.supported_ides,
             "external_mcps": ver.external_mcps,
             "components": comp_details,

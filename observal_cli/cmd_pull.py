@@ -226,27 +226,56 @@ def _resolve_path(raw_path: str, target_dir: Path, *, allow_home: bool = False) 
 _SCOPE_AWARE_IDES = get_scope_aware_ides()
 
 
+def _parse_model_overrides(values: list[str]) -> tuple[str | None, dict[str, str]]:
+    """Parse one or more ``--model`` flags.
+
+    Two grammars are accepted:
+
+    * ``--model <value>`` — applies to the IDE selected for this pull.
+    * ``--model <ide>=<value>`` — explicit per-IDE override (advanced; lets
+      a single command target a specific IDE without ambiguity).
+
+    Returns ``(default_value, per_ide_overrides)``.
+    """
+    default: str | None = None
+    overrides: dict[str, str] = {}
+    for raw in values or []:
+        if "=" in raw:
+            ide_key, _, val = raw.partition("=")
+            ide_key = ide_key.strip()
+            val = val.strip()
+            if ide_key and val:
+                overrides[ide_key] = val
+        elif raw.strip():
+            default = raw.strip()
+    return default, overrides
+
+
 def _collect_install_options(
     ide: str,
     *,
     scope: str | None,
-    model: str | None,
+    model_default: str | None,
+    model_overrides: dict[str, str],
     tools: str | None,
     no_prompt: bool,
+    refresh_models: bool = False,
 ) -> dict:
     """Interactively collect IDE-specific install options.
 
-    Honors explicit --scope/--model/--tools flags; only prompts for what's
-    missing when running in an interactive terminal and --no-prompt isn't set.
+    Honors explicit ``--scope``/``--model``/``--tools`` flags; only prompts for
+    what's missing when running in an interactive terminal and ``--no-prompt``
+    isn't set. The model picker now consults the live catalog (``GET /api/v1/models``)
+    instead of a hardcoded list.
     """
     import sys
 
+    from observal_cli.ide_registry import accepts_model_choice
     from observal_cli.prompts import select_one
 
     opts: dict = {}
     interactive = sys.stdin.isatty() and not no_prompt
 
-    # Scope (Claude Code, Kiro, Gemini CLI, Cursor)
     if ide in _SCOPE_AWARE_IDES:
         if scope:
             opts["scope"] = scope
@@ -257,20 +286,31 @@ def _collect_install_options(
         else:
             opts["scope"] = "project"
 
-    # Claude Code only: model and tools
-    if ide in ("claude-code", "claude_code"):
-        if model:
-            opts["model"] = model
+    if accepts_model_choice(ide):
+        explicit = model_overrides.get(ide) or model_default
+        if explicit:
+            opts["model"] = explicit
         elif interactive:
-            choice = select_one(
-                "  Model",
-                ["inherit (use main session model)", "sonnet", "opus", "haiku"],
-                default="inherit (use main session model)",
-            )
-            opts["model"] = "inherit" if choice.startswith("inherit") else choice
+            from observal_cli import model_catalog as _catalog
 
-        if tools:
-            opts["tools"] = tools
+            try:
+                catalog = _catalog.fetch_catalog(refresh=refresh_models)
+            except Exception:
+                catalog = {"models": []}
+            choices = _catalog.model_choices_for_picker(catalog, ide)
+            choice_labels = [c[0] for c in choices] if choices else []
+            choice_labels = ["auto (let the IDE decide)", *choice_labels]
+            picked = select_one("  Model", choice_labels, default="auto (let the IDE decide)")
+            if picked.startswith("auto"):
+                opts["model"] = ""
+            else:
+                for label, model_id in choices:
+                    if label == picked:
+                        opts["model"] = model_id
+                        break
+
+    if ide in ("claude-code", "claude_code") and tools:
+        opts["tools"] = tools
 
     return opts
 
@@ -290,10 +330,18 @@ def register_pull(app: typer.Typer):
         scope: str | None = typer.Option(
             None, "--scope", help="Install scope: 'project' or 'user' (Claude Code/Kiro/Gemini only)"
         ),
-        model: str | None = typer.Option(
-            None, "--model", help="Sub-agent model: inherit, sonnet, opus, haiku (Claude Code only)"
+        model: list[str] | None = typer.Option(
+            None,
+            "--model",
+            help=(
+                "Model override. Accepts '<value>' (applies to the selected --ide) or "
+                "'<ide>=<value>' for explicit per-IDE overrides. May be repeated."
+            ),
         ),
         tools: str | None = typer.Option(None, "--tools", help="Comma-separated tool whitelist (Claude Code only)"),
+        refresh_models: bool = typer.Option(
+            False, "--refresh-models", help="Bust the local model catalog cache before showing the model picker"
+        ),
         no_prompt: bool = typer.Option(False, "--no-prompt", "-y", help="Skip interactive prompts"),
     ):
         """Fetch agent config and write IDE files to disk.
@@ -311,9 +359,21 @@ def register_pull(app: typer.Typer):
 
         env_values = _collect_mcp_env_vars(agent_detail)
 
-        # Collect IDE-specific install options (scope, model, tools)
         rprint(f"\n[bold]Install options for [cyan]{ide}[/cyan]:[/bold]")
-        options = _collect_install_options(ide, scope=scope, model=model, tools=tools, no_prompt=no_prompt)
+        if refresh_models:
+            from observal_cli import model_catalog as _catalog
+
+            _catalog.invalidate_cache()
+        model_default, model_overrides = _parse_model_overrides(model or [])
+        options = _collect_install_options(
+            ide,
+            scope=scope,
+            model_default=model_default,
+            model_overrides=model_overrides,
+            tools=tools,
+            no_prompt=no_prompt,
+            refresh_models=refresh_models,
+        )
         is_user_scope = options.get("scope") == "user"
         if is_user_scope:
             rprint("  [dim]Files will be written to your home directory (user scope).[/dim]")
@@ -433,6 +493,12 @@ def register_pull(app: typer.Typer):
         for path, status in written:
             style = "dim" if dry_run else "green"
             rprint(f"  [{style}]{status}[/{style}]  {path}")
+
+        warnings_list = snippet.get("_warnings") or []
+        if warnings_list:
+            rprint("")
+            for w in warnings_list:
+                rprint(f"  [yellow]⚠[/yellow]  {w}")
 
         # ── Setup commands (Claude Code) ────────────────────
         setup_cmds = snippet.get("mcp_setup_commands")

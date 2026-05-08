@@ -65,3 +65,30 @@ export const FEATURE_LABELS: Record<IdeFeature, string> = {
   steering_files: "Steering files",
   otlp_telemetry: "OTLP telemetry",
 };
+
+/**
+ * Whether each IDE accepts an explicit model choice.
+ * Mirror of `accepts_model_choice` in IDE_REGISTRY (server) /
+ * observal_cli/ide_registry.py (CLI).
+ */
+export const IDE_ACCEPTS_MODEL_CHOICE: Record<IdeName, boolean> = {
+  "claude-code": true,
+  kiro: true,
+  "gemini-cli": true,
+  codex: true,
+  opencode: true,
+  cursor: false,
+  copilot: false,
+  "copilot-cli": false,
+  vscode: false,
+};
+
+export function ideAcceptsModelChoice(ide: string): boolean {
+  return IDE_ACCEPTS_MODEL_CHOICE[ide as IdeName] === true;
+}
+
+export function getModelChoiceIdes(): IdeName[] {
+  return (Object.keys(IDE_ACCEPTS_MODEL_CHOICE) as IdeName[]).filter(
+    (ide) => IDE_ACCEPTS_MODEL_CHOICE[ide],
+  );
+}

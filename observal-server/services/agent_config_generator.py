@@ -670,6 +670,7 @@ def generate_agent_config(
         kiro_spec = IDE_REGISTRY["kiro"]
         kiro_scope = options.get("scope", kiro_spec["default_scope"])
         agent_path = kiro_spec["rules_file"][kiro_scope].format(name=safe_name)
+        kiro_model = options.get("_resolved_model", None)
         result: dict = {
             "agent_file": {
                 "path": agent_path,
@@ -690,7 +691,8 @@ def generate_agent_config(
                     "hooks": hooks,
                     "toolsSettings": {},
                     "includeMcpJson": True,
-                    "model": None,  # Kiro uses "auto" model selection; actual model captured via SQLite in hooks
+                    # null = Kiro auto model selection; non-null = pinned model.
+                    "model": kiro_model,
                 },
             },
             "scope": kiro_scope,
@@ -699,8 +701,10 @@ def generate_agent_config(
         skill_files = [f for f in skill_files if f]
         if skill_files:
             result["skill_files"] = skill_files
-        if compatibility_warnings:
-            result["_warnings"] = compatibility_warnings
+        warnings_combined = list(compatibility_warnings)
+        warnings_combined.extend(options.get("_model_warnings") or [])
+        if warnings_combined:
+            result["_warnings"] = warnings_combined
         return result
 
     if ide in ("claude-code", "claude_code"):
@@ -715,13 +719,19 @@ def generate_agent_config(
 
         # IDE-specific options
         scope = options.get("scope", IDE_REGISTRY["claude-code"]["default_scope"])
-        model_choice = options.get("model", "")  # "", "inherit", "sonnet", "opus", "haiku"
         tools = options.get("tools", "")  # comma-separated whitelist
         color = options.get("color", "")
 
-        # Fall back to the agent's stored model_name when no explicit choice
-        if not model_choice or model_choice == "inherit":
-            model_choice = _model_name_to_frontmatter(getattr(agent, "model_name", ""))
+        # Prefer pre-resolved model from the install route's model resolver, which
+        # already handles per-IDE overrides, catalog fallbacks, and Claude Code's
+        # short aliases (sonnet/opus/haiku/inherit). Otherwise fall back to the
+        # legacy logic for back-compat (release-time pre-generation, tests).
+        if "_resolved_model" in (options or {}):
+            model_choice = options.get("_resolved_model") or ""
+        else:
+            model_choice = options.get("model", "")
+            if not model_choice or model_choice == "inherit":
+                model_choice = _model_name_to_frontmatter(getattr(agent, "model_name", ""))
 
         # Build Claude Code agent file with YAML frontmatter
         desc_line = (agent.description or safe_name).replace("\n", " ").strip()
@@ -766,8 +776,10 @@ def generate_agent_config(
         }
         if skill_files:
             result["skill_files"] = skill_files
-        if compatibility_warnings:
-            result["_warnings"] = compatibility_warnings
+        warnings_combined = list(compatibility_warnings)
+        warnings_combined.extend(options.get("_model_warnings") or [])
+        if warnings_combined:
+            result["_warnings"] = warnings_combined
         return result
 
     if ide in ("gemini-cli", "gemini_cli"):
@@ -776,9 +788,13 @@ def generate_agent_config(
         rules_path = gemini_spec["rules_file"][gemini_scope]
         mcp_path = gemini_spec["mcp_config_path"][gemini_scope]
         hooks_path = gemini_spec["mcp_config_path"][gemini_scope]  # hooks live in same settings.json
+        gemini_settings_content: dict = {"mcpServers": mcp_configs}
+        gemini_model = options.get("_resolved_model")
+        if gemini_model:
+            gemini_settings_content["model"] = gemini_model
         result = {
             "rules_file": {"path": rules_path, "content": rules_content},
-            "mcp_config": {"path": mcp_path, "content": {"mcpServers": mcp_configs}},
+            "mcp_config": {"path": mcp_path, "content": gemini_settings_content},
             "hooks_config": {
                 "path": hooks_path,
                 "content": _gemini_hooks_config("observal-hook.sh", "observal-stop-hook.sh"),
@@ -787,20 +803,28 @@ def generate_agent_config(
             "gemini_settings_snippet": _gemini_settings(effective_otlp_http),
             "scope": gemini_scope,
         }
-        if compatibility_warnings:
-            result["_warnings"] = compatibility_warnings
+        warnings_combined = list(compatibility_warnings)
+        warnings_combined.extend(options.get("_model_warnings") or [])
+        if warnings_combined:
+            result["_warnings"] = warnings_combined
         return result
 
     if ide == "codex":
         codex_spec = IDE_REGISTRY["codex"]
         codex_scope = codex_spec["default_scope"]
+        codex_content: dict = {"mcp.servers": mcp_configs}
+        codex_model = options.get("_resolved_model")
+        if codex_model:
+            codex_content["model"] = codex_model
         result = {
             "rules_file": {"path": codex_spec["rules_file"][codex_scope], "content": rules_content},
-            "mcp_config": {"path": codex_spec["mcp_config_path"][codex_scope], "content": {"mcp.servers": mcp_configs}},
+            "mcp_config": {"path": codex_spec["mcp_config_path"][codex_scope], "content": codex_content},
             "scope": codex_scope,
         }
-        if compatibility_warnings:
-            result["_warnings"] = compatibility_warnings
+        warnings_combined = list(compatibility_warnings)
+        warnings_combined.extend(options.get("_model_warnings") or [])
+        if warnings_combined:
+            result["_warnings"] = warnings_combined
         return result
 
     if ide == "copilot":
@@ -911,17 +935,23 @@ def generate_agent_config(
         mcp_path = opencode_spec["mcp_config_path"].get(
             opencode_scope, next(iter(opencode_spec["mcp_config_path"].values()))
         )
+        opencode_content: dict = {opencode_spec["mcp_servers_key"]: opencode_configs}
+        opencode_model = options.get("_resolved_model")
+        if opencode_model:
+            opencode_content["model"] = opencode_model
         result = {
             "rules_file": {"path": rules_path, "content": rules_content},
-            "mcp_config": {"path": mcp_path, "content": {opencode_spec["mcp_servers_key"]: opencode_configs}},
+            "mcp_config": {"path": mcp_path, "content": opencode_content},
             "hooks_config": {
                 "path": ".opencode/plugins/observal-plugin.mjs",
                 "content": _opencode_plugin_js("observal-hook.sh", "observal-stop-hook.sh"),
             },
             "scope": opencode_scope,
         }
-        if compatibility_warnings:
-            result["_warnings"] = compatibility_warnings
+        warnings_combined = list(compatibility_warnings)
+        warnings_combined.extend(options.get("_model_warnings") or [])
+        if warnings_combined:
+            result["_warnings"] = warnings_combined
         return result
 
     # cursor, vscode (and any future IDE with standard rules+mcp pattern)

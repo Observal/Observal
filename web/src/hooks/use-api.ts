@@ -19,6 +19,7 @@ import {
   bulk,
   graphql,
   insights,
+  models,
   type RegistryType,
 } from "@/lib/api";
 import type { LeaderboardWindow } from "@/lib/types";
@@ -968,6 +969,37 @@ export function useGenerateInsight() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to generate insight");
+    },
+  });
+}
+
+// ── Models catalog ─────────────────────────────────────────────────
+
+const MODELS_QUERY_KEY = ["models", "catalog"] as const;
+
+export function useModels() {
+  return useQuery({
+    queryKey: MODELS_QUERY_KEY,
+    queryFn: () => models.list(),
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useRefreshModels() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => models.refresh(),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: MODELS_QUERY_KEY });
+      const total = data.diff?.total ?? data.model_count ?? 0;
+      const added = data.diff?.added?.length ?? 0;
+      const removed = data.diff?.removed?.length ?? 0;
+      toast.success(`Models refreshed (${total} total, +${added} / -${removed})`);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to refresh model catalog");
     },
   });
 }

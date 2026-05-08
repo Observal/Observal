@@ -21,8 +21,24 @@ from pydantic import BaseModel, Field
 from schemas.ide_registry import IDE_REGISTRY, get_valid_ides
 from services.agent_config_generator import _wrap_kiro_prompt
 from services.agent_resolver import ResolvedAgent, ResolvedComponent
+from services.model_resolver import resolve_saved_value
 
 logger = logging.getLogger(__name__)
+
+
+def _saved_model_for(manifest: "AgentManifest", ide: str) -> str | None:
+    """Compute the IDE-formatted saved model from a manifest.
+
+    Manifest builders are synchronous and do not consult the live catalog.
+    They trust the saved per-IDE override (or `model_name` for Claude Code's
+    backward-compat path) and apply only ID translation. Catalog validation
+    happens in the install path via ``resolve_model_for_ide``.
+    """
+    return resolve_saved_value(
+        ide,
+        model_name=manifest.model_name or "",
+        models_by_ide=manifest.models_by_ide or {},
+    )
 
 
 # ── Manifest Pydantic Models ────────────────────────────────────────
@@ -101,6 +117,7 @@ class AgentManifest(BaseModel):
     prompt: str = ""
     description: str = ""
     model_name: str = ""
+    models_by_ide: dict[str, str] = Field(default_factory=dict)
     components: ManifestComponents = Field(default_factory=ManifestComponents)
     errors: list[ManifestError] = Field(default_factory=list)
 
@@ -117,6 +134,8 @@ class AgentManifest(BaseModel):
             result["description"] = self.description
         if self.model_name:
             result["model_name"] = self.model_name
+        if self.models_by_ide:
+            result["models_by_ide"] = dict(self.models_by_ide)
         if self.errors:
             result["errors"] = [e.model_dump() for e in self.errors]
         return result
@@ -228,6 +247,7 @@ def build_agent_manifest(resolved: ResolvedAgent) -> dict:
         prompt=resolved.agent_prompt,
         description=resolved.agent_description,
         model_name=resolved.model_name,
+        models_by_ide=resolved.models_by_ide,
         components=ManifestComponents(**grouped),
         errors=[
             ManifestError(
@@ -383,13 +403,15 @@ def _generate_claude_code(manifest: AgentManifest) -> IdeAgentConfig:
         args = cfg.get("args", [])
         setup_commands.append(["claude", "mcp", "add", name, "--", cmd, *args])
 
-    # Build Claude Code agent file with YAML frontmatter
     desc_line = (manifest.description or safe_name).replace("\n", " ").strip()
     frontmatter_lines = [
         "---",
         f"name: {safe_name}",
         f'description: "{desc_line}"',
     ]
+    saved_model = _saved_model_for(manifest, "claude-code")
+    if saved_model:
+        frontmatter_lines.append(f"model: {saved_model}")
     if mcp_entries:
         frontmatter_lines.append("mcpServers:")
         for mcp_name in mcp_entries:
@@ -492,6 +514,10 @@ def _generate_gemini_cli(manifest: AgentManifest) -> IdeAgentConfig:
     if mcp_entries:
         settings["mcpServers"] = mcp_entries
 
+    saved_model = _saved_model_for(manifest, "gemini-cli")
+    if saved_model:
+        settings["model"] = saved_model
+
     env: dict[str, str] = {
         "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
     }
@@ -592,7 +618,8 @@ def _generate_kiro(manifest: AgentManifest) -> IdeAgentConfig:
         "hooks": _build_kiro_hooks(safe_name, observal_url, platform),
         "toolsSettings": {},
         "includeMcpJson": True,
-        "model": None,
+        # null = Kiro auto model selection (per IDE_REGISTRY auto_sentinel).
+        "model": _saved_model_for(manifest, "kiro"),
     }
 
     # Materialize hook components from the agent manifest into the hooks dict
@@ -627,20 +654,29 @@ def _generate_codex(manifest: AgentManifest) -> IdeAgentConfig:
         ),
     ]
 
-    if otlp_url:
-        toml_snippet = (
-            "[otel]\n"
-            'environment = "production"\n'
-            "log_user_prompt = true\n"
-            "\n"
-            "[otel.exporter.otlp-http]\n"
-            f'endpoint = "{otlp_url}/v1/logs"\n'
-            'protocol = "http"\n'
-            "\n"
-            "[otel.trace_exporter.otlp-http]\n"
-            f'endpoint = "{otlp_url}/v1/traces"\n'
-            'protocol = "http"\n'
-        )
+    saved_model = _saved_model_for(manifest, "codex")
+    if otlp_url or saved_model:
+        toml_lines: list[str] = []
+        if saved_model:
+            toml_lines.append(f'model = "{saved_model}"')
+            toml_lines.append("")
+        if otlp_url:
+            toml_lines.extend(
+                [
+                    "[otel]",
+                    'environment = "production"',
+                    "log_user_prompt = true",
+                    "",
+                    "[otel.exporter.otlp-http]",
+                    f'endpoint = "{otlp_url}/v1/logs"',
+                    'protocol = "http"',
+                    "",
+                    "[otel.trace_exporter.otlp-http]",
+                    f'endpoint = "{otlp_url}/v1/traces"',
+                    'protocol = "http"',
+                ]
+            )
+        toml_snippet = "\n".join(toml_lines) + "\n"
         files.append(
             AgentFile(
                 path="~/.codex/config.toml",
@@ -710,11 +746,17 @@ def _generate_opencode(manifest: AgentManifest) -> IdeAgentConfig:
         ),
     ]
 
-    if opencode_mcp:
+    saved_model = _saved_model_for(manifest, "opencode")
+    if opencode_mcp or saved_model:
+        opencode_content: dict = {}
+        if opencode_mcp:
+            opencode_content["mcp"] = opencode_mcp
+        if saved_model:
+            opencode_content["model"] = saved_model
         files.append(
             AgentFile(
                 path="opencode.json",
-                content={"mcp": opencode_mcp},
+                content=opencode_content,
                 format="json",
             ),
         )

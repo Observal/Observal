@@ -88,6 +88,7 @@ from observal_cli.cmd_component import component_app
 from observal_cli.cmd_doctor import doctor_app
 from observal_cli.cmd_mcp import mcp_app
 from observal_cli.cmd_migrate import migrate_app
+from observal_cli.cmd_models import models_app
 from observal_cli.cmd_ops import (
     admin_app,
     ops_app,
@@ -115,6 +116,7 @@ registry_app.add_typer(mcp_app, name="mcp")
 registry_app.add_typer(skill_app, name="skill")
 registry_app.add_typer(prompt_app, name="prompt")
 registry_app.add_typer(sandbox_app, name="sandbox")
+registry_app.add_typer(models_app, name="models")
 
 # ── Auth subgroup ────────────────────────────────────────
 app.add_typer(auth_app, name="auth")

@@ -52,6 +52,10 @@ class AgentVersion(Base):
     prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     model_config_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Per-IDE model overrides: {"claude-code": "claude-sonnet-4-5", "kiro": "claude-opus-4-5", ...}
+    # Empty dict means "use model_name as the default for every IDE that accepts a model choice".
+    # Missing key for an IDE that accepts a choice means "emit auto sentinel".
+    models_by_ide: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     external_mcps: Mapped[list] = mapped_column(JSON, default=list)
     supported_ides: Mapped[list] = mapped_column(JSON, default=list)
     required_ide_features: Mapped[list] = mapped_column(JSON, default=list)
@@ -178,6 +182,16 @@ class Agent(Base):
         if not self.latest_version:
             raise RuntimeError("Agent has no latest_version; cannot set model_config_json")
         self.latest_version.model_config_json = value
+
+    @property
+    def models_by_ide(self) -> dict:
+        return self.latest_version.models_by_ide if self.latest_version else {}
+
+    @models_by_ide.setter
+    def models_by_ide(self, value: dict) -> None:
+        if not self.latest_version:
+            raise RuntimeError("Agent has no latest_version; cannot set models_by_ide")
+        self.latest_version.models_by_ide = value
 
     @property
     def external_mcps(self) -> list:

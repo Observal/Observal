@@ -703,3 +703,57 @@ export interface TelemetryStatus {
 	spans_count: number;
 	scores_count: number;
 }
+
+// ── Models catalog ──────────────────────────────────────────────────
+
+export interface ModelDisplay {
+  primary: string;
+  secondary: string | null;
+  is_rolling: boolean;
+  is_deprecated: boolean;
+}
+
+export interface CatalogModel {
+  model_id: string;
+  display_name: string;
+  provider: string;
+  family: string;
+  release_date: string | null;
+  last_updated: string | null;
+  context_window: number | null;
+  output_tokens: number | null;
+  cost_input: number | null;
+  cost_output: number | null;
+  capabilities: string[];
+  supported_ides: string[];
+  deprecated: boolean;
+  display: ModelDisplay | null;
+}
+
+export interface ModelCatalog {
+  models: CatalogModel[];
+  fetched_at: string;
+  source: "live" | "redis" | "snapshot" | "empty";
+  degraded: boolean;
+  etag: string | null;
+  upstream_etag: string | null;
+  model_count: number;
+}
+
+export interface ModelRefreshDiff {
+  added: string[];
+  removed: string[];
+  updated: string[];
+  total: number;
+}
+
+export interface ModelRefreshResult {
+  ok: boolean;
+  diff: ModelRefreshDiff;
+  fetched_at: string;
+  source: string;
+  degraded: boolean;
+  model_count: number;
+  etag: string | null;
+  upstream_etag: string | null;
+}

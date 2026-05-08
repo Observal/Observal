@@ -33,6 +33,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": "~/.cursor/mcp.json",
         "hook_type": "command",
         "config_dir": ".cursor",
+        "accepts_model_choice": False,
+        "auto_sentinel": None,
     },
     "kiro": {
         "display_name": "Kiro",
@@ -58,6 +60,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": "~/.kiro/settings/mcp.json",
         "hook_type": "command",
         "config_dir": ".kiro",
+        "accepts_model_choice": True,
+        "auto_sentinel": {"json_value": None},
     },
     "claude-code": {
         "display_name": "Claude Code",
@@ -84,6 +88,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": "~/.claude.json",
         "hook_type": "command",
         "config_dir": ".claude",
+        "accepts_model_choice": True,
+        "auto_sentinel": {"omit_frontmatter_field": True},
     },
     "gemini-cli": {
         "display_name": "Gemini CLI",
@@ -110,6 +116,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": "~/.gemini/settings.json",
         "hook_type": "command",
         "config_dir": ".gemini",
+        "accepts_model_choice": True,
+        "auto_sentinel": {"omit_setting": True},
     },
     "vscode": {
         "display_name": "VS Code",
@@ -133,6 +141,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": None,
         "hook_type": "command",
         "config_dir": ".vscode",
+        "accepts_model_choice": False,
+        "auto_sentinel": None,
     },
     "codex": {
         "display_name": "Codex",
@@ -154,6 +164,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": "~/.codex/config.toml",
         "hook_type": None,
         "config_dir": ".codex",
+        "accepts_model_choice": True,
+        "auto_sentinel": {"omit_toml_field": True},
     },
     "copilot": {
         "display_name": "Copilot",
@@ -175,6 +187,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": "~/.vscode/mcp.json",
         "hook_type": "command",
         "config_dir": ".vscode",
+        "accepts_model_choice": False,
+        "auto_sentinel": None,
     },
     "copilot-cli": {
         "display_name": "Copilot CLI",
@@ -199,6 +213,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": "~/.copilot/mcp-config.json",
         "hook_type": "command",
         "config_dir": ".copilot",
+        "accepts_model_choice": False,
+        "auto_sentinel": None,
     },
     "opencode": {
         "display_name": "OpenCode",
@@ -224,6 +240,8 @@ IDE_REGISTRY: dict[str, dict] = {
         "home_mcp_config": "~/.config/opencode/opencode.json",
         "hook_type": "plugin",
         "config_dir": ".config/opencode",
+        "accepts_model_choice": True,
+        "auto_sentinel": {"omit_field": True},
     },
 }
 
@@ -264,6 +282,21 @@ def get_mcp_servers_key(ide: str) -> str:
 def get_default_scope(ide: str) -> str:
     """Return the default install scope for an IDE."""
     return IDE_REGISTRY.get(ide, {}).get("default_scope", "project")
+
+
+def get_model_choice_ides() -> list[str]:
+    """Return IDEs that accept a per-agent model selection."""
+    return [ide for ide, spec in IDE_REGISTRY.items() if spec.get("accepts_model_choice")]
+
+
+def accepts_model_choice(ide: str) -> bool:
+    """Return True if this IDE supports a per-agent model field."""
+    return bool(IDE_REGISTRY.get(ide, {}).get("accepts_model_choice"))
+
+
+def get_auto_sentinel(ide: str) -> dict | None:
+    """Return the codegen sentinel describing how to express ``auto`` for this IDE."""
+    return IDE_REGISTRY.get(ide, {}).get("auto_sentinel")
 
 
 def get_session_parser_id(ide: str) -> str:

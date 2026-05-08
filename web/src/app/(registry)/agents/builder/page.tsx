@@ -45,6 +45,7 @@ const DRAFT_STORAGE_KEY = "observal_agent_draft";
 import { SortableComponentList } from "@/components/builder/sortable-component-list";
 import { ValidationPanel } from "@/components/builder/validation-panel";
 import { PreviewPanel } from "@/components/builder/preview-panel";
+import { ModelPicker } from "@/components/builder/model-picker";
 
 const COMPONENT_TYPES: { value: RegistryType; label: string }[] = [
   { value: "mcps", label: "MCPs" },
@@ -335,6 +336,7 @@ function AgentBuilderInner() {
   const [description, setDescription] = useState("");
   const [version, setVersion] = useState("1.0.0");
   const [modelName, setModelName] = useState("");
+  const [modelsByIde, setModelsByIde] = useState<Record<string, string>>({});
   const [visibility, setVisibility] = useState<"public" | "private">("private");
   const [teamAccesses, setTeamAccesses] = useState<{ group_name: string; permission: "view" | "edit" }[]>([]);
   const [publishing, setPublishing] = useState(false);
@@ -390,6 +392,10 @@ function AgentBuilderInner() {
     if (typeof agentVersion === "string") setVersion(agentVersion);
     const agentModel = (existingAgent as Record<string, unknown>).model_name;
     if (typeof agentModel === "string") setModelName(agentModel);
+    const agentModelsByIde = (existingAgent as Record<string, unknown>).models_by_ide;
+    if (agentModelsByIde && typeof agentModelsByIde === "object" && !Array.isArray(agentModelsByIde)) {
+      setModelsByIde(agentModelsByIde as Record<string, string>);
+    }
     const agentVisibility = (existingAgent as Record<string, unknown>).visibility;
     if (agentVisibility === "public" || agentVisibility === "private") setVisibility(agentVisibility as "public" | "private");
     const agentTeamAccesses = (existingAgent as Record<string, unknown>).team_accesses;
@@ -554,6 +560,7 @@ function AgentBuilderInner() {
           description,
           version,
           model_name: modelName,
+          models_by_ide: modelsByIde,
           visibility,
           team_accesses: teamAccesses,
           components: selectedComponents,
@@ -582,6 +589,9 @@ function AgentBuilderInner() {
       if (draft.description) setDescription(draft.description);
       if (draft.version) setVersion(draft.version);
       if (draft.model_name) setModelName(draft.model_name);
+      if (draft.models_by_ide && typeof draft.models_by_ide === "object") {
+        setModelsByIde(draft.models_by_ide);
+      }
       if (draft.visibility) setVisibility(draft.visibility);
       if (draft.team_accesses) setTeamAccesses(draft.team_accesses);
       if (draft.components) setSelectedComponents(draft.components);
@@ -748,6 +758,7 @@ function AgentBuilderInner() {
       team_accesses: teamAccesses,
       prompt: promptParts.join("\n\n"),
       model_name: modelName,
+      models_by_ide: modelsByIde,
       components: components.length > 0 ? components : [],
       goal_template: {
         description: goalDescription,
@@ -906,24 +917,13 @@ function AgentBuilderInner() {
                     onChange={(e) => setVersion(e.target.value)}
                   />
                 </div>
-                <div className="space-y-2 flex-1 max-w-xs">
-                  <Label htmlFor="agent-model" className="text-sm font-medium">
-                    Model
-                  </Label>
-                  <Input
-                    id="agent-model"
-                    list="model-suggestions"
-                    placeholder="claude-sonnet-4-20250514"
-                    value={modelName}
-                    onChange={(e) => setModelName(e.target.value)}
+                <div className="flex-1">
+                  <ModelPicker
+                    modelName={modelName}
+                    onModelNameChange={setModelName}
+                    modelsByIde={modelsByIde}
+                    onModelsByIdeChange={setModelsByIde}
                   />
-                  <datalist id="model-suggestions">
-                    <option value="claude-opus-4-6-20250725" />
-                    <option value="claude-sonnet-4-6-20250725" />
-                    <option value="claude-sonnet-4-20250514" />
-                    <option value="claude-opus-4-20250514" />
-                    <option value="claude-haiku-4-5-20251001" />
-                  </datalist>
                 </div>
               </div>
             </section>

@@ -158,6 +158,22 @@ async def batch_generate_insights(ctx: dict):
         logger.exception("insight_batch_failed", error=str(e))
 
 
+async def refresh_model_catalog(ctx: dict):
+    """Cron job: pre-warm the model catalog so user requests never hit a cold cache."""
+    from services.model_catalog import get_catalog
+
+    try:
+        cat = await get_catalog(force_refresh=True)
+        logger.info(
+            "model_catalog_prewarm",
+            source=cat.source,
+            count=cat.model_count,
+            degraded=cat.degraded,
+        )
+    except Exception as e:
+        logger.warning("model_catalog_prewarm_failed", error=str(e))
+
+
 async def startup(ctx: dict):
     from services.insights import configure_insights
 
@@ -179,12 +195,14 @@ class WorkerSettings:
         maintain_clickhouse,
         generate_insight_report,
         batch_generate_insights,
+        refresh_model_catalog,
     ]
     cron_jobs = [
         cron(sync_component_sources, hour={0, 6, 12, 18}),  # Every 6 hours
         cron(evaluate_alerts, second={0}, timeout=55),  # Every minute
         cron(maintain_clickhouse, hour={0, 4, 8, 12, 16, 20}, timeout=120),  # Every 4 hours
         cron(batch_generate_insights, weekday={0}, hour={6}, minute={0}, timeout=300),  # Weekly Monday 6AM
+        cron(refresh_model_catalog, hour={0, 6, 12, 18}, minute={5}, timeout=30),  # Every 6 hours (offset)
     ]
     on_startup = startup
     on_shutdown = shutdown
