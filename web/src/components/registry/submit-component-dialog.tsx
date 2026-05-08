@@ -21,7 +21,7 @@ import {
 import { Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import type { RegistryType } from "@/lib/api";
-import { useRegistryList, useMyComponents } from "@/hooks/use-api";
+import { useRegistryList, useMyComponents, useWhoami } from "@/hooks/use-api";
 
 const MCP_CATEGORIES = [
   "browser-automation", "cloud-platforms", "code-execution", "communication",
@@ -91,12 +91,15 @@ export function SubmitComponentDialog({
   editItem,
 }: SubmitComponentDialogProps) {
   const d = editItem as Record<string, unknown> | null;
+  const { data: whoami } = useWhoami();
+  const defaultOwner = (d?.owner as string) || whoami?.name || whoami?.username || whoami?.email || "";
 
   // ── Common ──────────────────────────────────────────────
   const [name, setName] = useState((d?.name as string) ?? "");
   const [version, setVersion] = useState((d?.version as string) ?? "0.1.0");
   const [description, setDescription] = useState((d?.description as string) ?? "");
-  const [owner, setOwner] = useState((d?.owner as string) ?? "");
+  const [ownerInput, setOwnerInput] = useState((d?.owner as string) ?? "");
+  const owner = ownerInput || defaultOwner;
   const [supportedIdes, setSupportedIdes] = useState<string[]>(Array.isArray(d?.supported_ides) ? d.supported_ides as string[] : []);
 
   // ── MCP ─────────────────────────────────────────────────
@@ -155,7 +158,7 @@ export function SubmitComponentDialog({
     setName("");
     setVersion("0.1.0");
     setDescription("");
-    setOwner("");
+    setOwnerInput("");
     setSupportedIdes([]);
     setCategory("general");
     setGitUrl("");
@@ -364,7 +367,7 @@ export function SubmitComponentDialog({
             <Input
               id="comp-owner"
               value={owner}
-              onChange={(e) => setOwner(e.target.value)}
+              onChange={(e) => setOwnerInput(e.target.value)}
               placeholder="your-username"
             />
           </div>

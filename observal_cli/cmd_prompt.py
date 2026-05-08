@@ -55,7 +55,7 @@ def prompt_submit(
                 "name": typer.prompt("Prompt name"),
                 "version": typer.prompt("Version", default="1.0.0"),
                 "description": typer.prompt("Description"),
-                "owner": typer.prompt("Owner"),
+                "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
                 "category": select_one("Category", VALID_PROMPT_CATEGORIES),
                 "template": content,
             }
@@ -64,7 +64,7 @@ def prompt_submit(
             "name": typer.prompt("Prompt name"),
             "version": typer.prompt("Version", default="1.0.0"),
             "description": typer.prompt("Description"),
-            "owner": typer.prompt("Owner"),
+            "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
             "category": select_one("Category", VALID_PROMPT_CATEGORIES),
             "template": typer.prompt("Template"),
         }

@@ -60,7 +60,7 @@ def hook_submit(
             "name": typer.prompt("Hook name"),
             "version": typer.prompt("Version", default="1.0.0"),
             "description": typer.prompt("Description"),
-            "owner": typer.prompt("Owner"),
+            "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
             "event": select_one("Event", VALID_HOOK_EVENTS),
             "handler_type": select_one("Handler type", VALID_HOOK_HANDLER_TYPES),
             "handler_config": _json.loads(typer.prompt("Handler config (JSON)")),
