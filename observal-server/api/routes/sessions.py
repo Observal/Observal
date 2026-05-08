@@ -11,7 +11,7 @@ import uuid as _uuid
 
 from fastapi import APIRouter, Depends, Query
 from fastapi_cache.decorator import cache
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
 from api.deps import require_role
 from config import settings
@@ -107,10 +107,12 @@ async def list_sessions(
     for row in rows:
         uid = row.get("user_id", "")
         row["user_name"] = uid_to_name.get(uid, current_user.name)
-        ide = row.get("ide", "claude-code")
+        ide = row.pop("ide", "") or ""
         row["platform"] = _platform_names.get(ide, "Claude Code")
         row["service_name"] = ide
         row["is_active"] = bool(int(row.get("is_active", 0)))
+        agent_id = row.get("agent_id") or None
+        row["agent_id"] = agent_id if agent_id else None
 
     if status == "active":
         rows = [r for r in rows if r["is_active"]]
@@ -129,7 +131,7 @@ async def _list_sessions_query(
     """ClickHouse query for session list from session_events table."""
     user_filter = ""
     time_filter = ""
-    platform_filter = ""
+    platform_having = ""
     params: dict[str, str] = {}
 
     if not is_admin:
@@ -137,31 +139,40 @@ async def _list_sessions_query(
         params["param_uid"] = uid
 
     if days is not None and days > 0:
-        time_filter = f"AND timestamp > now('UTC') - INTERVAL {int(days)} DAY "
+        time_filter = f"AND timestamp > now() - INTERVAL {int(days)} DAY "
 
     if platform:
-        platform_filter = "HAVING ide = {platform:String} "
+        platform_having = "HAVING any(ide) = {platform:String} "
         params["param_platform"] = platform
 
     return await _ch_json(
         "SELECT "
         "session_id, "
-        "ide, "
-        "any(user_id) AS user_id, "
-        "min(timestamp) AS first_event_time, "
-        "max(timestamp) AS last_event_time, "
-        "(max(timestamp) > now('UTC') - INTERVAL 30 MINUTE) AS is_active, "
-        "countIf(event_type = 'user') AS prompt_count, "
-        "countIf(event_type = 'assistant') AS api_request_count, "
-        "countIf(event_type = 'tool_use') AS tool_result_count, "
-        "count() AS hook_event_count, "
-        "anyIf(tool_name, tool_name != '') AS model "
+        "minIf(timestamp, timestamp > '1970-01-02 00:00:00') AS first_event_time, "
+        "maxIf(timestamp, timestamp > '1970-01-02 00:00:00') AS last_event_time, "
+        "(maxIf(timestamp, timestamp > '1970-01-02 00:00:00') > now() - INTERVAL 30 MINUTE) AS is_active, "
+        "countIf(event_type = 'user_prompt') AS prompt_count, "
+        "0 AS api_request_count, "
+        "countIf(event_type = 'tool_result') AS tool_result_count, "
+        "sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'input_tokens'), JSONExtractString(raw_line, 'type') = 'assistant') AS total_input_tokens, "
+        "sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens'), JSONExtractString(raw_line, 'type') = 'assistant') AS total_output_tokens, "
+        "sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_read_input_tokens'), JSONExtractString(raw_line, 'type') = 'assistant') AS total_cache_read_tokens, "
+        "sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_creation_input_tokens'), JSONExtractString(raw_line, 'type') = 'assistant') AS total_cache_write_tokens, "
+        "sum(credits) AS total_credits, "
+        "if("
+        "  anyIf(JSONExtractString(raw_line, 'message', 'model'), JSONExtractString(raw_line, 'type') = 'assistant' AND raw_line != '') != '',"
+        "  anyIf(JSONExtractString(raw_line, 'message', 'model'), JSONExtractString(raw_line, 'type') = 'assistant' AND raw_line != ''),"
+        "  anyIf(JSONExtractString(raw_line, 'model'), event_type = 'kiro_credits')"
+        ") AS model, "
+        "any(ide) AS ide, "
+        "any(agent_id) AS agent_id, "
+        "any(user_id) AS user_id "
         "FROM session_events FINAL "
         "WHERE session_id != '' "
         + user_filter
         + time_filter
-        + "GROUP BY session_id, ide "
-        + platform_filter
+        + "GROUP BY session_id "
+        + platform_having
         + "ORDER BY last_event_time DESC "
         "LIMIT 100",
         params or None,
@@ -229,10 +240,7 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
         # Verify the user owns this session
         params["param_uid"] = str(current_user.id)
         ownership = await _ch_json(
-            "SELECT 1 FROM session_events FINAL "
-            "WHERE session_id = {sid:String} "
-            "AND user_id = {uid:String} "
-            "LIMIT 1",
+            "SELECT 1 FROM session_events FINAL WHERE session_id = {sid:String} AND user_id = {uid:String} LIMIT 1",
             params,
         )
         if not ownership:
@@ -241,18 +249,18 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
     # Fetch all events for the session ordered by line offset
     rows = await _ch_json(
         "SELECT "
-        "session_id, "
-        "ide, "
-        "line_offset, "
-        "event_type, "
         "timestamp, "
-        "uuid, "
-        "parent_uuid, "
+        "event_type, "
+        "content_preview, "
         "tool_name, "
         "tool_id, "
-        "content_preview, "
+        "uuid, "
+        "parent_uuid, "
         "content_length, "
-        "raw_line "
+        "ide, "
+        "raw_line, "
+        "credits, "
+        "ingested_at "
         "FROM session_events FINAL "
         "WHERE session_id = {sid:String} "
         "ORDER BY line_offset ASC",
@@ -260,7 +268,7 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
     )
 
     if not rows:
-        return {"session_id": session_id, "ide": "", "events": []}
+        return {"session_id": session_id, "service_name": "", "events": [], "traces": []}
 
     ide = rows[0].get("ide", "claude-code")
 
@@ -270,7 +278,7 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
     events = parse_raw_events(rows)
 
     await audit(current_user, "session.view", "session", resource_id=session_id)
-    return {"session_id": session_id, "ide": ide, "events": events}
+    return {"session_id": session_id, "service_name": ide, "events": events, "traces": []}
 
 
 @router.get("/{session_id}/efficiency")
@@ -285,10 +293,7 @@ async def get_session_efficiency(session_id: str, current_user: User = Depends(r
     if not is_admin:
         params["param_uid"] = str(current_user.id)
         ownership = await _ch_json(
-            "SELECT 1 FROM session_events FINAL "
-            "WHERE session_id = {sid:String} "
-            "AND user_id = {uid:String} "
-            "LIMIT 1",
+            "SELECT 1 FROM session_events FINAL WHERE session_id = {sid:String} AND user_id = {uid:String} LIMIT 1",
             params,
         )
         if not ownership:
@@ -349,10 +354,7 @@ async def bind_session_agent(
     if not is_admin:
         params = {"param_sid": session_id, "param_uid": str(current_user.id)}
         ownership = await _ch_json(
-            "SELECT 1 FROM session_events FINAL "
-            "WHERE session_id = {sid:String} "
-            "AND user_id = {uid:String} "
-            "LIMIT 1",
+            "SELECT 1 FROM session_events FINAL WHERE session_id = {sid:String} AND user_id = {uid:String} LIMIT 1",
             params,
         )
         if not ownership:
