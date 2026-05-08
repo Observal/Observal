@@ -440,13 +440,15 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
 
             _name = name or typer.prompt("Server name", default=_name)
             _desc = typer.prompt("Description (what does this server do?)", default="")
-            _owner = typer.prompt("Owner / Team (e.g. your GitHub username)", default="default")
+            _owner = typer.prompt(
+                "Owner / Team (e.g. your GitHub username)", default=config.load().get("user_name", "default")
+            )
             _category = category or select_one("Category", VALID_MCP_CATEGORIES, default="general")
         else:
             if dollar_vars:
                 rprint(f"\n[dim]Auto-detected {len(dollar_vars)} input variable(s) from $VAR patterns.[/dim]")
             _desc = ""
-            _owner = "default"
+            _owner = config.load().get("user_name", "") or "default"
             _category = category or "general"
 
         supported_ides = list(VALID_IDES)
@@ -616,7 +618,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
         _name = name or detected_name
         _version = detected_ver
         _desc = detected_desc
-        _owner = "default"
+        _owner = config.load().get("user_name", "") or "default"
         _category = category or "general"
         if not _framework:
             _framework = "python"
@@ -712,7 +714,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
         else:
             _desc = typer.prompt("Description (what does this server do?)")
 
-        _owner = typer.prompt("\nOwner / Team (e.g. your GitHub username)")
+        _owner = typer.prompt("\nOwner / Team (e.g. your GitHub username)", default=config.load().get("user_name", ""))
         rprint()
 
         _category = category or select_one("Category", VALID_MCP_CATEGORIES, default="general")

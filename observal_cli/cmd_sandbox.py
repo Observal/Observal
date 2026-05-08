@@ -58,7 +58,7 @@ def sandbox_submit(
             "name": typer.prompt("Sandbox name"),
             "version": typer.prompt("Version", default="1.0.0"),
             "description": typer.prompt("Description"),
-            "owner": typer.prompt("Owner"),
+            "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
             "runtime_type": select_one("Runtime type", VALID_SANDBOX_RUNTIME_TYPES),
             "image": typer.prompt("Image"),
             "resource_limits": _json.loads(typer.prompt("Resource limits (JSON)")),

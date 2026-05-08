@@ -59,7 +59,7 @@ def skill_submit(
             "name": typer.prompt("Skill name"),
             "version": typer.prompt("Version", default="1.0.0"),
             "description": typer.prompt("Description"),
-            "owner": typer.prompt("Owner"),
+            "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
             "git_url": typer.prompt("Git URL"),
             "task_type": select_one("Task type", VALID_SKILL_TASK_TYPES),
             "target_agents": [a.strip() for a in agents_input.split(",") if a.strip()],
