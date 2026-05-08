@@ -10,10 +10,6 @@ Two responsibilities:
 
 Run as a background subprocess from session_push.py:
     python -m observal_cli.cmd_reconcile
-
-Usage (CLI):
-    observal reconcile run             Run crash recovery now
-    observal reconcile status          Show stale session status
 """
 
 from __future__ import annotations
