@@ -248,7 +248,8 @@ export default function UsersPage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button size="sm" onClick={closeDialog}>Done</Button>
+                <Button variant="ghost" size="sm" onClick={closeDialog}>Done</Button>
+                <Button size="sm" onClick={() => setCreatedPassword(null)}>Create Another</Button>
               </DialogFooter>
             </div>
           ) : (
