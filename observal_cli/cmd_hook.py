@@ -23,7 +23,7 @@ def _prompt_json(label: str) -> dict:
         try:
             parsed = _json.loads(raw)
             if not isinstance(parsed, dict):
-                rprint("[red]Expected a JSON object (e.g. {\"command\": \"...\"}), got a different type.[/red]")
+                rprint('[red]Expected a JSON object (e.g. {"command": "..."}), got a different type.[/red]')
                 continue
             return parsed
         except _json.JSONDecodeError as e:
