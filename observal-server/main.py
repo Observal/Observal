@@ -34,6 +34,7 @@ from api.routes.device_auth import router as device_auth_router
 from api.routes.eval import router as eval_router
 from api.routes.feedback import router as feedback_router
 from api.routes.hook import router as hook_router
+from api.routes.ingest import router as ingest_router
 from api.routes.insights import router as insights_router
 from api.routes.jwks import router as jwks_router
 from api.routes.mcp import router as mcp_router
@@ -306,6 +307,7 @@ app.include_router(feedback_router)
 app.include_router(eval_router)
 app.include_router(insights_router)
 app.include_router(reconcile_router)
+app.include_router(ingest_router)
 app.include_router(admin_router)
 app.include_router(alert_router)
 app.include_router(sessions_router)

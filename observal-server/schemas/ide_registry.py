@@ -15,6 +15,7 @@ IDE_REGISTRY: dict[str, dict] = {
     "cursor": {
         "display_name": "Cursor",
         "features": {"hook_bridge", "mcp_servers", "rules"},
+        "session_parser": "claude-code",
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.cursor/rules/)", "user (~/.cursor/rules/)"),
@@ -40,6 +41,7 @@ IDE_REGISTRY: dict[str, dict] = {
     "kiro": {
         "display_name": "Kiro",
         "features": {"superpowers", "hook_bridge", "mcp_servers", "rules", "steering_files", "otlp_telemetry"},
+        "session_parser": "kiro",
         "scopes": ["project", "user"],
         "default_scope": "user",
         "scope_labels": ("project (.kiro/agents/)", "user (~/.kiro/agents/)"),
@@ -64,6 +66,7 @@ IDE_REGISTRY: dict[str, dict] = {
     "claude-code": {
         "display_name": "Claude Code",
         "features": {"skills", "hook_bridge", "mcp_servers", "rules", "otlp_telemetry"},
+        "session_parser": "claude-code",
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.claude/agents/)", "user (~/.claude/agents/)"),
