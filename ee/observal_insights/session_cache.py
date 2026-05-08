@@ -103,6 +103,10 @@ async def load_cached_metas(
 ) -> dict[str, dict] | None:
     """Load cached session metadata from PostgreSQL.
 
+    The InsightSessionMeta model stores one row per session. We load all
+    cached sessions for the agent and return those whose start_time falls
+    within the requested period.
+
     Args:
         agent_id: The agent UUID (as string).
         period_start: ISO timestamp for period start.
@@ -116,19 +120,21 @@ async def load_cached_metas(
 
     from sqlalchemy import select
 
-    stmt = (
-        select(MetaModel)
-        .where(MetaModel.agent_id == agent_id)
-        .where(MetaModel.period_start == period_start)
-        .where(MetaModel.period_end == period_end)
-    )
+    stmt = select(MetaModel).where(MetaModel.agent_id == agent_id)
     result = await db.execute(stmt)
-    row = result.scalar_one_or_none()
+    rows = result.scalars().all()
 
-    if row is None:
+    if not rows:
         return None
 
-    return row.session_metas if hasattr(row, "session_metas") else None
+    metas: dict[str, dict] = {}
+    for row in rows:
+        meta = row.meta if hasattr(row, "meta") else None
+        if not meta:
+            continue
+        metas[row.session_id] = meta
+
+    return metas if metas else None
 
 
 async def store_cached_metas(
@@ -139,6 +145,9 @@ async def store_cached_metas(
     db,
 ) -> None:
     """Persist session metadata cache to PostgreSQL.
+
+    Stores one row per session in InsightSessionMeta. Upserts by
+    (agent_id, session_id) unique constraint.
 
     Args:
         agent_id: The agent UUID (as string).
@@ -151,28 +160,26 @@ async def store_cached_metas(
 
     from sqlalchemy import select
 
-    stmt = (
-        select(MetaModel)
-        .where(MetaModel.agent_id == agent_id)
-        .where(MetaModel.period_start == period_start)
-        .where(MetaModel.period_end == period_end)
-    )
-    result = await db.execute(stmt)
-    existing = result.scalar_one_or_none()
-
-    if existing:
-        existing.session_metas = session_metas
-        existing.updated_at = datetime.now(UTC)
-    else:
-        record = MetaModel(
-            agent_id=agent_id,
-            period_start=period_start,
-            period_end=period_end,
-            session_metas=session_metas,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
+    for session_id, meta in session_metas.items():
+        stmt = (
+            select(MetaModel)
+            .where(MetaModel.agent_id == agent_id)
+            .where(MetaModel.session_id == session_id)
         )
-        db.add(record)
+        result = await db.execute(stmt)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            existing.meta = meta
+            existing.computed_at = datetime.now(UTC)
+        else:
+            record = MetaModel(
+                agent_id=agent_id,
+                session_id=session_id,
+                computed_at=datetime.now(UTC),
+                meta=meta,
+            )
+            db.add(record)
 
     await db.flush()
 

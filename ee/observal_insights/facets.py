@@ -141,21 +141,24 @@ async def store_facets(
 
     from sqlalchemy import select
 
-    # Check if already exists
-    stmt = select(FacetsModel).where(FacetsModel.session_id == session_id)
+    # Check if already exists (unique on agent_id + session_id)
+    stmt = (
+        select(FacetsModel)
+        .where(FacetsModel.agent_id == agent_id)
+        .where(FacetsModel.session_id == session_id)
+    )
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
 
     if existing:
         existing.facets = facets
-        existing.updated_at = datetime.now(UTC)
+        existing.extracted_at = datetime.now(UTC)
     else:
         record = FacetsModel(
             session_id=session_id,
             agent_id=agent_id,
             facets=facets,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
+            extracted_at=datetime.now(UTC),
         )
         db.add(record)
 
