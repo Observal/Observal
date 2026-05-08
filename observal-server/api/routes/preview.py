@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.deps import get_current_user, get_db
@@ -17,9 +17,13 @@ from models.hook import HookListing
 from models.mcp import McpListing
 from models.prompt import PromptListing
 from models.skill import SkillListing
-from models.user import User
 from schemas.ide_registry import IDE_REGISTRY
 from services.agent_config_generator import generate_agent_config
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from models.user import User
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
