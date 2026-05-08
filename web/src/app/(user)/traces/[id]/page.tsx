@@ -142,6 +142,7 @@ function eventIcon(eventName: string) {
 	)
 		return Globe;
 	if (isShimEvent(eventName)) return Globe;
+	if (eventName === "hook_token_usage") return Zap;
 	if (isHookEvent(eventName)) return Zap;
 	return FileText;
 }
@@ -1942,215 +1943,6 @@ function SessionStats({
 
 /* ── Session Info tab ─────────────────────────────────────── */
 
-/** Hook capability definitions per IDE. Kiro only supports 5 native events. */
-type HookCapGroup = {
-	category: string;
-	hooks: { event: string; label: string; description: string }[];
-};
-
-const CLAUDE_CODE_HOOK_CAPABILITIES: HookCapGroup[] = [
-	{
-		category: "Capture",
-		hooks: [
-			{
-				event: "hook_userpromptsubmit",
-				label: "User Prompts",
-				description: "Captures what the user sends to the assistant",
-			},
-			{
-				event: "hook_assistant_response",
-				label: "Assistant Responses",
-				description: "Captures the assistant's text replies",
-			},
-			{
-				event: "hook_assistant_thinking",
-				label: "Assistant Thinking",
-				description: "Captures chain-of-thought reasoning",
-			},
-		],
-	},
-	{
-		category: "Tool Use",
-		hooks: [
-			{
-				event: "hook_pretooluse",
-				label: "Pre Tool Use",
-				description: "Fires before each tool call",
-			},
-			{
-				event: "hook_posttooluse",
-				label: "Post Tool Use",
-				description: "Captures tool input/output after execution",
-			},
-			{
-				event: "hook_posttoolusefailure",
-				label: "Tool Failures",
-				description: "Captures failed tool executions",
-			},
-		],
-	},
-	{
-		category: "Agents",
-		hooks: [
-			{
-				event: "hook_subagentstart",
-				label: "Subagent Start",
-				description: "Fires when a subagent is spawned",
-			},
-			{
-				event: "hook_subagentstop",
-				label: "Subagent Stop",
-				description: "Fires when a subagent finishes",
-			},
-		],
-	},
-	{
-		category: "Lifecycle",
-		hooks: [
-			{
-				event: "hook_sessionstart",
-				label: "Session Start",
-				description: "Session initialization and resumption",
-			},
-			{
-				event: "hook_stop",
-				label: "Stop",
-				description: "Turn/session end events",
-			},
-			{
-				event: "hook_notification",
-				label: "Notifications",
-				description: "System notifications",
-			},
-			{
-				event: "hook_taskcreated",
-				label: "Task Created",
-				description: "Task tracking events",
-			},
-			{
-				event: "hook_taskcompleted",
-				label: "Task Completed",
-				description: "Task completion events",
-			},
-			{
-				event: "hook_precompact",
-				label: "Pre Compact",
-				description: "Before context compaction",
-			},
-			{
-				event: "hook_postcompact",
-				label: "Post Compact",
-				description: "After context compaction",
-			},
-		],
-	},
-];
-
-const KIRO_HOOK_CAPABILITIES: HookCapGroup[] = [
-	{
-		category: "Capture",
-		hooks: [
-			{
-				event: "hook_userpromptsubmit",
-				label: "User Prompts",
-				description: "Captures prompts submitted by the user",
-			},
-			{
-				event: "hook_assistant_response",
-				label: "Response Capture",
-				description: "Extracted from stop-hook enrichment",
-			},
-		],
-	},
-	{
-		category: "Tool Use",
-		hooks: [
-			{
-				event: "hook_pretooluse",
-				label: "Pre Tool Use",
-				description: "Fires before each tool call — can validate and block",
-			},
-			{
-				event: "hook_posttooluse",
-				label: "Post Tool Use",
-				description: "Captures tool results after execution",
-			},
-			{
-				event: "hook_posttoolusefailure",
-				label: "Tool Failures",
-				description: "Auto-detected from failed tool responses",
-			},
-		],
-	},
-	{
-		category: "Lifecycle",
-		hooks: [
-			{
-				event: "hook_sessionstart",
-				label: "Agent Spawn",
-				description: "Fires when the agent is activated",
-			},
-			{
-				event: "hook_stop",
-				label: "Stop",
-				description: "Fires when the assistant finishes responding",
-			},
-		],
-	},
-];
-
-const COPILOT_CLI_HOOK_CAPABILITIES: HookCapGroup[] = [
-	{
-		category: "Capture",
-		hooks: [
-			{
-				event: "hook_userpromptsubmit",
-				label: "User Prompts",
-				description: "Captures prompts submitted by the user",
-			},
-		],
-	},
-	{
-		category: "Tool Use",
-		hooks: [
-			{
-				event: "hook_pretooluse",
-				label: "Pre Tool Use",
-				description: "Fires before each tool call",
-			},
-			{
-				event: "hook_posttooluse",
-				label: "Post Tool Use",
-				description: "Captures tool results after execution",
-			},
-		],
-	},
-	{
-		category: "Lifecycle",
-		hooks: [
-			{
-				event: "hook_sessionstart",
-				label: "Session Start",
-				description: "Fires when a session begins",
-			},
-			{
-				event: "hook_stop",
-				label: "Session End",
-				description: "Fires when the session ends",
-			},
-			{
-				event: "hook_stopfailure",
-				label: "Error",
-				description: "Fires when an error occurs during the session",
-			},
-		],
-	},
-];
-
-function isKiroService(serviceName: string, sessionId: string): boolean {
-	return serviceName === "kiro" || sessionId.startsWith("kiro-");
-}
-
 function isCopilotCliService(serviceName: string, sessionId: string): boolean {
 	return (
 		serviceName === "copilot-cli" ||
@@ -2159,59 +1951,32 @@ function isCopilotCliService(serviceName: string, sessionId: string): boolean {
 		sessionId.startsWith("copilot-cli-")
 	);
 }
-
-function getHookCapabilities(
-	serviceName: string,
-	sessionId: string,
-): HookCapGroup[] {
-	if (isKiroService(serviceName, sessionId)) return KIRO_HOOK_CAPABILITIES;
-	if (isCopilotCliService(serviceName, sessionId))
-		return COPILOT_CLI_HOOK_CAPABILITIES;
-	return CLAUDE_CODE_HOOK_CAPABILITIES;
-}
-
+/** Unix epoch sentinel: timestamps at/before 1971 are placeholders with no real time. */
 const EPOCH_CUTOFF_MS = new Date("1971-01-01").getTime();
 const isRealTs = (ts: string | undefined): ts is string =>
 	!!ts && new Date(ts).getTime() > EPOCH_CUTOFF_MS;
 
 function SessionInfoTab({
 	events,
-	sessionId,
 	serviceName,
 }: {
 	events: RawSessionEvent[];
 	sessionId: string;
 	serviceName: string;
 }) {
-	const isKiro = isKiroService(serviceName, sessionId);
-	const isCopilotCli = isCopilotCliService(serviceName, sessionId);
-	const hookCapabilities = useMemo(
-		() => getHookCapabilities(serviceName, sessionId),
-		[serviceName, sessionId],
-	);
-
-	// Derive active hooks from events actually present in this session
-	const activeHookEvents = useMemo(() => {
-		const seen = new Set<string>();
-		for (const evt of events) {
-			const eName = getEventName(evt);
-			if (isHookEvent(eName)) seen.add(eName);
-		}
-		return seen;
-	}, [events]);
-
-	// Extract session metadata from SessionStart event
+	// Uses isRealTs to skip 1970-epoch sentinel timestamps from Kiro lines
+	// that don't carry a real timestamp (AssistantMessage/ToolResults).
 	const sessionMeta = useMemo(() => {
 		const startEvt = events.find(
 			(e) => getEventName(e) === "hook_sessionstart",
 		);
 		const attrs = startEvt?.attributes ?? {};
-		const firstEvt = events[0];
-		const lastEvt = events[events.length - 1];
+		const firstReal = events.find((e) => isRealTs(e.timestamp));
+		const lastReal = [...events].reverse().find((e) => isRealTs(e.timestamp));
 		const duration =
-			firstEvt?.timestamp && lastEvt?.timestamp
-				? new Date(lastEvt.timestamp).getTime() -
-					new Date(firstEvt.timestamp).getTime()
+			firstReal && lastReal
+				? new Date(lastReal.timestamp).getTime() -
+					new Date(firstReal.timestamp).getTime()
 				: 0;
 
 		return {
@@ -2220,11 +1985,11 @@ function SessionInfoTab({
 				attrs.session_resumed === "true" || attrs.session_resumed === "True",
 			cwd: attrs.cwd || "",
 			permissionMode: attrs.permission_mode || "",
-			startTime: firstEvt?.timestamp
-				? new Date(firstEvt.timestamp).toLocaleString()
+			startTime: firstReal?.timestamp
+				? new Date(firstReal.timestamp).toLocaleString()
 				: "",
-			endTime: lastEvt?.timestamp
-				? new Date(lastEvt.timestamp).toLocaleString()
+			endTime: lastReal?.timestamp
+				? new Date(lastReal.timestamp).toLocaleString()
 				: "",
 			duration,
 			totalEvents: events.length,
@@ -2275,72 +2040,9 @@ function SessionInfoTab({
 					<span className="tabular-nums">{sessionMeta.totalEvents}</span>
 				</div>
 			</div>
-
-			<Separator />
-
-			{/* Active hooks */}
-			<div className="space-y-3">
-				<h3 className="text-sm font-semibold flex items-center gap-1.5">
-					<Zap className="h-4 w-4 text-orange-500" />
-					Active Hooks
-				</h3>
-				<p className="text-xs text-muted-foreground">
-					Hook types detected in this session.{" "}
-					{isKiro
-						? "Kiro supports 5 native hook events. Missing hooks mean those event types were not captured."
-						: isCopilotCli
-							? "Copilot CLI supports 6 hook events. Token usage and model info are not available."
-							: "Missing hooks mean those event types were not captured — check your hook configuration."}
-				</p>
-				<div className="space-y-4">
-					{hookCapabilities.map((group) => (
-						<div key={group.category} className="space-y-2">
-							<h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-								{group.category}
-							</h4>
-							<div className="grid gap-1.5">
-								{group.hooks.map((hook) => {
-									const active = activeHookEvents.has(hook.event);
-									return (
-										<div
-											key={hook.event}
-											className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm ${
-												active
-													? "bg-emerald-500/5 border border-emerald-500/20"
-													: "bg-muted/30 border border-transparent opacity-60"
-											}`}
-										>
-											{active ? (
-												<CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-											) : (
-												<XCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-											)}
-											<div className="flex-1 min-w-0">
-												<span className="font-medium">{hook.label}</span>
-												<span className="text-xs text-muted-foreground ml-2">
-													{hook.description}
-												</span>
-											</div>
-											{active && (
-												<Badge variant="success">
-													{
-														events.filter((e) => getEventName(e) === hook.event)
-															.length
-													}
-												</Badge>
-											)}
-										</div>
-									);
-								})}
-							</div>
-						</div>
-					))}
-				</div>
-			</div>
 		</div>
 	);
 }
-
 /* ── Page ───────────────────────────────────────────────── */
 
 export default function TraceDetailPage({
@@ -2463,13 +2165,15 @@ export default function TraceDetailPage({
 									<span className="text-sm">{session.service_name}</span>
 								</div>
 							)}
-							{events.length > 0 && events[0]?.timestamp && (
+							{events.some((e) => isRealTs(e.timestamp)) && (
 								<div>
 									<span className="text-xs text-muted-foreground block mb-0.5">
 										First Event
 									</span>
 									<span className="text-sm tabular-nums">
-										{new Date(events[0].timestamp).toLocaleString()}
+										{new Date(
+											events.find((e) => isRealTs(e.timestamp))!.timestamp,
+										).toLocaleString()}
 									</span>
 								</div>
 							)}
@@ -2479,15 +2183,18 @@ export default function TraceDetailPage({
 										Duration
 									</span>
 									<span className="text-sm tabular-nums">
-										{events.length > 1 &&
-										events[events.length - 1]?.timestamp &&
-										events[0]?.timestamp
-											? formatDuration(
-													new Date(
-														events[events.length - 1].timestamp,
-													).getTime() - new Date(events[0].timestamp).getTime(),
-												)
-											: "-"}
+										{(() => {
+											const fr = events.find((e) => isRealTs(e.timestamp));
+											const lr = [...events]
+												.reverse()
+												.find((e) => isRealTs(e.timestamp));
+											return fr && lr && fr !== lr
+												? formatDuration(
+														new Date(lr.timestamp).getTime() -
+															new Date(fr.timestamp).getTime(),
+													)
+												: "-";
+										})()}
 									</span>
 								</div>
 							)}
