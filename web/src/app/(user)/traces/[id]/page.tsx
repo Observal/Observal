@@ -2170,6 +2170,10 @@ function getHookCapabilities(
 	return CLAUDE_CODE_HOOK_CAPABILITIES;
 }
 
+const EPOCH_CUTOFF_MS = new Date("1971-01-01").getTime();
+const isRealTs = (ts: string | undefined): ts is string =>
+	!!ts && new Date(ts).getTime() > EPOCH_CUTOFF_MS;
+
 function SessionInfoTab({
 	events,
 	sessionId,
@@ -2420,21 +2424,23 @@ export default function TraceDetailPage({
 	return (
 		<>
 			<PageHeader
-				title={
-					isLoading
-						? "Trace"
-						: session?.service_name && events[0]?.timestamp
-							? `${session.service_name} · ${new Date(events[0].timestamp).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
-							: "Trace"
-				}
+				title={(() => {
+					if (isLoading) return "Trace";
+					const firstReal = events.find((e) => isRealTs(e.timestamp));
+					return session?.service_name && firstReal
+						? `${session.service_name} · ${new Date(firstReal.timestamp).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+						: "Trace";
+				})()}
 				breadcrumbs={[
 					{ label: "Dashboard", href: "/dashboard" },
 					{ label: "Traces", href: "/traces" },
 					{
-						label:
-							session?.service_name && events[0]?.timestamp
-								? `${session.service_name} · ${new Date(events[0].timestamp).toLocaleDateString([], { month: "short", day: "numeric" })}`
-								: "Trace",
+						label: (() => {
+							const firstReal = events.find((e) => isRealTs(e.timestamp));
+							return session?.service_name && firstReal
+								? `${session.service_name} · ${new Date(firstReal.timestamp).toLocaleDateString([], { month: "short", day: "numeric" })}`
+								: "Trace";
+						})(),
 					},
 				]}
 			/>
