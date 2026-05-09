@@ -1,9 +1,9 @@
-"""Parity test for model display helpers across server and CLI.
+"""Parity test for model display helpers.
 
-Server-side ``services.model_display.format_display`` and CLI-side
-``observal_cli.render.format_model`` must produce identical output for every
-case in ``tests/fixtures/model_display_cases.json``. The TypeScript helper
-under ``web/src/lib/model-display.ts`` is exercised by frontend unit tests.
+Server-side ``services.model_display.format_display`` is the source of truth.
+CLI-side ``observal_cli.render.format_model`` reads the pre-computed ``display``
+field from the API response. This test verifies both paths produce the same
+output for every case in ``tests/fixtures/model_display_cases.json``.
 """
 
 from __future__ import annotations
@@ -41,13 +41,32 @@ def test_server_display_matches_fixture(case):
 
 
 @pytest.mark.parametrize("case", _load_cases(), ids=lambda c: c["name"])
-def test_cli_display_matches_fixture(case):
+def test_cli_reads_server_display_field(case):
+    """CLI format_model reads the pre-computed display field from the API response."""
     from observal_cli.render import format_model
 
+    # Simulate what the server sends: pre-computed display from format_display
+    from services.model_display import format_display
+
+    rd_value = case.get("release_date")
+    rd = date.fromisoformat(rd_value) if rd_value else None
+    server_primary, server_secondary, server_rolling = format_display(
+        display_name=case["display_name"],
+        model_id=case["model_id"],
+        release_date=rd,
+        disambiguate=case["disambiguate"],
+    )
+
+    # Build a row as it would arrive from the API (with display field)
     row = {
         "display_name": case["display_name"],
         "model_id": case["model_id"],
         "release_date": case.get("release_date"),
+        "display": {
+            "primary": server_primary,
+            "secondary": server_secondary,
+            "is_rolling": server_rolling,
+        },
     }
     primary, secondary, is_rolling = format_model(row, disambiguate=case["disambiguate"])
     expected = case["expected"]

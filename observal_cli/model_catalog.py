@@ -139,15 +139,8 @@ def model_choices_for_picker(catalog: dict, ide: str) -> list[tuple[str, str]]:
             choices.append((short, short))
 
     rows = models_supporting_ide(catalog, ide)
-    primary_counts: dict[str, int] = {}
-    primaries: list[str] = []
     for m in rows:
-        primary, _, _ = format_model(m, disambiguate=False)
-        primaries.append(primary)
-        primary_counts[primary] = primary_counts.get(primary, 0) + 1
-
-    for m, p in zip(rows, primaries, strict=True):
-        primary, secondary, _ = format_model(m, disambiguate=primary_counts.get(p, 0) > 1)
+        primary, secondary, _ = format_model(m, disambiguate=True)
         label = f"{primary} ({secondary})" if secondary else primary
         choices.append((label, m.get("model_id") or ""))
     return choices
