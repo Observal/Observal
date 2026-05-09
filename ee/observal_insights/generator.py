@@ -55,6 +55,7 @@ async def generate_report_content(
     period_end: str = "",
     previous_metrics: dict | None = None,
     agent_config: dict | None = None,
+    registry_catalog: dict | None = None,
     db=None,
 ) -> dict:
     """Generate a complete insight report for an agent over a time period.
@@ -69,6 +70,7 @@ async def generate_report_content(
         previous_metrics: Metrics dict from the previous report period (for regression detection).
         agent_config: Agent configuration dict (system prompt, MCPs, skills, model) for
             component-aware suggestions. Loaded from the latest approved AgentVersion.
+        registry_catalog: Available MCPs/skills from the registry for component suggestions.
         db: Optional AsyncSession for caching. If None, a new session is created from _deps.
 
     Returns:
@@ -99,6 +101,7 @@ async def generate_report_content(
             period_end=period_end,
             previous_metrics=previous_metrics,
             agent_config=agent_config,
+            registry_catalog=registry_catalog,
             db=db,
             settings=settings,
         )
@@ -114,8 +117,9 @@ async def _run_pipeline(
     period_end: str,
     previous_metrics: dict | None,
     agent_config: dict | None,
-    db,
-    settings,
+    registry_catalog: dict | None = None,
+    db=None,
+    settings=None,
 ) -> dict:
     """Internal pipeline execution."""
 
@@ -242,9 +246,13 @@ async def _run_pipeline(
     )
 
     # ── Step 9: Generate narrative sections (8 parallel + 1 synthesis) ──
+    # Filter catalog to exclude components the agent already has
+    suggestions_catalog = _filter_catalog(registry_catalog, agent_config)
+
     narrative = await generate_sections(
         data_block=data_block,
         previous_report=previous_metrics,
+        registry_catalog=suggestions_catalog,
     )
 
     # Collect models used across sessions
@@ -295,6 +303,39 @@ async def _extract_facets_with_concurrency(
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     return [r for r in results if isinstance(r, dict) and r]
+
+
+def _filter_catalog(
+    registry_catalog: dict | None,
+    agent_config: dict | None,
+) -> dict | None:
+    """Remove components the agent already has from the catalog.
+
+    Keeps the suggestions prompt focused on genuinely new additions
+    and reduces token cost.
+    """
+    if not registry_catalog:
+        return None
+
+    existing_names: set[str] = set()
+    if agent_config:
+        for name in agent_config.get("configured_mcps", []):
+            existing_names.add(name.lower())
+        for name in agent_config.get("configured_skills", []):
+            existing_names.add(name.lower())
+
+    filtered: dict = {"mcps": [], "skills": []}
+    for mcp in registry_catalog.get("mcps", []):
+        if mcp.get("name", "").lower() not in existing_names:
+            filtered["mcps"].append(mcp)
+    for skill in registry_catalog.get("skills", []):
+        if skill.get("name", "").lower() not in existing_names:
+            filtered["skills"].append(skill)
+
+    if not filtered["mcps"] and not filtered["skills"]:
+        return None
+
+    return filtered
 
 
 def _build_data_block(

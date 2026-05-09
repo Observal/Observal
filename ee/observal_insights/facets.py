@@ -320,9 +320,10 @@ def aggregate_facets(all_facets: list[dict]) -> dict:
         for sf in f.get("primary_success_factors", []):
             success_factors[sf] = success_factors.get(sf, 0) + 1
 
-        # Tools
+        # Tools — LLM may return strings or dicts; normalize to strings
         for tool in f.get("tools_effective", []):
-            tools_effective[tool] = tools_effective.get(tool, 0) + 1
+            name = tool if isinstance(tool, str) else str(tool.get("name", tool) if isinstance(tool, dict) else tool)
+            tools_effective[name] = tools_effective.get(name, 0) + 1
         for tp in f.get("tools_problematic", []):
             tool_name = tp.get("tool", tp) if isinstance(tp, dict) else str(tp)
             tools_problematic[tool_name] = tools_problematic.get(tool_name, 0) + 1

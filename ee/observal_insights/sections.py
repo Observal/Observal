@@ -210,7 +210,24 @@ If "Agent Configuration" is present in the data, use it to ground your suggestio
 - If the system prompt is missing guidance for common user requests (visible in facets), suggest specific prompt additions
 - If a configured skill is never triggered, suggest removing it or improving its trigger conditions
 - Compare configured MCPs against actual tool usage — mismatches indicate configuration drift
-- If model_config has suboptimal settings given the usage pattern (e.g. low max_tokens but users need long outputs), flag it""",
+- If model_config has suboptimal settings given the usage pattern (e.g. low max_tokens but users need long outputs), flag it
+
+REGISTRY COMPONENT RECOMMENDATIONS:
+If "Available Components" section is present in the data:
+- Cross-reference user behavior with available registry components
+- If users do tasks that a registry MCP/skill could automate, suggest adding it
+- For registry components, include the CLI command: `observal agent add mcp <id>` or `observal agent add skill <id>`
+- For removal suggestions: edit `observal-agent.yaml` to remove the entry, then `observal agent publish`
+
+EXTERNAL MCP RECOMMENDATIONS:
+If the agent's usage patterns would benefit from a well-known MCP server NOT in the registry, suggest adding it as an external MCP. Common external MCPs to consider:
+- GitHub (@modelcontextprotocol/server-github) — for PR/issue automation
+- PostgreSQL (@modelcontextprotocol/server-postgres) — for database access
+- Slack (@modelcontextprotocol/server-slack) — for team communication
+- Memory (@modelcontextprotocol/server-memory) — for cross-session context persistence
+- Sequential Thinking (@modelcontextprotocol/server-sequential-thinking) — for complex reasoning
+
+For external MCPs, provide the YAML snippet to add under `external_mcps:` in `observal-agent.yaml`, then run `observal agent publish`.""",
     "usage_cost_analysis": """You are producing ONE section of a developer-facing insight report for an AI coding agent. Focus on cost efficiency.
 
 {data_block}
@@ -327,12 +344,25 @@ Rules:
 # All others use the "fast" model (Sonnet) for cost efficiency.
 _DEEP_SECTIONS = {"suggestions"}
 
+# Output size varies by section — right-size to avoid wasting tokens.
+_SECTION_MAX_TOKENS: dict[str, int] = {
+    "suggestions": 4096,
+    "usage_patterns": 3000,
+    "friction_analysis": 2500,
+    "what_works": 2000,
+    "usage_cost_analysis": 2000,
+    "user_experience": 2000,
+    "regression_detection": 2000,
+    "fun_ending": 512,
+}
+
 
 async def _call_section(section_name: str, prompt: str, model: str | None = None) -> tuple[str, dict]:
     """Call the eval model for a single section, return (name, result)."""
     call_model = get_call_model()
+    max_tokens = _SECTION_MAX_TOKENS.get(section_name, 4096)
     try:
-        result = await call_model(prompt, model_override=model, max_tokens=8192)
+        result = await call_model(prompt, model_override=model, max_tokens=max_tokens)
         if result and isinstance(result, dict):
             return section_name, result
         logger.warning("section_empty_response", section=section_name)
@@ -345,12 +375,14 @@ async def _call_section(section_name: str, prompt: str, model: str | None = None
 async def generate_sections(
     data_block: str,
     previous_report: dict | None = None,
+    registry_catalog: dict | None = None,
 ) -> dict:
     """Run 8 parallel section prompts + 1 synthesis, return combined narrative.
 
     Args:
         data_block: Formatted string with all metrics, facets, and session data.
         previous_report: Previous report's aggregated_data for regression comparison.
+        registry_catalog: Filtered catalog of available components (only for suggestions).
 
     Returns:
         Dict with structured section outputs for each narrative section.
@@ -364,6 +396,14 @@ async def generate_sections(
     else:
         previous_data_block = "## Previous Period Metrics\nNo previous period data available."
 
+    # Build catalog block — only injected into the suggestions prompt to save tokens
+    catalog_block = ""
+    if registry_catalog:
+        catalog_block = (
+            "\n\n## Available Components (registry catalog — NOT yet configured on this agent)\n"
+            + json.dumps(registry_catalog, indent=2)
+        )
+
     # Resolve models: deep (Opus) for complex sections, synthesis (Sonnet) for the rest
     deep_model = _get_section_model()
     fast_model = _get_synthesis_model()
@@ -372,6 +412,7 @@ async def generate_sections(
         "insight_sections_starting",
         deep_model=deep_model or "default",
         fast_model=fast_model or "default",
+        catalog_items=(len(registry_catalog.get("mcps", [])) + len(registry_catalog.get("skills", []))) if registry_catalog else 0,
     )
 
     # Build prompts for all 8 sections
@@ -382,6 +423,9 @@ async def generate_sections(
                 data_block=data_block,
                 previous_data_block=previous_data_block,
             )
+        elif name == "suggestions":
+            # Append catalog only to suggestions to minimize token cost
+            built = template.format(data_block=data_block + catalog_block)
         else:
             built = template.format(data_block=data_block)
         section_prompts[name] = SECTION_PREAMBLE + built
