@@ -112,6 +112,20 @@ def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
     return lines, len(raw)
 
 
+def read_agent_marker(cwd: str) -> tuple[str | None, str | None]:
+    """Return (agent_id, agent_version) from <cwd>/.observal/agent, or (None, None).
+
+    Written by ``observal pull`` so hooks can attribute sessions to the
+    pulled agent without needing OBSERVAL_AGENT_ID in the shell environment.
+    """
+    try:
+        marker = Path(cwd) / ".observal" / "agent"
+        data = json.loads(marker.read_text())
+        return data.get("agent_id"), data.get("agent_version")
+    except Exception:
+        return None, None
+
+
 def build_payload(
     session_id: str,
     lines: list[str],
@@ -119,13 +133,15 @@ def build_payload(
     hook_event: str,
     line_count_before: int,
     new_offset: int = 0,
+    cwd: str = "",
 ) -> dict:
     """Construct the JSON body for the ingest endpoint."""
+    agent_id, agent_version = read_agent_marker(cwd) if cwd else (None, None)
     payload: dict = {
         "session_id": session_id,
         "ide": "claude-code",
-        "agent_id": None,
-        "agent_version": None,
+        "agent_id": agent_id,
+        "agent_version": agent_version,
         "lines": lines,
         "start_offset": start_offset,
         "hook_event": hook_event,
@@ -250,6 +266,7 @@ def _run(home: Path | None = None) -> None:
         hook_event=hook_event,
         line_count_before=line_count,
         new_offset=new_offset,
+        cwd=cwd,
     )
 
     success = post_to_server(

@@ -121,6 +121,7 @@ def _run(home: Path | None = None) -> None:
         event = {}
 
     hook_event: str = event.get("hook_event_name", "") or event.get("hookEventName", "") or event.get("event", "")
+    cwd: str = event.get("cwd", "")
     if not hook_event:
         _h = home if home is not None else Path.home()
         _sf = _h / ".observal" / ".kiro-session"
@@ -166,6 +167,7 @@ def _run(home: Path | None = None) -> None:
                     hook_event=hook_event,
                     line_count_before=line_count,
                     new_offset=offset,
+                    cwd=cwd,
                 )
                 payload_credits["ide"] = "kiro"
                 payload_credits["total_credits"] = credits
@@ -184,6 +186,7 @@ def _run(home: Path | None = None) -> None:
         hook_event=hook_event,
         line_count_before=line_count,
         new_offset=new_offset,
+        cwd=cwd,
     )
     # Tag IDE so the server routes to the Kiro parser
     payload["ide"] = "kiro"

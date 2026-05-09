@@ -406,6 +406,18 @@ def register_pull(app: typer.Typer):
                 status = _write_file(p, sf["content"])
                 written.append((str(p), status))
 
+        # ── Agent marker (all IDEs) ─────────────────────────
+        # Write <target_dir>/.observal/agent so session_push hooks can attribute
+        # telemetry to this agent without needing OBSERVAL_AGENT_ID in the shell.
+        # Both Claude Code and Kiro pass cwd in their hook events, so one marker
+        # file covers all JSONL-based IDEs.
+        if not dry_run:
+            agent_uuid = agent_detail.get("id", resolved)
+            agent_version = agent_detail.get("version") or agent_detail.get("latest_version")
+            marker_dir = target_dir / ".observal"
+            marker_dir.mkdir(parents=True, exist_ok=True)
+            (marker_dir / "agent").write_text(json.dumps({"agent_id": agent_uuid, "agent_version": agent_version}))
+
         # ── Output summary ──────────────────────────────────
         if not written:
             rprint("[yellow]No files to write from the config snippet.[/yellow]")
