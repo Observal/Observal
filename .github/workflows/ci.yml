@@ -165,7 +165,7 @@ jobs:
       - uses: actions/checkout@v6
         if: needs.changes.outputs.web == 'true'
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: needs.changes.outputs.web == 'true'
         with:
           version: 10
@@ -272,7 +272,7 @@ jobs:
           uv run --with pip-audit pip-audit --strict --desc || true
 
       - name: JS dependency audit
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
       - name: Run pnpm audit
