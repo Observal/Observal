@@ -148,9 +148,9 @@ async def _list_sessions_query(
     return await _ch_json(
         "SELECT "
         "session_id, "
-        "minIf(timestamp, timestamp > '1970-01-02 00:00:00') AS first_event_time, "
-        "maxIf(timestamp, timestamp > '1970-01-02 00:00:00') AS last_event_time, "
-        "(maxIf(timestamp, timestamp > '1970-01-02 00:00:00') > now() - INTERVAL 30 MINUTE) AS is_active, "
+        "minIf(timestamp, timestamp > '1970-01-02 00:00:00' AND timestamp < '2099-01-01 00:00:00') AS first_event_time, "
+        "maxIf(timestamp, timestamp > '1970-01-02 00:00:00' AND timestamp < '2099-01-01 00:00:00') AS last_event_time, "
+        "(maxIf(timestamp, timestamp > '1970-01-02 00:00:00' AND timestamp < '2099-01-01 00:00:00') > now() - INTERVAL 30 MINUTE) AS is_active, "
         "countIf(event_type = 'user_prompt') AS prompt_count, "
         "0 AS api_request_count, "
         "countIf(event_type = 'tool_result') AS tool_result_count, "

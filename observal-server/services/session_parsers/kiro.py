@@ -270,7 +270,7 @@ def extra_ingest_rows(
             "line_hash": "",
             "layer_hash": None,
             "event_type": "kiro_credits",
-            "timestamp": "1970-01-01 00:00:00.000",
+            "timestamp": "2099-12-31 00:00:00.000",
             "uuid": None,
             "parent_uuid": None,
             "tool_name": None,

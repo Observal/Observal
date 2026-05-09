@@ -124,7 +124,7 @@ async def ingest_session_lines(
         ts = extract_timestamp(ide, parsed)
         if ts is not None:
             last_real_ts = ts
-        timestamp = ts if ts is not None else (last_real_ts if last_real_ts is not None else "1970-01-01 00:00:00.000")
+        timestamp = ts if ts is not None else (last_real_ts if last_real_ts is not None else "2000-01-01 00:00:00.000")
 
         rows.append(
             {
