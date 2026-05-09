@@ -48,6 +48,7 @@ async def ingest_session_lines(
     lines: list[str] | None = None,
     start_offset: int = 0,
     total_credits: float | None = None,
+    parent_session_id: str | None = None,
 ) -> IngestResult:
     """Parse, classify, and batch-insert JSONL transcript lines.
 
@@ -146,6 +147,7 @@ async def ingest_session_lines(
                 "content_length": len(raw_line.encode()),
                 "raw_line": redacted_line,
                 "credits": 0.0,
+                "parent_session_id": parent_session_id,
             }
         )
         ingested += 1

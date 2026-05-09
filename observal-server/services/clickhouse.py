@@ -321,6 +321,7 @@ INIT_SQL = [
         raw_line        String CODEC(ZSTD(3)),
         ingested_at     DateTime64(3, 'UTC') DEFAULT now(),
         credits         Float64 DEFAULT 0,
+        parent_session_id Nullable(String),
         INDEX idx_se_session_id session_id TYPE bloom_filter(0.001) GRANULARITY 1,
         INDEX idx_se_project_id project_id TYPE bloom_filter(0.01) GRANULARITY 1,
         INDEX idx_se_event_type event_type TYPE bloom_filter(0.01) GRANULARITY 1,
@@ -355,6 +356,9 @@ INIT_SQL = [
     ) ENGINE = MergeTree()
     PARTITION BY toDate(Timestamp)
     ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)""",
+    # Subagent attribution: link subagent sessions to their parent session
+    """ALTER TABLE session_events ADD COLUMN IF NOT EXISTS parent_session_id Nullable(String)""",
+    """ALTER TABLE session_events ADD INDEX IF NOT EXISTS idx_se_parent_session_id parent_session_id TYPE bloom_filter(0.01) GRANULARITY 1""",
 ]
 
 
@@ -1026,7 +1030,7 @@ async def insert_session_events(rows: list[dict]):
     sql = (
         "INSERT INTO session_events (session_id, project_id, user_id, agent_id, "
         "agent_version, layer_hash, ide, line_offset, line_hash, event_type, timestamp, uuid, parent_uuid, "
-        "tool_name, tool_id, content_preview, content_length, raw_line, credits) FORMAT JSONEachRow"
+        "tool_name, tool_id, content_preview, content_length, raw_line, credits, parent_session_id) FORMAT JSONEachRow"
     )
     try:
         r = await _query(sql, data="\n".join(lines))

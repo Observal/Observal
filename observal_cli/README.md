@@ -12,12 +12,12 @@ uv pip install -e .
 
 This installs four entry points:
 
-| Command | Purpose |
-|---------|---------|
-| `observal` | Main CLI |
-| `observal-shim` | Telemetry wrapper that sits in front of MCP servers |
-| `observal-proxy` | HTTP proxy for MCP servers |
-| `observal-sandbox-run` | Sandbox execution runner |
+| Command                | Purpose                                             |
+| ---------------------- | --------------------------------------------------- |
+| `observal`             | Main CLI                                            |
+| `observal-shim`        | Telemetry wrapper that sits in front of MCP servers |
+| `observal-proxy`       | HTTP proxy for MCP servers                          |
+| `observal-sandbox-run` | Sandbox execution runner                            |
 
 ## Quick Start
 
@@ -95,11 +95,11 @@ observal uninstall                                   # tear down Docker, remove 
 
 ## Supported IDEs
 
-| IDE / Tool | Support Level |
-|------------|--------------|
-| Claude Code | Fully supported |
-| Kiro CLI | Supported (next most tested) |
-| Cursor, VS Code, Gemini CLI | Untested |
+| IDE / Tool                  | Support Level                |
+| --------------------------- | ---------------------------- |
+| Claude Code                 | Fully supported              |
+| Kiro CLI                    | Supported (next most tested) |
+| Cursor, VS Code, Gemini CLI | Untested                     |
 
 The `--ide` flag controls which config format is generated. Each IDE has its own config paths and JSON structure.
 
@@ -107,13 +107,13 @@ The `--ide` flag controls which config format is generated. Each IDE has its own
 
 All CLI state lives in `~/.observal/`:
 
-| File | Contents |
-|------|----------|
-| `config.json` | Server URL, tokens, user ID |
-| `aliases.json` | User-defined name-to-UUID aliases |
-| `last_results.json` | Cached list results for numeric shorthand |
-| `telemetry_buffer.db` | SQLite buffer for offline event queuing |
-| `keys/server_public.pem` | Server public key for payload encryption |
+| File                     | Contents                                  |
+| ------------------------ | ----------------------------------------- |
+| `config.json`            | Server URL, tokens, user ID               |
+| `aliases.json`           | User-defined name-to-UUID aliases         |
+| `last_results.json`      | Cached list results for numeric shorthand |
+| `telemetry_buffer.db`    | SQLite buffer for offline event queuing   |
+| `keys/server_public.pem` | Server public key for payload encryption  |
 
 ## Telemetry
 

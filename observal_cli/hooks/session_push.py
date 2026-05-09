@@ -126,6 +126,21 @@ def read_agent_marker(cwd: str) -> tuple[str | None, str | None]:
         return None, None
 
 
+def get_parent_session_id(jsonl_path: Path) -> str | None:
+    """Return the parent session ID if *jsonl_path* is a Claude Code subagent file.
+
+    Subagent JSONL files live at:
+      ~/.claude/projects/<project>/<parent_session_id>/subagents/<subagent_session_id>.jsonl
+
+    The parent session ID is the directory two levels above the file.
+    Returns None for top-level session files.
+    """
+    parts = jsonl_path.parts
+    if len(parts) >= 3 and parts[-2] == "subagents":
+        return parts[-3]  # directory above subagents/ is the parent session id
+    return None
+
+
 def build_payload(
     session_id: str,
     lines: list[str],
@@ -134,6 +149,7 @@ def build_payload(
     line_count_before: int,
     new_offset: int = 0,
     cwd: str = "",
+    parent_session_id: str | None = None,
 ) -> dict:
     """Construct the JSON body for the ingest endpoint."""
     agent_id, agent_version = read_agent_marker(cwd) if cwd else (None, None)
@@ -145,6 +161,7 @@ def build_payload(
         "lines": lines,
         "start_offset": start_offset,
         "hook_event": hook_event,
+        "parent_session_id": parent_session_id,
     }
     if hook_event == "Stop":
         payload["final"] = True
@@ -252,6 +269,8 @@ def _run(home: Path | None = None) -> None:
     if jsonl_path is None:
         return
 
+    parent_session_id = get_parent_session_id(jsonl_path)
+
     offset, line_count = read_cursor(session_id, home=home)
     lines, bytes_read = read_new_lines(jsonl_path, offset=offset)
 
@@ -267,6 +286,7 @@ def _run(home: Path | None = None) -> None:
         line_count_before=line_count,
         new_offset=new_offset,
         cwd=cwd,
+        parent_session_id=parent_session_id,
     )
 
     success = post_to_server(

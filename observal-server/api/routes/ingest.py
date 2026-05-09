@@ -24,6 +24,8 @@ class SessionIngestRequest(BaseModel):
     total_offset: int | None = None
     # Kiro-specific: total credits consumed this session
     total_credits: float | None = None
+    # Claude Code subagent attribution: set when this session is a subagent
+    parent_session_id: str | None = None
 
 
 class SessionIngestResponse(BaseModel):
@@ -59,6 +61,7 @@ async def ingest_session(
         lines=req.lines,
         start_offset=req.start_offset,
         total_credits=req.total_credits,
+        parent_session_id=req.parent_session_id,
     )
 
     integrity_ok = None
