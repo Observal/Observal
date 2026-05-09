@@ -45,9 +45,9 @@ async def fetch_session_metas_from_events(
     sql = """
         SELECT
             session_id,
-            min(start_time) AS start_time,
-            max(end_time) AS end_time,
-            dateDiff('second', min(start_time), max(end_time)) AS duration_seconds,
+            min(s_start) AS start_time,
+            max(s_end) AS end_time,
+            dateDiff('second', min(s_start), max(s_end)) AS duration_seconds,
             sum(event_count) AS event_count,
             sum(prompt_count) AS prompt_count,
             sum(tool_call_count) AS tool_call_count,
@@ -64,8 +64,8 @@ async def fetch_session_metas_from_events(
             -- Primary: sessions directly attributed to this agent
             SELECT
                 session_id,
-                minIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS start_time,
-                maxIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS end_time,
+                minIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS s_start,
+                maxIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS s_end,
                 count() AS event_count,
                 countIf(event_type = 'user_prompt') AS prompt_count,
                 countIf(event_type = 'tool_call') AS tool_call_count,
@@ -91,8 +91,8 @@ async def fetch_session_metas_from_events(
             -- Excluded if agent_id already matches to avoid double-counting.
             SELECT
                 session_id,
-                minIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS start_time,
-                maxIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS end_time,
+                minIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS s_start,
+                maxIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS s_end,
                 count() AS event_count,
                 countIf(event_type = 'user_prompt') AS prompt_count,
                 countIf(event_type = 'tool_call') AS tool_call_count,
