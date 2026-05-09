@@ -214,6 +214,7 @@ def push_subagent_sessions(
             server_url=config["server_url"],
             access_token=config["access_token"],
             payload=payload,
+            config=config,
         )
         if success:
             write_cursor(cursor_key, new_offset, line_count + len(lines), home=home)
@@ -252,6 +253,9 @@ def build_payload(
 def load_config(home: Path | None = None) -> dict | None:
     """Read server_url and access_token from ~/.observal/config.json.
 
+    Token priority: api_key (30-day) > access_token (1-hour).
+    Also returns refresh_token for auto-refresh on 401.
+
     Returns None when the file is missing or required fields are absent.
     """
     if home is None:
@@ -267,11 +271,17 @@ def load_config(home: Path | None = None) -> dict | None:
         return None
 
     server_url = data.get("server_url", "").strip()
-    access_token = data.get("access_token", "").strip()
+    # Prefer api_key (30-day lifetime) over access_token (1-hour lifetime)
+    access_token = data.get("api_key", "").strip() or data.get("access_token", "").strip()
     if not server_url or not access_token:
         return None
 
-    return {"server_url": server_url, "access_token": access_token}
+    return {
+        "server_url": server_url,
+        "access_token": access_token,
+        "refresh_token": data.get("refresh_token", "").strip(),
+        "_config_path": str(cfg_file),
+    }
 
 
 def log_error(message: str, home: Path | None = None) -> None:
@@ -291,10 +301,45 @@ def log_error(message: str, home: Path | None = None) -> None:
         pass
 
 
-def post_to_server(server_url: str, access_token: str, payload: dict) -> bool:
+def _refresh_access_token(server_url: str, refresh_token: str, config_path: str) -> str | None:
+    """Use refresh_token to obtain a new access_token and persist it.
+
+    Returns the new access_token on success, None on failure.
+    """
+    import httpx
+
+    url = f"{server_url.rstrip('/')}/api/v1/auth/token/refresh"
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.post(url, json={"refresh_token": refresh_token})
+            if resp.status_code >= 300:
+                return None
+            data = resp.json()
+            new_token = data.get("access_token", "")
+            if not new_token:
+                return None
+
+            # Persist refreshed tokens so subsequent hooks don't also need to refresh
+            cfg_path = Path(config_path)
+            try:
+                cfg = json.loads(cfg_path.read_text())
+                cfg["access_token"] = new_token
+                if data.get("refresh_token"):
+                    cfg["refresh_token"] = data["refresh_token"]
+                cfg_path.write_text(json.dumps(cfg, indent=2))
+            except Exception:
+                pass
+
+            return new_token
+    except Exception:
+        return None
+
+
+def post_to_server(server_url: str, access_token: str, payload: dict, config: dict | None = None) -> bool:
     """POST *payload* to the ingest endpoint.
 
-    Returns True on HTTP 2xx, False on any error.
+    On 401 (expired token), attempts one auto-refresh using the refresh_token
+    from config, then retries. Returns True on HTTP 2xx, False on any error.
     httpx is imported here to keep module-level imports lean.
     """
     import httpx
@@ -305,9 +350,23 @@ def post_to_server(server_url: str, access_token: str, payload: dict) -> bool:
         "Content-Type": "application/json",
     }
     try:
-        with httpx.Client(timeout=5.0) as client:
+        with httpx.Client(timeout=10.0) as client:
             response = client.post(url, json=payload, headers=headers)
-            return response.status_code < 300
+            if response.status_code < 300:
+                return True
+
+            # Auto-refresh on 401 (expired token)
+            if response.status_code == 401 and config:
+                refresh_token = config.get("refresh_token", "")
+                config_path = config.get("_config_path", "")
+                if refresh_token and config_path:
+                    new_token = _refresh_access_token(server_url, refresh_token, config_path)
+                    if new_token:
+                        headers["Authorization"] = f"Bearer {new_token}"
+                        retry = client.post(url, json=payload, headers=headers)
+                        return retry.status_code < 300
+
+            return False
     except Exception:
         return False
 
@@ -373,6 +432,7 @@ def _run(home: Path | None = None) -> None:
         server_url=config["server_url"],
         access_token=config["access_token"],
         payload=payload,
+        config=config,
     )
 
     if not success:
