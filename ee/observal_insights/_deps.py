@@ -18,6 +18,7 @@ db_session: Callable[..., Any] | None = None  # async_session factory
 # Model classes (set by configure())
 InsightSessionFacets: type | None = None
 InsightSessionMeta: type | None = None
+InsightMetaCache: type | None = None
 
 
 def get_settings():
@@ -54,3 +55,9 @@ def get_meta_model():
     if InsightSessionMeta is None:
         raise RuntimeError("observal_insights not configured. Call configure() first.")
     return InsightSessionMeta
+
+
+def get_meta_cache_model():
+    if InsightMetaCache is None:
+        raise RuntimeError("observal_insights not configured. Call configure() first.")
+    return InsightMetaCache
