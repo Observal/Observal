@@ -3,17 +3,147 @@
 Loads session metadata from ClickHouse and caches processed results in
 PostgreSQL via the InsightSessionMeta model. This avoids re-querying
 ClickHouse for the same session data across report regenerations.
+
+V3: Primary path queries `session_events` table using `agent_id`.
+Fallback path queries `otel_logs` using `agent_name` for agents that
+haven't migrated to the new event pipeline.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import json
+from datetime import datetime, timezone
 
 import structlog
 
-from ._deps import get_meta_model, get_query
+from ._deps import get_query, get_meta_cache_model
 
 logger = structlog.get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Primary path: session_events table (V3)
+# ---------------------------------------------------------------------------
+
+
+async def fetch_session_metas_from_events(
+    agent_id: str,
+    period_start: str,
+    period_end: str,
+) -> list[dict]:
+    """Fetch session metadata from session_events table (V3 primary path).
+
+    Args:
+        agent_id: The agent UUID.
+        period_start: ISO timestamp for period start.
+        period_end: ISO timestamp for period end.
+
+    Returns:
+        List of session metadata dicts from ClickHouse.
+    """
+    query = get_query()
+
+    sql = """
+        SELECT
+            session_id,
+            min(timestamp) AS start_time,
+            max(timestamp) AS end_time,
+            dateDiff('second', min(timestamp), max(timestamp)) AS duration_seconds,
+            count() AS event_count,
+            countIf(event_type = 'user_prompt') AS prompt_count,
+            countIf(event_type = 'tool_call') AS tool_call_count,
+            countIf(event_type = 'tool_result') AS tool_result_count,
+            -- Token extraction (Claude Code only)
+            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'input_tokens'), ide = 'claude-code') AS input_tokens,
+            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens'), ide = 'claude-code') AS output_tokens,
+            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_read_input_tokens'), ide = 'claude-code') AS cache_read_tokens,
+            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_creation_input_tokens'), ide = 'claude-code') AS cache_write_tokens,
+            -- Credits (Kiro only)
+            sum(credits) AS total_credits,
+            any(ide) AS session_ide,
+            any(user_id) AS session_user_id,
+            any(parent_session_id) AS session_parent_id
+        FROM session_events FINAL
+        WHERE agent_id = {agent_id:String}
+          AND timestamp BETWEEN {t_start:String} AND {t_end:String}
+        GROUP BY session_id
+        HAVING event_count >= 2
+        ORDER BY start_time
+        FORMAT JSON
+    """
+    params = {
+        "param_agent_id": agent_id,
+        "param_t_start": period_start,
+        "param_t_end": period_end,
+    }
+
+    try:
+        r = await query(sql, params)
+        r.raise_for_status()
+        data = r.json().get("data", [])
+        # Remap aliased columns back to expected names
+        for row in data:
+            if "session_ide" in row:
+                row["ide"] = row.pop("session_ide")
+            if "session_user_id" in row:
+                row["user_id"] = row.pop("session_user_id")
+            if "session_parent_id" in row:
+                row["parent_session_id"] = row.pop("session_parent_id")
+        return data
+    except Exception as e:
+        logger.error(
+            "session_meta_fetch_from_events_failed",
+            agent_id=agent_id,
+            error=str(e),
+        )
+        return []
+
+
+async def get_session_last_event_time(session_id: str) -> datetime | None:
+    """Get the timestamp of the last event in a session (for facet staleness).
+
+    Args:
+        session_id: The session UUID.
+
+    Returns:
+        The datetime of the last event, or None if not found.
+    """
+    query = get_query()
+    sql = """
+        SELECT max(timestamp) AS last_event
+        FROM session_events FINAL
+        WHERE session_id = {sid:String}
+        FORMAT JSON
+    """
+    params = {"param_sid": session_id}
+
+    try:
+        r = await query(sql, params)
+        r.raise_for_status()
+        data = r.json().get("data", [])
+        if data and data[0].get("last_event"):
+            ts_str = data[0]["last_event"]
+            # Parse ClickHouse timestamp format
+            for fmt in (
+                "%Y-%m-%d %H:%M:%S.%f",
+                "%Y-%m-%dT%H:%M:%S.%fZ",
+                "%Y-%m-%dT%H:%M:%S.%f",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%SZ",
+            ):
+                try:
+                    return datetime.strptime(ts_str[:26], fmt).replace(tzinfo=timezone.utc)
+                except ValueError:
+                    continue
+        return None
+    except Exception as e:
+        logger.warning("session_last_event_time_failed", session_id=session_id, error=str(e))
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Fallback path: otel_logs table (legacy)
+# ---------------------------------------------------------------------------
 
 
 async def fetch_session_metas(
@@ -21,7 +151,7 @@ async def fetch_session_metas(
     period_start: str,
     period_end: str,
 ) -> list[dict]:
-    """Fetch session metadata from ClickHouse for a given agent and time range.
+    """Fetch session metadata from ClickHouse otel_logs (legacy fallback).
 
     Args:
         agent_name: The agent registry name (matches agent_type or agent_name in otel_logs).
@@ -95,6 +225,11 @@ async def fetch_session_metas(
         return []
 
 
+# ---------------------------------------------------------------------------
+# Cache layer (PostgreSQL)
+# ---------------------------------------------------------------------------
+
+
 async def load_cached_metas(
     agent_id: str,
     period_start: str,
@@ -102,10 +237,6 @@ async def load_cached_metas(
     db,
 ) -> dict[str, dict] | None:
     """Load cached session metadata from PostgreSQL.
-
-    The InsightSessionMeta model stores one row per session. We load all
-    cached sessions for the agent and return those whose start_time falls
-    within the requested period.
 
     Args:
         agent_id: The agent UUID (as string).
@@ -116,25 +247,23 @@ async def load_cached_metas(
     Returns:
         Dict mapping session_id -> metadata, or None if no cache exists.
     """
-    MetaModel = get_meta_model()
+    CacheModel = get_meta_cache_model()
 
     from sqlalchemy import select
 
-    stmt = select(MetaModel).where(MetaModel.agent_id == agent_id)
+    stmt = (
+        select(CacheModel)
+        .where(CacheModel.agent_id == agent_id)
+        .where(CacheModel.period_start == period_start)
+        .where(CacheModel.period_end == period_end)
+    )
     result = await db.execute(stmt)
-    rows = result.scalars().all()
+    row = result.scalar_one_or_none()
 
-    if not rows:
+    if row is None:
         return None
 
-    metas: dict[str, dict] = {}
-    for row in rows:
-        meta = row.meta if hasattr(row, "meta") else None
-        if not meta:
-            continue
-        metas[row.session_id] = meta
-
-    return metas if metas else None
+    return row.session_metas
 
 
 async def store_cached_metas(
@@ -146,9 +275,6 @@ async def store_cached_metas(
 ) -> None:
     """Persist session metadata cache to PostgreSQL.
 
-    Stores one row per session in InsightSessionMeta. Upserts by
-    (agent_id, session_id) unique constraint.
-
     Args:
         agent_id: The agent UUID (as string).
         period_start: ISO timestamp for period start.
@@ -156,28 +282,39 @@ async def store_cached_metas(
         session_metas: Dict mapping session_id -> metadata.
         db: An AsyncSession instance.
     """
-    MetaModel = get_meta_model()
+    CacheModel = get_meta_cache_model()
 
     from sqlalchemy import select
 
-    for session_id, meta in session_metas.items():
-        stmt = select(MetaModel).where(MetaModel.agent_id == agent_id).where(MetaModel.session_id == session_id)
-        result = await db.execute(stmt)
-        existing = result.scalar_one_or_none()
+    stmt = (
+        select(CacheModel)
+        .where(CacheModel.agent_id == agent_id)
+        .where(CacheModel.period_start == period_start)
+        .where(CacheModel.period_end == period_end)
+    )
+    result = await db.execute(stmt)
+    existing = result.scalar_one_or_none()
 
-        if existing:
-            existing.meta = meta
-            existing.computed_at = datetime.now(UTC)
-        else:
-            record = MetaModel(
-                agent_id=agent_id,
-                session_id=session_id,
-                computed_at=datetime.now(UTC),
-                meta=meta,
-            )
-            db.add(record)
+    if existing:
+        existing.session_metas = session_metas
+        existing.updated_at = datetime.now(timezone.utc)
+    else:
+        record = CacheModel(
+            agent_id=agent_id,
+            period_start=period_start,
+            period_end=period_end,
+            session_metas=session_metas,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.add(record)
 
     await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Main entry point: dual-source with fallback
+# ---------------------------------------------------------------------------
 
 
 async def get_session_metas(
@@ -190,12 +327,12 @@ async def get_session_metas(
 ) -> dict[str, dict]:
     """Get session metadata, using cache when available.
 
-    Fetches from ClickHouse and optionally caches in PostgreSQL for
-    subsequent report regenerations.
+    V3: Tries session_events first (using agent_id), falls back to
+    otel_logs (using agent_name) if no results are found.
 
     Args:
-        agent_id: The agent UUID (used for cache key).
-        agent_name: The agent registry name (used for ClickHouse query).
+        agent_id: The agent UUID (used for session_events query and cache key).
+        agent_name: The agent registry name (used for otel_logs fallback).
         period_start: ISO timestamp for period start.
         period_end: ISO timestamp for period end.
         db: Optional AsyncSession for caching. If None, caching is skipped.
@@ -218,8 +355,20 @@ async def get_session_metas(
         except Exception as e:
             logger.warning("session_metas_cache_load_failed", error=str(e))
 
-    # Fetch from ClickHouse using agent_name for the query
-    rows = await fetch_session_metas(agent_name or agent_id, period_start, period_end)
+    # V3 primary path: try session_events using agent_id
+    rows = []
+    if agent_id:
+        rows = await fetch_session_metas_from_events(agent_id, period_start, period_end)
+
+    # Fallback: otel_logs using agent_name
+    if not rows and agent_name:
+        logger.info(
+            "session_metas_falling_back_to_otel_logs",
+            agent_id=agent_id,
+            agent_name=agent_name,
+        )
+        rows = await fetch_session_metas(agent_name, period_start, period_end)
+
     if not rows:
         return {}
 

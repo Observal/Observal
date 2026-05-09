@@ -1,4 +1,4 @@
-"""HTML export for insight reports — self-contained single-file report."""
+"""HTML export for insight reports — self-contained single-file report (V3)."""
 
 from __future__ import annotations
 
@@ -19,28 +19,123 @@ def _format_cost(val: float | None) -> str:
     return f"${val:.2f}"
 
 
+def _format_number(val: int | float | None) -> str:
+    if val is None:
+        return "0"
+    if isinstance(val, float):
+        if val == int(val):
+            return f"{int(val):,}"
+        return f"{val:,.1f}"
+    return f"{val:,}"
+
+
+def _format_duration_hours(seconds: float | None) -> str:
+    if not seconds:
+        return "0h"
+    hours = seconds / 3600
+    if hours < 1:
+        return f"{seconds / 60:.0f}m"
+    return f"{hours:.1f}h"
+
+
 def _severity_color(severity: str) -> str:
-    return {"high": "#dc2626", "medium": "#d97706", "low": "#2563eb"}.get(severity, "#6b7280")
+    return {"high": "#dc2626", "medium": "#d97706", "low": "#2563eb"}.get(
+        severity, "#6b7280"
+    )
 
 
 def _priority_color(priority: str) -> str:
-    return {"high": "#dc2626", "medium": "#d97706", "low": "#16a34a"}.get(priority, "#6b7280")
+    return {"high": "#dc2626", "medium": "#d97706", "low": "#16a34a"}.get(
+        priority, "#6b7280"
+    )
 
 
-def _health_color(health: str) -> str:
-    return {"healthy": "#16a34a", "mixed": "#d97706", "concerning": "#dc2626"}.get(health, "#6b7280")
+def _health_badge(health: str) -> str:
+    colors = {
+        "healthy": ("#16a34a", "#f0fdf4"),
+        "mixed": ("#d97706", "#fffbeb"),
+        "concerning": ("#dc2626", "#fef2f2"),
+    }
+    fg, bg = colors.get(health, ("#6b7280", "#f1f5f9"))
+    return (
+        f'<span class="health-badge" style="background:{bg};color:{fg};'
+        f'border:1px solid {fg}30;">{_esc(health).upper()}</span>'
+    )
+
+
+def _render_bar_chart(items: list[tuple[str, float]], color: str = "var(--blue)") -> str:
+    """Render a CSS horizontal bar chart from (label, value) pairs."""
+    if not items:
+        return ""
+    max_val = max(v for _, v in items) if items else 1
+    if max_val == 0:
+        max_val = 1
+    rows = ""
+    for label, value in items:
+        pct = (value / max_val) * 100
+        display_val = f"{value:.0f}%" if max_val <= 100 and all(v <= 100 for _, v in items) else _format_number(value)
+        # If all values sum roughly to 100 or less and look like percentages, show as %
+        rows += f"""<div class="chart-bar-row">
+  <span class="chart-label">{_esc(label)}</span>
+  <div class="chart-bar-container">
+    <div class="chart-bar" style="width:{pct:.1f}%;background:{color}"></div>
+  </div>
+  <span class="chart-value">{display_val}</span>
+</div>"""
+    return rows
+
+
+def _render_pct_bar_chart(items: list[tuple[str, float]], color: str = "var(--blue)") -> str:
+    """Render bar chart where values are already percentages (0-100)."""
+    if not items:
+        return ""
+    rows = ""
+    for label, value in items:
+        rows += f"""<div class="chart-bar-row">
+  <span class="chart-label">{_esc(label)}</span>
+  <div class="chart-bar-container">
+    <div class="chart-bar" style="width:{value:.1f}%;background:{color}"></div>
+  </div>
+  <span class="chart-value">{value:.0f}%</span>
+</div>"""
+    return rows
+
+
+def _render_count_bar_chart(items: list[tuple[str, int | float]], color: str = "var(--blue)") -> str:
+    """Render bar chart where values are raw counts."""
+    if not items:
+        return ""
+    max_val = max(v for _, v in items) if items else 1
+    if max_val == 0:
+        max_val = 1
+    rows = ""
+    for label, value in items:
+        pct = (value / max_val) * 100
+        rows += f"""<div class="chart-bar-row">
+  <span class="chart-label">{_esc(label)}</span>
+  <div class="chart-bar-container">
+    <div class="chart-bar" style="width:{pct:.1f}%;background:{color}"></div>
+  </div>
+  <span class="chart-value">{_format_number(value)}</span>
+</div>"""
+    return rows
 
 
 def render_report_html(report: dict) -> str:
-    """Render a complete insight report as a self-contained HTML document.
+    """Render a complete V3 insight report as a self-contained HTML document.
 
     Args:
-        report: Full report dict with keys: id, agent_id, status, period_start,
-                period_end, metrics, narrative, sessions_analyzed, etc.
+        report: Full report dict with keys: id, agent_id, agent_name, status,
+                period_start, period_end, metrics, narrative, facets_summary,
+                sessions_analyzed, regressions, etc.
+
+    Returns:
+        Complete HTML string for the report.
     """
     metrics = report.get("metrics") or {}
     narrative = report.get("narrative") or {}
-    agent_id = report.get("agent_id", "Unknown")
+    facets = report.get("facets_summary") or {}
+    agent_name = report.get("agent_name") or report.get("agent_id", "Agent")
     period_start = report.get("period_start", "")
     period_end = report.get("period_end", "")
     sessions_analyzed = report.get("sessions_analyzed", 0)
@@ -57,542 +152,1385 @@ def render_report_html(report: dict) -> str:
     elif isinstance(period_end, str) and "T" in period_end:
         period_end = period_end.split("T")[0]
 
-    # Extract sections
-    at_a_glance = narrative.get("at_a_glance", {})
-    usage_patterns = narrative.get("usage_patterns", {})
-    what_works = narrative.get("what_works", {})
-    friction = narrative.get("friction_analysis", {})
-    suggestions = narrative.get("suggestions", {})
-    token_opt = narrative.get("token_optimization", {})
-    user_exp = narrative.get("user_experience", {})
-    regression = narrative.get("regression_detection", {})
-    fun_ending = narrative.get("fun_ending", {})
+    # Extract narrative sections
+    at_a_glance = narrative.get("at_a_glance") or {}
+    what_they_work_on = narrative.get("what_they_work_on") or {}
+    usage_patterns = narrative.get("usage_patterns") or {}
+    what_works = narrative.get("what_works") or {}
+    friction = narrative.get("friction_analysis") or {}
+    suggestions = narrative.get("suggestions") or {}
+    usage_cost = narrative.get("usage_cost_analysis") or {}
+    regression = narrative.get("regression_detection") or {}
+    fun_ending = narrative.get("fun_ending") or {}
 
-    # Metrics
-    overview = metrics.get("overview", {})
-    tokens = metrics.get("tokens", {})
-    cost = metrics.get("cost", {})
-    errors = metrics.get("errors", {})
-    duration = metrics.get("duration", {})
-    tools = metrics.get("tools", [])
-    tool_errors = metrics.get("tool_errors", {})
+    # Metrics sub-dicts
+    overview = metrics.get("overview") or {}
+    tokens = metrics.get("tokens") or {}
+    credits_data = metrics.get("credits") or {}
+    cost = metrics.get("cost") or {}
+    duration = metrics.get("duration") or {}
+    tools_list = metrics.get("tools") or []
+    tool_errors = metrics.get("tool_errors") or {}
+    git = metrics.get("git") or {}
+    languages = metrics.get("languages") or {}
+    time_of_day = metrics.get("time_of_day") or {}
+    interruptions = metrics.get("interruptions") or {}
+    multi_session = metrics.get("multi_session") or {}
+    subagents = metrics.get("subagents") or {}
 
-    # Build HTML sections
     sections_html = []
 
-    # ── At a Glance ──
-    if at_a_glance and isinstance(at_a_glance, dict):
+    # ══════════════════════════════════════════════════════════════════════════
+    # AT A GLANCE
+    # ══════════════════════════════════════════════════════════════════════════
+    if at_a_glance:
         health = at_a_glance.get("health", "mixed")
         sections_html.append(f"""
-    <section class="at-a-glance">
+<section class="at-a-glance-section">
+  <div class="at-a-glance-card">
+    <div class="glance-header">
       <h2>At a Glance</h2>
-      <div class="health-badge" style="background: {_health_color(health)}; color: white; display: inline-block; padding: 4px 12px; border-radius: 12px; font-weight: 600; margin-bottom: 16px;">
-        {_esc(health).upper()}
-      </div>
-      <div class="glance-grid">
-        <div class="glance-card glance-good">
+      {_health_badge(health)}
+    </div>
+    <div class="glance-grid">
+      <div class="glance-item glance-good">
+        <div class="glance-icon">&#10003;</div>
+        <div>
           <h4>What's Working</h4>
           <p>{_esc(at_a_glance.get("whats_working", ""))}</p>
         </div>
-        <div class="glance-card glance-bad">
+      </div>
+      <div class="glance-item glance-bad">
+        <div class="glance-icon">&#9888;</div>
+        <div>
           <h4>What's Hindering</h4>
           <p>{_esc(at_a_glance.get("whats_hindering", ""))}</p>
         </div>
-        <div class="glance-card glance-action">
+      </div>
+      <div class="glance-item glance-action">
+        <div class="glance-icon">&#9889;</div>
+        <div>
           <h4>Quick Win</h4>
           <p>{_esc(at_a_glance.get("quick_win", ""))}</p>
         </div>
       </div>
-    </section>""")
-
-    # ── Key Metrics ──
-    sections_html.append(f"""
-    <section class="metrics-overview">
-      <h2>Key Metrics</h2>
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <span class="metric-value">{overview.get("total_sessions", 0)}</span>
-          <span class="metric-label">Sessions</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-value">{overview.get("unique_users", overview.get("active_users", 0))}</span>
-          <span class="metric-label">Unique Users</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-value">{_format_cost(cost.get("total_cost_usd"))}</span>
-          <span class="metric-label">Total Cost</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-value">{_format_cost(cost.get("avg_cost_per_session"))}</span>
-          <span class="metric-label">Cost/Session</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-value">{round(float(cost.get("cache_efficiency_ratio", 0)) * 100, 1)}%</span>
-          <span class="metric-label">Cache Efficiency</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-value">{round(float(overview.get("avg_duration_seconds", duration.get("avg_duration_seconds", 0))) / 60, 1)}m</span>
-          <span class="metric-label">Avg Duration</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-value">{round(float(errors.get("error_rate", 0)) * 100, 1)}%</span>
-          <span class="metric-label">Error Rate</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-value">{int(tokens.get("total_tokens", 0)):,}</span>
-          <span class="metric-label">Total Tokens</span>
+      <div class="glance-item glance-ambitious">
+        <div class="glance-icon">&#127942;</div>
+        <div>
+          <h4>Ambitious Workflows</h4>
+          <p>{_esc(at_a_glance.get("ambitious_workflows", ""))}</p>
         </div>
       </div>
-    </section>""")
+    </div>
+  </div>
+</section>""")
 
-    # ── Usage Patterns ──
-    if usage_patterns and isinstance(usage_patterns, dict):
+    # ══════════════════════════════════════════════════════════════════════════
+    # STATS ROW
+    # ══════════════════════════════════════════════════════════════════════════
+    total_sessions = overview.get("total_sessions", sessions_analyzed)
+    avg_dur = duration.get("avg_duration_seconds", 0)
+    total_hours = (avg_dur * total_sessions) / 3600 if avg_dur else 0
+    commits = git.get("commits", 0)
+    lines_added = git.get("lines_added", 0)
+    lines_removed = git.get("lines_removed", 0)
+    files_modified = git.get("files_modified", 0)
+    total_cost = cost.get("total_cost_usd", 0)
+
+    sections_html.append(f"""
+<section class="stats-row-section">
+  <div class="stats-row">
+    <div class="stat-item">
+      <span class="stat-value">{_format_number(total_sessions)}</span>
+      <span class="stat-label">Sessions</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">{_format_duration_hours(avg_dur * total_sessions) if avg_dur else "0h"}</span>
+      <span class="stat-label">Total Hours</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">{_format_number(commits)}</span>
+      <span class="stat-label">Commits</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value stat-positive">+{_format_number(lines_added)}</span>
+      <span class="stat-value stat-negative">-{_format_number(lines_removed)}</span>
+      <span class="stat-label">Lines +/-</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">{_format_number(files_modified)}</span>
+      <span class="stat-label">Files</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">{_format_cost(total_cost)}</span>
+      <span class="stat-label">Cost</span>
+    </div>
+  </div>
+</section>""")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # WHAT THEY WORK ON
+    # ══════════════════════════════════════════════════════════════════════════
+    areas = what_they_work_on.get("areas", [])
+    if areas:
+        area_cards = ""
+        for area in areas:
+            if isinstance(area, dict):
+                area_cards += f"""
+    <div class="area-card">
+      <div class="area-header">
+        <h4>{_esc(area.get("name", ""))}</h4>
+        <span class="area-count">{area.get("sessions", 0)} sessions</span>
+      </div>
+      <p>{_esc(area.get("description", ""))}</p>
+    </div>"""
+        sections_html.append(f"""
+<section>
+  <h2>What They Work On</h2>
+  <div class="areas-grid">{area_cards}
+  </div>
+</section>""")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # CHARTS
+    # ══════════════════════════════════════════════════════════════════════════
+    charts_html_parts = []
+
+    # 1. Goal Categories
+    goal_cats = facets.get("goal_categories", [])
+    if goal_cats:
+        items = [(name, count) for name, count in goal_cats[:8]]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Goal Categories</h3>
+      {_render_count_bar_chart(items, "var(--blue)")}
+    </div>""")
+
+    # 2. Tool Distribution
+    tool_dist = usage_patterns.get("tool_distribution", [])
+    if tool_dist and isinstance(tool_dist, list):
+        items = [(t.get("tool", t.get("name", "")), t.get("calls", t.get("invocations", 0))) for t in tool_dist[:8]]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Tool Distribution</h3>
+      {_render_count_bar_chart(items, "var(--purple)")}
+    </div>""")
+    elif tools_list:
+        items = [(t.get("name", ""), t.get("invocations", 0)) for t in tools_list[:8]]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Tool Distribution</h3>
+      {_render_count_bar_chart(items, "var(--purple)")}
+    </div>""")
+
+    # 3. Languages
+    if languages:
+        lang_items = sorted(languages.items(), key=lambda x: -x[1])[:8]
+        # Values might be fractions (0.42) or percentages (42)
+        if lang_items and lang_items[0][1] <= 1.0:
+            pct_items = [(name, val * 100) for name, val in lang_items]
+        else:
+            pct_items = [(name, val) for name, val in lang_items]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Languages</h3>
+      {_render_pct_bar_chart(pct_items, "var(--green)")}
+    </div>""")
+
+    # 4. Outcomes
+    outcomes = facets.get("outcomes") or {}
+    if outcomes:
+        outcome_items = sorted(outcomes.items(), key=lambda x: -x[1])[:6]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Outcomes</h3>
+      {_render_count_bar_chart(outcome_items, "var(--amber)")}
+    </div>""")
+
+    # 5. Satisfaction
+    satisfaction = facets.get("satisfaction") or {}
+    if satisfaction:
+        sat_items = sorted(satisfaction.items(), key=lambda x: -x[1])[:6]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Satisfaction</h3>
+      {_render_count_bar_chart(sat_items, "#8b5cf6")}
+    </div>""")
+
+    if charts_html_parts:
+        sections_html.append(f"""
+<section>
+  <h2>Charts</h2>
+  <div class="charts-grid">{"".join(charts_html_parts)}
+  </div>
+</section>""")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # USAGE PATTERNS
+    # ══════════════════════════════════════════════════════════════════════════
+    if usage_patterns:
         usage_narrative = usage_patterns.get("narrative", "")
-        tool_dist = usage_patterns.get("tool_distribution", [])
-        session_profile = usage_patterns.get("session_profile", {})
+        top_tasks = usage_patterns.get("top_tasks", [])
+        session_profile = usage_patterns.get("session_profile") or {}
 
-        tool_dist_html = ""
-        if tool_dist and isinstance(tool_dist, list):
-            max_calls = max((t.get("calls", 0) for t in tool_dist), default=1) or 1
-            tool_rows = ""
-            for t in tool_dist[:10]:
-                calls = t.get("calls", 0)
-                pct = (calls / max_calls) * 100
-                err_rate = t.get("error_rate", 0)
-                tool_rows += f"""
-              <div class="tool-row">
-                <span class="tool-name">{_esc(t.get("tool", ""))}</span>
-                <div class="tool-bar-container">
-                  <div class="tool-bar" style="width: {pct}%"></div>
-                </div>
-                <span class="tool-calls">{calls}</span>
-                <span class="tool-err" style="color: {"#dc2626" if err_rate > 5 else "#6b7280"}">{err_rate:.1f}%</span>
-              </div>"""
-            tool_dist_html = f'<div class="tool-distribution"><h4>Tool Distribution</h4>{tool_rows}</div>'
+        top_tasks_html = ""
+        if top_tasks and isinstance(top_tasks, list):
+            tasks_items = []
+            for t in top_tasks[:6]:
+                if isinstance(t, dict):
+                    name = _esc(t.get("name", ""))
+                    count = t.get("count", "")
+                    desc = _esc(t.get("description", ""))
+                    tasks_items.append(f"<li><strong>{name}</strong> ({count}) — {desc}</li>")
+                else:
+                    tasks_items.append(f"<li>{_esc(str(t))}</li>")
+            tasks_list = "".join(tasks_items)
+            top_tasks_html = f'<div class="top-tasks"><h4>Top Tasks</h4><ul>{tasks_list}</ul></div>'
 
         profile_html = ""
-        if session_profile and isinstance(session_profile, dict):
+        if session_profile:
             profile_html = f"""
-          <div class="session-profile">
-            <h4>Typical Session</h4>
-            <div class="profile-stats">
-              <span><strong>{session_profile.get("avg_duration_minutes", "?")}m</strong> duration</span>
-              <span><strong>{session_profile.get("avg_tool_calls", "?")}</strong> tool calls</span>
-              <span><strong>{session_profile.get("avg_prompts", "?")}</strong> prompts</span>
-              <span>Type: <strong>{_esc(session_profile.get("session_type", "?"))}</strong></span>
-            </div>
-          </div>"""
+      <div class="session-profile-card">
+        <h4>Typical Session Profile</h4>
+        <div class="profile-stats">
+          <div class="profile-stat"><span class="profile-val">{session_profile.get("avg_duration_minutes", "?")}m</span><span class="profile-lbl">Duration</span></div>
+          <div class="profile-stat"><span class="profile-val">{session_profile.get("avg_tool_calls", "?")}</span><span class="profile-lbl">Tool Calls</span></div>
+          <div class="profile-stat"><span class="profile-val">{session_profile.get("avg_prompts", "?")}</span><span class="profile-lbl">Prompts</span></div>
+          <div class="profile-stat"><span class="profile-val">{_esc(session_profile.get("session_type", "?"))}</span><span class="profile-lbl">Type</span></div>
+        </div>
+      </div>"""
+
+        # Time-of-day heatmap
+        hourly = time_of_day.get("hourly_counts") or {}
+        heatmap_html = ""
+        if hourly:
+            max_hourly = max(hourly.values()) if hourly.values() else 1
+            cells = ""
+            for h in range(24):
+                count = hourly.get(h, hourly.get(str(h), 0))
+                intensity = count / max_hourly if max_hourly else 0
+                opacity = 0.1 + (intensity * 0.9)
+                label = f"{h:02d}:00"
+                cells += f'<div class="heatmap-cell" style="opacity:{opacity}" title="{label}: {count} sessions">{h}</div>'
+            heatmap_html = f"""
+      <div class="heatmap-section">
+        <h4>Activity by Hour</h4>
+        <div class="heatmap-row">{cells}</div>
+        <div class="heatmap-legend"><span>Less</span><span>More</span></div>
+      </div>"""
 
         sections_html.append(f"""
-    <section class="usage-patterns">
-      <h2>Usage Patterns</h2>
-      <p class="narrative">{_esc(usage_narrative)}</p>
-      {tool_dist_html}
-      {profile_html}
-    </section>""")
+<section>
+  <h2>Usage Patterns</h2>
+  <p class="narrative">{_esc(usage_narrative)}</p>
+  {top_tasks_html}
+  {profile_html}
+  {heatmap_html}
+</section>""")
 
-    # ── What Works ──
-    if what_works and isinstance(what_works, dict):
+    # ══════════════════════════════════════════════════════════════════════════
+    # WHAT'S WORKING
+    # ══════════════════════════════════════════════════════════════════════════
+    if what_works:
         strengths = what_works.get("strengths", [])
-        if strengths and isinstance(strengths, list):
+        if strengths:
             strength_cards = ""
             for s in strengths:
                 if isinstance(s, dict):
                     strength_cards += f"""
-              <div class="strength-card">
-                <h4>{_esc(s.get("title", ""))}</h4>
-                <p>{_esc(s.get("description", ""))}</p>
-              </div>"""
+        <div class="strength-card">
+          <h4>{_esc(s.get("title", ""))}</h4>
+          <p>{_esc(s.get("description", ""))}</p>
+        </div>"""
             sections_html.append(f"""
-    <section class="what-works">
-      <h2>What Works Well</h2>
-      <p class="section-intro">{_esc(what_works.get("intro", ""))}</p>
-      <div class="strengths-grid">{strength_cards}</div>
-    </section>""")
+<section class="whats-working-section">
+  <h2>What's Working</h2>
+  <p class="section-intro">{_esc(what_works.get("intro", ""))}</p>
+  <div class="strengths-grid">{strength_cards}
+  </div>
+</section>""")
 
-    # ── Friction Analysis ──
-    if friction and isinstance(friction, dict):
+    # ══════════════════════════════════════════════════════════════════════════
+    # WHERE THINGS GO WRONG
+    # ══════════════════════════════════════════════════════════════════════════
+    if friction:
         categories = friction.get("categories", [])
-        if categories and isinstance(categories, list):
+        if categories:
             friction_cards = ""
             for c in categories:
                 if isinstance(c, dict):
                     sev = c.get("severity", "low")
+                    evidence = c.get("evidence", "")
+                    evidence_html = f'<code class="evidence">{_esc(evidence)}</code>' if evidence else ""
                     friction_cards += f"""
-              <div class="friction-card" style="border-left: 4px solid {_severity_color(sev)}">
-                <div class="friction-header">
-                  <h4>{_esc(c.get("title", ""))}</h4>
-                  <span class="severity-badge" style="background: {_severity_color(sev)}; color: white;">{_esc(sev).upper()}</span>
-                </div>
-                <p>{_esc(c.get("description", ""))}</p>
-                <code class="evidence">{_esc(c.get("evidence", ""))}</code>
-                <p class="impact"><em>Impact: {_esc(c.get("impact", ""))}</em></p>
-              </div>"""
+        <div class="friction-card" style="border-left:4px solid {_severity_color(sev)}">
+          <div class="friction-header">
+            <h4>{_esc(c.get("title", ""))}</h4>
+            <span class="severity-badge" style="background:{_severity_color(sev)};color:white;">{_esc(sev).upper()}</span>
+          </div>
+          <p>{_esc(c.get("description", ""))}</p>
+          {evidence_html}
+          <p class="impact"><strong>Impact:</strong> {_esc(c.get("impact", ""))}</p>
+        </div>"""
             sections_html.append(f"""
-    <section class="friction-analysis">
-      <h2>Friction Analysis</h2>
-      <p class="section-intro">{_esc(friction.get("intro", ""))}</p>
-      <div class="friction-list">{friction_cards}</div>
-    </section>""")
+<section>
+  <h2>Where Things Go Wrong</h2>
+  <p class="section-intro">{_esc(friction.get("intro", ""))}</p>
+  <div class="friction-list">{friction_cards}
+  </div>
+</section>""")
 
-    # ── Suggestions ──
-    if suggestions and isinstance(suggestions, dict):
+    # ══════════════════════════════════════════════════════════════════════════
+    # SUGGESTIONS (with copy buttons)
+    # ══════════════════════════════════════════════════════════════════════════
+    if suggestions:
         items = suggestions.get("items", [])
-        if items and isinstance(items, list):
+        if items:
             suggestion_cards = ""
             for idx, item in enumerate(items, 1):
                 if isinstance(item, dict):
                     priority = item.get("priority", "medium")
-                    suggestion_cards += f"""
-              <div class="suggestion-card">
-                <div class="suggestion-header">
-                  <span class="suggestion-num">#{idx}</span>
-                  <h4>{_esc(item.get("title", ""))}</h4>
-                  <span class="priority-badge" style="background: {_priority_color(priority)}; color: white;">{_esc(priority).upper()}</span>
-                </div>
-                <div class="suggestion-action">
-                  <strong>Action:</strong> {_esc(item.get("action", ""))}
-                </div>
-                <p class="suggestion-why"><em>Why: {_esc(item.get("why", ""))}</em></p>
-              </div>"""
-            sections_html.append(f"""
-    <section class="suggestions">
-      <h2>Suggestions</h2>
-      <p class="section-intro">{_esc(suggestions.get("intro", ""))}</p>
-      <div class="suggestions-list">{suggestion_cards}</div>
-    </section>""")
+                    fix_type = item.get("fix_type", "")
+                    confidence = item.get("confidence", "")
+                    expected_impact = item.get("expected_impact", "")
+                    action_text = item.get("action", "")
+                    # Escape for HTML attribute
+                    action_attr = html.escape(action_text, quote=True) if action_text else ""
 
-    # ── Token Optimization ──
-    if token_opt and isinstance(token_opt, dict):
-        tok_metrics = token_opt.get("metrics", {})
-        opportunities = token_opt.get("opportunities", [])
+                    meta_badges = ""
+                    if fix_type:
+                        meta_badges += f'<span class="meta-badge">{_esc(fix_type)}</span>'
+                    if confidence:
+                        meta_badges += f'<span class="meta-badge">Confidence: {_esc(confidence)}</span>'
+                    if expected_impact:
+                        meta_badges += f'<span class="meta-badge">Impact: {_esc(expected_impact)}</span>'
+
+                    suggestion_cards += f"""
+        <div class="suggestion-card">
+          <div class="suggestion-header">
+            <span class="suggestion-num">#{idx}</span>
+            <h4>{_esc(item.get("title", ""))}</h4>
+            <span class="priority-badge" style="background:{_priority_color(priority)};color:white;">{_esc(priority).upper()}</span>
+          </div>
+          <div class="suggestion-action">
+            <div class="action-row">
+              <span class="action-text">{_esc(action_text)}</span>
+              <button class="copy-btn" onclick="navigator.clipboard.writeText(this.getAttribute('data-text')).then(()=>{{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)}})" data-text="{action_attr}">Copy</button>
+            </div>
+          </div>
+          <p class="suggestion-why"><em>{_esc(item.get("why", ""))}</em></p>
+          {f'<div class="suggestion-meta">{meta_badges}</div>' if meta_badges else ""}
+        </div>"""
+            sections_html.append(f"""
+<section>
+  <h2>Suggestions</h2>
+  <p class="section-intro">{_esc(suggestions.get("intro", ""))}</p>
+  <div class="suggestions-list">{suggestion_cards}
+  </div>
+</section>""")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # REPEATED INSTRUCTIONS
+    # ══════════════════════════════════════════════════════════════════════════
+    repeated_instructions = facets.get("repeated_instructions", [])
+    if repeated_instructions:
+        rows = ""
+        for item in repeated_instructions:
+            if isinstance(item, dict):
+                rows += f"""
+          <tr>
+            <td class="instruction-cell">{_esc(item.get("instruction", ""))}</td>
+            <td class="freq-cell">{item.get("frequency", 0)}</td>
+          </tr>"""
+        sections_html.append(f"""
+<section>
+  <h2>Repeated Instructions</h2>
+  <p class="section-intro">Instructions that appear across multiple sessions, indicating habits or persistent needs.</p>
+  <table class="repeated-table">
+    <thead><tr><th>Instruction</th><th>Frequency</th></tr></thead>
+    <tbody>{rows}
+    </tbody>
+  </table>
+</section>""")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # USAGE & COST ANALYSIS
+    # ══════════════════════════════════════════════════════════════════════════
+    if usage_cost or cost:
+        cost_summary = usage_cost.get("summary", "")
+        cost_metrics_data = usage_cost.get("metrics") or {}
+        model_breakdown = usage_cost.get("model_breakdown") or cost.get("cost_by_model") or {}
+        opportunities = usage_cost.get("opportunities") or []
+
+        model_rows = ""
+        if model_breakdown:
+            if isinstance(model_breakdown, dict):
+                sorted_models = sorted(model_breakdown.items(), key=lambda x: -(x[1] if isinstance(x[1], (int, float)) else 0))
+                for model, model_cost in sorted_models[:6]:
+                    if isinstance(model_cost, (int, float)):
+                        model_rows += f"<tr><td><code>{_esc(model)}</code></td><td>{_format_cost(model_cost)}</td></tr>"
+            elif isinstance(model_breakdown, list):
+                for item in model_breakdown[:6]:
+                    if isinstance(item, dict):
+                        model_name = item.get("model", "unknown")
+                        model_cost = item.get("cost_usd", item.get("total_cost_usd", 0))
+                        model_rows += f"<tr><td><code>{_esc(model_name)}</code></td><td>{_format_cost(model_cost)}</td></tr>"
+
         opp_html = ""
         if opportunities and isinstance(opportunities, list):
             for opp in opportunities:
-                if isinstance(opp, dict):
-                    opp_html += f"""
-              <div class="opportunity-card">
-                <h4>{_esc(opp.get("title", ""))}</h4>
-                <p>{_esc(opp.get("description", ""))}</p>
-                <span class="savings">{_esc(opp.get("estimated_savings", ""))}</span>
-              </div>"""
-        sections_html.append(f"""
-    <section class="token-optimization">
-      <h2>Cost & Token Optimization</h2>
-      <p class="narrative">{_esc(token_opt.get("summary", ""))}</p>
-      <div class="cost-metrics">
-        <div class="metric-card"><span class="metric-value">{_format_cost(tok_metrics.get("total_cost_usd"))}</span><span class="metric-label">Total Cost</span></div>
-        <div class="metric-card"><span class="metric-value">{_format_cost(tok_metrics.get("cost_per_session"))}</span><span class="metric-label">Per Session</span></div>
-        <div class="metric-card"><span class="metric-value">{round(float(tok_metrics.get("cache_efficiency_pct", 0)), 1)}%</span><span class="metric-label">Cache Efficiency</span></div>
-      </div>
-      {f'<div class="opportunities"><h4>Opportunities</h4>{opp_html}</div>' if opp_html else ""}
-    </section>""")
+                if isinstance(opp, str):
+                    opp_html += f"<li>{_esc(opp)}</li>"
+                elif isinstance(opp, dict):
+                    opp_html += f"<li><strong>{_esc(opp.get('title', ''))}</strong>: {_esc(opp.get('description', ''))}</li>"
 
-    # ── User Experience ──
-    if user_exp and isinstance(user_exp, dict):
-        signals = user_exp.get("signals", [])
-        indicators = user_exp.get("satisfaction_indicators", {})
-        signals_html = ""
-        if signals and isinstance(signals, list):
-            for sig in signals:
-                if isinstance(sig, dict):
-                    signals_html += f"""
-              <div class="signal-row">
-                <span class="signal-obs">{_esc(sig.get("signal", ""))}</span>
-                <span class="signal-interp">{_esc(sig.get("interpretation", ""))}</span>
-              </div>"""
-        sections_html.append(f"""
-    <section class="user-experience">
-      <h2>User Experience</h2>
-      <p class="narrative">{_esc(user_exp.get("narrative", ""))}</p>
-      {f'<div class="signals"><h4>Signals</h4>{signals_html}</div>' if signals_html else ""}
-      {
-            f'''<div class="satisfaction-indicators">
-        <span>Completion: <strong>{_esc(str(indicators.get("completion_rate", "N/A")))}</strong></span>
-        <span>Interruptions: <strong>{_esc(str(indicators.get("interruption_rate", "N/A")))}</strong></span>
-        <span>Retries: <strong>{_esc(str(indicators.get("retry_patterns", "none")))}</strong></span>
-      </div>'''
-            if indicators
-            else ""
-        }
-    </section>""")
+        cache_eff = cost.get("cache_efficiency_ratio", 0)
+        if isinstance(cache_eff, (int, float)):
+            cache_pct = round(float(cache_eff) * 100, 1) if cache_eff <= 1 else round(float(cache_eff), 1)
+        else:
+            cache_pct = 0
 
-    # ── Regression Detection ──
-    if regression and isinstance(regression, dict) and regression.get("has_previous_data"):
-        changes = regression.get("changes", [])
-        if changes and isinstance(changes, list):
+        sections_html.append(f"""
+<section>
+  <h2>Usage &amp; Cost Analysis</h2>
+  {f'<p class="narrative">{_esc(cost_summary)}</p>' if cost_summary else ""}
+  <div class="cost-grid">
+    <div class="cost-card">
+      <span class="cost-val">{_format_cost(cost.get("total_cost_usd"))}</span>
+      <span class="cost-lbl">Total Cost</span>
+    </div>
+    <div class="cost-card">
+      <span class="cost-val">{_format_cost(cost.get("avg_cost_per_session"))}</span>
+      <span class="cost-lbl">Per Session</span>
+    </div>
+    <div class="cost-card">
+      <span class="cost-val">{cache_pct}%</span>
+      <span class="cost-lbl">Cache Hit Rate</span>
+    </div>
+    <div class="cost-card">
+      <span class="cost-val">{_format_number(tokens.get("total_tokens", 0))}</span>
+      <span class="cost-lbl">Total Tokens</span>
+    </div>
+  </div>
+  {f'<div class="model-breakdown"><h4>Cost by Model</h4><table><thead><tr><th>Model</th><th>Cost</th></tr></thead><tbody>{model_rows}</tbody></table></div>' if model_rows else ""}
+  {f'<div class="cost-opportunities"><h4>Optimization Opportunities</h4><ul>{opp_html}</ul></div>' if opp_html else ""}
+</section>""")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # REGRESSION FLAGS
+    # ══════════════════════════════════════════════════════════════════════════
+    regressions_list = report.get("regressions") or []
+    has_regression_narrative = regression and regression.get("has_previous_data")
+
+    if has_regression_narrative or regressions_list:
+        changes = regression.get("changes", []) if regression else []
+        if not changes:
+            changes = regressions_list
+
+        if changes:
             change_rows = ""
             for ch in changes:
                 if isinstance(ch, dict):
                     direction = ch.get("direction", "stable")
-                    arrow = "\u2191" if direction == "improved" else "\u2193" if direction == "degraded" else "\u2192"
-                    color = (
-                        "#16a34a" if direction == "improved" else "#dc2626" if direction == "degraded" else "#6b7280"
-                    )
+                    arrow = "&#8593;" if direction == "improved" else "&#8595;" if direction == "degraded" else "&#8594;"
+                    color = "var(--green)" if direction == "improved" else "var(--red)" if direction == "degraded" else "var(--text-muted)"
+                    mag = ch.get("magnitude_pct", 0)
                     change_rows += f"""
-              <tr>
-                <td>{_esc(ch.get("metric", ""))}</td>
-                <td style="color: {color}; font-weight: 600;">{arrow} {_esc(direction)}</td>
-                <td>{_esc(str(ch.get("previous_value", "")))}</td>
-                <td>{_esc(str(ch.get("current_value", "")))}</td>
-                <td>{ch.get("magnitude_pct", 0):.1f}%</td>
-                <td>{_esc(ch.get("significance", ""))}</td>
-              </tr>"""
-            sections_html.append(f"""
-    <section class="regression-detection">
-      <h2>Period-over-Period Changes</h2>
-      <p class="narrative">{_esc(regression.get("summary", ""))}</p>
-      <table class="changes-table">
-        <thead><tr><th>Metric</th><th>Direction</th><th>Previous</th><th>Current</th><th>Change</th><th>Significance</th></tr></thead>
-        <tbody>{change_rows}</tbody>
-      </table>
-    </section>""")
-
-    # ── Top Tools Table ──
-    if tools:
-        tool_rows = ""
-        for t in tools[:15]:
-            invocations = int(t.get("invocations", t.get("calls", 0)))
-            errs = int(t.get("errors", 0))
-            err_rate = (errs / invocations * 100) if invocations > 0 else 0
-            tool_rows += f"""
           <tr>
-            <td><code>{_esc(t.get("name", t.get("tool", "")))}</code></td>
-            <td>{invocations}</td>
-            <td>{errs}</td>
-            <td style="color: {"#dc2626" if err_rate > 10 else "#6b7280"}">{err_rate:.1f}%</td>
+            <td>{_esc(ch.get("metric", ""))}</td>
+            <td style="color:{color};font-weight:600;">{arrow} {_esc(direction)}</td>
+            <td>{_esc(str(ch.get("previous_value", "")))}</td>
+            <td>{_esc(str(ch.get("current_value", "")))}</td>
+            <td>{mag:.1f}%</td>
+            <td>{_esc(ch.get("significance", ""))}</td>
           </tr>"""
-        sections_html.append(f"""
-    <section class="tools-table">
-      <h2>Tool Usage</h2>
-      <table>
-        <thead><tr><th>Tool</th><th>Invocations</th><th>Errors</th><th>Error Rate</th></tr></thead>
-        <tbody>{tool_rows}</tbody>
-      </table>
-    </section>""")
+            sections_html.append(f"""
+<section class="regression-section">
+  <h2>Regression Flags</h2>
+  <p class="narrative">{_esc(regression.get("summary", "Period-over-period changes detected."))}</p>
+  <table class="regression-table">
+    <thead><tr><th>Metric</th><th>Direction</th><th>Previous</th><th>Current</th><th>Change</th><th>Significance</th></tr></thead>
+    <tbody>{change_rows}
+    </tbody>
+  </table>
+</section>""")
 
-    # ── Error Categories ──
-    if tool_errors and tool_errors.get("categories"):
-        cats = tool_errors["categories"]
-        cat_rows = ""
-        for cat, count in sorted(cats.items(), key=lambda x: -x[1]):
-            cat_rows += f"<tr><td>{_esc(cat)}</td><td>{count}</td></tr>"
+    # ══════════════════════════════════════════════════════════════════════════
+    # FUN ENDING
+    # ══════════════════════════════════════════════════════════════════════════
+    if fun_ending and fun_ending.get("headline"):
         sections_html.append(f"""
-    <section class="error-categories">
-      <h2>Error Categories</h2>
-      <table>
-        <thead><tr><th>Category</th><th>Count</th></tr></thead>
-        <tbody>{cat_rows}</tbody>
-      </table>
-    </section>""")
+<section class="fun-ending-section">
+  <div class="fun-card">
+    <h3>{_esc(fun_ending.get("headline", ""))}</h3>
+    <p>{_esc(fun_ending.get("detail", ""))}</p>
+  </div>
+</section>""")
 
-    # ── Fun Ending ──
-    if fun_ending and isinstance(fun_ending, dict) and fun_ending.get("headline"):
-        sections_html.append(f"""
-    <section class="fun-ending">
-      <div class="fun-card">
-        <h3>{_esc(fun_ending.get("headline", ""))}</h3>
-        <p>{_esc(fun_ending.get("detail", ""))}</p>
-      </div>
-    </section>""")
-
+    # ══════════════════════════════════════════════════════════════════════════
+    # ASSEMBLE DOCUMENT
+    # ══════════════════════════════════════════════════════════════════════════
     body_content = "\n".join(sections_html)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agent Insight Report \u2014 {_esc(period_start)} to {_esc(period_end)}</title>
+  <title>Observal Agent Insights &mdash; {_esc(agent_name)} &mdash; {_esc(period_start)} to {_esc(period_end)}</title>
   <style>
     :root {{
       --bg: #f8fafc;
+      --bg-alt: #f1f5f9;
       --card-bg: #ffffff;
-      --text: #1e293b;
+      --text: #0f172a;
+      --text-secondary: #334155;
       --text-muted: #64748b;
       --border: #e2e8f0;
+      --border-light: #f1f5f9;
       --green: #16a34a;
       --green-bg: #f0fdf4;
+      --green-border: #bbf7d0;
       --red: #dc2626;
       --red-bg: #fef2f2;
+      --red-border: #fecaca;
       --amber: #d97706;
       --amber-bg: #fffbeb;
+      --amber-border: #fde68a;
       --blue: #2563eb;
       --blue-bg: #eff6ff;
+      --blue-border: #bfdbfe;
       --purple: #7c3aed;
+      --purple-bg: #f5f3ff;
+      --purple-border: #ddd6fe;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-xs: 6px;
     }}
+
+    @media (prefers-color-scheme: dark) {{
+      :root {{
+        --bg: #0f172a;
+        --bg-alt: #1e293b;
+        --card-bg: #1e293b;
+        --text: #f1f5f9;
+        --text-secondary: #cbd5e1;
+        --text-muted: #94a3b8;
+        --border: #334155;
+        --border-light: #1e293b;
+        --green-bg: #052e16;
+        --green-border: #166534;
+        --red-bg: #450a0a;
+        --red-border: #7f1d1d;
+        --amber-bg: #451a03;
+        --amber-border: #78350f;
+        --blue-bg: #172554;
+        --blue-border: #1e40af;
+        --purple-bg: #2e1065;
+        --purple-border: #4c1d95;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+        --shadow: 0 1px 3px rgba(0,0,0,0.3);
+        --shadow-md: 0 4px 6px rgba(0,0,0,0.3);
+      }}
+    }}
+
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+
     body {{
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.6;
-      padding: 40px 20px;
+      line-height: 1.65;
+      padding: 48px 24px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }}
-    .container {{ max-width: 900px; margin: 0 auto; }}
+
+    .container {{
+      max-width: 960px;
+      margin: 0 auto;
+    }}
+
+    /* ─── Header ─── */
     header {{
       text-align: center;
-      margin-bottom: 40px;
-      padding-bottom: 24px;
-      border-bottom: 2px solid var(--border);
+      margin-bottom: 48px;
+      padding: 32px;
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-md);
     }}
-    header h1 {{ font-size: 28px; margin-bottom: 8px; }}
-    header .subtitle {{ color: var(--text-muted); font-size: 14px; }}
+
+    .brand {{
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--purple);
+      margin-bottom: 12px;
+    }}
+
+    header h1 {{
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text);
+    }}
+
+    header .subtitle {{
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }}
+
+    /* ─── Sections ─── */
     section {{
       background: var(--card-bg);
-      border-radius: 12px;
-      padding: 24px;
+      border-radius: var(--radius);
+      padding: 28px;
       margin-bottom: 24px;
       border: 1px solid var(--border);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      box-shadow: var(--shadow);
     }}
+
     section h2 {{
-      font-size: 20px;
-      margin-bottom: 16px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--border);
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: var(--text);
+      letter-spacing: -0.01em;
     }}
-    .narrative {{ color: var(--text); margin-bottom: 16px; white-space: pre-wrap; }}
-    .section-intro {{ color: var(--text-muted); margin-bottom: 16px; font-style: italic; }}
-    .metrics-grid, .cost-metrics {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px;
+
+    .narrative {{
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+      white-space: pre-wrap;
+      font-size: 14px;
+      line-height: 1.7;
     }}
-    .metric-card {{
-      background: var(--bg);
-      padding: 16px;
-      border-radius: 8px;
-      text-align: center;
-      border: 1px solid var(--border);
+
+    .section-intro {{
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      font-size: 14px;
     }}
-    .metric-value {{ display: block; font-size: 24px; font-weight: 700; color: var(--blue); }}
-    .metric-label {{ display: block; font-size: 12px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }}
-    .glance-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }}
-    .glance-card {{ padding: 16px; border-radius: 8px; }}
-    .glance-card h4 {{ font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }}
-    .glance-card p {{ font-size: 14px; }}
-    .glance-good {{ background: var(--green-bg); border: 1px solid #bbf7d0; }}
-    .glance-good h4 {{ color: var(--green); }}
-    .glance-bad {{ background: var(--red-bg); border: 1px solid #fecaca; }}
-    .glance-bad h4 {{ color: var(--red); }}
-    .glance-action {{ background: var(--blue-bg); border: 1px solid #bfdbfe; }}
-    .glance-action h4 {{ color: var(--blue); }}
-    .strengths-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }}
-    .strength-card {{
-      background: var(--green-bg);
-      border: 1px solid #bbf7d0;
-      padding: 16px;
-      border-radius: 8px;
+
+    /* ─── At a Glance ─── */
+    .at-a-glance-section {{
+      background: linear-gradient(135deg, var(--card-bg), var(--blue-bg));
+      border: 1px solid var(--blue-border);
     }}
-    .strength-card h4 {{ color: var(--green); margin-bottom: 8px; font-size: 14px; }}
-    .strength-card p {{ font-size: 13px; color: var(--text); }}
-    .friction-list {{ display: flex; flex-direction: column; gap: 12px; }}
-    .friction-card {{ padding: 16px; border-radius: 8px; background: var(--bg); }}
-    .friction-header {{ display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }}
-    .friction-header h4 {{ flex: 1; font-size: 15px; }}
-    .severity-badge, .priority-badge {{
+
+    .glance-header {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }}
+
+    .glance-header h2 {{ margin-bottom: 0; }}
+
+    .health-badge {{
       font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-weight: 600;
+      font-weight: 700;
+      padding: 5px 14px;
+      border-radius: 20px;
       letter-spacing: 0.5px;
     }}
+
+    .glance-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }}
+
+    .glance-item {{
+      display: flex;
+      gap: 12px;
+      padding: 16px;
+      border-radius: var(--radius-sm);
+      align-items: flex-start;
+    }}
+
+    .glance-icon {{
+      font-size: 20px;
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+    }}
+
+    .glance-item h4 {{
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }}
+
+    .glance-item p {{
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }}
+
+    .glance-good {{ background: var(--green-bg); border: 1px solid var(--green-border); }}
+    .glance-good h4 {{ color: var(--green); }}
+    .glance-good .glance-icon {{ background: var(--green-border); color: var(--green); }}
+
+    .glance-bad {{ background: var(--red-bg); border: 1px solid var(--red-border); }}
+    .glance-bad h4 {{ color: var(--red); }}
+    .glance-bad .glance-icon {{ background: var(--red-border); color: var(--red); }}
+
+    .glance-action {{ background: var(--blue-bg); border: 1px solid var(--blue-border); }}
+    .glance-action h4 {{ color: var(--blue); }}
+    .glance-action .glance-icon {{ background: var(--blue-border); color: var(--blue); }}
+
+    .glance-ambitious {{ background: var(--purple-bg); border: 1px solid var(--purple-border); }}
+    .glance-ambitious h4 {{ color: var(--purple); }}
+    .glance-ambitious .glance-icon {{ background: var(--purple-border); color: var(--purple); }}
+
+    /* ─── Stats Row ─── */
+    .stats-row-section {{
+      background: var(--card-bg);
+      padding: 20px 28px;
+    }}
+
+    .stats-row {{
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+    }}
+
+    .stat-item {{
+      text-align: center;
+      padding: 16px 8px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+    }}
+
+    .stat-value {{
+      display: block;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--blue);
+      line-height: 1.2;
+    }}
+
+    .stat-value.stat-positive {{ font-size: 14px; color: var(--green); }}
+    .stat-value.stat-negative {{ font-size: 14px; color: var(--red); }}
+
+    .stat-label {{
+      display: block;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }}
+
+    /* ─── Areas ─── */
+    .areas-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }}
+
+    .area-card {{
+      padding: 16px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+    }}
+
+    .area-header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }}
+
+    .area-header h4 {{
+      font-size: 14px;
+      font-weight: 600;
+    }}
+
+    .area-count {{
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--card-bg);
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }}
+
+    .area-card p {{
+      font-size: 13px;
+      color: var(--text-muted);
+    }}
+
+    /* ─── Charts ─── */
+    .charts-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }}
+
+    .chart-panel {{
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 20px;
+    }}
+
+    .chart-panel h3 {{
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }}
+
+    .chart-bar-row {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }}
+
+    .chart-label {{
+      font-size: 12px;
+      min-width: 90px;
+      max-width: 90px;
+      color: var(--text-secondary);
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+
+    .chart-bar-container {{
+      flex: 1;
+      height: 22px;
+      background: var(--border-light);
+      border-radius: 4px;
+      overflow: hidden;
+    }}
+
+    .chart-bar {{
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+      min-width: 2px;
+    }}
+
+    .chart-value {{
+      font-size: 12px;
+      font-weight: 700;
+      min-width: 45px;
+      text-align: right;
+      color: var(--text);
+    }}
+
+    /* ─── Usage Patterns ─── */
+    .top-tasks {{ margin: 16px 0; }}
+    .top-tasks h4 {{ font-size: 14px; font-weight: 600; margin-bottom: 8px; }}
+    .top-tasks ul {{ padding-left: 20px; }}
+    .top-tasks li {{ font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }}
+
+    .session-profile-card {{
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      margin-top: 16px;
+    }}
+
+    .session-profile-card h4 {{
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }}
+
+    .profile-stats {{
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }}
+
+    .profile-stat {{
+      text-align: center;
+    }}
+
+    .profile-val {{
+      display: block;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--purple);
+    }}
+
+    .profile-lbl {{
+      display: block;
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-top: 2px;
+    }}
+
+    /* ─── Heatmap ─── */
+    .heatmap-section {{ margin-top: 20px; }}
+    .heatmap-section h4 {{ font-size: 14px; font-weight: 600; margin-bottom: 10px; }}
+
+    .heatmap-row {{
+      display: grid;
+      grid-template-columns: repeat(24, 1fr);
+      gap: 3px;
+    }}
+
+    .heatmap-cell {{
+      aspect-ratio: 1;
+      background: var(--blue);
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      color: white;
+      font-weight: 600;
+    }}
+
+    .heatmap-legend {{
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      padding: 0 2px;
+    }}
+
+    /* ─── Strengths ─── */
+    .strengths-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }}
+
+    .strength-card {{
+      background: var(--green-bg);
+      border: 1px solid var(--green-border);
+      padding: 16px;
+      border-radius: var(--radius-sm);
+    }}
+
+    .strength-card h4 {{
+      color: var(--green);
+      font-size: 14px;
+      margin-bottom: 6px;
+    }}
+
+    .strength-card p {{
+      font-size: 13px;
+      color: var(--text-secondary);
+    }}
+
+    /* ─── Friction ─── */
+    .friction-list {{
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }}
+
+    .friction-card {{
+      padding: 18px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+    }}
+
+    .friction-header {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }}
+
+    .friction-header h4 {{ flex: 1; font-size: 15px; }}
+
+    .severity-badge, .priority-badge {{
+      font-size: 10px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }}
+
+    .friction-card p {{
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }}
+
     .evidence {{
       display: block;
       background: #1e293b;
       color: #e2e8f0;
-      padding: 8px 12px;
-      border-radius: 6px;
+      padding: 10px 14px;
+      border-radius: var(--radius-xs);
       font-size: 12px;
-      margin: 8px 0;
+      margin: 10px 0;
       white-space: pre-wrap;
       word-break: break-word;
+      font-family: 'SF Mono', 'Fira Code', monospace;
     }}
-    .impact {{ color: var(--text-muted); font-size: 13px; }}
-    .suggestions-list {{ display: flex; flex-direction: column; gap: 12px; }}
+
+    .impact {{
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-top: 8px;
+    }}
+
+    /* ─── Suggestions ─── */
+    .suggestions-list {{
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }}
+
     .suggestion-card {{
-      padding: 16px;
-      border-radius: 8px;
-      background: var(--bg);
+      padding: 18px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-alt);
       border: 1px solid var(--border);
     }}
-    .suggestion-header {{ display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }}
-    .suggestion-num {{ font-size: 18px; font-weight: 700; color: var(--blue); min-width: 30px; }}
+
+    .suggestion-header {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }}
+
+    .suggestion-num {{
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--blue);
+      min-width: 36px;
+    }}
+
     .suggestion-header h4 {{ flex: 1; font-size: 15px; }}
-    .suggestion-action {{ background: var(--card-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--border); font-size: 13px; margin-bottom: 8px; }}
-    .suggestion-why {{ color: var(--text-muted); font-size: 13px; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-    thead {{ background: var(--bg); }}
-    th, td {{ padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }}
-    th {{ font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }}
-    code {{ background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 12px; }}
-    .tool-distribution {{ margin-top: 16px; }}
-    .tool-distribution h4 {{ margin-bottom: 12px; font-size: 14px; }}
-    .tool-row {{ display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }}
-    .tool-name {{ font-size: 12px; min-width: 100px; font-family: monospace; }}
-    .tool-bar-container {{ flex: 1; height: 20px; background: var(--bg); border-radius: 4px; overflow: hidden; }}
-    .tool-bar {{ height: 100%; background: var(--blue); border-radius: 4px; }}
-    .tool-calls {{ font-size: 12px; min-width: 40px; text-align: right; font-weight: 600; }}
-    .tool-err {{ font-size: 11px; min-width: 40px; text-align: right; }}
-    .session-profile {{ margin-top: 16px; }}
-    .session-profile h4 {{ margin-bottom: 8px; font-size: 14px; }}
-    .profile-stats {{ display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; }}
-    .signals {{ margin-top: 12px; }}
-    .signals h4 {{ margin-bottom: 8px; font-size: 14px; }}
-    .signal-row {{ display: flex; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }}
-    .signal-obs {{ flex: 1; font-weight: 500; }}
-    .signal-interp {{ flex: 1; color: var(--text-muted); }}
-    .satisfaction-indicators {{ display: flex; gap: 20px; margin-top: 12px; font-size: 13px; }}
-    .opportunities {{ margin-top: 16px; }}
-    .opportunities h4 {{ margin-bottom: 12px; font-size: 14px; }}
-    .opportunity-card {{ background: var(--amber-bg); border: 1px solid #fde68a; padding: 12px; border-radius: 8px; margin-bottom: 8px; }}
-    .opportunity-card h4 {{ font-size: 13px; color: var(--amber); margin-bottom: 4px; }}
-    .opportunity-card p {{ font-size: 13px; }}
-    .savings {{ font-size: 12px; color: var(--green); font-weight: 600; }}
-    .changes-table th, .changes-table td {{ font-size: 12px; padding: 8px; }}
-    .fun-card {{
-      background: linear-gradient(135deg, #eff6ff, #f0fdf4);
-      padding: 24px;
-      border-radius: 8px;
+
+    .suggestion-action {{
+      background: var(--card-bg);
+      padding: 12px 14px;
+      border-radius: var(--radius-xs);
+      border: 1px solid var(--border);
+      margin-bottom: 10px;
+    }}
+
+    .action-row {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }}
+
+    .action-text {{
+      font-size: 13px;
+      color: var(--text-secondary);
+      flex: 1;
+    }}
+
+    .copy-btn {{
+      background: var(--blue);
+      color: white;
+      border: none;
+      padding: 5px 12px;
+      border-radius: var(--radius-xs);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }}
+
+    .copy-btn:hover {{ background: #1d4ed8; }}
+    .copy-btn:active {{ background: #1e40af; }}
+
+    .suggestion-why {{
+      font-size: 13px;
+      color: var(--text-muted);
+    }}
+
+    .suggestion-meta {{
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }}
+
+    .meta-badge {{
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-weight: 600;
+    }}
+
+    /* ─── Repeated Instructions Table ─── */
+    .repeated-table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }}
+
+    .repeated-table thead {{
+      background: var(--bg-alt);
+    }}
+
+    .repeated-table th {{
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      border-bottom: 2px solid var(--border);
+    }}
+
+    .repeated-table td {{
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }}
+
+    .instruction-cell {{
+      color: var(--text-secondary);
+    }}
+
+    .freq-cell {{
+      font-weight: 700;
+      color: var(--purple);
+      width: 100px;
       text-align: center;
     }}
-    .fun-card h3 {{ font-size: 18px; margin-bottom: 8px; color: var(--purple); }}
-    .fun-card p {{ color: var(--text-muted); font-size: 14px; }}
+
+    /* ─── Cost Analysis ─── */
+    .cost-grid {{
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }}
+
+    .cost-card {{
+      text-align: center;
+      padding: 16px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+    }}
+
+    .cost-val {{
+      display: block;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--green);
+    }}
+
+    .cost-lbl {{
+      display: block;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      font-weight: 600;
+    }}
+
+    .model-breakdown {{
+      margin-top: 16px;
+    }}
+
+    .model-breakdown h4 {{
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }}
+
+    .cost-opportunities {{
+      margin-top: 16px;
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+    }}
+
+    .cost-opportunities h4 {{
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--amber);
+      margin-bottom: 8px;
+    }}
+
+    .cost-opportunities ul {{
+      padding-left: 18px;
+    }}
+
+    .cost-opportunities li {{
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }}
+
+    /* ─── Tables (generic) ─── */
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }}
+
+    thead {{ background: var(--bg-alt); }}
+
+    th, td {{
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }}
+
+    th {{
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }}
+
+    code {{
+      background: var(--bg-alt);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }}
+
+    /* ─── Regression ─── */
+    .regression-section {{
+      border-left: 4px solid var(--amber);
+    }}
+
+    .regression-table th, .regression-table td {{
+      font-size: 12px;
+      padding: 8px 10px;
+    }}
+
+    /* ─── Fun Ending ─── */
+    .fun-ending-section {{
+      background: linear-gradient(135deg, var(--purple-bg), var(--blue-bg));
+      border: 1px solid var(--purple-border);
+    }}
+
+    .fun-card {{
+      text-align: center;
+      padding: 24px;
+    }}
+
+    .fun-card h3 {{
+      font-size: 20px;
+      color: var(--purple);
+      margin-bottom: 8px;
+    }}
+
+    .fun-card p {{
+      font-size: 14px;
+      color: var(--text-muted);
+    }}
+
+    /* ─── Footer ─── */
     footer {{
       text-align: center;
       color: var(--text-muted);
       font-size: 12px;
-      margin-top: 40px;
-      padding-top: 20px;
+      margin-top: 48px;
+      padding: 24px 0;
       border-top: 1px solid var(--border);
     }}
-    @media print {{
-      body {{ padding: 20px; }}
-      section {{ break-inside: avoid; box-shadow: none; }}
+
+    footer .footer-brand {{
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--purple);
+      font-size: 10px;
+      margin-bottom: 4px;
     }}
-    @media (max-width: 640px) {{
-      .metrics-grid {{ grid-template-columns: repeat(2, 1fr); }}
+
+    /* ─── Responsive ─── */
+    @media (max-width: 768px) {{
+      body {{ padding: 24px 12px; }}
+      section {{ padding: 20px 16px; }}
+
+      .stats-row {{ grid-template-columns: repeat(3, 1fr); }}
       .glance-grid {{ grid-template-columns: 1fr; }}
+      .charts-grid {{ grid-template-columns: 1fr; }}
       .strengths-grid {{ grid-template-columns: 1fr; }}
+      .areas-grid {{ grid-template-columns: 1fr; }}
+      .cost-grid {{ grid-template-columns: repeat(2, 1fr); }}
+      .profile-stats {{ grid-template-columns: repeat(2, 1fr); }}
+      .heatmap-row {{ grid-template-columns: repeat(12, 1fr); }}
+      .heatmap-cell:nth-child(n+13) {{ display: none; }}
+    }}
+
+    @media (max-width: 480px) {{
+      .stats-row {{ grid-template-columns: repeat(2, 1fr); }}
+      .stat-value {{ font-size: 18px; }}
+      header h1 {{ font-size: 20px; }}
+    }}
+
+    /* ─── Print ─── */
+    @media print {{
+      body {{ padding: 20px; background: white; }}
+      section {{ box-shadow: none; break-inside: avoid; border: 1px solid #ddd; }}
+      .copy-btn {{ display: none; }}
+      header {{ box-shadow: none; }}
+      .at-a-glance-section {{ background: white; }}
+      .fun-ending-section {{ background: white; }}
     }}
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Agent Insight Report</h1>
+      <div class="brand">OBSERVAL AGENT INSIGHTS</div>
+      <h1>{_esc(agent_name)}</h1>
       <p class="subtitle">
-        Period: {_esc(period_start)} to {_esc(period_end)} &middot;
-        {sessions_analyzed} sessions analyzed &middot;
-        Report ID: {_esc(str(report_id)[:8])}
+        Period: {_esc(period_start)} &mdash; {_esc(period_end)} &nbsp;&middot;&nbsp;
+        {sessions_analyzed} sessions analyzed &nbsp;&middot;&nbsp;
+        Report {_esc(str(report_id)[:8])}
       </p>
     </header>
 
     {body_content}
 
     <footer>
-      Generated by Observal &middot; {datetime.now().strftime("%Y-%m-%d %H:%M")}
+      <div class="footer-brand">OBSERVAL</div>
+      <p>Generated {now_str}</p>
     </footer>
   </div>
 </body>

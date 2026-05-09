@@ -36,6 +36,7 @@ def configure(
     db_session_factory,
     meta_model=None,
     facets_model=None,
+    meta_cache_model=None,
 ):
     """Wire up dependencies from the host application.
 
@@ -47,6 +48,7 @@ def configure(
     _deps.db_session = db_session_factory
     _deps.InsightSessionMeta = meta_model
     _deps.InsightSessionFacets = facets_model
+    _deps.InsightMetaCache = meta_cache_model
 
 
 # Lazy imports for public API — avoids import-time dependency checks
