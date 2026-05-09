@@ -2,7 +2,11 @@
 
 import { use, useState, useCallback, useMemo, createElement } from "react";
 import { useSessionDetail, useSessionSubscription } from "@/hooks/use-api";
-import type { SessionData, RawSessionEvent } from "@/lib/types";
+import type {
+	SessionData,
+	RawSessionEvent,
+	SubagentSession,
+} from "@/lib/types";
 import {
 	FileText,
 	ChevronDown,
@@ -1528,6 +1532,71 @@ function AgentNode({
 	);
 }
 
+/* ── Inline subagent block (JSONL-sourced, nested at Agent tool_call) ── */
+
+function InlineSubagentBlock({
+	subagent,
+	parentKey,
+	expandedSet,
+	onToggleEvent,
+	activeFilters,
+	searchQuery,
+}: {
+	subagent: SubagentSession;
+	parentKey: string;
+	expandedSet: Set<string>;
+	onToggleEvent: (key: string) => void;
+	activeFilters: Set<string>;
+	searchQuery: string;
+}) {
+	const nodeKey = `${parentKey}-subagent`;
+	const isOpen = expandedSet.has(nodeKey);
+	const { turns } = useMemo(
+		() => buildEventTree(subagent.events),
+		[subagent.events],
+	);
+	return (
+		<div className="ml-6 mr-3 mb-2 rounded-md border border-indigo-500/30 overflow-hidden">
+			<button
+				type="button"
+				onClick={() => onToggleEvent(nodeKey)}
+				className="flex items-center gap-2 w-full text-left px-3 py-1.5 bg-indigo-500/5 hover:bg-indigo-500/10 transition-colors"
+			>
+				{isOpen ? (
+					<ChevronDown className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+				) : (
+					<ChevronRight className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+				)}
+				<Users className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+				<span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+					Subagent
+				</span>
+				<span className="text-[10px] text-muted-foreground ml-1 font-mono">
+					{subagent.session_id.slice(0, 8)}
+				</span>
+				<Badge variant="muted">
+					{turns.length} turn{turns.length !== 1 ? "s" : ""}
+				</Badge>
+			</button>
+			{isOpen && (
+				<div className="divide-y divide-border">
+					{turns.map((turn, ti) => (
+						<TurnNode
+							key={`${nodeKey}-turn-${ti}`}
+							turn={turn}
+							index={ti}
+							expandedSet={expandedSet}
+							onToggleEvent={onToggleEvent}
+							activeFilters={activeFilters}
+							searchQuery={searchQuery}
+						/>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
 /* ── Turn node (collapsible root) ────────────────────────── */
 
 function TurnNode({
@@ -1537,6 +1606,7 @@ function TurnNode({
 	onToggleEvent,
 	activeFilters,
 	searchQuery,
+	subagentSessions = [],
 }: {
 	turn: Turn;
 	index: number;
@@ -1544,7 +1614,17 @@ function TurnNode({
 	onToggleEvent: (key: string) => void;
 	activeFilters: Set<string>;
 	searchQuery: string;
+	subagentSessions?: SubagentSession[];
 }) {
+	// Build lookup: spawned_by uuid → subagent session
+	const subagentByUuid = useMemo(() => {
+		const m = new Map<string, SubagentSession>();
+		for (const s of subagentSessions) {
+			if (s.spawned_by) m.set(s.spawned_by, s);
+		}
+		return m;
+	}, [subagentSessions]);
+
 	const nodeKey = `turn-${index}`;
 	const isOpen = expandedSet.has(nodeKey);
 	const attrs = turn.promptEvent?.attributes ?? {};
@@ -1569,7 +1649,7 @@ function TurnNode({
 	const apiCount = turn.allEvents.filter(
 		(e) => getEventName(e) === "api_request",
 	).length;
-	const agentCount = turn.agents.length;
+	const agentCount = turn.agents.length + subagentSessions.length;
 
 	// Timestamps
 	const startTime = turn.promptEvent?.timestamp;
@@ -1651,21 +1731,42 @@ function TurnNode({
 							</div>
 						</div>
 					)}
-					{/* Top-level events (not inside any agent) */}
+					{/* Top-level events — render each; if it's an Agent tool_call,
+					    also render the matching subagent inline beneath it */}
 					{filteredTop.map((evt, i) => {
 						const key = `turn-${index}-evt-${i}`;
+						const evtAttrs = evt.attributes ?? {};
+						const evtUuid = evtAttrs.uuid || evtAttrs.message_id || "";
+						const isAgentCall =
+							getEventName(evt) === "tool_call" &&
+							evtAttrs.tool_name === "Agent" &&
+							subagentByUuid.has(evtUuid);
+						const subagent = isAgentCall
+							? subagentByUuid.get(evtUuid)
+							: undefined;
 						return (
-							<LeafEvent
-								key={key}
-								event={evt}
-								isExpanded={expandedSet.has(key)}
-								onToggle={() => onToggleEvent(key)}
-								depth={1}
-							/>
+							<div key={key}>
+								<LeafEvent
+									event={evt}
+									isExpanded={expandedSet.has(key)}
+									onToggle={() => onToggleEvent(key)}
+									depth={1}
+								/>
+								{subagent && (
+									<InlineSubagentBlock
+										subagent={subagent}
+										parentKey={key}
+										expandedSet={expandedSet}
+										onToggleEvent={onToggleEvent}
+										activeFilters={activeFilters}
+										searchQuery={searchQuery}
+									/>
+								)}
+							</div>
 						);
 					})}
 
-					{/* Agent sub-trees */}
+					{/* Legacy hook-based agent sub-trees (pre-JSONL IDEs) */}
 					{turn.agents.map((agent, ai) => (
 						<AgentNode
 							key={`turn-${index}-agent-${ai}`}
@@ -2059,6 +2160,10 @@ export default function TraceDetailPage({
 		() => session?.events ?? [],
 		[session],
 	);
+	const subagentSessions: SubagentSession[] = useMemo(
+		() => session?.subagent_sessions ?? [],
+		[session],
+	);
 
 	const [expandedSet, setExpandedSet] = useState<Set<string>>(new Set());
 	const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
@@ -2344,6 +2449,7 @@ export default function TraceDetailPage({
 														onToggleEvent={onToggleEvent}
 														activeFilters={activeFilters}
 														searchQuery={searchQuery}
+														subagentSessions={subagentSessions}
 													/>
 												);
 											})}

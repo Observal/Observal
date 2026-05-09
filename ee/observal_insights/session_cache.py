@@ -45,26 +45,76 @@ async def fetch_session_metas_from_events(
     sql = """
         SELECT
             session_id,
-            min(timestamp) AS start_time,
-            max(timestamp) AS end_time,
-            dateDiff('second', min(timestamp), max(timestamp)) AS duration_seconds,
-            count() AS event_count,
-            countIf(event_type = 'user_prompt') AS prompt_count,
-            countIf(event_type = 'tool_call') AS tool_call_count,
-            countIf(event_type = 'tool_result') AS tool_result_count,
-            -- Token extraction (Claude Code only)
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'input_tokens'), ide = 'claude-code') AS input_tokens,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens'), ide = 'claude-code') AS output_tokens,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_read_input_tokens'), ide = 'claude-code') AS cache_read_tokens,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_creation_input_tokens'), ide = 'claude-code') AS cache_write_tokens,
-            -- Credits (Kiro only)
-            sum(credits) AS total_credits,
-            any(ide) AS session_ide,
-            any(user_id) AS session_user_id,
-            any(parent_session_id) AS session_parent_id
-        FROM session_events FINAL
-        WHERE agent_id = {agent_id:String}
-          AND timestamp BETWEEN {t_start:String} AND {t_end:String}
+            min(start_time) AS start_time,
+            max(end_time) AS end_time,
+            dateDiff('second', min(start_time), max(end_time)) AS duration_seconds,
+            sum(event_count) AS event_count,
+            sum(prompt_count) AS prompt_count,
+            sum(tool_call_count) AS tool_call_count,
+            sum(tool_result_count) AS tool_result_count,
+            sum(input_tokens) AS input_tokens,
+            sum(output_tokens) AS output_tokens,
+            sum(cache_read_tokens) AS cache_read_tokens,
+            sum(cache_write_tokens) AS cache_write_tokens,
+            sum(total_credits) AS total_credits,
+            any(session_ide) AS session_ide,
+            any(session_user_id) AS session_user_id,
+            any(session_parent_id) AS session_parent_id
+        FROM (
+            -- Primary: sessions directly attributed to this agent
+            SELECT
+                session_id,
+                minIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS start_time,
+                maxIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS end_time,
+                count() AS event_count,
+                countIf(event_type = 'user_prompt') AS prompt_count,
+                countIf(event_type = 'tool_call') AS tool_call_count,
+                countIf(event_type = 'tool_result') AS tool_result_count,
+                sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'input_tokens'), ide = 'claude-code') AS input_tokens,
+                sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens'), ide = 'claude-code') AS output_tokens,
+                sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_read_input_tokens'), ide = 'claude-code') AS cache_read_tokens,
+                sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_creation_input_tokens'), ide = 'claude-code') AS cache_write_tokens,
+                sum(credits) AS total_credits,
+                any(ide) AS session_ide,
+                any(user_id) AS session_user_id,
+                any(parent_session_id) AS session_parent_id
+            FROM session_events FINAL
+            WHERE agent_id = {agent_id:String}
+              AND timestamp BETWEEN {t_start:String} AND {t_end:String}
+            GROUP BY session_id
+            HAVING event_count >= 2
+
+            UNION ALL
+
+            -- Subagent sessions: parent belongs to this agent but subagent
+            -- rows may have agent_id NULL (pushed before attribution was wired).
+            -- Excluded if agent_id already matches to avoid double-counting.
+            SELECT
+                session_id,
+                minIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS start_time,
+                maxIf(timestamp, timestamp > '1970-01-02' AND timestamp < '2099-01-01') AS end_time,
+                count() AS event_count,
+                countIf(event_type = 'user_prompt') AS prompt_count,
+                countIf(event_type = 'tool_call') AS tool_call_count,
+                countIf(event_type = 'tool_result') AS tool_result_count,
+                sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'input_tokens'), ide = 'claude-code') AS input_tokens,
+                sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens'), ide = 'claude-code') AS output_tokens,
+                sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_read_input_tokens'), ide = 'claude-code') AS cache_read_tokens,
+                sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_creation_input_tokens'), ide = 'claude-code') AS cache_write_tokens,
+                sum(credits) AS total_credits,
+                any(ide) AS session_ide,
+                any(user_id) AS session_user_id,
+                any(parent_session_id) AS session_parent_id
+            FROM session_events FINAL
+            WHERE parent_session_id IN (
+                SELECT DISTINCT session_id FROM session_events FINAL
+                WHERE agent_id = {agent_id:String}
+            )
+              AND (agent_id != {agent_id:String} OR agent_id = '')
+              AND timestamp BETWEEN {t_start:String} AND {t_end:String}
+            GROUP BY session_id
+            HAVING event_count >= 2
+        )
         GROUP BY session_id
         HAVING event_count >= 2
         ORDER BY start_time

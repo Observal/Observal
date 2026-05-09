@@ -277,8 +277,46 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
 
     events = parse_raw_events(rows)
 
+    # Fetch subagent sessions linked to this parent and attach their events.
+    # Each subagent's first row carries parent_uuid pointing at the Agent
+    # tool_call in the parent that spawned it — the frontend uses this to
+    # nest the subagent inline at the right position.
+    subagent_sessions = []
+    sub_rows_all = await _ch_json(
+        "SELECT session_id, timestamp, event_type, content_preview, "
+        "tool_name, tool_id, uuid, parent_uuid, content_length, ide, "
+        "raw_line, credits, ingested_at, line_offset "
+        "FROM session_events FINAL "
+        "WHERE parent_session_id = {sid:String} "
+        "ORDER BY session_id, line_offset ASC",
+        {"param_sid": session_id},
+    )
+    if sub_rows_all:
+        # Group by session_id
+        from itertools import groupby
+
+        sub_rows_all.sort(key=lambda r: r["session_id"])
+        for sub_sid, sub_rows in groupby(sub_rows_all, key=lambda r: r["session_id"]):
+            sub_rows_list = list(sub_rows)
+            # first row's parent_uuid links to the Agent tool_call in the parent
+            spawned_by = sub_rows_list[0].get("parent_uuid") if sub_rows_list else None
+            sub_events = parse_raw_events(sub_rows_list)
+            subagent_sessions.append(
+                {
+                    "session_id": sub_sid,
+                    "spawned_by": spawned_by,
+                    "events": sub_events,
+                }
+            )
+
     await audit(current_user, "session.view", "session", resource_id=session_id)
-    return {"session_id": session_id, "service_name": ide, "events": events, "traces": []}
+    return {
+        "session_id": session_id,
+        "service_name": ide,
+        "events": events,
+        "traces": [],
+        "subagent_sessions": subagent_sessions,
+    }
 
 
 @router.get("/{session_id}/efficiency")
