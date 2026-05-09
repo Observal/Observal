@@ -443,7 +443,10 @@ def _run(home: Path | None = None) -> None:
         return
 
     is_stop = hook_event == "Stop"
-    write_cursor(session_id, new_offset, line_count + len(lines), finalized=is_stop, home=home)
+    # Don't mark finalized on Stop — Claude Code writes ~5 more lines after
+    # the Stop event fires (final assistant response, turn_duration, etc.).
+    # A tail-flush subprocess will pick those up and finalize the cursor.
+    write_cursor(session_id, new_offset, line_count + len(lines), finalized=False, home=home)
 
     # Push any subagent JSONL files that live under this parent session.
     # Only fires for top-level sessions (parent_session_id is None) to avoid
@@ -451,9 +454,12 @@ def _run(home: Path | None = None) -> None:
     if parent_session_id is None:
         push_subagent_sessions(session_id, jsonl_path, config, cwd=cwd, home=home)
 
-    # On every turn (non-Stop), spawn a background crash-recovery subprocess
-    # to push tails of sessions whose Stop hook never fired (hard kill/crash).
-    if not is_stop:
+    if is_stop:
+        # Spawn a delayed tail-flush to capture post-Stop lines, then finalize.
+        _spawn_tail_flush(session_id)
+    else:
+        # On every turn (non-Stop), spawn a background crash-recovery subprocess
+        # to push tails of sessions whose Stop hook never fired (hard kill/crash).
         _spawn_crash_recovery()
 
 
@@ -468,6 +474,29 @@ def _spawn_crash_recovery() -> None:
     try:
         subprocess.Popen(
             [sys.executable, "-m", "observal_cli.cmd_reconcile"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        pass
+
+
+def _spawn_tail_flush(session_id: str) -> None:
+    """Spawn a delayed tail-flush subprocess to capture post-Stop lines.
+
+    Claude Code writes ~5 lines after the Stop hook fires (final assistant
+    response with token usage, turn_duration, etc.).  This subprocess sleeps
+    briefly, then pushes the remaining tail and marks the session finalized.
+
+    Best-effort: spawn failure is silently swallowed.
+    """
+    import subprocess
+
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "observal_cli.cmd_tail_flush", session_id],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

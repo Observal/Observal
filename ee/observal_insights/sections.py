@@ -412,7 +412,9 @@ async def generate_sections(
         "insight_sections_starting",
         deep_model=deep_model or "default",
         fast_model=fast_model or "default",
-        catalog_items=(len(registry_catalog.get("mcps", [])) + len(registry_catalog.get("skills", []))) if registry_catalog else 0,
+        catalog_items=(len(registry_catalog.get("mcps", [])) + len(registry_catalog.get("skills", [])))
+        if registry_catalog
+        else 0,
     )
 
     # Build prompts for all 8 sections

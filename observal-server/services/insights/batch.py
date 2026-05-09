@@ -94,12 +94,14 @@ async def _load_registry_catalog(db) -> dict:
     )
     mcp_result = await db.execute(mcp_stmt)
     for row in mcp_result.all():
-        catalog["mcps"].append({
-            "id": str(row[0]),
-            "name": row[1],
-            "category": row[2],
-            "description": (row[3] or "")[:120],
-        })
+        catalog["mcps"].append(
+            {
+                "id": str(row[0]),
+                "name": row[1],
+                "category": row[2],
+                "description": (row[3] or "")[:120],
+            }
+        )
 
     # Public skills with their latest version description
     skill_stmt = (
@@ -109,11 +111,13 @@ async def _load_registry_catalog(db) -> dict:
     )
     skill_result = await db.execute(skill_stmt)
     for row in skill_result.all():
-        catalog["skills"].append({
-            "id": str(row[0]),
-            "name": row[1],
-            "description": (row[2] or "")[:120],
-        })
+        catalog["skills"].append(
+            {
+                "id": str(row[0]),
+                "name": row[1],
+                "description": (row[2] or "")[:120],
+            }
+        )
 
     return catalog
 
