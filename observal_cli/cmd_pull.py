@@ -519,7 +519,12 @@ def register_pull(app: typer.Typer):
             agent_version = agent_detail.get("version") or agent_detail.get("latest_version")
             marker_dir = target_dir / ".observal"
             marker_dir.mkdir(parents=True, exist_ok=True)
-            (marker_dir / "agent").write_text(json.dumps({"agent_id": agent_uuid, "agent_version": agent_version}))
+            import datetime as _dt
+            (marker_dir / "agent").write_text(json.dumps({
+                "agent_id": agent_uuid,
+                "agent_version": agent_version,
+                "pulled_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            }))
 
         # ── Output summary ──────────────────────────────────
         if not written:

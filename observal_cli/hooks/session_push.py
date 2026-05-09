@@ -112,15 +112,34 @@ def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
     return lines, len(raw)
 
 
-def read_agent_marker(cwd: str) -> tuple[str | None, str | None]:
+def read_agent_marker(cwd: str, session_jsonl: Path | None = None) -> tuple[str | None, str | None]:
     """Return (agent_id, agent_version) from <cwd>/.observal/agent, or (None, None).
 
     Written by ``observal pull`` so hooks can attribute sessions to the
     pulled agent without needing OBSERVAL_AGENT_ID in the shell environment.
+
+    Only attributes the session if it was created AFTER the agent was pulled.
+    This prevents unrelated sessions in the same directory from being
+    incorrectly attributed to an agent.
     """
     try:
         marker = Path(cwd) / ".observal" / "agent"
         data = json.loads(marker.read_text())
+
+        # If marker has a pulled_at timestamp, only attribute sessions started after the pull
+        pulled_at = data.get("pulled_at")
+        if pulled_at and session_jsonl and session_jsonl.exists():
+            from datetime import datetime, timezone
+
+            pull_time = datetime.fromisoformat(pulled_at)
+            # Session JSONL file creation time = session start time
+            stat = session_jsonl.stat()
+            # st_birthtime (macOS/Windows) or st_ctime as fallback (Linux)
+            ctime = getattr(stat, "st_birthtime", None) or stat.st_ctime
+            session_ctime = datetime.fromtimestamp(ctime, tz=timezone.utc)
+            if session_ctime < pull_time:
+                return None, None
+
         return data.get("agent_id"), data.get("agent_version")
     except Exception:
         return None, None
@@ -150,9 +169,10 @@ def build_payload(
     new_offset: int = 0,
     cwd: str = "",
     parent_session_id: str | None = None,
+    session_jsonl: Path | None = None,
 ) -> dict:
     """Construct the JSON body for the ingest endpoint."""
-    agent_id, agent_version = read_agent_marker(cwd) if cwd else (None, None)
+    agent_id, agent_version = read_agent_marker(cwd, session_jsonl) if cwd else (None, None)
     payload: dict = {
         "session_id": session_id,
         "ide": "claude-code",
@@ -287,6 +307,7 @@ def _run(home: Path | None = None) -> None:
         new_offset=new_offset,
         cwd=cwd,
         parent_session_id=parent_session_id,
+        session_jsonl=jsonl_path,
     )
 
     success = post_to_server(
