@@ -271,7 +271,7 @@ def status():
             if buf["oldest_pending"]:
                 rprint(f"  Oldest:  {buf['oldest_pending']} UTC")
             if pending and not ok:
-                rprint("  [dim]Run `observal ops sync` when the server is back online.[/dim]")
+                rprint("  [dim]Session data is pushed incrementally; run `observal doctor` to diagnose.[/dim]")
     except Exception:
         pass
 

@@ -75,7 +75,6 @@ observal ops review approve <id>   # approve
 observal ops review reject <id> --reason "..."  # reject
 observal ops telemetry status      # check telemetry flow
 observal ops telemetry test        # send a test event
-observal ops sync                  # flush buffered events
 observal ops overview              # system-wide stats
 observal ops metrics <id>          # metrics for an MCP or agent
 ```
@@ -118,7 +117,7 @@ All CLI state lives in `~/.observal/`:
 
 ## Telemetry
 
-When `observal doctor patch --shim` wraps an MCP server, tool calls flow through `observal-shim` which records usage events. If the server is unreachable, events are buffered locally in `telemetry_buffer.db` and flushed on the next `observal ops sync`.
+When `observal doctor patch --shim` wraps an MCP server, tool calls flow through `observal-shim` which records usage events. If the server is unreachable, events are retried automatically on the next hook fire.
 
 Hook scripts in `observal_cli/hooks/` capture IDE-level events (prompts, tool use, subagent spawning) and forward them to the server.
 

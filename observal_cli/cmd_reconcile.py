@@ -3,7 +3,7 @@
 Two responsibilities:
 1. Discovery helpers (_find_claude_sessions_dir, _find_recent_sessions,
    _find_session_file, _parse_session_file) used by the reconcile pipeline
-   and the admin `observal ops sync` command.
+   and the `observal ops overview` command.
 2. Crash recovery: on the next UserPromptSubmit hook after a session was
    killed before its Stop hook fired, this module detects the stale cursor
    and pushes the remaining JSONL lines so no turns are lost.

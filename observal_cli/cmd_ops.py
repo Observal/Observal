@@ -252,22 +252,6 @@ def telemetry_test():
     rprint(f"[green]✓ Test event sent![/green] Ingested: {result.get('ingested', 0)}")
 
 
-# ── Sync (on ops_app) ──────────────────────────────────
-
-
-@ops_app.command(name="sync")
-def ops_sync():
-    """Flush locally buffered telemetry events to the server.
-
-    Note: The local SQLite buffer has been removed. Session telemetry
-    now uses incremental JSONL push with crash recovery. Use
-    `observal reconcile run` to recover interrupted sessions.
-    """
-    rprint("[dim]The telemetry buffer has been removed.[/dim]")
-    rprint("[dim]Session data is now pushed incrementally via JSONL hooks.[/dim]")
-    rprint("[dim]Run `observal reconcile run` to recover interrupted sessions.[/dim]")
-
-
 # ── Dashboard (on ops_app) ──────────────────────────────
 
 
