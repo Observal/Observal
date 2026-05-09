@@ -678,76 +678,83 @@ def render_report_html(report: dict) -> str:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <title>Observal Agent Insights &mdash; {_esc(agent_name)} &mdash; {_esc(period_start)} to {_esc(period_end)}</title>
   <style>
     :root {{
-      --bg: #f8fafc;
-      --bg-alt: #f1f5f9;
+      --bg: #fafaf9;
+      --bg-alt: #f5f5f4;
       --card-bg: #ffffff;
-      --text: #0f172a;
-      --text-secondary: #334155;
-      --text-muted: #64748b;
-      --border: #e2e8f0;
-      --border-light: #f1f5f9;
-      --green: #16a34a;
+      --text: #1c1917;
+      --text-secondary: #44403c;
+      --text-muted: #78716c;
+      --border: #e7e5e4;
+      --border-light: #f5f5f4;
+      --green: #15803d;
       --green-bg: #f0fdf4;
       --green-border: #bbf7d0;
-      --red: #dc2626;
+      --red: #b91c1c;
       --red-bg: #fef2f2;
       --red-border: #fecaca;
-      --amber: #d97706;
+      --amber: #b45309;
       --amber-bg: #fffbeb;
       --amber-border: #fde68a;
-      --blue: #2563eb;
+      --blue: #1d4ed8;
       --blue-bg: #eff6ff;
       --blue-border: #bfdbfe;
-      --purple: #7c3aed;
-      --purple-bg: #f5f3ff;
-      --purple-border: #ddd6fe;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
-      --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
-      --radius: 12px;
-      --radius-sm: 8px;
+      --accent: #c2410c;
+      --accent-bg: #fff7ed;
+      --accent-border: #fed7aa;
+      --accent-light: #ea580c;
+      --shadow-sm: 0 1px 2px rgba(28,25,23,0.03);
+      --shadow: 0 1px 3px rgba(28,25,23,0.04), 0 1px 2px rgba(28,25,23,0.03);
+      --shadow-md: 0 4px 6px -1px rgba(28,25,23,0.05), 0 2px 4px -2px rgba(28,25,23,0.03);
+      --radius: 16px;
+      --radius-sm: 10px;
       --radius-xs: 6px;
     }}
 
     @media (prefers-color-scheme: dark) {{
       :root {{
-        --bg: #0f172a;
-        --bg-alt: #1e293b;
-        --card-bg: #1e293b;
-        --text: #f1f5f9;
-        --text-secondary: #cbd5e1;
-        --text-muted: #94a3b8;
-        --border: #334155;
-        --border-light: #1e293b;
+        --bg: #1c1917;
+        --bg-alt: #292524;
+        --card-bg: #292524;
+        --text: #fafaf9;
+        --text-secondary: #d6d3d1;
+        --text-muted: #a8a29e;
+        --border: #44403c;
+        --border-light: #292524;
         --green-bg: #052e16;
         --green-border: #166534;
         --red-bg: #450a0a;
-        --red-border: #7f1d1d;
+        --red-border: #991b1b;
         --amber-bg: #451a03;
-        --amber-border: #78350f;
-        --blue-bg: #172554;
-        --blue-border: #1e40af;
-        --purple-bg: #2e1065;
-        --purple-border: #4c1d95;
-        --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
-        --shadow: 0 1px 3px rgba(0,0,0,0.3);
-        --shadow-md: 0 4px 6px rgba(0,0,0,0.3);
+        --amber-border: #92400e;
+        --blue-bg: #1e3a5f;
+        --blue-border: #1d4ed8;
+        --accent: #ea580c;
+        --accent-bg: #431407;
+        --accent-border: #9a3412;
+        --accent-light: #fb923c;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+        --shadow: 0 1px 3px rgba(0,0,0,0.4);
+        --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
       }}
     }}
 
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 
     body {{
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.65;
-      padding: 48px 24px;
+      line-height: 1.6;
+      padding: 56px 24px;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+      font-size: 15px;
     }}
 
     .container {{
@@ -768,18 +775,19 @@ def render_report_html(report: dict) -> str:
 
     .brand {{
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 3px;
+      font-weight: 600;
+      letter-spacing: 2.5px;
       text-transform: uppercase;
-      color: var(--purple);
-      margin-bottom: 12px;
+      color: var(--accent);
+      margin-bottom: 16px;
     }}
 
     header h1 {{
-      font-size: 26px;
-      font-weight: 700;
+      font-size: 24px;
+      font-weight: 600;
       margin-bottom: 8px;
       color: var(--text);
+      letter-spacing: -0.02em;
     }}
 
     header .subtitle {{
@@ -792,15 +800,15 @@ def render_report_html(report: dict) -> str:
     section {{
       background: var(--card-bg);
       border-radius: var(--radius);
-      padding: 28px;
-      margin-bottom: 24px;
+      padding: 32px;
+      margin-bottom: 20px;
       border: 1px solid var(--border);
       box-shadow: var(--shadow);
     }}
 
     section h2 {{
-      font-size: 18px;
-      font-weight: 700;
+      font-size: 17px;
+      font-weight: 600;
       margin-bottom: 20px;
       color: var(--text);
       letter-spacing: -0.01em;
@@ -822,8 +830,9 @@ def render_report_html(report: dict) -> str:
 
     /* ─── At a Glance ─── */
     .at-a-glance-section {{
-      background: linear-gradient(135deg, var(--card-bg), var(--blue-bg));
-      border: 1px solid var(--blue-border);
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-top: 3px solid var(--accent);
     }}
 
     .glance-header {{
@@ -894,9 +903,9 @@ def render_report_html(report: dict) -> str:
     .glance-action h4 {{ color: var(--blue); }}
     .glance-action .glance-icon {{ background: var(--blue-border); color: var(--blue); }}
 
-    .glance-ambitious {{ background: var(--purple-bg); border: 1px solid var(--purple-border); }}
-    .glance-ambitious h4 {{ color: var(--purple); }}
-    .glance-ambitious .glance-icon {{ background: var(--purple-border); color: var(--purple); }}
+    .glance-ambitious {{ background: var(--accent-bg); border: 1px solid var(--accent-border); }}
+    .glance-ambitious h4 {{ color: var(--accent); }}
+    .glance-ambitious .glance-icon {{ background: var(--accent-border); color: var(--accent); }}
 
     /* ─── Stats Row ─── */
     .stats-row-section {{
@@ -921,8 +930,8 @@ def render_report_html(report: dict) -> str:
     .stat-value {{
       display: block;
       font-size: 22px;
-      font-weight: 800;
-      color: var(--blue);
+      font-weight: 700;
+      color: var(--text);
       line-height: 1.2;
     }}
 
@@ -1080,7 +1089,7 @@ def render_report_html(report: dict) -> str:
       display: block;
       font-size: 20px;
       font-weight: 700;
-      color: var(--purple);
+      color: var(--accent);
     }}
 
     .profile-lbl {{
@@ -1104,8 +1113,8 @@ def render_report_html(report: dict) -> str:
 
     .heatmap-cell {{
       aspect-ratio: 1;
-      background: var(--blue);
-      border-radius: 3px;
+      background: var(--accent);
+      border-radius: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1187,15 +1196,16 @@ def render_report_html(report: dict) -> str:
 
     .evidence {{
       display: block;
-      background: #1e293b;
-      color: #e2e8f0;
+      background: var(--bg-alt);
+      color: var(--text-secondary);
       padding: 10px 14px;
       border-radius: var(--radius-xs);
+      border: 1px solid var(--border);
       font-size: 12px;
       margin: 10px 0;
       white-space: pre-wrap;
       word-break: break-word;
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
     }}
 
     .impact {{
@@ -1226,9 +1236,9 @@ def render_report_html(report: dict) -> str:
     }}
 
     .suggestion-num {{
-      font-size: 20px;
-      font-weight: 800;
-      color: var(--blue);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
       min-width: 36px;
     }}
 
@@ -1256,7 +1266,7 @@ def render_report_html(report: dict) -> str:
     }}
 
     .copy-btn {{
-      background: var(--blue);
+      background: var(--accent);
       color: white;
       border: none;
       padding: 5px 12px;
@@ -1268,8 +1278,8 @@ def render_report_html(report: dict) -> str:
       transition: background 0.2s;
     }}
 
-    .copy-btn:hover {{ background: #1d4ed8; }}
-    .copy-btn:active {{ background: #1e40af; }}
+    .copy-btn:hover {{ background: #9a3412; }}
+    .copy-btn:active {{ background: #7c2d12; }}
 
     .suggestion-why {{
       font-size: 13px;
@@ -1350,8 +1360,8 @@ def render_report_html(report: dict) -> str:
     .cost-val {{
       display: block;
       font-size: 22px;
-      font-weight: 800;
-      color: var(--green);
+      font-weight: 700;
+      color: var(--text);
     }}
 
     .cost-lbl {{
@@ -1442,24 +1452,27 @@ def render_report_html(report: dict) -> str:
 
     /* ─── Fun Ending ─── */
     .fun-ending-section {{
-      background: linear-gradient(135deg, var(--purple-bg), var(--blue-bg));
-      border: 1px solid var(--purple-border);
+      background: var(--accent-bg);
+      border: 1px solid var(--accent-border);
     }}
 
     .fun-card {{
       text-align: center;
-      padding: 24px;
+      padding: 28px;
     }}
 
     .fun-card h3 {{
-      font-size: 20px;
-      color: var(--purple);
-      margin-bottom: 8px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 10px;
     }}
 
     .fun-card p {{
       font-size: 14px;
-      color: var(--text-muted);
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto;
     }}
 
     /* ─── Footer ─── */
@@ -1467,16 +1480,16 @@ def render_report_html(report: dict) -> str:
       text-align: center;
       color: var(--text-muted);
       font-size: 12px;
-      margin-top: 48px;
+      margin-top: 56px;
       padding: 24px 0;
       border-top: 1px solid var(--border);
     }}
 
     footer .footer-brand {{
-      font-weight: 700;
+      font-weight: 600;
       letter-spacing: 2px;
       text-transform: uppercase;
-      color: var(--purple);
+      color: var(--accent);
       font-size: 10px;
       margin-bottom: 4px;
     }}
