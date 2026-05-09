@@ -119,27 +119,31 @@ def read_agent_marker(cwd: str, session_jsonl: Path | None = None) -> tuple[str 
     Written by ``observal pull`` so hooks can attribute sessions to the
     pulled agent without needing OBSERVAL_AGENT_ID in the shell environment.
 
-    Only attributes the session if it was created AFTER the agent was pulled.
-    This prevents unrelated sessions in the same directory from being
-    incorrectly attributed to an agent.
+    Only applies the pulled_at guard for brand-new sessions (cursor offset == 0).
+    Resumed sessions (cursor > 0) keep whatever attribution was set on their
+    first push — changing agent_id mid-session would split the session across
+    two agents in analytics.
     """
     try:
         marker = Path(cwd) / ".observal" / "agent"
         data = json.loads(marker.read_text())
 
-        # If marker has a pulled_at timestamp, only attribute sessions started after the pull
         pulled_at = data.get("pulled_at")
         if pulled_at and session_jsonl and session_jsonl.exists():
             from datetime import datetime
 
-            pull_time = datetime.fromisoformat(pulled_at)
-            # Session JSONL file creation time = session start time
-            stat = session_jsonl.stat()
-            # st_birthtime (macOS/Windows) or st_ctime as fallback (Linux)
-            ctime = getattr(stat, "st_birthtime", None) or stat.st_ctime
-            session_ctime = datetime.fromtimestamp(ctime, tz=UTC)
-            if session_ctime < pull_time:
-                return None, None
+            # Only guard first-ever push for this session (offset == 0).
+            # Resumed sessions have offset > 0 and already had their attribution
+            # decided on the first push — don't change it now.
+            session_id = session_jsonl.stem
+            offset, _ = read_cursor(session_id)
+            if offset == 0:
+                pull_time = datetime.fromisoformat(pulled_at)
+                stat = session_jsonl.stat()
+                ctime = getattr(stat, "st_birthtime", None) or stat.st_ctime
+                session_ctime = datetime.fromtimestamp(ctime, tz=UTC)
+                if session_ctime < pull_time:
+                    return None, None
 
         return data.get("agent_id"), data.get("agent_version")
     except Exception:
