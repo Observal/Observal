@@ -163,13 +163,13 @@ Browse what the community has published:
 
 ```bash
 observal agent list
-observal agent show <agent-id>
+observal agent show <agent-name>
 ```
 
 Install one into your IDE:
 
 ```bash
-observal pull <agent-id> --ide claude-code
+observal pull agent <agent-name> --ide <ide-name>
 ```
 
 This drops agent files, skills, hooks, and MCP configs into the right places for your IDE and wires up telemetry automatically.

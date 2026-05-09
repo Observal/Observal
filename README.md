@@ -91,7 +91,7 @@ Admin approve/reject workflow for submissions
 
 ## Documentation
 
-**Full docs live at [observal.gitbook.io](https://observal.gitbook.io/observal)** (sourced from [`/docs`](docs/) in this repo).
+**Full docs live at [docs.observal.io](https://docs.observal.io/)**
 
 | Start here                           | Go to                                                        |
 | ------------------------------------ | ------------------------------------------------------------ |

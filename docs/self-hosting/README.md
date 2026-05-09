@@ -5,21 +5,21 @@ Run Observal entirely on your own infrastructure. No SaaS, no egress, every byte
 ## Architecture at a glance
 
 ```
-                  ┌─────────────────────────────────────────┐
-                  │           observal-net (bridge)         │
-                  │                                         │
-  [Engineers] ──► │  observal-web  ◄──►  observal-api       │
-   (port 3000)    │      │                    │             │
-                  │      ▼                    ▼             │
-                  │  (static)        observal-worker        │
-                  │                     │  │  │             │
-                  │          ┌──────────┘  │  └──────────┐  │
-                  │          ▼             ▼             ▼  │
-                  │   observal-db   observal-redis  observal-clickhouse
-                  │   (Postgres)    (jobs, pubsub)   (telemetry)   │
-                  │                                               │
-                  │   observal-grafana  ──►  clickhouse (optional)│
-                  └───────────────────────────────────────────────┘
+                  ┌────────────────────────────────────────────────────┐
+                  │              observal-net (bridge)                 │
+                  │                                                    │
+  [Engineers] ──► │  observal-web  ◄──►  observal-api                  │
+   (port 3000)    │      │                    │                        │
+                  │      ▼                    ▼                        │
+                  │  (static)        observal-worker                   │
+                  │                     │  │  │                        │
+                  │          ┌──────────┘  │  └──────────┐             │
+                  │          ▼             ▼             ▼             │
+                  │   observal-db   observal-redis  observal-clickhouse│
+                  │   (Postgres)    (jobs, pubsub)   (telemetry)       │
+                  │                                                    │
+                  │   observal-grafana  ──►  clickhouse (optional)     │
+                  └────────────────────────────────────────────────────┘
 ```
 
 **Seven services:**
