@@ -98,7 +98,7 @@ services:
       - observal-net
 
   observal-clickhouse:
-    image: clickhouse/clickhouse-server:26.3
+    image: clickhouse/clickhouse-server:26.4
     ports:
       - "${CLICKHOUSE_HOST_PORT:-8123}:8123"
     env_file:
