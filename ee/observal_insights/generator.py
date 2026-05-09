@@ -168,22 +168,15 @@ async def _run_pipeline(
 
     # ── Step 3: Filter & Rank Sessions ──
     # Remove non-substantive sessions and rank by duration x tool_call_count
-    substantive_sessions = [
-        (sid, meta)
-        for sid, meta in enriched_metas.items()
-        if meta.get("is_substantive", False)
-    ]
+    substantive_sessions = [(sid, meta) for sid, meta in enriched_metas.items() if meta.get("is_substantive", False)]
     # Sort by substantiveness score: duration_seconds * tool_call_count (descending)
     substantive_sessions.sort(
-        key=lambda x: int(x[1].get("duration_seconds", 0))
-        * int(x[1].get("tool_call_count", 0)),
+        key=lambda x: int(x[1].get("duration_seconds", 0)) * int(x[1].get("tool_call_count", 0)),
         reverse=True,
     )
 
     # ── Step 4: Compute deterministic metrics (parallel ClickHouse queries) ──
-    metrics = await compute_all_metrics(
-        agent_name, period_start, period_end, agent_id=agent_id
-    )
+    metrics = await compute_all_metrics(agent_name, period_start, period_end, agent_id=agent_id)
 
     # ── Step 4b: Cross-user patterns (deterministic, multi-session + subagent) ──
     cross_user_patterns = await compute_cross_user_patterns(enriched_metas)
@@ -206,9 +199,7 @@ async def _run_pipeline(
             )
             for sid, meta in top_sessions
         ]
-        transcript_results = await asyncio.gather(
-            *transcript_tasks, return_exceptions=True
-        )
+        transcript_results = await asyncio.gather(*transcript_tasks, return_exceptions=True)
         for (sid, _), result in zip(top_sessions, transcript_results):
             if isinstance(result, str) and result:
                 transcripts[sid] = result
@@ -257,9 +248,7 @@ async def _run_pipeline(
     )
 
     # Collect models used across sessions
-    models_used = list(
-        {s.get("model", "") for s in enriched_sessions if s.get("model")}
-    )
+    models_used = list({s.get("model", "") for s in enriched_sessions if s.get("model")})
 
     logger.info(
         "insight_generation_complete",
@@ -332,20 +321,24 @@ def _build_data_block(
 
     # Agent configuration (for component-aware suggestions)
     if agent_config:
-        sections.extend([
-            "## Agent Configuration",
-            json.dumps(agent_config, indent=2),
-            "",
-        ])
+        sections.extend(
+            [
+                "## Agent Configuration",
+                json.dumps(agent_config, indent=2),
+                "",
+            ]
+        )
 
-    sections.extend([
-        "## Metrics Overview",
-        json.dumps(metrics.get("overview", {}), indent=2),
-        "",
-        "## Token Usage",
-        json.dumps(metrics.get("tokens", {}), indent=2),
-        "",
-    ])
+    sections.extend(
+        [
+            "## Metrics Overview",
+            json.dumps(metrics.get("overview", {}), indent=2),
+            "",
+            "## Token Usage",
+            json.dumps(metrics.get("tokens", {}), indent=2),
+            "",
+        ]
+    )
 
     # Credits (Kiro) if available
     credits = metrics.get("credits", {})

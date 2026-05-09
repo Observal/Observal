@@ -9,7 +9,6 @@ from datetime import datetime
 
 from .pricing import compute_session_cost
 
-
 # ---------------------------------------------------------------------------
 # Existing V2 functions (preserved)
 # ---------------------------------------------------------------------------
@@ -47,25 +46,24 @@ def detect_user_friction_clusters(sessions: list[dict]) -> dict:
     per_user_summary = []
     for uid, errs in user_errors.items():
         avg = sum(errs) / len(errs)
-        per_user_summary.append({
-            "user_id": uid,
-            "session_count": len(errs),
-            "avg_error_rate": round(avg, 4),
-        })
+        per_user_summary.append(
+            {
+                "user_id": uid,
+                "session_count": len(errs),
+                "avg_error_rate": round(avg, 4),
+            }
+        )
 
     total_users = len(user_errors)
     avg_user_error_rate = overall_error_rate  # same as global avg by definition
 
     high_friction_users = sum(
-        1 for entry in per_user_summary
+        1
+        for entry in per_user_summary
         if avg_user_error_rate > 0 and entry["avg_error_rate"] >= 2 * avg_user_error_rate
     )
 
-    friction_concentrated = (
-        total_users > 0
-        and high_friction_users > 0
-        and (high_friction_users / total_users) <= 0.20
-    )
+    friction_concentrated = total_users > 0 and high_friction_users > 0 and (high_friction_users / total_users) <= 0.20
 
     return {
         "total_users": total_users,
@@ -155,10 +153,7 @@ def compute_session_length_trends(sessions: list[dict]) -> dict:
     p99 = sorted_durations[int((n - 1) * 0.99)] if n > 1 else sorted_durations[-1]
 
     # Outliers: sessions with duration > 3x p50
-    outlier_sessions = [
-        s for s, d in zip(sessions, durations)
-        if p50 > 0 and d > 3 * p50
-    ]
+    outlier_sessions = [s for s, d in zip(sessions, durations) if p50 > 0 and d > 3 * p50]
 
     # Trend: compare first half avg vs second half avg (sorted by first_event if possible)
     try:
@@ -236,10 +231,7 @@ def compute_cost_distribution(sessions: list[dict]) -> dict:
     p99 = costs_sorted[int(n * 0.99)][1] if n > 1 else costs_sorted[-1][1]
     total = sum(c for _, c in session_costs)
 
-    outlier_sessions = [
-        s for s, c in session_costs
-        if p50 > 0 and c > 3 * p50
-    ]
+    outlier_sessions = [s for s, c in session_costs if p50 > 0 and c > 3 * p50]
 
     return {
         "p50_cost_usd": round(p50, 6),
@@ -327,16 +319,8 @@ def detect_multi_session(sessions: list[dict]) -> dict:
             end = s.get("end_time", "")
             if start and end:
                 try:
-                    st = (
-                        datetime.fromisoformat(str(start).replace("Z", "+00:00"))
-                        if isinstance(start, str)
-                        else start
-                    )
-                    et = (
-                        datetime.fromisoformat(str(end).replace("Z", "+00:00"))
-                        if isinstance(end, str)
-                        else end
-                    )
+                    st = datetime.fromisoformat(str(start).replace("Z", "+00:00")) if isinstance(start, str) else start
+                    et = datetime.fromisoformat(str(end).replace("Z", "+00:00")) if isinstance(end, str) else end
                     intervals.append((st, et, s.get("session_id", "")))
                 except (ValueError, TypeError):
                     continue
@@ -407,8 +391,10 @@ def analyze_subagent_patterns(sessions: list[dict]) -> dict:
 
     # Estimate success rate: sessions with low error rate and reasonable duration
     successful = sum(
-        1 for s in subagents
-        if int(s.get("error_count", 0)) == 0 or (
+        1
+        for s in subagents
+        if int(s.get("error_count", 0)) == 0
+        or (
             int(s.get("tool_call_count", 0)) > 0
             and int(s.get("error_count", 0)) / int(s.get("tool_call_count", 1)) < 0.3
         )
@@ -474,9 +460,7 @@ def detect_shared_friction(sessions: list[dict]) -> dict:
             # Detect patterns from tool_call_count vs error_count ratio
             tool_count = int(s.get("tool_call_count") or 0)
             if tool_count > 0 and error_count / tool_count > 0.2:
-                user_errors[uid]["high_error_rate"] = (
-                    user_errors[uid].get("high_error_rate", 0) + 1
-                )
+                user_errors[uid]["high_error_rate"] = user_errors[uid].get("high_error_rate", 0) + 1
 
     # Find patterns affecting 2+ users
     pattern_users: dict[str, set[str]] = {}
@@ -487,11 +471,13 @@ def detect_shared_friction(sessions: list[dict]) -> dict:
     shared_patterns: list[dict] = []
     for pattern, users in pattern_users.items():
         if len(users) >= 2:
-            shared_patterns.append({
-                "pattern": pattern,
-                "users_affected": len(users),
-                "confidence": "high" if len(users) >= 3 else "medium",
-            })
+            shared_patterns.append(
+                {
+                    "pattern": pattern,
+                    "users_affected": len(users),
+                    "confidence": "high" if len(users) >= 3 else "medium",
+                }
+            )
 
     # Adoption gaps: tools with very low usage across users
     # (Will be enhanced when per-tool facet data is available)

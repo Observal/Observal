@@ -59,10 +59,7 @@ def enrich_session_meta(meta: dict) -> dict:
     tool_calls = int(meta.get("tool_call_count", 0))
     prompt_count = int(meta.get("prompt_count", 0))
     duration = int(meta.get("duration_seconds", 0))
-    enriched["is_substantive"] = (
-        tool_calls >= 3
-        or (prompt_count >= 2 and duration >= 60)
-    )
+    enriched["is_substantive"] = tool_calls >= 3 or (prompt_count >= 2 and duration >= 60)
 
     return enriched
 

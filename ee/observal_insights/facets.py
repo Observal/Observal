@@ -10,11 +10,11 @@ outcome granularity, and new dimensions (helpfulness, session_type, repeated_ins
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 
-from ._deps import get_call_model, get_settings, get_facets_model
+from ._deps import get_call_model, get_facets_model, get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -162,14 +162,14 @@ async def store_facets(
 
     if existing:
         existing.facets = facets
-        existing.updated_at = datetime.now(timezone.utc)
+        existing.updated_at = datetime.now(UTC)
     else:
         record = FacetsModel(
             session_id=session_id,
             agent_id=agent_id,
             facets=facets,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db.add(record)
 

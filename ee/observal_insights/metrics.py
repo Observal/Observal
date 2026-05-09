@@ -22,14 +22,30 @@ logger = structlog.get_logger(__name__)
 # ===========================================================================
 
 EXTENSION_MAP = {
-    ".py": "Python", ".ts": "TypeScript", ".tsx": "TypeScript",
-    ".js": "JavaScript", ".jsx": "JavaScript", ".rs": "Rust",
-    ".go": "Go", ".java": "Java", ".rb": "Ruby", ".sql": "SQL",
-    ".yaml": "YAML", ".yml": "YAML", ".json": "JSON",
-    ".md": "Markdown", ".html": "HTML", ".css": "CSS",
-    ".sh": "Shell", ".bash": "Shell", ".zsh": "Shell",
-    ".c": "C", ".cpp": "C++", ".h": "C/C++",
-    ".swift": "Swift", ".kt": "Kotlin",
+    ".py": "Python",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript",
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".rs": "Rust",
+    ".go": "Go",
+    ".java": "Java",
+    ".rb": "Ruby",
+    ".sql": "SQL",
+    ".yaml": "YAML",
+    ".yml": "YAML",
+    ".json": "JSON",
+    ".md": "Markdown",
+    ".html": "HTML",
+    ".css": "CSS",
+    ".sh": "Shell",
+    ".bash": "Shell",
+    ".zsh": "Shell",
+    ".c": "C",
+    ".cpp": "C++",
+    ".h": "C/C++",
+    ".swift": "Swift",
+    ".kt": "Kotlin",
 }
 
 
@@ -682,32 +698,36 @@ async def _ev_response_times(agent_id: str, start: str, end: str) -> dict:
 
     prev_event = None
     for row in rows:
-        if prev_event and prev_event.get("session_id") == row.get("session_id"):
-            if prev_event.get("event_type") == "assistant_text" and row.get("event_type") == "user_prompt":
-                try:
-                    t1 = datetime.fromisoformat(str(prev_event["timestamp"]).replace("Z", "+00:00"))
-                    t2 = datetime.fromisoformat(str(row["timestamp"]).replace("Z", "+00:00"))
-                    gap = (t2 - t1).total_seconds()
-                    if 2 < gap < 3600:  # Filter noise
-                        gaps.append(gap)
-                        if gap < 2:
-                            buckets["<2s"] += 1
-                        elif gap < 10:
-                            buckets["2-10s"] += 1
-                        elif gap < 30:
-                            buckets["10-30s"] += 1
-                        elif gap < 60:
-                            buckets["30s-1m"] += 1
-                        elif gap < 120:
-                            buckets["1-2m"] += 1
-                        elif gap < 300:
-                            buckets["2-5m"] += 1
-                        elif gap < 900:
-                            buckets["5-15m"] += 1
-                        else:
-                            buckets[">15m"] += 1
-                except (ValueError, TypeError):
-                    pass
+        if (
+            prev_event
+            and prev_event.get("session_id") == row.get("session_id")
+            and prev_event.get("event_type") == "assistant_text"
+            and row.get("event_type") == "user_prompt"
+        ):
+            try:
+                t1 = datetime.fromisoformat(str(prev_event["timestamp"]).replace("Z", "+00:00"))
+                t2 = datetime.fromisoformat(str(row["timestamp"]).replace("Z", "+00:00"))
+                gap = (t2 - t1).total_seconds()
+                if 2 < gap < 3600:  # Filter noise
+                    gaps.append(gap)
+                    if gap < 2:
+                        buckets["<2s"] += 1
+                    elif gap < 10:
+                        buckets["2-10s"] += 1
+                    elif gap < 30:
+                        buckets["10-30s"] += 1
+                    elif gap < 60:
+                        buckets["30s-1m"] += 1
+                    elif gap < 120:
+                        buckets["1-2m"] += 1
+                    elif gap < 300:
+                        buckets["2-5m"] += 1
+                    elif gap < 900:
+                        buckets["5-15m"] += 1
+                    else:
+                        buckets[">15m"] += 1
+            except (ValueError, TypeError):
+                pass
         prev_event = row
 
     median_seconds = sorted(gaps)[len(gaps) // 2] if gaps else 0.0
@@ -779,6 +799,7 @@ async def compute_all_metrics_from_events(agent_id: str, start: str, end: str) -
     if first_session and last_session:
         try:
             from datetime import datetime
+
             t1 = datetime.fromisoformat(str(first_session).replace("Z", "+00:00"))
             t2 = datetime.fromisoformat(str(last_session).replace("Z", "+00:00"))
             days_active = max(1, (t2 - t1).days + 1)

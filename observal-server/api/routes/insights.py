@@ -196,19 +196,13 @@ async def clear_agent_reports(
         raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
 
     # Delete reports
-    report_result = await db.execute(
-        delete(InsightReport).where(InsightReport.agent_id == agent.id)
-    )
+    report_result = await db.execute(delete(InsightReport).where(InsightReport.agent_id == agent.id))
 
     # Delete cached session facets
-    facets_result = await db.execute(
-        delete(InsightSessionFacets).where(InsightSessionFacets.agent_id == agent.id)
-    )
+    facets_result = await db.execute(delete(InsightSessionFacets).where(InsightSessionFacets.agent_id == agent.id))
 
     # Delete meta cache
-    cache_result = await db.execute(
-        delete(InsightMetaCache).where(InsightMetaCache.agent_id == agent.id)
-    )
+    cache_result = await db.execute(delete(InsightMetaCache).where(InsightMetaCache.agent_id == agent.id))
 
     await audit(current_user, "insights.clear", resource_type="agent", resource_id=str(agent.id))
     await db.commit()

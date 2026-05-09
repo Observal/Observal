@@ -18,7 +18,7 @@ import json
 
 import structlog
 
-from ._deps import get_settings, get_call_model
+from ._deps import get_call_model, get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -79,7 +79,6 @@ Rules:
 - Each area must have a real session count
 - Group related goals into logical work areas
 - Order by session count descending""",
-
     "usage_patterns": """You are producing ONE section of a developer-facing insight report for an AI coding agent. Write for the agent's admin/owner.
 
 {data_block}
@@ -109,7 +108,6 @@ Rules:
 - Session type from facets data if available
 - With fewer than 5 sessions, keep the narrative to 1-2 sentences of pure facts
 - Do NOT speculate about patterns from insufficient data""",
-
     "what_works": """You are producing ONE section of a developer-facing insight report for an AI coding agent. This section highlights genuine strengths.
 
 {data_block}
@@ -134,7 +132,6 @@ Rules:
 - "Zero crashes" or "no errors" are only strengths if the agent also completed its tasks successfully
 - Focus on: tasks completed successfully, time saved, effective tool usage, good cost efficiency on productive work
 - If sessions ended incomplete or users had to repeat themselves, the bar for "strength" is higher""",
-
     "friction_analysis": """You are producing ONE section of a developer-facing insight report for an AI coding agent. This section identifies problems and their impact.
 
 {data_block}
@@ -165,7 +162,6 @@ Rules:
   - LOW: minor optimization opportunities
 - Be direct about failures. "The agent could not complete the requested task" is clearer than "task completion was suboptimal"
 - If no significant friction exists, return an empty categories array with intro: 'No significant friction detected in this period.'""",
-
     "suggestions": """You are producing ONE section of a developer-facing insight report for an AI coding agent. Provide SPECIFIC, IMPLEMENTABLE suggestions.
 
 {data_block}
@@ -215,7 +211,6 @@ If "Agent Configuration" is present in the data, use it to ground your suggestio
 - If a configured skill is never triggered, suggest removing it or improving its trigger conditions
 - Compare configured MCPs against actual tool usage — mismatches indicate configuration drift
 - If model_config has suboptimal settings given the usage pattern (e.g. low max_tokens but users need long outputs), flag it""",
-
     "usage_cost_analysis": """You are producing ONE section of a developer-facing insight report for an AI coding agent. Focus on cost efficiency.
 
 {data_block}
@@ -252,7 +247,6 @@ Rules:
 - Maximum 3 opportunities, empty array is fine if costs are reasonable
 - If costs are reasonable and cache efficiency is good, keep this section brief — state the numbers and move on
 - Only go deep on cost when there's a real problem (e.g. high cost per session with low output, or poor cache efficiency)""",
-
     "regression_detection": """You are comparing current and previous period metrics for an AI coding agent.
 
 {data_block}
@@ -279,7 +273,6 @@ Produce a JSON object with this EXACT structure:
 }}
 
 If no previous data: {{"regression_detection": {{"has_previous_data": false, "summary": "No previous period data available.", "changes": []}}}}""",
-
     "fun_ending": """You are producing the final section of an AI coding agent insight report. Find ONE genuinely interesting or memorable observation.
 
 {data_block}
@@ -418,13 +411,9 @@ async def generate_sections(
             narrative[name] = {} if name != "fun_ending" else {"headline": "", "detail": ""}
 
     # Run synthesis with all section outputs using fast model (Sonnet)
-    synthesis_prompt = SYNTHESIS_PROMPT.format(
-        sections_json=json.dumps(narrative, indent=2, default=str)
-    )
+    synthesis_prompt = SYNTHESIS_PROMPT.format(sections_json=json.dumps(narrative, indent=2, default=str))
     try:
-        synthesis_result = await call_model(
-            synthesis_prompt, model_override=fast_model, max_tokens=4096
-        )
+        synthesis_result = await call_model(synthesis_prompt, model_override=fast_model, max_tokens=4096)
         if synthesis_result and "at_a_glance" in synthesis_result:
             narrative["at_a_glance"] = synthesis_result["at_a_glance"]
         elif synthesis_result:

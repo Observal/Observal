@@ -39,15 +39,11 @@ def _format_duration_hours(seconds: float | None) -> str:
 
 
 def _severity_color(severity: str) -> str:
-    return {"high": "#dc2626", "medium": "#d97706", "low": "#2563eb"}.get(
-        severity, "#6b7280"
-    )
+    return {"high": "#dc2626", "medium": "#d97706", "low": "#2563eb"}.get(severity, "#6b7280")
 
 
 def _priority_color(priority: str) -> str:
-    return {"high": "#dc2626", "medium": "#d97706", "low": "#16a34a"}.get(
-        priority, "#6b7280"
-    )
+    return {"high": "#dc2626", "medium": "#d97706", "low": "#16a34a"}.get(priority, "#6b7280")
 
 
 def _health_badge(health: str) -> str:
@@ -411,7 +407,9 @@ def render_report_html(report: dict) -> str:
                 intensity = count / max_hourly if max_hourly else 0
                 opacity = 0.1 + (intensity * 0.9)
                 label = f"{h:02d}:00"
-                cells += f'<div class="heatmap-cell" style="opacity:{opacity}" title="{label}: {count} sessions">{h}</div>'
+                cells += (
+                    f'<div class="heatmap-cell" style="opacity:{opacity}" title="{label}: {count} sessions">{h}</div>'
+                )
             heatmap_html = f"""
       <div class="heatmap-section">
         <h4>Activity by Hour</h4>
@@ -565,7 +563,9 @@ def render_report_html(report: dict) -> str:
         model_rows = ""
         if model_breakdown:
             if isinstance(model_breakdown, dict):
-                sorted_models = sorted(model_breakdown.items(), key=lambda x: -(x[1] if isinstance(x[1], (int, float)) else 0))
+                sorted_models = sorted(
+                    model_breakdown.items(), key=lambda x: -(x[1] if isinstance(x[1], (int, float)) else 0)
+                )
                 for model, model_cost in sorted_models[:6]:
                     if isinstance(model_cost, (int, float)):
                         model_rows += f"<tr><td><code>{_esc(model)}</code></td><td>{_format_cost(model_cost)}</td></tr>"
@@ -574,7 +574,9 @@ def render_report_html(report: dict) -> str:
                     if isinstance(item, dict):
                         model_name = item.get("model", "unknown")
                         model_cost = item.get("cost_usd", item.get("total_cost_usd", 0))
-                        model_rows += f"<tr><td><code>{_esc(model_name)}</code></td><td>{_format_cost(model_cost)}</td></tr>"
+                        model_rows += (
+                            f"<tr><td><code>{_esc(model_name)}</code></td><td>{_format_cost(model_cost)}</td></tr>"
+                        )
 
         opp_html = ""
         if opportunities and isinstance(opportunities, list):
@@ -582,7 +584,9 @@ def render_report_html(report: dict) -> str:
                 if isinstance(opp, str):
                     opp_html += f"<li>{_esc(opp)}</li>"
                 elif isinstance(opp, dict):
-                    opp_html += f"<li><strong>{_esc(opp.get('title', ''))}</strong>: {_esc(opp.get('description', ''))}</li>"
+                    opp_html += (
+                        f"<li><strong>{_esc(opp.get('title', ''))}</strong>: {_esc(opp.get('description', ''))}</li>"
+                    )
 
         cache_eff = cost.get("cache_efficiency_ratio", 0)
         if isinstance(cache_eff, (int, float)):
@@ -632,8 +636,16 @@ def render_report_html(report: dict) -> str:
             for ch in changes:
                 if isinstance(ch, dict):
                     direction = ch.get("direction", "stable")
-                    arrow = "&#8593;" if direction == "improved" else "&#8595;" if direction == "degraded" else "&#8594;"
-                    color = "var(--green)" if direction == "improved" else "var(--red)" if direction == "degraded" else "var(--text-muted)"
+                    arrow = (
+                        "&#8593;" if direction == "improved" else "&#8595;" if direction == "degraded" else "&#8594;"
+                    )
+                    color = (
+                        "var(--green)"
+                        if direction == "improved"
+                        else "var(--red)"
+                        if direction == "degraded"
+                        else "var(--text-muted)"
+                    )
                     mag = ch.get("magnitude_pct", 0)
                     change_rows += f"""
           <tr>
