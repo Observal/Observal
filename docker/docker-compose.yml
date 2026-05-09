@@ -76,7 +76,7 @@ services:
       - observal-net
 
   observal-db:
-    image: postgres:16
+    image: postgres:18
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     env_file:
