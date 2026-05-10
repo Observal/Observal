@@ -164,14 +164,47 @@ class TestDataLoaders:
 
 
 class TestSchema:
-    def test_schema_exists(self):
-        assert schema is not None
+    def test_schema_exposes_required_query_fields(self):
+        # Renames or removals of these resolvers would break the dashboard,
+        # so the schema must keep advertising them.
+        query_type = schema._schema.query_type
+        assert query_type is not None
+        field_names = set(query_type.fields.keys())
+        for required in ("traces", "trace", "span", "mcpMetrics", "overview", "trends"):
+            assert required in field_names, f"Query.{required} missing from schema; got {sorted(field_names)}"
 
-    def test_has_query_type(self):
-        assert schema._schema.query_type is not None
+    def test_query_trace_returns_trace_type(self):
+        # Guards against the resolver being retyped (e.g. to a connection or scalar).
+        query_type = schema._schema.query_type
+        trace_field = query_type.fields["trace"]
+        # GraphQL nullable Trace serialises as type name "Trace"
+        assert "Trace" in str(trace_field.type)
 
-    def test_has_subscription_type(self):
-        assert schema._schema.subscription_type is not None
+    def test_schema_exposes_required_subscription_fields(self):
+        sub_type = schema._schema.subscription_type
+        assert sub_type is not None
+        field_names = set(sub_type.fields.keys())
+        for required in ("traceCreated", "spanCreated", "sessionUpdated"):
+            assert required in field_names, f"Subscription.{required} missing from schema; got {sorted(field_names)}"
+
+    @pytest.mark.asyncio
+    async def test_schema_executes_traces_query(self):
+        # End-to-end: parse + execute a real GraphQL document so a broken
+        # resolver wiring (mis-named field, wrong return type) actually fails.
+        mock_rows = [{"trace_id": "t1", "user_id": "u1", "start_time": "2026-01-01"}]
+        with patch("api.graphql.query_traces", new_callable=AsyncMock, return_value=mock_rows):
+            result = await schema.execute(
+                "{ traces(limit: 10) { items { traceId userId } hasMore totalCount } }",
+                context_value=get_context(),
+            )
+        assert result.errors is None, result.errors
+        assert result.data == {
+            "traces": {
+                "items": [{"traceId": "t1", "userId": "u1"}],
+                "hasMore": False,
+                "totalCount": 1,
+            }
+        }
 
     def test_context_has_loaders(self):
         ctx = get_context()

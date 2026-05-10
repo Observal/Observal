@@ -168,7 +168,15 @@ class TestUnauthenticatedAccess:
             mock_resolve.return_value = listing
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
-            assert r.status_code == 200
+            assert r.status_code == 200, r.text
+            body = r.json()
+            # The response must actually carry the listing's payload; otherwise
+            # a regression that returns an empty/wrong body would still pass a
+            # bare status-code check.
+            assert body["id"] == str(listing.id)
+            assert body["name"] == listing.name
+            assert body["version"] == listing.version
+            assert body["status"] == ListingStatus.approved.value
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -252,7 +260,14 @@ class TestNonOwnerRegularUser:
             mock_resolve.return_value = listing
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
-            assert r.status_code == 200
+            assert r.status_code == 200, r.text
+            body = r.json()
+            # Non-owner regular user must see the same approved listing payload
+            # an anonymous user would — not just a 200 with a stripped body.
+            assert body["id"] == str(listing.id)
+            assert body["name"] == listing.name
+            assert body["version"] == listing.version
+            assert body["status"] == ListingStatus.approved.value
 
 
 @pytest.mark.parametrize("route_type,base_path,module_path", ENDPOINTS)
