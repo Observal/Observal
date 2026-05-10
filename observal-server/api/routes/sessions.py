@@ -5,6 +5,7 @@ Reads from the session_events ClickHouse table populated by the
 raw JSONL rows into frontend-friendly event dicts.
 """
 
+import asyncio
 import json
 import logging
 import uuid as _uuid
@@ -271,27 +272,32 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
         if not ownership:
             return {"session_id": session_id, "ide": "", "events": []}
 
-    # Fetch all events for the session ordered by line offset
-    rows = await _ch_json(
+    # Fan out both FINAL scans in parallel — wall time ≈ max(t1, t2) not t1+t2.
+    # do_not_merge_across_partitions_select_final=1 lets CH process each monthly
+    # partition independently instead of a single cross-partition merge pass.
+    # (ClickHouse docs benchmark: 2.3s → 0.99s on 59M rows with yearly partitioning)
+    _main_sql = (
         "SELECT "
-        "timestamp, "
-        "event_type, "
-        "content_preview, "
-        "tool_name, "
-        "tool_id, "
-        "uuid, "
-        "parent_uuid, "
-        "content_length, "
-        "ide, "
-        "raw_line, "
-        "raw_line_truncated, "
-        "credits, "
-        "ingested_at "
+        "timestamp, event_type, content_preview, tool_name, tool_id, "
+        "uuid, parent_uuid, content_length, ide, raw_line, raw_line_truncated, "
+        "credits, ingested_at "
         "FROM session_events FINAL "
         "WHERE session_id = {sid:String} "
         "ORDER BY line_offset ASC "
-        "SETTINGS max_final_threads = 4",
-        params,
+        "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
+    )
+    _sub_sql = (
+        "SELECT session_id, timestamp, event_type, content_preview, "
+        "tool_name, tool_id, uuid, parent_uuid, content_length, ide, "
+        "raw_line, raw_line_truncated, credits, ingested_at, line_offset "
+        "FROM session_events FINAL "
+        "WHERE parent_session_id = {sid:String} "
+        "ORDER BY session_id, line_offset ASC "
+        "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
+    )
+    rows, sub_rows_all = await asyncio.gather(
+        _ch_json(_main_sql, params),
+        _ch_json(_sub_sql, {"param_sid": session_id}),
     )
 
     if not rows:
@@ -304,21 +310,11 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
 
     events = parse_raw_events(rows)
 
-    # Fetch subagent sessions linked to this parent and attach their events.
+    # sub_rows_all was fetched concurrently above alongside the main query.
     # Each subagent's first row carries parent_uuid pointing at the Agent
     # tool_call in the parent that spawned it — the frontend uses this to
     # nest the subagent inline at the right position.
     subagent_sessions = []
-    sub_rows_all = await _ch_json(
-        "SELECT session_id, timestamp, event_type, content_preview, "
-        "tool_name, tool_id, uuid, parent_uuid, content_length, ide, "
-        "raw_line, raw_line_truncated, credits, ingested_at, line_offset "
-        "FROM session_events FINAL "
-        "WHERE parent_session_id = {sid:String} "
-        "ORDER BY session_id, line_offset ASC "
-        "SETTINGS max_final_threads = 4",
-        {"param_sid": session_id},
-    )
     if sub_rows_all:
         # Group by session_id
         from itertools import groupby
