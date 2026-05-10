@@ -324,7 +324,9 @@ INIT_SQL = [
         parent_session_id Nullable(String),
         INDEX idx_se_session_id session_id TYPE bloom_filter(0.001) GRANULARITY 1,
         INDEX idx_se_project_id project_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_se_event_type event_type TYPE bloom_filter(0.01) GRANULARITY 1,
+        -- set(20) is more precise than bloom_filter for low-cardinality LowCardinality columns;
+        -- event_type has ~10-20 distinct values so set membership is O(1) with no false positives.
+        INDEX idx_se_event_type event_type TYPE set(20) GRANULARITY 1,
         INDEX idx_se_line_hash line_hash TYPE bloom_filter(0.001) GRANULARITY 1
     ) ENGINE = ReplacingMergeTree(ingested_at)
     PARTITION BY toYYYYMM(timestamp)
@@ -432,6 +434,12 @@ INIT_SQL = [
     # Row-level TTL (set via admin retention_days) is independent and deletes entire rows.
     # Source: clickhouse.com/docs/guides/developer/ttl — column TTL expression pattern.
     """ALTER TABLE session_events MODIFY COLUMN raw_line String TTL timestamp + INTERVAL 30 DAY""",
+    # Migrate event_type skip index from bloom_filter -> set(20).
+    # LowCardinality(String) with ~10-20 distinct values is a perfect fit for set:
+    # exact membership check, zero false positives, cheaper to build than bloom_filter.
+    # bloom_filter on low-cardinality columns wastes probability mass and adds write overhead.
+    """ALTER TABLE session_events DROP INDEX IF EXISTS idx_se_event_type""",
+    """ALTER TABLE session_events ADD INDEX IF NOT EXISTS idx_se_event_type event_type TYPE set(20) GRANULARITY 1""",
 ]
 
 
