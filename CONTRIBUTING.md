@@ -15,6 +15,7 @@ If you have questions about contributing or want to discuss your ideas before op
 - [Reporting Issues](#reporting-issues)
 - [Codebase Context](#codebase-context)
 - [License](#license)
+- [Contributor License Agreement (CLA)](#contributor-license-agreement-cla)
 
 ## Getting Started
 
@@ -165,7 +166,7 @@ Keep the subject line under 72 characters, use the imperative mood ("add", not "
 
 ### DCO Sign-off
 
-All commits must include a `Signed-off-by` line to certify the [Developer Certificate of Origin (DCO)](https://developercertificate.org/). The DCO is a lightweight agreement that confirms you wrote (or have the right to submit) your contribution and that it is licensed under the project's open-source GNU AGPL v3.0 license (for all code outside `ee/`).
+All commits must include a `Signed-off-by` line to certify the [Developer Certificate of Origin (DCO)](https://developercertificate.org/). The DCO is a lightweight agreement that confirms you wrote (or have the right to submit) your contribution and that it is licensed under the project's open-source license (AGPL-3.0 for all code outside `ee/`).
 
 You can add the sign-off manually to your commit message:
 
@@ -248,6 +249,12 @@ See [AGENTS.md](AGENTS.md) for internal architecture notes, file layout, and con
 
 ## License
 
-This repository uses a dual-license structure. By contributing, you agree that your contributions will be licensed under the [GNU Affero General Public License v3.0](LICENSE), which covers all code outside the `ee/` directory. The `ee/` directory is licensed separately under the [Observal Enterprise License](ee/LICENSE) and does not accept community contributions.
+This repository uses a dual-license structure. All code outside the `ee/` directory is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE). The `ee/` directory is licensed separately under the [Observal Enterprise License](ee/LICENSE) and does not accept community contributions.
 
-The DCO sign-off on each commit is your explicit acknowledgement of this.
+## Contributor License Agreement (CLA)
+
+Before your first pull request can be merged, you must sign the [Observal CLA](CLA.md). This is handled automatically — when you open a PR, the [CLA-assistant](https://cla-assistant.io) bot will comment with a link to sign electronically. You only need to sign once.
+
+The CLA and the DCO work together. The DCO (signed on every commit) certifies that you wrote the code and have the right to submit it. The CLA grants BlazeUp AI the rights needed to distribute your contribution under both the open-source and commercial licenses.
+
+If you are contributing on behalf of a company, contact contact@observal.io to arrange a Corporate CLA.
