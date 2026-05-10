@@ -38,7 +38,6 @@ license_policies:
     label: Approved License
   - license_key: 0bsd
     label: Approved License
-
   - license_key: gpl-2.0-plus
     label: Approved License
   - license_key: psf-2.0
