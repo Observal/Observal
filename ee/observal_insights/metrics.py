@@ -246,20 +246,21 @@ async def _ev_session_overview(agent_id: str, start: str, end: str) -> dict:
 
 
 async def _ev_token_aggregates(agent_id: str, start: str, end: str) -> dict:
-    """Token aggregates from session_events (Claude Code only)."""
+    """Token aggregates from session_events materialized columns.
+
+    Uses the input_tokens/output_tokens/cache_* columns extracted at ingest time
+    instead of JSONExtractInt on raw_line, eliminating per-row JSON parsing.
+    """
     _query = get_query()
     sql = """
         SELECT
-            sum(JSONExtractInt(raw_line, 'message', 'usage', 'input_tokens')) AS total_input_tokens,
-            sum(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens')) AS total_output_tokens,
-            sum(JSONExtractInt(raw_line, 'message', 'usage', 'cache_read_input_tokens')) AS total_cache_read_tokens,
-            sum(JSONExtractInt(raw_line, 'message', 'usage', 'cache_creation_input_tokens')) AS total_cache_write_tokens
+            sum(input_tokens)       AS total_input_tokens,
+            sum(output_tokens)      AS total_output_tokens,
+            sum(cache_read_tokens)  AS total_cache_read_tokens,
+            sum(cache_write_tokens) AS total_cache_write_tokens
         FROM session_events FINAL
         WHERE agent_id = {agent_id:String}
-          AND ide = 'claude-code'
           AND timestamp BETWEEN {t_start:String} AND {t_end:String}
-          AND event_type = 'assistant_text'
-          AND JSONHas(raw_line, 'message', 'usage')
         FORMAT JSON
     """
     params = {
@@ -513,13 +514,13 @@ async def _ev_language_detection(agent_id: str, start: str, end: str) -> dict[st
 
 
 async def _ev_subagent_stats(agent_id: str, start: str, end: str) -> dict:
-    """Subagent statistics from session_events."""
+    """Subagent statistics using materialized output_tokens column."""
     _query = get_query()
     sql = """
         SELECT
             count(DISTINCT session_id) AS total_subagent_sessions,
-            count() AS subagent_events,
-            sum(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens')) AS subagent_output_tokens
+            count()                    AS subagent_events,
+            sum(output_tokens)         AS subagent_output_tokens
         FROM session_events FINAL
         WHERE agent_id = {agent_id:String}
           AND timestamp BETWEEN {t_start:String} AND {t_end:String}
@@ -586,18 +587,27 @@ async def _ev_time_of_day(agent_id: str, start: str, end: str) -> dict:
 
 
 async def _ev_per_session_tokens(agent_id: str, start: str, end: str) -> list[dict]:
-    """Per-session token breakdown for cost computation from session_events."""
+    """Per-session token breakdown using materialized columns.
+
+    Replaces JSONExtractInt on raw_line with the pre-extracted column values.
+    Kiro model falls back to JSONExtract from raw_line only for the model field,
+    which is not in the materialized column for kiro_credits event rows.
+    """
     _query = get_query()
     sql = """
         SELECT
             session_id,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'input_tokens'), ide = 'claude-code') AS input_tokens,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens'), ide = 'claude-code') AS output_tokens,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_read_input_tokens'), ide = 'claude-code') AS cache_read,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'cache_creation_input_tokens'), ide = 'claude-code') AS cache_write,
-            sum(credits) AS credits,
-            any(ide) AS session_ide,
-            anyIf(JSONExtractString(raw_line, 'model'), JSONHas(raw_line, 'model')) AS model
+            sum(input_tokens)       AS input_tokens,
+            sum(output_tokens)      AS output_tokens,
+            sum(cache_read_tokens)  AS cache_read,
+            sum(cache_write_tokens) AS cache_write,
+            sum(credits)            AS credits,
+            any(ide)                AS session_ide,
+            if(
+                anyLastIf(model, model != '') != '',
+                anyLastIf(model, model != ''),
+                anyIf(JSONExtractString(raw_line, 'model'), event_type = 'kiro_credits')
+            ) AS model
         FROM session_events FINAL
         WHERE agent_id = {agent_id:String}
           AND timestamp BETWEEN {t_start:String} AND {t_end:String}
@@ -619,18 +629,18 @@ async def _ev_per_session_tokens(agent_id: str, start: str, end: str) -> list[di
 
 
 async def _ev_session_details(agent_id: str, start: str, end: str) -> list[dict]:
-    """Per-session details from session_events."""
+    """Per-session details using materialized token columns."""
     _query = get_query()
     sql = """
         SELECT
             session_id,
             dateDiff('second', min(timestamp), max(timestamp)) AS duration_seconds,
             countIf(event_type = 'user_prompt') AS prompt_count,
-            countIf(event_type = 'tool_call') AS tool_call_count,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'input_tokens'), ide = 'claude-code') AS input_tokens,
-            sumIf(JSONExtractInt(raw_line, 'message', 'usage', 'output_tokens'), ide = 'claude-code') AS output_tokens,
-            any(ide) AS session_ide,
-            any(parent_session_id) AS session_parent_id
+            countIf(event_type = 'tool_call')   AS tool_call_count,
+            sum(input_tokens)              AS input_tokens,
+            sum(output_tokens)             AS output_tokens,
+            any(ide)                       AS session_ide,
+            any(parent_session_id)         AS session_parent_id
         FROM session_events FINAL
         WHERE agent_id = {agent_id:String}
           AND timestamp BETWEEN {t_start:String} AND {t_end:String}
