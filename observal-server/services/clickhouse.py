@@ -450,6 +450,20 @@ INIT_SQL = [
     # lookups like WHERE parent_session_id = {sid} used in subagent fetches.
     """ALTER TABLE session_events DROP INDEX IF EXISTS idx_se_parent_session_id""",
     """ALTER TABLE session_events ADD INDEX IF NOT EXISTS idx_se_parent_session_id parent_session_id TYPE set(0) GRANULARITY 1""",
+    # Projection for queries that don't need raw_line (the heavy ZSTD(3) blob column).
+    # Stores session metadata ordered by (session_id, line_offset) so CH can use a
+    # tight primary key scan without reading raw_line at all. CH picks this projection
+    # automatically when raw_line is absent from the SELECT list.
+    # Trades ~1x storage for the projected columns against I/O savings on repeated reads.
+    """ALTER TABLE session_events ADD PROJECTION IF NOT EXISTS proj_session_view (
+        SELECT
+            session_id, line_offset, timestamp, event_type, content_preview,
+            tool_name, tool_id, uuid, parent_uuid, content_length,
+            ide, credits, ingested_at, raw_line_truncated,
+            input_tokens, output_tokens, model
+        ORDER BY (session_id, line_offset)
+    )""",
+    """ALTER TABLE session_events MATERIALIZE PROJECTION proj_session_view""",
 ]
 
 
