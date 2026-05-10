@@ -425,6 +425,13 @@ INIT_SQL = [
         anyLastIf(model, model != '')         AS model
     FROM session_events
     GROUP BY project_id, session_id""",
+    # Null out raw_line blobs older than 30 days to cap storage.
+    # Row metadata (input_tokens, output_tokens, model, content_preview,
+    # tool_name, event_type, timestamps) is retained indefinitely.
+    # The TTL fires on background merge; existing data is not immediately affected.
+    # Row-level TTL (set via admin retention_days) is independent and deletes entire rows.
+    # Source: clickhouse.com/docs/guides/developer/ttl — column TTL expression pattern.
+    """ALTER TABLE session_events MODIFY COLUMN raw_line String TTL timestamp + INTERVAL 30 DAY""",
 ]
 
 
