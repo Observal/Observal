@@ -164,28 +164,6 @@ docs: update contributing guide
 
 Keep the subject line under 72 characters, use the imperative mood ("add", not "added"), and do not end it with a period. If more detail is needed, add a blank line after the subject and write a longer description wrapped at 80 characters.
 
-### DCO Sign-off
-
-All commits must include a `Signed-off-by` line to certify the [Developer Certificate of Origin (DCO)](https://developercertificate.org/). The DCO is a lightweight agreement that confirms you wrote (or have the right to submit) your contribution and that it is licensed under the project's open-source license (AGPL-3.0 for all code outside `ee/`).
-
-You can add the sign-off manually to your commit message:
-
-```
-feat(cli): add skill submit command
-
-Signed-off-by: Your Name <your.email@example.com>
-```
-
-Or use the `-s` flag to have Git append it for you:
-
-```bash
-git commit -s -m "feat(cli): add skill submit command"
-```
-
-> **Note:** The project does not configure or encourage automatic sign-off (e.g. via Git hooks or aliases). The DCO sign-off is a conscious attestation that you have the right to submit your contribution. If you choose to automate it, that is your responsibility — you are still bound by its terms.
-
-Make sure your `user.name` and `user.email` in git config match the identity you want to use. A CI check and a pre-push hook will block PRs that have unsigned commits.
-
 ### Changelog
 
 We maintain a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. When submitting a PR that adds a feature, fixes a bug, or makes any user-facing change, add an entry under the `[Unreleased]` section in the appropriate category:
@@ -253,8 +231,6 @@ This repository uses a dual-license structure. All code outside the `ee/` direct
 
 ## Contributor License Agreement (CLA)
 
-Before your first pull request can be merged, you must sign the [Observal CLA](CLA.md). This is handled automatically — when you open a PR, the [CLA-assistant](https://cla-assistant.io) bot will comment with a link to sign electronically. You only need to sign once.
-
-The CLA and the DCO work together. The DCO (signed on every commit) certifies that you wrote the code and have the right to submit it. The CLA grants BlazeUp AI the rights needed to distribute your contribution under both the open-source and commercial licenses.
+Before your first pull request can be merged, you must sign the [Observal CLA](CLA.md). This is handled automatically: when you open a PR, the [CLA-assistant](https://cla-assistant.io) bot will comment with a link to sign electronically. You only need to sign once.
 
 If you are contributing on behalf of a company, contact contact@observal.io to arrange a Corporate CLA.

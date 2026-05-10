@@ -43,16 +43,6 @@ repos:
         files: ^observal-server/alembic/versions/.*\.py$
         pass_filenames: false
 
-  # ── DCO sign-off (pre-push) ────────────────────────────
-  - repo: local
-    hooks:
-      - id: check-dco
-        name: check DCO sign-off on all commits
-        entry: scripts/check_dco.sh
-        language: script
-        always_run: true
-        pass_filenames: false
-        stages: [pre-push]
 
   # ── Docker ─────────────────────────────────────────────
   - repo: https://github.com/hadolint/hadolint
