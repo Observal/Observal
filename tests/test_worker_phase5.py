@@ -141,7 +141,7 @@ class TestDockerCompose:
         with open(COMPOSE_PATH) as f:
             compose = yaml.safe_load(f)
         assert "observal-redis" in compose["services"]
-        assert compose["services"]["observal-redis"]["image"] == "redis:7-alpine"
+        assert compose["services"]["observal-redis"]["image"] == "redis:8-alpine"
 
     def test_worker_service_exists(self):
         import yaml
