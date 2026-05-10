@@ -225,16 +225,25 @@ async def sessions_summary(
 @router.get("/stats")
 @cache(expire=settings.CACHE_TTL_DEFAULT, namespace="otel")
 async def sessions_stats(current_user: User = Depends(require_role(UserRole.admin))):
+    # Use pre-aggregated session_stats_agg — avoids a full session_events FINAL scan.
+    # prompt_count / tool_call_count in the MV correspond to 'user_prompt' / 'tool_call'
+    # event types (legacy otel names 'user' / 'tool_use' are not present in V3 events).
     rows = await _ch_json(
         "SELECT "
-        "count(DISTINCT session_id) AS total_sessions, "
-        "countIf(event_type = 'user') AS total_prompts, "
-        "countIf(event_type = 'assistant') AS total_api_requests, "
-        "countIf(event_type = 'tool_use') AS total_tool_calls, "
-        "count() AS total_events "
-        "FROM session_events FINAL "
-        "WHERE session_id != '' "
-        "SETTINGS max_final_threads = 8"
+        "count() AS total_sessions, "
+        "sum(prompt_count) AS total_prompts, "
+        "0 AS total_api_requests, "
+        "sum(tool_call_count) AS total_tool_calls, "
+        "sum(event_count) AS total_events "
+        "FROM ( "
+        "  SELECT session_id, "
+        "    sum(prompt_count) AS prompt_count, "
+        "    sum(tool_call_count) AS tool_call_count, "
+        "    sum(event_count) AS event_count "
+        "  FROM session_stats_agg "
+        "  WHERE session_id != '' "
+        "  GROUP BY session_id "
+        ")"
     )
     row = rows[0] if rows else {}
     await audit(current_user, "stats.view", "stats")
