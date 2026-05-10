@@ -221,17 +221,28 @@ async def _count_sessions_in_events(agent_id: str, start: str, end: str) -> int:
 
 
 async def _ev_session_overview(agent_id: str, start: str, end: str) -> dict:
-    """Session overview from session_events."""
+    """Session overview from session_stats_agg.
+
+    Uses the pre-aggregated AggregatingMergeTree table: no FINAL, no event-row scan.
+    first_event_time / last_event_time are SimpleAggregateFunction(min/max) columns
+    that merge automatically on GROUP BY.
+    """
     _query = get_query()
     sql = """
         SELECT
-            count(DISTINCT session_id) AS total_sessions,
-            count(DISTINCT user_id) AS unique_users,
-            min(timestamp) AS first_session,
-            max(timestamp) AS last_session
-        FROM session_events FINAL
-        WHERE agent_id = {agent_id:String}
-          AND timestamp BETWEEN {t_start:String} AND {t_end:String}
+            count()                   AS total_sessions,
+            count(DISTINCT user_id)   AS unique_users,
+            min(first_event_time)     AS first_session,
+            max(last_event_time)      AS last_session
+        FROM (
+            SELECT session_id, user_id,
+                   min(first_event_time) AS first_event_time,
+                   max(last_event_time)  AS last_event_time
+            FROM session_stats_agg
+            WHERE agent_id = {agent_id:String}
+              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+            GROUP BY session_id, user_id
+        )
         FORMAT JSON
     """
     params = {
