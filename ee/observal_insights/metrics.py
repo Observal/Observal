@@ -639,11 +639,10 @@ async def _ev_time_of_day(agent_id: str, start: str, end: str) -> dict:
 
 
 async def _ev_per_session_tokens(agent_id: str, start: str, end: str) -> list[dict]:
-    """Per-session token breakdown using materialized columns.
+    """Per-session token breakdown from session_stats_agg.
 
-    Replaces JSONExtractInt on raw_line with the pre-extracted column values.
-    Kiro model falls back to JSONExtract from raw_line only for the model field,
-    which is not in the materialized column for kiro_credits event rows.
+    token columns are SimpleAggregateFunction(sum) in the MV — GROUP BY session_id
+    merges partial aggregates.  model is anyLast(String) so no JSONExtract needed.
     """
     _query = get_query()
     sql = """
@@ -653,16 +652,12 @@ async def _ev_per_session_tokens(agent_id: str, start: str, end: str) -> list[di
             sum(output_tokens)      AS output_tokens,
             sum(cache_read_tokens)  AS cache_read,
             sum(cache_write_tokens) AS cache_write,
-            sum(credits)            AS credits,
-            any(ide)                AS session_ide,
-            if(
-                anyLastIf(model, model != '') != '',
-                anyLastIf(model, model != ''),
-                anyIf(JSONExtractString(raw_line, 'model'), event_type = 'kiro_credits')
-            ) AS model
-        FROM session_events FINAL
+            sum(total_credits)      AS credits,
+            anyLast(ide)            AS session_ide,
+            anyLastIf(model, model != '') AS model
+        FROM session_stats_agg
         WHERE agent_id = {agent_id:String}
-          AND timestamp BETWEEN {t_start:String} AND {t_end:String}
+          AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
         GROUP BY session_id
         FORMAT JSON
     """
