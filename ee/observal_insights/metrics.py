@@ -261,10 +261,11 @@ async def _ev_session_overview(agent_id: str, start: str, end: str) -> dict:
 
 
 async def _ev_token_aggregates(agent_id: str, start: str, end: str) -> dict:
-    """Token aggregates from session_events materialized columns.
+    """Token aggregates from session_stats_agg pre-aggregated columns.
 
-    Uses the input_tokens/output_tokens/cache_* columns extracted at ingest time
-    instead of JSONExtractInt on raw_line, eliminating per-row JSON parsing.
+    session_stats_agg stores per-session sums via SimpleAggregateFunction(sum, Int64);
+    GROUP BY session_id merges partial aggregates, then we sum over all sessions.
+    Eliminates the per-event-row scan + FINAL on session_events.
     """
     _query = get_query()
     sql = """
@@ -273,9 +274,17 @@ async def _ev_token_aggregates(agent_id: str, start: str, end: str) -> dict:
             sum(output_tokens)      AS total_output_tokens,
             sum(cache_read_tokens)  AS total_cache_read_tokens,
             sum(cache_write_tokens) AS total_cache_write_tokens
-        FROM session_events FINAL
-        WHERE agent_id = {agent_id:String}
-          AND timestamp BETWEEN {t_start:String} AND {t_end:String}
+        FROM (
+            SELECT session_id,
+                   sum(input_tokens)       AS input_tokens,
+                   sum(output_tokens)      AS output_tokens,
+                   sum(cache_read_tokens)  AS cache_read_tokens,
+                   sum(cache_write_tokens) AS cache_write_tokens
+            FROM session_stats_agg
+            WHERE agent_id = {agent_id:String}
+              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+            GROUP BY session_id
+        )
         FORMAT JSON
     """
     params = {
