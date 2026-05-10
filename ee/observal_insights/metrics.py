@@ -308,17 +308,26 @@ async def _ev_token_aggregates(agent_id: str, start: str, end: str) -> dict:
 
 
 async def _ev_credit_aggregates(agent_id: str, start: str, end: str) -> dict:
-    """Credit aggregates from session_events (Kiro only)."""
+    """Credit aggregates from session_stats_agg (Kiro only).
+
+    Filters by ide = 'kiro' at the per-session level; total_credits in the MV
+    is the sum of all credits for that session (Kiro is the only IDE that emits
+    non-zero credits so the filter is equivalent to the original event-level filter).
+    """
     _query = get_query()
     sql = """
         SELECT
-            sum(credits) AS total_credits,
-            count(DISTINCT session_id) AS sessions_with_credits
-        FROM session_events FINAL
-        WHERE agent_id = {agent_id:String}
-          AND ide = 'kiro'
-          AND timestamp BETWEEN {t_start:String} AND {t_end:String}
-          AND credits > 0
+            sum(total_credits)              AS total_credits,
+            countIf(total_credits > 0)      AS sessions_with_credits
+        FROM (
+            SELECT session_id,
+                   sum(total_credits) AS total_credits
+            FROM session_stats_agg
+            WHERE agent_id = {agent_id:String}
+              AND ide = 'kiro'
+              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+            GROUP BY session_id
+        )
         FORMAT JSON
     """
     params = {
