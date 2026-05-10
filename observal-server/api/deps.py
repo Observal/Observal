@@ -289,6 +289,10 @@ async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_s
     return result.scalars().first()
 
 
+MIN_ID_PREFIX_LENGTH = 4
+MAX_AMBIGUOUS_MATCHES_SHOWN = 5
+
+
 async def resolve_prefix_id(
     model,
     identifier: str,
@@ -316,7 +320,7 @@ async def resolve_prefix_id(
     except ValueError:
         pass
 
-    if len(norm_id) < 4:
+    if len(norm_id) < MIN_ID_PREFIX_LENGTH:
         raise HTTPException(
             status_code=400,
             detail=f"Prefix '{norm_id}' is too short (minimum 4 characters required)",
@@ -339,10 +343,10 @@ async def resolve_prefix_id(
         return records[0]
 
     matches = []
-    for r in records[:5]:
+    for r in records[:MAX_AMBIGUOUS_MATCHES_SHOWN]:
         label = getattr(r, display_field, None) or "unnamed"
         matches.append(f"{label} ({str(r.id)[:13]}...)")
     detail = f"Ambiguous prefix '{norm_id}' matches {len(records)} records: {', '.join(matches)}"
-    if len(records) > 5:
+    if len(records) > MAX_AMBIGUOUS_MATCHES_SHOWN:
         detail += " and more..."
     raise HTTPException(status_code=400, detail=detail)
