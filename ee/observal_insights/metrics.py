@@ -346,7 +346,11 @@ async def _ev_credit_aggregates(agent_id: str, start: str, end: str) -> dict:
 
 
 async def _ev_duration_stats(agent_id: str, start: str, end: str) -> dict:
-    """Duration percentiles from session_events."""
+    """Duration percentiles from session_stats_agg.
+
+    first_event_time / last_event_time are materialized min/max per session,
+    so dateDiff can be computed per-session row without scanning individual events.
+    """
     _query = get_query()
     sql = """
         SELECT
@@ -355,10 +359,14 @@ async def _ev_duration_stats(agent_id: str, start: str, end: str) -> dict:
             quantile(0.9)(duration_s) AS p90_duration_seconds,
             quantile(0.99)(duration_s) AS p99_duration_seconds
         FROM (
-            SELECT dateDiff('second', min(timestamp), max(timestamp)) AS duration_s
-            FROM session_events FINAL
+            SELECT dateDiff(
+                'second',
+                min(first_event_time),
+                max(last_event_time)
+            ) AS duration_s
+            FROM session_stats_agg
             WHERE agent_id = {agent_id:String}
-              AND timestamp BETWEEN {t_start:String} AND {t_end:String}
+              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
             GROUP BY session_id
         )
         FORMAT JSON
