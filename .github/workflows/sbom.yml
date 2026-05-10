@@ -1,0 +1,134 @@
+name: SBOM & License Compliance
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # ── Python SBOM (observal-server) ────────────────────────
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Generate Python SBOM
+        run: |
+          cd observal-server
+          uv sync --frozen
+          uv run --with cyclonedx-bom cyclonedx-py environment \
+            --pyproject pyproject.toml \
+            -o ../sbom-python.cdx.json \
+            --of JSON \
+            --output-reproducible
+
+      # ── Node.js SBOM (web) ───────────────────────────────────
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Generate Node.js SBOM
+        run: |
+          cd web
+          pnpm install --frozen-lockfile
+          pnpm dlx @cyclonedx/cdxgen -o ../sbom-node.cdx.json
+
+      # ── Vulnerability check (non-blocking) ───────────────────
+      - name: Check vulnerabilities
+        continue-on-error: true
+        run: uv run --no-project scripts/check_vulnerabilities.py sbom-python.cdx.json sbom-node.cdx.json
+
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "security" --color "D73A4A" --description "Security vulnerabilities and hardening" 2>/dev/null || true
+          gh label create "automated" --color "0E8A16" --description "Created by CI automation" 2>/dev/null || true
+
+      - name: Post vulnerability summary
+        if: hashFiles('vulnerability-report.md') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh issue list --state open --label "automated" --search "SBOM vulnerability report in:title" --json number --jq 'length')
+          if [ "$EXISTING" = "0" ]; then
+            gh issue create \
+              --title "SBOM vulnerability report" \
+              --body-file vulnerability-report.md \
+              --label "security,automated"
+          fi
+
+      # ── Upload SBOM artifacts ────────────────────────────────
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: |
+            sbom-python.cdx.json
+            sbom-node.cdx.json
+
+      # ── Attach to release ────────────────────────────────────
+      - name: Attach SBOMs to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            sbom-python.cdx.json \
+            sbom-node.cdx.json \
+            --clobber
+
+  license-check:
+    name: License compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Run ScanCode license scan
+        run: |
+          uv tool install "scancode-toolkit>=32.0,<33.0"
+          scancode \
+            --license --package --info \
+            --license-policy license-policy.yml \
+            --json-pp scan-results.json \
+            --processes $(nproc) \
+            --timeout 120 \
+            --ignore "*.pyc" --ignore "__pycache__" \
+            --ignore ".git" --ignore "node_modules" \
+            --ignore ".venv" --ignore "dist" \
+            --ignore "*.egg-info" --ignore ".next" \
+            --ignore "ee" \
+            .
+
+      - name: Check license policy
+        run: uv run --no-project scripts/check_license_policy.py scan-results.json
