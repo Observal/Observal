@@ -453,6 +453,16 @@ The `clickhouses://` scheme maps to HTTPS with a default port of 8443. Use it wh
 * Store migration artifacts securely and delete after successful import and validation.
 * The `--project-id` flag on `import-telemetry` rewrites ownership — use it when migrating between orgs to avoid data leaking across tenants.
 
+## Managed Postgres Note
+
+The `migrate import` command uses `SET session_replication_role = 'replica'` to disable trigger-based FK enforcement during bulk import. On managed Postgres services this requires elevated privileges:
+
+* **AWS RDS**: requires `rds_superuser` role membership
+* **Google Cloud SQL**: requires `cloudsqlsuperuser` role
+* **Azure Database for PostgreSQL**: requires `azure_pg_admin` role
+
+If you encounter a permission error during import, ask your DBA to grant the appropriate role to the migration user.
+
 ## Exit Codes
 
 | Code | Meaning |

@@ -345,6 +345,58 @@ async def _get_column_types(conn: asyncpg.Connection, table: str) -> dict[str, s
     return {row["column_name"]: row["udt_name"] for row in rows}
 
 
+async def _get_org_fk_columns(conn: asyncpg.Connection) -> set[str]:
+    """Discover all columns that FK-reference organizations.id from information_schema."""
+    rows = await conn.fetch(
+        """
+        SELECT DISTINCT kcu.column_name
+        FROM information_schema.referential_constraints rc
+        JOIN information_schema.key_column_usage kcu
+            ON kcu.constraint_name = rc.constraint_name
+            AND kcu.constraint_schema = rc.constraint_schema
+        JOIN information_schema.key_column_usage ccu
+            ON ccu.constraint_name = rc.unique_constraint_name
+            AND ccu.constraint_schema = rc.unique_constraint_schema
+        WHERE ccu.table_name = 'organizations'
+            AND ccu.column_name = 'id'
+            AND rc.constraint_schema = 'public'
+        """
+    )
+    return {row["column_name"] for row in rows}
+
+
+async def _get_notnull_json_defaults(conn: asyncpg.Connection, table: str) -> dict[str, str]:
+    """Discover NOT NULL JSON/JSONB columns for a table and provide safe defaults.
+
+    SQLAlchemy models define defaults in Python (default=dict, default=list) which
+    don't appear in information_schema.column_default. We detect NOT NULL JSON columns
+    and provide empty-object defaults so older archives with NULL values don't crash.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT column_name, column_default
+        FROM information_schema.columns
+        WHERE table_name = $1
+            AND table_schema = 'public'
+            AND is_nullable = 'NO'
+            AND udt_name IN ('json', 'jsonb')
+        """,
+        table,
+    )
+    defaults: dict[str, str] = {}
+    for row in rows:
+        col_default = row["column_default"]
+        if col_default:
+            # Has an explicit DB default — extract the JSON value
+            clean = col_default.split("::")[0].strip().strip("'")
+            defaults[row["column_name"]] = clean
+        else:
+            # No DB default but column is NOT NULL — use empty object as safe fallback.
+            # This covers SQLAlchemy models with default=dict or default=list.
+            defaults[row["column_name"]] = "{}"
+    return defaults
+
+
 def _coerce_value(value: object, pg_type: str) -> object:
     """Coerce a JSON-deserialized value to the correct Python type for asyncpg."""
     if value is None:
@@ -367,10 +419,8 @@ def _coerce_value(value: object, pg_type: str) -> object:
     return value
 
 
-# Columns that are NOT NULL with JSON defaults — used when archive has NULL for these.
-_NOTNULL_JSON_DEFAULTS: dict[str, dict[str, str]] = {
-    "agent_versions": {"models_by_ide": "{}"},
-}
+# NOT NULL JSON defaults are now derived from information_schema at runtime
+# (see _get_notnull_json_defaults). No hardcoded map needed.
 
 
 def _build_insert(table: str, columns: list[str], col_types: dict[str, str]) -> str:
@@ -393,8 +443,9 @@ async def _flush_batch(
     columns: list[str],
     col_types: dict[str, str],
     batch: list[dict],
-) -> tuple[int, int]:
-    """Flush a batch of rows to the database. Returns (inserted, skipped)."""
+    notnull_defaults: dict[str, str] | None = None,
+) -> tuple[int, int, list[str]]:
+    """Flush a batch of rows to the database. Returns (inserted, skipped, warnings)."""
     try:
         import asyncpg
     except ImportError:
@@ -404,24 +455,29 @@ async def _flush_batch(
         raise typer.Exit(1)
 
     if not batch:
-        return 0, 0
+        return 0, 0, []
 
     query = _build_insert(table, columns, col_types)
 
     inserted = 0
     skipped = 0
+    batch_warnings: list[str] = []
+    defaulted_cols: set[str] = set()
 
     for row in batch:
         # Apply NOT NULL JSON defaults for columns that are NULL in the archive
-        table_defaults = _NOTNULL_JSON_DEFAULTS.get(table, {})
-        for col, default_val in table_defaults.items():
-            if col in columns and row.get(col) is None:
-                row[col] = default_val  # Already a JSON string
+        if notnull_defaults:
+            for col, default_val in notnull_defaults.items():
+                if col in columns and row.get(col) is None:
+                    row[col] = default_val  # Already a JSON string
+                    if col not in defaulted_cols:
+                        rprint(f"[dim]  {table}: substituting default for NULL in NOT NULL column '{col}'[/dim]")
+                        defaulted_cols.add(col)
 
         values = [_coerce_value(row.get(col), col_types.get(col, "")) for col in columns]
         try:
             status = await conn.execute(query, *values)
-            # status is like "INSERT 0 1" (inserted) or "INSERT 0 0" (conflict)
+            # status is like "INSERT 0 1" (inserted) or "INSERT 0 0" (conflict on PK)
             count = int(status.split()[-1])
             if count > 0:
                 inserted += 1
@@ -432,11 +488,15 @@ async def _flush_batch(
             rprint(f"[yellow]  FK violation in {table}, row {row_id}: {e.constraint_name}[/yellow]")
             skipped += 1
         except asyncpg.UniqueViolationError as e:
+            # This fires for unique constraints on non-PK columns (slug, email, etc.)
+            # since PK conflicts are handled by ON CONFLICT ("id") DO NOTHING.
             row_id = row.get("id", "unknown")
+            msg = f"{table}: unique conflict on row {row_id} ({e.constraint_name})"
             rprint(f"[yellow]  Unique conflict in {table}, row {row_id}: {e.constraint_name}[/yellow]")
+            batch_warnings.append(msg)
             skipped += 1
 
-    return inserted, skipped
+    return inserted, skipped, batch_warnings
 
 
 async def _insert_table(
@@ -446,10 +506,12 @@ async def _insert_table(
     col_types: dict[str, str],
     org_rewrite_map: dict[str, str] | None = None,
     org_columns: set[str] | None = None,
-) -> tuple[int, int]:
-    """Insert rows from a JSONL file into a table. Returns (inserted, skipped)."""
+    notnull_defaults: dict[str, str] | None = None,
+) -> tuple[int, int, list[str]]:
+    """Insert rows from a JSONL file into a table. Returns (inserted, skipped, warnings)."""
     inserted = 0
     skipped = 0
+    table_warnings: list[str] = []
     batch: list[dict] = []
     columns = sorted(col_types.keys())
     logged_skipped = False
@@ -483,17 +545,19 @@ async def _insert_table(
             batch.append(row)
 
             if len(batch) >= CHUNK_SIZE:
-                ins, sk = await _flush_batch(conn, table, columns, col_types, batch)
+                ins, sk, bw = await _flush_batch(conn, table, columns, col_types, batch, notnull_defaults)
                 inserted += ins
                 skipped += sk
+                table_warnings.extend(bw)
                 batch = []
 
     if batch and columns:
-        ins, sk = await _flush_batch(conn, table, columns, col_types, batch)
+        ins, sk, bw = await _flush_batch(conn, table, columns, col_types, batch, notnull_defaults)
         inserted += ins
         skipped += sk
+        table_warnings.extend(bw)
 
-    return inserted, skipped
+    return inserted, skipped, table_warnings
 
 
 # ── Phase 2: ClickHouse HTTP helpers ─────────────────────
@@ -790,23 +854,37 @@ async def _import_archive(db_url: str, archive_path: Path, normalize_org_id: str
 
             # Org ID normalization: detect source org(s) and build rewrite map
             org_rewrite_map: dict[str, str] = {}
+            source_org_ids: set[str] = set()
+            org_jsonl = staging_dir / "pg" / "organizations.jsonl"
+            if org_jsonl.exists():
+                with open(org_jsonl, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        row = json.loads(line)
+                        src_id = row.get("id")
+                        if src_id:
+                            source_org_ids.add(src_id)
+
             if normalize_org_id:
-                org_jsonl = staging_dir / "pg" / "organizations.jsonl"
-                if org_jsonl.exists():
-                    with open(org_jsonl, encoding="utf-8") as f:
-                        for line in f:
-                            line = line.strip()
-                            if not line:
-                                continue
-                            row = json.loads(line)
-                            src_id = row.get("id")
-                            if src_id and src_id != normalize_org_id:
-                                org_rewrite_map[src_id] = normalize_org_id
+                for src_id in source_org_ids:
+                    if src_id != normalize_org_id:
+                        org_rewrite_map[src_id] = normalize_org_id
                 if org_rewrite_map:
                     rprint(f"[dim]  Normalizing {len(org_rewrite_map)} source org(s) to: {normalize_org_id}[/dim]")
+            elif source_org_ids:
+                # Check if any source orgs don't exist on the target
+                target_org_ids = {str(row["id"]) for row in await conn.fetch("SELECT id FROM organizations")}
+                foreign_orgs = source_org_ids - target_org_ids
+                if foreign_orgs:
+                    rprint(f"[yellow]⚠  Archive contains {len(foreign_orgs)} org(s) not present on target.[/yellow]")
+                    rprint("[yellow]   Data referencing these orgs may be invisible in the UI.[/yellow]")
+                    rprint("[yellow]   Consider re-running with --org-id <target-org-id> to remap.[/yellow]")
+                    warnings.append(f"Archive contains {len(foreign_orgs)} org(s) not on target; use --org-id to remap")
 
-            # Columns that hold org references and should be rewritten
-            org_columns = {"org_id", "owner_org_id"}
+            # Derive org FK columns from schema (any column referencing organizations.id)
+            org_columns = await _get_org_fk_columns(conn)
 
             # Disable all user-defined triggers (including FK constraint triggers)
             # for the duration of the bulk import. This is necessary because
@@ -837,16 +915,21 @@ async def _import_archive(db_url: str, archive_path: Path, normalize_org_id: str
                     # Get column types for proper coercion
                     col_types = await _get_column_types(conn, table)
 
-                    ins, sk = await _insert_table(
+                    # Get NOT NULL JSON defaults from schema (avoids hardcoded map)
+                    notnull_defaults = await _get_notnull_json_defaults(conn, table)
+
+                    ins, sk, tw = await _insert_table(
                         conn,
                         table,
                         jsonl_path,
                         col_types,
                         org_rewrite_map=org_rewrite_map,
                         org_columns=org_columns,
+                        notnull_defaults=notnull_defaults,
                     )
                     rows_inserted[table] = ins
                     rows_skipped[table] = sk
+                    warnings.extend(tw)
             finally:
                 # Always restore default trigger behavior, even on error
                 await conn.execute("SET session_replication_role = 'origin'")
