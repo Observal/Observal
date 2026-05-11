@@ -4,7 +4,7 @@ import os
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,7 @@ class User(Base):
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     auth_provider: Mapped[str] = mapped_column(String(50), default="local", server_default="local")
     sso_subject_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     def __init__(self, **kwargs: object) -> None:

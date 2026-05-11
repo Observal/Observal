@@ -56,6 +56,7 @@ class UserResponse(BaseModel):
     username: str | None = None
     name: str
     role: UserRole
+    avatar_url: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

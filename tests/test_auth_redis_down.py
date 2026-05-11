@@ -23,6 +23,7 @@ def _make_mock_user():
     user.username = "testuser"
     user.name = "Test User"
     user.role = UserRole.user
+    user.avatar_url = None
     user.verify_password = MagicMock(return_value=True)
     return user
 

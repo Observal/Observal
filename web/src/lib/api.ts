@@ -46,6 +46,7 @@ const STORAGE_KEY_USER_ROLE = "observal_user_role";
 const STORAGE_KEY_USER_NAME = "observal_user_name";
 const STORAGE_KEY_USER_EMAIL = "observal_user_email";
 const STORAGE_KEY_USER_USERNAME = "observal_user_username";
+const STORAGE_KEY_USER_AVATAR = "observal_user_avatar";
 
 function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -70,6 +71,7 @@ export function clearSession() {
   localStorage.removeItem(STORAGE_KEY_USER_NAME);
   localStorage.removeItem(STORAGE_KEY_USER_EMAIL);
   localStorage.removeItem(STORAGE_KEY_USER_USERNAME);
+  localStorage.removeItem(STORAGE_KEY_USER_AVATAR);
 }
 
 export function setUserRole(role: string) {
@@ -106,6 +108,20 @@ export function setUserUsername(username: string) {
 export function getUserUsername(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(STORAGE_KEY_USER_USERNAME);
+}
+
+export function setUserAvatar(avatar: string | null) {
+  if (avatar) {
+    localStorage.setItem(STORAGE_KEY_USER_AVATAR, avatar);
+  } else {
+    localStorage.removeItem(STORAGE_KEY_USER_AVATAR);
+  }
+  window.dispatchEvent(new Event("storage"));
+}
+
+export function getUserAvatar(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(STORAGE_KEY_USER_AVATAR);
 }
 
 let _refreshPromise: Promise<boolean> | null = null;
@@ -237,7 +253,7 @@ export async function graphql<T = unknown>(
 
 // ── Auth ────────────────────────────────────────────────────────────
 type AuthResponse = {
-  user: { id: string; email: string; username?: string | null; name: string; role: string; created_at: string };
+  user: { id: string; email: string; username?: string | null; name: string; role: string; avatar_url?: string | null; created_at: string };
   access_token: string;
   refresh_token: string;
   expires_in: number;
@@ -248,13 +264,17 @@ export const auth = {
     post<AuthResponse>("/auth/init", body),
   login: (body: { email: string; password: string }) =>
     post<AuthResponse & { must_change_password?: boolean }>("/auth/login", body),
-  whoami: () => get<{ id: string; email: string; username?: string | null; name: string; role: string }>("/auth/whoami"),
+  whoami: () => get<{ id: string; email: string; username?: string | null; name: string; role: string; avatar_url?: string | null }>("/auth/whoami"),
   exchangeCode: (body: { code: string }) =>
     post<AuthResponse>("/auth/exchange", body),
   deviceConfirm: (userCode: string) =>
     post<{ message: string }>("/auth/device/confirm", { user_code: userCode }),
   changePassword: (body: { current_password: string; new_password: string }) =>
     put<{ message: string }>("/auth/profile/password", body),
+  uploadAvatar: (body: { avatar_url: string }) =>
+    put<{ avatar_url: string | null }>("/auth/profile/avatar", body),
+  deleteAvatar: () =>
+    del<{ avatar_url: null }>("/auth/profile/avatar"),
 };
 
 // ── Registry (all 8 types) ─────────────────────────────────────────

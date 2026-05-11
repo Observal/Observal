@@ -1,5 +1,7 @@
+import base64
 import json
 import logging
+import re
 import secrets
 from datetime import UTC, datetime
 
@@ -682,3 +684,91 @@ async def create_hooks_token(current_user: User = Depends(get_current_user)):
         detail="Hooks token created (30-day)",
     )
     return {"access_token": token, "expires_in": expires_in}
+
+
+# ── Avatar Upload ─────────────────────────────────────────────────
+
+_MAX_AVATAR_BYTES = 2 * 1024 * 1024
+# Data URL encoding adds ~33% overhead; 2MB binary → ~2.7MB encoded.
+# Frontend also caps at 2MB before upload so these stay in sync.
+_MAX_AVATAR_DATA_URL_LEN = int(2 * 1024 * 1024 * 1.4)
+_AVATAR_ALLOWED_MIMES = {"image/png", "image/jpeg", "image/webp"}
+_AVATAR_MAGIC_BYTES: dict[str, list[bytes]] = {
+    "image/png": [b"\x89PNG\r\n\x1a\n"],
+    "image/jpeg": [b"\xff\xd8\xff"],
+    "image/webp": [b"RIFF"],
+}
+
+
+def _validate_avatar_data_url(value: str) -> None:
+    if len(value) > _MAX_AVATAR_DATA_URL_LEN:
+        raise HTTPException(status_code=422, detail="Image data too large")
+
+    match = re.match(r"^data:(image/[a-zA-Z0-9.+-]+);base64,(.+)$", value, re.DOTALL)
+    if not match:
+        raise HTTPException(status_code=422, detail="Avatar must be a base64 data URL")
+
+    mime_type = match.group(1)
+    b64_data = match.group(2)
+
+    if mime_type not in _AVATAR_ALLOWED_MIMES:
+        raise HTTPException(status_code=422, detail="Only PNG, JPEG, and WebP images are allowed")
+
+    try:
+        raw = base64.b64decode(b64_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid base64 data")
+
+    if len(raw) > _MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=422, detail="Image too large (max 2MB)")
+
+    signatures = _AVATAR_MAGIC_BYTES.get(mime_type, [])
+    if not any(raw.startswith(sig) for sig in signatures):
+        raise HTTPException(status_code=422, detail="File content does not match declared type")
+    if mime_type == "image/webp" and raw[8:12] != b"WEBP":
+        raise HTTPException(status_code=422, detail="File content does not match declared type")
+
+
+@router.put("/profile/avatar", response_model=UserResponse)
+@limiter.limit("1/minute")
+async def upload_avatar(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    body = await request.json()
+    avatar_url = body.get("avatar_url")
+    if not avatar_url or not isinstance(avatar_url, str):
+        raise HTTPException(status_code=422, detail="avatar_url is required")
+
+    _validate_avatar_data_url(avatar_url)
+
+    current_user.avatar_url = avatar_url
+    await db.commit()
+    await db.refresh(current_user)
+    await audit(
+        current_user,
+        "auth.set_avatar",
+        resource_type="user",
+        resource_id=str(current_user.id),
+        detail="Avatar uploaded",
+    )
+    return UserResponse.model_validate(current_user)
+
+
+@router.delete("/profile/avatar", response_model=UserResponse)
+async def delete_avatar(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_user.avatar_url = None
+    await db.commit()
+    await db.refresh(current_user)
+    await audit(
+        current_user,
+        "auth.delete_avatar",
+        resource_type="user",
+        resource_id=str(current_user.id),
+        detail="Avatar removed",
+    )
+    return UserResponse.model_validate(current_user)

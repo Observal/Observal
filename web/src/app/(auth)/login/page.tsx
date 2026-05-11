@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { auth, setTokens, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername } from "@/lib/api";
+import { auth, setTokens, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,12 +52,13 @@ function LoginContent() {
           }
           return res.json();
         })
-        .then((data: { access_token: string; refresh_token: string; user: { role: string; name: string; email: string; username?: string } }) => {
+        .then((data: { access_token: string; refresh_token: string; user: { role: string; name: string; email: string; username?: string; avatar_url?: string | null } }) => {
           setTokens(data.access_token, data.refresh_token);
           setUserRole(data.user.role);
           setUserName(data.user.name);
           setUserEmail(data.user.email);
           if (data.user.username) setUserUsername(data.user.username);
+          if (data.user.avatar_url) setUserAvatar(data.user.avatar_url);
           toast.success("Signed in successfully via SSO");
           const nextPath = searchParams.get("next");
           const redirectTo = nextPath && nextPath.startsWith("/") ? nextPath : "/";
@@ -100,6 +101,7 @@ function LoginContent() {
       setUserName(res.user.name);
       setUserEmail(res.user.email);
       if (res.user.username) setUserUsername(res.user.username);
+      if (res.user.avatar_url) setUserAvatar(res.user.avatar_url);
       toast.success("Signed in successfully");
       router.push("/");
     } catch (e) {
@@ -135,6 +137,7 @@ function LoginContent() {
       setUserName(res.name);
       setUserEmail(res.email);
       if (res.username) setUserUsername(res.username);
+      if (res.avatar_url) setUserAvatar(res.avatar_url);
       router.push("/");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to change password";

@@ -32,6 +32,7 @@ def _make_mock_user(**overrides):
     user.auth_provider = overrides.get("auth_provider", "local")
     user.created_at = overrides.get("created_at", datetime.now(UTC))
     user.org_id = overrides.get("org_id", uuid.uuid4())
+    user.avatar_url = overrides.get("avatar_url")
     user._trace_privacy = False
     return user
 
