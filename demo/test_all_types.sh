@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # End-to-end test: submit, approve, install, and test all registry types
 set -euo pipefail
 

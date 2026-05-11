@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Devaansh Dubey <devaanshdubey@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for _scan_kiro_home: agent, MCP, skill, and hook discovery."""
 
 from __future__ import annotations

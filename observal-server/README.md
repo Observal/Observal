@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Observal Server
 
 FastAPI backend that powers the Observal platform. Provides REST and GraphQL APIs for managing agents, components, evaluations, telemetry, and user access.

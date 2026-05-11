@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Structural scorer: rule-based scoring for Tool Efficiency and Tool Failures.
 
 Parses spans from ClickHouse to detect penalties without needing an LLM.

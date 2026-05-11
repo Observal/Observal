@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Observal E2E Demo
 
 End-to-end integration tests that run against your **real local setup** — your actual `~/.claude` config, real MCP servers, real plugins, real agents. No mocks.

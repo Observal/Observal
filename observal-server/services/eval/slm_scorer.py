@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """SLM scorer: LLM-assisted scoring for Goal Completion, Factual Grounding, Thought Process.
 
 Uses the existing EvalBackend (LLMJudgeBackend/FallbackBackend) to evaluate trace quality.

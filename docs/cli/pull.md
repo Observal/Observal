@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # observal pull
 
 Install a complete agent — MCP servers, skills, hooks, prompts, sandboxes, and IDE-specific config — into an IDE in one command.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Unit tests for ClickHouse service: Phase 1 (traces, spans, scores)."""
 
 import json

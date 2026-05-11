@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """
 Kernel Scorer v3 — Efficiency-Only Scoring
 

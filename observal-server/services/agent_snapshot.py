@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Build a deterministic YAML snapshot of an :class:`AgentVersion`.
 
 The snapshot is the canonical text the reviewer reads when approving a

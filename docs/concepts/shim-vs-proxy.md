@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Shim vs proxy
 
 How Observal intercepts MCP traffic without modifying it. Two components, different transports, same job.

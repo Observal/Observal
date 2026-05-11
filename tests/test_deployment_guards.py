@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for deployment mode guards (require_local_mode)."""
 
 from unittest.mock import patch

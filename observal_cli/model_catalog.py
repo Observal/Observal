@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """CLI-side model catalog access with a 1h read-through file cache.
 
 The CLI fetches the catalog from ``GET /api/v1/models`` and caches the JSON

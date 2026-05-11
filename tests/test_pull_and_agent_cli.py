@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for the `observal pull` command."""
 
 from __future__ import annotations

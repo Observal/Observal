@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # observal agent
 
 Create, author, and publish agents. An agent bundles registry components (MCPs, skills, hooks, prompts, sandboxes) into one installable YAML.

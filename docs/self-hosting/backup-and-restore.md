@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Backup and restore
 
 What to back up, how often, and how to restore. Observal has three persistent stores with very different loss profiles.

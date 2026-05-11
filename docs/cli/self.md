@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # observal self
 
 Manage the CLI itself — upgrades and downgrades.

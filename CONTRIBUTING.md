@@ -1,3 +1,14 @@
+<!-- SPDX-FileCopyrightText: 2026 Ai-chan-0411 <aoikabu12@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Luca Magrini <lucamagrini1234@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
+> Parts of this guide were inspired by the excellent contributing documentation from [AnkiDroid/Anki-Android](https://github.com/ankidroid/Anki-Android). They set a great standard for OSS contributor docs, worth checking out.
+
 # Contributing to Observal
 
 Thank you for considering contributing to Observal! Contributions of all kinds are welcome: bug reports, bug fixes, new features, documentation improvements, and tests. This guide walks you through the process from setting up your environment to getting your pull request merged.
@@ -132,6 +143,26 @@ docs/update-setup-guide
 ### Code Style
 
 Python is linted and formatted with `ruff`. Dockerfiles are linted with `hadolint`. Pre-commit hooks enforce both - install them early so issues are caught before you commit.
+
+### SPDX License Headers
+
+Every source file must have SPDX copyright and license headers. Add these two lines at the top of any new file you create:
+
+For files in the core (everything outside `ee/`):
+
+```python
+# SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+```
+
+For files inside `ee/`:
+
+```python
+# SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+```
+
+Use the appropriate comment style for the file type (`// ` for TypeScript, `<!-- -->` for Markdown, `/* */` for CSS). A CI check (`reuse lint`) will block merge if any file is missing headers.
 
 ```bash
 make hooks     # install pre-commit hooks

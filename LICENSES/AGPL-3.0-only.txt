@@ -1,0 +1,108 @@
+SPDX-License-Identifier: AGPL-3.0-only
+
+Copyright (c) 2026-present Observal (BlazeUp AI LLP)
+Registered Office: Chennai, Tamil Nadu, India
+Contact: contact@observal.io
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DUAL LICENSE STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━
+
+This repository uses a dual-license structure:
+
+  1. All content in this repository is licensed under the GNU Affero
+     General Public License v3.0 ("AGPL"), as published by the Free
+     Software Foundation - EXCEPT content residing under the "ee/"
+     directory.
+
+  2. Content under the "ee/" directory is licensed under the Observal
+     Enterprise License defined in "ee/LICENSE". That code is
+     source-available but requires a paid commercial license for any
+     production, internal enterprise, or commercial use.
+
+The open-source core (everything outside "ee/") is fully functional
+on its own and does not require any code in the "ee/" directory to
+operate.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IMPORTANT — AGPL SECTION 7 NOTICE (ee/ boundary)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Pursuant to AGPL Section 7, the following additional permissions
+apply to the AGPL-licensed core (code outside "ee/"):
+
+  (a) You may combine or link the AGPL-licensed core with the
+      "ee/" directory code ONLY if you hold a valid Observal
+      Commercial License. Using the "ee/" features without a
+      commercial license, even if you have built the project
+      successfully, constitutes a violation of the "ee/LICENSE".
+
+  (b) The "ee/" directory code is NOT covered by the AGPL and
+      does NOT grant you any AGPL rights. The AGPL Section 7
+      additional permissions here apply only to the core code
+      (outside "ee/") and do not extend any license to "ee/".
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COMMERCIAL LICENSE
+━━━━━━━━━━━━━━━━━━
+
+If you or your organization:
+
+  • Cannot comply with the AGPL (e.g., cannot open-source your
+    internal modifications or network-facing deployments),
+  • Want to use Observal in a proprietary product or internal
+    enterprise deployment without AGPL obligations,
+  • Want access to the enterprise features in the "ee/" directory,
+  • Require an SLA, IP indemnification, or compliance documentation,
+
+→ A commercial license is available from BlazeUp AI LLP.
+
+  Website : https://observal.io/
+  Email   : contact@observal.io
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3.0, 19 November 2007
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Copyright (C) 2026-present BlazeUp AI LLP
+
+This program is free software: you can redistribute it and/or
+modify it under the terms of the GNU Affero General Public License
+as published by the Free Software Foundation, either version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public
+License along with this program. If not, see:
+<https://www.gnu.org/licenses/agpl-3.0.html>
+
+The full license text is incorporated here by reference and is
+available at the URL above. A copy is also included in this
+repository as AGPL-3.0.txt.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+END OF LICENSE HEADER
+
+Copyright 2026-present BlazeUp AI LLP
+
+Licensed under the GNU Affero General Public License v3.0
+(the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+    https://www.gnu.org/licenses/agpl-3.0.html
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing
+permissions and limitations under the License.

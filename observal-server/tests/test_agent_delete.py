@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for agent deletion with lazy='raise' relationships.
 
 Verifies that delete_agent eagerly loads Scorecard.penalties and

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for the endpoint discovery system.
 
 Tests derive_endpoints logic and the claude_code_hooks_spec env generation.

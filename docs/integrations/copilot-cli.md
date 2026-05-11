@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Copilot CLI
 
 [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) is the standalone agentic coding CLI from GitHub (binary: `copilot`). Observal uses a hook-based bridge for session lifecycle events and `observal-shim` for MCP server instrumentation.

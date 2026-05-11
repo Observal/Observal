@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Public model catalog endpoints + admin refresh.
 
 The catalog itself lives in ``services.model_catalog``. This route layer adds:

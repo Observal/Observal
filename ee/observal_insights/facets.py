@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Session facet extraction and caching for Agent Insights (V3).
 
 Facets are structured metadata extracted from session transcripts via LLM analysis.

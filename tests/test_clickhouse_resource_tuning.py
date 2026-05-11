@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for ClickHouse resource tuning — edge cases around admin-configured
 memory limits, concurrent override swaps, invalid inputs, and query-level
 injection via the HTTP API.

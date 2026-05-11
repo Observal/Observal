@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Evaluation engine
 
 The operator's guide to standing up the eval engine. For the user-facing workflow, see [Use Cases → Evaluate and compare agents](../use-cases/evaluate-agents.md); for the architecture, see [Concepts → Evaluation engine](../concepts/evaluation.md).

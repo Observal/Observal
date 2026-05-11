@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Live model catalog service.
 
 A small read-through cache around ``https://models.dev/api.json``. All callers

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 license_policies:
   # ── Approved (compatible with AGPL-3.0) ──────────────────
   - license_key: agpl-3.0

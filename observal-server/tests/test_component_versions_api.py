@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for the component version API (factory-generated endpoints).
 
 Tests are parametrized over all 5 component types.  They use MagicMock for the

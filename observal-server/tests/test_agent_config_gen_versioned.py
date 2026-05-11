@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for versioned agent config generation (generate_all_ide_configs + lock file)."""
 
 from __future__ import annotations

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """BenchJack self-test suite: attacks Observal's own scoring pipeline.
 
 These tests simulate the BenchJack methodology against Observal.

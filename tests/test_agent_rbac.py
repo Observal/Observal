@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for agent RBAC permission evaluation."""
 
 import uuid

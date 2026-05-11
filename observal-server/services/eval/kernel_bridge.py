@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Observal -> Kernel bridge. Converts otel_logs hook events to kernel analysis."""
 
 import hashlib

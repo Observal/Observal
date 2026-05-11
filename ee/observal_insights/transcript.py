@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Build readable session transcripts from ClickHouse for facet extraction.
 
 V3: Reads from session_events.raw_line (primary) with otel_logs fallback.

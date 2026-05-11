@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for SQL LIKE wildcard escaping (SOC 2 compliance)."""
 
 from api.sanitize import escape_like

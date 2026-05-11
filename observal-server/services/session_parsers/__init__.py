@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Session JSONL parsers -- READ path (raw ClickHouse rows -> frontend events).
 
 Dispatches to format-specific parsers based on the ``session_parser`` key in

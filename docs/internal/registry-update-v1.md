@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Registry Update v1.0
 
 Date: 2026-04-28

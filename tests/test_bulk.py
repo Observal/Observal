@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for bulk agent creation endpoint.
 
 Covers successful creation, dry-run preview, duplicate deduplication,

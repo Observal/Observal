@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Meta-test suite: validates the scoring engine itself (BenchJack Pattern 6).
 
 These tests verify that the evaluation logic actually evaluates — catching

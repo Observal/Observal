@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Unit tests for Phase 8A: SLM judge hardening against prompt injection.
 
 Tests the TraceSanitizer, InjectionAttempt detection, hardened prompt templates,

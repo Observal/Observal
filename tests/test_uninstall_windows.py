@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for Windows-specific uninstall behaviour (runs on any platform via mocking)."""
 
 from __future__ import annotations

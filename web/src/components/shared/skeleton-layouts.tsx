@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { Skeleton } from "@/components/ui/skeleton";
 
 /** Skeleton for table-based list pages (traces, agents, users, review, etc.) */

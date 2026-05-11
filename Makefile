@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 .PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate check-migrations new-migration reset rebuild rebuild-enterprise rebuild-local release-major release-feature release-patch
 
 # ── Linting ──────────────────────────────────────────────

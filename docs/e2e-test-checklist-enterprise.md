@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # E2E Test Checklist — Enterprise Mode
 
 This checklist covers enterprise-only features (`DEPLOYMENT_MODE=enterprise`). Run the [local checklist](e2e-test-checklist.md) first — it covers all base features (registry, agents, components, reviews, traces, ratings). This checklist layers enterprise-specific tests on top.

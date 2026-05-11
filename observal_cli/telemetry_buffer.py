@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Lightweight SQLite buffer for offline telemetry events.
 
 Stores telemetry events locally when the Observal server is unreachable,

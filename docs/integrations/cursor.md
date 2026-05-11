@@ -1,3 +1,8 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Cursor
 
 Cursor is supported at the MCP and rules level. Telemetry is MCP-traffic-only — Cursor doesn't expose session lifecycle hooks, so tool calls are the unit of observation.

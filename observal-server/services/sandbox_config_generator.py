@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+
 def generate_sandbox_config(sandbox_listing, ide: str, server_url: str = "http://localhost:8000") -> dict:
     """Generate config snippet that wraps sandbox execution with observal-sandbox-run."""
     sandbox_id = str(sandbox_listing.id)

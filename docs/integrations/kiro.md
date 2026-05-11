@@ -1,3 +1,8 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Kiro CLI
 
 [Kiro CLI](https://kiro.dev) is fully supported. It doesn't yet export OpenTelemetry natively ([kirodotdev/Kiro#6319](https://github.com/kirodotdev/Kiro/issues/6319)), so Observal uses a hook-based bridge for session lifecycle events. MCP traffic flows through `observal-shim` the same way it does everywhere else.

@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Troubleshooting
 
 Common failure modes and their fixes. If none of these match, open a [GitHub Discussion](https://github.com/BlazeUp-AI/Observal/discussions) with the output of `observal auth status` and relevant logs from `docker compose logs`.

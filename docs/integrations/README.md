@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Integrations
 
 Observal supports seven IDEs / AI coding tools. The depth of support varies — some have native OpenTelemetry export and integrate almost transparently; others need hook-based workarounds until their upstream catches up.

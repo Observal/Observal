@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Enterprise Edition
 
 Source-available enterprise features for Observal. This module is loaded only when `DEPLOYMENT_MODE=enterprise` is set.

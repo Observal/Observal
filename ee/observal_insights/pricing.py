@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Model pricing lookup and cost computation for Agent Insights."""
 
 from __future__ import annotations

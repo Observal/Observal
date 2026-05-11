@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Refresh the vendored model catalog snapshot from models.dev.
 
 This is a manual ops tool — run it during a release if you want the offline

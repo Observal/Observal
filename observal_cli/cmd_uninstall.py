@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Observal uninstall command — tears down Docker stack, removes repo and config."""
 
 from __future__ import annotations

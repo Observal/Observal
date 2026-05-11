@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Evaluate and compare agents
 
 "Did my new prompt make the agent better?" is the hardest question in AI engineering. Observal answers it with structured evaluation across six dimensions on real traces — not a test harness, not a benchmark, real sessions your agents actually ran.

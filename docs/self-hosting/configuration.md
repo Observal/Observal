@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Configuration
 
 Every Observal server setting lives in `.env`. Defaults are sane for local development. This page groups settings by concern; the full table is in [Reference → Environment variables](../reference/environment-variables.md).

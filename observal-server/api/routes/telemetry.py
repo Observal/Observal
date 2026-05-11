@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Subramania Raja <dhanpraja231@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Telemetry ingestion endpoint for shim/proxy structured spans.
 
 The legacy /hooks and OTLP /v1/{traces,logs,metrics} endpoints have been

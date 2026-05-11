@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Scoring models for the 5-dimension penalty-based eval system."""
 
 import enum

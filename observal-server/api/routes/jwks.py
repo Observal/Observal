@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """JWKS discovery endpoint for JWT public key distribution.
 
 Exposes the server's public signing key(s) in standard JWKS format so that

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for listing detail endpoint access control.
 
 Verifies that GET /{listing_id} endpoints for all 5 registry types

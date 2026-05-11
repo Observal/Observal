@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Observal Web UI Reference
 
 > **WIP:** Current screenshots show pages without demo data (empty states). These will be replaced with richer captures once seed data is available. Some pages (agent detail, component detail, trace detail, eval detail, enterprise login) are still pending. If you are contributing screenshots, use the dev server with demo data and capture at 1280x800 viewport.

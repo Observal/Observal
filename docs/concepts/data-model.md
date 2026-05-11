@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Data model
 
 Everything Observal stores in ClickHouse fits into four shapes: **traces**, **spans**, **sessions**, and **scores**. This page is the authoritative reference for the fields each carries.

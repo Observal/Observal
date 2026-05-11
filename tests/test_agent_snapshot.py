@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for the agent YAML snapshot builder + the matching CLI behaviours.
 
 Covers the bug where per-IDE model overrides set in the web builder never

@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """JWT token generation and validation for unified browser/CLI auth."""
 
 import uuid

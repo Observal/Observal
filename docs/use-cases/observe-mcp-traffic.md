@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Observe MCP traffic
 
 Your agents are making tool calls every session. You have no idea how many, which ones fail, which ones are slow, or which ones are never used. This is the first and cheapest thing Observal does for you.

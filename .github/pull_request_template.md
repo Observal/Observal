@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 <!--- Please fill the necessary details below -->
 ## Purpose / Description
 _Describe the problem or feature and motivation_

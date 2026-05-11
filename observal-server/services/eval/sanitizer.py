@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """TraceSanitizer: strips prompt injection vectors from agent output before SLM judge evaluation.
 
 Implements BenchJack Pattern 4 mitigation — prevents agents from manipulating

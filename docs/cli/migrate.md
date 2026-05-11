@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # observal migrate
 
 Portable migration tools for moving an Observal instance between environments. The workflow has two phases:

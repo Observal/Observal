@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 from __future__ import annotations
 
 import uuid  # noqa: TC003 — needed at runtime by Pydantic

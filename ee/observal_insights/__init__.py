@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Observal Insights — enterprise insight generation engine.
 
 This module lives under ee/ and is covered by the Observal Enterprise License.

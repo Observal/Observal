@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for the 3-tier health check endpoints."""
 
 import uuid

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """In-memory cache for agent registration lookups at ingest time.
 
 Avoids hitting Postgres on every hook event (70+/sec at scale).

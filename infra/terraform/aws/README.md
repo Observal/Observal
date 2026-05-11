@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Observal on AWS — Terraform
 
 Production-shaped self-hosted Observal in your own AWS account. One `terraform apply` provisions:

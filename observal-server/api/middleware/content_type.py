@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Content-Type validation and JSON depth protection middleware.
 
 Rejects POST/PUT/PATCH requests that do not carry an acceptable Content-Type

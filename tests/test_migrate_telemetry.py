@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Unit and property-based tests for ch-deep-copy: ClickHouse telemetry migration."""
 
 from __future__ import annotations

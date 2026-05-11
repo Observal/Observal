@@ -1,3 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
+# SPDX-FileCopyrightText: 2026 Subramania Raja <dhanpraja231@gmail.com>
+# SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for the draft agent lifecycle (save, update, submit).
 
 Covers creating a draft, updating it, submitting for review,

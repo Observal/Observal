@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Property-based tests for the support bundle redaction, manifest, and config modules.
 
 Uses Hypothesis to verify universal correctness properties across randomized inputs.

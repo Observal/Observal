@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Eval engine v2: managed LLM-as-judge with pluggable backend.
 
 Reads traces/spans from ClickHouse, runs eval templates, writes scores back.

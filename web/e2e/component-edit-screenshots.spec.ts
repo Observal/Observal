@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Screenshot script for the component edit form and detail page.
  * Run: npx playwright test e2e/component-edit-screenshots.spec.ts --project=chromium

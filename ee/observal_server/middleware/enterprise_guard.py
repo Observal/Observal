@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Middleware that returns 503 on enterprise routes when EE is misconfigured."""
 
 from __future__ import annotations

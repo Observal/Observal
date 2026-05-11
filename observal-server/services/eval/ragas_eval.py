@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """RAGAS evaluation for GraphRAG retrieval spans.
 
 Implements the 4 core RAGAS metrics using LLM-as-judge:

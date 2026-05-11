@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Use Cases
 
 Observal solves five concrete problems in the AI-agent lifecycle. Each page below is written as a playbook — what the problem is, how Observal addresses it, and the exact commands to run.

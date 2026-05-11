@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # OIDC / OAuth 2.0 SSO Setup Guide
 
 This guide walks you through configuring OpenID Connect (OIDC) / OAuth 2.0

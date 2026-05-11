@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Subramania Raja <dhanpraja231@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Tests for services/insights/shim_enrichment.py.
 
 TDD: these tests define the expected behavior before implementation.

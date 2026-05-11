@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """End-to-end integration test for the support bundle feature.
 
 Mocks the API server's /api/v1/support/collect endpoint, runs

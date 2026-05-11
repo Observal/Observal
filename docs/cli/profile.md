@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # observal use / observal profile
 
 Snapshot-style profile management for IDE configs. Swap between configs from a single command without manually copying files.

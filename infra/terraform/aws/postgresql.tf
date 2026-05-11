@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 resource "aws_db_subnet_group" "main" {
   name       = "${local.name}-db"
   subnet_ids = aws_subnet.private[*].id

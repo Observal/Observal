@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Query VulnerableCode for known vulnerabilities in CycloneDX SBOM components."""
 
 import json

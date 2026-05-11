@@ -1,9 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Observal CI — runs on every PR targeting main and on pushes to main.
 #
 # Recommended branch-protection rules (Settings → Branches → main):
 #   Required status checks:
 #     • lint
+#     • reuse-lint
 #     • test (3.11)
 #     • test (3.12)
 #     • test (3.13)
@@ -99,7 +107,17 @@ jobs:
         if: needs.changes.outputs.python == 'true'
         run: uv run --with ruff==0.15.10 ruff format --check .
 
-# ── Job 2: Python tests (matrix) ──────────────────────────────────────────────
+# ── Job 2: REUSE license compliance ──────────────────────────────────────────────
+  reuse-lint:
+    name: reuse-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: REUSE compliance check
+        uses: fsfe/reuse-action@v5
+
+# ── Job 3: Python tests (matrix) ──────────────────────────────────────────────
   test:
     name: test (${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -145,7 +163,7 @@ jobs:
             --with pyarrow \
             pytest ../tests/ -q
 
-# ── Job 3: Next.js lint + typecheck ───────────────────────────────────────────
+# ── Job 4: Next.js lint + typecheck ───────────────────────────────────────────
   web-lint:
     name: web-lint
     runs-on: ubuntu-latest

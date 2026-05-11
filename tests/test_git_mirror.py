@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for git mirror service — real git operations, no mocks.
 
 These tests create real git repos in tmpdir and exercise the full clone/discover/validate pipeline.

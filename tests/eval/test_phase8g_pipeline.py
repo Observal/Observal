@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for Phase 8G: Wired BenchJack-hardened pipeline.
 
 Tests that eval_service.run_structured_eval correctly wires together:

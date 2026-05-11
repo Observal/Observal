@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Redis-backed response cache for dashboard and OTEL endpoints."""
 
 import hashlib

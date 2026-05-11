@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Debug agent failures
 
 A user says the agent "didn't work." Without traces, you guess. With traces, you walk the exact sequence of events.

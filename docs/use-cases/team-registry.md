@@ -1,3 +1,8 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Run a team-wide agent registry
 
 Once two or more people are authoring agents, you need a single source of truth. Observal becomes your team's internal Docker Hub for AI agents — with review, RBAC, telemetry, and evaluation baked in.

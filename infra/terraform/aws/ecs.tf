@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # ECS Fargate stack: api, web, worker, init.
 #
 # api + worker share the same image (different commands). web has its own image.
