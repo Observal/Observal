@@ -1,0 +1,71 @@
+okaokayname: E2E Frontend
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: e2e-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e-frontend-flows
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.13
+        run: uv python install 3.13
+
+      - name: Start Docker stack
+        run: |
+          cp .env.example .env
+          make up
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Wait for API health
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && exit 0
+            sleep 2
+          done
+          echo "API not healthy" && exit 1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        working-directory: web
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run frontend e2e
+        working-directory: web
+        run: pnpm exec playwright test frontend-flows
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-frontend-results
+          path: web/test-results/
+          retention-days: 7
