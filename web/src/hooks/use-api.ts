@@ -348,6 +348,44 @@ export function useAdminSettings() {
   return useQuery({ queryKey: ["admin", "settings"], queryFn: admin.settings });
 }
 
+// ── Retention ────────────────────────────────────────────────────────
+
+export function useRetentionConfig() {
+  return useQuery({
+    queryKey: ["admin", "retention"],
+    queryFn: admin.getRetention,
+  });
+}
+
+export function useUpdateRetention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: admin.setRetention,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "retention"] });
+      toast.success("Retention settings updated");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to update retention settings");
+    },
+  });
+}
+
+export function useRetentionStats() {
+  return useQuery({
+    queryKey: ["admin", "retention", "stats"],
+    queryFn: admin.getRetentionStats,
+  });
+}
+
+export function useRetentionWarnings() {
+  return useQuery({
+    queryKey: ["admin", "retention", "warnings"],
+    queryFn: admin.getRetentionWarnings,
+    refetchInterval: 5 * 60 * 1000,
+  });
+}
+
 // ── Audit & Security ────────────────────────────────────────────────
 
 export function useAuditLog(filters?: Record<string, string>) {

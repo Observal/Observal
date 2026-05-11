@@ -17,6 +17,7 @@ import { CardSkeleton, TableSkeleton } from "@/components/shared/skeleton-layout
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ScoreOverview } from "@/components/dashboard/score-overview";
+import { RetentionWidget } from "@/components/dashboard/retention-widget";
 
 function TrendIcon({ value }: { value: number }) {
   if (value > 0) return <TrendingUp className="h-3 w-3 text-success" />;
@@ -247,6 +248,8 @@ export default function DashboardPage() {
 
           {/* Right column: 1/3 */}
           <div className="space-y-6">
+            {/* Data Retention Widget */}
+            <RetentionWidget />
             {/* Agent Scores */}
             <section className="animate-in stagger-3">
               <div className="flex items-center justify-between mb-3">

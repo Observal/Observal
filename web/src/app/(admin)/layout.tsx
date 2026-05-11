@@ -7,6 +7,7 @@ import { CommandMenu } from "@/components/nav/command-menu";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthGuard } from "@/components/layouts/auth-guard";
 import { RoleGuard } from "@/components/layouts/role-guard";
+import { RetentionWarningBanner } from "@/components/shared/retention-warning-banner";
 
 export default function AdminLayout({
   children,
@@ -18,7 +19,10 @@ export default function AdminLayout({
       <RoleGuard minRole="reviewer">
         <SidebarProvider>
           <RegistrySidebar />
-          <SidebarInset>{children}</SidebarInset>
+          <SidebarInset>
+            <RetentionWarningBanner />
+            {children}
+          </SidebarInset>
           <CommandMenu />
           <Toaster visibleToasts={1} />
         </SidebarProvider>

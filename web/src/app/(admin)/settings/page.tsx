@@ -208,6 +208,17 @@ export default function SettingsPage() {
   const [registeredAgentsOnly, setRegisteredAgentsOnly] = useState(false);
   const [registeredAgentsOnlyLoading, setRegisteredAgentsOnlyLoading] = useState(true);
   const [registeredAgentsOnlyToggling, setRegisteredAgentsOnlyToggling] = useState(false);
+  const [retentionEnabled, setRetentionEnabled] = useState(false);
+  const [retentionDays, setRetentionDays] = useState<string>("");
+  const [scoreRetentionDays, setScoreRetentionDays] = useState<string>("");
+  const [maxTraceCount, setMaxTraceCount] = useState<string>("");
+  const [retentionGlobal, setRetentionGlobal] = useState(90);
+  const [retentionLoading, setRetentionLoading] = useState(true);
+  const [retentionSaving, setRetentionSaving] = useState(false);
+  const [showRetentionConfirm, setShowRetentionConfirm] = useState(false);
+  const [retentionConfirmChecked, setRetentionConfirmChecked] = useState(false);
+  const [retentionPreview, setRetentionPreview] = useState<Record<string, number> | null>(null);
+  const retentionWasEnabled = useRef(false);
   const [logoOverride, setLogoOverride] = useState<string | null | undefined>(undefined);
   const [wordmarkOverride, setWordmarkOverride] = useState<string | null | undefined>(undefined);
   const [appNameOverride, setAppNameOverride] = useState<string | undefined>(undefined);
@@ -232,6 +243,17 @@ export default function SettingsPage() {
     } else {
       setRegisteredAgentsOnlyLoading(false);
     }
+    admin.getRetention()
+      .then((res) => {
+        setRetentionEnabled(res.retention_enabled);
+        retentionWasEnabled.current = res.retention_enabled;
+        setRetentionDays(res.data_retention_days?.toString() || "");
+        setScoreRetentionDays(res.score_retention_days?.toString() || "");
+        setMaxTraceCount(res.max_trace_count?.toString() || "");
+        setRetentionGlobal(res.global_retention_days);
+      })
+      .catch(() => {})
+      .finally(() => setRetentionLoading(false));
   }, []);
 
   const handleTracePrivacyToggle = useCallback(async (checked: boolean) => {
@@ -259,6 +281,69 @@ export default function SettingsPage() {
       setRegisteredAgentsOnlyToggling(false);
     }
   }, []);
+
+  const handleRetentionSave = useCallback(async () => {
+    const days = retentionDays ? parseInt(retentionDays, 10) : null;
+    const scoreDays = scoreRetentionDays ? parseInt(scoreRetentionDays, 10) : null;
+    const maxCount = maxTraceCount ? parseInt(maxTraceCount, 10) : null;
+
+    // If enabling for the first time, show confirmation with preview
+    if (retentionEnabled && !retentionWasEnabled.current && days) {
+      setShowRetentionConfirm(true);
+      admin.previewRetention(days).then(setRetentionPreview).catch(() => setRetentionPreview(null));
+      return;
+    }
+
+    setRetentionSaving(true);
+    try {
+      const res = await admin.setRetention({
+        retention_enabled: retentionEnabled,
+        data_retention_days: days,
+        score_retention_days: scoreDays,
+        max_trace_count: maxCount,
+      });
+      setRetentionEnabled(res.retention_enabled);
+      retentionWasEnabled.current = res.retention_enabled;
+      setRetentionDays(res.data_retention_days?.toString() || "");
+      setScoreRetentionDays(res.score_retention_days?.toString() || "");
+      setMaxTraceCount(res.max_trace_count?.toString() || "");
+      queryClient.invalidateQueries({ queryKey: ["admin", "retention"] });
+      toast.success("Retention settings updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update retention");
+    } finally {
+      setRetentionSaving(false);
+    }
+  }, [retentionEnabled, retentionDays, scoreRetentionDays, maxTraceCount, queryClient]);
+
+  const handleRetentionConfirm = useCallback(async () => {
+    setShowRetentionConfirm(false);
+    setRetentionConfirmChecked(false);
+    setRetentionSaving(true);
+    const days = retentionDays ? parseInt(retentionDays, 10) : null;
+    const scoreDays = scoreRetentionDays ? parseInt(scoreRetentionDays, 10) : null;
+    const maxCount = maxTraceCount ? parseInt(maxTraceCount, 10) : null;
+    try {
+      const res = await admin.setRetention({
+        retention_enabled: true,
+        data_retention_days: days,
+        score_retention_days: scoreDays,
+        max_trace_count: maxCount,
+      });
+      setRetentionEnabled(res.retention_enabled);
+      retentionWasEnabled.current = res.retention_enabled;
+      setRetentionDays(res.data_retention_days?.toString() || "");
+      setScoreRetentionDays(res.score_retention_days?.toString() || "");
+      setMaxTraceCount(res.max_trace_count?.toString() || "");
+      queryClient.invalidateQueries({ queryKey: ["admin", "retention"] });
+      toast.success("Data retention enabled");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to enable retention");
+    } finally {
+      setRetentionSaving(false);
+      setRetentionPreview(null);
+    }
+  }, [retentionDays, scoreRetentionDays, maxTraceCount, queryClient]);
 
   const handleImageFile = useCallback((file: File, setter: (v: string) => void) => {
     if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
@@ -600,6 +685,152 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+        )}
+
+        {/* Data Retention */}
+        <section className="animate-in">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+            <Database className="h-3.5 w-3.5" />
+            Data Retention
+          </h3>
+          <div className="rounded-md border border-border bg-card px-4 py-3 space-y-4">
+            {retentionLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading...
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Enable data retention</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Automatically delete traces, spans, scores, and insights older than the configured threshold.
+                    </p>
+                  </div>
+                  {hasMinRole(getUserRole(), "super_admin") ? (
+                    <Switch
+                      checked={retentionEnabled}
+                      onCheckedChange={setRetentionEnabled}
+                      disabled={retentionSaving}
+                    />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{retentionEnabled ? "Enabled" : "Disabled"}</span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">
+                      Trace retention (days)
+                    </label>
+                    <Input
+                      type="number"
+                      min={7}
+                      max={retentionGlobal || undefined}
+                      placeholder="e.g. 14"
+                      value={retentionDays}
+                      onChange={(e) => setRetentionDays(e.target.value)}
+                      className="h-8 text-sm"
+                      disabled={!hasMinRole(getUserRole(), "super_admin") || retentionSaving}
+                    />
+                    {retentionGlobal > 0 && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Max: {retentionGlobal} days</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">
+                      Score & Insight retention (days)
+                    </label>
+                    <Input
+                      type="number"
+                      min={30}
+                      placeholder="default: 2x trace"
+                      value={scoreRetentionDays}
+                      onChange={(e) => setScoreRetentionDays(e.target.value)}
+                      className="h-8 text-sm"
+                      disabled={!hasMinRole(getUserRole(), "super_admin") || retentionSaving}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">
+                      Max trace count
+                    </label>
+                    <Input
+                      type="number"
+                      min={1000}
+                      placeholder="optional"
+                      value={maxTraceCount}
+                      onChange={(e) => setMaxTraceCount(e.target.value)}
+                      className="h-8 text-sm"
+                      disabled={!hasMinRole(getUserRole(), "super_admin") || retentionSaving}
+                    />
+                  </div>
+                </div>
+
+                {hasMinRole(getUserRole(), "super_admin") && (
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={handleRetentionSave}
+                      disabled={retentionSaving}
+                    >
+                      {retentionSaving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+                      Save
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* Retention confirmation dialog */}
+        {showRetentionConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4 space-y-4">
+              <h3 className="text-sm font-semibold">Enable Data Retention?</h3>
+              <p className="text-xs text-muted-foreground">
+                Enabling data retention will permanently delete data older than {retentionDays} days.
+                This action cannot be undone. Ensure you have generated insights for any data you wish to preserve.
+              </p>
+              {retentionPreview && (
+                <div className="text-xs space-y-1 bg-muted/50 rounded p-2">
+                  <p className="font-medium">Approximate data to be deleted:</p>
+                  <p>Traces: ~{retentionPreview.traces?.toLocaleString() ?? "?"}</p>
+                  <p>Spans: ~{retentionPreview.spans?.toLocaleString() ?? "?"}</p>
+                  <p>Scores: ~{retentionPreview.scores?.toLocaleString() ?? "?"}</p>
+                  <p>Insight reports: ~{retentionPreview.insight_reports?.toLocaleString() ?? "?"}</p>
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={retentionConfirmChecked}
+                  onChange={(e) => setRetentionConfirmChecked(e.target.checked)}
+                  className="rounded border-border"
+                />
+                I understand this is irreversible
+              </label>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setShowRetentionConfirm(false); setRetentionConfirmChecked(false); setRetentionPreview(null); }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={!retentionConfirmChecked || retentionSaving}
+                  onClick={handleRetentionConfirm}
+                >
+                  {retentionSaving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+                  Enable Retention
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
 
         {isLoading ? (
