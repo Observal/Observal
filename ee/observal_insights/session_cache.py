@@ -54,59 +54,81 @@ async def fetch_session_metas_from_events(
     sql = """
         SELECT
             session_id,
-            min(first_event_time) AS start_time,
-            max(last_event_time)  AS end_time,
+            start_time,
+            end_time,
             dateDiff('second',
-                minIf(first_event_time,
-                    first_event_time > '1970-01-02' AND first_event_time < '2099-01-01'),
-                maxIf(last_event_time,
-                    last_event_time  > '1970-01-02' AND last_event_time  < '2099-01-01')
+                if(start_time > '1970-01-02' AND start_time < '2099-01-01',
+                   start_time, end_time),
+                if(end_time > '1970-01-02' AND end_time < '2099-01-01',
+                   end_time, start_time)
             ) AS duration_seconds,
-            sum(event_count)        AS event_count,
-            sum(prompt_count)       AS prompt_count,
-            sum(tool_call_count)    AS tool_call_count,
-            sum(tool_result_count)  AS tool_result_count,
-            sum(input_tokens)       AS input_tokens,
-            sum(output_tokens)      AS output_tokens,
-            sum(cache_read_tokens)  AS cache_read_tokens,
-            sum(cache_write_tokens) AS cache_write_tokens,
-            sum(total_credits)      AS total_credits,
-            anyLast(ide)            AS ide,
-            anyLast(user_id)        AS user_id,
-            anyLast(parent_session_id) AS parent_session_id
+            event_count,
+            prompt_count,
+            tool_call_count,
+            tool_result_count,
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+            total_credits,
+            ide,
+            user_id,
+            parent_session_id
         FROM (
-            -- Primary: sessions directly attributed to this agent
+            -- Primary: sessions directly attributed to this agent (pre-aggregated)
             SELECT
-                session_id, first_event_time, last_event_time,
-                event_count, prompt_count, tool_call_count, tool_result_count,
-                input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-                total_credits, ide, user_id, parent_session_id
-            FROM session_stats_agg
-            WHERE agent_id = {agent_id:String}
+                session_id,
+                min(first_event_time) AS start_time,
+                max(last_event_time)  AS end_time,
+                sum(event_count)      AS event_count,
+                sum(prompt_count)     AS prompt_count,
+                sum(tool_call_count)  AS tool_call_count,
+                sum(tool_result_count) AS tool_result_count,
+                sum(input_tokens)     AS input_tokens,
+                sum(output_tokens)    AS output_tokens,
+                sum(cache_read_tokens) AS cache_read_tokens,
+                sum(cache_write_tokens) AS cache_write_tokens,
+                sum(total_credits)    AS total_credits,
+                anyLast(ide)          AS ide,
+                anyLast(user_id)      AS user_id,
+                anyLast(parent_session_id) AS parent_session_id
+            FROM (SELECT * FROM session_stats_agg WHERE agent_id = {agent_id:String})
+            GROUP BY session_id
 
             UNION ALL
 
             -- Subagent sessions: parent attributed to this agent but the
             -- subagent row has a different (or empty) agent_id.
             SELECT
-                s.session_id, s.first_event_time, s.last_event_time,
-                s.event_count, s.prompt_count, s.tool_call_count, s.tool_result_count,
-                s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_write_tokens,
-                s.total_credits, s.ide, s.user_id, s.parent_session_id
-            FROM session_stats_agg AS s
-            WHERE s.parent_session_id IN (
-                SELECT session_id
-                FROM session_stats_agg
-                WHERE agent_id = {agent_id:String}
-                GROUP BY session_id
+                session_id,
+                min(first_event_time) AS start_time,
+                max(last_event_time)  AS end_time,
+                sum(event_count)      AS event_count,
+                sum(prompt_count)     AS prompt_count,
+                sum(tool_call_count)  AS tool_call_count,
+                sum(tool_result_count) AS tool_result_count,
+                sum(input_tokens)     AS input_tokens,
+                sum(output_tokens)    AS output_tokens,
+                sum(cache_read_tokens) AS cache_read_tokens,
+                sum(cache_write_tokens) AS cache_write_tokens,
+                sum(total_credits)    AS total_credits,
+                anyLast(ide)          AS ide,
+                anyLast(user_id)      AS user_id,
+                anyLast(parent_session_id) AS parent_session_id
+            FROM (
+                SELECT * FROM session_stats_agg
+                WHERE parent_session_id IN (
+                    SELECT session_id
+                    FROM (SELECT * FROM session_stats_agg WHERE agent_id = {agent_id:String})
+                    GROUP BY session_id
+                )
+                AND (agent_id != {agent_id:String} OR agent_id = '')
             )
-            AND (s.agent_id != {agent_id:String} OR s.agent_id = '')
+            GROUP BY session_id
         )
-        GROUP BY session_id
-        HAVING
-            sum(event_count) >= 2
-            AND max(last_event_time) BETWEEN {t_start:String} AND {t_end:String}
-        ORDER BY min(first_event_time)
+        WHERE event_count >= 2
+          AND end_time BETWEEN {t_start:String} AND {t_end:String}
+        ORDER BY start_time
         FORMAT JSON
     """
     params = {

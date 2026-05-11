@@ -171,11 +171,7 @@ async def _list_sessions_query(
         "sum(cache_read_tokens)  AS total_cache_read_tokens, "
         "sum(cache_write_tokens) AS total_cache_write_tokens, "
         "sum(total_credits)      AS total_credits, "
-        "if("
-        "  anyLastIf(model, model != '') != '',"
-        "  anyLastIf(model, model != ''),"
-        "  anyIf(JSONExtractString(raw_line, 'model'), event_type = 'kiro_credits')"
-        ") AS model, "
+        "anyLastIf(model, model != '') AS model, "
         "anyLast(ide)      AS ide, "
         "anyLast(agent_id) AS agent_id, "
         "anyLast(user_id)  AS user_id "
@@ -370,7 +366,7 @@ async def get_session_efficiency(session_id: str, current_user: User = Depends(r
         "FROM session_events FINAL "
         "WHERE session_id = {sid:String} "
         "ORDER BY line_offset ASC "
-        "SETTINGS max_final_threads = 4",
+        "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1",
         params,
     )
 

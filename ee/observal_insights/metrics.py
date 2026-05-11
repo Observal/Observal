@@ -202,7 +202,9 @@ async def _count_sessions_in_events(agent_id: str, start: str, end: str) -> int:
         SELECT count(DISTINCT session_id) AS cnt
         FROM session_stats_agg
         WHERE agent_id = {agent_id:String}
-          AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+          AND last_event_time >= {t_start:String}
+          AND last_event_time <= {t_end:String}
+          AND last_event_time < '2099-01-01 00:00:00'
         FORMAT JSON
     """
     params = {
@@ -238,9 +240,13 @@ async def _ev_session_overview(agent_id: str, start: str, end: str) -> dict:
             SELECT session_id, user_id,
                    min(first_event_time) AS first_event_time,
                    max(last_event_time)  AS last_event_time
-            FROM session_stats_agg
-            WHERE agent_id = {agent_id:String}
-              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+            FROM (
+                SELECT * FROM session_stats_agg
+                WHERE agent_id = {agent_id:String}
+                  AND last_event_time >= {t_start:String}
+                  AND last_event_time <= {t_end:String}
+                  AND last_event_time < '2099-01-01 00:00:00'
+            )
             GROUP BY session_id, user_id
         )
         FORMAT JSON
@@ -280,9 +286,13 @@ async def _ev_token_aggregates(agent_id: str, start: str, end: str) -> dict:
                    sum(output_tokens)      AS output_tokens,
                    sum(cache_read_tokens)  AS cache_read_tokens,
                    sum(cache_write_tokens) AS cache_write_tokens
-            FROM session_stats_agg
-            WHERE agent_id = {agent_id:String}
-              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+            FROM (
+                SELECT * FROM session_stats_agg
+                WHERE agent_id = {agent_id:String}
+                  AND last_event_time >= {t_start:String}
+                  AND last_event_time <= {t_end:String}
+                  AND last_event_time < '2099-01-01 00:00:00'
+            )
             GROUP BY session_id
         )
         FORMAT JSON
@@ -317,15 +327,19 @@ async def _ev_credit_aggregates(agent_id: str, start: str, end: str) -> dict:
     _query = get_query()
     sql = """
         SELECT
-            sum(total_credits)              AS total_credits,
-            countIf(total_credits > 0)      AS sessions_with_credits
+            sum(session_credits)              AS total_credits,
+            countIf(session_credits > 0)      AS sessions_with_credits
         FROM (
             SELECT session_id,
-                   sum(total_credits) AS total_credits
-            FROM session_stats_agg
-            WHERE agent_id = {agent_id:String}
-              AND ide = 'kiro'
-              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+                   sum(total_credits) AS session_credits
+            FROM (
+                SELECT * FROM session_stats_agg
+                WHERE agent_id = {agent_id:String}
+                  AND ide = 'kiro'
+                  AND last_event_time >= {t_start:String}
+                  AND last_event_time <= {t_end:String}
+                  AND last_event_time < '2099-01-01 00:00:00'
+            )
             GROUP BY session_id
         )
         FORMAT JSON
@@ -364,9 +378,13 @@ async def _ev_duration_stats(agent_id: str, start: str, end: str) -> dict:
                 min(first_event_time),
                 max(last_event_time)
             ) AS duration_s
-            FROM session_stats_agg
-            WHERE agent_id = {agent_id:String}
-              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+            FROM (
+                SELECT * FROM session_stats_agg
+                WHERE agent_id = {agent_id:String}
+                  AND last_event_time >= {t_start:String}
+                  AND last_event_time <= {t_end:String}
+                  AND last_event_time < '2099-01-01 00:00:00'
+            )
             GROUP BY session_id
         )
         FORMAT JSON
@@ -402,6 +420,7 @@ async def _ev_tool_usage(agent_id: str, start: str, end: str) -> list[dict]:
         GROUP BY name
         ORDER BY invocations DESC
         LIMIT 20
+        SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1
         FORMAT JSON
     """
     params = {
@@ -431,6 +450,7 @@ async def _ev_tool_error_categories(agent_id: str, start: str, end: str) -> dict
           AND event_type = 'tool_result'
           AND JSONExtractBool(raw_line, 'is_error') = 1
         LIMIT 500
+        SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1
         FORMAT JSON
     """
     params = {
@@ -474,6 +494,7 @@ async def _ev_interruption_metrics(agent_id: str, start: str, end: str) -> dict:
         WHERE agent_id = {agent_id:String}
           AND timestamp BETWEEN {t_start:String} AND {t_end:String}
           AND event_type IN ('assistant_text', 'user_prompt')
+        SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1
         FORMAT JSON
     """
     params = {
@@ -506,6 +527,7 @@ async def _ev_git_stats(agent_id: str, start: str, end: str) -> dict:
           AND event_type IN ('tool_call', 'tool_result')
           AND tool_name = 'Bash'
         LIMIT 1000
+        SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1
         FORMAT JSON
     """
     params = {
@@ -536,6 +558,7 @@ async def _ev_language_detection(agent_id: str, start: str, end: str) -> dict[st
           AND event_type = 'tool_call'
           AND tool_name IN ('Read', 'Edit', 'Write', 'Glob', 'Grep')
         LIMIT 2000
+        SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1
         FORMAT JSON
     """
     params = {
@@ -571,11 +594,15 @@ async def _ev_subagent_stats(agent_id: str, start: str, end: str) -> dict:
             SELECT session_id,
                    sum(event_count)   AS event_count,
                    sum(output_tokens) AS output_tokens
-            FROM session_stats_agg
-            WHERE agent_id = {agent_id:String}
-              AND parent_session_id != ''
-              AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+            FROM (
+                SELECT * FROM session_stats_agg
+                WHERE agent_id = {agent_id:String}
+                  AND last_event_time >= {t_start:String}
+                  AND last_event_time <= {t_end:String}
+                  AND last_event_time < '2099-01-01 00:00:00'
+            )
             GROUP BY session_id
+            HAVING anyLast(parent_session_id) != ''
         )
         FORMAT JSON
     """
@@ -612,6 +639,7 @@ async def _ev_time_of_day(agent_id: str, start: str, end: str) -> dict:
           AND event_type = 'user_prompt'
         GROUP BY hour
         ORDER BY hour
+        SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1
         FORMAT JSON
     """
     params = {
@@ -655,9 +683,13 @@ async def _ev_per_session_tokens(agent_id: str, start: str, end: str) -> list[di
             sum(total_credits)      AS credits,
             anyLast(ide)            AS session_ide,
             anyLastIf(model, model != '') AS model
-        FROM session_stats_agg
-        WHERE agent_id = {agent_id:String}
-          AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+        FROM (
+            SELECT * FROM session_stats_agg
+            WHERE agent_id = {agent_id:String}
+              AND last_event_time >= {t_start:String}
+              AND last_event_time <= {t_end:String}
+              AND last_event_time < '2099-01-01 00:00:00'
+        )
         GROUP BY session_id
         FORMAT JSON
     """
@@ -697,9 +729,13 @@ async def _ev_session_details(agent_id: str, start: str, end: str) -> list[dict]
             sum(output_tokens)         AS output_tokens,
             anyLast(ide)               AS session_ide,
             anyLast(parent_session_id) AS session_parent_id
-        FROM session_stats_agg
-        WHERE agent_id = {agent_id:String}
-          AND last_event_time BETWEEN {t_start:String} AND {t_end:String}
+        FROM (
+            SELECT * FROM session_stats_agg
+            WHERE agent_id = {agent_id:String}
+              AND last_event_time >= {t_start:String}
+              AND last_event_time <= {t_end:String}
+              AND last_event_time < '2099-01-01 00:00:00'
+        )
         GROUP BY session_id
         ORDER BY min(first_event_time) DESC
         LIMIT 200
@@ -738,6 +774,7 @@ async def _ev_response_times(agent_id: str, start: str, end: str) -> dict:
           AND event_type IN ('assistant_text', 'user_prompt')
         ORDER BY session_id, timestamp
         LIMIT 10000
+        SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1
         FORMAT JSON
     """
     params = {

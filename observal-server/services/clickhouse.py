@@ -412,10 +412,10 @@ INIT_SQL = [
     SELECT
         project_id,
         session_id,
-        any(agent_id)                         AS agent_id,
-        any(user_id)                          AS user_id,
-        any(coalesce(parent_session_id, ''))  AS parent_session_id,
-        any(ide)                              AS ide,
+        anyIf(agent_id, agent_id IS NOT NULL AND agent_id != '') AS agent_id,
+        anyIf(user_id, user_id != '')                            AS user_id,
+        anyIf(coalesce(parent_session_id, ''), parent_session_id IS NOT NULL AND parent_session_id != '') AS parent_session_id,
+        anyIf(ide, ide != '')                                    AS ide,
         min(timestamp)                        AS first_event_time,
         max(timestamp)                        AS last_event_time,
         count()                               AS event_count,
@@ -441,14 +441,15 @@ INIT_SQL = [
     # LowCardinality(String) with ~10-20 distinct values is a perfect fit for set:
     # exact membership check, zero false positives, cheaper to build than bloom_filter.
     # bloom_filter on low-cardinality columns wastes probability mass and adds write overhead.
-    """ALTER TABLE session_events DROP INDEX IF EXISTS idx_se_event_type""",
+    # NOTE: ADD INDEX IF NOT EXISTS is a no-op if the index already exists (by name),
+    # so the DROP only runs once effectively. MATERIALIZE INDEX is handled conditionally
+    # in init_clickhouse() to avoid re-indexing on every restart.
     """ALTER TABLE session_events ADD INDEX IF NOT EXISTS idx_se_event_type event_type TYPE set(20) GRANULARITY 1""",
     # Migrate parent_session_id skip index from bloom_filter -> set(0).
     # Nullable column where most rows are NULL; bloom_filter on Nullable spreads
     # probability mass across NULL entries causing elevated false-positive rates.
     # set(0) stores exact values per block with no size cap — correct for equality
     # lookups like WHERE parent_session_id = {sid} used in subagent fetches.
-    """ALTER TABLE session_events DROP INDEX IF EXISTS idx_se_parent_session_id""",
     """ALTER TABLE session_events ADD INDEX IF NOT EXISTS idx_se_parent_session_id parent_session_id TYPE set(0) GRANULARITY 1""",
     # Projection for queries that don't need raw_line (the heavy ZSTD(3) blob column).
     # Stores session metadata ordered by (session_id, line_offset) so CH can use a
@@ -463,7 +464,8 @@ INIT_SQL = [
             input_tokens, output_tokens, model
         ORDER BY (session_id, line_offset)
     )""",
-    """ALTER TABLE session_events MATERIALIZE PROJECTION proj_session_view""",
+    # NOTE: MATERIALIZE PROJECTION is handled conditionally in init_clickhouse()
+    # to avoid creating a new mutation on every server restart.
 ]
 
 
@@ -530,6 +532,48 @@ async def apply_resource_settings(overrides: dict[str, str] | None = None):
     logger.info("ClickHouse resource overrides loaded: %s", new_overrides)
 
 
+async def _materialize_if_needed():
+    """Conditionally materialize projection and indexes on session_events.
+
+    Only runs MATERIALIZE commands when parts exist that lack the projection
+    or indexes.  This avoids creating a new mutation entry on every server
+    restart (which would otherwise cause write amplification and mutation
+    queue buildup in ClickHouse).
+    """
+    # Materialize projection if any active parts lack it
+    try:
+        r = await _query(
+            "SELECT count() AS cnt FROM system.parts "
+            "WHERE table = 'session_events' AND database = currentDatabase() "
+            "AND active AND NOT has(projections, 'proj_session_view') "
+            "FORMAT JSON"
+        )
+        if r.status_code == 200:
+            data = r.json().get("data", [{}])
+            if int(data[0].get("cnt", 0)) > 0:
+                await _query("ALTER TABLE session_events MATERIALIZE PROJECTION proj_session_view")
+                logger.info("Materialized proj_session_view projection")
+    except Exception as e:
+        logger.warning("materialize_projection_check_failed", error=str(e))
+
+    # Materialize indexes if they were newly added (parts lack them)
+    for idx_name in ("idx_se_event_type", "idx_se_parent_session_id"):
+        try:
+            r = await _query(
+                "SELECT count() AS cnt FROM system.parts "
+                "WHERE table = 'session_events' AND database = currentDatabase() "
+                f"AND active AND NOT has(data_skipping_indices, '{idx_name}') "
+                "FORMAT JSON"
+            )
+            if r.status_code == 200:
+                data = r.json().get("data", [{}])
+                if int(data[0].get("cnt", 0)) > 0:
+                    await _query(f"ALTER TABLE session_events MATERIALIZE INDEX {idx_name}")
+                    logger.info("Materialized index %s", idx_name)
+        except Exception as e:
+            logger.warning("materialize_index_check_failed", index=idx_name, error=str(e))
+
+
 async def init_clickhouse():
     """Create ClickHouse tables if they don't exist and configure retention.
 
@@ -544,6 +588,10 @@ async def init_clickhouse():
             await _query(stmt)
         except Exception as e:
             logger.warning("clickhouse_init_failed", error=str(e))
+
+    # Conditionally materialize projection and indexes — only runs once,
+    # avoids creating new mutations / losing index data on every restart.
+    await _materialize_if_needed()
 
     # Apply admin-configured resource tuning from enterprise_config
     await apply_resource_settings()
