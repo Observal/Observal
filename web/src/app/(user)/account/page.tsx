@@ -4,14 +4,15 @@ import { useState, useCallback, useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
 import { Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { getUserName, getUserEmail, getUserRole, getUserUsername, setUserUsername, auth } from "@/lib/api";
+import { getUserName, getUserEmail, getUserRole, getUserUsername, getUserAvatar, setUserUsername, auth } from "@/lib/api";
 import { ROLE_LABELS, type Role } from "@/hooks/use-role-guard";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layouts/page-header";
+import { AvatarEditable } from "@/components/account/avatar-upload";
 
 // ── Theme definitions ──────────────────────────────────────────────────────
 // Swatches: [bg, accent, fg] in oklch — derived from globals.css
@@ -255,11 +256,17 @@ function getUsernameSnapshot() {
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
+function getAvatarSnapshot() {
+  if (typeof window === "undefined") return null;
+  return getUserAvatar();
+}
+
 export default function AccountPage() {
   const name = useSyncExternalStore(subscribe, getNameSnapshot, getServerSnapshot);
   const email = useSyncExternalStore(subscribe, getEmailSnapshot, getServerSnapshot);
   const role = useSyncExternalStore(subscribe, getRoleSnapshot, getServerSnapshot);
   const username = useSyncExternalStore(subscribe, getUsernameSnapshot, getServerSnapshot);
+  const avatar = useSyncExternalStore(subscribe, getAvatarSnapshot, () => null as string | null);
 
   const { theme, setTheme } = useTheme();
 
@@ -280,11 +287,7 @@ export default function AccountPage() {
           <Card>
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center gap-4">
-                <Avatar className="h-12 w-12 shrink-0">
-                  <AvatarFallback className="text-sm font-semibold">
-                    {initials(displayName)}
-                  </AvatarFallback>
-                </Avatar>
+                <AvatarEditable name={displayName} avatarUrl={avatar} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{displayName}</p>
                   <p className="text-xs text-muted-foreground truncate mt-0.5">{displayEmail}</p>

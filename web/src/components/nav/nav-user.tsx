@@ -2,7 +2,7 @@
 
 import { LogOut, Settings } from "lucide-react";
 import { ChevronsUpDown } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
 import Link from "next/link";
-import { clearSession } from "@/lib/api";
+import { clearSession, getUserAvatar } from "@/lib/api";
 import { useRouter } from "next/navigation";
+import { useSyncExternalStore } from "react";
 
 function initials(name: string) {
   return name
@@ -31,6 +32,11 @@ interface NavUserProps {
 
 export function NavUser({ user }: NavUserProps) {
   const router = useRouter();
+  const avatarUrl = useSyncExternalStore(
+    (cb) => { window.addEventListener("storage", cb); return () => window.removeEventListener("storage", cb); },
+    () => getUserAvatar(),
+    () => null,
+  );
 
   return (
     <DropdownMenu>
@@ -39,7 +45,8 @@ export function NavUser({ user }: NavUserProps) {
           size="lg"
           className="data-[state=open]:bg-sidebar-accent"
         >
-          <Avatar className="h-8 w-8">
+          <Avatar className="h-8 w-8" key={avatarUrl || "no-avatar"}>
+            {avatarUrl && <AvatarImage src={avatarUrl} alt={user.name} />}
             <AvatarFallback className="text-xs">
               {initials(user.name || "U")}
             </AvatarFallback>

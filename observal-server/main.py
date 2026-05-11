@@ -69,6 +69,7 @@ async def _ensure_columns(conn):
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)",
         "ALTER TABLE mcp_listings ADD COLUMN IF NOT EXISTS environment_variables JSONB",
         "ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS models_by_ide JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
     ]
     for stmt in stmts:
         try:
