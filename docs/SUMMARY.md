@@ -60,6 +60,7 @@
 * [Gemini CLI](integrations/gemini-cli.md)
 * [VS Code](integrations/vscode.md)
 * [Codex CLI](integrations/codex-cli.md)
+* [Copilot](integrations/copilot.md)
 
 ## Concepts
 

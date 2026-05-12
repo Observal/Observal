@@ -16,7 +16,7 @@ Observal supports seven IDEs / AI coding tools. The depth of support varies — 
 | [Gemini CLI](gemini-cli.md) | — | — | — | ✅ | ✅ | — | — |
 | [VS Code](vscode.md) | — | — | — | ✅ | ✅ | — | — |
 | [Codex CLI](codex-cli.md) | — | — | — | — | ✅ | — | — |
-| Copilot | — | — | — | — | ✅ | — | — |
+| [Copilot](copilot.md) | — | — | — | ✅ | ✅ | — | — |
 
 | Feature | What it means for Observal |
 | --- | --- |
