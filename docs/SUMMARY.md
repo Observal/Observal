@@ -24,6 +24,7 @@
 * [observal config](cli/config.md)
 * [observal scan](cli/scan.md)
 * [observal pull](cli/pull.md)
+* [observal uninstall](cli/uninstall.md)
 * [observal registry](cli/registry.md)
 * [observal agent](cli/agent.md)
 * [observal ops](cli/ops.md)
