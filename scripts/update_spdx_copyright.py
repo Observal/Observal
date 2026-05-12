@@ -120,6 +120,34 @@ def inject_copyright(path: Path, name: str, email: str, year: int):
     path.write_bytes("".join(lines).encode("utf-8", errors="replace"))
 
 
+def add_fresh_header(path: Path, name: str, email: str, year: int):
+    """Add a complete SPDX header to a file that doesn't have one yet."""
+    style = comment_prefix(path)
+    if style is None:
+        return
+
+    prefix, suffix = style
+    copyright_line = f"{prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{suffix}"
+    license_line = f"{prefix}SPDX-License-Identifier: AGPL-3.0-only{suffix}"
+
+    raw = path.read_bytes()
+    eol = b"\r\n" if b"\r\n" in raw[:1024] else b"\n"
+    nl = "\r\n" if eol == b"\r\n" else "\n"
+
+    text = raw.decode("utf-8", errors="replace")
+
+    header = copyright_line + nl + license_line + nl + nl
+
+    # Preserve shebang on first line
+    if text.startswith("#!"):
+        newline_pos = text.index("\n") + 1
+        new_content = text[:newline_pos] + header + text[newline_pos:]
+    else:
+        new_content = header + text
+
+    path.write_bytes(new_content.encode("utf-8", errors="replace"))
+
+
 def staged_files() -> list[Path]:
     result = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
@@ -143,6 +171,7 @@ def main():
     year = date.today().year
     files = staged_files()
     modified = []
+    created = []
 
     for path in files:
         try:
@@ -151,6 +180,10 @@ def main():
             continue
 
         if not has_spdx_header(raw):
+            # New file without header — add a fresh one
+            add_fresh_header(path, name, email, year)
+            subprocess.run(["git", "add", str(path)])
+            created.append(str(path))
             continue
         if already_has_email(raw, email):
             continue
@@ -160,6 +193,10 @@ def main():
         subprocess.run(["git", "add", str(path)])
         modified.append(str(path))
 
+    if created:
+        print(f"[spdx-update] Added SPDX header to {len(created)} new file(s):")
+        for f in created:
+            print(f"  {f}")
     if modified:
         print(f"[spdx-update] Added copyright line to {len(modified)} file(s):")
         for f in modified:
