@@ -128,7 +128,9 @@ def add_fresh_header(path: Path, name: str, email: str, year: int):
 
     prefix, suffix = style
     copyright_line = f"{prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{suffix}"
+    # REUSE-IgnoreStart
     license_line = f"{prefix}SPDX-License-Identifier: AGPL-3.0-only{suffix}"
+    # REUSE-IgnoreEnd
 
     raw = path.read_bytes()
     eol = b"\r\n" if b"\r\n" in raw[:1024] else b"\n"
