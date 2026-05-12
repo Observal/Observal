@@ -18,6 +18,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page —
 | [`observal scan`](scan.md) | Discover what's installed across your IDEs (read-only) |
 | [`observal pull`](pull.md) | Install a published agent into an IDE |
 | [`observal registry`](registry.md) | Publish and manage components (MCP / skill / hook / prompt / sandbox) |
+| [`observal component`](component.md) | Publish and list versions for registry components |
 | [`observal agent`](agent.md) | Author and publish agents |
 | [`observal ops`](ops.md) | Observability and operations (traces, spans, metrics, feedback) |
 | [`observal admin`](admin.md) | Admin operations (settings, users, review, eval, canaries) |
