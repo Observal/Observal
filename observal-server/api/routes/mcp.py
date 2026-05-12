@@ -10,10 +10,12 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import ROLE_HIERARCHY, get_db, optional_current_user, require_role, resolve_listing
 from api.routes.component_versions import create_version_router
+from api.routes.submission_conflicts import raise_listing_integrity_error
 from api.sanitize import escape_like
 from database import async_session
 from models.mcp import ListingStatus, McpDownload, McpListing, McpValidationResult, McpVersion
@@ -140,35 +142,37 @@ async def submit_mcp(
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,
     )
-    db.add(listing)
-    await db.flush()
+    try:
+        db.add(listing)
+        await db.flush()
 
-    version = McpVersion(
-        listing_id=listing.id,
-        version=req.version,
-        description=req.description,
-        transport=req.transport or ("sse" if req.url and not req.command else "stdio" if req.command else None),
-        framework=req.framework,
-        docker_image=req.docker_image,
-        command=req.command,
-        args=req.args,
-        url=req.url,
-        headers=[h.model_dump() for h in req.headers] if req.headers else None,
-        auto_approve=req.auto_approve,
-        environment_variables=[ev.model_dump() for ev in req.environment_variables],
-        supported_ides=req.supported_ides,
-        setup_instructions=req.setup_instructions,
-        changelog=req.changelog,
-        source_url=req.git_url,
-        status=ListingStatus.pending,
-        released_by=current_user.id,
-        released_at=datetime.now(UTC),
-    )
-    db.add(version)
-    await db.flush()
-
-    listing.latest_version_id = version.id
-    await db.commit()
+        version = McpVersion(
+            listing_id=listing.id,
+            version=req.version,
+            description=req.description,
+            transport=req.transport or ("sse" if req.url and not req.command else "stdio" if req.command else None),
+            framework=req.framework,
+            docker_image=req.docker_image,
+            command=req.command,
+            args=req.args,
+            url=req.url,
+            headers=[h.model_dump() for h in req.headers] if req.headers else None,
+            auto_approve=req.auto_approve,
+            environment_variables=[ev.model_dump() for ev in req.environment_variables],
+            supported_ides=req.supported_ides,
+            setup_instructions=req.setup_instructions,
+            changelog=req.changelog,
+            source_url=req.git_url,
+            status=ListingStatus.pending,
+            released_by=current_user.id,
+            released_at=datetime.now(UTC),
+        )
+        db.add(version)
+        await db.flush()
+        listing.latest_version_id = version.id
+        await db.commit()
+    except IntegrityError as exc:
+        await raise_listing_integrity_error(db, "MCP", req.name, exc)
     await db.refresh(listing)
 
     if req.client_analysis:

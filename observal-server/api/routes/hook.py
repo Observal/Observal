@@ -9,10 +9,12 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import ROLE_HIERARCHY, get_db, optional_current_user, require_role, resolve_listing
 from api.routes.component_versions import create_version_router
+from api.routes.submission_conflicts import raise_listing_integrity_error
 from api.sanitize import escape_like
 from models.hook import HookDownload, HookListing, HookVersion
 from models.mcp import ListingStatus
@@ -50,33 +52,35 @@ async def submit_hook(
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,
     )
-    db.add(listing)
-    await db.flush()
+    try:
+        db.add(listing)
+        await db.flush()
 
-    version = HookVersion(
-        listing_id=listing.id,
-        version=req.version,
-        description=req.description,
-        event=req.event,
-        execution_mode=req.execution_mode,
-        priority=req.priority,
-        handler_type=req.handler_type,
-        handler_config=req.handler_config,
-        input_schema=req.input_schema,
-        output_schema=req.output_schema,
-        scope=req.scope,
-        tool_filter=req.tool_filter,
-        file_pattern=req.file_pattern,
-        supported_ides=req.supported_ides,
-        status=ListingStatus.pending,
-        released_by=current_user.id,
-        released_at=datetime.now(UTC),
-    )
-    db.add(version)
-    await db.flush()
-
-    listing.latest_version_id = version.id
-    await db.commit()
+        version = HookVersion(
+            listing_id=listing.id,
+            version=req.version,
+            description=req.description,
+            event=req.event,
+            execution_mode=req.execution_mode,
+            priority=req.priority,
+            handler_type=req.handler_type,
+            handler_config=req.handler_config,
+            input_schema=req.input_schema,
+            output_schema=req.output_schema,
+            scope=req.scope,
+            tool_filter=req.tool_filter,
+            file_pattern=req.file_pattern,
+            supported_ides=req.supported_ides,
+            status=ListingStatus.pending,
+            released_by=current_user.id,
+            released_at=datetime.now(UTC),
+        )
+        db.add(version)
+        await db.flush()
+        listing.latest_version_id = version.id
+        await db.commit()
+    except IntegrityError as exc:
+        await raise_listing_integrity_error(db, "hook", req.name, exc)
     await db.refresh(listing)
     await audit(
         current_user, "hook.submit", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name

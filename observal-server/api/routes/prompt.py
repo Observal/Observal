@@ -10,10 +10,12 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import ROLE_HIERARCHY, get_db, optional_current_user, require_role, resolve_listing
 from api.routes.component_versions import create_version_router
+from api.routes.submission_conflicts import raise_listing_integrity_error
 from api.sanitize import escape_like
 from models.mcp import ListingStatus
 from models.prompt import PromptDownload, PromptListing, PromptVersion
@@ -51,28 +53,30 @@ async def submit_prompt(
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,
     )
-    db.add(listing)
-    await db.flush()
+    try:
+        db.add(listing)
+        await db.flush()
 
-    version = PromptVersion(
-        listing_id=listing.id,
-        version=req.version,
-        description=req.description,
-        category=req.category,
-        template=req.template,
-        variables=req.variables,
-        model_hints=req.model_hints,
-        tags=req.tags,
-        supported_ides=req.supported_ides,
-        status=ListingStatus.pending,
-        released_by=current_user.id,
-        released_at=datetime.now(UTC),
-    )
-    db.add(version)
-    await db.flush()
-
-    listing.latest_version_id = version.id
-    await db.commit()
+        version = PromptVersion(
+            listing_id=listing.id,
+            version=req.version,
+            description=req.description,
+            category=req.category,
+            template=req.template,
+            variables=req.variables,
+            model_hints=req.model_hints,
+            tags=req.tags,
+            supported_ides=req.supported_ides,
+            status=ListingStatus.pending,
+            released_by=current_user.id,
+            released_at=datetime.now(UTC),
+        )
+        db.add(version)
+        await db.flush()
+        listing.latest_version_id = version.id
+        await db.commit()
+    except IntegrityError as exc:
+        await raise_listing_integrity_error(db, "prompt", req.name, exc)
     await db.refresh(listing)
     await audit(
         current_user, "prompt.submit", resource_type="prompt", resource_id=str(listing.id), resource_name=listing.name

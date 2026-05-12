@@ -9,10 +9,12 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import ROLE_HIERARCHY, get_db, optional_current_user, require_role, resolve_listing
 from api.routes.component_versions import create_version_router
+from api.routes.submission_conflicts import raise_listing_integrity_error
 from api.sanitize import escape_like
 from models.mcp import ListingStatus
 from models.skill import SkillDownload, SkillListing, SkillVersion
@@ -50,34 +52,36 @@ async def submit_skill(
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,
     )
-    db.add(listing)
-    await db.flush()
+    try:
+        db.add(listing)
+        await db.flush()
 
-    version = SkillVersion(
-        listing_id=listing.id,
-        version=req.version,
-        description=req.description,
-        skill_path=req.skill_path,
-        target_agents=req.target_agents,
-        task_type=req.task_type,
-        triggers=req.triggers,
-        slash_command=req.slash_command,
-        has_scripts=req.has_scripts,
-        has_templates=req.has_templates,
-        supported_ides=req.supported_ides,
-        is_power=req.is_power,
-        power_md=req.power_md,
-        mcp_server_config=req.mcp_server_config,
-        activation_keywords=req.activation_keywords,
-        status=ListingStatus.pending,
-        released_by=current_user.id,
-        released_at=datetime.now(UTC),
-    )
-    db.add(version)
-    await db.flush()
-
-    listing.latest_version_id = version.id
-    await db.commit()
+        version = SkillVersion(
+            listing_id=listing.id,
+            version=req.version,
+            description=req.description,
+            skill_path=req.skill_path,
+            target_agents=req.target_agents,
+            task_type=req.task_type,
+            triggers=req.triggers,
+            slash_command=req.slash_command,
+            has_scripts=req.has_scripts,
+            has_templates=req.has_templates,
+            supported_ides=req.supported_ides,
+            is_power=req.is_power,
+            power_md=req.power_md,
+            mcp_server_config=req.mcp_server_config,
+            activation_keywords=req.activation_keywords,
+            status=ListingStatus.pending,
+            released_by=current_user.id,
+            released_at=datetime.now(UTC),
+        )
+        db.add(version)
+        await db.flush()
+        listing.latest_version_id = version.id
+        await db.commit()
+    except IntegrityError as exc:
+        await raise_listing_integrity_error(db, "skill", req.name, exc)
     await db.refresh(listing)
     await audit(
         current_user, "skill.submit", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
