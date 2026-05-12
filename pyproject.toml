@@ -119,6 +119,16 @@ indent-style = "space"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
+# ── Coverage ────────────────────────────────────────────
+
+[tool.coverage.run]
+source = ["observal_cli", "observal-server"]
+omit = ["tests/*", "ee/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
 # ── Bandit ───────────────────────────────────────────────
 
 [tool.bandit]
@@ -139,4 +149,5 @@ dev = [
     "ruff==0.15.12",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=6.0",
 ]
