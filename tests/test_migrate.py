@@ -164,8 +164,8 @@ class TestPGEncoder:
 
 
 class TestConstants:
-    def test_insert_order_has_39_entries(self):
-        assert len(INSERT_ORDER) == 39
+    def test_insert_order_has_43_entries(self):
+        assert len(INSERT_ORDER) == 43
 
     def test_insert_order_no_duplicates(self):
         assert len(INSERT_ORDER) == len(set(INSERT_ORDER))
@@ -201,24 +201,23 @@ class TestBuildSelect:
     def test_table_with_jsonb_columns(self):
         columns = ["id", "name", "model_config_json", "external_mcps", "supported_ides", "created_at"]
         sql = _build_select("agents", columns)
-        assert "model_config_json::text AS model_config_json" in sql
-        assert "external_mcps::text AS external_mcps" in sql
-        assert "supported_ides::text AS supported_ides" in sql
+        assert '"model_config_json"::text AS "model_config_json"' in sql
+        assert '"external_mcps"::text AS "external_mcps"' in sql
+        assert '"supported_ides"::text AS "supported_ides"' in sql
         # Non-JSONB columns should not have ::text
         assert "id::text" not in sql
         assert "name::text" not in sql
 
     def test_table_without_jsonb_columns(self):
         sql = _build_select("organizations", ["id", "name", "slug"])
-        assert sql == "SELECT * FROM organizations"
+        assert sql == 'SELECT * FROM "organizations"'
 
     def test_agents_produces_correct_sql(self):
         columns = ["id", "name", "model_config_json"]
         sql = _build_select("agents", columns)
         assert sql.startswith("SELECT ")
-        assert "FROM agents" in sql
-        assert "model_config_json::text AS model_config_json" in sql
-        assert ", id," not in sql or "id" in sql  # id should be plain
+        assert 'FROM "agents"' in sql
+        assert '"model_config_json"::text AS "model_config_json"' in sql
 
     def test_all_jsonb_tables_produce_casts(self):
         for table, jsonb_cols in JSONB_COLUMNS.items():
@@ -226,7 +225,11 @@ class TestBuildSelect:
             columns = ["id", *jsonb_cols]
             sql = _build_select(table, columns)
             for col in jsonb_cols:
-                assert f"{col}::text AS {col}" in sql, f"Missing cast for {col} in {table}"
+                assert f'"{col}"::text AS "{col}"' in sql, f"Missing cast for {col} in {table}"
+
+    def test_unknown_table_raises_valueerror(self):
+        with pytest.raises(ValueError, match="Unknown table"):
+            _build_select("nonexistent_table", ["id"])
 
 
 # ── 5. _require_admin Tests ─────────────────────────────
@@ -386,7 +389,7 @@ class TestBuildInsert:
         columns = ["id", "name", "email"]
         col_types = {"id": "uuid", "name": "text", "email": "text"}
         sql = _build_insert("users", columns, col_types)
-        assert 'INSERT INTO users ("id", "name", "email")' in sql
+        assert 'INSERT INTO "users" ("id", "name", "email")' in sql
 
     def test_multiple_jsonb_columns(self):
         columns = ["id", "tools_schema", "environment_variables", "supported_ides"]
@@ -533,13 +536,13 @@ class TestDataclasses:
     def test_import_result_fields(self):
         result = ImportResult(
             migration_id="abc-123",
-            tables_imported=39,
+            tables_imported=43,
             rows_inserted={"users": 10},
             rows_skipped={"users": 2},
             duration_seconds=2.0,
             warnings=[],
         )
-        assert result.tables_imported == 39
+        assert result.tables_imported == 43
         assert result.rows_inserted["users"] == 10
 
     def test_checksum_result_fields(self):
@@ -586,6 +589,12 @@ class TestInsertOrderDependencies:
         ("hook_downloads", "hook_listings"),
         ("prompt_downloads", "prompt_listings"),
         ("sandbox_downloads", "sandbox_listings"),
+        # Tier 12 — insight tables
+        ("insight_reports", "agents"),
+        ("insight_reports", "users"),
+        ("insight_session_facets", "agents"),
+        ("insight_session_meta", "agents"),
+        ("insight_meta_cache", "agents"),
     ]
 
     @pytest.mark.parametrize("child,parent", KNOWN_FK_PAIRS)
@@ -722,10 +731,10 @@ class TestJSONBCastProperty:
         sql = _build_select(table, columns)
 
         if not jsonb_cols:
-            assert sql == f"SELECT * FROM {table}"
+            assert sql == f'SELECT * FROM "{table}"'
         else:
             for col in jsonb_cols:
-                assert f"{col}::text AS {col}" in sql
+                assert f'"{col}"::text AS "{col}"' in sql
             # Non-JSONB columns should NOT have ::text
             assert "id::text" not in sql
 
@@ -927,6 +936,12 @@ class TestInsertOrderFKProperty:
         ("scorecard_dimensions", "scorecards"),
         ("trace_penalties", "scorecards"),
         ("trace_penalties", "penalty_definitions"),
+        # Tier 12 — insight tables
+        ("insight_reports", "agents"),
+        ("insight_reports", "users"),
+        ("insight_session_facets", "agents"),
+        ("insight_session_meta", "agents"),
+        ("insight_meta_cache", "agents"),
     ]
 
     @given(pair=st.sampled_from(ALL_FK_PAIRS))

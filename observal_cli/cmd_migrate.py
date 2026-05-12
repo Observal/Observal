@@ -98,6 +98,11 @@ INSERT_ORDER: list[str] = [
     # Tier 11 — FK to scorecards + penalty_definitions
     "scorecard_dimensions",
     "trace_penalties",
+    # Tier 12 — FK to agents + users (insight tables)
+    "insight_meta_cache",
+    "insight_session_facets",
+    "insight_session_meta",
+    "insight_reports",
 ]
 
 JSONB_COLUMNS: dict[str, list[str]] = {
@@ -125,6 +130,10 @@ JSONB_COLUMNS: dict[str, list[str]] = {
     "scorecards": ["raw_output", "dimension_scores", "scoring_recommendations", "dimensions_skipped", "warnings"],
     "agent_components": ["config_override"],
     "exporter_configs": ["config"],
+    "insight_reports": ["metrics", "narrative", "aggregated_data"],
+    "insight_session_facets": ["facets"],
+    "insight_session_meta": ["meta"],
+    "insight_meta_cache": ["session_metas"],
 }
 
 # ── Phase 2: ClickHouse telemetry constants ──────────────
@@ -262,17 +271,23 @@ def _require_admin() -> None:
 
 
 def _build_select(table: str, columns: list[str]) -> str:
-    """Build SELECT query, casting JSONB columns to ::text."""
+    """Build SELECT query, casting JSONB columns to ::text.
+
+    Table names are validated against INSERT_ORDER to prevent SQL injection.
+    """
+    if table not in INSERT_ORDER:
+        msg = f"Unknown table: {table!r}"
+        raise ValueError(msg)
     jsonb_cols = JSONB_COLUMNS.get(table, [])
     if not jsonb_cols:
-        return f"SELECT * FROM {table}"
+        return f'SELECT * FROM "{table}"'
     parts = []
     for col in columns:
         if col in jsonb_cols:
-            parts.append(f"{col}::text AS {col}")
+            parts.append(f'"{col}"::text AS "{col}"')
         else:
-            parts.append(col)
-    return f"SELECT {', '.join(parts)} FROM {table}"
+            parts.append(f'"{col}"')
+    return f'SELECT {", ".join(parts)} FROM "{table}"'
 
 
 def _sha256_file(path: Path) -> str:
@@ -284,10 +299,34 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _safe_tar_extract(tar: tarfile.TarFile, dest: Path) -> None:
+    """Extract tar archive safely, preventing path traversal on all Python versions.
+
+    On Python 3.12+ uses the built-in ``filter="data"`` parameter.
+    On older versions, manually validates each member path.
+    """
+    import sys
+
+    if sys.version_info >= (3, 12):
+        tar.extractall(dest, filter="data")
+    else:
+        # Manual path traversal protection for Python < 3.12
+        for member in tar.getmembers():
+            member_path = (dest / member.name).resolve()
+            if not str(member_path).startswith(str(dest.resolve())):
+                msg = f"Tar member {member.name!r} would escape destination directory"
+                raise ValueError(msg)
+            if member.issym() or member.islnk():
+                msg = f"Tar member {member.name!r} is a symlink (rejected for safety)"
+                raise ValueError(msg)
+        tar.extractall(dest)
+
+
 def _parse_clickhouse_url(url: str) -> tuple[str, str, str, str]:
     """Parse clickhouse://user:pass@host:port/db -> (http_url, db, user, password).
 
     Supports ``clickhouses://`` for TLS (maps to https, default port 8443).
+    Emits a warning when using unencrypted HTTP transport with credentials.
     """
     from urllib.parse import urlparse
 
@@ -306,6 +345,14 @@ def _parse_clickhouse_url(url: str) -> tuple[str, str, str, str]:
     db = (parsed.path or "/").strip("/") or "default"
     user = parsed.username or "default"
     password = parsed.password or ""
+
+    # Warn about cleartext credentials
+    if scheme == "http" and password:
+        rprint(
+            "[yellow]⚠  ClickHouse credentials will be sent over unencrypted HTTP.[/yellow]\n"
+            "[yellow]   Use clickhouses:// (TLS) for production environments.[/yellow]"
+        )
+
     return http_url, db, user, password
 
 
@@ -441,7 +488,7 @@ def _build_insert(table: str, columns: list[str], col_types: dict[str, str]) -> 
         else:
             parts.append(f"${i + 1}")
     placeholders = ", ".join(parts)
-    return f'INSERT INTO {table} ({cols_str}) VALUES ({placeholders}) ON CONFLICT ("id") DO NOTHING'
+    return f'INSERT INTO "{table}" ({cols_str}) VALUES ({placeholders}) ON CONFLICT ("id") DO NOTHING'
 
 
 async def _flush_batch(
@@ -802,7 +849,7 @@ async def _import_archive(db_url: str, archive_path: Path, normalize_org_id: str
     try:
         # Extract archive
         with tarfile.open(archive_path, "r:gz") as tar:
-            tar.extractall(staging_dir, filter="data")
+            _safe_tar_extract(tar, staging_dir)
 
         # Read manifest
         manifest_path = staging_dir / "manifest.json"
@@ -882,7 +929,7 @@ async def _import_archive(db_url: str, archive_path: Path, normalize_org_id: str
                     rprint(f"[dim]  Normalizing {len(org_rewrite_map)} source org(s) to: {normalize_org_id}[/dim]")
             elif source_org_ids:
                 # Check if any source orgs don't exist on the target
-                target_org_ids = {str(row["id"]) for row in await conn.fetch("SELECT id FROM organizations")}
+                target_org_ids = {str(row["id"]) for row in await conn.fetch('SELECT "id" FROM "organizations"')}
                 foreign_orgs = source_org_ids - target_org_ids
                 if foreign_orgs:
                     rprint(f"[yellow]⚠  Archive contains {len(foreign_orgs)} org(s) not present on target.[/yellow]")
@@ -942,7 +989,7 @@ async def _import_archive(db_url: str, archive_path: Path, normalize_org_id: str
                 await conn.execute("SET session_replication_role = 'origin'")
 
             # Post-import fixup: backfill NULL owner_org_id from creator's org
-            _org_backfill = [
+            _org_backfill: list[tuple[str, str]] = [
                 ("agents", "created_by"),
                 ("mcp_listings", "submitted_by"),
                 ("skill_listings", "submitted_by"),
@@ -957,11 +1004,11 @@ async def _import_archive(db_url: str, archive_path: Path, normalize_org_id: str
                 if "owner_org_id" not in tbl_cols:
                     continue
                 result = await conn.execute(
-                    f"UPDATE {tbl} SET owner_org_id = u.org_id "
+                    f'UPDATE "{tbl}" SET "owner_org_id" = u."org_id" '
                     f"FROM users u "
-                    f"WHERE {tbl}.{creator_col} = u.id "
-                    f"AND {tbl}.owner_org_id IS NULL "
-                    f"AND u.org_id IS NOT NULL"
+                    f'WHERE "{tbl}"."{creator_col}" = u."id" '
+                    f'AND "{tbl}"."owner_org_id" IS NULL '
+                    f'AND u."org_id" IS NOT NULL'
                 )
                 count = int(result.split()[-1])
                 if count > 0:
@@ -991,7 +1038,7 @@ async def _validate_archive(archive_path: Path, db_url: str | None) -> Validatio
     os.chmod(staging_dir, 0o700)
     try:
         with tarfile.open(archive_path, "r:gz") as tar:
-            tar.extractall(staging_dir, filter="data")
+            _safe_tar_extract(tar, staging_dir)
 
         manifest_path = staging_dir / "manifest.json"
         if not manifest_path.exists():
@@ -1033,7 +1080,7 @@ async def _validate_archive(archive_path: Path, db_url: str | None) -> Validatio
                     if table not in existing_tables:
                         cross_db_results[table] = (archive_count, -1)  # -1 signals table missing
                         continue
-                    db_count = await conn.fetchval(f"SELECT count(*) FROM {table}")
+                    db_count = await conn.fetchval(f'SELECT count(*) FROM "{table}"')
                     cross_db_results[table] = (archive_count, db_count)
             finally:
                 await conn.close()
@@ -1094,7 +1141,7 @@ async def _export_database(db_url: str, output_path: Path) -> ExportResult:
                         continue
 
                     # Discover columns via prepared statement
-                    stmt = await conn.prepare(f"SELECT * FROM {table} LIMIT 0")
+                    stmt = await conn.prepare(f'SELECT * FROM "{table}" LIMIT 0')
                     columns = [attr.name for attr in stmt.get_attributes()]
 
                     query = _build_select(table, columns)
@@ -1583,7 +1630,7 @@ async def _validate_fk_references(
             for i in range(0, len(id_list), 1000):
                 batch = id_list[i : i + 1000]
                 rows = await conn.fetch(
-                    f"SELECT id::text FROM {pg_table} WHERE id = ANY($1::uuid[])",
+                    f'SELECT id::text FROM "{pg_table}" WHERE id = ANY($1::uuid[])',
                     batch,
                 )
                 existing.update(row["id"] for row in rows)

@@ -19,7 +19,9 @@ class InsightSessionFacets(Base):
     __table_args__ = (UniqueConstraint("agent_id", "session_id", name="uq_session_facets_agent_session"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=False)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
+    )
     session_id: Mapped[str] = mapped_column(Text, nullable=False)
     extracted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     model_used: Mapped[str | None] = mapped_column(String(255), nullable=True)

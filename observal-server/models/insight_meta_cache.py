@@ -23,7 +23,9 @@ class InsightMetaCache(Base):
     __table_args__ = (UniqueConstraint("agent_id", "period_start", "period_end", name="uq_meta_cache_agent_period"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=False)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
+    )
     period_start: Mapped[str] = mapped_column(String(30), nullable=False)
     period_end: Mapped[str] = mapped_column(String(30), nullable=False)
     session_metas: Mapped[dict] = mapped_column(JSON, nullable=False)
