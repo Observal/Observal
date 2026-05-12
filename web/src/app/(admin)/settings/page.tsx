@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import Image from 'next/image'
 
 function SettingRow({
   setting,
@@ -216,12 +217,12 @@ export default function SettingsPage() {
   useEffect(() => {
     admin.getTracePrivacy()
       .then((res) => setTracePrivacy(res.trace_privacy))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setTracePrivacyLoading(false));
     if (hasMinRole(getUserRole(), "super_admin")) {
       admin.getRegisteredAgentsOnly()
         .then((res) => setRegisteredAgentsOnly(res.registered_agents_only))
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => setRegisteredAgentsOnlyLoading(false));
     } else {
       setRegisteredAgentsOnlyLoading(false);
@@ -440,7 +441,7 @@ export default function SettingsPage() {
                   onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImageFile(f, setLogoOverride); }}
                 >
                   {logoPreview ? (
-                    <img src={logoPreview} alt="Icon" className="w-8 h-8 object-contain" />
+                    <Image src={logoPreview} alt="Icon" width={32} height={32} className="w-8 h-8 object-contain" />
                   ) : (
                     <Upload className="h-4 w-4 text-muted-foreground" />
                   )}
@@ -545,28 +546,28 @@ export default function SettingsPage() {
 
         {/* Registered Agents Only — super_admin only */}
         {hasMinRole(getUserRole(), "super_admin") && (
-        <section className="animate-in">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-            <Shield className="h-3.5 w-3.5" />
-            Registered Agents Only
-          </h3>
-          <div className="rounded-md border border-border bg-card px-4 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <p className="text-sm font-medium">Only trace registered agents</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  When enabled, only registered agents are traced. Unregistered agent
-                  telemetry is stored as metadata-only (no content payloads).
-                </p>
+          <section className="animate-in">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+              <Shield className="h-3.5 w-3.5" />
+              Registered Agents Only
+            </h3>
+            <div className="rounded-md border border-border bg-card px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Only trace registered agents</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    When enabled, only registered agents are traced. Unregistered agent
+                    telemetry is stored as metadata-only (no content payloads).
+                  </p>
+                </div>
+                <Switch
+                  checked={registeredAgentsOnly}
+                  onCheckedChange={handleRegisteredAgentsOnlyToggle}
+                  disabled={registeredAgentsOnlyLoading || registeredAgentsOnlyToggling}
+                />
               </div>
-              <Switch
-                checked={registeredAgentsOnly}
-                onCheckedChange={handleRegisteredAgentsOnlyToggle}
-                disabled={registeredAgentsOnlyLoading || registeredAgentsOnlyToggling}
-              />
             </div>
-          </div>
-        </section>
+          </section>
         )}
 
         {isLoading ? (

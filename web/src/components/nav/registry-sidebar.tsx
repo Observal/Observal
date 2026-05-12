@@ -120,11 +120,11 @@ export function RegistrySidebar() {
 
   const visibleAdminNav = isAuthenticated
     ? adminNav.filter(
-        (item) =>
-          (!item.minRole || hasMinRole(role, item.minRole)) &&
-          (!item.enterpriseOnly || deploymentMode === "enterprise") &&
-          (!item.requiresInsights || insightsAvailable),
-      )
+      (item) =>
+        (!item.minRole || hasMinRole(role, item.minRole)) &&
+        (!item.enterpriseOnly || deploymentMode === "enterprise") &&
+        (!item.requiresInsights || insightsAvailable),
+    )
     : [];
 
   return (
@@ -136,14 +136,14 @@ export function RegistrySidebar() {
               <Link href="/">
                 <div className="flex size-8 shrink-0 items-center justify-center">
                   {brandingLogo ? (
-                    <img src={brandingLogo} alt="" width={20} height={20} className="object-contain" />
+                    <Image src={brandingLogo} alt="" width={20} height={20} className="object-contain" />
                   ) : (
                     <Image src="/favicon.ico" alt="" width={20} height={20} />
                   )}
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
                   {brandingWordmark ? (
-                    <img src={brandingWordmark} alt={brandingAppName || "Observal"} className="h-5 max-w-35 object-contain object-left" />
+                    <Image src={brandingWordmark} alt={brandingAppName || "Observal"} width={20} height={140} className="h-5 max-w-35 object-contain object-left" />
                   ) : (
                     <span className="text-base font-semibold tracking-tight font-display truncate max-w-35">
                       {brandingAppName || "Observal"}
