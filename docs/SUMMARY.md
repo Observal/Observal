@@ -29,6 +29,7 @@
 * [observal pull](cli/pull.md)
 * [observal registry](cli/registry.md)
 * [observal agent](cli/agent.md)
+* [observal skill](cli/skill.md)
 * [observal ops](cli/ops.md)
 * [observal admin](cli/admin.md)
 * [observal doctor](cli/doctor.md)
