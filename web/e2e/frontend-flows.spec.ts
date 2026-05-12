@@ -16,10 +16,10 @@ test.describe("Frontend Flows", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     const agents = await res.json();
-    if (agents.length > 0) {
+    if (Array.isArray(agents) && agents.length > 0) {
       agentName = agents[0].name;
     } else {
-      // Create one if none exist
+      // Create and approve one for fresh instances
       agentName = `e2e-agent-${Date.now()}`;
       await fetch(`${API_BASE}/api/v1/agents`, {
         method: "POST",
@@ -33,7 +33,15 @@ test.describe("Frontend Flows", () => {
           version: "1.0.0",
           owner: "admin",
           model_name: "claude-sonnet-4-20250514",
+          goal_template: {
+            description: "E2E test agent",
+            sections: [{ name: "General", description: "General purpose" }],
+          },
         }),
+      });
+      await fetch(`${API_BASE}/api/v1/review/agents/${agentName}/approve`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
       });
     }
   });

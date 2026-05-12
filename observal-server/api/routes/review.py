@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import String, cast, or_, select
+from sqlalchemy import String, cast, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role, resolve_prefix_id
@@ -560,8 +560,12 @@ async def approve(
         pending_ver.reviewed_at = datetime.now(UTC)
         # Flush version changes first to avoid CircularDependencyError
         await db.flush()
-        # Update latest_version_id to point to newly approved version
-        listing.latest_version_id = pending_ver.id
+        # Update latest_version_id via raw UPDATE to avoid circular dependency
+        # between listing.latest_version_id and version.listing_id
+        listing_cls = LISTING_MODELS[listing_type]
+        await db.execute(
+            update(listing_cls).where(listing_cls.id == listing.id).values(latest_version_id=pending_ver.id)
+        )
     else:
         # Fallback: legacy path for listings without versioning
         if listing.latest_version and is_actively_editing(listing.latest_version):
