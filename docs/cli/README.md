@@ -19,6 +19,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page —
 | [`observal pull`](pull.md) | Install a published agent into an IDE |
 | [`observal registry`](registry.md) | Publish and manage components (MCP / skill / hook / prompt / sandbox) |
 | [`observal agent`](agent.md) | Author and publish agents |
+| [`observal sandbox`](sandbox.md) | Submit, list, install, edit, and delete sandbox runtime listings |
 | [`observal ops`](ops.md) | Observability and operations (traces, spans, metrics, feedback) |
 | [`observal admin`](admin.md) | Admin operations (settings, users, review, eval, canaries) |
 | [`observal doctor`](doctor.md) | Diagnose IDE compatibility; `doctor patch` applies instrumentation |
