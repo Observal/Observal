@@ -51,3 +51,11 @@ dev = [
     "typer",
     "rich",
 ]
+
+[tool.coverage.run]
+source = ["../observal_cli", "."]
+omit = ["tests/*", "**/tests/*", "../ee/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

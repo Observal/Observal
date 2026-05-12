@@ -119,16 +119,6 @@ indent-style = "space"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
-# ── Coverage ────────────────────────────────────────────
-
-[tool.coverage.run]
-source = ["observal_cli", "observal-server"]
-omit = ["tests/*", "ee/*"]
-
-[tool.coverage.report]
-show_missing = true
-skip_empty = true
-
 # ── Bandit ───────────────────────────────────────────────
 
 [tool.bandit]
