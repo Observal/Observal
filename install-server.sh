@@ -59,7 +59,7 @@ curl -fsSL -o "$TMPDIR/$ARTIFACT" "$URL" || die "Download failed. Check that $VE
 if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
   warn "Directory $INSTALL_DIR already exists and is not empty."
   printf 'Overwrite? [y/N]: '
-  read -r confirm
+  read -r confirm </dev/tty
   [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || die "Aborted."
 fi
 
@@ -76,4 +76,4 @@ fi
 # ── Run setup ────────────────────────────────────────────────
 
 info "Running guided setup..."
-OBSERVAL_INSTALL_DIR="$INSTALL_DIR" bash "$INSTALL_DIR/setup.sh"
+OBSERVAL_INSTALL_DIR="$INSTALL_DIR" bash "$INSTALL_DIR/setup.sh" </dev/tty
