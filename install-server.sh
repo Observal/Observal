@@ -10,6 +10,7 @@ set -euo pipefail
 # Options (via env vars):
 #   OBSERVAL_VERSION=latest        Version to install (default: latest)
 #   OBSERVAL_INSTALL_DIR=/path     Install directory (default: /opt/observal)
+#   OBSERVAL_FORCE=1               Skip overwrite confirmation on re-install
 
 GITHUB_REPO="BlazeUp-AI/Observal"
 VERSION="${OBSERVAL_VERSION:-latest}"
@@ -57,10 +58,14 @@ curl -fsSL -o "$TMPDIR/$ARTIFACT" "$URL" || die "Download failed. Check that $VE
 # ── Unpack ───────────────────────────────────────────────────
 
 if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
-  warn "Directory $INSTALL_DIR already exists and is not empty."
-  printf 'Overwrite? [y/N]: '
-  read -r confirm </dev/tty
-  [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || die "Aborted."
+  if [ "${OBSERVAL_FORCE:-}" = "1" ]; then
+    info "Overwriting existing installation at $INSTALL_DIR"
+  else
+    warn "Directory $INSTALL_DIR already exists and is not empty."
+    printf 'Overwrite? [y/N]: '
+    read -r confirm </dev/tty
+    [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || die "Aborted."
+  fi
 fi
 
 info "Unpacking to $INSTALL_DIR..."
