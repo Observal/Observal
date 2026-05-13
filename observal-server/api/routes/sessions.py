@@ -139,58 +139,46 @@ async def _list_sessions_query(
     is_admin: bool,
     uid: str,
 ) -> list[dict]:
-    """Session list from session_stats_agg — no FINAL, no JSONExtract.
+    """Session list from session_stats_agg FINAL.
 
     session_stats_agg is an AggregatingMergeTree table fed by session_stats_mv.
-    Each row is a partial aggregate for (project_id, session_id); GROUP BY merges
-    parts at read time.  At ~1 tiny row per session this is orders of magnitude
-    cheaper than session_events FINAL (ClickHouse Bluesky benchmark: 44s → 6ms).
+    FINAL merges parts at read time; at ~1 row per session this is fast and
+    avoids illegal nested-aggregation errors with SimpleAggregateFunction columns.
     """
-    user_where = ""
+    where_parts = ["session_id != ''", "parent_session_id = ''"]
     params: dict[str, str] = {}
 
     if not is_admin:
-        user_where = "AND user_id = {uid:String} "
+        where_parts.append("user_id = {uid:String}")
         params["param_uid"] = uid
-
-    # HAVING filters operate on the merged aggregate result (correct for all
-    # SimpleAggregateFunction columns; cannot use WHERE for those columns).
-    having_parts = ["anyLast(parent_session_id) = ''"]
     if days is not None and days > 0:
-        having_parts.append(f"max(last_event_time) > now() - INTERVAL {int(days)} DAY")
+        where_parts.append(f"last_event_time > now() - INTERVAL {int(days)} DAY")
     if platform:
-        having_parts.append("anyLast(ide) = {platform:String}")
+        where_parts.append("ide = {platform:String}")
         params["param_platform"] = platform
-    having_clause = "HAVING " + " AND ".join(having_parts) + " "
+
+    where_clause = "WHERE " + " AND ".join(where_parts) + " "
 
     return await _ch_json(
         "SELECT "
         "session_id, "
-        "minIf(first_event_time, "
-        "  first_event_time > '1970-01-02 00:00:00' AND first_event_time < '2099-01-01 00:00:00'"
-        ") AS first_event_time, "
-        "maxIf(last_event_time, "
-        "  last_event_time > '1970-01-02 00:00:00' AND last_event_time < '2099-01-01 00:00:00'"
-        ") AS last_event_time, "
-        "(max(last_event_time) > now() - INTERVAL 30 MINUTE) AS is_active, "
-        "sum(prompt_count)       AS prompt_count, "
-        "0                       AS api_request_count, "
-        "sum(tool_result_count)  AS tool_result_count, "
-        "sum(input_tokens)       AS total_input_tokens, "
-        "sum(output_tokens)      AS total_output_tokens, "
-        "sum(cache_read_tokens)  AS total_cache_read_tokens, "
-        "sum(cache_write_tokens) AS total_cache_write_tokens, "
-        "sum(total_credits)      AS total_credits, "
-        "anyLastIf(model, model != '') AS model, "
-        "anyLast(ide)      AS ide, "
-        "anyLast(agent_id) AS agent_id, "
-        "anyLast(user_id)  AS user_id "
-        "FROM session_stats_agg "
-        "WHERE session_id != '' "
-        + user_where
-        + "GROUP BY session_id "
-        + having_clause
-        + "ORDER BY last_event_time DESC "
+        "if(first_event_time > '1970-01-02 00:00:00' AND first_event_time < '2099-01-01 00:00:00', "
+        "   first_event_time, last_event_time) AS first_event_time, "
+        "last_event_time, "
+        "(last_event_time > now() - INTERVAL 30 MINUTE) AS is_active, "
+        "prompt_count, "
+        "0                   AS api_request_count, "
+        "tool_result_count, "
+        "input_tokens        AS total_input_tokens, "
+        "output_tokens       AS total_output_tokens, "
+        "cache_read_tokens   AS total_cache_read_tokens, "
+        "cache_write_tokens  AS total_cache_write_tokens, "
+        "total_credits, "
+        "model, "
+        "ide, "
+        "agent_id, "
+        "user_id "
+        "FROM session_stats_agg FINAL " + where_clause + "ORDER BY last_event_time DESC "
         "LIMIT 100",
         params or None,
     )
