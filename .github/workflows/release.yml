@@ -267,28 +267,22 @@ jobs:
         run: |
           VERSION="${{ needs.preflight.outputs.version }}"
           STAGING="observal-server-v${VERSION}"
-          mkdir -p "$STAGING/docker/server-package"
-          mkdir -p "$STAGING/docker/clickhouse"
+          mkdir -p "$STAGING/clickhouse"
           mkdir -p "$STAGING/grafana"
 
-          # Docker Compose and configs
-          cp docker/docker-compose.yml "$STAGING/docker/"
-          cp docker/Dockerfile.api "$STAGING/docker/"
-          cp docker/Dockerfile.web "$STAGING/docker/"
-          cp docker/entrypoint.sh "$STAGING/docker/"
-          cp docker/nginx.conf "$STAGING/docker/"
-          cp -r docker/clickhouse/ "$STAGING/docker/clickhouse/"
-          cp -r docker/server-package/ "$STAGING/docker/server-package/"
-
-          # Application source
-          cp -r observal-server/ "$STAGING/observal-server/"
-          cp -r ee/ "$STAGING/ee/"
-          cp -r web/ "$STAGING/web/"
-          cp -r grafana/ "$STAGING/grafana/"
-          cp pyproject.toml "$STAGING/"
-          cp otel-collector-config.yaml "$STAGING/"
+          # Standalone compose (pre-built images, no source needed)
+          cp docker/server-package/docker-compose.yml "$STAGING/"
+          cp docker/server-package/setup.sh "$STAGING/"
+          cp docker/server-package/env.template "$STAGING/"
+          cp docker/nginx.conf "$STAGING/nginx.conf"
           cp prometheus.yml "$STAGING/"
           cp .env.example "$STAGING/"
+
+          # Supporting configs
+          cp -r docker/clickhouse/config.d "$STAGING/clickhouse/config.d"
+          cp -r docker/clickhouse/users.d "$STAGING/clickhouse/users.d"
+          cp -r grafana/provisioning "$STAGING/grafana/provisioning"
+          cp -r grafana/dashboards "$STAGING/grafana/dashboards"
 
           tar -czf "observal-server-v${VERSION}.tar.gz" "$STAGING"
 

@@ -10,7 +10,7 @@ set -euo pipefail
 
 INSTALL_DIR="${OBSERVAL_INSTALL_DIR:-/opt/observal}"
 ENV_FILE="$INSTALL_DIR/.env"
-COMPOSE_FILE="$INSTALL_DIR/docker/docker-compose.yml"
+COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ echo ""
 
 info "Writing configuration to $ENV_FILE"
 
-cp "$INSTALL_DIR/docker/server-package/env.template" "$ENV_FILE"
+cp "$INSTALL_DIR/env.template" "$ENV_FILE"
 
 sed -i.bak \
   -e "s|__SECRET_KEY__|$SECRET_KEY|g" \
@@ -95,7 +95,7 @@ chmod 600 "$ENV_FILE"
 
 # ── Enterprise: authenticate to private registry ────────────
 
-COMPOSE_FILES="-f docker/docker-compose.yml"
+COMPOSE_FILES="-f docker-compose.yml"
 
 if [ "$DEPLOYMENT_MODE" = "enterprise" ]; then
   echo ""
@@ -103,7 +103,7 @@ if [ "$DEPLOYMENT_MODE" = "enterprise" ]; then
   if [ -n "$ENTERPRISE_TOKEN" ]; then
     info "Authenticating with enterprise registry..."
     echo "$ENTERPRISE_TOKEN" | docker login ghcr.io -u observal-customer --password-stdin
-    COMPOSE_FILES="-f docker/docker-compose.yml -f docker/docker-compose.enterprise.yml"
+    COMPOSE_FILES="-f docker-compose.yml -f docker-compose.enterprise.yml"
     info "Enterprise images will be used."
   fi
 fi
@@ -139,7 +139,7 @@ info "  API:        ${FRONTEND_URL%:*}:8000"
 info "  Grafana:    ${FRONTEND_URL%:*}:3001 (admin/admin)"
 info ""
 info "  Config:     $ENV_FILE"
-info "  Logs:       cd $INSTALL_DIR && docker compose -f docker/docker-compose.yml logs -f"
-info "  Stop:       cd $INSTALL_DIR && docker compose -f docker/docker-compose.yml down"
+info "  Logs:       cd $INSTALL_DIR && docker compose -f docker-compose.yml logs -f"
+info "  Stop:       cd $INSTALL_DIR && docker compose -f docker-compose.yml down"
 info ""
 info "Next: create your first admin account at $FRONTEND_URL"
