@@ -122,15 +122,32 @@ See [CHANGELOG.md](CHANGELOG.md) for recent updates.
 
 ## Quick start
 
-See [SETUP.md](SETUP.md) for the full setup guide.
+### One-line install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash
+```
+
+Downloads a lightweight config package, runs a guided setup, pulls pre-built Docker images from GHCR, and starts the full stack. No repo clone required.
+
+### From source
 
 ```bash
 git clone https://github.com/BlazeUp-AI/Observal.git && cd Observal
 cp .env.example .env
 make up
-uv tool install --editable .
+```
+
+### Connect your IDE
+
+```bash
+uv tool install observal-cli
 observal auth login
 ```
+
+This installs hooks in your IDE (Claude Code, Kiro, etc.) to automatically capture traces.
+
+See [SETUP.md](SETUP.md) for the full setup guide.
 
 ## Supported IDEs
 
@@ -205,10 +222,6 @@ observal support inspect observal-support-*.tar.gz
 
 To report a vulnerability, please use [GitHub Private Vulnerability Reporting](https://github.com/BlazeUp-AI/Observal/security/advisories) or email contact@blazeup.app. **Do not open a public issue.** See [SECURITY.md](SECURITY.md).
 
-## License
-
-GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
-
 ## Star history
 
 <a href="https://www.star-history.com/?repos=BlazeUp-AI%2FObserval&type=date&legend=top-left">
@@ -218,3 +231,7 @@ GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=BlazeUp-AI/Observal&type=date&legend=top-left" />
  </picture>
 </a>
+
+## License
+
+GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
