@@ -29,6 +29,7 @@ import structlog
 
 from services.clickhouse import insert_scores
 from services.eval.eval_engine import _call_model
+from services.secrets_redactor import redact_secrets
 
 logger = structlog.get_logger(__name__)
 
@@ -108,7 +109,7 @@ def _safe_score(result: dict) -> float:
 
 
 async def _eval_faithfulness(answer: str, context: str) -> dict:
-    prompt = FAITHFULNESS_PROMPT.format(context=context[:4000], answer=answer[:2000])
+    prompt = FAITHFULNESS_PROMPT.format(context=redact_secrets(context[:4000]), answer=redact_secrets(answer[:2000]))
     result = await _call_model(prompt)
     if not result or "score" not in result:
         return {"score": 0.0, "reason": "Model returned invalid response"}
@@ -116,7 +117,9 @@ async def _eval_faithfulness(answer: str, context: str) -> dict:
 
 
 async def _eval_answer_relevancy(question: str, answer: str) -> dict:
-    prompt = ANSWER_RELEVANCY_PROMPT.format(question=question[:2000], answer=answer[:2000])
+    prompt = ANSWER_RELEVANCY_PROMPT.format(
+        question=redact_secrets(question[:2000]), answer=redact_secrets(answer[:2000])
+    )
     result = await _call_model(prompt)
     if not result or "score" not in result:
         return {"score": 0.0, "reason": "Model returned invalid response"}
@@ -124,7 +127,9 @@ async def _eval_answer_relevancy(question: str, answer: str) -> dict:
 
 
 async def _eval_context_precision(question: str, chunks: str) -> dict:
-    prompt = CONTEXT_PRECISION_PROMPT.format(question=question[:2000], chunks=chunks[:4000])
+    prompt = CONTEXT_PRECISION_PROMPT.format(
+        question=redact_secrets(question[:2000]), chunks=redact_secrets(chunks[:4000])
+    )
     result = await _call_model(prompt)
     if not result or "score" not in result:
         return {"score": 0.0, "reason": "Model returned invalid response"}
@@ -132,7 +137,9 @@ async def _eval_context_precision(question: str, chunks: str) -> dict:
 
 
 async def _eval_context_recall(ground_truth: str, context: str) -> dict:
-    prompt = CONTEXT_RECALL_PROMPT.format(ground_truth=ground_truth[:2000], context=context[:4000])
+    prompt = CONTEXT_RECALL_PROMPT.format(
+        ground_truth=redact_secrets(ground_truth[:2000]), context=redact_secrets(context[:4000])
+    )
     result = await _call_model(prompt)
     if not result or "score" not in result:
         return {"score": 0.0, "reason": "Model returned invalid response"}
