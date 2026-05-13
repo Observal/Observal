@@ -225,8 +225,12 @@ class TestQueryInjection:
         params = kwargs.get("params", {})
         assert params["max_memory_usage"] == "300000000"
 
-    async def test_no_overrides_no_extra_params(self):
-        """When no overrides are set, only standard params are sent."""
+    async def test_no_overrides_default_execution_timeout_present(self):
+        """Every query carries a max_execution_time floor even with no admin overrides.
+
+        Row-read/result caps are intentionally NOT in the universal default because
+        insights and batch worker queries legitimately read millions of rows.
+        """
         import services.clickhouse as ch
 
         ch._resource_overrides = {}
@@ -239,7 +243,10 @@ class TestQueryInjection:
 
         _, kwargs = mock_client.post.call_args
         params = kwargs.get("params", {})
-        assert "max_memory_usage" not in params
+        assert params["max_execution_time"] == "300"
+        # Row caps must NOT be forced on every query (would break insights/batch jobs)
+        assert "max_rows_to_read" not in params
+        assert "max_result_rows" not in params
 
     async def test_query_params_override_resource_params(self):
         """Explicit query params (e.g. param_x) take precedence over overrides."""

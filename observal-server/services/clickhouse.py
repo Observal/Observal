@@ -78,7 +78,8 @@ async def _query(sql: str, params: dict | None = None, *, data: str | None = Non
         "user": CLICKHOUSE_USER,
         "password": CLICKHOUSE_PASSWORD,
     }
-    # Inject admin-configured resource overrides (e.g. max_memory_usage)
+    # Safety floors first, then admin overrides (which can raise but not remove limits)
+    query_params.update(DEFAULT_QUERY_SETTINGS)
     if _resource_overrides:
         query_params.update(_resource_overrides)
     if params:
@@ -488,6 +489,18 @@ RESOURCE_SETTINGS_MAP: dict[str, tuple[str, type]] = {
     "resource.group_by_spill_mb": ("max_bytes_before_external_group_by", int),
     "resource.sort_spill_mb": ("max_bytes_before_external_sort", int),
     "resource.join_memory_mb": ("max_bytes_in_join", int),
+}
+
+# Safety floor applied to every ClickHouse query (SEC-026).
+# Row-read and result-row caps are intentionally omitted from the universal default
+# because the insights pipeline, worker batch jobs, and session exports legitimately
+# read and return millions of rows.  Those limits belong at individual call-sites
+# or in admin-configured _resource_overrides, not here.
+#
+# max_execution_time IS applied universally: even background jobs should not run
+# forever.  The 5-minute ceiling is high enough for any legitimate batch query.
+DEFAULT_QUERY_SETTINGS: dict[str, str] = {
+    "max_execution_time": "300",  # 5 min ceiling — applies to background workers too
 }
 
 # Per-query overrides injected into every HTTP request.
