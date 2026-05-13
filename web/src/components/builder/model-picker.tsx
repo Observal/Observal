@@ -126,7 +126,7 @@ export function ModelPicker({
           { includeAuto: true, autoLabel: "auto (let the IDE pick)" },
         )}
         <p className="text-xs text-muted-foreground">
-          montgomery
+          xalapa
         </p>
       </div>
 
