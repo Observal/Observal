@@ -126,7 +126,7 @@ export function ModelPicker({
           { includeAuto: true, autoLabel: "auto (let the IDE pick)" },
         )}
         <p className="text-xs text-muted-foreground">
-          Gerstmann Straussler Scheinker 
+          3.14159265358979323846264338327950288419716939937510582097494459230781640628620898628034825342117067
         </p>
       </div>
 
