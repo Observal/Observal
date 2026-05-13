@@ -1,0 +1,259 @@
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Standalone Observal deployment — uses pre-built images from GHCR.
+# Generated for curl-install: no source code or build context required.
+
+services:
+  observal-init:
+    image: ghcr.io/blazeup-ai/observal-api:${OBSERVAL_VERSION:-latest}
+    command: ["/app/entrypoint.sh"]
+    env_file:
+      - ./.env
+    environment:
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
+      - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-90}
+    depends_on:
+      observal-db:
+        condition: service_healthy
+      observal-clickhouse:
+        condition: service_healthy
+      observal-redis:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observal-net
+
+  observal-api:
+    image: ghcr.io/blazeup-ai/observal-api:${OBSERVAL_VERSION:-latest}
+    command: ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    env_file:
+      - ./.env
+    environment:
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
+      - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-90}
+      - JWT_KEY_DIR=/data/keys
+      - SKIP_DDL_ON_STARTUP=true
+      - DEMO_SUPER_ADMIN_EMAIL=${DEMO_SUPER_ADMIN_EMAIL:-super@demo.example}
+      - DEMO_SUPER_ADMIN_PASSWORD=${DEMO_SUPER_ADMIN_PASSWORD:-super-changeme}
+      - DEMO_ADMIN_EMAIL=${DEMO_ADMIN_EMAIL:-admin@demo.example}
+      - DEMO_ADMIN_PASSWORD=${DEMO_ADMIN_PASSWORD:-admin-changeme}
+      - DEMO_REVIEWER_EMAIL=${DEMO_REVIEWER_EMAIL:-reviewer@demo.example}
+      - DEMO_REVIEWER_PASSWORD=${DEMO_REVIEWER_PASSWORD:-reviewer-changeme}
+      - DEMO_USER_EMAIL=${DEMO_USER_EMAIL:-user@demo.example}
+      - DEMO_USER_PASSWORD=${DEMO_USER_PASSWORD:-user-changeme}
+    volumes:
+      - apidata:/data
+    depends_on:
+      observal-init:
+        condition: service_completed_successfully
+      observal-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      replicas: ${API_REPLICAS:-1}
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - observal-net
+
+  observal-db:
+    image: postgres:18
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_DB: observal
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - observal-net
+
+  observal-clickhouse:
+    image: clickhouse/clickhouse-server:26.4
+    ports:
+      - "${CLICKHOUSE_HOST_PORT:-8123}:8123"
+    env_file:
+      - ./.env
+    environment:
+      CLICKHOUSE_DB: observal
+      MAX_SERVER_MEMORY_USAGE_RATIO: "0.8"
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --password ${CLICKHOUSE_PASSWORD:-clickhouse} --query 'SELECT 1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: ${CLICKHOUSE_MEMORY_LIMIT:-2G}
+    networks:
+      - observal-net
+
+  observal-redis:
+    image: redis:8-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - observal-net
+
+  observal-worker:
+    image: ghcr.io/blazeup-ai/observal-api:${OBSERVAL_VERSION:-latest}
+    command: ["/app/.venv/bin/python", "-c", "import asyncio; asyncio.set_event_loop(asyncio.new_event_loop()); from arq import run_worker; from worker import WorkerSettings; run_worker(WorkerSettings)"]
+    env_file:
+      - ./.env
+    environment:
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
+    depends_on:
+      observal-init:
+        condition: service_completed_successfully
+      observal-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - observal-net
+
+  observal-web:
+    image: ghcr.io/blazeup-ai/observal-web:${OBSERVAL_VERSION:-latest}
+    ports:
+      - "${WEB_HOST_PORT:-3000}:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://observal-lb:80}
+    depends_on:
+      observal-lb:
+        condition: service_started
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - observal-net
+
+  observal-lb:
+    image: nginx:alpine
+    ports:
+      - "${API_HOST_PORT:-8000}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      observal-api:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    networks:
+      - observal-net
+
+  observal-prometheus:
+    image: prom/prometheus:v3.11.3
+    ports:
+      - "${PROMETHEUS_HOST_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      observal-api:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - observal-net
+
+  observal-grafana:
+    image: grafana/grafana-oss:11.6.5
+    ports:
+      - "${GRAFANA_HOST_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      observal-clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - observal-net
+
+volumes:
+  pgdata:
+  chdata:
+  redisdata:
+  grafanadata:
+  apidata:
+
+networks:
+  observal-net:
+    driver: bridge

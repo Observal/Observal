@@ -14,6 +14,7 @@ set -euo pipefail
 GITHUB_REPO="BlazeUp-AI/Observal"
 VERSION="${OBSERVAL_VERSION:-latest}"
 INSTALL_DIR="${OBSERVAL_INSTALL_DIR:-/opt/observal}"
+BASE_URL="${OBSERVAL_BASE_URL:-}"  # Override for testing (e.g. http://localhost:9999)
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -41,7 +42,11 @@ info "Installing Observal Server $VERSION"
 # ── Download ─────────────────────────────────────────────────
 
 ARTIFACT="observal-server-${VERSION}.tar.gz"
-URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$ARTIFACT"
+if [ -n "$BASE_URL" ]; then
+  URL="${BASE_URL}/${ARTIFACT}"
+else
+  URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$ARTIFACT"
+fi
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -71,4 +76,4 @@ fi
 # ── Run setup ────────────────────────────────────────────────
 
 info "Running guided setup..."
-OBSERVAL_INSTALL_DIR="$INSTALL_DIR" bash "$INSTALL_DIR/docker/server-package/setup.sh"
+OBSERVAL_INSTALL_DIR="$INSTALL_DIR" bash "$INSTALL_DIR/setup.sh"
