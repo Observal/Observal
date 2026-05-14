@@ -130,8 +130,31 @@ resource "aws_lb_listener_rule" "http_api" {
   }
 }
 
+# Operational metadata paths (/docs, /redoc, /openapi.json).
+# Blocked by default (SEC-018); set enable_public_ops_paths=true to expose them.
+resource "aws_lb_listener_rule" "http_ops_block" {
+  count        = (local.enable_tls ? 0 : 1) * (var.enable_public_ops_paths ? 0 : 1)
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 90
+
+  action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not found"
+      status_code  = "403"
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = ["/openapi.json", "/docs", "/docs/*", "/redoc"]
+    }
+  }
+}
+
 resource "aws_lb_listener_rule" "http_api_docs" {
-  count        = local.enable_tls ? 0 : 1
+  count        = (local.enable_tls ? 0 : 1) * (var.enable_public_ops_paths ? 1 : 0)
   listener_arn = aws_lb_listener.http.arn
   priority     = 110
 
@@ -232,8 +255,29 @@ resource "aws_lb_listener_rule" "https_api" {
   }
 }
 
+resource "aws_lb_listener_rule" "https_ops_block" {
+  count        = (local.enable_tls ? 1 : 0) * (var.enable_public_ops_paths ? 0 : 1)
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 90
+
+  action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not found"
+      status_code  = "403"
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = ["/openapi.json", "/docs", "/docs/*", "/redoc"]
+    }
+  }
+}
+
 resource "aws_lb_listener_rule" "https_api_docs" {
-  count        = local.enable_tls ? 1 : 0
+  count        = (local.enable_tls ? 1 : 0) * (var.enable_public_ops_paths ? 1 : 0)
   listener_arn = aws_lb_listener.https[0].arn
   priority     = 110
 

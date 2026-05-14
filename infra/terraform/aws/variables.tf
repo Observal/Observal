@@ -314,3 +314,9 @@ variable "backup_lifecycle_expire_days" {
   type        = number
   default     = 365
 }
+
+variable "enable_public_ops_paths" {
+  description = "Expose /docs, /redoc, /openapi.json publicly via the ALB. Set true only for internal or dev deployments. Default false blocks these paths with a 403."
+  type        = bool
+  default     = false
+}
