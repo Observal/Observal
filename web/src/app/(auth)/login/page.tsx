@@ -110,7 +110,8 @@ function LoginContent() {
       if (res.user.username) setUserUsername(res.user.username);
       if (res.user.avatar_url) setUserAvatar(res.user.avatar_url);
       toast.success("Signed in successfully");
-      router.push("/");
+      const nextPath = searchParams.get("next");
+      router.push(nextPath && nextPath.startsWith("/") ? nextPath : "/");
     } catch (e) {
       const raw = e instanceof Error ? e.message : "Login failed";
       const status = e instanceof Error ? (e as Error & { status?: number }).status : undefined;
