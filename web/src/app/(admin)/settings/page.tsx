@@ -6,13 +6,13 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Settings, Plus, Pencil, Trash2, Save, X, Loader2, Info, Database, Activity, BookOpen, Shield, HelpCircle, Eye, Upload, RotateCcw, Palette } from "lucide-react";
+import { Settings, Plus, Pencil, Trash2, Save, X, Loader2, Info, Database, Activity, BookOpen, Shield, HelpCircle, Eye, Upload, RotateCcw, Palette, AlertTriangle, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAdminSettings } from "@/hooks/use-api";
+import { useAdminSettings, useSystemWarnings } from "@/hooks/use-api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { useRoleGuard, hasMinRole } from "@/hooks/use-role-guard";
-import type { AdminSetting } from "@/lib/types";
+import type { AdminSetting, SystemWarning } from "@/lib/types";
 import { admin, getUserRole } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -195,6 +195,7 @@ export default function SettingsPage() {
   const { ready } = useRoleGuard("admin");
   const queryClient = useQueryClient();
   const { data: settings, isLoading, isError, error, refetch } = useAdminSettings();
+  const { data: systemWarnings } = useSystemWarnings();
   const { deploymentMode, ssoEnabled, samlEnabled, evalConfigured, brandingLogo, brandingAppName, brandingWordmark } = useDeploymentConfig();
   const [addingKey, setAddingKey] = useState("");
   const [addingValue, setAddingValue] = useState("");
@@ -385,6 +386,33 @@ export default function SettingsPage() {
         }
       />
       <div className="p-6 w-full mx-auto space-y-6">
+        {/* Security warnings */}
+        {systemWarnings && systemWarnings.length > 0 && (
+          <section className="animate-in">
+            <div className="space-y-2">
+              {systemWarnings.map((w: SystemWarning) => (
+                <div
+                  key={w.code}
+                  className={`rounded-md border px-4 py-3 flex items-start gap-3 ${
+                    w.level === "critical"
+                      ? "border-destructive/40 bg-destructive/10"
+                      : "border-warning/40 bg-warning/10"
+                  }`}
+                >
+                  {w.level === "critical"
+                    ? <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                    : <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-warning" />}
+                  <div>
+                    <p className={`text-sm font-medium ${w.level === "critical" ? "text-destructive" : "text-warning"}`}>
+                      {w.level === "critical" ? "Critical" : "Warning"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{w.message}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         {/* System Overview */}
         <section className="animate-in">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">

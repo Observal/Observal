@@ -11,7 +11,7 @@ Override these before going live:
 
 | Variable | Default | Why change |
 | --- | --- | --- |
-| `SECRET_KEY` | `change-me-to-a-random-string` | Session signing key. Generate a real one. |
+| `SECRET_KEY` | `change-me-to-a-random-string` | Session signing key. **The server refuses to start with this default when `DEPLOYMENT_MODE` is not `local`.** Generate a real one. |
 | `POSTGRES_PASSWORD` | `postgres` | Default password is not secure. |
 | `CLICKHOUSE_PASSWORD` | `clickhouse` | Same. |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Scope to your real frontend origin(s). |
@@ -52,6 +52,8 @@ DEMO_USER_PASSWORD=user-changeme
 ```
 
 **Unset every `DEMO_*` env var before a real deployment.** Existing demo users survive after unsetting — delete them manually (`observal admin delete-user <email>`).
+
+> **Admin settings warning:** If demo accounts are still active or `SECRET_KEY` is insecure, the admin Settings page will display a warning banner at the top so operators can spot and fix the issue without digging through logs.
 
 ## Database connections
 

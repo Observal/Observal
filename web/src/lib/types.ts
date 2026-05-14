@@ -773,3 +773,10 @@ export interface ModelRefreshResult {
 	etag: string | null;
 	upstream_etag: string | null;
 }
+
+
+export interface SystemWarning {
+  level: "critical" | "warning" | "info";
+  code: string;
+  message: string;
+}
