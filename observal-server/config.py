@@ -134,6 +134,9 @@ class Settings(BaseSettings):
             raise ValueError("DATA_RETENTION_DAYS must be >= 7 to prevent accidental data loss")
         return v
 
+    # Agent install policy
+    ALLOW_DRAFT_INSTALL: bool = False
+
     # Deployment mode
     DEPLOYMENT_MODE: Literal["local", "enterprise"] = "local"
 

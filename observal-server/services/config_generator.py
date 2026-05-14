@@ -9,6 +9,25 @@ import re
 from models.mcp import McpListing
 from services.codex_config_generator import generate_codex_config
 
+_SHELL_META_RE = re.compile(r"[|;&`><\n\r]|\$\(|\$\{")
+_DANGEROUS_CMD_RE = re.compile(
+    r"^(?:curl|wget|bash|sh|zsh|fish|dash|python|perl|ruby|nc|ncat|netcat|powershell|cmd\.exe)$",
+    re.IGNORECASE,
+)
+
+
+def validate_mcp_command(command: str, args: list[str] | None = None) -> None:
+    """Raise ValueError if command contains shell metacharacters or uses a dangerous program."""
+    if not command:
+        return
+    full = " ".join([command, *list(args or [])])
+    if _SHELL_META_RE.search(full):
+        raise ValueError("MCP command contains shell metacharacters")
+    cmd_base = command.strip().split()[0] if command.strip() else ""
+    if _DANGEROUS_CMD_RE.match(cmd_base):
+        raise ValueError(f"MCP command uses a disallowed program: {cmd_base!r}")
+
+
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 _DOLLAR_VAR = re.compile(r"\$\{([A-Z][A-Z0-9_]+)\}|\$([A-Z][A-Z0-9_]+)")
 
