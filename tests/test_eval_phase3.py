@@ -122,6 +122,49 @@ class TestEvalTraceLookup:
             "param_excluded_trace_type": "registry",
         }
 
+    @pytest.mark.asyncio
+    async def test_structured_eval_marks_schema_echo_dimensions_skipped(self, monkeypatch):
+        from types import SimpleNamespace
+
+        import services.eval.eval_service as eval_service_mod
+        from services.eval.eval_service import run_structured_eval
+
+        class _EchoScorer:
+            failed_dimensions = {"goal_completion", "thought_process"}
+
+            def __init__(self, backend):
+                self.backend = backend
+
+            async def score_goal_completion(self, *args, **kwargs):
+                return []
+
+            async def score_factual_grounding(self, *args, **kwargs):
+                return []
+
+            async def score_thought_process(self, *args, **kwargs):
+                return []
+
+        monkeypatch.setattr(eval_service_mod, "get_backend", MagicMock(return_value=object()))
+        monkeypatch.setattr(eval_service_mod, "SLMScorer", _EchoScorer)
+
+        agent = MagicMock(id=uuid.uuid4(), version="v1")
+        agent.goal_template = MagicMock(
+            description="Goal",
+            sections=[SimpleNamespace(name="Summary", grounding_required=False)],
+        )
+
+        scorecard = await run_structured_eval(
+            agent,
+            trace={"trace_id": "trace-1", "output": "Summary: done"},
+            spans=[{"span_id": "s1", "type": "tool_call", "name": "read", "status": "success", "output": "data"}],
+            eval_run_id=uuid.uuid4(),
+        )
+
+        assert scorecard.partial_evaluation is True
+        assert sorted(scorecard.dimensions_skipped) == ["goal_completion", "thought_process"]
+        assert scorecard.dimension_scores["goal_completion"] is None
+        assert scorecard.dimension_scores["thought_process"] is None
+
 
 # ── Spec DAG registration ──
 

@@ -329,6 +329,7 @@ async def run_structured_eval(
 
             slm_penalties += await slm_scorer.score_factual_grounding(sanitized_trace, spans)
             slm_penalties += await slm_scorer.score_thought_process(spans)
+            skipped_dimensions = sorted(slm_scorer.failed_dimensions)
         except Exception as e:
             logger.error("slm_scoring_failed", error=str(e))
             slm_penalties = []
@@ -487,6 +488,7 @@ async def run_agent_scoped_eval(
 
             slm_penalties += await slm_scorer.score_factual_grounding(sanitized_trace, full_spans)
             slm_penalties += await slm_scorer.score_thought_process(full_spans)
+            skipped_dimensions = sorted(slm_scorer.failed_dimensions)
         except Exception as e:
             logger.error("slm_scoring_failed", scope="agent", error=str(e))
             slm_penalties = []

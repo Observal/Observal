@@ -116,6 +116,7 @@ class SLMScorer:
 
     def __init__(self, backend: EvalBackend):
         self.backend = backend
+        self.failed_dimensions: set[str] = set()
 
     async def score_goal_completion(
         self,
@@ -148,7 +149,8 @@ class SLMScorer:
 
         result = await self._call_llm_with_validation(prompt, GoalCompletionJudgment)
         if result is None:
-            logger.warning("Goal completion judge failed validation after retry — skipping dimension")
+            logger.warning("Goal completion judge failed validation; skipping dimension")
+            self.failed_dimensions.add(ScoringDimension.goal_completion.value)
             return []
 
         penalties: list[dict] = []
@@ -204,7 +206,8 @@ class SLMScorer:
 
         result = await self._call_llm_with_validation(prompt, FactualGroundingJudgment)
         if result is None:
-            logger.warning("Factual grounding judge failed validation after retry — skipping dimension")
+            logger.warning("Factual grounding judge failed validation; skipping dimension")
+            self.failed_dimensions.add(ScoringDimension.factual_grounding.value)
             return []
 
         penalties: list[dict] = []
@@ -245,7 +248,8 @@ class SLMScorer:
 
         result = await self._call_llm_with_validation(prompt, ThoughtProcessJudgment)
         if result is None:
-            logger.warning("Thought process judge failed validation after retry — skipping dimension")
+            logger.warning("Thought process judge failed validation; skipping dimension")
+            self.failed_dimensions.add(ScoringDimension.thought_process.value)
             return []
 
         penalties: list[dict] = []
@@ -274,6 +278,12 @@ class SLMScorer:
             try:
                 return schema_cls.model_validate(raw)
             except Exception as e:
+                if _looks_like_json_schema(raw):
+                    logger.warning(
+                        "Judge returned a JSON schema instead of judgment data; skipping %s",
+                        schema_cls.__name__,
+                    )
+                    return None
                 logger.warning(
                     "Judge output failed schema validation (attempt %d/%d): %s",
                     attempt + 1,
@@ -304,6 +314,16 @@ class SLMScorer:
         except Exception as e:
             logger.error("slm_scorer_model_call_failed", error=str(e))
         return {}
+
+
+def _looks_like_json_schema(value: object) -> bool:
+    """Detect model responses that echo the requested JSON schema."""
+    if not isinstance(value, dict):
+        return False
+    keys = set(value)
+    if "$defs" in keys or "definitions" in keys:
+        return True
+    return value.get("type") == "object" and "properties" in value and "required" in value
 
 
 def _extract_tool_results(spans: list[dict]) -> str:
