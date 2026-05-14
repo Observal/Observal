@@ -34,7 +34,7 @@ function LoginContent() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const hasToken = !!localStorage.getItem("observal_access_token");
+    const hasToken = !!sessionStorage.getItem("observal_access_token");
     if (hasToken && getUserRole()) {
       router.replace("/");
     }

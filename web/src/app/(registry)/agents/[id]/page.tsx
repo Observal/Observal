@@ -493,7 +493,7 @@ export default function AgentDetailPage({
   }, []);
   const isAuthenticated = useSyncExternalStore(
     storeSub,
-    () => !!localStorage.getItem("observal_access_token"),
+    () => !!sessionStorage.getItem("observal_access_token"),
     () => false,
   );
   const isAdmin = useSyncExternalStore(

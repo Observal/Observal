@@ -93,7 +93,7 @@ const storeSub = (cb: () => void) => {
   return () => window.removeEventListener("storage", cb);
 };
 const getAuthSnap = () =>
-  `${localStorage.getItem("observal_access_token") ?? ""}|${getUserRole() ?? ""}|${getUserName() ?? ""}|${getUserEmail() ?? ""}|${getUserUsername() ?? ""}`;
+  `${sessionStorage.getItem("observal_access_token") ?? ""}|${getUserRole() ?? ""}|${getUserName() ?? ""}|${getUserEmail() ?? ""}|${getUserUsername() ?? ""}`;
 const getServerSnap = () => "||||";
 
 export function RegistrySidebar() {

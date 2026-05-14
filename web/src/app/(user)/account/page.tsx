@@ -245,7 +245,7 @@ function ChangeUsernameSection() {
 				method: "PUT",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${localStorage.getItem("observal_access_token")}`,
+					Authorization: `Bearer ${sessionStorage.getItem("observal_access_token")}`,
 				},
 				body: JSON.stringify({ username: newUsername }),
 			});

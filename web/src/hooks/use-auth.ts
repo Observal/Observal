@@ -17,7 +17,7 @@ function subscribe(cb: () => void) {
 
 function getAuthSnapshot() {
   if (typeof window === "undefined") return "";
-  const key = localStorage.getItem("observal_access_token");
+  const key = sessionStorage.getItem("observal_access_token");
   const role = getUserRole();
   return key ? (role || "pending") : "";
 }

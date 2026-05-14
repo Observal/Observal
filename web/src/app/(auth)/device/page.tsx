@@ -32,7 +32,7 @@ function DeviceContent() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const hasToken = !!localStorage.getItem("observal_access_token");
+    const hasToken = !!sessionStorage.getItem("observal_access_token");
     if (!hasToken) {
       const code = searchParams.get("code");
       const returnPath = code ? `/device?code=${encodeURIComponent(code)}` : "/device";
@@ -76,7 +76,7 @@ function DeviceContent() {
   }
 
   // Don't render form until we know user is authenticated
-  if (typeof window !== "undefined" && !localStorage.getItem("observal_access_token")) {
+  if (typeof window !== "undefined" && !sessionStorage.getItem("observal_access_token")) {
     return null;
   }
 

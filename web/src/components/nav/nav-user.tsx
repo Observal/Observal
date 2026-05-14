@@ -95,7 +95,7 @@ export function NavUser({ user }: NavUserProps) {
         <DropdownMenuItem
           onClick={async () => {
             try {
-              const token = localStorage.getItem("observal_access_token");
+              const token = sessionStorage.getItem("observal_access_token");
               const refreshToken = localStorage.getItem("observal_refresh_token");
               if (token) {
                 await fetch("/api/v1/auth/logout", {
