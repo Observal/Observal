@@ -115,6 +115,7 @@ services:
       - ../.env
     environment:
       CLICKHOUSE_DB: observal
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-clickhouse}"
       MAX_SERVER_MEMORY_USAGE_RATIO: "0.8"
     volumes:
       - chdata:/var/lib/clickhouse

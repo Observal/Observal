@@ -246,6 +246,19 @@ INIT_SQL = [
     """ALTER TABLE traces ADD INDEX IF NOT EXISTS idx_agent_version agent_version TYPE bloom_filter(0.01) GRANULARITY 1""",
     """ALTER TABLE spans ADD INDEX IF NOT EXISTS idx_agent_version agent_version TYPE bloom_filter(0.01) GRANULARITY 1""",
     """ALTER TABLE scores ADD INDEX IF NOT EXISTS idx_agent_version agent_version TYPE bloom_filter(0.01) GRANULARITY 1""",
+    # SDK Phase 1: causal metadata columns on spans
+    # `references` is a SQL reserved word in some tooling — column is span_references
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS sdk_version LowCardinality(String) DEFAULT ''""",
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS output_excerpt String DEFAULT '' CODEC(ZSTD(3))""",
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS tool_result_hash FixedString(64) DEFAULT ''""",
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS files_read Array(String) DEFAULT []""",
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS files_written Array(String) DEFAULT []""",
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS intent_label LowCardinality(String) DEFAULT ''""",
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS span_references Array(String) DEFAULT []""",
+    # SDK Phase 2: state-store writes (parallel arrays preserve per-write tuple order)
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS state_write_namespaces Array(LowCardinality(String)) DEFAULT []""",
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS state_write_keys Array(String) DEFAULT []""",
+    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS state_write_value_hashes Array(String) DEFAULT []""",
     # Security events table (SIEM integration — SOC 2 / ISO 27001)
     """CREATE TABLE IF NOT EXISTS security_events (
         event_id    UUID,
@@ -778,6 +791,16 @@ async def insert_spans(spans: list[dict]):
             "template_tokens": s.get("template_tokens"),
             "rendered_tokens": s.get("rendered_tokens"),
             "agent_version": s.get("agent_version"),
+            "sdk_version": s.get("sdk_version") or "",
+            "output_excerpt": s.get("output_excerpt") or "",
+            "tool_result_hash": s.get("tool_result_hash") or "",
+            "files_read": s.get("files_read") or [],
+            "files_written": s.get("files_written") or [],
+            "intent_label": s.get("intent_label") or "",
+            "span_references": s.get("span_references") or [],
+            "state_write_namespaces": s.get("state_write_namespaces") or [],
+            "state_write_keys": s.get("state_write_keys") or [],
+            "state_write_value_hashes": s.get("state_write_value_hashes") or [],
         }
         lines.append(json.dumps(row, default=str))
     sql = (
@@ -792,7 +815,9 @@ async def insert_spans(spans: list[dict]):
         "relevance_score, chunks_returned, embedding_latency_ms, "
         "hook_event, hook_scope, hook_action, hook_blocked, "
         "variables_provided, template_tokens, rendered_tokens, "
-        "agent_version) FORMAT JSONEachRow"
+        "agent_version, sdk_version, output_excerpt, tool_result_hash, "
+        "files_read, files_written, intent_label, span_references, "
+        "state_write_namespaces, state_write_keys, state_write_value_hashes) FORMAT JSONEachRow"
     )
     try:
         r = await _query(sql, data="\n".join(lines))

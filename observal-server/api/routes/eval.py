@@ -7,11 +7,14 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+import asyncio
+import json
 import uuid
 from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -39,6 +42,7 @@ router = APIRouter(prefix="/api/v1/eval", tags=["eval"])
 
 _scorecard_load = [selectinload(Scorecard.dimensions)]
 _eval_run_load = [selectinload(EvalRun.scorecards).selectinload(Scorecard.dimensions)]
+_background_tasks: set[asyncio.Task] = set()
 
 
 @router.post("/agents/{agent_id}", response_model=EvalRunDetailResponse)
@@ -259,6 +263,23 @@ async def compare_versions(
         )
         row = result.one()
         return {"version": version, "avg_score": round(float(row.avg_overall or 0), 2), "count": row.count}
+
+    async def _scoring_methods(version: str) -> set[str]:
+        rows = await db.execute(
+            select(Scorecard.scoring_method).where(Scorecard.agent_id == agent.id, Scorecard.version == version)
+        )
+        return {(r[0] or "legacy_deductive") for r in rows.all()}
+
+    methods_a = await _scoring_methods(version_a)
+    methods_b = await _scoring_methods(version_b)
+    if methods_a and methods_b and methods_a != methods_b:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "refusing cross-method comparison: "
+                f"version_a methods={sorted(methods_a)} version_b methods={sorted(methods_b)}"
+            ),
+        )
 
     result = {"version_a": await _avg_scores(version_a), "version_b": await _avg_scores(version_b)}
     await audit(
@@ -619,3 +640,675 @@ async def list_agent_evaluated_sessions(
     )
 
     return valid_sessions
+
+
+# ---------------------------------------------------------------------------
+# Unified eval Phase 3 — Spec DAG registry, raw checks, HTML report, batch insights
+# ---------------------------------------------------------------------------
+
+
+@router.post("/spec-dags", response_model=dict)
+async def register_spec_dag(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Register a new Spec DAG version.
+
+    Body shape: a JSON-serialized SpecDAG (see services.eval.spec_dag.models).
+    The (task_type, version) tuple must be unique.
+    """
+    from services.eval.spec_dag.models import SpecDAG
+    from services.eval.spec_dag.registry import register
+
+    try:
+        spec = SpecDAG.from_json(payload)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"invalid spec dag: {e}") from e
+
+    try:
+        new_id = await register(db, spec, created_by=current_user.email)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"could not register spec: {e}") from e
+
+    await audit(
+        current_user,
+        "eval.spec_dag.register",
+        resource_type="eval_spec_dag",
+        resource_id=str(new_id),
+        resource_name=f"{spec.task_type}:{spec.version}",
+    )
+    return {"id": str(new_id), "task_type": spec.task_type, "version": spec.version, "source": spec.source.value}
+
+
+@router.post("/spec-dags/{task_type}/migrate", response_model=dict)
+async def migrate_spec_dags(
+    task_type: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Migrate v1 (path-oriented) Spec DAGs for a task type to v2 (outcome-oriented)."""
+    from services.eval.spec_dag.registry import migrate_task_type
+
+    try:
+        new_ids = await migrate_task_type(db, task_type)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"migrate failed: {e}") from e
+    await audit(
+        current_user,
+        "eval.spec_dag.migrate",
+        resource_type="eval_spec_dag",
+        resource_name=task_type,
+        detail=f"Migrated {len(new_ids)} v1 version(s)",
+    )
+    return {"task_type": task_type, "migrated": [str(i) for i in new_ids]}
+
+
+@router.get("/spec-dags", response_model=list[dict])
+async def list_spec_dags(
+    task_type: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """List Spec DAGs for a given task_type, newest first."""
+    from services.eval.spec_dag.registry import list_by_task_type
+
+    rows = await list_by_task_type(db, task_type)
+    await audit(current_user, "eval.spec_dag.list", resource_type="eval_spec_dag")
+    return [
+        {
+            "id": str(r.id),
+            "task_type": r.task_type,
+            "version": r.version,
+            "source": r.source,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "created_by": r.created_by,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/scorecards/{scorecard_id}/checks", response_model=list[dict])
+async def get_scorecard_checks(
+    scorecard_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Return raw CheckResult[] for a scorecard. Empty for legacy_deductive rows."""
+    sc = await resolve_prefix_id(Scorecard, scorecard_id, db, display_field="version")
+    if current_user.org_id is not None:
+        agent = await db.get(Agent, sc.agent_id)
+        if not agent or agent.owner_org_id != current_user.org_id:
+            raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+    await audit(current_user, "eval.scorecard.checks", resource_type="scorecard", resource_id=str(sc.id))
+    return list(sc.checks_json or [])
+
+
+@router.get("/scorecards/{scorecard_id}/report")
+async def get_scorecard_report(
+    scorecard_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Render an HTML report for a single scorecard."""
+    from fastapi import Response
+
+    from services.eval.aggregation.scorecard import Scorecard as ScScorecard
+    from services.eval.aggregation.scorecard import ScoringMode
+    from services.eval.check_result.models import CheckResult
+    from services.eval.reporting.html_report import render_batch_report
+
+    sc = await resolve_prefix_id(Scorecard, scorecard_id, db, display_field="version")
+    if current_user.org_id is not None:
+        agent = await db.get(Agent, sc.agent_id)
+        if not agent or agent.owner_org_id != current_user.org_id:
+            raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+
+    checks = [CheckResult.model_validate(c) for c in (sc.checks_json or [])]
+    mode_str = sc.scoring_method or "legacy_deductive"
+    try:
+        mode = ScoringMode(mode_str)
+    except ValueError:
+        mode = ScoringMode.SPEC_DAG_ALIGNMENT
+    score = float(sc.composite_score or sc.overall_score or 0.0)
+    html = render_batch_report(
+        [
+            ScScorecard(
+                score=score,
+                scoring_mode=mode,
+                checks=checks,
+                points_earned=score,
+                points_possible=1.0 if mode == ScoringMode.SPEC_DAG_ALIGNMENT else 100.0,
+            )
+        ]
+    )
+    await audit(current_user, "eval.scorecard.report", resource_type="scorecard", resource_id=str(sc.id))
+    return Response(content=html, media_type="text/html")
+
+
+@router.get("/batches/{batch_id}/insights")
+async def get_batch_insights(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Render an HTML report for a batch (eval_run id).
+
+    Insights section text is left blank when no LLM is configured —
+    the deterministic structure is always present.
+    """
+    from fastapi import Response
+
+    from services.eval.aggregation.scorecard import Scorecard as ScScorecard
+    from services.eval.aggregation.scorecard import ScoringMode
+    from services.eval.check_result.models import CheckResult
+    from services.eval.reporting.html_report import render_batch_report
+
+    run = await resolve_prefix_id(EvalRun, batch_id, db)
+    stmt = select(Scorecard).where(Scorecard.eval_run_id == run.id).options(*_scorecard_load)
+    rows = (await db.execute(stmt)).scalars().all()
+    sc_objs: list[ScScorecard] = []
+    for sc in rows:
+        checks = [CheckResult.model_validate(c) for c in (sc.checks_json or [])]
+        mode_str = sc.scoring_method or "legacy_deductive"
+        try:
+            mode = ScoringMode(mode_str)
+        except ValueError:
+            mode = ScoringMode.SPEC_DAG_ALIGNMENT
+        score = float(sc.composite_score or sc.overall_score or 0.0)
+        sc_objs.append(
+            ScScorecard(
+                score=score,
+                scoring_mode=mode,
+                checks=checks,
+                points_earned=score,
+                points_possible=1.0 if mode == ScoringMode.SPEC_DAG_ALIGNMENT else 100.0,
+            )
+        )
+    html = render_batch_report(sc_objs)
+    await audit(current_user, "eval.batch.insights", resource_type="eval_run", resource_id=str(run.id))
+    return Response(content=html, media_type="text/html")
+
+
+# ── Reliability Report ────────────────────────────────────────────────────────
+
+_WASTE_CHECK_TYPES = {"WASTE_CYCLE", "WASTE_REVERT", "WASTE_REDUNDANT_READ"}
+_INJECTION_CHECK_TYPES = {"INPUT_TAMPERED", "CANARY_TRIPPED"}
+
+_AGENT_DIMS = {"goal_completion", "tool_efficiency", "factual_grounding", "thought_process"}
+_MCP_DIMS = {"tool_failures"}
+_INJECTION_DIMS = {"adversarial_robustness"}
+
+
+def _penalty_attribution(penalties: list[dict], dim_scores: dict) -> dict:
+    """Derive penalty attribution from raw penalty list."""
+    attr: dict[str, float] = {
+        "agent": 0.0,
+        "mcp_tool": 0.0,
+        "prompt_injection": 0.0,
+        "waste": 0.0,
+        "user_ambiguity": 0.0,
+    }
+    for p in penalties:
+        dim = (p.get("dimension") or "").lower()
+        event = (p.get("event_name") or "").lower()
+        amount = float(p.get("amount") or 0)
+        # Waste detection by event name keywords
+        if any(kw in event for kw in ("waste", "duplicate", "unused", "revert", "redundant")):
+            attr["waste"] += amount
+        elif dim in _AGENT_DIMS:
+            attr["agent"] += amount
+        elif dim in _MCP_DIMS:
+            attr["mcp_tool"] += amount
+        elif dim in _INJECTION_DIMS:
+            attr["prompt_injection"] += amount
+        else:
+            attr["agent"] += amount  # default to agent
+    return attr
+
+
+def _dominant_failure(attribution: dict) -> str | None:
+    filtered = {k: v for k, v in attribution.items() if k != "user_ambiguity" and v > 0}
+    if not filtered:
+        return None
+    return max(filtered, key=lambda k: filtered[k])
+
+
+def _span_status(span: dict, checks: list[dict]) -> str:
+    sid = span.get("span_id")
+    for c in checks:
+        if c.get("status") != "FAIL":
+            continue
+        ct = c.get("check_type", "")
+        evidence = c.get("evidence") or []
+        span_ids_in_evidence = [e.get("span_id") for e in evidence if isinstance(e, dict)]
+        if sid not in span_ids_in_evidence:
+            continue
+        if ct in _WASTE_CHECK_TYPES:
+            return "waste"
+        if ct in _INJECTION_CHECK_TYPES:
+            return "injection"
+    if (span.get("status") or "").lower() == "error":
+        return "failure"
+    return "success"
+
+
+_STATUS_LABELS = {
+    "success": "OK",
+    "failure": "Error",
+    "waste": "Waste",
+    "injection": "Injection",
+    "recovery": "Recovery",
+}
+
+
+def _latency_display(ms: int | float | None) -> str:
+    if ms is None:
+        return "—"
+    if ms < 1000:
+        return f"{int(ms)}ms"
+    return f"{ms / 1000:.1f}s"
+
+
+def _build_trace_dag_simple(spans: list[dict]) -> dict:
+    """Build a simple linear DAG from spans for hook-materialized traces."""
+    nodes = []
+    edges = []
+    span_ids_set = set()
+    for i, span in enumerate(spans):
+        sid = span.get("span_id", f"span_{i}")
+        span_ids_set.add(sid)
+        nodes.append(
+            {
+                "span_id": sid,
+                "name": span.get("name", ""),
+                "type": span.get("type", ""),
+                "status": span.get("status", "ok"),
+                "is_cycle": False,
+                "depth": i,
+            }
+        )
+        if i > 0:
+            prev_sid = spans[i - 1].get("span_id", f"span_{i - 1}")
+            edges.append({"src": prev_sid, "dst": sid, "kind": "temporal", "confidence": "high"})
+
+    # Check for cycles: span_id appears as both src and dst
+    srcs = {e["src"] for e in edges}
+    dsts = {e["dst"] for e in edges}
+    cycle_ids = srcs & dsts
+    for node in nodes:
+        if node["span_id"] in cycle_ids:
+            # Mark if it also appears as a src pointing back (true cycle)
+            # Simple heuristic: if same id appears >1 time in edges as dst, likely cycle
+            node["is_cycle"] = True
+
+    return {"nodes": nodes, "edges": edges}
+
+
+def _waste_clusters(checks: list[dict]) -> list[dict]:
+    clusters = []
+    for i, c in enumerate(checks):
+        ct = c.get("check_type", "")
+        if ct not in _WASTE_CHECK_TYPES or c.get("status") != "FAIL":
+            continue
+        evidence = c.get("evidence") or []
+        span_ids = [e.get("span_id") for e in evidence if isinstance(e, dict) and e.get("span_id")]
+        meta = c.get("meta") or {}
+        clusters.append(
+            {
+                "cluster_id": f"cluster_{i}",
+                "check_type": ct,
+                "span_ids": span_ids,
+                "tokens_wasted": int(meta.get("tokens_in", 0) or 0) + int(meta.get("tokens_out", 0) or 0),
+                "cost_usd": meta.get("cost_usd"),
+                "fix_suggestion": meta.get("fix_suggestion"),
+            }
+        )
+    return clusters
+
+
+@router.get("/traces/{trace_id}/reliability-report")
+async def get_reliability_report(
+    trace_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Return the full reliability report for a trace (latest scorecard)."""
+    from services.redis import get_redis
+
+    redis = get_redis()
+
+    # Manual Redis cache
+    cache_key = f"reliability:{trace_id}"
+    try:
+        cached = await redis.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass  # degrade gracefully
+
+    # Look up latest scorecard by trace_id
+    stmt = (
+        select(Scorecard)
+        .where(Scorecard.trace_id == trace_id)
+        .order_by(Scorecard.evaluated_at.desc().nullslast())
+        .limit(1)
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        # Try without ordering as fallback
+        stmt2 = select(Scorecard).where(Scorecard.trace_id == trace_id).limit(1)
+        row = (await db.execute(stmt2)).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No scorecard found for trace_id")
+
+    sc = row
+
+    # Org-scope check
+    if current_user.org_id is not None:
+        agent = await db.get(Agent, sc.agent_id)
+        if not agent or agent.owner_org_id != current_user.org_id:
+            raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+
+    # Load penalties and checks
+    raw_output = sc.raw_output or {}
+    penalties: list[dict] = raw_output.get("penalties") or []
+    checks: list[dict] = list(sc.checks_json or [])
+    dim_scores: dict = sc.dimension_scores or {}
+
+    # Rebuild spans
+    try:
+        _trace_dict, spans = await materialize_session_spans(trace_id)
+    except Exception:
+        spans = []
+
+    # Sort spans by start_time
+    def _span_sort_key(s: dict):
+        t = s.get("start_time")
+        if t is None:
+            return ""
+        if isinstance(t, str):
+            return t
+        return str(t)
+
+    spans_sorted = sorted(spans, key=_span_sort_key)
+
+    # Build causal timeline
+    causal_timeline = []
+    for span in spans_sorted:
+        status = _span_status(span, checks)
+        causal_timeline.append(
+            {
+                "span_id": span.get("span_id", ""),
+                "name": span.get("name", ""),
+                "type": span.get("type", ""),
+                "status": status,
+                "status_label": _STATUS_LABELS.get(status, status),
+                "description": span.get("error") or "",
+                "latency_ms": span.get("latency_ms"),
+                "start_time": str(span.get("start_time") or ""),
+                "is_main_path": True,
+            }
+        )
+
+    # Build trace DAG
+    trace_dag = _build_trace_dag_simple(spans_sorted)
+
+    # Penalty attribution
+    attribution = _penalty_attribution(penalties, dim_scores)
+    dominant = _dominant_failure(attribution)
+
+    # Reliability dimensions from dim_scores
+    reliability_dimensions = {
+        "goal_completion": dim_scores.get("goal_completion"),
+        "tool_efficiency": dim_scores.get("tool_efficiency"),
+        "tool_failures": dim_scores.get("tool_failures"),
+        "factual_grounding": dim_scores.get("factual_grounding"),
+        "thought_process": dim_scores.get("thought_process"),
+        "adversarial_robustness": dim_scores.get("adversarial_robustness"),
+    }
+
+    # Waste clusters
+    waste_clusters = _waste_clusters(checks)
+
+    result = {
+        "trace_id": trace_id,
+        "scorecard_id": str(sc.id),
+        "agent_id": str(sc.agent_id),
+        "agent_version": sc.version or "",
+        "overall_score": float(sc.display_score or sc.overall_score or 0.0),
+        "overall_grade": sc.grade or sc.overall_grade or "",
+        "penalty_attribution": attribution,
+        "dominant_failure": dominant,
+        "penalties": penalties,
+        "checks": checks,
+        "causal_timeline": causal_timeline,
+        "trace_dag": trace_dag,
+        "reliability_dimensions": reliability_dimensions,
+        "waste_clusters": waste_clusters,
+        "adversarial_findings": raw_output.get("adversarial_findings"),
+    }
+
+    try:
+        await redis.set(cache_key, json.dumps(result, default=str), ex=300)
+    except Exception:
+        pass  # degrade gracefully
+
+    await audit(current_user, "eval.reliability_report.view", resource_type="scorecard", resource_id=str(sc.id))
+    return result
+
+
+async def _generate_scorecard_explanation(
+    scorecard_id: str,
+    cache_key: str,
+    sc: Scorecard,
+    redis,
+) -> None:
+    """Background task: generate prose explanation for a scorecard."""
+    from services.eval.eval_service import call_eval_model
+
+    try:
+        dim_scores = sc.dimension_scores or {}
+        bottleneck = sc.bottleneck or "unknown"
+        penalty_count = sc.penalty_count or 0
+        score = float(sc.display_score or sc.overall_score or 0.0)
+        grade = sc.grade or sc.overall_grade or "N/A"
+        dims_text = "; ".join(f"{k}={v:.1f}" for k, v in dim_scores.items() if v is not None)
+
+        raw_output = sc.raw_output or {}
+        penalties: list[dict] = raw_output.get("penalties") or []
+        attribution = _penalty_attribution(penalties, dim_scores)
+        dominant = _dominant_failure(attribution) or "none"
+
+        prompt = (
+            f"You are a reliability analyst reviewing an AI agent scorecard.\n\n"
+            f"Agent version: {sc.version or 'unknown'}\n"
+            f"Overall score: {score:.1f} (Grade: {grade})\n"
+            f"Dimension scores: {dims_text or 'none'}\n"
+            f"Penalty count: {penalty_count}\n"
+            f"Bottleneck: {bottleneck}\n"
+            f"Dominant failure category: {dominant}\n\n"
+            "Provide a concise (3-5 sentence) root cause analysis explaining why this agent scored "
+            "as it did, what the main reliability issues are, and one concrete recommendation to "
+            "improve the score. Be direct and technical. No markdown headers."
+        )
+
+        result = await call_eval_model(prompt, max_tokens=512)
+        explanation = result.get("text") or ""
+        if not explanation:
+            explanation = (
+                f"Agent scored {score:.1f}/{100} (Grade: {grade}). "
+                f"Primary failure category: {dominant}. "
+                f"{penalty_count} penalties recorded. "
+                "Configure an eval model for detailed root cause analysis."
+            )
+    except Exception as exc:
+        _log.warning("scorecard_explanation_failed", scorecard_id=scorecard_id, error=str(exc))
+        explanation = "Root cause analysis unavailable — eval model not configured or failed."
+
+    try:
+        await redis.set(cache_key, explanation, ex=300)
+        await redis.delete(f"{cache_key}:pending")
+    except Exception:
+        pass
+
+
+@router.get("/scorecards/{scorecard_id}/explanation")
+async def get_scorecard_explanation(
+    scorecard_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """202/poll endpoint: prose explanation for a scorecard."""
+    from services.redis import get_redis
+
+    sc = await resolve_prefix_id(Scorecard, scorecard_id, db, display_field="version")
+    if current_user.org_id is not None:
+        agent = await db.get(Agent, sc.agent_id)
+        if not agent or agent.owner_org_id != current_user.org_id:
+            raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+
+    cache_key = f"explanation:scorecard:{scorecard_id}"
+
+    try:
+        redis = get_redis()
+        cached = await redis.get(cache_key)
+        if cached:
+            return {"status": "ready", "explanation": cached.decode()}
+
+        in_progress = await redis.get(f"{cache_key}:pending")
+        if in_progress:
+            return JSONResponse(status_code=202, content={"status": "pending", "retry_after": 2})
+
+        await redis.set(f"{cache_key}:pending", "1", ex=60)
+    except Exception:
+        # Redis unavailable — run synchronously
+        dim_scores = sc.dimension_scores or {}
+        score = float(sc.display_score or sc.overall_score or 0.0)
+        grade = sc.grade or sc.overall_grade or "N/A"
+        raw_output = sc.raw_output or {}
+        penalties: list[dict] = raw_output.get("penalties") or []
+        attribution = _penalty_attribution(penalties, dim_scores)
+        dominant = _dominant_failure(attribution) or "none"
+        explanation = (
+            f"Agent scored {score:.1f}/100 (Grade: {grade}). "
+            f"Primary failure category: {dominant}. "
+            f"{sc.penalty_count or 0} penalties recorded."
+        )
+        return {"status": "ready", "explanation": explanation}
+
+    task = asyncio.create_task(_generate_scorecard_explanation(scorecard_id, cache_key, sc, redis))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return JSONResponse(status_code=202, content={"status": "pending", "retry_after": 2})
+
+
+async def _generate_check_explanation(
+    scorecard_id: str,
+    check_index: int,
+    cache_key: str,
+    check: dict,
+    redis,
+) -> None:
+    """Background task: generate prose explanation for a single check result."""
+    from services.eval.eval_service import call_eval_model
+
+    try:
+        ct = check.get("check_type", "UNKNOWN")
+        status = check.get("status", "UNKNOWN")
+        category = check.get("category", "unknown")
+        points_earned = check.get("points_earned", 0)
+        points_possible = check.get("points_possible", 0)
+        meta = check.get("meta") or {}
+        evidence_list = check.get("evidence") or []
+        evidence_spans = ", ".join(e.get("span_id", "") for e in evidence_list if isinstance(e, dict))
+
+        prompt = (
+            f"You are a reliability analyst. Explain the following eval check result in plain English.\n\n"
+            f"Check type: {ct}\n"
+            f"Status: {status}\n"
+            f"Category: {category}\n"
+            f"Points: {points_earned}/{points_possible}\n"
+            f"Evidence spans: {evidence_spans or 'none'}\n"
+            f"Metadata: {json.dumps(meta)}\n\n"
+            "Provide a 2-3 sentence explanation of what this check detected and why it matters. "
+            "Then give one concrete fix suggestion. Be concise and technical."
+        )
+
+        result = await call_eval_model(prompt, max_tokens=256)
+        explanation = result.get("text") or ""
+        if not explanation:
+            fix = meta.get("fix_suggestion") or "Review the flagged spans and address the root cause."
+            explanation = f"Check {ct} {status.lower()} for {category}. {fix}"
+    except Exception as exc:
+        _log.warning("check_explanation_failed", scorecard_id=scorecard_id, check_index=check_index, error=str(exc))
+        fix = (check.get("meta") or {}).get("fix_suggestion") or ""
+        explanation = f"Explanation unavailable. {fix}".strip()
+
+    try:
+        await redis.set(cache_key, explanation, ex=300)
+        await redis.delete(f"{cache_key}:pending")
+    except Exception:
+        pass
+
+
+@router.get("/scorecards/{scorecard_id}/checks/{check_id}/explanation")
+async def get_check_explanation(
+    scorecard_id: str,
+    check_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """202/poll endpoint: explanation for a specific check result (check_id = 0-based index)."""
+    from services.redis import get_redis
+
+    sc = await resolve_prefix_id(Scorecard, scorecard_id, db, display_field="version")
+    if current_user.org_id is not None:
+        agent = await db.get(Agent, sc.agent_id)
+        if not agent or agent.owner_org_id != current_user.org_id:
+            raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+
+    checks = list(sc.checks_json or [])
+    try:
+        check_index = int(check_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="check_id must be a 0-based integer index")
+
+    if check_index < 0 or check_index >= len(checks):
+        raise HTTPException(status_code=404, detail=f"Check index {check_index} out of range (0..{len(checks) - 1})")
+
+    check = checks[check_index]
+
+    # Return fix_suggestion directly if available in meta
+    meta = check.get("meta") or {}
+    fix_suggestion = meta.get("fix_suggestion")
+    if fix_suggestion:
+        return {"status": "ready", "explanation": fix_suggestion}
+
+    cache_key = f"explanation:check:{scorecard_id}:{check_id}"
+
+    try:
+        redis = get_redis()
+        cached = await redis.get(cache_key)
+        if cached:
+            return {"status": "ready", "explanation": cached.decode()}
+
+        in_progress = await redis.get(f"{cache_key}:pending")
+        if in_progress:
+            return JSONResponse(status_code=202, content={"status": "pending", "retry_after": 2})
+
+        await redis.set(f"{cache_key}:pending", "1", ex=60)
+    except Exception:
+        ct = check.get("check_type", "UNKNOWN")
+        status = check.get("status", "UNKNOWN")
+        explanation = f"Check {ct} {status.lower()}. Explanation unavailable (Redis not available)."
+        return {"status": "ready", "explanation": explanation}
+
+    task = asyncio.create_task(_generate_check_explanation(scorecard_id, check_index, cache_key, check, redis))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return JSONResponse(status_code=202, content={"status": "pending", "retry_after": 2})

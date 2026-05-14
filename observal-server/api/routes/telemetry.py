@@ -33,6 +33,7 @@ from services.clickhouse import (
 )
 from services.redis import publish
 from services.secrets_redactor import redact_secrets
+from services.span_enrichment import enrich_span
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/telemetry", tags=["telemetry"])
@@ -114,6 +115,7 @@ async def ingest(
         try:
             rows = []
             for s in batch.spans:
+                s = enrich_span(s)
                 rows.append(
                     {
                         "span_id": s.span_id,
@@ -166,6 +168,16 @@ async def ingest(
                         "variables_provided": s.variables_provided,
                         "template_tokens": s.template_tokens,
                         "rendered_tokens": s.rendered_tokens,
+                        "sdk_version": s.sdk_version,
+                        "output_excerpt": s.output_excerpt,
+                        "tool_result_hash": s.tool_result_hash,
+                        "files_read": s.files_read or [],
+                        "files_written": s.files_written or [],
+                        "intent_label": s.intent_label,
+                        "span_references": s.references or [],
+                        "state_write_namespaces": [w.namespace for w in (s.state_writes or [])],
+                        "state_write_keys": [w.key for w in (s.state_writes or [])],
+                        "state_write_value_hashes": [w.value_hash for w in (s.state_writes or [])],
                     }
                 )
             await insert_spans(rows)

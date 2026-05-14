@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 import httpx
 import typer
@@ -712,6 +714,98 @@ def eval_aggregate(
             table.add_row(dim, f"[{dc}]{ds:.0f}[/{dc}]", bar)
         console.print(table)
     rprint()
+
+
+# ── Eval: Spec DAG / Report / Insights (unified eval Phase 3) ─────────────
+
+spec_dag_app = typer.Typer(help="Spec DAG authoring & inspection")
+eval_app.add_typer(spec_dag_app, name="spec-dag")
+
+
+@spec_dag_app.command(name="register")
+def spec_dag_register(
+    file: Path = typer.Argument(..., exists=True, readable=True, help="JSON file containing a SpecDAG"),
+):
+    """Register a Spec DAG version from a JSON file."""
+    payload = json.loads(file.read_text())
+    with spinner("Registering Spec DAG..."):
+        result = client.post("/api/v1/eval/spec-dags", payload)
+    rprint(f"[green]Registered:[/green] {result.get('task_type')}@{result.get('version')} ({result.get('id')})")
+
+
+@spec_dag_app.command(name="migrate")
+def spec_dag_migrate(
+    task_type: str = typer.Argument(..., help="Task type whose v1 specs should be migrated"),
+):
+    """Migrate every v1 (path-oriented) Spec DAG for a task type to v2 (outcome-oriented).
+
+    Reads each v1 row, writes a v2 successor (version=<old>+v2). Idempotent —
+    rows already at schema_version >= 2 are skipped.
+    """
+    with spinner(f"Migrating v1 specs for task_type={task_type!r}..."):
+        result = client.post(f"/api/v1/eval/spec-dags/{task_type}/migrate", {})
+    migrated = result.get("migrated", []) if isinstance(result, dict) else []
+    if not migrated:
+        rprint("[dim]Nothing to migrate (all rows already v2 or task type not found).[/dim]")
+        return
+    rprint(f"[green]Migrated[/green] {len(migrated)} version(s):")
+    for new_id in migrated:
+        rprint(f"  · {new_id}")
+
+
+@spec_dag_app.command(name="list")
+def spec_dag_list(
+    task_type: str = typer.Argument(..., help="Task type to list versions for"),
+    output: str = typer.Option("table", "--output", "-o"),
+):
+    """List Spec DAGs for a task type, newest first."""
+    with spinner("Fetching..."):
+        rows = client.get("/api/v1/eval/spec-dags", params={"task_type": task_type})
+    if output == "json":
+        output_json(rows)
+        return
+    if not rows:
+        rprint("[dim]No Spec DAGs registered for this task type.[/dim]")
+        return
+    table = Table(title=f"Spec DAGs · {task_type}", show_lines=False, padding=(0, 1))
+    table.add_column("Version", style="bold")
+    table.add_column("Source")
+    table.add_column("Created")
+    table.add_column("By")
+    table.add_column("ID", style="dim")
+    for r in rows:
+        table.add_row(
+            r.get("version", ""),
+            r.get("source", ""),
+            (r.get("created_at") or "")[:19],
+            r.get("created_by") or "",
+            (r.get("id") or "")[:8] + "…",
+        )
+    console.print(table)
+
+
+@eval_app.command(name="report")
+def eval_report(
+    scorecard_id: str = typer.Argument(..., help="Scorecard ID (or prefix)"),
+    output_path: Path = typer.Option(Path("scorecard_report.html"), "--out", "-o"),
+):
+    """Render an HTML report for a scorecard."""
+    with spinner("Rendering report..."):
+        html = client.get_raw(f"/api/v1/eval/scorecards/{scorecard_id}/report")
+    output_path.write_text(html)
+    rprint(f"[green]Wrote[/green] {output_path}")
+
+
+@eval_app.command(name="insights")
+def eval_insights(
+    batch_id: str = typer.Argument(..., help="Eval run ID (or prefix)"),
+    output_path: Path = typer.Option(Path("batch_insights.html"), "--out", "-o"),
+):
+    """Render the batch insights HTML report for an eval run."""
+    with spinner("Rendering insights..."):
+        html = client.get_raw(f"/api/v1/eval/batches/{batch_id}/insights")
+    output_path.write_text(html)
+    rprint(f"[green]Wrote[/green] {output_path}")
 
 
 # ── Admin ────────────────────────────────────────────────
