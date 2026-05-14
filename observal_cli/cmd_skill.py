@@ -9,6 +9,10 @@
 from __future__ import annotations
 
 import json as _json
+import re
+import subprocess
+import tempfile
+from pathlib import Path
 
 import typer
 from rich import print as rprint
@@ -26,22 +30,77 @@ def register_skill(app: typer.Typer):
     app.add_typer(skill_app, name="skill")
 
 
+# ── Security helpers (port of vercel-labs installer.ts) ─────────────────────
+
+
+def _sanitize_name(name: str) -> str:
+    """Normalise a skill name to a safe directory name (lowercase, hyphenated)."""
+    name = name.lower().strip()
+    name = re.sub(r"[^a-z0-9_-]", "-", name)
+    name = re.sub(r"-{2,}", "-", name).strip("-")
+    return name or "skill"
+
+
+def _is_path_safe(path: Path, base: Path) -> bool:
+    """Return True only if resolved *path* is inside *base* (no traversal)."""
+    try:
+        path.resolve().relative_to(base.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+# ── Frontmatter parser (mirrors vercel-labs parseFrontmatter) ───────────────
+
+_FM_RE = re.compile(r"^---\r?\n(.*?)\r?\n---", re.DOTALL)
+
+
+def _parse_frontmatter(content: str) -> dict:
+    """Extract YAML frontmatter from markdown.  Uses yaml.safe_load (no eval)."""
+    try:
+        import yaml  # only needed locally; server-side already does this
+    except ImportError:
+        return {}
+    m = _FM_RE.match(content)
+    if not m:
+        return {}
+    try:
+        result = yaml.safe_load(m.group(1))
+        return result if isinstance(result, dict) else {}
+    except Exception:
+        return {}
+
+
+# ── Submit ────────────────────────────────────────────────────────────────────
+
+
 @skill_app.command(name="submit")
 def skill_submit(
     from_file: str | None = typer.Option(None, "--from-file", "-f", help="Create from JSON file"),
+    skill_md: str | None = typer.Option(None, "--skill-md", help="Path to SKILL.md to paste (auto-fills fields)"),
+    git_url: str | None = typer.Option(None, "--git-url", help="Git repository URL"),
+    git_ref: str | None = typer.Option(None, "--git-ref", help="Branch or tag (default: main)"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (skill ID)"),
 ):
     """Submit a new skill for review.
+
+    Preferred: provide --git-url (+ optional --skill-path / --git-ref) and let the
+    server fetch SKILL.md automatically.
+
+    Shortcut: provide --skill-md PATH to paste the SKILL.md content directly
+    (fields are auto-filled from frontmatter; --git-url is still required for install).
 
     Only submit skills you created or are the point-of-contact for.
     """
     rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
     if draft and submit_draft:
         rprint(
-            "[red]Cannot use --draft and --submit together.[/red] Use --draft to save a new draft, or --submit to submit an existing draft."
+            "[red]Cannot use --draft and --submit together.[/red] "
+            "Use --draft to save a new draft, or --submit to submit an existing draft."
         )
         raise typer.Exit(code=1)
+
     if submit_draft:
         resolved = config.resolve_alias(submit_draft)
         with spinner("Submitting draft for review..."):
@@ -60,25 +119,55 @@ def skill_submit(
             rprint(f"[red]File not found:[/red] {from_file}")
             raise typer.Exit(code=1)
     else:
+        # --- Paste-first: parse SKILL.md locally if provided ---
+        prefill: dict = {}
+        skill_md_content: str | None = None
+        if skill_md:
+            try:
+                raw = Path(skill_md).read_text(encoding="utf-8")
+            except FileNotFoundError:
+                rprint(f"[red]SKILL.md not found:[/red] {skill_md}")
+                raise typer.Exit(code=1)
+            fm = _parse_frontmatter(raw)
+            skill_md_content = raw
+            prefill["name"] = fm.get("name", "")
+            prefill["description"] = fm.get("description", "")
+            cmd_field = fm.get("command", "")
+            if isinstance(cmd_field, str) and cmd_field.strip():
+                prefill["slash_command"] = cmd_field.strip().lstrip("/")
+            if fm:
+                rprint(
+                    f"[green]✓ Parsed SKILL.md:[/green] name={prefill.get('name')!r}  "
+                    f"description={str(prefill.get('description', ''))[:60]!r}"
+                )
+
         agents_input = typer.prompt("Target agents (comma-separated)", default="")
         payload = {
-            "name": typer.prompt("Skill name"),
+            "name": typer.prompt("Skill name", default=prefill.get("name", "")),
             "version": typer.prompt("Version", default="1.0.0"),
-            "description": typer.prompt("Description"),
+            "description": typer.prompt("Description", default=prefill.get("description", "")),
             "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
-            "git_url": typer.prompt("Git URL"),
+            "git_url": git_url or typer.prompt("Git URL"),
+            "skill_path": typer.prompt("Skill path in repo", default="/"),
+            "git_ref": git_ref or typer.prompt("Git ref (branch/tag)", default="main"),
             "task_type": select_one("Task type", VALID_SKILL_TASK_TYPES),
             "target_agents": [a.strip() for a in agents_input.split(",") if a.strip()],
         }
+        if prefill.get("slash_command"):
+            payload["slash_command"] = prefill["slash_command"]
+        if skill_md_content:
+            payload["skill_md_content"] = skill_md_content
 
-    if draft:
-        with spinner("Saving draft..."):
-            result = client.post("/api/v1/skills/draft", payload)
-        rprint(f"[green]✓ Draft saved![/green] ID: [bold]{result['id']}[/bold]")
-    else:
-        with spinner("Submitting skill..."):
-            result = client.post("/api/v1/skills/submit", payload)
-        rprint(f"[green]✓ Skill submitted![/green] ID: [bold]{result['id']}[/bold]")
+    endpoint = "/api/v1/skills/draft" if draft else "/api/v1/skills/submit"
+    label = "draft" if draft else "skill"
+    with spinner(f"Saving {label}..."):
+        result = client.post(endpoint, payload)
+    validated = result.get("validated", False)
+    validated_tag = "[green]✓ validated[/green]" if validated else "[yellow]unvalidated[/yellow]"
+    rprint(f"[green]✓ {label.capitalize()} submitted![/green] ID: [bold]{result['id']}[/bold]  {validated_tag}")
+
+
+# ── List / My ─────────────────────────────────────────────────────────────────
 
 
 @skill_app.command(name="list")
@@ -165,6 +254,9 @@ def skill_my(
     console.print(table)
 
 
+# ── Show ──────────────────────────────────────────────────────────────────────
+
+
 @skill_app.command(name="show")
 def skill_show(
     skill_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
@@ -182,9 +274,13 @@ def skill_show(
             f"{item['name']} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
+                ("Validated", "✓" if item.get("validated") else "✗"),
                 ("Task Type", item.get("task_type", "N/A")),
                 ("Owner", item.get("owner", "N/A")),
                 ("Git URL", item.get("git_url", "N/A")),
+                ("Git Ref", item.get("git_ref") or "N/A"),
+                ("Skill Path", item.get("skill_path", "/")),
+                ("Slash Command", f"/{item['slash_command']}" if item.get("slash_command") else "N/A"),
                 ("Description", item.get("description", "")),
                 ("Target Agents", ", ".join(item.get("target_agents", [])) or "N/A"),
                 ("Created", relative_time(item.get("created_at"))),
@@ -195,41 +291,199 @@ def skill_show(
     )
 
 
+# ── Install ────────────────────────────────────────────────────────────────────
+
+
+def _sparse_clone_skill_dir(git_url: str, skill_path: str, git_ref: str, dest: Path) -> bool:
+    """Sparse-clone only the skill subdirectory from a remote repo.
+
+    Returns True on success, False if git is unavailable or the clone fails.
+    Writes the full skill directory tree to *dest*.
+    """
+    import shutil
+
+    # Guard against None values from API responses
+    git_ref = git_ref or "main"
+    skill_path = skill_path or "/"
+
+    try:
+        subprocess.run(["git", "--version"], check=True, capture_output=True, timeout=5)
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+
+    clean_path = skill_path.strip("/")
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            _run = lambda cmd, **kw: subprocess.run(  # noqa: E731
+                cmd, cwd=tmp_path, check=True, capture_output=True, timeout=30, **kw
+            )
+            _run(["git", "init"])
+            _run(["git", "remote", "add", "origin", git_url])
+            _run(["git", "config", "core.sparseCheckout", "true"])
+            _run(["git", "fetch", "--filter=blob:none", "--depth=1", "origin", git_ref])
+            # Set sparse checkout path
+            sparse_file = tmp_path / ".git" / "info" / "sparse-checkout"
+            sparse_file.parent.mkdir(parents=True, exist_ok=True)
+            sparse_file.write_text(f"{clean_path}/\n" if clean_path else "/\n")
+            _run(["git", "checkout", f"origin/{git_ref}"])
+            # Copy skill directory to dest
+            src = tmp_path / clean_path if clean_path else tmp_path
+            if not src.exists():
+                return False
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+
+
 @skill_app.command(name="install")
 def skill_install(
     skill_id: str = typer.Argument(..., help="Skill ID, name, row number, or @alias"),
     ide: str = typer.Option(..., "--ide", "-i", help="Target IDE"),
+    scope: str = typer.Option("user", "--scope", "-s", help="Install scope: user (global, default) or project"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
     no_write: bool = typer.Option(False, "--no-write", help="Print config without writing files"),
 ):
-    """Install a skill — writes the skill file to disk and shows config."""
+    """Install a skill — fetches the full skill directory from git and writes it to disk.
+
+    Scopes:
+      --scope user (default): writes to ~/.<ide>/skills/<name>/ (global, persists across projects).
+      --scope project: writes to .agents/skills/<name>/ in cwd,
+        symlinks to .<ide>/skills/<name>/ for each IDE config dir present.
+
+    Primary path: git sparse-clone using git_url + skill_path + git_ref.
+    Fallback: single SKILL.md from cached skill_md_content.
+    """
     resolved = config.resolve_alias(skill_id)
     with spinner(f"Generating {ide} config..."):
-        result = client.post(f"/api/v1/skills/{resolved}/install", {"ide": ide})
+        result = client.post(f"/api/v1/skills/{resolved}/install", {"ide": ide, "scope": scope})
     snippet = result.get("config_snippet", result)
 
     if raw:
         print(_json.dumps(snippet, indent=2))
         return
 
-    # Write the skill file to disk unless --no-write
-    skill_file = snippet.get("skill_file")
-    if skill_file and not no_write:
-        from pathlib import Path
+    skill_info = snippet.get("skill", {})
 
-        file_path = skill_file["path"]
-        if file_path.startswith("~/"):
-            file_path = str(Path.home() / file_path[2:])
-
-        dest = Path(file_path)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(skill_file["content"], encoding="utf-8")
-        rprint(f"[green]✓ Wrote skill file:[/green] {dest}")
-    elif skill_file:
-        rprint(f"[dim]Skill file (not written):[/dim] {skill_file['path']}")
+    if not no_write:
+        install_skill_from_git(
+            name=skill_info.get("name", "skill"),
+            git_url=skill_info.get("git_url"),
+            skill_path=skill_info.get("skill_path", "/"),
+            git_ref=skill_info.get("git_ref", "main"),
+            ide=ide,
+            scope=scope,
+            skill_md_content=skill_info.get("skill_md_content"),
+        )
+    else:
+        rprint("[dim]Skill install skipped (--no-write)[/dim]")
 
     rprint(f"\n[bold]Config for {ide}:[/bold]\n")
     console.print_json(_json.dumps(snippet, indent=2))
+
+
+# Agent config dirs to check for symlinking (canonical name → dir name)
+_AGENT_SKILL_DIRS: list[tuple[str, str]] = [
+    ("claude-code", ".claude"),
+    ("cursor", ".cursor"),
+    ("kiro", ".kiro"),
+    ("vscode", ".vscode"),
+    ("gemini-cli", ".gemini"),
+    ("opencode", ".opencode"),
+]
+
+# User-scope skill directories per IDE (global install locations)
+_USER_SKILL_DIRS: dict[str, str] = {
+    "claude-code": "~/.claude/skills",
+    "kiro": "~/.kiro/skills",
+    "gemini-cli": "~/.gemini/skills",
+    "opencode": "~/.config/opencode/skills",
+    "cursor": "~/.cursor/rules",
+    "vscode": "~/.vscode/skills",
+    "copilot": "~/.copilot/skills",
+}
+
+
+def _user_skill_dest(ide: str, skill_name: str) -> Path:
+    """Resolve the user-scope (global) install path for a skill."""
+    ide_key = ide.replace("_", "-")
+    base = _USER_SKILL_DIRS.get(ide_key, "~/.agents/skills")
+    expanded = Path(base.replace("~", str(Path.home())))
+    return expanded / skill_name
+
+
+def install_skill_from_git(
+    *,
+    name: str,
+    git_url: str | None,
+    skill_path: str = "/",
+    git_ref: str = "main",
+    ide: str = "claude-code",
+    scope: str = "user",
+    skill_md_content: str | None = None,
+    cwd: Path | None = None,
+) -> Path | None:
+    """Core skill install logic — clone full directory from git.
+
+    Used by both `observal skill install` and `observal pull` (for agent skills).
+
+    Returns the destination Path on success, None on failure.
+    """
+    skill_name = _sanitize_name(name)
+
+    if scope == "user":
+        dest = _user_skill_dest(ide, skill_name)
+    else:
+        base = (cwd or Path.cwd()) / ".agents" / "skills"
+        dest = base / skill_name
+        if not _is_path_safe(dest, base):
+            rprint(f"[red]\u2717 Unsafe skill name (path traversal detected):[/red] {skill_name!r}")
+            return None
+
+    wrote_full_dir = False
+
+    if git_url:
+        dest.mkdir(parents=True, exist_ok=True)
+        wrote_full_dir = _sparse_clone_skill_dir(git_url, skill_path, git_ref, dest)
+        if wrote_full_dir:
+            rprint(f"[green]\u2713 Skill directory written:[/green] {dest}")
+            if scope == "project":
+                _symlink_for_ides(cwd or Path.cwd(), dest, skill_name)
+            return dest
+        rprint("[yellow]\u26a0 git clone failed.[/yellow] Falling back to SKILL.md cache.")
+
+    # Fallback: write cached SKILL.md only
+    if skill_md_content:
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "SKILL.md").write_text(skill_md_content, encoding="utf-8")
+        rprint(f"[green]\u2713 Wrote skill file (cached):[/green] {dest / 'SKILL.md'}")
+        return dest
+
+    rprint("[yellow]\u26a0 No skill content available to write.[/yellow]")
+    return None
+
+
+def _symlink_for_ides(cwd: Path, canonical: Path, skill_name: str) -> None:
+    """Create .<agent>/skills/<name>/ symlinks for every IDE config dir that exists."""
+    for _ide, agent_dir in _AGENT_SKILL_DIRS:
+        agent_root = cwd / agent_dir
+        if not agent_root.exists():
+            continue
+        skills_dir = agent_root / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        link = skills_dir / skill_name
+        if link.exists() or link.is_symlink():
+            continue
+        try:
+            link.symlink_to(canonical.resolve())
+            rprint(f"[dim]  → symlinked {link} → {canonical}[/dim]")
+        except OSError:
+            pass  # Non-fatal — Windows without dev mode, etc.
+
+
+# ── Edit ─────────────────────────────────────────────────────────────────────
 
 
 @skill_app.command(name="edit")
@@ -240,6 +494,8 @@ def skill_edit(
     description: str | None = typer.Option(None, "--description", "-d", help="New description"),
     version: str | None = typer.Option(None, "--version", "-v", help="New version string"),
     task_type: str | None = typer.Option(None, "--task-type", "-t", help="New task type"),
+    git_url: str | None = typer.Option(None, "--git-url", help="New git URL"),
+    git_ref: str | None = typer.Option(None, "--git-ref", help="New git ref"),
 ):
     """Edit a draft, rejected, or pending skill submission."""
     resolved = config.resolve_alias(skill_id)
@@ -263,9 +519,16 @@ def skill_edit(
             updates["version"] = version
         if task_type is not None:
             updates["task_type"] = task_type
+        if git_url is not None:
+            updates["git_url"] = git_url
+        if git_ref is not None:
+            updates["git_ref"] = git_ref
 
     if not updates:
-        rprint("[yellow]No changes specified.[/yellow] Use --from-file or field options (--name, --description, etc.)")
+        rprint(
+            "[yellow]No changes specified.[/yellow] "
+            "Use --from-file or field options (--name, --description, --git-url, etc.)"
+        )
         raise typer.Exit(code=1)
 
     try:
@@ -285,6 +548,9 @@ def skill_edit(
             pass
         rprint(f"[red]Failed to update:[/red] {exc}")
         raise typer.Exit(code=1)
+
+
+# ── Delete ────────────────────────────────────────────────────────────────────
 
 
 @skill_app.command(name="delete")

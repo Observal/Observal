@@ -36,6 +36,7 @@ from schemas.skill import (
 )
 from services.audit_helpers import audit
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
+from services.skill_validator import SkillValidationError, validate_skill_md
 
 router = APIRouter(prefix="/api/v1/skills", tags=["skills"])
 
@@ -52,8 +53,50 @@ async def submit_skill(
     if existing.scalars().first():
         raise HTTPException(status_code=409, detail=f"You already have a skill named '{req.name}'")
 
+    # Resolve name/description/slash_command — frontmatter wins when caller omits them.
+    skill_md_content = req.skill_md_content
+    validated = False
+    name = req.name
+    description = req.description
+    slash_command = req.slash_command
+    skill_path = req.skill_path
+
+    if req.git_url:
+        try:
+            analysis = await validate_skill_md(
+                req.git_url,
+                skill_path=req.skill_path,
+                git_ref=req.git_ref or "main",
+            )
+            validated = True
+            skill_md_content = skill_md_content or analysis.raw_content
+            # Use discovered path if server auto-found it (user left skill_path as "/")
+            if analysis.discovered_path:
+                skill_path = analysis.discovered_path
+            if not name:
+                name = analysis.name
+            if not description:
+                description = analysis.description
+            if slash_command is None:
+                slash_command = analysis.slash_command
+        except SkillValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    if not description:
+        raise HTTPException(status_code=422, detail="description is required")
+
+    # Re-check uniqueness with resolved name (may differ from req.name when auto-filled).
+    if name != req.name:
+        dup = await db.execute(
+            select(SkillListing).where(SkillListing.name == name, SkillListing.submitted_by == current_user.id)
+        )
+        if dup.scalars().first():
+            raise HTTPException(status_code=409, detail=f"You already have a skill named '{name}'")
+
     listing = SkillListing(
-        name=req.name,
+        name=name,
         owner=req.owner,
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,
@@ -64,19 +107,16 @@ async def submit_skill(
     version = SkillVersion(
         listing_id=listing.id,
         version=req.version,
-        description=req.description,
-        skill_path=req.skill_path,
+        description=description,
+        skill_path=skill_path,
+        git_url=req.git_url,
+        git_ref=req.git_ref,
+        skill_md_content=skill_md_content,
+        validated=validated,
         target_agents=req.target_agents,
         task_type=req.task_type,
-        triggers=req.triggers,
-        slash_command=req.slash_command,
-        has_scripts=req.has_scripts,
-        has_templates=req.has_templates,
+        slash_command=slash_command,
         supported_ides=req.supported_ides,
-        is_power=req.is_power,
-        power_md=req.power_md,
-        mcp_server_config=req.mcp_server_config,
-        activation_keywords=req.activation_keywords,
         status=ListingStatus.pending,
         released_by=current_user.id,
         released_at=datetime.now(UTC),
@@ -210,17 +250,13 @@ async def save_skill_draft(
         version=req.version,
         description=req.description,
         skill_path=req.skill_path,
+        git_url=req.git_url,
+        git_ref=req.git_ref,
+        skill_md_content=req.skill_md_content,
         target_agents=req.target_agents,
         task_type=req.task_type,
-        triggers=req.triggers,
         slash_command=req.slash_command,
-        has_scripts=req.has_scripts,
-        has_templates=req.has_templates,
         supported_ides=req.supported_ides,
-        is_power=req.is_power,
-        power_md=req.power_md,
-        mcp_server_config=req.mcp_server_config,
-        activation_keywords=req.activation_keywords,
         status=ListingStatus.draft,
         released_by=current_user.id,
         released_at=datetime.now(UTC),
@@ -264,17 +300,13 @@ async def update_skill_draft(
         "version",
         "description",
         "skill_path",
+        "git_url",
+        "git_ref",
+        "skill_md_content",
         "target_agents",
         "task_type",
-        "triggers",
         "slash_command",
-        "has_scripts",
-        "has_templates",
         "supported_ides",
-        "is_power",
-        "power_md",
-        "mcp_server_config",
-        "activation_keywords",
     ):
         val = getattr(req, field)
         if val is not None:

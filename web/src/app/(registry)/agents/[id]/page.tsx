@@ -340,7 +340,7 @@ function AccessSettingsWidget({ agentId, visibility, teamAccesses, canEdit }: { 
             </Button>
           )}
         </div>
-        
+
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm">
             {visibility === "public" ? <Globe className="h-4 w-4 text-muted-foreground" /> : <Lock className="h-4 w-4 text-muted-foreground" />}
@@ -370,7 +370,7 @@ function AccessSettingsWidget({ agentId, visibility, teamAccesses, canEdit }: { 
           Edit Access Settings
         </h3>
       </div>
-      
+
       <div className="space-y-3">
         <select
           className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

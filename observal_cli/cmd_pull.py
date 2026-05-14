@@ -512,7 +512,37 @@ def register_pull(app: typer.Typer):
                 written.append((str(p), status))
 
         # ── skill_files (Claude Code, Kiro, Cursor) ──────────
+        # Use shared install_skill_from_git for each skill component.
+        from observal_cli.cmd_skill import _sanitize_name, install_skill_from_git
+
+        skill_components = snippet.get("skill_components") or []
+        cloned_skills: set[str] = set()
+        scope_str = "user" if is_user_scope else "project"
+        for sc in skill_components:
+            if dry_run:
+                sc_name = _sanitize_name(sc.get("name", "skill"))
+                written.append((f"<skill:{sc_name}>", "would clone"))
+                cloned_skills.add(sc_name)
+                continue
+            result_path = install_skill_from_git(
+                name=sc.get("name", "skill"),
+                git_url=sc.get("git_url"),
+                skill_path=sc.get("skill_path", "/"),
+                git_ref=sc.get("git_ref", "main"),
+                ide=ide,
+                scope=scope_str,
+                skill_md_content=sc.get("skill_md_content"),
+                cwd=target_dir,
+            )
+            if result_path:
+                written.append((str(result_path), "cloned"))
+                cloned_skills.add(_sanitize_name(sc.get("name", "skill")))
+
+        # Only write skill_files for skills that weren't successfully installed
         for sf in snippet.get("skill_files") or []:
+            sf_name = Path(sf["path"]).parent.name
+            if sf_name in cloned_skills:
+                continue
             p = _resolve_path(sf["path"], target_dir, allow_home=is_user_scope)
             if dry_run:
                 written.append((str(p), "would write"))

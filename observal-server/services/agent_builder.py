@@ -210,6 +210,8 @@ def _resolved_to_manifest_component(comp: ResolvedComponent) -> ManifestComponen
             kwargs["slash_command"] = comp.extra["slash_command"]
         if comp.extra.get("task_type"):
             kwargs["task_type"] = comp.extra["task_type"]
+        if comp.extra.get("skill_md_content"):
+            kwargs["config_override"] = {"skill_md_content": comp.extra["skill_md_content"]}
     elif comp.component_type == "hook":
         kwargs["event"] = comp.extra.get("event", "")
         kwargs["execution_mode"] = comp.extra.get("execution_mode", "async")
@@ -332,7 +334,12 @@ def _build_mcp_entries(manifest: AgentManifest) -> dict:
 
 
 def _build_skill_files(manifest: AgentManifest, ide: str) -> list[AgentFile]:
-    """Generate IDE-specific skill files from manifest skills."""
+    """Generate IDE-specific skill files from manifest skills.
+
+    Fast path: if skill_md_content is cached (stored verbatim from the repo),
+    use it as-is as the SKILL.md body.  Fallback: synthesize a minimal stub
+    from description + slash_command (same as before).
+    """
     ide_key = ide.replace("_", "-")
     spec = IDE_REGISTRY.get(ide_key, {})
     skill_paths = spec.get("skill_file")
@@ -346,6 +353,13 @@ def _build_skill_files(manifest: AgentManifest, ide: str) -> list[AgentFile]:
         desc = skill.description or ""
         path = next(iter(skill_paths.values())).format(name=name)
 
+        # --- Fast path: verbatim SKILL.md from git repo ---
+        skill_md_content: str | None = (skill.config_override or {}).get("skill_md_content")
+        if skill_md_content:
+            files.append(AgentFile(path=path, content=skill_md_content, format="markdown"))
+            continue
+
+        # --- Fallback: synthetic stub ---
         if skill_format == "yaml_frontmatter":
             content = f"---\nname: {name}\n"
             if desc:
@@ -545,6 +559,7 @@ def _generate_gemini_cli(manifest: AgentManifest) -> IdeAgentConfig:
                 content=settings,
                 format="json",
             ),
+            *_build_skill_files(manifest, "gemini-cli"),
         ],
         mcp_servers=mcp_entries,
         env=env,
@@ -771,7 +786,7 @@ def _generate_opencode(manifest: AgentManifest) -> IdeAgentConfig:
 
     return IdeAgentConfig(
         ide="opencode",
-        files=files,
+        files=[*files, *_build_skill_files(manifest, "opencode")],
         mcp_servers=mcp_entries,
     )
 

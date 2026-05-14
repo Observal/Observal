@@ -304,14 +304,16 @@ class TestExtractExtra:
         listing.skill_path = "/skills/tdd"
         listing.task_type = "development"
         listing.slash_command = "/tdd"
-        listing.triggers = {"on": "test"}
-        listing.has_scripts = True
-        listing.is_power = False
-        listing.mcp_server_config = None
+        listing.skill_md_content = "---\nname: tdd\ndescription: TDD skill\n---\n"
         extra = _extract_extra(listing, "skill")
         assert extra["skill_path"] == "/skills/tdd"
         assert extra["slash_command"] == "/tdd"
-        assert extra["has_scripts"] is True
+        assert extra["skill_md_content"] == listing.skill_md_content
+        # Dropped fields are gone
+        assert "has_scripts" not in extra
+        assert "is_power" not in extra
+        assert "triggers" not in extra
+        assert "mcp_server_config" not in extra
 
     def test_hook_extra(self):
         from services.agent_resolver import _extract_extra
@@ -533,10 +535,7 @@ class TestResolveAgent:
         listing.skill_path = "/"
         listing.task_type = "dev"
         listing.slash_command = None
-        listing.triggers = None
-        listing.has_scripts = False
-        listing.is_power = False
-        listing.mcp_server_config = None
+        listing.skill_md_content = None
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = listing
@@ -1236,10 +1235,9 @@ class TestGenerateIdeAgentFiles:
         manifest = self._make_manifest()
         config = generate_ide_agent_files(manifest, "gemini-cli")
         assert config.ide == "gemini-cli"
-        md_files = [f for f in config.files if f.format == "markdown"]
-        assert len(md_files) == 1
-        assert md_files[0].path == "GEMINI.md"
-        assert "You are a helpful coding assistant." in md_files[0].content
+        gemini_md = [f for f in config.files if f.path == "GEMINI.md"]
+        assert len(gemini_md) == 1
+        assert "You are a helpful coding assistant." in gemini_md[0].content
 
     def test_gemini_cli_env_includes_otel(self):
         from services.agent_builder import generate_ide_agent_files

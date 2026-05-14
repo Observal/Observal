@@ -404,7 +404,10 @@ def _build_skill_configs(
                 "description": getattr(listing, "description", "") or "",
                 "slash_command": getattr(listing, "slash_command", None),
                 "task_type": getattr(listing, "task_type", ""),
-                "activation_keywords": getattr(listing, "activation_keywords", None),
+                "git_url": getattr(listing, "git_url", None),
+                "git_ref": getattr(listing, "git_ref", None) or "main",
+                "skill_path": getattr(listing, "skill_path", None) or "/",
+                "skill_md_content": getattr(listing, "skill_md_content", None),
             }
         )
 
@@ -639,6 +642,7 @@ def generate_agent_config(
         skill_files = [f for f in skill_files if f]
         if skill_files:
             result["skill_files"] = skill_files
+            result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
         warnings_combined = list(compatibility_warnings)
         warnings_combined.extend(options.get("_model_warnings") or [])
         if warnings_combined:
@@ -711,6 +715,7 @@ def generate_agent_config(
         }
         if skill_files:
             result["skill_files"] = skill_files
+            result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
         warnings_combined = list(compatibility_warnings)
         warnings_combined.extend(options.get("_model_warnings") or [])
         if warnings_combined:
@@ -917,6 +922,7 @@ def generate_agent_config(
         }
     if skill_files:
         result["skill_files"] = skill_files
+        result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
     if compatibility_warnings:
         result["_warnings"] = compatibility_warnings
     return result
