@@ -41,7 +41,7 @@ export async function loginToWebUI(page: Page) {
   const token = await getAccessToken();
   await page.goto("/");
   await page.evaluate((t) => {
-    localStorage.setItem("observal_access_token", t);
+    sessionStorage.setItem("observal_access_token", t);
     localStorage.setItem("observal_user_role", "admin");
   }, token);
   await page.reload();
