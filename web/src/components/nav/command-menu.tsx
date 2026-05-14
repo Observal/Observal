@@ -4,6 +4,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Activity, Bot, LayoutDashboard, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   CommandDialog,
@@ -14,11 +15,13 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import { useTraces } from "@/hooks/use-api";
 import { allNavItems } from "./registry-sidebar";
 
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
+  const { data: recentTraces = [] } = useTraces();
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -41,6 +44,25 @@ export function CommandMenu() {
       <CommandInput placeholder="Search agents, components, traces..." />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
+        <CommandGroup heading="Top pages">
+          <CommandItem onSelect={() => onSelect("/traces")}>
+            <Activity className="mr-2 h-4 w-4" />
+            Traces
+          </CommandItem>
+          <CommandItem onSelect={() => onSelect("/dashboard")}>
+            <LayoutDashboard className="mr-2 h-4 w-4" />
+            Dashboard
+          </CommandItem>
+          <CommandItem onSelect={() => onSelect("/settings")}>
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
+          </CommandItem>
+          <CommandItem onSelect={() => onSelect("/agents")}>
+            <Bot className="mr-2 h-4 w-4" />
+            Agents
+          </CommandItem>
+        </CommandGroup>
+        <CommandSeparator />
         <CommandGroup heading="Navigate">
           {allNavItems.map((group) =>
             group.items.map((item) => (
@@ -53,6 +75,22 @@ export function CommandMenu() {
               </CommandItem>
             )),
           )}
+        </CommandGroup>
+        <CommandSeparator />
+        <CommandGroup heading="Recent traces">
+          {recentTraces.slice(0, 5).map((trace) => {
+            const traceId = String(trace.traceId ?? "");
+            const name = String(trace.name ?? trace.traceType ?? traceId);
+            return (
+              <CommandItem
+                key={traceId}
+                onSelect={() => onSelect(`/traces/${traceId}`)}
+              >
+                <Activity className="mr-2 h-4 w-4" />
+                {name}
+              </CommandItem>
+            );
+          })}
         </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading="Quick Actions">
