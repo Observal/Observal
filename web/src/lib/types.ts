@@ -196,16 +196,13 @@ export interface ComponentVersionSummary {
 	file_pattern?: string[];
 	// Skill fields
 	skill_path?: string;
+	git_url?: string;
+	git_ref?: string;
+	skill_md_content?: string;
+	validated?: boolean;
 	target_agents?: string[];
 	task_type?: string;
-	triggers?: Record<string, unknown>;
 	slash_command?: string;
-	has_scripts?: boolean;
-	has_templates?: boolean;
-	is_power?: boolean;
-	power_md?: string;
-	mcp_server_config?: Record<string, unknown>;
-	activation_keywords?: string[];
 	// Prompt fields
 	category?: string;
 	template?: string;
@@ -336,16 +333,11 @@ export interface ReviewItem {
 
 	// Skill-specific
 	skill_path?: string;
+	skill_md_content?: string;
+	validated?: boolean;
 	target_agents?: string[];
 	task_type?: string;
-	triggers?: Record<string, unknown>;
 	slash_command?: string;
-	mcp_server_config?: Record<string, unknown>;
-	has_scripts?: boolean;
-	has_templates?: boolean;
-	is_power?: boolean;
-	power_md?: string;
-	activation_keywords?: string[];
 
 	// Hook-specific
 	event?: string;
@@ -774,9 +766,8 @@ export interface ModelRefreshResult {
 	upstream_etag: string | null;
 }
 
-
 export interface SystemWarning {
-  level: "critical" | "warning" | "info";
-  code: string;
-  message: string;
+	level: "critical" | "warning" | "info";
+	code: string;
+	message: string;
 }

@@ -453,7 +453,9 @@ async def list_agents(
     from models.feedback import Feedback
 
     is_admin = False
-    skip_visibility = settings.DEPLOYMENT_MODE == "local"
+    # Skip visibility only for authenticated users in local mode (dev convenience).
+    # Anonymous callers always get the public-only filter regardless of mode.
+    skip_visibility = settings.DEPLOYMENT_MODE == "local" and current_user is not None
     if current_user:
         user_role_level = ROLE_HIERARCHY.get(current_user.role, 999)
         if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:
