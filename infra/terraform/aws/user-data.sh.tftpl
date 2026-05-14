@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-set -euxo pipefail
+set -eo pipefail
 
 # Bootstrap the data tier host: ClickHouse + Grafana + Prometheus via docker compose.
 # api/web/worker run on ECS Fargate — they are NOT started here.
@@ -15,9 +15,10 @@ dnf -y update
 dnf -y install docker jq awscli amazon-cloudwatch-agent
 systemctl enable --now docker
 
-# Compose v2 plugin
+# Compose v2 plugin (pinned version — do not use releases/latest)
+DOCKER_COMPOSE_VERSION="v2.35.1"
 mkdir -p /usr/libexec/docker/cli-plugins
-curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+curl -fsSL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
   -o /usr/libexec/docker/cli-plugins/docker-compose
 chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 
@@ -42,10 +43,13 @@ chown -R 472:472 /data/grafana     || true   # grafana user
 chown -R 65534:65534 /data/prometheus || true # nobody
 
 # ── Pull secrets from SSM ────────────────────────────────────────
+# Disable xtrace here so secrets are not echoed to CloudWatch logs (SEC-020).
+set +x
 fetch() { aws ssm get-parameter --with-decryption --name "$1" --region "${region}" --query Parameter.Value --output text; }
 
 CLICKHOUSE_PASSWORD=$(fetch "${ssm_prefix}/CLICKHOUSE_PASSWORD")
 GRAFANA_ADMIN_PASSWORD=$(fetch "${ssm_prefix}/GRAFANA_ADMIN_PASSWORD")
+set -x  # re-enable tracing for non-sensitive operations
 
 # ── CloudWatch agent (ship docker logs + system logs) ────────────
 cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<EOF
@@ -69,8 +73,7 @@ INSTALL_DIR=/opt/observal
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 curl -fsSL "https://github.com/BlazeUp-AI/Observal/releases/download/${image_tag}/observal-server-${image_tag}.tar.gz" \
-  -o /tmp/observal.tgz \
-  || curl -fsSL "https://api.github.com/repos/BlazeUp-AI/Observal/tarball/main" -o /tmp/observal.tgz
+  -o /tmp/observal.tgz
 tar -xzf /tmp/observal.tgz --strip-components=1
 rm /tmp/observal.tgz
 
