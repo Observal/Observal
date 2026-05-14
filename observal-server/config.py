@@ -84,6 +84,31 @@ class Settings(BaseSettings):
     # Rate limiting
     RATE_LIMIT_AUTH: str = "10/minute"
     RATE_LIMIT_AUTH_STRICT: str = "5/minute"
+    # Comma-separated list of trusted proxy IPs whose X-Forwarded-For header is trusted.
+    # Leave empty to never trust X-Forwarded-For (safest default).
+    TRUSTED_PROXY_IPS: list[str] = []
+
+    @field_validator("TRUSTED_PROXY_IPS", mode="before")
+    @classmethod
+    def parse_trusted_proxy_ips(cls, v: object) -> list[str]:
+        import ipaddress
+
+        if isinstance(v, str):
+            ips = [ip.strip() for ip in v.split(",") if ip.strip()]
+        elif isinstance(v, list):
+            ips = [str(i) for i in v]
+        else:
+            return []
+        validated: list[str] = []
+        for ip in ips:
+            try:
+                ipaddress.ip_address(ip)
+                validated.append(ip)
+            except ValueError:
+                import logging
+
+                logging.getLogger(__name__).warning("TRUSTED_PROXY_IPS: ignoring invalid IP %r", ip)
+        return validated
 
     # Agent Insights batch processing
     INSIGHT_BATCH_ENABLED: bool = True

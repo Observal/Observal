@@ -10,11 +10,22 @@ from config import settings
 
 
 def _get_real_ip(request: Request) -> str:
-    """Extract client IP, preferring X-Forwarded-For when behind a reverse proxy."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "127.0.0.1"
+    """Return the real client IP.
+    Only trusts X-Forwarded-For when the direct TCP peer is in TRUSTED_PROXY_IPS.
+    Without configured trusted proxies, uses the socket IP directly.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    trusted = settings.TRUSTED_PROXY_IPS or []
+    if not trusted or client_ip not in trusted:
+        return client_ip
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if not forwarded:
+        return client_ip
+    ips = [ip.strip() for ip in forwarded.split(",")]
+    for ip in reversed(ips):
+        if ip not in trusted:
+            return ip
+    return client_ip
 
 
 limiter = Limiter(
