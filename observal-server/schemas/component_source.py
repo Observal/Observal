@@ -11,7 +11,6 @@ class ComponentSourceCreate(BaseModel):
     url: str = Field(..., min_length=10, pattern=r"^https://")
     component_type: str = Field(..., pattern="^(mcp|skill|hook|prompt|sandbox)$")
     is_public: bool = True
-    owner_org_id: uuid.UUID | None = None
 
 
 class ComponentSourceResponse(BaseModel):

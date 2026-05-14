@@ -39,12 +39,13 @@ async def add_source(
     elif "bitbucket" in url_lower:
         provider = "bitbucket"
 
+    # Always derive owner from the authenticated user's org — never trust client-supplied org
     source = ComponentSource(
         url=req.url,
         provider=provider,
         component_type=req.component_type,
         is_public=req.is_public,
-        owner_org_id=req.owner_org_id,
+        owner_org_id=current_user.org_id,
     )
     try:
         db.add(source)
@@ -73,6 +74,14 @@ async def list_sources(
     stmt = select(ComponentSource)
     if component_type:
         stmt = stmt.where(ComponentSource.component_type == component_type)
+    # Scope: public sources are visible to all; private sources only to owning org
+    if current_user.org_id is not None:
+        stmt = stmt.where(
+            (ComponentSource.is_public == True)  # noqa: E712
+            | (ComponentSource.owner_org_id == current_user.org_id)
+        )
+    else:
+        stmt = stmt.where(ComponentSource.is_public == True)  # noqa: E712
     result = await db.execute(stmt.order_by(ComponentSource.created_at.desc()))
     sources = result.scalars().all()
     await audit(current_user, "source.list", resource_type="component_source")
@@ -87,6 +96,9 @@ async def get_source(
 ):
     source = await db.get(ComponentSource, source_id)
     if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    # Private sources are only visible to the owning org
+    if not source.is_public and (current_user.org_id is None or source.owner_org_id != current_user.org_id):
         raise HTTPException(status_code=404, detail="Source not found")
     await audit(
         current_user,
