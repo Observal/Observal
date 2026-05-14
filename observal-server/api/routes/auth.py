@@ -126,7 +126,8 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
         # Clear any logout revocation so hooks resume after re-login
         await redis.delete(f"revoked_user:{user.id}")
     except RedisError as e:
-        logger.warning("Redis unavailable when storing refresh JTI, failing open: %s", e)
+        logger.warning("Redis unavailable when storing refresh JTI: %s", e)
+        raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     return access_token, refresh_token, expires_in
 
@@ -611,6 +612,7 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
         await redis.setex(f"refresh_jti:{new_jti}", refresh_ttl, str(user.id))
     except RedisError as e:
         logger.warning("Redis unavailable when storing new refresh JTI: %s", e)
+        raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     await audit(user, "auth.refresh_token", resource_type="token", resource_id=str(user.id))
     return TokenResponse(

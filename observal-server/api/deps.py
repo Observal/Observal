@@ -49,13 +49,19 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
         return None
 
     jti = payload.get("jti")
-    if jti:
-        try:
-            redis = get_redis()
-            if await redis.get(f"revoked_jti:{jti}"):
-                return None
-        except RedisError:
-            pass  # Fail open if Redis is down
+    user_id_str = payload.get("sub")
+    try:
+        redis = get_redis()
+        # SEC-002: fail closed on revocation checks — Redis errors must not
+        # re-enable revoked tokens or user-level revocations
+        if jti and await redis.get(f"revoked_jti:{jti}"):
+            return None
+        if user_id_str and await redis.get(f"revoked_user:{user_id_str}"):
+            return None  # SEC-001: account-wide revocation (e.g. logout all)
+    except RedisError:
+        # Redis is down: block all token-based auth to prevent revoked tokens
+        # from regaining access. Requests will receive HTTP 503.
+        raise RedisError("Auth service temporarily unavailable — please retry")
 
     user_id = payload.get("sub")
 
@@ -108,14 +114,15 @@ async def get_current_user(
     if user.auth_provider == "deactivated":
         raise HTTPException(status_code=403, detail="Account deactivated")
 
-    # Enforce must_change_password (fail open if Redis is unavailable)
+    # Enforce must_change_password — fail closed: if Redis is down we cannot
+    # guarantee the gate is enforced, so block non-exempt requests.
     if request.url.path not in _PASSWORD_CHANGE_EXEMPT_PATHS:
         try:
             redis = get_redis()
             if await redis.get(f"must_change_password:{user.id}"):
                 raise HTTPException(status_code=403, detail="Password change required")
         except RedisError:
-            pass
+            raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     return user
 
