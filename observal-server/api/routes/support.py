@@ -31,6 +31,7 @@ from config import Settings, settings
 from models.user import UserRole
 from services.clickhouse import CLICKHOUSE_DB, _query
 from services.redis import get_redis
+from services.secrets_redactor import redact_dict
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -396,8 +397,9 @@ def _parse_duration(duration_str: str) -> timedelta:
 async def _collect_logs(logs_since: str = "1h") -> dict:
     """Collect structured log lines from the in-memory ring buffer.
 
-    Filters entries by the ``logs_since`` duration. The CLI is
-    responsible for redacting the returned lines before writing.
+    Filters entries by the ``logs_since`` duration. Secrets are redacted
+    server-side before returning; the CLI applies a second redaction pass
+    as defence-in-depth.
     Returns an empty list gracefully if the buffer is empty.
     """
     try:
@@ -427,7 +429,11 @@ async def _collect_logs(logs_since: str = "1h") -> dict:
                     clean[k] = str(v)
             sanitized.append(clean)
 
-        return {"lines": sanitized}
+        # Redact secrets server-side before returning (SEC-022).
+        # redact_dict scrubs all string values; redact_secrets handles
+        # individual strings that were coerced to str above.
+        redacted = [redact_dict(entry) for entry in sanitized]
+        return {"lines": redacted}
     except ImportError:
         return {
             "lines": [],

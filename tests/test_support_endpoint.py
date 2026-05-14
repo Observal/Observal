@@ -1081,3 +1081,57 @@ class TestConfigAllowlistFiltering:
         assert "AWS_REGION" in filtered
         assert "SECRET_KEY" not in filtered
         assert "OAUTH_CLIENT_SECRET" not in filtered
+
+
+class TestCollectLogsRedaction:
+    """SEC-022: server-side redaction applied to log lines before return."""
+
+    @pytest.mark.asyncio
+    async def test_bearer_token_redacted(self):
+        from datetime import UTC, datetime
+
+        from api.routes.support import _collect_logs
+
+        now = datetime.now(UTC)
+        entries = [
+            {
+                "timestamp": now.isoformat(),
+                "event": "request",
+                "auth": "Bearer ghp_abc123def456ghi789jkl0123456789012345",
+            }
+        ]
+        mock_buffer = MagicMock()
+        mock_buffer.get_since.return_value = entries
+
+        with patch("services.log_buffer.get_log_buffer", return_value=mock_buffer):
+            result = await _collect_logs("1h")
+
+        import json
+
+        raw = json.dumps(result["lines"])
+        assert "ghp_abc123def456ghi789jkl0123456789012345" not in raw
+
+    @pytest.mark.asyncio
+    async def test_db_url_password_redacted(self):
+        from datetime import UTC, datetime
+
+        from api.routes.support import _collect_logs
+
+        now = datetime.now(UTC)
+        entries = [
+            {"timestamp": now.isoformat(), "event": "connect", "url": "postgres://admin:s3cr3tPass@db.example.com/prod"}
+        ]
+        mock_buffer = MagicMock()
+        mock_buffer.get_since.return_value = entries
+
+        with patch("services.log_buffer.get_log_buffer", return_value=mock_buffer):
+            result = await _collect_logs("1h")
+
+        import json
+        from urllib.parse import urlparse
+
+        raw = json.dumps(result["lines"])
+        assert "s3cr3tPass" not in raw
+        # Parse the redacted URL from the result to confirm hostname is intact
+        url_field = result["lines"][0]["url"]
+        assert urlparse(url_field).hostname == "db.example.com"
