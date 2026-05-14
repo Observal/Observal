@@ -64,6 +64,12 @@ class Scorecard(Base):
     partial_evaluation: Mapped[bool] = mapped_column(Boolean, default=False)
     dimensions_skipped: Mapped[list | None] = mapped_column(JSON, nullable=True)
     warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Unified eval Phase 3: which scoring substrate produced this row.
+    # legacy_deductive (existing slm_scorer pipeline), spec_dag_alignment (anchored),
+    # council_deductive (no spec; SLM evidence + deterministic rules).
+    scoring_method: Mapped[str] = mapped_column(String(32), nullable=False, default="legacy_deductive")
+    # Optional: full CheckResult[] for spec_dag_alignment / council_deductive scorecards
+    checks_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     eval_run: Mapped["EvalRun"] = relationship(back_populates="scorecards")
     dimensions: Mapped[list["ScorecardDimension"]] = relationship(

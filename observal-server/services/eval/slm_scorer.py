@@ -3,10 +3,20 @@
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""SLM scorer: LLM-assisted scoring for Goal Completion, Factual Grounding, Thought Process.
+"""[LEGACY] SLM scorer for Goal Completion, Factual Grounding, Thought Process.
 
-Uses the existing EvalBackend (LLMJudgeBackend/FallbackBackend) to evaluate trace quality.
-Hardened against BenchJack Pattern 4 (prompt injection in agent output).
+This module produces numeric scores from LLM output and is the substrate
+of the ``legacy_deductive`` scoring path. It is preserved unchanged so
+existing scorecards keep working, but **NEW code must not call into it**.
+
+The replacement reasoning layer is ``services.eval.reasoning.slm_explainer``,
+which takes a CheckResult[] and emits prose only — never a number. The
+unified eval architecture is: deterministic CheckResult[] → aggregation;
+LLMs write narratives over the substrate, not into it.
+
+Scorecards produced via this scorer must be persisted with
+``scoring_method='legacy_deductive'``. Cross-method comparison is
+refused at the API level. See ``services/eval/aggregation/scorecard.py``.
 """
 
 import json
