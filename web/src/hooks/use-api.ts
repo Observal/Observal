@@ -565,6 +565,49 @@ export function useEvalScorecard(scorecardId: string | undefined) {
   });
 }
 
+// ── Spec DAG v2 (outcome-oriented) ──
+
+export function useSpecDags(taskType: string) {
+  return useQuery({
+    queryKey: ["eval", "spec-dags", taskType],
+    enabled: !!taskType,
+    queryFn: () => eval_.listSpecDags(taskType),
+  });
+}
+
+export function useRegisterSpecDag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: import("@/lib/types").SpecDagV2Payload) =>
+      eval_.registerSpecDag(body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["eval", "spec-dags", data.task_type] });
+      toast.success(`Registered ${data.task_type}@${data.version}`);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Could not register Spec DAG");
+    },
+  });
+}
+
+export function useMigrateSpecDags() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskType: string) => eval_.migrateSpecDags(taskType),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["eval", "spec-dags", data.task_type] });
+      const n = data.migrated?.length ?? 0;
+      if (n === 0) {
+        toast.info("Nothing to migrate.");
+      } else {
+        toast.success(`Migrated ${n} v1 version(s) → v2.`);
+      }
+    },
+    onError: (err: Error) => toast.error(err.message || "Migration failed"),
+  });
+}
+
+
 // ── Archive ────────────────────────────────────────────────────────
 
 export function useArchiveAgent() {
@@ -984,6 +1027,15 @@ export function useGenerateInsight() {
   });
 }
 
+export function useReliabilityReport(traceId: string | undefined) {
+  return useQuery({
+    queryKey: ["reliability-report", traceId],
+    enabled: !!traceId,
+    queryFn: () => eval_.reliabilityReport(traceId!),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 // ── Models catalog ─────────────────────────────────────────────────
 
 const MODELS_QUERY_KEY = ["models", "catalog"] as const;
@@ -1014,4 +1066,3 @@ export function useRefreshModels() {
     },
   });
 }
-

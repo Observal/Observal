@@ -72,6 +72,7 @@ const adminNav: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, minRole: "admin" },
   { title: "Errors", href: "/errors", icon: AlertTriangle, minRole: "admin" },
   { title: "Evals", href: "/eval", icon: FlaskConical, minRole: "admin" },
+  { title: "Spec DAGs", href: "/eval/spec-dags", icon: FlaskConical, minRole: "admin" },
   { title: "Insights", href: "/insights", icon: Lightbulb, minRole: "admin", requiresInsights: true },
   { title: "Users", href: "/users", icon: Users, minRole: "admin" },
   { title: "Audit Log", href: "/audit-log", icon: ScrollText, minRole: "admin", enterpriseOnly: true },

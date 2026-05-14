@@ -64,7 +64,7 @@ const ACTION_LETTER: Record<string, string> = {
 
 const ACTION_WORD: Record<string, string> = {
   file_read: "Read", file_write: "Write", file_delete: "Delete",
-  bash: "Bash", search: "Search", think: "Think", mcp_meta: "MCP",
+  bash: "Bash", search: "Search", think: "Think", mcp_meta: "Dependency",
 };
 
 const ACTION_COLOR: Record<string, string> = {
