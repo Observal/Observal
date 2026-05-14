@@ -10,6 +10,8 @@ emerges does so through these rules — same fact in, same CheckResult out.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from services.eval.check_result.models import (
     Category,
     CheckResult,
@@ -22,6 +24,9 @@ from services.eval.council.extractors import (
     GROUNDED_QUANTITIES_QUESTION,
     CouncilFact,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _cite_check_to_result(fact: CouncilFact) -> CheckResult:
@@ -61,7 +66,7 @@ def _grounded_quantities_to_result(fact: CouncilFact) -> CheckResult:
     )
 
 
-_RULES: dict[str, callable] = {
+_RULES: dict[str, Callable[[CouncilFact], CheckResult]] = {
     CITE_CHECK_QUESTION.question_id: _cite_check_to_result,
     GROUNDED_QUANTITIES_QUESTION.question_id: _grounded_quantities_to_result,
 }

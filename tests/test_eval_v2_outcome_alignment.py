@@ -390,8 +390,8 @@ def test_artifact_exists_check():
     assert align_and_score(spec, dag).correctness_score == 1.0
 
 
-def test_custom_python_namespace_enforced():
-    """function_path outside the allowlist namespace is refused."""
+def test_custom_python_is_disabled():
+    """CUSTOM_PYTHON is refused instead of importing arbitrary server code."""
     spec = SpecDAG(
         task_type="t",
         version="1",
@@ -412,7 +412,7 @@ def test_custom_python_namespace_enforced():
     result = align_and_score(spec, trace)
     assert result.correctness_score == 0.0
     failure = next(c for c in result.check_results if c.status == Status.FAIL)
-    assert "must start with" in failure.meta.get("reason", "")
+    assert "disabled" in failure.meta.get("reason", "")
 
 
 def test_semantic_match_uses_real_cosine():
@@ -608,7 +608,7 @@ def test_outcome_checks_cover_edge_paths():
 
     passed, meta = check_custom_python(empty, {"function_path": "os.path.exists"})
     assert not passed
-    assert "must start" in meta["reason"]
+    assert "disabled" in meta["reason"]
 
     class UnknownCheck:
         check_type = "unknown"

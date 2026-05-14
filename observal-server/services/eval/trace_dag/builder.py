@@ -31,7 +31,7 @@ def _to_ms(value: Any) -> int:
     if isinstance(value, (int, float)):
         # heuristic: looks like seconds vs ms
         v = float(value)
-        return int(v * 1000) if v < 1e12 else int(v)
+        return int(v * 1000) if v < 1e10 else int(v)
     if isinstance(value, str):
         s = value.strip()
         if not s:
@@ -44,7 +44,7 @@ def _to_ms(value: Any) -> int:
             return int(dt.timestamp() * 1000)
         except ValueError:
             try:
-                return int(float(s))
+                return _to_ms(float(s))
             except ValueError:
                 return 0
     return 0

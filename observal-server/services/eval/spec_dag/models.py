@@ -64,10 +64,8 @@ class OutcomeCheckType(str, Enum):
 #   params: {"path_pattern": str (glob or regex over files_written),
 #            "content_pattern": str | None (optional, against output_excerpt)}
 #
-# CUSTOM_PYTHON — escape hatch.
-#   params: {"function_path": str (dotted import within the
-#                services.eval.spec_dag.custom_checks.* allowlist),
-#            "description": str}
+# CUSTOM_PYTHON — reserved for a future sandboxed/registered implementation.
+#   In-process dotted imports are intentionally disabled.
 
 
 class OutcomeCheck(BaseModel):

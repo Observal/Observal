@@ -7,11 +7,6 @@
 Sections per the unified prompt: header stats, At a Glance, Task Areas,
 Charts, Big Wins, Friction Categories, Waste Hot Spots, Spec Suggestions,
 On the Horizon, Fun Ending. Per-scorecard table at the bottom.
-
-Reference layout (`~/observal-redesign/reference_report.html`) was not
-present in the working tree at the time of writing — this is a faithful
-section-by-section structural match against the prompt's enumeration.
-Layout/styling can be re-skinned to match the reference once provided.
 """
 
 from __future__ import annotations

@@ -17,13 +17,34 @@ not the span list. Injection patterns must appear in the final response.
 """
 
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
+from pathlib import Path
 
-BASE = "http://localhost:8000"
+
+def _server_url() -> str:
+    """Resolve server URL from env or the local Observal CLI config."""
+    for key in ("OBSERVAL_SERVER_URL", "OBSERVAL_API_URL"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value.rstrip("/")
+    cfg_path = Path(os.environ.get("OBSERVAL_CONFIG", Path.home() / ".observal" / "config.json"))
+    try:
+        cfg = json.loads(cfg_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        cfg = {}
+    value = str(cfg.get("server_url") or "").strip()
+    if value:
+        return value.rstrip("/")
+    print("Set OBSERVAL_SERVER_URL or run `observal auth login` before using this script.", file=sys.stderr)
+    sys.exit(1)
+
+
+BASE = _server_url()
 
 
 def req(method, path, body=None, token=""):
@@ -44,9 +65,16 @@ def req(method, path, body=None, token=""):
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
-print("→ Logging in...")
-login = req("POST", "/api/v1/auth/login", {"email": "super@demo.example", "password": "super-changeme"})
-token = login.get("access_token", "")
+token = os.environ.get("OBSERVAL_TOKEN", "").strip()
+if not token:
+    email = os.environ.get("OBSERVAL_EMAIL", "").strip()
+    password = os.environ.get("OBSERVAL_PASSWORD", "").strip()
+    if not email or not password:
+        print("Set OBSERVAL_TOKEN or OBSERVAL_EMAIL/OBSERVAL_PASSWORD.", file=sys.stderr)
+        sys.exit(1)
+    print("→ Logging in...")
+    login = req("POST", "/api/v1/auth/login", {"email": email, "password": password})
+    token = login.get("access_token", "")
 if not token:
     print("Login failed", file=sys.stderr)
     sys.exit(1)

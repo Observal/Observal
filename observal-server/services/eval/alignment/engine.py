@@ -33,6 +33,7 @@ from services.eval.check_result.models import (
     SpanRef,
     Status,
 )
+from services.eval.trace_dag.helpers import spans_for_tool
 
 if TYPE_CHECKING:
     from services.eval.spec_dag.models import (
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
         SpecDAG,
         StepConstraint,
     )
-    from services.eval.trace_dag.models import TraceDAG, TraceNode
+    from services.eval.trace_dag.models import TraceDAG
 
 
 @dataclass(frozen=True)
@@ -62,15 +63,6 @@ class AlignmentResult:
     def score(self) -> float:
         """Back-compat alias — equals correctness_score."""
         return self.correctness_score
-
-
-def _tool_key(node: TraceNode) -> str:
-    return (node.method or node.name or "").strip()
-
-
-def _spans_for_tool(dag: TraceDAG, tool_name: str) -> list[TraceNode]:
-    target = tool_name.strip()
-    return [dag.nodes[sid] for sid in dag.topo_sorted_ids() if _tool_key(dag.nodes[sid]) == target]
 
 
 # ── Pass 1: outcome assertions ──
@@ -139,8 +131,8 @@ def _evaluate_assertions(spec: SpecDAG, dag: TraceDAG) -> tuple[list[CheckResult
 
 
 def _evaluate_step_constraint(constraint: StepConstraint, dag: TraceDAG) -> CheckResult | None:
-    before = _spans_for_tool(dag, constraint.before_tool)
-    after = _spans_for_tool(dag, constraint.after_tool)
+    before = spans_for_tool(dag, constraint.before_tool)
+    after = spans_for_tool(dag, constraint.after_tool)
     if not before or not after:
         # ordering only checkable when both sides present
         return None

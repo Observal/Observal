@@ -12,17 +12,15 @@ reasoning for the reasoning layer to consume; it never carries a score.
 from __future__ import annotations
 
 import fnmatch
-import importlib
 import json
 import re
 from typing import TYPE_CHECKING, Any
 
 from services.eval.spec_dag.models import OutcomeCheck, OutcomeCheckType
+from services.eval.trace_dag.helpers import spans_for_tool
 
 if TYPE_CHECKING:
     from services.eval.trace_dag.models import TraceDAG, TraceNode
-
-CUSTOM_CHECK_NAMESPACE = "services.eval.spec_dag.custom_checks."
 
 
 # ── helpers ──
@@ -47,15 +45,6 @@ def _final_user_facing(dag: TraceDAG) -> TraceNode | None:
         if node.output or node.output_excerpt:
             return node
     return None
-
-
-def _tool_key(node: TraceNode) -> str:
-    return (node.method or node.name or "").strip()
-
-
-def _spans_for_tool(dag: TraceDAG, tool_name: str) -> list[TraceNode]:
-    target = tool_name.strip()
-    return [dag.nodes[sid] for sid in dag.topo_sorted_ids() if _tool_key(dag.nodes[sid]) == target]
 
 
 def _input_dict(node: TraceNode) -> dict[str, Any]:
@@ -334,7 +323,7 @@ def check_tool_was_called(dag: TraceDAG, params: dict) -> tuple[bool, dict]:
     min_count = int(params.get("min_count", 1))
     constraints = params.get("param_constraints") or None
 
-    spans = _spans_for_tool(dag, tool)
+    spans = spans_for_tool(dag, tool)
     matching: list[str] = []
     for s in spans:
         if constraints is None:
@@ -356,7 +345,7 @@ def check_tool_result_contains(dag: TraceDAG, params: dict) -> tuple[bool, dict]
     tool = params.get("tool_name", "")
     pattern = params.get("pattern", "")
     match_type = params.get("match_type", "substring")
-    spans = _spans_for_tool(dag, tool)
+    spans = spans_for_tool(dag, tool)
     if not spans:
         return False, {"reason": f"no spans matching tool {tool!r}"}
     for s in spans:
@@ -399,25 +388,16 @@ def check_artifact_exists(dag: TraceDAG, params: dict) -> tuple[bool, dict]:
 
 
 def check_custom_python(dag: TraceDAG, params: dict) -> tuple[bool, dict]:
+    """Fail closed: arbitrary Python checks are not executed in-process."""
     fn_path = str(params.get("function_path") or "")
     description = str(params.get("description") or "")
     if not fn_path:
         return False, {"reason": "function_path missing"}
-    if not fn_path.startswith(CUSTOM_CHECK_NAMESPACE):
-        return False, {"reason": f"function_path must start with {CUSTOM_CHECK_NAMESPACE!r}"}
-    module_path, _, attr = fn_path.rpartition(".")
-    if not module_path or not attr:
-        return False, {"reason": "function_path must be module.fn"}
-    try:
-        mod = importlib.import_module(module_path)
-        fn = getattr(mod, attr)
-    except (ImportError, AttributeError) as e:
-        return False, {"reason": f"cannot resolve {fn_path}: {e}"}
-    try:
-        result = fn(dag)
-    except Exception as e:
-        return False, {"reason": f"custom check raised: {e}", "function_path": fn_path}
-    return bool(result), {"function_path": fn_path, "description": description}
+    return False, {
+        "reason": "custom_python checks are disabled; use built-in deterministic check types",
+        "function_path": fn_path,
+        "description": description,
+    }
 
 
 # ── dispatch ──

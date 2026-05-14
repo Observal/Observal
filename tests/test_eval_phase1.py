@@ -151,6 +151,14 @@ class TestBuildTraceDAG:
         dag = build_trace_dag(spans)
         assert list(dag.nodes) == ["a"]
 
+    def test_unix_epoch_seconds_are_converted_to_ms(self):
+        dag = build_trace_dag([_span("a", "Read", start=1_750_000_000)])
+        assert dag.nodes["a"].start_time_ms == 1_750_000_000_000
+
+    def test_unix_epoch_ms_are_preserved(self):
+        dag = build_trace_dag([_span("a", "Read", start=1_750_000_000_000)])
+        assert dag.nodes["a"].start_time_ms == 1_750_000_000_000
+
     def test_missing_parent_id_no_parent_edge(self):
         spans = [_span("a", "Read", start=1), _span("b", "Write", start=2)]
         dag = build_trace_dag(spans)

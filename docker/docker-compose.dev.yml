@@ -11,15 +11,3 @@ services:
       - "80:80"
     volumes:
       - ./nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
-
-  observal-api:
-    read_only: false
-    volumes:
-      - ../observal-server/services:/app/services:ro
-      - ../observal-server/api:/app/api:ro
-
-  observal-worker:
-    read_only: false
-    volumes:
-      - ../observal-server/services:/app/services:ro
-      - ../observal-server/api:/app/api:ro

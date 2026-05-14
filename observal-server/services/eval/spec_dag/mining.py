@@ -26,13 +26,10 @@ from services.eval.spec_dag.models import (
     SpecSource,
     StepConstraint,
 )
+from services.eval.trace_dag.helpers import tool_key
 
 if TYPE_CHECKING:
-    from services.eval.trace_dag.models import TraceDAG, TraceNode
-
-
-def _tool_key(node: TraceNode) -> str:
-    return (node.method or node.name or "").strip()
+    from services.eval.trace_dag.models import TraceDAG
 
 
 def _final_response_text(dag: TraceDAG) -> str:
@@ -106,7 +103,7 @@ def _mine_outcome_assertions(traces: list[TraceDAG]) -> list[OutcomeAssertion]:
         seen_in_trace: dict[str, list[dict[str, Any]]] = {}
         for sid in trace.topo_sorted_ids():
             node = trace.nodes[sid]
-            key = _tool_key(node)
+            key = tool_key(node)
             if not key:
                 continue
             params: dict[str, Any] = {}
@@ -229,7 +226,7 @@ def _mine_step_constraints(traces: list[TraceDAG]) -> list[StepConstraint]:
         return []
     universal_pairs: set[tuple[str, str]] | None = None
     for trace in traces:
-        seq = [(_tool_key(trace.nodes[sid]), trace.nodes[sid].start_time_ms) for sid in trace.topo_sorted_ids()]
+        seq = [(tool_key(trace.nodes[sid]), trace.nodes[sid].start_time_ms) for sid in trace.topo_sorted_ids()]
         seq = [(k, t) for k, t in seq if k]
         pairs: set[tuple[str, str]] = set()
         for i in range(len(seq)):

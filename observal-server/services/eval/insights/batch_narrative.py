@@ -4,6 +4,11 @@
 
 """Batch narrative — pre-computed deterministic metrics, then prose-only LLM.
 
+This lives alongside eval because batch insights reuse eval scorecards,
+CheckResults, and waste classifications. The LLM layer is deliberately
+prose-only: all metrics are computed before prompting so generated reports
+cannot invent counts, latency percentiles, cost, or regression deltas.
+
 The pipeline:
 
 1. Compute deterministic metrics over the batch (counts, token aggregates,

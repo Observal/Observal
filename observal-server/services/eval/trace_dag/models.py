@@ -8,6 +8,8 @@ Pure data model. No I/O. The builder constructs one of these from spans;
 the alignment / waste / longitudinal layers consume it as a read-only
 graph. Edge kinds carry confidence, so consumers can degrade gracefully
 when spans lack rich metadata (no `files_touched`, no `output_excerpt`).
+Trace DAGs are timestamp-monotonic causal graphs; repeated action
+"cycles" elsewhere refer to behavioral repetition, not graph back-edges.
 """
 
 from __future__ import annotations

@@ -57,13 +57,7 @@ def _cost_meta(node: TraceNode, pricing: PricingFn | None) -> dict[str, Any]:
 
 
 def _detect_cycles(dag: TraceDAG) -> list[list[str]]:
-    """Action repetition cycles: same `(method|name, file_path)` repeated 3+ times.
-
-    Trace DAGs in this codebase are causal (timestamp-monotonic), so a
-    "cycle" here means a tool-call repetition pattern — not a graph cycle
-    in the strict sense. This matches the kernel's `detect_repetition_cycles`
-    intent.
-    """
+    """Action repetition cycles: same `(method|name, file_path)` repeated 3+ times."""
     sequence: list[tuple[str, str]] = []
     span_ids: list[str] = []
     for sid in dag.topo_sorted_ids():
