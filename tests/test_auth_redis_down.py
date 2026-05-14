@@ -25,7 +25,6 @@ def init_key_manager_for_module(tmp_path_factory):
     init_key_manager(key_dir=str(key_dir), key_password=None)
 
 
-
 def _make_mock_user():
     from models.user import UserRole
 
