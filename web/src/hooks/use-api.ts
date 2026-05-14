@@ -372,6 +372,14 @@ export function useDiagnostics() {
   });
 }
 
+export function useSystemWarnings() {
+  return useQuery({
+    queryKey: ["admin", "system-warnings"],
+    queryFn: admin.systemWarnings,
+    refetchInterval: 60_000,
+  });
+}
+
 // ── Telemetry ───────────────────────────────────────────────────────
 
 export function useTelemetryStatus() {
