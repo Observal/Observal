@@ -20,11 +20,27 @@ _redis: aioredis.Redis | None = None
 
 
 def _request_key_builder(func, namespace="", *, request: Request | None = None, **kwargs):
-    """Build cache key from path + query string only, ignoring Depends params."""
+    """Build cache key from auth identity + path + query string.
+
+    Including a per-user identity component prevents a shared cache from
+    serving one authenticated user's response to a different user whose
+    request happens to hit the same path and query string (SEC-023).
+
+    Anonymous requests use the literal identity ``anon`` so they can
+    still share a cache bucket with each other.
+    """
     prefix = f"{CACHE_PREFIX}:{namespace}" if namespace else CACHE_PREFIX
     url = request.url.path if request else func.__name__
     qs = str(request.query_params) if request and request.query_params else ""
-    raw = f"{url}?{qs}" if qs else url
+
+    identity = "anon"
+    if request:
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            # Hash the token so the raw credential never appears in a cache key.
+            identity = hashlib.sha256(auth.encode(), usedforsecurity=False).hexdigest()[:16]
+
+    raw = f"{identity}:{url}?{qs}" if qs else f"{identity}:{url}"
     return f"{prefix}:{hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()}"
 
 
