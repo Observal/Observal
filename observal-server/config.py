@@ -136,6 +136,8 @@ class Settings(BaseSettings):
 
     # Agent install policy
     ALLOW_DRAFT_INSTALL: bool = False
+    ENABLE_OPENAPI: bool = False  # expose /docs, /redoc, /openapi.json
+    ENABLE_METRICS: bool = False  # expose Prometheus /metrics endpoint
 
     # Deployment mode
     DEPLOYMENT_MODE: Literal["local", "enterprise"] = "local"
