@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+// SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { ArrowRight, Loader2, RotateCcw, Construction } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { parseMcpConfigJson, applyParsedConfig } from "@/lib/mcp-parser";
 import {
   Dialog,
   DialogContent,
@@ -87,18 +89,278 @@ interface PromptFieldState {
   tags: string;
 }
 
-// ── WIP Stub ───────────────────────────────────────────────────────
 
-function WipStub({ type }: { type: string }) {
+// ── MCP Edit Form ──────────────────────────────────────────────────
+
+function McpEditForm({
+  listingId,
+  type,
+  currentVersion,
+  item,
+  onSuccess,
+}: {
+  listingId: string;
+  type: RegistryType;
+  currentVersion: string;
+  item: RegistryItem;
+  onSuccess?: () => void;
+}) {
+  // Build current config as editable JSON for the textarea
+  const itemCommand = (item.command as string) ?? "";
+  const itemUrl = (item.url as string) ?? "";
+  const itemTransport = (item.transport as string) ?? "";
+  const itemName = (item.name as string) ?? "";
+  const itemArgs = Array.isArray(item.args) ? (item.args as string[]) : [];
+  const itemEnvVars = Array.isArray(item.environment_variables) ? (item.environment_variables as { name: string }[]) : [];
+
+  const currentConfigJson = useMemo(() => {
+    const cfg: Record<string, unknown> = {};
+    if (itemCommand) {
+      cfg.command = itemCommand;
+      if (itemArgs.length > 0) cfg.args = itemArgs;
+      if (itemEnvVars.length > 0) {
+        cfg.env = Object.fromEntries(itemEnvVars.map((ev) => [ev.name, `$${ev.name}`]));
+      }
+    } else if (itemUrl) {
+      cfg.url = itemUrl;
+      if (itemTransport) cfg.type = itemTransport;
+    }
+    if (Object.keys(cfg).length === 0) return "";
+    const wrapper = { mcpServers: { [itemName]: cfg } };
+    return JSON.stringify(wrapper, null, 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemCommand, itemUrl, itemTransport, itemName, JSON.stringify(itemArgs), JSON.stringify(itemEnvVars)]);
+
+  const [jsonInput, setJsonInput] = useState(currentConfigJson);
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [jsonParsed, setJsonParsed] = useState(false);
+  const [description, setDescription] = useState((item.description as string) ?? "");
+  const [command, setCommand] = useState((item.command as string) ?? "");
+  const [args, setArgs] = useState(Array.isArray(item.args) ? (item.args as string[]).join(" ") : "");
+  const [mcpUrl, setMcpUrl] = useState((item.url as string) ?? "");
+  const [transport, setTransport] = useState((item.transport as string) ?? "");
+  const [framework, setFramework] = useState((item.framework as string) ?? "");
+  const [dockerImage, setDockerImage] = useState((item.docker_image as string) ?? "");
+  const [envVars, setEnvVars] = useState<{ name: string; description: string; required: boolean }[]>(
+    Array.isArray(item.environment_variables) ? item.environment_variables as { name: string; description: string; required: boolean }[] : []
+  );
+  const [changelog, setChangelog] = useState("");
+  const [showVersionDialog, setShowVersionDialog] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
+  const publishVersion = usePublishComponentVersion();
+  const { data: versionSuggestions } = useComponentVersionSuggestions(type, listingId);
+
+  const itemDescription = (item.description as string) ?? "";
+  const isDirty = useMemo(() => {
+    return (
+      jsonParsed ||
+      changelog.trim() !== "" ||
+      description !== itemDescription ||
+      jsonInput !== currentConfigJson
+    );
+  }, [jsonParsed, changelog, description, jsonInput, currentConfigJson, itemDescription]);
+
+  const jsonParseTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const handleJsonInput = useCallback((value: string) => {
+    setJsonInput(value);
+    setJsonError(null);
+    setJsonParsed(false);
+
+    clearTimeout(jsonParseTimerRef.current);
+    if (!value.trim()) return;
+
+    jsonParseTimerRef.current = setTimeout(() => {
+      const { parsed, error } = parseMcpConfigJson(value);
+      if (error) {
+        setJsonError(error);
+        return;
+      }
+      if (!parsed) return;
+
+      applyParsedConfig(parsed, {
+        setCommand, setArgs, setMcpUrl, setTransport,
+        setFramework, setDockerImage, setEnvVars,
+        setDescription,
+      }, "fill");
+      setJsonParsed(true);
+    }, 300);
+  }, []);
+
+  function buildBody(version: string): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      version,
+      description: description.trim() || undefined,
+      changelog: changelog.trim() || undefined,
+    };
+    const extra: Record<string, unknown> = {};
+    if (command) extra.command = command;
+    if (args.trim()) extra.args = args.split(/\s+/).filter(Boolean);
+    if (mcpUrl) extra.url = mcpUrl;
+    if (transport) extra.transport = transport;
+    if (framework) extra.framework = framework;
+    if (dockerImage) extra.docker_image = dockerImage;
+    if (envVars.length > 0) extra.environment_variables = envVars;
+    if (Object.keys(extra).length > 0) body.extra = extra;
+    return body;
+  }
+
+  async function handleRelease(selectedVersion: string) {
+    setPublishing(true);
+    try {
+      const body = buildBody(selectedVersion);
+      await publishVersion.mutateAsync({ type, listingId, body });
+      setShowVersionDialog(false);
+      setJsonInput("");
+      setJsonParsed(false);
+      setChangelog("");
+      onSuccess?.();
+    } catch {
+      // handled by mutation
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="mcp-name" className="text-sm font-medium">Name</Label>
+          <Input id="mcp-name" value={item.name} disabled className="max-w-md bg-muted/40 text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">Component name cannot be changed after creation.</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="mcp-description" className="text-sm font-medium">Description</Label>
+          <Textarea
+            id="mcp-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            className="max-w-lg resize-y"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="mcp-changelog" className="text-sm font-medium">Changelog</Label>
+          <Textarea
+            id="mcp-changelog"
+            placeholder="What changed in this version?"
+            value={changelog}
+            onChange={(e) => setChangelog(e.target.value)}
+            rows={2}
+            className="max-w-lg resize-y"
+          />
+        </div>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-sm font-medium font-[family-name:var(--font-display)]">Update Server Config</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Paste your updated server JSON config below. Accepts IDE config, bare config, SSE, or server.json formats.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Textarea
+            id="mcp-json"
+            value={jsonInput}
+            onChange={(e) => handleJsonInput(e.target.value)}
+            placeholder={`Paste your updated config, e.g.:\n{\n  "mcpServers": {\n    "${item.name}": {\n      "command": "npx",\n      "args": ["-y", "@example/server@latest"]\n    }\n  }\n}`}
+            rows={8}
+            className="resize-y font-[family-name:var(--font-mono)] text-xs"
+          />
+          {jsonError && <p className="text-xs text-destructive">{jsonError}</p>}
+          {jsonParsed && (
+            <p className="text-xs text-green-600 flex items-center gap-1.5">
+              <ArrowRight className="h-3 w-3" />
+              Config parsed: {command && `${command} `}{args && `${args} `}{mcpUrl && `${mcpUrl} `}
+              {envVars.length > 0 && `(${envVars.length} env var${envVars.length > 1 ? "s" : ""})`}
+            </p>
+          )}
+        </div>
+
+        {/* Current config summary */}
+        <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">Current config:</p>
+          {command && <p className="text-xs font-mono">command: {command} {args}</p>}
+          {mcpUrl && <p className="text-xs font-mono">url: {mcpUrl}</p>}
+          {transport && <p className="text-xs font-mono">transport: {transport}</p>}
+          {framework && <p className="text-xs font-mono">framework: {framework}</p>}
+          {envVars.length > 0 && <p className="text-xs font-mono">env vars: {envVars.map(e => e.name).join(", ")}</p>}
+          {!command && !mcpUrl && <p className="text-xs text-muted-foreground italic">No config set</p>}
+        </div>
+      </section>
+
+      <Separator />
+
+      <div className="flex items-center gap-3">
+        <Button
+          onClick={() => setShowVersionDialog(true)}
+          disabled={publishing || !isDirty}
+          className="min-w-[160px]"
+        >
+          {publishing ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <ArrowRight className="mr-2 h-4 w-4" />
+          )}
+          Save &amp; Release
+        </Button>
+
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setJsonInput(currentConfigJson);
+            setJsonError(null);
+            setJsonParsed(false);
+            setDescription((item.description as string) ?? "");
+            setChangelog("");
+            setCommand((item.command as string) ?? "");
+            setArgs(Array.isArray(item.args) ? (item.args as string[]).join(" ") : "");
+            setMcpUrl((item.url as string) ?? "");
+            setTransport((item.transport as string) ?? "");
+            setFramework((item.framework as string) ?? "");
+            setDockerImage((item.docker_image as string) ?? "");
+            setEnvVars(Array.isArray(item.environment_variables) ? item.environment_variables as { name: string; description: string; required: boolean }[] : []);
+          }}
+          disabled={!isDirty || publishing}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <RotateCcw className="mr-2 h-4 w-4" />
+          Discard
+        </Button>
+      </div>
+
+      <VersionBumpDialog
+        open={showVersionDialog}
+        onOpenChange={setShowVersionDialog}
+        currentVersion={currentVersion}
+        suggestions={versionSuggestions}
+        onConfirm={handleRelease}
+        publishing={publishing}
+      />
+    </div>
+  );
+}
+
+// ── WIP Stub (sandboxes only) ──────────────────────────────────────
+
+function WipStub() {
   return (
     <div className="rounded-md border border-dashed border-border p-8 text-center space-y-3">
       <Construction className="h-8 w-8 mx-auto text-muted-foreground" />
       <h3 className="text-sm font-semibold font-[family-name:var(--font-display)]">
-        {type === "mcp" ? "MCP" : "Sandbox"} Editing — Coming Soon
+        Sandbox Editing — Coming Soon
       </h3>
       <p className="text-xs text-muted-foreground max-w-md mx-auto">
-        Version editing for {type === "mcp" ? "MCP servers" : "sandboxes"} requires lock file
-        support and semver resolution, which is planned for Phase 2.
+        Version editing for sandboxes requires lock file support and semver resolution,
+        which is planned for Phase 2.
       </p>
       <Badge variant="secondary" className="text-[10px]">Phase 2</Badge>
     </div>
@@ -839,8 +1101,36 @@ export function ComponentEditForm({
 }: ComponentEditFormProps) {
   const singularType = type === "sandboxes" ? "sandbox" : type.replace(/s$/, "");
 
-  if (singularType === "mcp" || singularType === "sandbox") {
-    return <WipStub type={singularType} />;
+  if (item.status === "pending") {
+    return (
+      <div className="rounded-md border border-dashed border-border p-8 text-center space-y-3">
+        <Construction className="h-8 w-8 mx-auto text-muted-foreground" />
+        <h3 className="text-sm font-semibold font-[family-name:var(--font-display)]">
+          Pending Review
+        </h3>
+        <p className="text-xs text-muted-foreground max-w-md mx-auto">
+          This component is currently pending review and cannot be edited.
+          You can edit it once it has been approved or rejected.
+        </p>
+        <Badge variant="secondary" className="text-[10px]">Pending</Badge>
+      </div>
+    );
+  }
+
+  if (singularType === "mcp") {
+    return (
+      <McpEditForm
+        listingId={listingId}
+        type={type}
+        currentVersion={currentVersion}
+        item={item}
+        onSuccess={onSuccess}
+      />
+    );
+  }
+
+  if (singularType === "sandbox") {
+    return <WipStub />;
   }
 
   return (
