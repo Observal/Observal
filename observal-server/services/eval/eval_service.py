@@ -84,11 +84,20 @@ def _score_to_grade(score: float) -> str:
 async def fetch_traces(agent_id: str, limit: int = 20, trace_id: str | None = None) -> list[dict]:
     """Fetch recent agent traces from ClickHouse."""
     if trace_id:
-        sql = "SELECT * FROM traces WHERE agent_id = {aid:String} AND trace_id = {tid:String} AND is_deleted = 0 FORMAT JSON"
-        params = {"param_aid": agent_id, "param_tid": trace_id}
+        sql = (
+            "SELECT * FROM traces WHERE agent_id = {aid:String} "
+            "AND trace_id = {tid:String} "
+            "AND trace_type != {excluded_trace_type:String} "
+            "AND is_deleted = 0 FORMAT JSON"
+        )
+        params = {"param_aid": agent_id, "param_tid": trace_id, "param_excluded_trace_type": "registry"}
     else:
-        sql = f"SELECT * FROM traces WHERE agent_id = {{aid:String}} AND is_deleted = 0 ORDER BY start_time DESC LIMIT {int(limit)} FORMAT JSON"
-        params = {"param_aid": agent_id}
+        sql = (
+            "SELECT * FROM traces WHERE agent_id = {aid:String} "
+            "AND trace_type != {excluded_trace_type:String} "
+            f"AND is_deleted = 0 ORDER BY start_time DESC LIMIT {int(limit)} FORMAT JSON"
+        )
+        params = {"param_aid": agent_id, "param_excluded_trace_type": "registry"}
 
     try:
         r = await _query(sql, params)
@@ -320,6 +329,7 @@ async def run_structured_eval(
 
             slm_penalties += await slm_scorer.score_factual_grounding(sanitized_trace, spans)
             slm_penalties += await slm_scorer.score_thought_process(spans)
+            skipped_dimensions = sorted(slm_scorer.failed_dimensions)
         except Exception as e:
             logger.error("slm_scoring_failed", error=str(e))
             slm_penalties = []
@@ -478,6 +488,7 @@ async def run_agent_scoped_eval(
 
             slm_penalties += await slm_scorer.score_factual_grounding(sanitized_trace, full_spans)
             slm_penalties += await slm_scorer.score_thought_process(full_spans)
+            skipped_dimensions = sorted(slm_scorer.failed_dimensions)
         except Exception as e:
             logger.error("slm_scoring_failed", scope="agent", error=str(e))
             slm_penalties = []

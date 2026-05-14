@@ -48,7 +48,7 @@ class Scorecard(Base):
     trace_id: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[str] = mapped_column(String(50), nullable=False)
     overall_score: Mapped[float] = mapped_column(Float, nullable=False)
-    overall_grade: Mapped[str] = mapped_column(String(2), nullable=False)
+    overall_grade: Mapped[str] = mapped_column(String(3), nullable=False)
     recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)
     bottleneck: Mapped[str | None] = mapped_column(String(255), nullable=True)
     raw_output: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -58,12 +58,18 @@ class Scorecard(Base):
     dimension_scores: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     composite_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     display_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    grade: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    grade: Mapped[str | None] = mapped_column(String(3), nullable=True)
     scoring_recommendations: Mapped[list | None] = mapped_column(JSON, nullable=True)
     penalty_count: Mapped[int] = mapped_column(Integer, default=0)
     partial_evaluation: Mapped[bool] = mapped_column(Boolean, default=False)
     dimensions_skipped: Mapped[list | None] = mapped_column(JSON, nullable=True)
     warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Unified eval Phase 3: which scoring substrate produced this row.
+    # legacy_deductive (existing slm_scorer pipeline), spec_dag_alignment (anchored),
+    # council_deductive (no spec; SLM evidence + deterministic rules).
+    scoring_method: Mapped[str] = mapped_column(String(32), nullable=False, default="legacy_deductive")
+    # Optional: full CheckResult[] for spec_dag_alignment / council_deductive scorecards
+    checks_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     eval_run: Mapped["EvalRun"] = relationship(back_populates="scorecards")
     dimensions: Mapped[list["ScorecardDimension"]] = relationship(
@@ -83,7 +89,7 @@ class ScorecardDimension(Base):
     )
     dimension: Mapped[str] = mapped_column(String(100), nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False)
-    grade: Mapped[str] = mapped_column(String(2), nullable=False)
+    grade: Mapped[str] = mapped_column(String(3), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     scorecard: Mapped["Scorecard"] = relationship(back_populates="dimensions")

@@ -15,6 +15,7 @@ from models.component_source import ComponentSource
 from models.download import AgentDownloadRecord, ComponentDownloadRecord
 from models.enterprise_config import EnterpriseConfig
 from models.eval import EvalRun, EvalRunStatus, Scorecard, ScorecardDimension
+from models.eval_spec_dag import EvalSpecDAG
 from models.exporter_config import ExporterConfig
 from models.feedback import Feedback
 from models.hook import HookDownload, HookListing
@@ -63,6 +64,7 @@ __all__ = [
     "EnterpriseConfig",
     "EvalRun",
     "EvalRunStatus",
+    "EvalSpecDAG",
     "ExporterConfig",
     "Feedback",
     "HookDownload",

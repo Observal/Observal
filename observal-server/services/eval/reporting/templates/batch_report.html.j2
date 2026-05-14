@@ -1,0 +1,139 @@
+{#
+SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+
+SPDX-License-Identifier: AGPL-3.0-only
+#}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eval Batch Report</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 24px; color: #1a1a1a; }
+  h1, h2 { margin-top: 32px; }
+  .header-stats { display: flex; gap: 24px; margin: 16px 0; }
+  .header-stats .stat { background: #f6f8fa; padding: 12px 16px; border-radius: 6px; min-width: 120px; }
+  .stat .label { font-size: 12px; color: #6a737d; text-transform: uppercase; }
+  .stat .value { font-size: 24px; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  th, td { border-bottom: 1px solid #e1e4e8; padding: 8px 12px; text-align: left; font-size: 13px; }
+  th { background: #f6f8fa; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+  .pill-pass { background: #d1f7d6; color: #12502a; }
+  .pill-fail { background: #fbd5d5; color: #6a1d1d; }
+  .pill-warn { background: #fff3bf; color: #5b4400; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; }
+  .card h3 { margin-top: 0; }
+  .friction { background: #fff8f0; }
+  .wins    { background: #f0fff4; }
+  .waste   { background: #fff4f4; }
+  pre { background: #f6f8fa; padding: 8px; border-radius: 4px; overflow: auto; font-size: 12px; }
+  .copy-paste { background: #fafbfc; border: 1px dashed #d0d7de; padding: 12px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<h1>Eval Batch Report</h1>
+
+<section class="header-stats">
+  <div class="stat"><div class="label">Sessions</div><div class="value">{{ metrics.session_count }}</div></div>
+  <div class="stat"><div class="label">Traces</div><div class="value">{{ metrics.trace_count }}</div></div>
+  <div class="stat"><div class="label">Tokens In</div><div class="value">{{ metrics.total_tokens_in }}</div></div>
+  <div class="stat"><div class="label">Tokens Out</div><div class="value">{{ metrics.total_tokens_out }}</div></div>
+  <div class="stat"><div class="label">Cost USD</div><div class="value">${{ '%.4f' % metrics.cost_usd }}{% if metrics.cost_unknown %}*{% endif %}</div></div>
+  <div class="stat"><div class="label">Latency p95</div><div class="value">{{ '%.0f' % metrics.latency_p95 }} ms</div></div>
+</section>
+
+<section>
+  <h2>At a Glance</h2>
+  <p>{{ synthesis or "No synthesis available." }}</p>
+</section>
+
+<section>
+  <h2>Task Areas</h2>
+  <table>
+    <tr><th>Tool</th><th>Calls</th><th>Errors</th></tr>
+    {% for tool, count in tool_usage_sorted %}
+    <tr>
+      <td>{{ tool }}</td>
+      <td>{{ count }}</td>
+      <td>{{ metrics.error_breakdown_by_tool.get(tool, 0) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>Charts</h2>
+  <div class="grid">
+    <div class="card"><h3>Tools</h3><pre>{{ tool_usage_text }}</pre></div>
+    <div class="card"><h3>Failure Categories</h3><pre>{{ failure_categories_text }}</pre></div>
+    <div class="card"><h3>Languages</h3><pre>{{ languages_text }}</pre></div>
+    <div class="card"><h3>Response Time</h3><pre>p50 {{ '%.0f' % metrics.latency_p50 }} ms · p95 {{ '%.0f' % metrics.latency_p95 }} ms · p99 {{ '%.0f' % metrics.latency_p99 }} ms</pre></div>
+  </div>
+</section>
+
+<section>
+  <h2 class="wins">Big Wins</h2>
+  <p>{{ section_text["what_works"] or "No wins narrative." }}</p>
+</section>
+
+<section>
+  <h2 class="friction">Friction Categories</h2>
+  <p>{{ section_text["friction_analysis"] or "No friction narrative." }}</p>
+</section>
+
+<section>
+  <h2 class="waste">Waste Hot Spots</h2>
+  {% if waste_hot_spots_flat %}
+  <table>
+    <tr><th>Kind</th><th>Cost USD</th><th>Evidence Span IDs</th></tr>
+    {% for row in waste_hot_spots_flat %}
+    <tr>
+      <td>{{ row.kind }}</td>
+      <td>{% if row.cost_usd is not none %}${{ '%.4f' % row.cost_usd }}{% else %}—{% endif %}</td>
+      <td>{{ row.evidence_span_ids | join(", ") }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>No waste hot spots identified.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Spec Suggestions</h2>
+  <div class="copy-paste">{{ spec_suggestions_text or "No spec suggestions." }}</div>
+</section>
+
+<section>
+  <h2>On the Horizon</h2>
+  <p>{{ section_text["regression_detection"] or "No regression narrative." }}</p>
+</section>
+
+<section>
+  <h2>Fun Ending</h2>
+  <p>{{ section_text["fun_ending"] or "" }}</p>
+</section>
+
+<section>
+  <h2>Per-Scorecard</h2>
+  <table>
+    <tr><th>#</th><th>Mode</th><th>Score</th><th>Pass</th><th>Fail</th><th>Warn</th></tr>
+    {% for row in scorecard_rows %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ row.mode }}</td>
+      <td>{{ '%.4f' % row.score }}</td>
+      <td><span class="pill pill-pass">{{ row.pass_count }}</span></td>
+      <td><span class="pill pill-fail">{{ row.fail_count }}</span></td>
+      <td><span class="pill pill-warn">{{ row.warn_count }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+</body>
+</html>

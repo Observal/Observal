@@ -420,23 +420,26 @@ export interface FeedbackItem {
 // ── Eval ────────────────────────────────────────────────────────────
 
 export interface Scorecard {
-	id: string;
-	agent_id?: string;
-	agent_name?: string;
-	version?: string;
-	status?: string;
-	overall_score?: number;
-	created_at?: string;
-	dimensions?: { name: string; score: number; comment?: string }[];
-	metadata?: Record<string, unknown>;
-	// New structured scoring fields
-	dimension_scores?: Record<string, number>;
-	composite_score?: number;
-	display_score?: number;
-	grade?: string;
-	overall_grade?: string;
-	scoring_recommendations?: string[];
-	penalty_count?: number;
+  id: string;
+  agent_id?: string;
+  agent_name?: string;
+  trace_id?: string;
+  version?: string;
+  status?: string;
+  overall_score?: number;
+  created_at?: string;
+  evaluated_at?: string;
+  dimensions?: { name: string; score: number; comment?: string }[];
+  metadata?: Record<string, unknown>;
+  // New structured scoring fields
+  dimension_scores?: Record<string, number>;
+  composite_score?: number;
+  display_score?: number;
+  grade?: string;
+  overall_grade?: string;
+  scoring_recommendations?: string[];
+  penalty_count?: number;
+  warnings?: string[];
 }
 
 export interface TracePenalty {
@@ -772,4 +775,142 @@ export interface ModelRefreshResult {
 	model_count: number;
 	etag: string | null;
 	upstream_etag: string | null;
+}
+
+// ── Spec DAG v2 (outcome-oriented) ───────────────────────────────────
+
+export type OutcomeCheckType =
+  | "response_contains"
+  | "response_schema"
+  | "state_equals"
+  | "state_changed"
+  | "tool_was_called"
+  | "tool_result_contains"
+  | "artifact_exists"
+  | "custom_python";
+
+export type SpecSource = "hand_authored" | "mined" | "llm_inferred";
+export type StepSeverity = "hard" | "soft";
+export type InvariantSeverity = "critical" | "major";
+
+export interface OutcomeCheck {
+  check_type: OutcomeCheckType;
+  params: Record<string, unknown>;
+}
+
+export interface OutcomeAssertion {
+  assertion_id: string;
+  description?: string;
+  check: OutcomeCheck;
+  weight: number;
+  required: boolean;
+}
+
+export interface StepConstraint {
+  constraint_id: string;
+  description?: string;
+  before_tool: string;
+  after_tool: string;
+  weight: number;
+  severity: StepSeverity;
+}
+
+export interface DomainInvariant {
+  invariant_id: string;
+  description?: string;
+  check: OutcomeCheck;
+  severity: InvariantSeverity;
+}
+
+export interface SpecDagV2Payload {
+  schema_version: 2;
+  task_type: string;
+  version: string;
+  source: SpecSource;
+  outcome_assertions: OutcomeAssertion[];
+  step_constraints: StepConstraint[];
+  domain_invariants: DomainInvariant[];
+}
+
+export interface SpecDagRow {
+  id: string;
+  task_type: string;
+  version: string;
+  source: SpecSource;
+  created_at: string | null;
+  created_by: string | null;
+}
+
+// ── Reliability Report ──────────────────────────────────────────────
+
+export interface ReliabilityPenaltyAttribution {
+  agent: number;
+  mcp_tool: number;
+  prompt_injection: number;
+  waste: number;
+  user_ambiguity: number;
+}
+
+export interface ReliabilityTimelineNode {
+  span_id: string;
+  name: string;
+  type: string;
+  status: "success" | "failure" | "waste" | "injection" | "recovery";
+  status_label: string;
+  description: string;
+  latency_ms: number;
+  start_time: string;
+  is_main_path: boolean;
+}
+
+export interface ReliabilityDagNode {
+  span_id: string;
+  name: string;
+  type: string;
+  status: string;
+  is_cycle: boolean;
+  depth: number;
+}
+
+export interface ReliabilityDagEdge {
+  src: string;
+  dst: string;
+  kind: string;
+  confidence: string;
+}
+
+export interface ReliabilityDimensions {
+  goal_completion: number | null;
+  tool_efficiency: number | null;
+  tool_failures: number | null;
+  factual_grounding: number | null;
+  thought_process: number | null;
+  adversarial_robustness: number | null;
+}
+
+export interface WasteCluster {
+  cluster_id: string;
+  check_type: string;
+  span_ids: string[];
+  tokens_wasted: number;
+  cost_usd: number | null;
+  fix_suggestion: string | null;
+}
+
+export interface ReliabilityReport {
+  trace_id: string;
+  scorecard_id: string;
+  agent_id: string;
+  agent_version: string;
+  overall_score: number;
+  overall_grade: string;
+  penalty_attribution: ReliabilityPenaltyAttribution;
+  dominant_failure: string | null;
+  penalties: Record<string, unknown>[];
+  checks: Record<string, unknown>[];
+  causal_timeline: ReliabilityTimelineNode[];
+  trace_dag: { nodes: ReliabilityDagNode[]; edges: ReliabilityDagEdge[] };
+  reliability_dimensions: ReliabilityDimensions;
+  waste_clusters: WasteCluster[];
+  adversarial_findings: Record<string, unknown> | null;
 }

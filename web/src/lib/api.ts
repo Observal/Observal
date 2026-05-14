@@ -48,6 +48,9 @@ import type {
   DiagnosticsResponse,
   InsightReportListItem,
   InsightReport,
+  SpecDagRow,
+  SpecDagV2Payload,
+  ReliabilityReport,
 } from "./types";
 
 const API = "/api/v1";
@@ -465,6 +468,19 @@ export const eval_ = {
   },
   penalties: (scorecardId: string) =>
     get<TracePenalty[]>(`/eval/scorecards/${scorecardId}/penalties`),
+  // ── Spec DAG v2 (outcome-oriented) ──
+  listSpecDags: (taskType: string) =>
+    get<SpecDagRow[]>(`/eval/spec-dags?task_type=${encodeURIComponent(taskType)}`),
+  registerSpecDag: (body: SpecDagV2Payload) =>
+    post<{ id: string; task_type: string; version: string; source: string }>(
+      "/eval/spec-dags",
+      body
+    ),
+  migrateSpecDags: (taskType: string) =>
+    post<{ task_type: string; migrated: string[] }>(
+      `/eval/spec-dags/${encodeURIComponent(taskType)}/migrate`,
+      {}
+    ),
   agentSessions: (agentId: string) =>
     get<Array<{
       session_id: string;
@@ -476,6 +492,26 @@ export const eval_ = {
       first_prompt?: string;
       service_name?: string;
     }>>(`/eval/agents/${agentId}/sessions`),
+  reliabilityReport: (traceId: string) =>
+    get<ReliabilityReport>(`/eval/traces/${encodeURIComponent(traceId)}/reliability-report`),
+  scorecardExplanation: async (scorecardId: string): Promise<{ status: string; explanation?: string; retry_after?: number }> => {
+    const token = getAccessToken();
+    const res = await fetch(`${API}/eval/scorecards/${encodeURIComponent(scorecardId)}/explanation`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 202) return res.json();
+    if (res.ok) return res.json();
+    return { status: "unavailable" };
+  },
+  checkExplanation: async (scorecardId: string, checkId: string): Promise<{ status: string; explanation?: string; retry_after?: number }> => {
+    const token = getAccessToken();
+    const res = await fetch(`${API}/eval/scorecards/${encodeURIComponent(scorecardId)}/checks/${encodeURIComponent(checkId)}/explanation`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 202) return res.json();
+    if (res.ok) return res.json();
+    return { status: "unavailable" };
+  },
 };
 
 // ── Admin ───────────────────────────────────────────────────────────

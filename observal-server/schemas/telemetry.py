@@ -5,6 +5,45 @@
 from pydantic import BaseModel
 
 
+class StateWriteIn(BaseModel):
+    """One state-store mutation captured during a span.
+
+    `value_hash` is sha256 of the canonical JSON of the written value —
+    never the value itself (privacy + size). Agents can compute the hash
+    via ``services.eval.span_enrichment.hash_state_value``.
+    """
+
+    namespace: str
+    key: str
+    value_hash: str
+
+
+class ToolCallEvent(BaseModel):
+    mcp_server_id: str
+    tool_name: str
+    input_params: str = ""
+    response: str = ""
+    latency_ms: int = 0
+    status: str = "success"
+    user_action: str = ""
+    session_id: str = ""
+    ide: str = ""
+
+
+class AgentInteractionEvent(BaseModel):
+    agent_id: str
+    session_id: str = ""
+    tool_calls: int = 0
+    user_action: str = ""
+    latency_ms: int = 0
+    ide: str = ""
+
+
+class TelemetryBatch(BaseModel):
+    tool_calls: list[ToolCallEvent] = []
+    agent_interactions: list[AgentInteractionEvent] = []
+
+
 class TelemetryStatusResponse(BaseModel):
     tool_call_events: int
     agent_interaction_events: int
@@ -87,6 +126,15 @@ class SpanIngest(BaseModel):
     variables_provided: int | None = None
     template_tokens: int | None = None
     rendered_tokens: int | None = None
+    # Causal metadata (SDK Phase 1) — server-derived if absent unless noted
+    sdk_version: str | None = None
+    output_excerpt: str | None = None
+    tool_result_hash: str | None = None
+    files_read: list[str] | None = None
+    files_written: list[str] | None = None
+    intent_label: str | None = None  # annotation only
+    references: list[str] | None = None  # annotation only; upstream span_ids
+    state_writes: list[StateWriteIn] | None = None  # caller-provided; SDK Phase 2
 
 
 class ScoreIngest(BaseModel):

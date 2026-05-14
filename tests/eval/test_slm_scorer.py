@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.eval.slm_scorer import SLMScorer, _extract_reasoning_trace, _extract_tool_results
+from services.eval.slm_scorer import SLMScorer, _extract_reasoning_trace, _extract_tool_results, _looks_like_json_schema
 
 
 def _make_backend(response: dict):
@@ -140,6 +140,26 @@ class TestGoalCompletion:
         penalties = await scorer.score_goal_completion(trace={"output": "output"}, spans=[], required_sections=[])
         assert penalties == []
 
+    @pytest.mark.asyncio
+    async def test_schema_echo_marks_dimension_failed(self):
+        backend = _make_backend({})
+        scorer = SLMScorer(backend)
+        schema_echo = {
+            "type": "object",
+            "properties": {"sections": {"type": "array"}},
+            "required": ["sections"],
+            "$defs": {},
+        }
+        with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=schema_echo):
+            penalties = await scorer.score_goal_completion(
+                trace={"output": "Summary: text"},
+                spans=[],
+                goal_description="Test",
+                required_sections=[{"name": "Summary"}],
+            )
+        assert penalties == []
+        assert scorer.failed_dimensions == {"goal_completion"}
+
 
 class TestFactualGrounding:
     @pytest.mark.asyncio
@@ -250,3 +270,29 @@ class TestThoughtProcess:
         scorer = SLMScorer(backend)
         penalties = await scorer.score_thought_process(spans=[])
         assert penalties == []
+
+    @pytest.mark.asyncio
+    async def test_schema_echo_marks_thought_process_failed(self):
+        backend = _make_backend({})
+        scorer = SLMScorer(backend)
+        schema_echo = {"type": "object", "properties": {"findings": {"type": "array"}}, "required": ["findings"]}
+        with patch.object(scorer, "_call_model_direct", new_callable=AsyncMock, return_value=schema_echo):
+            penalties = await scorer.score_thought_process(spans=[_reasoning_span(), _tool_span()])
+        assert penalties == []
+        assert scorer.failed_dimensions == {"thought_process"}
+
+
+class TestSchemaEchoDetection:
+    def test_detects_nova_style_schema_echo(self):
+        assert _looks_like_json_schema(
+            {
+                "type": "object",
+                "properties": {"findings": {"type": "array"}},
+                "required": ["findings"],
+            }
+        )
+        assert _looks_like_json_schema({"$defs": {"Finding": {}}})
+
+    def test_does_not_flag_valid_judgment_data(self):
+        assert not _looks_like_json_schema({"sections": []})
+        assert not _looks_like_json_schema({"findings": []})

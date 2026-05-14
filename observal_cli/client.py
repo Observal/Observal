@@ -187,6 +187,20 @@ def get(path: str, params: dict | None = None) -> dict:
         _handle_connect()
 
 
+def get_raw(path: str, params: dict | None = None) -> str:
+    """GET that returns the raw response text (for HTML reports etc.)."""
+    base, headers = _client()
+    try:
+        r = _request_with_retry("get", f"{base}{path}", headers, params=params)
+        return r.text
+    except httpx.HTTPStatusError as e:
+        _handle_error(e, path)
+    except httpx.ReadTimeout:
+        _handle_timeout(path)
+    except httpx.ConnectError:
+        _handle_connect()
+
+
 def get_with_headers(path: str, params: dict | None = None) -> tuple[dict, dict[str, str]]:
     """Like ``get()``, but also returns the response headers (lowercased keys).
 
