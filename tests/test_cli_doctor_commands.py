@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 0xSHSH <156781261+0xSHSH@users.noreply.github.com>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: AGPL-3.0-only
 
 """E2E tests for CLI doctor commands.
 
