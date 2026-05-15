@@ -98,6 +98,15 @@ async def _ensure_columns(conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ── Unsafe-default guards (non-local deployments only) ─────────────────
+    if settings.DEPLOYMENT_MODE != "local":
+        weak_secrets = {"change-me-to-a-random-string", "changeme", "secret", "dev", ""}
+        if settings.SECRET_KEY in weak_secrets or len(settings.SECRET_KEY) < 32:
+            raise RuntimeError(
+                "SECRET_KEY is insecure. Set a random string of at least 32 characters "
+                "before running in non-local mode."
+            )
+
     if not settings.SKIP_DDL_ON_STARTUP:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

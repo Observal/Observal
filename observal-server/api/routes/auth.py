@@ -57,6 +57,45 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
+_COMMON_WEAK_PASSWORDS = frozenset(
+    {
+        # Passwords that fail the complexity rules anyway (kept for clarity)
+        "password",
+        "password1",
+        "password123",
+        "12345678",
+        "123456789",
+        "qwerty123",
+        "iloveyou",
+        "letmein123",
+        "welcome1",
+        "monkey123",
+        # Passwords that pass all four complexity rules but are still common
+        "P@ssw0rd!123",
+        "Admin@1234!!",
+        "Welcome@123!",
+        "Password@1!2",
+        "Qwerty@123!!",
+        "Letmein@123!",
+        "Passw0rd@123",
+        "P@$$w0rd1234",
+    }
+)
+
+
+def _validate_password_strength(password: str) -> None:
+    if len(password) < 12:
+        raise HTTPException(status_code=422, detail="Password must be at least 12 characters")
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(status_code=422, detail="Password must contain at least one uppercase letter")
+    if not re.search(r"[0-9]", password):
+        raise HTTPException(status_code=422, detail="Password must contain at least one digit")
+    if not re.search(r"[^A-Za-z0-9]", password):
+        raise HTTPException(status_code=422, detail="Password must contain at least one special character")
+    if password.lower() in _COMMON_WEAK_PASSWORDS:
+        raise HTTPException(status_code=422, detail="Password is too common")
+
+
 # Configure OAuth client
 oauth = OAuth()
 if settings.OAUTH_CLIENT_ID and settings.OAUTH_CLIENT_SECRET and settings.OAUTH_SERVER_METADATA_URL:
@@ -87,7 +126,8 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
         # Clear any logout revocation so hooks resume after re-login
         await redis.delete(f"revoked_user:{user.id}")
     except RedisError as e:
-        logger.warning("Redis unavailable when storing refresh JTI, failing open: %s", e)
+        logger.warning("Redis unavailable when storing refresh JTI: %s", e)
+        raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     return access_token, refresh_token, expires_in
 
@@ -108,6 +148,7 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
         org_id=default_org.id,
     )
     if req.password:
+        _validate_password_strength(req.password)
         user.set_password(req.password)
     db.add(user)
     try:
@@ -571,6 +612,7 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
         await redis.setex(f"refresh_jti:{new_jti}", refresh_ttl, str(user.id))
     except RedisError as e:
         logger.warning("Redis unavailable when storing new refresh JTI: %s", e)
+        raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     await audit(user, "auth.refresh_token", resource_type="token", resource_id=str(user.id))
     return TokenResponse(
@@ -615,6 +657,7 @@ async def change_password(
     if not current_user.verify_password(req.current_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
+    _validate_password_strength(req.new_password)
     current_user.set_password(req.new_password)
     await db.commit()
 

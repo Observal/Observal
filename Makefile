@@ -45,11 +45,12 @@ hooks:  ## Install pre-commit hooks
 
 # ── Docker ───────────────────────────────────────────────
 
-# Auto-detect enterprise mode: if ee/observal_insights/ exists, use enterprise override
+# Auto-detect enterprise edition: if ee/observal_insights/ exists, include enterprise compose file.
+# NOTE: DEPLOYMENT_MODE is always sourced from .env — the enterprise file does NOT override it.
 COMPOSE_FILES := -f docker-compose.yml
 ifneq (,$(wildcard ee/observal_insights/__init__.py))
   COMPOSE_FILES += -f docker-compose.enterprise.yml
-  $(info [enterprise mode] ee/observal_insights/ detected)
+  $(info [enterprise mode] ee/observal_insights/ detected — DEPLOYMENT_MODE from .env)
 endif
 
 up:  ## Start Docker stack

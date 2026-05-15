@@ -1,13 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Tests for auth endpoint resilience when Redis is unavailable (issue #398).
+"""Tests for auth endpoint resilience when Redis is unavailable.
 
-Validates that:
-- Login fails open (returns tokens) when Redis is down
+Validates fail-closed behavior:
+- Login returns 503 when Redis is down (cannot durably store refresh JTI)
 - Token refresh returns 503 when Redis is down
 - Token revoke returns 503 when Redis is down
-- The global RedisError handler catches unhandled errors as 503
 """
 
 import uuid
@@ -15,6 +14,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
+
+
+@pytest.fixture(autouse=True, scope="module")
+def init_key_manager_for_module(tmp_path_factory):
+    """Ensure the asymmetric key manager is initialised for all tests in this module."""
+    from services.crypto import init_key_manager
+
+    key_dir = tmp_path_factory.mktemp("keys")
+    init_key_manager(key_dir=str(key_dir), key_password=None)
 
 
 def _make_mock_user():
@@ -40,7 +48,11 @@ def _make_broken_redis():
 
 
 class TestLoginRedisDown:
-    """POST /api/v1/auth/login should fail-open when Redis is unreachable."""
+    """POST /api/v1/auth/login should return 503 when Redis is unreachable.
+
+    Fail closed: if the refresh JTI cannot be stored we cannot revoke it
+    later, so the token must not be issued.
+    """
 
     @pytest.mark.asyncio
     async def test_login_succeeds_when_redis_down(self):
@@ -71,10 +83,7 @@ class TestLoginRedisDown:
                         json={"email": "test@example.com", "password": "password"},
                     )
 
-            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-            body = resp.json()
-            assert "access_token" in body
-            assert "refresh_token" in body
+            assert resp.status_code == 503, f"Expected 503 (fail closed), got {resp.status_code}: {resp.text}"
         finally:
             app.dependency_overrides.clear()
 

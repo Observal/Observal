@@ -11,7 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import ROLE_HIERARCHY, get_db, optional_current_user, require_role, resolve_listing
+from api.deps import (
+    ROLE_HIERARCHY,
+    apply_visibility_filter,
+    check_listing_visibility,
+    get_db,
+    optional_current_user,
+    require_role,
+    resolve_listing,
+)
 from api.routes.component_versions import create_version_router
 from api.sanitize import escape_like
 from models.hook import HookDownload, HookListing, HookVersion
@@ -90,6 +98,7 @@ async def list_hooks(
     scope: str | None = Query(None),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
 ):
     stmt = (
         select(HookListing)
@@ -103,6 +112,7 @@ async def list_hooks(
     if search:
         safe = escape_like(search)
         stmt = stmt.where(HookListing.name.ilike(f"%{safe}%") | HookVersion.description.ilike(f"%{safe}%"))
+    stmt = apply_visibility_filter(stmt, HookListing, current_user)
     result = await db.execute(stmt.order_by(HookListing.created_at.desc()))
     listings = [HookListingSummary.model_validate(r) for r in result.scalars().all()]
     await audit(None, "hook.list", resource_type="hook")
@@ -140,10 +150,7 @@ async def get_hook(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
-    if current_user and (
-        listing.submitted_by == current_user.id
-        or ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
-    ):
+    if check_listing_visibility(listing, current_user):
         await audit(
             current_user, "hook.view", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name
         )

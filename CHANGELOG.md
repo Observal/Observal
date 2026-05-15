@@ -1225,4 +1225,3 @@ All notable changes to this project will be documented in this file.
 ### Ui
 
 - brighter borders, responsive text scaling, observal favicon ([909a9b6](https://github.com/BlazeUp-AI/Observal/commit/909a9b6dd7cedc9ddaff31b208f09ace9d35be7e))
-

@@ -476,7 +476,7 @@ function AgentBuilderInner() {
     });
 
     const releaseLock = () => {
-      const token = localStorage.getItem("observal_access_token");
+      const token = sessionStorage.getItem("observal_access_token");
       fetch(`/api/v1/agents/${agentIdParam}/cancel-edit`, {
         method: "POST",
         headers: {

@@ -207,7 +207,7 @@ export default function ComponentsPage() {
       const item = editItemRef.current;
       if (item?.status === "pending") {
         const type = activeTypeRef.current;
-        const token = localStorage.getItem("observal_access_token");
+        const token = sessionStorage.getItem("observal_access_token");
         fetch(`/api/v1/${type}/${item.id}/cancel-edit`, {
           method: "POST",
           headers: {

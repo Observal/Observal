@@ -61,7 +61,7 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
   }, []);
   const isAuthenticated = useSyncExternalStore(
     storeSub,
-    () => !!localStorage.getItem("observal_access_token"),
+    () => !!sessionStorage.getItem("observal_access_token"),
     () => false,
   );
 

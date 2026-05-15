@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json as _json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -39,6 +40,35 @@ config_app = typer.Typer(help="CLI configuration")
 
 
 # ── Auth commands (registered on auth_app) ──────────────────
+
+
+_PASSWORD_REQUIREMENTS = [
+    ("At least 12 characters", lambda p: len(p) >= 12),
+    ("One uppercase letter", lambda p: bool(re.search(r"[A-Z]", p))),
+    ("One number", lambda p: bool(re.search(r"[0-9]", p))),
+    ("One special character", lambda p: bool(re.search(r"[^A-Za-z0-9]", p))),
+]
+
+
+def _validate_password(password: str) -> list[str]:
+    """Return list of unmet requirement descriptions, empty if valid."""
+    return [label for label, check in _PASSWORD_REQUIREMENTS if not check(password)]
+
+
+def _prompt_password(prompt_text: str = "New password") -> str:
+    """Prompt for a password, show requirements, retry until valid."""
+    rprint("\n[dim]Password requirements:[/dim]")
+    for label, _ in _PASSWORD_REQUIREMENTS:
+        rprint(f"  [dim]· {label}[/dim]")
+
+    while True:
+        pw = typer.prompt(f"\n{prompt_text}", hide_input=True)
+        failed = _validate_password(pw)
+        if not failed:
+            return pw
+        rprint("\n[yellow]Password does not meet requirements:[/yellow]")
+        for f in failed:
+            rprint(f"  [red]✗[/red] {f}")
 
 
 @auth_app.command()
@@ -86,7 +116,7 @@ def login(
         if password:
             admin_password = password
         else:
-            admin_password = typer.prompt("Admin password", hide_input=True)
+            admin_password = _prompt_password("Admin password")
             confirm = typer.prompt("Confirm password", hide_input=True)
             if admin_password != confirm:
                 rprint("[red]Passwords do not match.[/red]")
@@ -299,13 +329,10 @@ def change_password():
         raise typer.Exit(1)
 
     current = typer.prompt("Current password", hide_input=True)
-    new_pw = typer.prompt("New password", hide_input=True)
+    new_pw = _prompt_password("New password")
     confirm = typer.prompt("Confirm new password", hide_input=True)
     if new_pw != confirm:
         rprint("[red]Passwords do not match.[/red]")
-        raise typer.Exit(1)
-    if len(new_pw) < 8:
-        rprint("[red]Password must be at least 8 characters.[/red]")
         raise typer.Exit(1)
 
     try:

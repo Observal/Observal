@@ -235,6 +235,37 @@ def _validate_branding_app_name(value: str) -> None:
 # ── Enterprise Settings ──────────────────────────────────
 
 
+@router.get("/system-warnings", response_model=list[dict])
+async def system_warnings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Return actionable security warnings for the admin settings page."""
+    warnings: list[dict] = []
+
+    weak_keys = {"change-me-to-a-random-string", "changeme", "secret", "dev", ""}
+    if settings.SECRET_KEY in weak_keys or len(settings.SECRET_KEY) < 32:
+        warnings.append(
+            {
+                "level": "critical",
+                "code": "weak_secret_key",
+                "message": "SECRET_KEY is insecure. Set a random string of at least 32 characters.",
+            }
+        )
+
+    demo_count = await db.scalar(select(func.count()).select_from(User).where(User.is_demo.is_(True)))
+    if demo_count:
+        warnings.append(
+            {
+                "level": "warning",
+                "code": "demo_accounts_active",
+                "message": f"{demo_count} demo account(s) are still active. Remove them or change their passwords before going to production.",
+            }
+        )
+
+    return warnings
+
+
 @router.get("/settings", response_model=list[EnterpriseConfigResponse])
 async def list_settings(
     db: AsyncSession = Depends(get_db),

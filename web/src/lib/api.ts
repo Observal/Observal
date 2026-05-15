@@ -46,6 +46,7 @@ import type {
   AuditLogEntry,
   SecurityEvent,
   DiagnosticsResponse,
+  SystemWarning,
   InsightReportListItem,
   InsightReport,
 } from "./types";
@@ -520,6 +521,7 @@ export const admin = {
     return get<{ events: SecurityEvent[]; total: number }>(`/admin/security-events${qs}`);
   },
   diagnostics: () => get<DiagnosticsResponse>("/admin/diagnostics"),
+  systemWarnings: () => get<SystemWarning[]>("/admin/system-warnings"),
   samlConfig: () => get<Record<string, unknown>>("/admin/saml-config"),
   updateSamlConfig: (body: Record<string, unknown>) =>
     put<Record<string, unknown>>("/admin/saml-config", body),

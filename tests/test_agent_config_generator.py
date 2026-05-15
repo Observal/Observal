@@ -381,8 +381,12 @@ class TestGenerateKiro:
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro")
         hooks = cfg["agent_file"]["content"]["hooks"]
-        for event in ("agentSpawn", "userPromptSubmit", "preToolUse", "postToolUse", "stop"):
+        # Only 2 events needed — JSONL session push reads incrementally
+        for event in ("userPromptSubmit", "stop"):
             assert event in hooks
+        # Legacy bloat events should NOT be present
+        for event in ("agentSpawn", "preToolUse", "postToolUse"):
+            assert event not in hooks
 
     def test_no_steering_file_generated(self):
         """Prompt lives in agent JSON only — no redundant steering file."""
@@ -850,12 +854,12 @@ class TestGenerateKiroWin32:
             assert "python3" not in cmd
             assert "python " in cmd or "python -m" in cmd
 
-    def test_win32_hooks_include_agent_name(self):
+    def test_win32_hooks_use_session_push(self):
         agent = _make_agent(name="my-cool-agent")
         cfg = generate_agent_config(agent, "kiro", platform="win32")
         cmds = self._all_hook_commands(cfg)
         for cmd in cmds:
-            assert "--agent-name my-cool-agent" in cmd
+            assert "kiro_session_push" in cmd
 
     def test_hooks_omit_model_flag(self):
         """Model is detected from Kiro SQLite at runtime, not baked into hook commands."""
@@ -865,12 +869,14 @@ class TestGenerateKiroWin32:
         for cmd in cmds:
             assert "--model" not in cmd
 
-    def test_win32_still_has_all_hook_events(self):
+    def test_win32_has_session_push_events_only(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro", platform="win32")
         hooks = cfg["agent_file"]["content"]["hooks"]
-        for event in ("agentSpawn", "userPromptSubmit", "preToolUse", "postToolUse", "stop"):
+        for event in ("userPromptSubmit", "stop"):
             assert event in hooks
+        for event in ("agentSpawn", "preToolUse", "postToolUse"):
+            assert event not in hooks
 
     def test_win32_agent_file_path_unchanged(self):
         agent = _make_agent()
@@ -899,15 +905,15 @@ class TestGenerateKiroPreservation:
         cfg_empty = generate_agent_config(agent, "kiro", platform="")
         assert cfg_default == cfg_empty
 
-    def test_unix_hooks_use_python_hook_scripts(self):
+    def test_unix_hooks_use_kiro_session_push(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro", platform="linux")
         hooks = cfg["agent_file"]["content"]["hooks"]
-        spawn_cmd = hooks["agentSpawn"][0]["command"]
-        assert "python3 -m observal_cli.hooks.kiro_hook" in spawn_cmd
-        assert "cat |" not in spawn_cmd
-        assert "sed " not in spawn_cmd
-        assert "curl" not in spawn_cmd
+        cmd = hooks["userPromptSubmit"][0]["command"]
+        assert "python3 -m observal_cli.hooks.kiro_session_push" in cmd
+        assert "cat |" not in cmd
+        assert "sed " not in cmd
+        assert "curl" not in cmd
 
     def test_non_kiro_ides_unaffected_by_platform(self):
         agent = _make_agent()
