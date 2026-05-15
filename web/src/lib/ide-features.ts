@@ -41,7 +41,7 @@ export type IdeFeature = (typeof IDE_FEATURES)[number];
 export const IDE_FEATURE_MATRIX: Record<IdeName, ReadonlySet<IdeFeature>> = {
   "claude-code": new Set(["skills", "hook_bridge", "mcp_servers", "rules", "otlp_telemetry"]),
   kiro: new Set(["superpowers", "hook_bridge", "mcp_servers", "rules", "steering_files", "otlp_telemetry"]),
-  cursor: new Set(["mcp_servers", "rules"]),
+  cursor: new Set(["mcp_servers", "rules", "hook_bridge"]),
   "gemini-cli": new Set(["hook_bridge", "mcp_servers", "rules", "otlp_telemetry"]),
   codex: new Set(["rules"]),
   copilot: new Set(["mcp_servers", "rules"]),
