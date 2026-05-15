@@ -27,8 +27,10 @@ repos:
         args: [--maxkb=500]
       - id: check-merge-conflict
       - id: detect-private-key
+        exclude: ^tests/test_secrets_redactor\.py$|^tests/test_saml\.py$
       - id: no-commit-to-branch
         args: [--branch, main]
+        stages: [pre-commit]
 
   # ── Secrets / .env guard ───────────────────────────────
   - repo: local
