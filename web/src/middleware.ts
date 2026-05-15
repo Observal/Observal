@@ -15,7 +15,7 @@ import type { NextRequest } from "next/server";
 
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' 'unsafe-inline'", // unsafe-inline required for Next.js hydration scripts
   "style-src 'self' 'unsafe-inline'", // unsafe-inline needed for Tailwind/shadcn
   "img-src 'self' data: https:",
   "font-src 'self'",

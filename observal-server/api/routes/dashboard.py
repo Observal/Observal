@@ -79,6 +79,25 @@ async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
     return []
 
 
+def _project_id_for_user(current_user) -> str:
+    """ClickHouse project_id scoped to the requesting user's org."""
+    if current_user is not None and current_user.org_id is not None:
+        return str(current_user.org_id)
+    return "default"
+
+
+async def _ch_json_scoped(sql: str, current_user, params: dict | None = None) -> list[dict]:
+    """_ch_json variant for admin endpoints that scopes queries to the user's org.
+
+    Replaces the hardcoded ``project_id = 'default'`` literal with a
+    parameterised placeholder and injects ``param_pid`` automatically.
+    """
+    pid = _project_id_for_user(current_user)
+    scoped_sql = sql.replace("project_id = 'default'", "project_id = {pid:String}")
+    scoped_params = {**(params or {}), "param_pid": pid}
+    return await _ch_json(scoped_sql, scoped_params)
+
+
 @router.get("/overview/stats", response_model=OverviewStats)
 @cache(expire=settings.CACHE_TTL_DASHBOARD, namespace="dashboard")
 async def overview_stats(
@@ -456,20 +475,16 @@ async def trends(
     start = now - timedelta(days=days)
 
     day_col_mcp = func.date_trunc("day", McpListing.created_at).label("day")
-    mcp_rows = await db.execute(
-        select(day_col_mcp, func.count(McpListing.id).label("cnt"))
-        .where(McpListing.created_at >= start)
-        .group_by(day_col_mcp)
-        .order_by(day_col_mcp)
-    )
+    mcp_stmt = select(day_col_mcp, func.count(McpListing.id).label("cnt")).where(McpListing.created_at >= start)
+    if current_user.org_id is not None:
+        mcp_stmt = mcp_stmt.where(McpListing.owner_org_id == current_user.org_id)
+    mcp_rows = await db.execute(mcp_stmt.group_by(day_col_mcp).order_by(day_col_mcp))
 
     day_col_user = func.date_trunc("day", User.created_at).label("day")
-    user_rows = await db.execute(
-        select(day_col_user, func.count(User.id).label("cnt"))
-        .where(User.created_at >= start)
-        .group_by(day_col_user)
-        .order_by(day_col_user)
-    )
+    user_stmt = select(day_col_user, func.count(User.id).label("cnt")).where(User.created_at >= start)
+    if current_user.org_id is not None:
+        user_stmt = user_stmt.where(User.org_id == current_user.org_id)
+    user_rows = await db.execute(user_stmt.group_by(day_col_user).order_by(day_col_user))
 
     submissions = {str(r.day.date()): r.cnt for r in mcp_rows.all()}
     users = {str(r.day.date()): r.cnt for r in user_rows.all()}
@@ -495,13 +510,14 @@ async def token_stats(
     days = _range_days(range_)
     days_param = {"param_days": str(days)}
     # Totals
-    totals = await _ch_json(
+    totals = await _ch_json_scoped(
         "SELECT "
         "sumIf(token_count_input, token_count_input IS NOT NULL) AS total_input, "
         "sumIf(token_count_output, token_count_output IS NOT NULL) AS total_output, "
         "sumIf(token_count_total, token_count_total IS NOT NULL) AS total_tokens "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 "
         "AND start_time >= now() - INTERVAL {days:UInt32} DAY",
+        current_user,
         days_param,
     )
     t = totals[0] if totals else {}
@@ -510,19 +526,20 @@ async def token_stats(
     total_tokens = int(t.get("total_tokens", 0))
 
     # Avg per trace
-    avg_rows = await _ch_json(
+    avg_rows = await _ch_json_scoped(
         "SELECT round(avg(s), 2) AS avg_per_trace FROM ("
         "SELECT trace_id, sum(token_count_total) AS s "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND token_count_total IS NOT NULL "
         "AND start_time >= now() - INTERVAL {days:UInt32} DAY "
         "GROUP BY trace_id"
         ")",
+        current_user,
         days_param,
     )
     avg_per_trace = float((avg_rows[0] if avg_rows else {}).get("avg_per_trace", 0))
 
     # By agent
-    by_agent_rows = await _ch_json(
+    by_agent_rows = await _ch_json_scoped(
         "SELECT t.agent_id AS agent_id, "
         "sumIf(s.token_count_input, s.token_count_input IS NOT NULL) AS input, "
         "sumIf(s.token_count_output, s.token_count_output IS NOT NULL) AS output, "
@@ -533,6 +550,7 @@ async def token_stats(
         "WHERE s.project_id = 'default' AND s.is_deleted = 0 AND t.agent_id != '' "
         "AND s.start_time >= now() - INTERVAL {days:UInt32} DAY "
         "GROUP BY t.agent_id ORDER BY total DESC LIMIT 20",
+        current_user,
         days_param,
     )
     agent_ids = [r["agent_id"] for r in by_agent_rows if r.get("agent_id")]
@@ -555,7 +573,7 @@ async def token_stats(
     ]
 
     # By MCP
-    by_mcp_rows = await _ch_json(
+    by_mcp_rows = await _ch_json_scoped(
         "SELECT t.mcp_id AS mcp_id, "
         "sumIf(s.token_count_input, s.token_count_input IS NOT NULL) AS input, "
         "sumIf(s.token_count_output, s.token_count_output IS NOT NULL) AS output, "
@@ -566,6 +584,7 @@ async def token_stats(
         "WHERE s.project_id = 'default' AND s.is_deleted = 0 AND t.mcp_id != '' "
         "AND s.start_time >= now() - INTERVAL {days:UInt32} DAY "
         "GROUP BY t.mcp_id ORDER BY total DESC LIMIT 20",
+        current_user,
         days_param,
     )
     mcp_ids = [r["mcp_id"] for r in by_mcp_rows if r.get("mcp_id")]
@@ -599,13 +618,14 @@ async def token_stats(
     ]
 
     # Over time
-    over_time_rows = await _ch_json(
+    over_time_rows = await _ch_json_scoped(
         "SELECT toDate(start_time) AS date, "
         "sumIf(token_count_input, token_count_input IS NOT NULL) AS input, "
         "sumIf(token_count_output, token_count_output IS NOT NULL) AS output "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 "
         "AND start_time >= now() - INTERVAL {days:UInt32} DAY "
         "GROUP BY date ORDER BY date",
+        current_user,
         days_param,
     )
     over_time = [
@@ -635,7 +655,7 @@ async def ide_usage(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    rows = await _ch_json(
+    rows = await _ch_json_scoped(
         "SELECT t.ide AS ide, "
         "count(DISTINCT t.trace_id) AS traces, "
         "round(avg(s.latency_ms), 1) AS avg_latency_ms, "
@@ -644,7 +664,8 @@ async def ide_usage(
         "FROM traces AS t FINAL "
         "INNER JOIN spans AS s FINAL ON t.trace_id = s.trace_id AND s.project_id = 'default' AND s.is_deleted = 0 "
         "WHERE t.project_id = 'default' AND t.is_deleted = 0 "
-        "GROUP BY t.ide ORDER BY traces DESC"
+        "GROUP BY t.ide ORDER BY traces DESC",
+        current_user,
     )
     ides = [
         IdeBreakdown(
@@ -671,26 +692,28 @@ async def sandbox_metrics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    agg = await _ch_json(
+    agg = await _ch_json_scoped(
         "SELECT count() AS total_runs, "
         "countIf(metadata['oom'] = '1' OR metadata['oom'] = 'true') AS oom_count, "
         "countIf(metadata['timeout'] = '1' OR metadata['timeout'] = 'true') AS timeout_count, "
         "avg(toFloat64OrNull(metadata['exit_code'])) AS avg_exit_code "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec'"
+        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec'",
+        current_user,
     )
     a = agg[0] if agg else {}
     total_runs = int(a.get("total_runs", 0))
     oom_count = int(a.get("oom_count", 0))
     timeout_count = int(a.get("timeout_count", 0))
 
-    recent = await _ch_json(
+    recent = await _ch_json_scoped(
         "SELECT span_id, name, "
         "metadata['exit_code'] AS exit_code, "
         "latency_ms AS duration_ms, memory_mb, cpu_ms, "
         "metadata['oom'] AS oom, "
         "start_time "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec' "
-        "ORDER BY start_time DESC LIMIT 20"
+        "ORDER BY start_time DESC LIMIT 20",
+        current_user,
     )
     recent_runs = [
         SandboxRun(
@@ -706,15 +729,17 @@ async def sandbox_metrics(
         for r in recent
     ]
 
-    cpu_rows = await _ch_json(
+    cpu_rows = await _ch_json_scoped(
         "SELECT toDate(start_time) AS date, round(avg(cpu_ms), 1) AS avg_cpu "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec' AND cpu_ms IS NOT NULL "
-        "GROUP BY date ORDER BY date"
+        "GROUP BY date ORDER BY date",
+        current_user,
     )
-    mem_rows = await _ch_json(
+    mem_rows = await _ch_json_scoped(
         "SELECT toDate(start_time) AS date, round(avg(memory_mb), 2) AS avg_memory "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec' AND memory_mb IS NOT NULL "
-        "GROUP BY date ORDER BY date"
+        "GROUP BY date ORDER BY date",
+        current_user,
     )
 
     await audit(current_user, "dashboard.sandbox_metrics", resource_type="dashboard")
@@ -742,17 +767,18 @@ async def graphrag_metrics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    agg = await _ch_json(
+    agg = await _ch_json_scoped(
         "SELECT count() AS total_queries, "
         "round(avg(entities_retrieved), 2) AS avg_entities, "
         "round(avg(relationships_used), 2) AS avg_relationships, "
         "round(avg(toFloat64OrNull(metadata['relevance_score'])), 4) AS avg_relevance_score, "
         "round(avg(toFloat64OrNull(metadata['embedding_latency_ms'])), 1) AS avg_embedding_latency_ms "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'retrieval'"
+        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'retrieval'",
+        current_user,
     )
     a = agg[0] if agg else {}
 
-    dist = await _ch_json(
+    dist = await _ch_json_scoped(
         "SELECT multiIf("
         "toFloat64OrNull(metadata['relevance_score']) < 0.2, '0.0-0.2', "
         "toFloat64OrNull(metadata['relevance_score']) < 0.4, '0.2-0.4', "
@@ -762,17 +788,19 @@ async def graphrag_metrics(
         "count() AS count "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'retrieval' "
         "AND metadata['relevance_score'] != '' "
-        "GROUP BY bucket ORDER BY bucket"
+        "GROUP BY bucket ORDER BY bucket",
+        current_user,
     )
 
-    recent = await _ch_json(
+    recent = await _ch_json_scoped(
         "SELECT span_id, name, "
         "metadata['query_interface'] AS query_interface, "
         "entities_retrieved, relationships_used, "
         "metadata['relevance_score'] AS relevance_score, "
         "latency_ms, start_time "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'retrieval' "
-        "ORDER BY start_time DESC LIMIT 20"
+        "ORDER BY start_time DESC LIMIT 20",
+        current_user,
     )
 
     await audit(current_user, "dashboard.graphrag_metrics", resource_type="dashboard")
@@ -879,7 +907,7 @@ async def latency_heatmap(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    rows = await _ch_json(
+    rows = await _ch_json_scoped(
         "SELECT name, toStartOfHour(start_time) AS hour, "
         "round(quantile(0.5)(latency_ms), 1) AS p50, "
         "round(quantile(0.9)(latency_ms), 1) AS p90, "
@@ -895,7 +923,8 @@ async def latency_heatmap(
         "AND latency_ms IS NOT NULL "
         "GROUP BY name ORDER BY count() DESC LIMIT 20"
         ") "
-        "GROUP BY name, hour ORDER BY name, hour"
+        "GROUP BY name, hour ORDER BY name, hour",
+        current_user,
     )
     cells = [
         LatencyCell(name=r["name"], hour=str(r["hour"]), p50=float(r["p50"]), p90=float(r["p90"]), p99=float(r["p99"]))
@@ -916,7 +945,7 @@ async def unannotated_traces(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    rows = await _ch_json(
+    rows = await _ch_json_scoped(
         "SELECT trace_id, name, session_id, ide, trace_type, start_time "
         "FROM traces FINAL "
         "WHERE project_id = 'default' AND is_deleted = 0 "
@@ -924,7 +953,8 @@ async def unannotated_traces(
         "SELECT DISTINCT trace_id FROM scores FINAL "
         "WHERE project_id = 'default' AND is_deleted = 0 AND source = 'human'"
         ") "
-        "ORDER BY start_time DESC LIMIT 50"
+        "ORDER BY start_time DESC LIMIT 50",
+        current_user,
     )
     traces = [
         UnannotatedTrace(

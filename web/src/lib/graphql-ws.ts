@@ -15,7 +15,7 @@ function getWsUrl(): string {
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("observal_access_token");
+  return sessionStorage.getItem("observal_access_token");
 }
 
 let client: Client | null = null;

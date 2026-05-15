@@ -632,8 +632,16 @@ def _is_admin(ctx: dict) -> bool:
 
 
 async def get_context_dep(request: Request = None) -> dict:
-    """Strawberry FastAPI context getter — receives the incoming ``Request``."""
+    """Strawberry FastAPI context getter — receives the incoming ``Request``.
+
+    Rejects unauthenticated requests with HTTP 401 so that telemetry data
+    (traces, spans, metrics) is never exposed to anonymous callers.
+    """
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
     uctx = await _resolve_user_context_from_request(request)
+    if uctx["user_id"] is None:
+        raise StarletteHTTPException(status_code=401, detail="Authentication required")
     return get_context(uctx["project_id"], uctx["user_id"], uctx["user_role"], uctx.get("trace_privacy", False))
 
 

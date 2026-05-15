@@ -97,10 +97,7 @@ def _extract_extra(listing, component_type: str) -> dict:
             "skill_path": getattr(listing, "skill_path", "/"),
             "task_type": getattr(listing, "task_type", ""),
             "slash_command": getattr(listing, "slash_command", None),
-            "triggers": getattr(listing, "triggers", None),
-            "has_scripts": getattr(listing, "has_scripts", False),
-            "is_power": getattr(listing, "is_power", False),
-            "mcp_server_config": getattr(listing, "mcp_server_config", None),
+            "skill_md_content": getattr(listing, "skill_md_content", None),
         }
     if component_type == "hook":
         return {

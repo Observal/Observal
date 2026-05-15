@@ -3,13 +3,10 @@
 
 # Enterprise override — enables enterprise features including insights.
 # The insights engine is bundled in ee/observal_insights/ and activated
-# when DEPLOYMENT_MODE=enterprise.
+# when DEPLOYMENT_MODE=enterprise (set via .env, NOT hardcoded here).
 #
 # Usage: docker compose -f docker-compose.yml -f docker-compose.enterprise.yml up -d
-services:
-  observal-api:
-    environment:
-      - DEPLOYMENT_MODE=enterprise
-  observal-worker:
-    environment:
-      - DEPLOYMENT_MODE=enterprise
+#
+# NOTE: DEPLOYMENT_MODE is controlled by .env (source of truth).
+# This file must NOT override environment variables from .env.
+services: {}

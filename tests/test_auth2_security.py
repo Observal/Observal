@@ -18,6 +18,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+
+@pytest.fixture(autouse=True, scope="module")
+def _init_key_manager(tmp_path_factory):
+    from services.crypto import init_key_manager
+
+    key_dir = tmp_path_factory.mktemp("keys")
+    init_key_manager(key_dir=str(key_dir), key_password=None)
+
+
 # ---------------------------------------------------------------------------
 # Helpers shared across all test classes
 # ---------------------------------------------------------------------------

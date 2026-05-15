@@ -39,32 +39,16 @@ _KIRO_EVENT_MAP = {
     "Stop": "stop",
 }
 
-# Hook events that send to the generic observal-hook.sh handler.
-_GENERIC_HOOK_EVENTS = [
-    "SessionStart",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PostToolUse",
-    "PostToolUseFailure",
-    "SubagentStart",
-    "SubagentStop",
-    "StopFailure",
-    "Notification",
-    "TaskCreated",
-    "TaskCompleted",
-    "PreCompact",
-    "PostCompact",
-    "WorktreeCreate",
-    "WorktreeRemove",
-    "Elicitation",
-    "ElicitationResult",
-]
+# Session push hook command — reads JSONL incrementally, only needs 2 events.
+_SESSION_PUSH_CMD = "python3 -m observal_cli.hooks.session_push"
+
+# The two events that drive JSONL-based telemetry collection.
+# UserPromptSubmit: push new lines accumulated since last push.
+# Stop: push final lines and mark session complete.
+_SESSION_PUSH_EVENTS = ("UserPromptSubmit", "Stop")
 
 
 def _claude_code_hooks_frontmatter_lines(
-    hook_script: str,
-    stop_script: str,
-    agent_name: str = "",
     custom_hooks: list[dict] | None = None,
 ) -> list[str]:
     """Build the YAML lines for a hooks: section in Claude Code frontmatter.
@@ -72,14 +56,12 @@ def _claude_code_hooks_frontmatter_lines(
     Returns a list of indented strings (no trailing newlines) ready to be
     appended to the frontmatter_lines list before the closing '---'.
 
-    agent_name: baked into hook commands so each agent's telemetry carries
-    its identity (mirrors Kiro's --agent-name pattern).
+    Only two events are needed (UserPromptSubmit + Stop) because the hook
+    reads the session JSONL file incrementally — no per-event shell scripts.
 
     custom_hooks: list of dicts with event, handler_type, handler_config
     from hook components attached to the agent.
     """
-    import re
-
     custom_hooks = custom_hooks or []
     custom_by_event: dict[str, list[dict]] = {}
     for h in custom_hooks:
@@ -87,31 +69,26 @@ def _claude_code_hooks_frontmatter_lines(
         if ev:
             custom_by_event.setdefault(ev, []).append(h)
 
-    agent_name = re.sub(r"[^a-zA-Z0-9_\-.]", "", agent_name)
-    agent_flag = f" --agent-name {agent_name}" if agent_name else ""
+    cmd = _SESSION_PUSH_CMD
 
     lines = ["hooks:"]
-    for event in _GENERIC_HOOK_EVENTS:
+    for event in _SESSION_PUSH_EVENTS:
         lines += [
             f"  {event}:",
             "    - hooks:",
             "        - type: command",
-            f'          command: "{hook_script}{agent_flag}"',
+            f'          command: "{cmd}"',
         ]
         for ch in custom_by_event.get(event, []):
             lines += _custom_hook_matcher_lines(ch)
 
-    lines += [
-        "  Stop:",
-        "    - hooks:",
-        "        - type: command",
-        f'          command: "{hook_script}{agent_flag}"',
-        "    - hooks:",
-        "        - type: command",
-        f'          command: "{stop_script}{agent_flag}"',
-    ]
-    for ch in custom_by_event.get("Stop", []):
-        lines += _custom_hook_matcher_lines(ch)
+    # Append any custom hooks on events we don't natively use
+    for event, hooks in custom_by_event.items():
+        if event in _SESSION_PUSH_EVENTS:
+            continue
+        lines.append(f"  {event}:")
+        for ch in hooks:
+            lines += _custom_hook_matcher_lines(ch)
 
     return lines
 
@@ -136,117 +113,97 @@ def _custom_hook_matcher_lines(hook: dict) -> list[str]:
     return lines
 
 
-_CURSOR_HOOK_EVENTS = (
-    "sessionStart",
-    "preToolUse",
-    "postToolUse",
-    "postToolUseFailure",
-    "subagentStart",
-    "subagentStop",
-    "beforeShellExecution",
-    "afterShellExecution",
-    "afterFileEdit",
-    "preCompact",
-    "stop",
-)
+def _cursor_hooks_config() -> dict:
+    """Build .cursor/hooks.json content with Observal telemetry hooks.
 
-_VSCODE_HOOK_EVENTS = (
-    "SessionStart",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PostToolUse",
-    "PreCompact",
-    "SubagentStart",
-    "SubagentStop",
-    "Stop",
-)
+    Cursor uses camelCase event names.  Only userPromptSubmit + stop needed.
+
+    TODO: Cursor does not have a JSONL session push implementation yet
+    (no observal_cli/hooks/cursor_session_push.py).  The command below
+    invokes the Claude Code session_push script which expects Claude's
+    JSONL layout.  This is a stub — it will no-op gracefully until a
+    Cursor-specific pusher is written.
+    """
+    cmd = _SESSION_PUSH_CMD
+    return {
+        "version": 1,
+        "hooks": {
+            "userPromptSubmit": [{"command": cmd, "type": "command"}],
+            "stop": [{"command": cmd, "type": "command"}],
+        },
+    }
 
 
-def _cursor_hooks_config(hook_script: str, stop_script: str) -> dict:
-    """Build .cursor/hooks.json content with Observal telemetry hooks."""
-    hooks: dict[str, list] = {}
-    for event in _CURSOR_HOOK_EVENTS:
-        if event == "stop":
-            hooks[event] = [
-                {"command": hook_script, "type": "command"},
-                {"command": stop_script, "type": "command"},
-            ]
-        else:
-            hooks[event] = [{"command": hook_script, "type": "command"}]
-    return {"version": 1, "hooks": hooks}
+def _vscode_copilot_hooks_config() -> dict:
+    """Build .github/hooks/observal.json content for VS Code Copilot hooks.
+
+    TODO: No JSONL session push implementation for VS Code / Copilot yet.
+    Stub — session_push.py will no-op gracefully when it can't find a
+    matching session file.
+    """
+    cmd = _SESSION_PUSH_CMD
+    return {
+        "hooks": {
+            "UserPromptSubmit": [{"type": "command", "command": cmd}],
+            "Stop": [{"type": "command", "command": cmd}],
+        },
+    }
 
 
-def _vscode_copilot_hooks_config(hook_script: str, stop_script: str) -> dict:
-    """Build .github/hooks/observal.json content for VS Code Copilot hooks."""
-    hooks: dict[str, list] = {}
-    for event in _VSCODE_HOOK_EVENTS:
-        if event == "Stop":
-            hooks[event] = [
-                {"type": "command", "command": hook_script},
-                {"type": "command", "command": stop_script},
-            ]
-        else:
-            hooks[event] = [{"type": "command", "command": hook_script}]
-    return {"hooks": hooks}
+def _vscode_copilot_hooks_frontmatter_lines() -> list[str]:
+    """Build YAML lines for hooks in a VS Code Copilot .agent.md frontmatter.
+
+    TODO: No JSONL session push for Copilot yet — stub (no-ops gracefully).
+    """
+    cmd = _SESSION_PUSH_CMD
+    return [
+        "hooks:",
+        "  UserPromptSubmit:",
+        "    - type: command",
+        f'      command: "{cmd}"',
+        "  Stop:",
+        "    - type: command",
+        f'      command: "{cmd}"',
+    ]
 
 
-def _vscode_copilot_hooks_frontmatter_lines(hook_script: str, stop_script: str) -> list[str]:
-    """Build YAML lines for hooks in a VS Code Copilot .agent.md frontmatter."""
-    lines = ["hooks:"]
-    for event in _VSCODE_HOOK_EVENTS:
-        if event == "Stop":
-            lines += [
-                f"  {event}:",
-                "    - type: command",
-                f'      command: "{hook_script}"',
-                "    - type: command",
-                f'      command: "{stop_script}"',
-            ]
-        else:
-            lines += [
-                f"  {event}:",
-                "    - type: command",
-                f'      command: "{hook_script}"',
-            ]
-    return lines
+def _gemini_hooks_config() -> dict:
+    """Build the hooks block for Gemini CLI settings.json.
+
+    Gemini uses SessionStart/SessionEnd.  We hook SessionStart (first turn)
+    and SessionEnd (final flush) which maps to our UserPromptSubmit + Stop pattern.
+
+    TODO: No JSONL session push for Gemini CLI yet.  session_push.py will
+    no-op when it can't locate a matching session JSONL file.
+    """
+    cmd = _SESSION_PUSH_CMD
+    return {
+        "hooks": {
+            "SessionStart": [{"hooks": [{"type": "command", "command": cmd}]}],
+            "SessionEnd": [{"hooks": [{"type": "command", "command": cmd}]}],
+        },
+    }
 
 
-_GEMINI_HOOK_EVENTS = (
-    "SessionStart",
-    "BeforeAgent",
-    "AfterAgent",
-    "BeforeTool",
-    "AfterTool",
-    "SessionEnd",
-    "Notification",
-)
+def _opencode_plugin_js() -> str:
+    """Build JS plugin source for OpenCode telemetry.
 
+    Only fires on session.created (start) and session.idle (stop).
 
-def _gemini_hooks_config(hook_script: str, stop_script: str) -> dict:
-    """Build the hooks block for Gemini CLI settings.json."""
-    hooks: dict[str, list] = {}
-    for event in _GEMINI_HOOK_EVENTS:
-        if event in ("AfterAgent", "SessionEnd"):
-            hooks[event] = [{"hooks": [{"type": "command", "command": stop_script}]}]
-        else:
-            hooks[event] = [{"hooks": [{"type": "command", "command": hook_script}]}]
-    return {"hooks": hooks}
-
-
-def _opencode_plugin_js(hook_script: str, stop_script: str) -> str:
-    """Build JS plugin source for OpenCode telemetry."""
-    hs = hook_script.replace("\\", "\\\\").replace('"', '\\"')
-    ss = stop_script.replace("\\", "\\\\").replace('"', '\\"')
-    return f'''// Observal telemetry plugin for OpenCode
+    TODO: No JSONL session push for OpenCode yet.  The plugin invokes
+    session_push.py which will no-op gracefully until an OpenCode-specific
+    pusher is written.
+    """
+    cmd = _SESSION_PUSH_CMD.replace("\\", "\\\\").replace('"', '\\"')
+    return f"""// Observal telemetry plugin for OpenCode
 // Auto-generated by `observal pull`
 import {{ execSync }} from "child_process";
 
-const HOOK_SCRIPT = "{hs}";
-const STOP_SCRIPT = "{ss}";
+const SESSION_PUSH = "{cmd}";
 
-function fireHook(script, event, input) {{
+function fireHook(event, input) {{
   try {{
-    execSync(script, {{
+    execSync(SESSION_PUSH, {{
       input: JSON.stringify({{ hook_event_name: event, ...input }}),
       timeout: 10000,
       stdio: ["pipe", "pipe", "pipe"],
@@ -258,16 +215,11 @@ function fireHook(script, event, input) {{
 
 export const ObservalPlugin = async ({{ project, client }}) => {{
   return {{
-    "session.created": () => fireHook(HOOK_SCRIPT, "session.created", {{}}),
-    "session.idle": () => fireHook(STOP_SCRIPT, "session.idle", {{}}),
-    "session.error": (input) => fireHook(STOP_SCRIPT, "session.error", input),
-    "session.compacted": () => fireHook(HOOK_SCRIPT, "session.compacted", {{}}),
-    "tool.execute.before": (input) => fireHook(HOOK_SCRIPT, "tool.execute.before", input),
-    "tool.execute.after": (input, output) => fireHook(HOOK_SCRIPT, "tool.execute.after", {{ ...input, output }}),
-    "file.edited": (input) => fireHook(HOOK_SCRIPT, "file.edited", input),
+    "session.created": () => fireHook("session.created", {{}}),
+    "session.idle": () => fireHook("session.idle", {{}}),
   }};
 }};
-'''
+"""
 
 
 _MODEL_SHORT_NAMES: dict[str, str] = {
@@ -452,7 +404,10 @@ def _build_skill_configs(
                 "description": getattr(listing, "description", "") or "",
                 "slash_command": getattr(listing, "slash_command", None),
                 "task_type": getattr(listing, "task_type", ""),
-                "activation_keywords": getattr(listing, "activation_keywords", None),
+                "git_url": getattr(listing, "git_url", None),
+                "git_ref": getattr(listing, "git_ref", None) or "main",
+                "skill_path": getattr(listing, "skill_path", None) or "/",
+                "skill_md_content": getattr(listing, "skill_md_content", None),
             }
         )
 
@@ -620,40 +575,14 @@ def generate_agent_config(
 
     if ide == "kiro":
         # Kiro agent JSON: drop into ~/.kiro/agents/<name>.json
-        # Telemetry collected via observal-shim + hook bridge
+        # Telemetry via JSONL session push — only 2 events needed.
         if platform == "win32":
-            # PowerShell-compatible: pipe stdin through the Python hook script.
-            # No cat/sed/curl/$PPID/$TERM/$SHELL — those don't exist in PowerShell.
-            hook_cmd = (
-                f"python -m observal_cli.hooks.kiro_hook "
-                f"--url {observal_url}/api/v1/telemetry/hooks "
-                f"--agent-name {safe_name}"
-            )
-            stop_cmd = (
-                f"python -m observal_cli.hooks.kiro_stop_hook "
-                f"--url {observal_url}/api/v1/telemetry/hooks "
-                f"--agent-name {safe_name}"
-            )
-            spawn_cmd = hook_cmd  # Windows: Python script handles session IDs
+            push_cmd = "python -m observal_cli.hooks.kiro_session_push"
         else:
-            # Unix: use the same Python hook scripts as Windows.
-            hook_cmd = (
-                f"python3 -m observal_cli.hooks.kiro_hook "
-                f"--url {observal_url}/api/v1/telemetry/hooks "
-                f"--agent-name {safe_name}"
-            )
-            stop_cmd = (
-                f"python3 -m observal_cli.hooks.kiro_stop_hook "
-                f"--url {observal_url}/api/v1/telemetry/hooks "
-                f"--agent-name {safe_name}"
-            )
-            spawn_cmd = hook_cmd  # Python script handles session IDs
+            push_cmd = "python3 -m observal_cli.hooks.kiro_session_push"
         hooks = {
-            "agentSpawn": [{"command": spawn_cmd}],
-            "userPromptSubmit": [{"command": hook_cmd}],
-            "preToolUse": [{"matcher": "*", "command": hook_cmd}],
-            "postToolUse": [{"matcher": "*", "command": hook_cmd}],
-            "stop": [{"command": stop_cmd}],
+            "userPromptSubmit": [{"command": push_cmd}],
+            "stop": [{"command": push_cmd}],
         }
         # Merge hook components (e.g. tester1) into the Kiro hooks dict
         for hc in hook_configs:
@@ -713,6 +642,7 @@ def generate_agent_config(
         skill_files = [f for f in skill_files if f]
         if skill_files:
             result["skill_files"] = skill_files
+            result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
         warnings_combined = list(compatibility_warnings)
         warnings_combined.extend(options.get("_model_warnings") or [])
         if warnings_combined:
@@ -764,9 +694,6 @@ def generate_agent_config(
                 frontmatter_lines.append(f"  - {mcp_name}")
         frontmatter_lines.extend(
             _claude_code_hooks_frontmatter_lines(
-                "observal-hook.sh",
-                "observal-stop-hook.sh",
-                agent_name=safe_name,
                 custom_hooks=hook_configs,
             )
         )
@@ -788,6 +715,7 @@ def generate_agent_config(
         }
         if skill_files:
             result["skill_files"] = skill_files
+            result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
         warnings_combined = list(compatibility_warnings)
         warnings_combined.extend(options.get("_model_warnings") or [])
         if warnings_combined:
@@ -809,7 +737,7 @@ def generate_agent_config(
             "mcp_config": {"path": mcp_path, "content": gemini_settings_content},
             "hooks_config": {
                 "path": hooks_path,
-                "content": _gemini_hooks_config("observal-hook.sh", "observal-stop-hook.sh"),
+                "content": _gemini_hooks_config(),
             },
             "otlp_env": _gemini_otlp_env(effective_otlp_http),
             "gemini_settings_snippet": _gemini_settings(effective_otlp_http),
@@ -861,7 +789,7 @@ def generate_agent_config(
             f'description: "{desc_line}"',
             "tools: ['*']",
         ]
-        frontmatter_lines.extend(_vscode_copilot_hooks_frontmatter_lines("observal-hook.sh", "observal-stop-hook.sh"))
+        frontmatter_lines.extend(_vscode_copilot_hooks_frontmatter_lines())
         frontmatter_lines.append("---")
         agent_content = "\n".join(frontmatter_lines) + "\n\n" + rules_content
 
@@ -876,7 +804,7 @@ def generate_agent_config(
             },
             "hooks_config": {
                 "path": ".github/hooks/observal.json",
-                "content": _vscode_copilot_hooks_config("observal-hook.sh", "observal-stop-hook.sh"),
+                "content": _vscode_copilot_hooks_config(),
             },
             "scope": copilot_spec["default_scope"],
         }
@@ -911,7 +839,7 @@ def generate_agent_config(
             f'description: "{desc_line}"',
             "tools: ['*']",
         ]
-        frontmatter_lines.extend(_vscode_copilot_hooks_frontmatter_lines("observal-hook.sh", "observal-stop-hook.sh"))
+        frontmatter_lines.extend(_vscode_copilot_hooks_frontmatter_lines())
         frontmatter_lines.append("---")
         agent_content = "\n".join(frontmatter_lines) + "\n\n" + rules_content
 
@@ -926,7 +854,7 @@ def generate_agent_config(
             },
             "hooks_config": {
                 "path": ".github/hooks/observal.json",
-                "content": _vscode_copilot_hooks_config("observal-hook.sh", "observal-stop-hook.sh"),
+                "content": _vscode_copilot_hooks_config(),
             },
             "scope": copilot_cli_spec["default_scope"],
         }
@@ -956,7 +884,7 @@ def generate_agent_config(
             "mcp_config": {"path": mcp_path, "content": opencode_content},
             "hooks_config": {
                 "path": ".opencode/plugins/observal-plugin.mjs",
-                "content": _opencode_plugin_js("observal-hook.sh", "observal-stop-hook.sh"),
+                "content": _opencode_plugin_js(),
             },
             "scope": opencode_scope,
         }
@@ -985,15 +913,16 @@ def generate_agent_config(
         hooks_path = ".cursor/hooks.json" if ide_scope == "project" else "~/.cursor/hooks.json"
         result["hooks_config"] = {
             "path": hooks_path,
-            "content": _cursor_hooks_config("observal-hook.sh", "observal-stop-hook.sh"),
+            "content": _cursor_hooks_config(),
         }
     elif ide == "vscode":
         result["hooks_config"] = {
             "path": ".github/hooks/observal.json",
-            "content": _vscode_copilot_hooks_config("observal-hook.sh", "observal-stop-hook.sh"),
+            "content": _vscode_copilot_hooks_config(),
         }
     if skill_files:
         result["skill_files"] = skill_files
+        result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
     if compatibility_warnings:
         result["_warnings"] = compatibility_warnings
     return result

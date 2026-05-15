@@ -24,16 +24,12 @@ HOOK_FIELDS = {
 
 SKILL_FIELDS = {
     "skill_path",
+    "git_url",
+    "git_ref",
+    "skill_md_content",
     "target_agents",
     "task_type",
-    "triggers",
     "slash_command",
-    "has_scripts",
-    "has_templates",
-    "is_power",
-    "power_md",
-    "mcp_server_config",
-    "activation_keywords",
 }
 
 PROMPT_FIELDS = {
@@ -90,9 +86,11 @@ FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
     "handler_type": str,
     "scope": str,
     "skill_path": str,
+    "git_url": str,
+    "git_ref": str,
+    "skill_md_content": str,
     "task_type": str,
     "slash_command": str,
-    "power_md": str,
     "category": str,
     "template": str,
     "source_url": str,

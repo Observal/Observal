@@ -49,13 +49,19 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
         return None
 
     jti = payload.get("jti")
-    if jti:
-        try:
-            redis = get_redis()
-            if await redis.get(f"revoked_jti:{jti}"):
-                return None
-        except RedisError:
-            pass  # Fail open if Redis is down
+    user_id_str = payload.get("sub")
+    try:
+        redis = get_redis()
+        # SEC-002: fail closed on revocation checks — Redis errors must not
+        # re-enable revoked tokens or user-level revocations
+        if jti and await redis.get(f"revoked_jti:{jti}"):
+            return None
+        if user_id_str and await redis.get(f"revoked_user:{user_id_str}"):
+            return None  # SEC-001: account-wide revocation (e.g. logout all)
+    except RedisError:
+        # Redis is down: block all token-based auth to prevent revoked tokens
+        # from regaining access. Requests will receive HTTP 503.
+        raise RedisError("Auth service temporarily unavailable — please retry")
 
     user_id = payload.get("sub")
 
@@ -108,14 +114,15 @@ async def get_current_user(
     if user.auth_provider == "deactivated":
         raise HTTPException(status_code=403, detail="Account deactivated")
 
-    # Enforce must_change_password (fail open if Redis is unavailable)
+    # Enforce must_change_password — fail closed: if Redis is down we cannot
+    # guarantee the gate is enforced, so block non-exempt requests.
     if request.url.path not in _PASSWORD_CHANGE_EXEMPT_PATHS:
         try:
             redis = get_redis()
             if await redis.get(f"must_change_password:{user.id}"):
                 raise HTTPException(status_code=403, detail="Password change required")
         except RedisError:
-            pass
+            raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     return user
 
@@ -360,3 +367,57 @@ async def resolve_prefix_id(
     if len(records) > MAX_AMBIGUOUS_MATCHES_SHOWN:
         detail += " and more..."
     raise HTTPException(status_code=400, detail=detail)
+
+
+def apply_visibility_filter(stmt, model, current_user):
+    """Exclude private listings from orgs other than the requesting user's.
+
+    Rules:
+    - Public items (is_private=False) are always visible.
+    - Private items are only visible to users in the same org, or to the
+      submitter directly, or to admins/reviewers.
+    """
+    from sqlalchemy import or_
+
+    from models.user import UserRole
+
+    if not hasattr(model, "is_private"):
+        return stmt
+
+    is_admin = (
+        current_user is not None and ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
+    )
+    if is_admin:
+        return stmt  # admins see everything
+
+    public = model.is_private == False  # noqa: E712
+    if current_user is None:
+        return stmt.where(public)
+
+    # Guard: only match same-org if user actually has an org (not NULL)
+    if current_user.org_id is not None:
+        same_org = (model.is_private == True) & (model.owner_org_id == current_user.org_id)  # noqa: E712
+        own = (model.is_private == True) & (model.submitted_by == current_user.id)  # noqa: E712
+        return stmt.where(or_(public, same_org, own))
+    # User has no org — can only see their own private items
+    own = (model.is_private == True) & (model.submitted_by == current_user.id)  # noqa: E712
+    return stmt.where(or_(public, own))
+
+
+def check_listing_visibility(listing, current_user) -> bool:
+    """Return True if current_user may see this listing.
+
+    Used on detail routes to gate access to private items.
+    """
+    from models.user import UserRole
+
+    if not getattr(listing, "is_private", False):
+        return True
+    if current_user is None:
+        return False
+    is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
+    if is_admin:
+        return True
+    if listing.submitted_by == current_user.id:
+        return True
+    return current_user.org_id is not None and listing.owner_org_id == current_user.org_id

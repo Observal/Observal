@@ -55,6 +55,12 @@ def _generate_skill_file(skill_listing, ide: str, scope: str = "project") -> dic
     slash_cmd = getattr(skill_listing, "slash_command", None)
     path = skill_paths.get(scope, next(iter(skill_paths.values()))).format(name=name)
 
+    # Fast path: verbatim SKILL.md cached from the git repo.
+    skill_md_content = getattr(skill_listing, "skill_md_content", None)
+    if skill_md_content:
+        return {"path": path, "content": skill_md_content}
+
+    # Fallback: synthesise a minimal stub from stored fields.
     short_desc = _short_description(desc)
     skill_format = spec.get("skill_format")
     if skill_format == "yaml_frontmatter":
@@ -102,13 +108,20 @@ def generate_skill_config(
         "listing_id": skill_id,
     }
 
-    # For Kiro, also include the skill path for auto-loading
+    # Always include git coordinates — they are the install-time source of truth.
     git_url = getattr(skill_listing, "git_url", None)
     if git_url:
         config["skill"]["git_url"] = git_url
     skill_path = getattr(skill_listing, "skill_path", None)
     if skill_path:
         config["skill"]["skill_path"] = skill_path
+    git_ref = getattr(skill_listing, "git_ref", None)
+    if git_ref:
+        config["skill"]["git_ref"] = git_ref
+    # Cache skill_md_content as a fast-path fallback (no git needed at install time).
+    skill_md_content = getattr(skill_listing, "skill_md_content", None)
+    if skill_md_content:
+        config["skill"]["skill_md_content"] = skill_md_content
 
     # Generate IDE-specific skill file
     skill_file = _generate_skill_file(skill_listing, ide, scope)

@@ -10,7 +10,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import ROLE_HIERARCHY, get_db, optional_current_user, require_role, resolve_listing
+from api.deps import (
+    ROLE_HIERARCHY,
+    apply_visibility_filter,
+    check_listing_visibility,
+    get_db,
+    optional_current_user,
+    require_role,
+    resolve_listing,
+)
 from api.routes.component_versions import create_version_router
 from api.sanitize import escape_like
 from models.mcp import ListingStatus
@@ -86,6 +94,7 @@ async def list_sandboxes(
     runtime_type: str | None = Query(None),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
 ):
     stmt = (
         select(SandboxListing)
@@ -97,6 +106,7 @@ async def list_sandboxes(
     if search:
         safe = escape_like(search)
         stmt = stmt.where(SandboxListing.name.ilike(f"%{safe}%") | SandboxVersion.description.ilike(f"%{safe}%"))
+    stmt = apply_visibility_filter(stmt, SandboxListing, current_user)
     result = await db.execute(stmt.order_by(SandboxListing.created_at.desc()))
     listings = [SandboxListingSummary.model_validate(r) for r in result.scalars().all()]
     await audit(None, "sandbox.list", resource_type="sandbox")
@@ -140,10 +150,7 @@ async def get_sandbox(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
-    if current_user and (
-        listing.submitted_by == current_user.id
-        or ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
-    ):
+    if check_listing_visibility(listing, current_user):
         await audit(
             current_user,
             "sandbox.view",
