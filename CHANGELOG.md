@@ -10,6 +10,84 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-05-16
+
+### Added
+
+- realign skill model with git-first architecture (**skills**) ([9600d3b](https://github.com/BlazeUp-AI/Observal/commit/9600d3ba363d1e37bcb81278275913ba1bfc91ff))
+- add insight tables to migration system ([cd73e1e](https://github.com/BlazeUp-AI/Observal/commit/cd73e1e9ea20d7f5ea5c388db25bf2dda65853f8))
+- add best-effort disclaimer for --git flag (**mcp**) ([360248e](https://github.com/BlazeUp-AI/Observal/commit/360248e0c00da9c260cfb50d64bd03130e88eac8))
+- JSON paste as default MCP submit/edit with shared parser (**UI**) ([55daede](https://github.com/BlazeUp-AI/Observal/commit/55daede837428239afdc88fe7fb67adebbc0247a))
+- make JSON paste the default MCP submission method (**cli**) ([ff9e3de](https://github.com/BlazeUp-AI/Observal/commit/ff9e3de8716ac129f3e3d573d899fab036ebff8f))
+- add backend integration tests against real DB ([7e1e8ee](https://github.com/BlazeUp-AI/Observal/commit/7e1e8eee215aeb02ad1eb1c29339ddf1ff049cb8))
+
+### CI
+
+- add workflow for backend integration tests ([ba4e741](https://github.com/BlazeUp-AI/Observal/commit/ba4e741feaf813f27eec071c7720ac9451f90866))
+
+### Documentation
+
+- update quick start with curl-install and move license to bottom ([d1b4dfa](https://github.com/BlazeUp-AI/Observal/commit/d1b4dfa2f07f645111086d5b957d9b8ed3e1a9d3))
+
+### Fixed
+
+- correct sentinel timestamp causing broken duration/started columns (**traces**) ([56733af](https://github.com/BlazeUp-AI/Observal/commit/56733af5d0ed0361eea48baa7273158625c521e1))
+- stub page and hide from sidebar pending rework (**errors**) ([7ccf37b](https://github.com/BlazeUp-AI/Observal/commit/7ccf37b57d84e05a2efac59cf9b52d99345f142d))
+- replace import-based detection with INSIGHTS_AVAILABLE env flag (**insights**) ([d822993](https://github.com/BlazeUp-AI/Observal/commit/d82299371690c6cec3d214cbef09da6fb14fbc34))
+- resolve pre-commit and pre-push hook failures ([236f9c1](https://github.com/BlazeUp-AI/Observal/commit/236f9c1081d337fd7b5a2de16d6d74ecbbbefea8))
+- wire token counts and correct duration in session list ([7719683](https://github.com/BlazeUp-AI/Observal/commit/7719683887a0d2573ee0783f46a9b3860671f1c1))
+- use sessionStorage for access token in loginToWebUI helper (**e2e**) ([4d39d12](https://github.com/BlazeUp-AI/Observal/commit/4d39d12148611f478ba7108ee76e9487bbe98588))
+- replace nonexistent observal-hook.sh with session_push.py (**hooks**) ([77014e6](https://github.com/BlazeUp-AI/Observal/commit/77014e61ddf3207400ed1305bd5e88b2ace5a1e3))
+- stop enterprise compose file from overriding DEPLOYMENT_MODE ([08e317d](https://github.com/BlazeUp-AI/Observal/commit/08e317d00bb73c6166faaf754b5bae5050e890bc))
+- login page respects ?next= param after authentication ([0acca4b](https://github.com/BlazeUp-AI/Observal/commit/0acca4b2aef48136b845d240b1015d7c8f3d995c))
+- migrate JWT signing from HS256 to ES256 (**security**) ([e562524](https://github.com/BlazeUp-AI/Observal/commit/e56252495d9e6297ca29dfc3064032ad77f0d93d))
+- user-level token revocation and Redis fail-closed auth (**security**) ([899fa0c](https://github.com/BlazeUp-AI/Observal/commit/899fa0c910086f93754c8e69dac4f098ef4c476a))
+- update remaining localStorage reads to sessionStorage for access token ([71feea2](https://github.com/BlazeUp-AI/Observal/commit/71feea2e2ff2fe3f082dd9060088792f39760d31))
+- enforce org ownership on component source routes (**security**) ([2f9dbcb](https://github.com/BlazeUp-AI/Observal/commit/2f9dbcb97c7c50e7bf51b0fa819b1a1334c01323))
+- scope admin dashboard and telemetry queries to requesting user's org (**security**) ([afe13b1](https://github.com/BlazeUp-AI/Observal/commit/afe13b16a3760c851fe24aeb9b7cd8e951e67c5d))
+- private agents not visible to anonymous callers in local mode (**security**) ([78d465f](https://github.com/BlazeUp-AI/Observal/commit/78d465f52c0dc2c137628de0497301af14b9f7b9))
+- scope private registry listings to owner org (**security**) ([af993b0](https://github.com/BlazeUp-AI/Observal/commit/af993b04dca6db3fe8e60b21165bdf10e5dc1021))
+- require authentication on GraphQL telemetry endpoint (**security**) ([ed65c9e](https://github.com/BlazeUp-AI/Observal/commit/ed65c9eda6d4dbe188747123f4a6b78354c1c72c))
+- block startup with weak SECRET_KEY, warn on insecure defaults in settings (**security**) ([a22ec35](https://github.com/BlazeUp-AI/Observal/commit/a22ec35d325082bb1966d6f367624003448515f6))
+- enforce password strength on account creation and change (OBSV-SEC-006) (**security**) ([cc65f9f](https://github.com/BlazeUp-AI/Observal/commit/cc65f9f0f33e73664672c61820071b96b256da71))
+- add 'unsafe-inline' to CSP script-src for Next.js hydration ([15dcaf8](https://github.com/BlazeUp-AI/Observal/commit/15dcaf8e183c7c4a5d68523864c6d23ec1c3082f))
+- hide OpenAPI docs and metrics endpoints by default (OBSV-SEC-015) (**security**) ([c338b88](https://github.com/BlazeUp-AI/Observal/commit/c338b88f8e43cbdc91de07f846f06710496d3c80))
+- require approved status for agent install, validate MCP commands (OBSV-SEC-027) (**security**) ([5b6a3a0](https://github.com/BlazeUp-AI/Observal/commit/5b6a3a0852c277dc5eeb9dc4838203b2e40a9247))
+- block password lifecycle routes in SSO-only mode (OBSV-SEC-028) (**security**) ([298cc09](https://github.com/BlazeUp-AI/Observal/commit/298cc090c60a11bd9a97f5b1b9428760f51e2265))
+- rate limiting only trusts XFF from configured trusted proxies (OBSV-SEC-003) (**security**) ([1b9f087](https://github.com/BlazeUp-AI/Observal/commit/1b9f08741256a98dca7499a3ca3fad1e79b750c9))
+- address PR review feedback ([007e05c](https://github.com/BlazeUp-AI/Observal/commit/007e05cc626c46c8bd0d16542487d5635178eca4))
+- add SPDX header and suppress bandit false positive (**ci**) ([a2efe47](https://github.com/BlazeUp-AI/Observal/commit/a2efe476cb1b8f837f10a7ac03ac4b543657da41))
+- renumber insight migration 0004 -> 0005 (**alembic**) ([050a8c2](https://github.com/BlazeUp-AI/Observal/commit/050a8c24ee63c3b5e8b80088bb13287fafcd4dc2))
+- CSP middleware and access token in sessionStorage (OBSV-SEC-025) (**security**) ([1040029](https://github.com/BlazeUp-AI/Observal/commit/10400295015f6a398e60901bb98bf2e7d34dbaa4))
+- harden EC2 bootstrap script (OBSV-SEC-020) (**security**) ([d230bf0](https://github.com/BlazeUp-AI/Observal/commit/d230bf081b281be00e506d1c0629d47369968915))
+- block operational paths at ALB by default (OBSV-SEC-018) (**security**) ([0b35ccf](https://github.com/BlazeUp-AI/Observal/commit/0b35ccfae02fbc7b94dc4a0c30a6411e2b92b455))
+- block operational metadata paths in nginx (OBSV-SEC-017) (**security**) ([4a430ab](https://github.com/BlazeUp-AI/Observal/commit/4a430ab80e2a0f24b228b6636d95a3dce70b7baf))
+- centralise SSRF guard for webhooks, git clone, MCP analysis (OBSV-SEC-012/013/014) (**security**) ([b78dc96](https://github.com/BlazeUp-AI/Observal/commit/b78dc96b4fc11b0260445c82081567497c87100a))
+- allow MCP config fields in version extras validation (**api**) ([831a0d1](https://github.com/BlazeUp-AI/Observal/commit/831a0d14624545a14dbb2bc4bc9b6686f8039662))
+- emit JSON-RPC error notification on MCP startup failure (**shim**) ([4b64b5e](https://github.com/BlazeUp-AI/Observal/commit/4b64b5e18eff18627f24049657fec040ddea757c))
+- bind stateful services to loopback in Docker Compose (OBSV-SEC-016) (**security**) ([6dbcfac](https://github.com/BlazeUp-AI/Observal/commit/6dbcfac2ad69af80ec69e3c4ea32c9ee0d69c694))
+- include auth identity in cache key to prevent cross-user hits (OBSV-SEC-023) (**security**) ([cd3acf6](https://github.com/BlazeUp-AI/Observal/commit/cd3acf6a8e131f9e9f5fb06d213ce0adf6e8c5b6))
+- redact secrets from support log collector output (OBSV-SEC-022) (**security**) ([7a27288](https://github.com/BlazeUp-AI/Observal/commit/7a27288102be0fe34be25418d4329257467f8abc))
+- redact secrets before sending content to LLM providers (OBSV-SEC-021) (**security**) ([19ac039](https://github.com/BlazeUp-AI/Observal/commit/19ac0397d2c222ab760329b01eefdddac6c712c2))
+- require auth on telemetry reconcile endpoint (OBSV-SEC-011) (**security**) ([9f275df](https://github.com/BlazeUp-AI/Observal/commit/9f275df2cc66224b2560e26fa4b5ab5972f3adab))
+- restrict support diagnostics to admin role (OBSV-SEC-008) (**security**) ([4ed0883](https://github.com/BlazeUp-AI/Observal/commit/4ed08833c822aad9c97c6a1e5a2349328f73effd))
+- apply execution time floor to every ClickHouse query (OBSV-SEC-026) (**security**) ([b1d80bd](https://github.com/BlazeUp-AI/Observal/commit/b1d80bd657b16f1a80850380d2168e20ec910d37))
+- validate session IDs before SQL interpolation in shim enrichment (**security**) ([66ca3d0](https://github.com/BlazeUp-AI/Observal/commit/66ca3d02439e845d028d59c4e7d5d5799babed6d))
+- use FINAL instead of GROUP BY for session_stats_agg (**server**) ([ce8069b](https://github.com/BlazeUp-AI/Observal/commit/ce8069bea89238b2471e6018c1dbe13fa0aece65))
+- default to ~/.observal on macOS for Docker compatibility (**deploy**) ([119aed3](https://github.com/BlazeUp-AI/Observal/commit/119aed3127ee4847ce146785816386656feb87ee))
+- add OBSERVAL_FORCE=1 to skip overwrite prompt (**deploy**) ([9910a94](https://github.com/BlazeUp-AI/Observal/commit/9910a94a353a2ecdf654f6842cb5478eb5d99563))
+- read from /dev/tty so curl|bash works interactively (**deploy**) ([4bc203b](https://github.com/BlazeUp-AI/Observal/commit/4bc203bbaf4b0b16f46078700e0783098ae2b103))
+
+### Other
+
+- remove hardcoded dev paths and stale internal docs ([6f39743](https://github.com/BlazeUp-AI/Observal/commit/6f39743cc3c2d6cec4c54be833a3410a6334b957))
+- ignore pi-lens cache directories ([b8d84e2](https://github.com/BlazeUp-AI/Observal/commit/b8d84e2d39a0f6daa0c2b6cca32d7814d293ec07))
+- update dependency authlib to v1.7.1 [security] (#923) (**deps**) ([6a00ce3](https://github.com/BlazeUp-AI/Observal/commit/6a00ce3e33f89ffdc05d42d2a563ef0633ac761e))
+- ignore and untrack Terraform plan files (OBSV-SEC-019) (**security**) ([c4873d4](https://github.com/BlazeUp-AI/Observal/commit/c4873d4469a5efdc6db470a82f156fec4763fa4c))
+
+### Testing
+
+- add coverage for MCP config parser, shim errors, and edit/submit ([8896814](https://github.com/BlazeUp-AI/Observal/commit/889681403a06bca72120a7e4869b337f4d2b5f51))
 ## [0.5.0] - 2026-05-13
 
 ### Added
