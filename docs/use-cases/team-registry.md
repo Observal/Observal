@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Run a team-wide agent registry
@@ -75,7 +76,7 @@ After registering, they can:
 
 ```bash
 observal agent list                           # see every agent the team has published
-observal pull team-reviewer --ide claude-code # install one
+observal agent pull team-reviewer --ide claude-code # install one
 observal scan                                 # discover what they have installed
 observal doctor patch --all --all-ides        # instrument everything
 ```

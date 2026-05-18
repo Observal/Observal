@@ -1,15 +1,16 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
-# observal pull
+# observal agent pull
 
 Install a complete agent — MCP servers, skills, hooks, prompts, sandboxes, and IDE-specific config — into an IDE in one command.
 
 ## Synopsis
 
 ```bash
-observal pull <agent-id-or-name> --ide <ide> [OPTIONS]
+observal agent pull <agent-id-or-name> --ide <ide> [OPTIONS]
 ```
 
 ## Required
@@ -28,7 +29,7 @@ observal pull <agent-id-or-name> --ide <ide> [OPTIONS]
 | `--scope project\|user` | Claude Code / Kiro / Gemini: install at project or user scope |
 | `--model inherit\|sonnet\|opus\|haiku` | Claude Code only: sub-agent model (default: `inherit`) |
 | `--tools <list>` | Claude Code only: comma-separated tool allowlist |
-| `--yes` / `-y` | Skip confirmation prompts |
+| `--no-prompt` / `-y` | Skip confirmation prompts |
 
 ## What gets installed
 
@@ -66,19 +67,19 @@ Values are written into your IDE config (not uploaded to Observal).
 ### Basic
 
 ```bash
-observal pull code-reviewer --ide claude-code
+observal agent pull code-reviewer --ide claude-code
 ```
 
 ### Preview first
 
 ```bash
-observal pull code-reviewer --ide claude-code --dry-run
+observal agent pull code-reviewer --ide claude-code --dry-run
 ```
 
 ### Project-scoped Claude Code install with a specific model and tool allowlist
 
 ```bash
-observal pull code-reviewer --ide claude-code \
+observal agent pull code-reviewer --ide claude-code \
   --scope project \
   --model sonnet \
   --tools "Read,Bash,Grep"
@@ -88,7 +89,7 @@ observal pull code-reviewer --ide claude-code \
 
 ```bash
 export GITHUB_TOKEN=ghp_...
-observal pull code-reviewer --ide claude-code -y
+observal agent pull code-reviewer --ide claude-code -y
 ```
 
 ## Restart your IDE

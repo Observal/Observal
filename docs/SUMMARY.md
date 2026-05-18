@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Summary
@@ -26,7 +27,7 @@
 * [observal auth](cli/auth.md)
 * [observal config](cli/config.md)
 * [observal scan](cli/scan.md)
-* [observal pull](cli/pull.md)
+* [observal agent pull](cli/pull.md)
 * [observal registry](cli/registry.md)
 * [observal agent](cli/agent.md)
 * [observal ops](cli/ops.md)

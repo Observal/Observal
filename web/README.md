@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Observal Web UI Reference
@@ -108,7 +109,7 @@ The landing page for the agent registry. Accessible without authentication.
 
 **Sections:**
 
-1. **Hero** -- Branding, tagline, live stats bar (agents, components, engineers count), search bar, terminal snippet with copy button (`observal pull my-agent --ide cursor`)
+1. **Hero** -- Branding, tagline, live stats bar (agents, components, engineers count), search bar, terminal snippet with copy button (`observal agent pull my-agent --ide cursor`)
 2. **Trending** -- Grid of top 6 agents by download count. Uses `AgentCard` components.
 3. **Leaderboard** -- Time-window tabs (24h, 7d, 30d, all time) showing top 10 agents ranked by composite score. Links to full leaderboard.
 4. **Recently Added** -- Grid of 6 newest agents sorted by creation date.
@@ -142,7 +143,7 @@ Comprehensive agent page with five tabs.
 | **Overview** | About section, model name, goal template (structured sections with title + description) |
 | **Components** | Linked MCPs/skills/hooks with type badges. Shows system prompt inline if no components linked. |
 | **Reviews** | Star rating form (1-5) + text comment for authenticated users. Review list with user, date, rating. |
-| **Install** | CLI quick install (`observal pull <name>`), manual IDE config JSON snippet with copy button. |
+| **Install** | CLI quick install (`observal agent pull <name>`), manual IDE config JSON snippet with copy button. |
 | **Analytics** | Admin-only tab. Composite score, standard deviation, 95% CI, drift alert. Dimension averages bar chart, score trend, link to traces. |
 
 <!-- Screenshot: Agent detail page -- overview tab with sidebar (WIP -- needs demo data) -->

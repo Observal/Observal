@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # CLI Reference
@@ -16,7 +17,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page —
 | [`observal auth`](auth.md) | Authentication and account management |
 | [`observal config`](config.md) | Local CLI configuration, aliases |
 | [`observal scan`](scan.md) | Discover what's installed across your IDEs (read-only) |
-| [`observal pull`](pull.md) | Install a published agent into an IDE |
+| [`observal agent pull`](pull.md) | Install a published agent into an IDE |
 | [`observal registry`](registry.md) | Publish and manage components (MCP / skill / hook / prompt / sandbox) |
 | [`observal agent`](agent.md) | Author and publish agents |
 | [`observal ops`](ops.md) | Observability and operations (traces, spans, metrics, feedback) |

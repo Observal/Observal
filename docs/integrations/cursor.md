@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Cursor
@@ -39,7 +40,7 @@ Restart Cursor.
 ## Install an agent
 
 ```bash
-observal pull <agent-id> --ide cursor
+observal agent pull <agent-id> --ide cursor
 ```
 
 What gets written:

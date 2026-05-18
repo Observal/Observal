@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # observal use / observal profile
@@ -12,7 +13,7 @@ Snapshot-style profile management for IDE configs. Swap between configs from a s
 | [`observal use`](#observal-use) | Switch to a git-hosted or local profile |
 | [`observal profile`](#observal-profile) | Show the active profile and backup info |
 
-Unlike `observal pull` (installs one agent), these work at **config-level** — your whole IDE setup.
+Unlike `observal agent pull` (installs one agent), these work at **config-level** — your whole IDE setup.
 
 ---
 
@@ -101,12 +102,12 @@ cp -r ~/.observal/backups/profile-before-20260421_143000/kiro/* .kiro/
 
 | Situation | Use |
 | --- | --- |
-| Install one published agent into my current setup | [`observal pull`](pull.md) |
+| Install one published agent into my current setup | [`observal agent pull`](pull.md) |
 | Switch my whole setup to a known-good team config | `observal use` |
 | Onboard a new machine to match your team's baseline | `observal use` |
 | Swap between "work setup" and "personal setup" | `observal use` |
 
 ## Related
 
-* [`observal pull`](pull.md) — the single-agent equivalent
+* [`observal agent pull`](pull.md) — the single-agent equivalent
 * [Use Cases → Share agent configs](../use-cases/share-agent-configs.md)

@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Config files
@@ -101,7 +102,7 @@ Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
 
 ## Backups
 
-Every config modification by `observal doctor patch`, `observal pull`, or `observal use` creates a timestamped `.bak` file next to the original:
+Every config modification by `observal doctor patch`, `observal agent pull`, or `observal use` creates a timestamped `.bak` file next to the original:
 
 ```
 ~/.claude/settings.json.20260421_143055.bak

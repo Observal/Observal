@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # observal agent
@@ -12,7 +13,7 @@ Create, author, and publish agents. An agent bundles registry components (MCPs, 
 | [`agent create`](#observal-agent-create) | Interactive agent creation wizard |
 | [`agent list`](#observal-agent-list) | List agents |
 | [`agent show`](#observal-agent-show) | Show an agent's details and components |
-| [`agent install`](#observal-agent-install) | Install an agent into an IDE (see also [`observal pull`](pull.md)) |
+| [`agent pull`](#observal-agent-pull) | Install an agent into an IDE |
 | [`agent delete`](#observal-agent-delete) | Delete an agent |
 | [`agent init`](#observal-agent-init) | Scaffold `observal-agent.yaml` in the current directory |
 | [`agent add`](#observal-agent-add) | Add a component to the local `observal-agent.yaml` |
@@ -49,12 +50,12 @@ Prints the agent's metadata and every bundled component.
 
 ---
 
-## `observal agent install`
+## `observal agent pull`
 
-Install an agent into an IDE. Equivalent to [`observal pull`](pull.md); `pull` is the preferred shorthand.
+Install an agent into an IDE.
 
 ```bash
-observal agent install <id-or-name> --ide <ide>
+observal agent pull <id-or-name> --ide <ide>
 ```
 
 ---
@@ -118,6 +119,6 @@ Invalid: `Code-Reviewer` (uppercase), `-starts-with-hyphen`, `my.agent` (dot)
 
 ## Related
 
-* [`observal pull`](pull.md) — install a published agent
+* [`observal agent pull`](pull.md) — install a published agent
 * [`observal registry`](registry.md) — author the components an agent will bundle
 * [Use Cases → Share agent configs](../use-cases/share-agent-configs.md)

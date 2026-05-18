@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # observal doctor
@@ -207,5 +208,5 @@ mv ~/.claude/settings.json.20260421_143055.bak ~/.claude/settings.json
 ## Related
 
 * [`observal scan`](scan.md) -- read-only discovery of what's installed
-* [`observal pull`](pull.md) -- install a full agent (also wires up MCP servers)
+* [`observal agent pull`](pull.md) -- install a full agent (also wires up MCP servers)
 * [Use Cases -- Observe MCP traffic](../use-cases/observe-mcp-traffic.md) -- narrative walkthrough
