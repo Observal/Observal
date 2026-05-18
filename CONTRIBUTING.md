@@ -175,6 +175,7 @@ make lint      # run linters
 ```bash
 make test      # quick
 make test-v    # verbose
+make test-cov  # generate coverage.xml and htmlcov/
 ```
 
 All tests must pass before submitting a PR. Tests mock all external services, so Docker does not need to be running. If you are adding a new feature or fixing a bug, include tests that cover the change.

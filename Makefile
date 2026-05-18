@@ -34,6 +34,10 @@ test-eval-completeness:  ## Run eval completeness tests
 
 test-all: test test-eval-completeness test-adversarial  ## Run all tests including adversarial and completeness
 
+test-cov:  ## Run Python tests with coverage
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-cov --with pyyaml --with typer --with rich --with hypothesis --with pyarrow \
+	pytest ../tests/ --cov=observal_cli --cov=observal_server --cov-report=xml --cov-report=html
+
 # ── Setup ────────────────────────────────────────────────
 
 hooks:  ## Install pre-commit hooks
