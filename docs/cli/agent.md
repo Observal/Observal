@@ -13,7 +13,8 @@ Create, author, and publish agents. An agent bundles registry components (MCPs, 
 | [`agent create`](#observal-agent-create) | Interactive agent creation wizard |
 | [`agent list`](#observal-agent-list) | List agents |
 | [`agent show`](#observal-agent-show) | Show an agent's details and components |
-| [`agent pull`](#observal-agent-pull) | Install an agent into an IDE |
+| [`agent install`](#observal-agent-install) | Get install config for an agent |
+| [`agent pull`](#observal-agent-pull) | Write agent config to IDE files |
 | [`agent delete`](#observal-agent-delete) | Delete an agent |
 | [`agent init`](#observal-agent-init) | Scaffold `observal-agent.yaml` in the current directory |
 | [`agent add`](#observal-agent-add) | Add a component to the local `observal-agent.yaml` |
@@ -50,9 +51,19 @@ Prints the agent's metadata and every bundled component.
 
 ---
 
+## `observal agent install`
+
+Get install config for an agent.
+
+```bash
+observal agent install <id-or-name> --ide <ide>
+```
+
+---
+
 ## `observal agent pull`
 
-Install an agent into an IDE.
+Fetch agent config and write IDE files to disk.
 
 ```bash
 observal agent pull <id-or-name> --ide <ide>
