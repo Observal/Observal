@@ -323,7 +323,19 @@ class TestPullKiro:
     def test_writes_agent_file(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_kiro_snippet()):
             result = runner.invoke(
-                cli_app, ["agent", "pull", "abc123", "--ide", "kiro", "--dir", str(tmp_path), "--no-prompt"]
+                cli_app,
+                [
+                    "agent",
+                    "pull",
+                    "abc123",
+                    "--ide",
+                    "kiro",
+                    "--dir",
+                    str(tmp_path),
+                    "--no-prompt",
+                    "--scope",
+                    "project",
+                ],
             )
 
         assert result.exit_code == 0, result.output
@@ -352,7 +364,19 @@ class TestPullKiro:
         }
         with _patch_config(), _patch_get_agent(), _patch_post(snippet):
             result = runner.invoke(
-                cli_app, ["agent", "pull", "abc123", "--ide", "kiro", "--dir", str(tmp_path), "--no-prompt"]
+                cli_app,
+                [
+                    "agent",
+                    "pull",
+                    "abc123",
+                    "--ide",
+                    "kiro",
+                    "--dir",
+                    str(tmp_path),
+                    "--no-prompt",
+                    "--scope",
+                    "project",
+                ],
             )
 
         assert result.exit_code == 0, result.output

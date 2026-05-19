@@ -907,7 +907,19 @@ class TestPullOpenCode:
         }
         with _patch_config(), _patch_get_agent(), _patch_post(snippet):
             result = runner.invoke(
-                cli_app, ["agent", "pull", "abc123", "--ide", "opencode", "--dir", str(tmp_path), "--no-prompt"]
+                cli_app,
+                [
+                    "agent",
+                    "pull",
+                    "abc123",
+                    "--ide",
+                    "opencode",
+                    "--dir",
+                    str(tmp_path),
+                    "--no-prompt",
+                    "--scope",
+                    "project",
+                ],
             )
         assert result.exit_code == 0, result.output
         rules = tmp_path / "AGENTS.md"

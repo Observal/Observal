@@ -321,10 +321,10 @@ def _collect_install_options(
             opts["scope"] = scope
         elif interactive:
             project_label, user_label = _SCOPE_AWARE_IDES[ide]
-            choice = select_one("  Scope", [project_label, user_label], default=project_label)
+            choice = select_one("  Scope", [user_label, project_label], default=user_label)
             opts["scope"] = "user" if choice.startswith("user") else "project"
         else:
-            opts["scope"] = "project"
+            opts["scope"] = "user"
 
     if accepts_model_choice(ide):
         explicit = model_overrides.get(ide) or model_default
