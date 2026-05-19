@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+
 """Tests for cross-user pattern detection (Phase 3).
 
 All functions are deterministic — no LLM, no I/O.
@@ -10,15 +11,16 @@ All functions are deterministic — no LLM, no I/O.
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("ee.observal_insights", reason="enterprise package not present")
+
 import os
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-prod")
-
-import pytest
-
-from services.insights.cross_user import (
+from ee.observal_insights.cross_user import (
     compute_cost_distribution,
     compute_cross_user_patterns,
     compute_ide_distribution,

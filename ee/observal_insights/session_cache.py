@@ -61,10 +61,8 @@ async def fetch_session_metas_from_events(
             start_time,
             end_time,
             dateDiff('second',
-                if(start_time > '1970-01-02' AND start_time < '2099-01-01',
-                   start_time, end_time),
-                if(end_time > '1970-01-02' AND end_time < '2099-01-01',
-                   end_time, start_time)
+                start_time,
+                if(end_time < '2098-01-01', end_time, start_time)
             ) AS duration_seconds,
             event_count,
             prompt_count,
@@ -83,7 +81,7 @@ async def fetch_session_metas_from_events(
             SELECT
                 session_id,
                 min(first_event_time) AS start_time,
-                max(last_event_time)  AS end_time,
+                maxIf(last_event_time, last_event_time < '2098-01-01')  AS end_time,
                 sum(event_count)      AS event_count,
                 sum(prompt_count)     AS prompt_count,
                 sum(tool_call_count)  AS tool_call_count,
@@ -106,7 +104,7 @@ async def fetch_session_metas_from_events(
             SELECT
                 session_id,
                 min(first_event_time) AS start_time,
-                max(last_event_time)  AS end_time,
+                maxIf(last_event_time, last_event_time < '2098-01-01')  AS end_time,
                 sum(event_count)      AS event_count,
                 sum(prompt_count)     AS prompt_count,
                 sum(tool_call_count)  AS tool_call_count,
@@ -131,7 +129,7 @@ async def fetch_session_metas_from_events(
             GROUP BY session_id
         )
         WHERE event_count >= 2
-          AND end_time BETWEEN {t_start:String} AND {t_end:String}
+          AND start_time BETWEEN {t_start:String} AND {t_end:String}
         ORDER BY start_time
         FORMAT JSON
     """

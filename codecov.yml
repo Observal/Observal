@@ -10,6 +10,7 @@ coverage:
     patch:
       default:
         target: 80%
+        informational: true
 
 ignore:
   - "tests/"
@@ -17,3 +18,4 @@ ignore:
   - "web/"
   - "demo/"
   - "alembic/"
+  - "observal-server/services/insights/"

@@ -9,8 +9,10 @@ Instead, the main app calls configure() which injects these dependencies.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 # These are set by configure() at application startup
 settings: Any = None
@@ -22,6 +24,31 @@ db_session: Callable[..., Any] | None = None  # async_session factory
 InsightSessionFacets: type | None = None
 InsightSessionMeta: type | None = None
 InsightMetaCache: type | None = None
+
+
+def configure(
+    *,
+    settings: Any = None,
+    query_fn=None,
+    call_model_fn=None,
+    db_session_factory=None,
+    meta_model=None,
+    facets_model=None,
+    meta_cache_model=None,
+):
+    """Wire up dependencies from the host application.
+
+    Must be called before any insight generation functions are used.
+    """
+    import services.insights._deps as _self
+
+    _self.settings = settings
+    _self.query = query_fn
+    _self.call_model = call_model_fn
+    _self.db_session = db_session_factory
+    _self.InsightSessionMeta = meta_model
+    _self.InsightSessionFacets = facets_model
+    _self.InsightMetaCache = meta_cache_model
 
 
 def get_settings():

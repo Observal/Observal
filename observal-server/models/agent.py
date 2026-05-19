@@ -131,7 +131,7 @@ class Agent(Base):
         foreign_keys="AgentVersion.agent_id",
     )
     latest_version: Mapped["AgentVersion | None"] = relationship(
-        foreign_keys=[latest_version_id], lazy="selectin", uselist=False
+        foreign_keys=[latest_version_id], lazy="selectin", uselist=False, post_update=True
     )
     team_accesses: Mapped[list["AgentTeamAccess"]] = relationship(
         back_populates="agent", lazy="selectin", cascade="all, delete-orphan"

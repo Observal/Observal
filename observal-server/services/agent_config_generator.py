@@ -42,6 +42,7 @@ _KIRO_EVENT_MAP = {
 # Session push hook command — reads JSONL incrementally, only needs 2 events.
 _SESSION_PUSH_CMD = "python3 -m observal_cli.hooks.session_push"
 
+
 # The two events that drive JSONL-based telemetry collection.
 # UserPromptSubmit: push new lines accumulated since last push.
 # Stop: push final lines and mark session complete.
@@ -72,6 +73,7 @@ def _claude_code_hooks_frontmatter_lines(
     cmd = _SESSION_PUSH_CMD
 
     lines = ["hooks:"]
+
     for event in _SESSION_PUSH_EVENTS:
         lines += [
             f"  {event}:",
@@ -475,7 +477,11 @@ def _build_hook_configs(
     return hooks
 
 
-def _build_rules_content(agent: Agent, component_names: dict | None = None, prompt_listings: dict | None = None) -> str:
+def _build_rules_content(
+    agent: Agent,
+    component_names: dict | None = None,
+    prompt_listings: dict | None = None,
+) -> str:
     """Build markdown rules content from the agent and its components.
 
     Assembles the agent prompt (if any), description, and a summary of
@@ -584,7 +590,7 @@ def generate_agent_config(
             "userPromptSubmit": [{"command": push_cmd}],
             "stop": [{"command": push_cmd}],
         }
-        # Merge hook components (e.g. tester1) into the Kiro hooks dict
+        # Self-learning: fetch latest skills on session start
         for hc in hook_configs:
             event = hc.get("event")
             if not event:

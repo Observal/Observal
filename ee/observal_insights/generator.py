@@ -208,7 +208,7 @@ async def _run_pipeline(
             for sid, meta in top_sessions
         ]
         transcript_results = await asyncio.gather(*transcript_tasks, return_exceptions=True)
-        for (sid, _), result in zip(top_sessions, transcript_results):
+        for (sid, _), result in zip(top_sessions, transcript_results, strict=False):
             if isinstance(result, str) and result:
                 transcripts[sid] = result
 

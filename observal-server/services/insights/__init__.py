@@ -5,45 +5,64 @@
 
 """Insights plugin loader.
 
-Controlled by the INSIGHTS_ENABLED env var (defaults to True when
-DEPLOYMENT_MODE=enterprise). Set INSIGHTS_ENABLED=false to disable explicitly.
+Delegates to the enterprise insights engine (ee/observal_insights/) when:
+1. INSIGHTS_AVAILABLE=true in config
+2. A valid OBSERVAL_LICENSE_KEY is present
 
-If enabled but the ee/ package is missing the import will fail loudly at
-startup rather than silently returning 402s.
+If either condition is unmet, all insight operations raise RuntimeError
+or return 403 via the API layer.
 """
 
 from config import settings
 
 INSIGHTS_AVAILABLE: bool = settings.INSIGHTS_AVAILABLE
 
+_generate = None
+_render = None
+
+_run_single_report = None
+_discover_and_queue = None
+
 if INSIGHTS_AVAILABLE:
-    from ee.observal_insights import generate_report_content as _generate
-    from ee.observal_insights import render_report_html as _render
-else:
-    _generate = None  # type: ignore[assignment]
-    _render = None  # type: ignore[assignment]
+    try:
+        from ee.license import require_license
+
+        require_license("insights")
+        from ee.observal_insights import generate_report_content as _generate  # type: ignore[assignment]
+        from ee.observal_insights import render_report_html as _render  # type: ignore[assignment]
+        from ee.observal_insights.batch import (
+            discover_and_queue_reports as _discover_and_queue,  # type: ignore[assignment]  # noqa: F401
+        )
+        from ee.observal_insights.batch import (
+            run_single_report as _run_single_report,  # type: ignore[assignment]  # noqa: F401
+        )
+    except (ImportError, RuntimeError):
+        # ee/ not present or license invalid — degrade gracefully
+        INSIGHTS_AVAILABLE = False
 
 
 def _not_available():
-    raise RuntimeError("Insights is not enabled. Set INSIGHTS_ENABLED=true (or DEPLOYMENT_MODE=enterprise).")
+    raise RuntimeError(
+        "Insights requires a valid Observal Enterprise license. Set OBSERVAL_LICENSE_KEY or contact team@observal.dev."
+    )
 
 
 async def generate_report_content(*args, **kwargs):
-    if not INSIGHTS_AVAILABLE:
+    if not INSIGHTS_AVAILABLE or _generate is None:
         _not_available()
-    return await _generate(*args, **kwargs)  # type: ignore[misc]
+    return await _generate(*args, **kwargs)
 
 
 def render_report_html(*args, **kwargs):
-    if not INSIGHTS_AVAILABLE:
+    if not INSIGHTS_AVAILABLE or _render is None:
         _not_available()
-    return _render(*args, **kwargs)  # type: ignore[misc]
+    return _render(*args, **kwargs)
 
 
 def configure_insights():
     """Wire up dependencies from the host app into the insights package.
 
-    Called once at server startup. No-op if not enabled.
+    Called once at server startup. No-op if not licensed/available.
     """
     if not INSIGHTS_AVAILABLE:
         return
@@ -65,3 +84,15 @@ def configure_insights():
         facets_model=InsightSessionFacets,
         meta_cache_model=InsightMetaCache,
     )
+
+
+def licensed_features() -> list[str]:
+    """Return licensed feature list via the gate — never import ee/ directly."""
+    if not INSIGHTS_AVAILABLE:
+        return []
+    try:
+        from ee.license import licensed_features as _lf
+
+        return _lf()
+    except (ImportError, RuntimeError):
+        return []

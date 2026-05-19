@@ -108,7 +108,7 @@ class TestInsightsBatchRedaction:
     """redact_secrets() is applied to system_prompt_excerpt in _load_agent_config."""
 
     async def test_system_prompt_secret_redacted(self):
-        from services.insights.batch import _load_agent_config
+        from ee.observal_insights.batch import _load_agent_config
 
         mock_version = MagicMock()
         mock_version.version = "1.0.0"

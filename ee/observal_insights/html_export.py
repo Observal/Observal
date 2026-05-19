@@ -166,17 +166,17 @@ def render_report_html(report: dict) -> str:
     # Metrics sub-dicts
     overview = metrics.get("overview") or {}
     tokens = metrics.get("tokens") or {}
-    credits_data = metrics.get("credits") or {}
+    metrics.get("credits") or {}
     cost = metrics.get("cost") or {}
     duration = metrics.get("duration") or {}
     tools_list = metrics.get("tools") or []
-    tool_errors = metrics.get("tool_errors") or {}
+    metrics.get("tool_errors") or {}
     git = metrics.get("git") or {}
     languages = metrics.get("languages") or {}
     time_of_day = metrics.get("time_of_day") or {}
-    interruptions = metrics.get("interruptions") or {}
-    multi_session = metrics.get("multi_session") or {}
-    subagents = metrics.get("subagents") or {}
+    metrics.get("interruptions") or {}
+    metrics.get("multi_session") or {}
+    metrics.get("subagents") or {}
 
     sections_html = []
 
@@ -230,7 +230,7 @@ def render_report_html(report: dict) -> str:
     # ══════════════════════════════════════════════════════════════════════════
     total_sessions = overview.get("total_sessions", sessions_analyzed)
     avg_dur = duration.get("avg_duration_seconds", 0)
-    total_hours = (avg_dur * total_sessions) / 3600 if avg_dur else 0
+    (avg_dur * total_sessions) / 3600 if avg_dur else 0
     commits = git.get("commits", 0)
     lines_added = git.get("lines_added", 0)
     lines_removed = git.get("lines_removed", 0)
@@ -560,7 +560,7 @@ def render_report_html(report: dict) -> str:
     # ══════════════════════════════════════════════════════════════════════════
     if usage_cost or cost:
         cost_summary = usage_cost.get("summary", "")
-        cost_metrics_data = usage_cost.get("metrics") or {}
+        usage_cost.get("metrics") or {}
         model_breakdown = usage_cost.get("model_breakdown") or cost.get("cost_by_model") or {}
         opportunities = usage_cost.get("opportunities") or []
 

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
 
 """Batch insight report generation — discovers agents needing reports and queues jobs.
 
@@ -129,13 +129,44 @@ async def _load_registry_catalog(db) -> dict:
     return catalog
 
 
+# Maximum time a report can stay in 'running' before being considered stale.
+_REPORT_TIMEOUT_MINUTES = 10
+
+
+async def _reap_stale_reports() -> int:
+    """Mark reports stuck in 'running' for too long as failed.
+
+    Handles cases where the worker crashed, system shut off, or the job timed out.
+    Returns the number of reports reaped.
+    """
+    cutoff = datetime.now(UTC) - timedelta(minutes=_REPORT_TIMEOUT_MINUTES)
+    async with async_session() as db:
+        stmt = select(InsightReport).where(
+            InsightReport.status == InsightReportStatus.running,
+            InsightReport.started_at < cutoff,
+        )
+        result = await db.execute(stmt)
+        stale = list(result.scalars().all())
+        for report in stale:
+            report.status = InsightReportStatus.failed
+            report.error_message = f"Timed out after {_REPORT_TIMEOUT_MINUTES} minutes (system may have restarted)"
+            report.completed_at = datetime.now(UTC)
+            logger.warning("insight_report_reaped", report_id=str(report.id), started_at=str(report.started_at))
+        if stale:
+            await db.commit()
+    return len(stale)
+
+
 async def run_single_report(report_id: str) -> None:
     """Generate an insight report: load from DB, run pipeline, save results.
 
     This replaces the old generator.generate_report() — orchestration stays
     here in the main repo, computation is delegated to the observal-insights package.
     """
-    from services.insights import generate_report_content
+    from ee.observal_insights import generate_report_content
+
+    # Reap any stale reports before starting (handles crash recovery)
+    await _reap_stale_reports()
 
     async with async_session() as db:
         stmt = select(InsightReport).where(InsightReport.id == report_id)
@@ -248,6 +279,11 @@ async def discover_and_queue_reports() -> int:
 
     Returns the number of reports queued.
     """
+    # First, reap any reports stuck from crashes/restarts
+    reaped = await _reap_stale_reports()
+    if reaped:
+        logger.info("insight_batch_reaped_stale", count=reaped)
+
     if not settings.INSIGHT_BATCH_ENABLED:
         return 0
 

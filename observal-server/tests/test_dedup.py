@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+
 """Tests for event deduplication logic (hook + OTLP merge)."""
 
 
@@ -29,7 +30,7 @@ def _make_event(
 
 
 def test_dedup_key_same_session_tool_bucket():
-    from services.insights.dedup import _make_dedup_key
+    from ee.observal_insights.dedup import _make_dedup_key
 
     a = _make_event(timestamp="2024-01-01 10:00:00.123")
     b = _make_event(timestamp="2024-01-01 10:00:00.987")
@@ -37,7 +38,7 @@ def test_dedup_key_same_session_tool_bucket():
 
 
 def test_dedup_key_different_seconds():
-    from services.insights.dedup import _make_dedup_key
+    from ee.observal_insights.dedup import _make_dedup_key
 
     a = _make_event(timestamp="2024-01-01 10:00:00.000")
     b = _make_event(timestamp="2024-01-01 10:00:01.000")
@@ -45,7 +46,7 @@ def test_dedup_key_different_seconds():
 
 
 def test_dedup_key_different_tool_name():
-    from services.insights.dedup import _make_dedup_key
+    from ee.observal_insights.dedup import _make_dedup_key
 
     a = _make_event(tool_name="Bash")
     b = _make_event(tool_name="Read")
@@ -53,7 +54,7 @@ def test_dedup_key_different_tool_name():
 
 
 def test_dedup_key_different_session():
-    from services.insights.dedup import _make_dedup_key
+    from ee.observal_insights.dedup import _make_dedup_key
 
     a = _make_event(session_id="sess-1")
     b = _make_event(session_id="sess-2")
@@ -61,7 +62,7 @@ def test_dedup_key_different_session():
 
 
 def test_dedup_key_none_tool_name():
-    from services.insights.dedup import _make_dedup_key
+    from ee.observal_insights.dedup import _make_dedup_key
 
     a = _make_event(tool_name=None)
     b = _make_event(tool_name=None)
@@ -69,7 +70,7 @@ def test_dedup_key_none_tool_name():
 
 
 def test_dedup_key_none_session_id():
-    from services.insights.dedup import _make_dedup_key
+    from ee.observal_insights.dedup import _make_dedup_key
 
     a = _make_event(session_id=None)
     b = _make_event(session_id=None)
@@ -83,7 +84,7 @@ def test_dedup_key_none_session_id():
 
 
 def test_merge_prefers_otlp_tokens():
-    from services.insights.dedup import _merge_events
+    from ee.observal_insights.dedup import _merge_events
 
     hook = _make_event(source="hook", input_tokens=0, output_tokens=0, tool_input="cmd")
     otlp = _make_event(source="otlp", input_tokens=100, output_tokens=50)
@@ -94,7 +95,7 @@ def test_merge_prefers_otlp_tokens():
 
 
 def test_merge_prefers_hook_tool_input():
-    from services.insights.dedup import _merge_events
+    from ee.observal_insights.dedup import _merge_events
 
     hook = _make_event(source="hook", tool_input="echo hello", tool_response="hello")
     otlp = _make_event(source="otlp")
@@ -105,7 +106,7 @@ def test_merge_prefers_hook_tool_input():
 
 
 def test_merge_keeps_earlier_timestamp():
-    from services.insights.dedup import _merge_events
+    from ee.observal_insights.dedup import _merge_events
 
     earlier = _make_event(timestamp="2024-01-01 10:00:00.100")
     later = _make_event(timestamp="2024-01-01 10:00:00.900")
@@ -118,7 +119,7 @@ def test_merge_keeps_earlier_timestamp():
 
 
 def test_merge_prefers_error_from_either():
-    from services.insights.dedup import _merge_events
+    from ee.observal_insights.dedup import _merge_events
 
     hook = _make_event(source="hook")
     otlp = _make_event(source="otlp", error="connection refused")
@@ -128,7 +129,7 @@ def test_merge_prefers_error_from_either():
 
 
 def test_merge_prefers_model_from_either():
-    from services.insights.dedup import _merge_events
+    from ee.observal_insights.dedup import _merge_events
 
     hook = _make_event(source="hook", model="claude-sonnet-4")
     otlp = _make_event(source="otlp")
@@ -138,7 +139,7 @@ def test_merge_prefers_model_from_either():
 
 
 def test_merge_prefers_cache_fields_from_otlp():
-    from services.insights.dedup import _merge_events
+    from ee.observal_insights.dedup import _merge_events
 
     hook = _make_event(source="hook")
     otlp = _make_event(source="otlp", cache_read=200, cache_creation=50)
@@ -150,7 +151,7 @@ def test_merge_prefers_cache_fields_from_otlp():
 
 def test_merge_idempotent_same_event():
     """Merging an event with itself should not corrupt data."""
-    from services.insights.dedup import _merge_events
+    from ee.observal_insights.dedup import _merge_events
 
     event = _make_event(source="hook", tool_input="ls", input_tokens=10, output_tokens=5)
     merged = _merge_events(event, event)
@@ -164,7 +165,7 @@ def test_merge_idempotent_same_event():
 
 
 def test_dedupe_events_no_duplicates():
-    from services.insights.dedup import dedupe_events
+    from ee.observal_insights.dedup import dedupe_events
 
     events = [
         _make_event(session_id="s1", tool_name="Bash", timestamp="2024-01-01 10:00:00.000"),
@@ -175,7 +176,7 @@ def test_dedupe_events_no_duplicates():
 
 
 def test_dedupe_events_merges_hook_and_otlp():
-    from services.insights.dedup import dedupe_events
+    from ee.observal_insights.dedup import dedupe_events
 
     events = [
         _make_event(
@@ -199,7 +200,7 @@ def test_dedupe_events_merges_hook_and_otlp():
 
 
 def test_dedupe_events_outside_2s_window_not_merged():
-    from services.insights.dedup import dedupe_events
+    from ee.observal_insights.dedup import dedupe_events
 
     events = [
         _make_event(
@@ -218,7 +219,7 @@ def test_dedupe_events_outside_2s_window_not_merged():
 
 
 def test_dedupe_events_sorted_by_timestamp():
-    from services.insights.dedup import dedupe_events
+    from ee.observal_insights.dedup import dedupe_events
 
     events = [
         _make_event(timestamp="2024-01-01 10:00:05.000", tool_name="C"),
@@ -231,7 +232,7 @@ def test_dedupe_events_sorted_by_timestamp():
 
 def test_dedupe_events_idempotent():
     """Running dedup twice on the same list returns the same result."""
-    from services.insights.dedup import dedupe_events
+    from ee.observal_insights.dedup import dedupe_events
 
     events = [
         _make_event(source="hook", tool_name="Bash", timestamp="2024-01-01 10:00:00.200", tool_input="echo hi"),
@@ -243,14 +244,14 @@ def test_dedupe_events_idempotent():
 
 
 def test_dedupe_events_empty():
-    from services.insights.dedup import dedupe_events
+    from ee.observal_insights.dedup import dedupe_events
 
     assert dedupe_events([]) == []
 
 
 def test_dedupe_events_no_session_id():
     """Events without session_id should still be handled without error."""
-    from services.insights.dedup import dedupe_events
+    from ee.observal_insights.dedup import dedupe_events
 
     events = [
         _make_event(session_id=None, tool_name="Bash", timestamp="2024-01-01 10:00:00.000"),
@@ -263,7 +264,7 @@ def test_dedupe_events_no_session_id():
 
 def test_dedupe_events_no_tool_name():
     """Events without tool_name (e.g., session_start) should not be merged."""
-    from services.insights.dedup import dedupe_events
+    from ee.observal_insights.dedup import dedupe_events
 
     events = [
         _make_event(tool_name=None, timestamp="2024-01-01 10:00:00.000", source="hook"),
@@ -279,9 +280,13 @@ def test_dedupe_events_no_tool_name():
 # dedupe_session_events
 # ---------------------------------------------------------------------------
 
+import pytest
+
+pytest.importorskip("ee.observal_insights", reason="enterprise package not present")
+
 
 def test_dedupe_session_events_filters_by_session():
-    from services.insights.dedup import dedupe_session_events
+    from ee.observal_insights.dedup import dedupe_session_events
 
     events = [
         _make_event(session_id="sess-A", tool_name="Bash", timestamp="2024-01-01 10:00:00.000"),

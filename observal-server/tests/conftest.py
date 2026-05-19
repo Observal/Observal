@@ -5,9 +5,16 @@
 """Shared fixtures for JWT / auth tests."""
 
 import os
+import sys
 import uuid
+from pathlib import Path
 
 import pytest
+
+# Ensure repo root is on sys.path so ee/ imports work
+_repo_root = str(Path(__file__).resolve().parent.parent.parent)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 # Override settings before any app code imports them
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///")

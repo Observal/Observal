@@ -206,9 +206,9 @@ async def _count_sessions_in_events(agent_id: str, start: str, end: str) -> int:
         SELECT count(DISTINCT session_id) AS cnt
         FROM session_stats_agg
         WHERE agent_id = {agent_id:String}
-          AND last_event_time >= {t_start:String}
-          AND last_event_time <= {t_end:String}
-          AND last_event_time < '2099-01-01 00:00:00'
+          AND first_event_time >= {t_start:String}
+          AND first_event_time <= {t_end:String}
+
         FORMAT JSON
     """
     params = {
@@ -247,9 +247,9 @@ async def _ev_session_overview(agent_id: str, start: str, end: str) -> dict:
             FROM (
                 SELECT * FROM session_stats_agg
                 WHERE agent_id = {agent_id:String}
-                  AND last_event_time >= {t_start:String}
-                  AND last_event_time <= {t_end:String}
-                  AND last_event_time < '2099-01-01 00:00:00'
+                  AND first_event_time >= {t_start:String}
+                  AND first_event_time <= {t_end:String}
+
             )
             GROUP BY session_id, user_id
         )
@@ -293,9 +293,9 @@ async def _ev_token_aggregates(agent_id: str, start: str, end: str) -> dict:
             FROM (
                 SELECT * FROM session_stats_agg
                 WHERE agent_id = {agent_id:String}
-                  AND last_event_time >= {t_start:String}
-                  AND last_event_time <= {t_end:String}
-                  AND last_event_time < '2099-01-01 00:00:00'
+                  AND first_event_time >= {t_start:String}
+                  AND first_event_time <= {t_end:String}
+
             )
             GROUP BY session_id
         )
@@ -340,9 +340,9 @@ async def _ev_credit_aggregates(agent_id: str, start: str, end: str) -> dict:
                 SELECT * FROM session_stats_agg
                 WHERE agent_id = {agent_id:String}
                   AND ide = 'kiro'
-                  AND last_event_time >= {t_start:String}
-                  AND last_event_time <= {t_end:String}
-                  AND last_event_time < '2099-01-01 00:00:00'
+                  AND first_event_time >= {t_start:String}
+                  AND first_event_time <= {t_end:String}
+
             )
             GROUP BY session_id
         )
@@ -385,9 +385,9 @@ async def _ev_duration_stats(agent_id: str, start: str, end: str) -> dict:
             FROM (
                 SELECT * FROM session_stats_agg
                 WHERE agent_id = {agent_id:String}
-                  AND last_event_time >= {t_start:String}
-                  AND last_event_time <= {t_end:String}
-                  AND last_event_time < '2099-01-01 00:00:00'
+                  AND first_event_time >= {t_start:String}
+                  AND first_event_time <= {t_end:String}
+
             )
             GROUP BY session_id
         )
@@ -601,9 +601,9 @@ async def _ev_subagent_stats(agent_id: str, start: str, end: str) -> dict:
             FROM (
                 SELECT * FROM session_stats_agg
                 WHERE agent_id = {agent_id:String}
-                  AND last_event_time >= {t_start:String}
-                  AND last_event_time <= {t_end:String}
-                  AND last_event_time < '2099-01-01 00:00:00'
+                  AND first_event_time >= {t_start:String}
+                  AND first_event_time <= {t_end:String}
+
             )
             GROUP BY session_id
             HAVING anyLast(parent_session_id) != ''
@@ -690,9 +690,9 @@ async def _ev_per_session_tokens(agent_id: str, start: str, end: str) -> list[di
         FROM (
             SELECT * FROM session_stats_agg
             WHERE agent_id = {agent_id:String}
-              AND last_event_time >= {t_start:String}
-              AND last_event_time <= {t_end:String}
-              AND last_event_time < '2099-01-01 00:00:00'
+              AND first_event_time >= {t_start:String}
+              AND first_event_time <= {t_end:String}
+
         )
         GROUP BY session_id
         FORMAT JSON
@@ -736,9 +736,9 @@ async def _ev_session_details(agent_id: str, start: str, end: str) -> list[dict]
         FROM (
             SELECT * FROM session_stats_agg
             WHERE agent_id = {agent_id:String}
-              AND last_event_time >= {t_start:String}
-              AND last_event_time <= {t_end:String}
-              AND last_event_time < '2099-01-01 00:00:00'
+              AND first_event_time >= {t_start:String}
+              AND first_event_time <= {t_end:String}
+
         )
         GROUP BY session_id
         ORDER BY min(first_event_time) DESC

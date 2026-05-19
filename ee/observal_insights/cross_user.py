@@ -95,10 +95,7 @@ def compute_time_of_day_distribution(sessions: list[dict]) -> dict:
         if not ts:
             continue
         try:
-            if isinstance(ts, str):
-                dt = datetime.fromisoformat(ts)
-            else:
-                dt = ts
+            dt = datetime.fromisoformat(ts) if isinstance(ts, str) else ts
             hour = dt.hour
             hourly_counts[hour] = hourly_counts.get(hour, 0) + 1
             valid += 1
@@ -157,7 +154,7 @@ def compute_session_length_trends(sessions: list[dict]) -> dict:
     p99 = sorted_durations[int((n - 1) * 0.99)] if n > 1 else sorted_durations[-1]
 
     # Outliers: sessions with duration > 3x p50
-    outlier_sessions = [s for s, d in zip(sessions, durations) if p50 > 0 and d > 3 * p50]
+    outlier_sessions = [s for s, d in zip(sessions, durations, strict=False) if p50 > 0 and d > 3 * p50]
 
     # Trend: compare first half avg vs second half avg (sorted by first_event if possible)
     try:

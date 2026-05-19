@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+
 """Tests for services/insights/shim_enrichment.py.
 
 TDD: these tests define the expected behavior before implementation.
@@ -10,11 +11,13 @@ TDD: these tests define the expected behavior before implementation.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
-from services.insights.shim_enrichment import (
+pytest.importorskip("ee.observal_insights", reason="enterprise package not present")
+
+from unittest.mock import AsyncMock, patch
+
+from ee.observal_insights.shim_enrichment import (
     compute_mcp_metrics,
     enrich_session_with_shim,
     get_shim_spans_for_sessions,
@@ -168,7 +171,7 @@ class TestGetShimSpansForSessions:
         mock_response.raise_for_status = lambda: None
         mock_response.json = lambda: {"data": mock_rows}
 
-        with patch("services.insights.shim_enrichment._query", new=AsyncMock(return_value=mock_response)):
+        with patch("ee.observal_insights.shim_enrichment._query", new=AsyncMock(return_value=mock_response)):
             result = await get_shim_spans_for_sessions("my-agent", ["sess-a", "sess-b"], "2026-01-01", "2026-01-31")
 
         assert set(result.keys()) == {"sess-a", "sess-b"}
@@ -178,7 +181,7 @@ class TestGetShimSpansForSessions:
 
     @pytest.mark.asyncio
     async def test_returns_empty_dict_on_query_failure(self):
-        with patch("services.insights.shim_enrichment._query", new=AsyncMock(side_effect=Exception("db error"))):
+        with patch("ee.observal_insights.shim_enrichment._query", new=AsyncMock(side_effect=Exception("db error"))):
             result = await get_shim_spans_for_sessions("my-agent", ["sess-x"], "2026-01-01", "2026-01-31")
         assert result == {}
 
@@ -195,7 +198,7 @@ class TestComputeMcpMetrics:
         mock_response.raise_for_status = lambda: None
         mock_response.json = lambda: {"data": []}
 
-        with patch("services.insights.shim_enrichment._query", new=AsyncMock(return_value=mock_response)):
+        with patch("ee.observal_insights.shim_enrichment._query", new=AsyncMock(return_value=mock_response)):
             result = await compute_mcp_metrics("my-agent", "2026-01-01", "2026-01-31")
 
         assert result["total_mcp_calls"] == 0
@@ -233,7 +236,7 @@ class TestComputeMcpMetrics:
             call_idx[0] += 1
             return r
 
-        with patch("services.insights.shim_enrichment._query", side_effect=fake_query):
+        with patch("ee.observal_insights.shim_enrichment._query", side_effect=fake_query):
             result = await compute_mcp_metrics("my-agent", "2026-01-01", "2026-01-31")
 
         assert result["total_mcp_calls"] == 10
@@ -246,7 +249,7 @@ class TestComputeMcpMetrics:
 
     @pytest.mark.asyncio
     async def test_returns_safe_defaults_on_query_error(self):
-        with patch("services.insights.shim_enrichment._query", new=AsyncMock(side_effect=Exception("fail"))):
+        with patch("ee.observal_insights.shim_enrichment._query", new=AsyncMock(side_effect=Exception("fail"))):
             result = await compute_mcp_metrics("my-agent", "2026-01-01", "2026-01-31")
 
         assert result["total_mcp_calls"] == 0

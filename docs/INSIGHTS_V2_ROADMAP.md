@@ -40,7 +40,7 @@ regression detection, and qualitative session analysis.
 | Model `insight_session_facets.py` | Pending |
 | `services/insights/sections.py` — 8 section prompts + synthesis | Pending |
 | `services/insights/anonymize.py` — user/cwd anonymization | Pending |
-| `services/insights/session_cache.py` — PostgreSQL session meta cache | Pending |
+| `ee/observal_insights/session_cache.py` — PostgreSQL session meta cache | Done |
 | Rewrite `generator.py` — new orchestrator flow | Pending |
 | Update `batch.py` — set `previous_report_id` | Pending |
 | Update `models/insight_report.py` — `previous_report_id`, `aggregated_data`, `report_version` | Pending |

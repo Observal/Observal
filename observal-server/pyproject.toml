@@ -25,7 +25,7 @@ dependencies = [
     "boto3",
     "redis[hiredis]",
     "arq",
-    "strawberry-graphql[fastapi]>=0.314.0",
+    "strawberry-graphql[fastapi]>=0.315.4",
     "authlib>=1.6.11",
     "itsdangerous",
     "cryptography>=44.0.0",
@@ -42,6 +42,7 @@ dependencies = [
     "structlog>=24.1.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
     "urllib3>=2.7.0",
+    "idna>=3.15",
 ]
 
 [dependency-groups]

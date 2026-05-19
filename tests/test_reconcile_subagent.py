@@ -381,7 +381,7 @@ async def test_reconcile_endpoint_subagent_dedup_uses_subagent_id_not_session_id
 def test_session_enrichment_has_subagent_fields():
     """SessionEnrichment dataclass includes the new subagent attribution fields."""
     pytest.importorskip("services.insights.reconcile")
-    from services.insights.reconcile import SessionEnrichment
+    from ee.observal_insights.reconcile import SessionEnrichment
 
     e = SessionEnrichment(session_id="parent-abc")
     assert hasattr(e, "is_subagent")
@@ -399,7 +399,7 @@ def test_session_enrichment_has_subagent_fields():
 def test_enrichment_to_dict_includes_subagent_fields():
     """enrichment_to_dict includes the subagent fields in serialised output."""
     pytest.importorskip("services.insights.reconcile")
-    from services.insights.reconcile import SessionEnrichment, enrichment_to_dict
+    from ee.observal_insights.reconcile import SessionEnrichment, enrichment_to_dict
 
     e = SessionEnrichment(
         session_id="parent-abc",

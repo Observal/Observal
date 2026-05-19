@@ -105,11 +105,15 @@ known-first-party = ["observal_cli", "models", "schemas", "services", "api", "ee
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["F841", "RUF059", "B007", "TID251"]  # unused vars, allow ee imports in tests
+"observal-server/tests/*" = ["F841", "RUF059", "B007", "TID251", "E402"]  # same for server tests; E402 for importorskip guards
 "ee/*" = ["TID251"]                                     # ee/ may import from itself
 "ee/observal_insights/*" = ["TID251", "N806", "SIM108", "B905", "F841", "TCH003"]  # ported code, preserve original style
 "observal_cli/main.py" = ["E402"]       # imports after app = typer.Typer()
 "observal-server/main.py" = ["TID251"]  # main.py is the single allowed ee/ crossing point
 "observal-server/services/insights/__init__.py" = ["TID251"]  # insights loader imports from ee/
+"observal-server/api/routes/config.py" = ["TID251"]  # exposes licensed_features from ee/
+"observal-server/api/routes/ingest.py" = ["TID251"]  # ingest endpoint imports from ee/ gate
+"observal-server/worker.py" = ["TID251"]  # worker runs ee/ insight jobs
 "demo/*" = ["E402"]
 
 [tool.ruff.format]

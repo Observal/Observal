@@ -19,7 +19,6 @@ services:
     env_file:
       - ../.env
     environment:
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
       - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-90}
     depends_on:
       observal-db:
@@ -46,7 +45,6 @@ services:
     env_file:
       - ../.env
     environment:
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
       - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-90}
       - JWT_KEY_DIR=/data/keys
       - SKIP_DDL_ON_STARTUP=true
@@ -158,8 +156,6 @@ services:
     command: ["/app/.venv/bin/python", "-c", "import asyncio; asyncio.set_event_loop(asyncio.new_event_loop()); from arq import run_worker; from worker import WorkerSettings; run_worker(WorkerSettings)"]
     env_file:
       - ../.env
-    environment:
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
     depends_on:
       observal-init:
         condition: service_completed_successfully

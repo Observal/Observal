@@ -143,9 +143,12 @@ async def generate_insight_report(ctx: dict, report_id: str):
 
     logger.info("insight_report_started", report_id=report_id)
     try:
-        from services.insights.batch import run_single_report
+        from services.insights import _run_single_report
 
-        await run_single_report(report_id)
+        if _run_single_report is None:
+            logger.warning("insight_report_skipped", reason="license not valid")
+            return
+        await _run_single_report(report_id)
     except Exception as e:
         logger.exception("insight_report_job_failed", report_id=report_id, error=str(e))
 
@@ -157,10 +160,13 @@ async def batch_generate_insights(ctx: dict):
     if not INSIGHTS_AVAILABLE:
         return
 
-    from services.insights.batch import discover_and_queue_reports
+    from services.insights import _discover_and_queue
+
+    if _discover_and_queue is None:
+        return
 
     try:
-        queued = await discover_and_queue_reports()
+        queued = await _discover_and_queue()
         if queued > 0:
             logger.info("insight_batch_queued_reports", count=queued)
     except Exception as e:
