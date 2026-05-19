@@ -178,6 +178,7 @@ def test_tail_flush_retries_and_logs_failure(home, payload, file_path, changes, 
         result = tail_flush(SESSION_ID, home=home)
     assert result is None
     assert mock_sleep.call_count == 1 + _MAX_RETRIES
+    assert mock_post.call_count == _MAX_RETRIES + 1
     mock_config.assert_called_once_with(home=home)
     mock_session_file.assert_called_once_with(SESSION_ID, home=home)
     mock_write_cursor.assert_not_called()
