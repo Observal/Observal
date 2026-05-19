@@ -484,8 +484,8 @@ def _build_rules_content(
 ) -> str:
     """Build markdown rules content from the agent and its components.
 
-    Assembles the agent prompt (if any), description, and a summary of
-    all bundled components so the rules file is never empty.
+    Assembles the agent prompt (if any) and a summary of all bundled
+    components. Description is registry metadata and is never injected.
 
     Args:
         prompt_listings: optional {component_id: PromptListing} map. When provided,
@@ -495,8 +495,6 @@ def _build_rules_content(
 
     if agent.prompt:
         sections.append(agent.prompt)
-    elif agent.description:
-        sections.append(agent.description)
 
     # Group components by type and resolve display names
     names = component_names or {}
@@ -542,7 +540,7 @@ def _build_rules_content(
                 lines.append(f"- **{n}**")
             sections.append("\n".join(lines))
 
-    return "\n\n".join(sections) if sections else f"# {agent.name}\n\n{agent.description or ''}"
+    return "\n\n".join(sections) if sections else f"# {agent.name}"
 
 
 def generate_agent_config(
@@ -623,7 +621,6 @@ def generate_agent_config(
                 "path": agent_path,
                 "content": {
                     "name": safe_name,
-                    "description": agent.description[:200] if agent.description else "",
                     "prompt": _wrap_kiro_prompt(agent.prompt, safe_name),
                     "mcpServers": mcp_configs,
                     "tools": ["*"],
@@ -682,11 +679,9 @@ def generate_agent_config(
                 model_choice = _model_name_to_frontmatter(getattr(agent, "model_name", ""))
 
         # Build Claude Code agent file with YAML frontmatter
-        desc_line = (agent.description or safe_name).replace("\n", " ").strip()
         frontmatter_lines = [
             "---",
             f"name: {safe_name}",
-            f'description: "{desc_line}"',
         ]
         if model_choice:
             frontmatter_lines.append(f"model: {model_choice}")
@@ -788,11 +783,9 @@ def generate_agent_config(
         copilot_spec = IDE_REGISTRY["copilot"]
 
         # Build .agent.md with hooks in frontmatter (per-agent hooks)
-        desc_line = (agent.description or safe_name).replace("\n", " ").strip()
         frontmatter_lines = [
             "---",
             f"name: {safe_name}",
-            f'description: "{desc_line}"',
             "tools: ['*']",
         ]
         frontmatter_lines.extend(_vscode_copilot_hooks_frontmatter_lines())
@@ -838,11 +831,9 @@ def generate_agent_config(
         copilot_cli_spec = IDE_REGISTRY["copilot-cli"]
 
         # Build .agent.md with hooks in frontmatter (per-agent hooks)
-        desc_line = (agent.description or safe_name).replace("\n", " ").strip()
         frontmatter_lines = [
             "---",
             f"name: {safe_name}",
-            f'description: "{desc_line}"',
             "tools: ['*']",
         ]
         frontmatter_lines.extend(_vscode_copilot_hooks_frontmatter_lines())

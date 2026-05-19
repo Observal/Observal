@@ -146,10 +146,11 @@ class TestBuildRulesContent:
         assert "Custom prompt" in result
         assert "Desc" not in result
 
-    def test_falls_back_to_description_when_no_prompt(self):
-        agent = _make_agent(prompt="", description="Agent description")
+    def test_no_prompt_produces_bare_heading(self):
+        agent = _make_agent(prompt="", description="Registry copy. Must not appear.")
         result = _build_rules_content(agent)
-        assert "Agent description" in result
+        assert "Registry copy" not in result
+        assert result == f"# {agent.name}"
 
     def test_fallback_when_both_empty(self):
         agent = _make_agent(prompt="", description="")
@@ -217,7 +218,7 @@ class TestGenerateClaudeCode:
         assert len(parts) >= 3
         fm = yaml.safe_load(parts[1])
         assert fm["name"] == "test-agent"
-        assert "A test agent" in fm["description"]
+        assert "description" not in fm
 
     def test_frontmatter_includes_mcp_servers(self):
         ext_mcps = [{"name": "my-ext", "command": "npx", "args": ["-y", "ext"]}]
@@ -262,14 +263,6 @@ class TestGenerateClaudeCode:
         agent = _make_agent()
         cfg = generate_agent_config(agent, "claude_code")
         assert ".claude/agents/" in cfg["rules_file"]["path"]
-
-    def test_multiline_description_collapsed(self):
-        agent = _make_agent(description="Line one\nLine two\nLine three")
-        cfg = generate_agent_config(agent, "claude-code")
-        content = cfg["rules_file"]["content"]
-        parts = content.split("---", 2)
-        fm = yaml.safe_load(parts[1])
-        assert "\n" not in fm["description"]
 
     def test_model_fallback_from_agent_when_no_option(self):
         agent = _make_agent(model_name="claude-sonnet-4-6-20250725")
@@ -394,10 +387,10 @@ class TestGenerateKiro:
         cfg = generate_agent_config(agent, "kiro")
         assert "steering_file" not in cfg
 
-    def test_description_truncated_to_200(self):
+    def test_kiro_agent_file_has_no_description(self):
         agent = _make_agent(description="x" * 300)
         cfg = generate_agent_config(agent, "kiro")
-        assert len(cfg["agent_file"]["content"]["description"]) == 200
+        assert "description" not in cfg["agent_file"]["content"]
 
     def test_tools_include_wildcard(self):
         agent = _make_agent()
