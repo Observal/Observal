@@ -5,5 +5,10 @@
   "scripts": {
     "e2e": "pnpm --filter web e2e",
     "e2e:list": "pnpm --filter web exec playwright test --list"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": ">=8.5.10"
+    }
   }
 }

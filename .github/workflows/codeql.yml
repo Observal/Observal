@@ -8,6 +8,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    paths:
+      - '**/*.py'
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.js'
+      - '**/*.jsx'
+      - '.github/workflows/codeql.yml'
   schedule:
     - cron: '0 6 * * 1'
 

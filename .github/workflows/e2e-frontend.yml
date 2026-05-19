@@ -6,6 +6,10 @@ name: E2E Frontend
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'web/**'
+      - 'tests/e2e/**'
+      - '.github/workflows/e2e-frontend.yml'
 
 concurrency:
   group: e2e-frontend-${{ github.ref }}
@@ -15,7 +19,6 @@ jobs:
   e2e:
     name: e2e-frontend-flows
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 15
 
     steps:

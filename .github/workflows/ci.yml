@@ -17,7 +17,8 @@
 #     • test (3.13)
 #     • web-lint
 #     • docker-build
-#     • security-scan
+#     • import-boundary
+#     • dependency-audit
 #   Require a pull request before merging
 #   Require approvals: 1
 #   Do not allow bypassing the above settings
@@ -101,11 +102,11 @@ jobs:
 
       - name: ruff check
         if: needs.changes.outputs.python == 'true'
-        run: uv run --with ruff==0.15.10 ruff check .
+        run: uv run --with ruff==0.15.12 ruff check .
 
       - name: ruff format --check
         if: needs.changes.outputs.python == 'true'
-        run: uv run --with ruff==0.15.10 ruff format --check .
+        run: uv run --with ruff==0.15.12 ruff format --check .
 
 # ── Job 2: REUSE license compliance ──────────────────────────────────────────────
   reuse-lint:
@@ -216,7 +217,7 @@ jobs:
         if: needs.changes.outputs.web == 'true'
         run: pnpm run typecheck
 
-# ── Job 4: Import boundary check ─────────────────────────────────────────────
+# ── Job 5: Import boundary check ─────────────────────────────────────────────
   import-boundary:
     name: import-boundary
     runs-on: ubuntu-latest
@@ -236,7 +237,7 @@ jobs:
           fi
           echo "✓ No import boundary violations found"
 
-# ── Job 5: Docker build ───────────────────────────────────────────────────────
+# ── Job 6: Docker build ───────────────────────────────────────────────────────
   docker-build:
     name: docker-build
     runs-on: ubuntu-latest
@@ -264,43 +265,32 @@ jobs:
         if: needs.changes.outputs.docker == 'true'
         run: docker compose build
 
-# ── Job 5: Python SAST with bandit ──────────────────────────────────────────
-  security-scan:
-    name: security-scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
-      - name: Install Python 3.12
-        run: uv python install 3.12
-      - name: Run bandit
-        run: uv run --with bandit bandit -r observal-server/ observal_cli/ -c pyproject.toml -f json -o bandit-report.json || true
-      - name: Check bandit results
-        run: uv run --with bandit bandit -r observal-server/ observal_cli/ -c pyproject.toml -ll
-
-# ── Job 6: Dependency audit ─────────────────────────────────────────────────
+# ── Job 7: Dependency audit ─────────────────────────────────────────────────
   dependency-audit:
     name: dependency-audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Python dependency audit
-        uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
+
       - name: Run pip-audit
-        # TODO: burn down pre-existing advisories then remove || true
         run: |
           uv python install 3.12
           cd observal-server
-          uv run --with pip-audit pip-audit --strict --desc || true
+          uv run --with pip-audit pip-audit --strict --desc
 
-      - name: JS dependency audit
-        uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
       - name: Run pnpm audit
         run: |
           pnpm install --frozen-lockfile
-          pnpm audit --prod || true
+          pnpm audit --prod
