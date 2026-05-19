@@ -1,0 +1,192 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: PR Labels
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  # Applies 'new contributor' to PRs from authors with no prior merged PRs
+  new-contributor:
+    if: github.event_name == 'pull_request_target' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const author = context.payload.pull_request.user.login;
+            const repo = context.repo;
+
+            const { data: results } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${repo.owner}/${repo.repo} is:pr is:merged author:${author}`,
+              per_page: 1,
+            });
+
+            const hasMergedPR = results.total_count > 0;
+
+            if (hasMergedPR) {
+              console.log(`${author} has previous merged PRs, skipping label.`);
+              return;
+            }
+
+            console.log(`${author} is a new contributor, adding label.`);
+
+            const labelName = 'new contributor';
+            try {
+              await github.rest.issues.getLabel({ ...repo, name: labelName });
+            } catch (e) {
+              if (e.status !== 404) throw e;
+              await github.rest.issues.createLabel({
+                ...repo,
+                name: labelName,
+                color: '7057ff',
+                description: 'Pull request from a first-time contributor',
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              ...repo,
+              issue_number: context.payload.pull_request.number,
+              labels: [labelName],
+            });
+
+  # Applies 'tests' and/or 'enterprise' based on changed file paths
+  auto-label:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const repo = context.repo;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const paths = files.map((f) => f.filename);
+
+            const isTest = paths.some((p) =>
+              /^tests\//.test(p) ||
+              /\/tests\//.test(p) ||
+              /\/test_[^/]+$/.test(p) ||
+              /\/[^/]+_test\.[^/]+$/.test(p) ||
+              /\.spec\.[jt]sx?$/.test(p)
+            );
+
+            const isEnterprise = paths.some((p) => /^ee\//.test(p));
+
+            const labelsToApply = [
+              ...(isTest ? ['tests'] : []),
+              ...(isEnterprise ? ['enterprise'] : []),
+            ];
+
+            if (labelsToApply.length === 0) return;
+
+            const labelDefs = {
+              tests: { color: '0075ca', description: 'Pull request adds or modifies tests' },
+              enterprise: { color: 'e11d48', description: 'Pull request touches enterprise (ee/) code' },
+            };
+
+            for (const name of labelsToApply) {
+              try {
+                await github.rest.issues.getLabel({ ...repo, name });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                await github.rest.issues.createLabel({ ...repo, name, ...labelDefs[name] });
+              }
+            }
+
+            await github.rest.issues.addLabels({
+              ...repo,
+              issue_number: pr.number,
+              labels: labelsToApply,
+            });
+
+            console.log(`Applied labels: ${labelsToApply.join(', ')}`);
+
+  # Applies or removes 'Has Conflicts' based on mergeable_state
+  conflict-label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const repo = context.repo;
+            const labelName = 'Has Conflicts';
+
+            try {
+              await github.rest.issues.getLabel({ ...repo, name: labelName });
+            } catch (e) {
+              if (e.status !== 404) throw e;
+              await github.rest.issues.createLabel({
+                ...repo,
+                name: labelName,
+                color: 'd93f0b',
+                description: 'Pull request has merge conflicts',
+              });
+            }
+
+            let prs = [];
+            if (context.eventName === 'push') {
+              prs = await github.paginate(github.rest.pulls.list, {
+                ...repo,
+                state: 'open',
+                per_page: 100,
+              });
+            } else {
+              prs = [context.payload.pull_request];
+            }
+
+            for (const pr of prs) {
+              let mergeable_state = pr.mergeable_state;
+              if (mergeable_state === 'unknown') {
+                for (let i = 0; i < 6; i++) {
+                  await new Promise((r) => setTimeout(r, 5000));
+                  const { data: fresh } = await github.rest.pulls.get({
+                    ...repo,
+                    pull_number: pr.number,
+                  });
+                  mergeable_state = fresh.mergeable_state;
+                  if (mergeable_state !== 'unknown') break;
+                }
+              }
+
+              const hasConflicts = mergeable_state === 'dirty';
+              const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+                ...repo,
+                issue_number: pr.number,
+              });
+              const isLabeled = labels.some((l) => l.name === labelName);
+
+              if (hasConflicts && !isLabeled) {
+                await github.rest.issues.addLabels({
+                  ...repo,
+                  issue_number: pr.number,
+                  labels: [labelName],
+                });
+                console.log(`#${pr.number}: added '${labelName}'`);
+              } else if (!hasConflicts && isLabeled) {
+                await github.rest.issues.removeLabel({
+                  ...repo,
+                  issue_number: pr.number,
+                  name: labelName,
+                });
+                console.log(`#${pr.number}: removed '${labelName}'`);
+              }
+            }
