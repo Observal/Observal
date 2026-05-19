@@ -1,0 +1,71 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: Auto-label PRs
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply labels based on changed files
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const repo = context.repo;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const paths = files.map((f) => f.filename);
+
+            const isTest = paths.some((p) =>
+              /^tests\//.test(p) ||
+              /\/tests\//.test(p) ||
+              /\/test_[^/]+$/.test(p) ||
+              /\/[^/]+_test\.[^/]+$/.test(p) ||
+              /\.spec\.[jt]sx?$/.test(p)
+            );
+
+            const isEnterprise = paths.some((p) => /^ee\//.test(p));
+
+            const labelsToApply = [
+              ...(isTest ? ['tests'] : []),
+              ...(isEnterprise ? ['enterprise'] : []),
+            ];
+
+            if (labelsToApply.length === 0) return;
+
+            const labelDefs = {
+              tests: { color: '0075ca', description: 'Pull request adds or modifies tests' },
+              enterprise: { color: 'e11d48', description: 'Pull request touches enterprise (ee/) code' },
+            };
+
+            for (const name of labelsToApply) {
+              try {
+                await github.rest.issues.getLabel({ ...repo, name });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                await github.rest.issues.createLabel({ ...repo, name, ...labelDefs[name] });
+              }
+            }
+
+            await github.rest.issues.addLabels({
+              ...repo,
+              issue_number: pr.number,
+              labels: labelsToApply,
+            });
+
+            console.log(`Applied labels: ${labelsToApply.join(', ')}`);
