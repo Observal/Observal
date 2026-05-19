@@ -24,14 +24,11 @@ dependencies = [
     "questionary>=2.0.0",
     "docker>=7.0.0",
     "asyncpg>=0.29.0",
-    "hypothesis",
-    "pyarrow",
 ]
-
 
 keywords = ["mcp", "model-context-protocol", "registry", "cli", "agents", "observability"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
@@ -41,6 +38,12 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
 ]
+
+# Optional extras: only required for specific commands.
+# Install with `pip install observal-cli[migrate]` if you need the
+# `observal migrate` Parquet export/import pipeline.
+[project.optional-dependencies]
+migrate = ["pyarrow>=15.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/BlazeUp-AI/Observal"
@@ -136,8 +139,10 @@ dev = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "sqlalchemy>=2.0.49",
-    "ruff==0.15.12",
+    "ruff==0.15.13",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=6.0",
+    "hypothesis>=6.0",
+    "pyarrow>=15.0.0",
 ]

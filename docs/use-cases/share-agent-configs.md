@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Share agent configs across IDEs
@@ -17,7 +18,7 @@ Every agent is a YAML file that bundles:
 * Prompts (with variables)
 * Sandboxes for code execution
 
-When someone runs `observal pull <agent>`, Observal templates that YAML into the right files for their IDE — `~/.claude/agents/*.json`, `.kiro/agents/*.json`, `.cursor/mcp.json`, and so on.
+When someone runs `observal agent pull <agent>`, Observal templates that YAML into the right files for their IDE — `~/.claude/agents/*.json`, `.kiro/agents/*.json`, `.cursor/mcp.json`, and so on.
 
 ## Publish an agent
 
@@ -56,12 +57,12 @@ observal agent show <agent-id>
 Install — one command, pick the IDE:
 
 ```bash
-observal pull <agent-id> --ide claude-code
-observal pull <agent-id> --ide kiro
-observal pull <agent-id> --ide cursor
-observal pull <agent-id> --ide gemini-cli
-observal pull <agent-id> --ide vscode
-observal pull <agent-id> --ide codex
+observal agent pull <agent-id> --ide claude-code
+observal agent pull <agent-id> --ide kiro
+observal agent pull <agent-id> --ide cursor
+observal agent pull <agent-id> --ide gemini-cli
+observal agent pull <agent-id> --ide vscode
+observal agent pull <agent-id> --ide codex
 ```
 
 The CLI prompts for any environment variables the MCP servers declare as required (GitHub tokens, API keys). These are stored in your IDE config, not uploaded to Observal.
@@ -70,20 +71,20 @@ The CLI prompts for any environment variables the MCP servers declare as require
 
 ```bash
 # Preview without writing anything
-observal pull <agent-id> --ide claude-code --dry-run
+observal agent pull <agent-id> --ide claude-code --dry-run
 
 # Install into a specific directory
-observal pull <agent-id> --ide claude-code --dir ./my-project
+observal agent pull <agent-id> --ide claude-code --dir ./my-project
 
 # Claude Code only: scope (project-local vs user-global)
-observal pull <agent-id> --ide claude-code --scope project
-observal pull <agent-id> --ide claude-code --scope user
+observal agent pull <agent-id> --ide claude-code --scope project
+observal agent pull <agent-id> --ide claude-code --scope user
 
 # Claude Code only: sub-agent model
-observal pull <agent-id> --ide claude-code --model sonnet
+observal agent pull <agent-id> --ide claude-code --model sonnet
 
 # Claude Code only: tool allowlist
-observal pull <agent-id> --ide claude-code --tools Read,Write,Bash
+observal agent pull <agent-id> --ide claude-code --tools Read,Write,Bash
 ```
 
 ## What portability actually means

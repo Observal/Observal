@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Claude Code
@@ -29,7 +30,7 @@ observal scan --ide claude-code
 observal doctor patch --all --ide claude-code
 
 # 4. (Optional) pull an agent from the registry
-observal pull <agent-id> --ide claude-code
+observal agent pull <agent-id> --ide claude-code
 
 # 5. Verify
 observal doctor --ide claude-code
@@ -70,12 +71,12 @@ Events captured:
 
 Hook schema and handler types: [Hooks specification](../reference/hooks-spec.md).
 
-## Sub-agents (`observal pull` options)
+## Sub-agents (`observal agent pull` options)
 
 Claude Code supports nested sub-agents, each with their own model and tool allowlist. Control these at pull time:
 
 ```bash
-observal pull code-reviewer --ide claude-code \
+observal agent pull code-reviewer --ide claude-code \
   --scope project \
   --model sonnet \
   --tools "Read,Bash,Grep"
@@ -114,6 +115,6 @@ This drops a directory into `.claude/skills/` that Claude Code loads on demand.
 
 ## Related
 
-* [`observal pull`](../cli/pull.md)
+* [`observal agent pull`](../cli/pull.md)
 * [`observal scan`](../cli/scan.md)
 * [Data model](../concepts/data-model.md)

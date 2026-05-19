@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # observal scan
@@ -90,6 +91,6 @@ observal doctor patch --all --all-ides --dry-run
 ## Related
 
 * [`observal doctor patch`](doctor.md) — instrument your IDEs (hooks, shims, OTel)
-* [`observal pull`](pull.md) — install a full agent (also wires up MCP servers)
+* [`observal agent pull`](pull.md) — install a full agent (also wires up MCP servers)
 * [`observal doctor`](doctor.md) — diagnose instrumentation end-to-end
 * [Use Cases -- Observe MCP traffic](../use-cases/observe-mcp-traffic.md) — narrative walkthrough

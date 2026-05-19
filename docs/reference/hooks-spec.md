@@ -1,10 +1,11 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Hooks specification
 
-The schema Observal uses for hook definitions -- both the registry hook type (`observal registry hook`) and hooks wired into IDE configs by `observal pull` / `observal doctor patch`.
+The schema Observal uses for hook definitions -- both the registry hook type (`observal registry hook`) and hooks wired into IDE configs by `observal agent pull` / `observal doctor patch`.
 
 Current version: `HOOKS_SPEC_VERSION = "5"` (see `observal_cli/hooks_spec.py`).
 
@@ -13,7 +14,7 @@ Current version: `HOOKS_SPEC_VERSION = "5"` (see `observal_cli/hooks_spec.py`).
 Two distinct things share the name "hook":
 
 1. **Registry hooks** — packaged, versioned hook definitions in the Observal registry. Install them via `observal registry hook install`.
-2. **IDE hooks** -- entries in `~/.claude/settings.json`, `.kiro/agents/<name>.json`, etc. These are written by `observal pull` and `observal doctor patch --hook`.
+2. **IDE hooks** -- entries in `~/.claude/settings.json`, `.kiro/agents/<name>.json`, etc. These are written by `observal agent pull` and `observal doctor patch --hook`.
 
 Both use the same event vocabulary.
 

@@ -103,6 +103,12 @@ uv tool install observal-cli
 # or: pipx install observal-cli
 ```
 
+**Via Homebrew** (macOS Apple Silicon, Linux x64/arm64):
+
+```bash
+brew install BlazeUp-AI/observal/observal-cli
+```
+
 Verify: `observal --version`
 
 ---

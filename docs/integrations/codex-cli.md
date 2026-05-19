@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Codex CLI
@@ -20,7 +21,7 @@ In practice, Codex CLI is a rules-only target today. Use it to ship `AGENTS.md` 
 ## Install an agent (rules only)
 
 ```bash
-observal pull <agent-id> --ide codex
+observal agent pull <agent-id> --ide codex
 ```
 
 Writes only the rules portion of the agent.
@@ -31,4 +32,4 @@ If Codex CLI adds MCP or hook support upstream, we'll extend Observal accordingl
 
 ## Related
 
-* [`observal pull`](../cli/pull.md)
+* [`observal agent pull`](../cli/pull.md)

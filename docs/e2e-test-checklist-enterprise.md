@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # E2E Test Checklist — Enterprise Mode
@@ -269,7 +270,7 @@ Perform the following actions and verify each generates an audit log entry:
 - [ ] `observal self doctor` — verify diagnostics pass
 - [ ] `observal scan` -- verify IDE discovery works (read-only)
 - [ ] `observal doctor patch --all --all-ides` -- verify instrumentation works
-- [ ] `observal pull <agent>` — verify agent pull works with SSO auth token
+- [ ] `observal agent pull <agent>` — verify agent pull works with SSO auth token
 - [ ] `observal admin review list` — verify review list works (admin only)
 
 ## 16. Eval Engine (Enterprise)

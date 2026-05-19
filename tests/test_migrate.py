@@ -33,6 +33,7 @@ from observal_cli.cmd_migrate import (
     _build_select,
     _coerce_value,
     _require_admin,
+    _require_pyarrow,
     _sha256_file,
 )
 from observal_cli.main import app as cli_app
@@ -79,6 +80,34 @@ class TestCLIRegistration:
         result = runner.invoke(cli_app, ["migrate", "validate", "--help"])
         assert result.exit_code == 0
         assert "--archive" in _plain(result.output)
+
+
+class TestPyarrowRequirement:
+    def test_passes_when_pyarrow_importable(self):
+        # pyarrow is installed in the dev environment, so the guard is a no-op.
+        _require_pyarrow()
+
+    def test_raises_install_hint_when_missing(self):
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pyarrow":
+                raise ImportError("simulated missing pyarrow")
+            return real_import(name, *args, **kwargs)
+
+        import typer
+
+        with (
+            patch.object(builtins, "__import__", side_effect=fake_import),
+            pytest.raises(typer.BadParameter) as excinfo,
+        ):
+            _require_pyarrow()
+
+        msg = str(excinfo.value)
+        assert "pyarrow" in msg
+        assert "observal-cli[migrate]" in msg
 
 
 # ── 2. PGEncoder Tests ───────────────────────────────────

@@ -1722,6 +1722,21 @@ async def _validate_telemetry(
 migrate_app = typer.Typer(help="PostgreSQL shallow-copy migration tools")
 
 
+def _require_pyarrow() -> None:
+    """pyarrow is an optional dependency; tell the user how to install it."""
+    try:
+        import pyarrow  # noqa: F401
+    except ImportError as exc:
+        raise typer.BadParameter(
+            "The migrate commands require pyarrow. Install with: pip install 'observal-cli[migrate]'"
+        ) from exc
+
+
+@migrate_app.callback()
+def _migrate_callback() -> None:
+    _require_pyarrow()
+
+
 @migrate_app.command("export")
 def export_cmd(
     db_url: str = typer.Option(..., "--db-url", help="Source PostgreSQL connection string"),

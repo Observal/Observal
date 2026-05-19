@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Copilot CLI
@@ -56,7 +57,7 @@ observal doctor patch --all --ide copilot-cli
 
 ```bash
 observal agent list
-observal pull <agent-id> --ide copilot-cli
+observal agent pull <agent-id> --ide copilot-cli
 ```
 
 This writes:
@@ -173,6 +174,6 @@ which observal-shim
 
 ## Related
 
-* [`observal pull`](../cli/pull.md)
+* [`observal agent pull`](../cli/pull.md)
 * [`observal scan`](../cli/scan.md)
 * [`observal doctor`](../cli/doctor.md)

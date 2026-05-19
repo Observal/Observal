@@ -3,25 +3,29 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 ---
-description: Self-hosted AI agent registry with built-in observability.
 ---
 
-# Welcome to Observal
+# Observal
 
-Observal is a **self-hosted AI agent registry with built-in observability**. Think Docker Hub, but for AI coding agents.
+*A self-hosted registry and observability platform for AI coding agents.*
 
-It gives you three things the AI-agent ecosystem doesn't:
+Think Docker Hub, but for AI coding agents — publish, install, observe, and evaluate agent configurations across your team.
 
-1. **A registry** — browse, publish, and install complete agent configurations. Each agent bundles its MCP servers, skills, hooks, prompts, and sandboxes into one portable YAML that installs cleanly into Claude Code, Kiro, Cursor, Gemini CLI, and more.
-2. **A telemetry pipeline** — a transparent shim sits between your IDE and every MCP server. Every tool call becomes a span, spans group into traces, traces form sessions. Everything streams into ClickHouse with zero changes to the MCP servers themselves.
-3. **An evaluation engine** — scores agent sessions on goal completion, tool efficiency, factual grounding, thought process, and adversarial robustness. Compare agent versions. See what actually works.
+## What Observal does
+
+1. **Agent Registry** — publish and install complete agent configurations. Each agent bundles its MCP servers, skills, hooks, prompts, and sandboxes into one portable YAML that works across Claude Code, Kiro, Cursor, Gemini CLI, and more.
+2. **Telemetry Pipeline** — a transparent shim between your IDE and every MCP server. Every tool call becomes a span, spans group into traces, traces form sessions. Everything streams into ClickHouse with no changes to the MCP servers themselves.
+3. **Evaluation & Scoring** — score agent sessions on goal completion, tool efficiency, factual grounding, and adversarial robustness. Compare agent versions side-by-side and track performance over time.
+4. **Insight Reports** — AI-generated analysis of agent usage patterns including regression detection, cost breakdowns, cross-user comparisons, and actionable recommendations.
+5. **Data Retention** — configurable per-organization retention policies with automatic purge scheduling, count-based limits, and dry-run previews before enabling.
+6. **Role-Based Access Control** — four permission tiers (super_admin, admin, reviewer, user) with scoped access to registry, settings, and telemetry data.
 
 ## Who this is for
 
-- **AI engineers** who want to know which of their agents actually deliver results, not just look impressive in a demo.
-- **Platform teams** running agents across a team or org who need visibility, governance, and a single source of truth.
+- **AI engineers** who want to know which agents deliver results, not just look good in a demo.
+- **Platform teams** who need visibility, governance, and a single source of truth across agents.
 - **Agent authors** who want to share their work and see how it performs on real workflows.
-- **Operators** who want the entire stack self-hosted: Docker Compose up, no SaaS, no egress.
+- **Self-hosters** who want the entire stack on their own infrastructure: Docker Compose up, no SaaS, no egress.
 
 ## Start here
 
@@ -74,9 +78,13 @@ It gives you three things the AI-agent ecosystem doesn't:
 
 The full matrix lives in [Integrations](integrations/README.md).
 
-## Is Observal free?
+## Free & Open Source
 
-Yes. Observal is open source under the AGPL-3.0 license. Self-host the whole thing for free. There is an enterprise edition with SSO, SCIM, and audit logging, but everything covered in these docs works without it.
+Observal is open source under AGPL-3.0. The community edition includes the full registry, telemetry pipeline, evaluation engine, RBAC, and data retention — everything you need to run agents at scale, completely free.
+
+## Enterprise Edition
+
+For organizations that require compliance-grade infrastructure, the enterprise edition builds on top with SAML 2.0 SSO, SCIM 2.0 user provisioning, immutable audit logging with CSV export, and AI-powered insight reports with regression detection and cost analysis.
 
 ## Next
 

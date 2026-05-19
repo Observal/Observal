@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Kiro CLI
@@ -79,7 +80,7 @@ Backup saved: .kiro/settings/mcp.json.20260421_143055.bak
 
 ```bash
 observal agent list
-observal pull <agent-id> --ide kiro
+observal agent pull <agent-id> --ide kiro
 ```
 
 This writes:
@@ -133,7 +134,7 @@ Each hook is a `curl` call to `http://localhost:8000/api/v1/telemetry/hooks` (or
 }
 ```
 
-You don't write these by hand — `observal pull` generates them.
+You don't write these by hand — `observal agent pull` generates them.
 
 ## View your traces
 
@@ -202,6 +203,6 @@ For every gap between Kiro and Claude Code (hook event names, missing fields, et
 
 ## Related
 
-* [`observal pull`](../cli/pull.md)
+* [`observal agent pull`](../cli/pull.md)
 * [`observal scan`](../cli/scan.md)
 * [`observal doctor`](../cli/doctor.md)

@@ -27,7 +27,7 @@
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.11+-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/status-alpha-orange?style=flat-square" alt="Status">
+  <img src="https://img.shields.io/badge/status-beta-yellow?style=flat-square" alt="Status">
   <a href="https://github.com/BlazeUp-AI/Observal/stargazers"><img src="https://img.shields.io/github/stars/BlazeUp-AI/Observal?style=flat-square" alt="Stars"></a>
   <a href="https://codecov.io/gh/BlazeUp-AI/Observal"><img src="https://img.shields.io/codecov/c/github/BlazeUp-AI/Observal?style=flat-square&logo=codecov" alt="Coverage"></a>
 </p>
@@ -141,7 +141,12 @@ make up
 ### Connect your IDE
 
 ```bash
-uv tool install observal-cli
+# Homebrew (macOS Apple Silicon, Linux)
+brew install BlazeUp-AI/observal/observal-cli
+
+# Or via Python tooling (all platforms)
+uv tool install observal-cli   # or: pipx install observal-cli
+
 observal auth login
 ```
 
