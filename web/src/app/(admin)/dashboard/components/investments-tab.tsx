@@ -2,11 +2,186 @@
 
 "use client";
 
+import { useState } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+} from "recharts";
+import { useExecPlatforms } from "@/hooks/use-api";
+import type { ExecPlatformScore } from "@/lib/types";
+
+const COLORS = ["#2563eb", "#7c3aed", "#0d9488", "#f59e0b", "#e11d48", "#6366f1", "#84cc16"];
+
+function deriveRadarData(p: ExecPlatformScore, best: { latency: number; cost: number }) {
+  const successScore = p.success_rate;
+  const speedScore = best.latency > 0 ? Math.max(0, 100 - ((p.avg_latency_ms / best.latency) - 1) * 50) : 100;
+  const costScore = best.cost > 0 ? Math.max(0, 100 - ((p.avg_cost / best.cost) - 1) * 50) : 100;
+  const reliabilityScore = 100 - p.error_rate;
+  const volumeScore = p.composite_score;
+
+  return [
+    { metric: "Success Rate", value: Math.min(successScore, 100) },
+    { metric: "Speed", value: Math.min(Math.max(speedScore, 0), 100) },
+    { metric: "Cost Efficiency", value: Math.min(Math.max(costScore, 0), 100) },
+    { metric: "Reliability", value: Math.min(Math.max(reliabilityScore, 0), 100) },
+    { metric: "Volume", value: Math.min(Math.max(volumeScore, 0), 100) },
+  ];
+}
+
 export function InvestmentsTab() {
+  const { data: platforms, isLoading } = useExecPlatforms();
+  const [selected, setSelected] = useState(0);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 pt-4">
+        <div className="h-80 rounded-lg border border-border animate-pulse bg-muted/30" />
+      </div>
+    );
+  }
+
+  if (!platforms || platforms.length === 0) {
+    return (
+      <div className="space-y-6 pt-4">
+        <div className="rounded-md border border-border p-8 text-center text-muted-foreground">
+          <p className="text-sm">No platform data yet — traces from different IDEs will populate this view.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const platform = platforms[selected];
+  const bestLatency = Math.min(...platforms.map((p) => p.avg_latency_ms || Infinity));
+  const bestCost = Math.min(...platforms.filter((p) => p.avg_cost > 0).map((p) => p.avg_cost));
+  const radarData = deriveRadarData(platform, { latency: bestLatency, cost: bestCost || 1 });
+
+  const chartData = platforms.map((p, i) => ({
+    name: p.platform,
+    score: p.composite_score,
+    color: COLORS[i % COLORS.length],
+  }));
+
   return (
     <div className="space-y-6 pt-4">
-      <div className="rounded-md border border-border p-8 text-center text-muted-foreground">
-        <p className="text-sm">Investments tab — coming in Batch 2</p>
+      {/* Score Overview Bar Chart */}
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="text-sm font-medium mb-1">Platform Investment Analysis</h3>
+        <p className="text-xs text-muted-foreground mb-4">Click a bar to view platform details</p>
+        <ResponsiveContainer width="100%" height={280}>
+          <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: -10 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+            <XAxis dataKey="name" className="text-xs" />
+            <YAxis domain={[0, 100]} className="text-xs" />
+            <Tooltip formatter={(value: number) => [`${value}/100`, "Score"]} />
+            <Bar dataKey="score" radius={[6, 6, 0, 0]} barSize={48} onClick={(_, index) => setSelected(index)} className="cursor-pointer">
+              {chartData.map((entry, i) => (
+                <Cell key={i} fill={i === selected ? entry.color : `${entry.color}66`} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Detail + Radar */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Detail Card */}
+        <div className="rounded-lg border border-border p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 rounded" style={{ background: COLORS[selected % COLORS.length] }} />
+              <h3 className="text-lg font-semibold">{platform.platform}</h3>
+            </div>
+            <div className="text-2xl font-bold" style={{ color: COLORS[selected % COLORS.length] }}>
+              {platform.composite_score}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border">
+            <div className="text-center">
+              <div className="text-lg font-bold">{(platform.sessions / 1000).toFixed(1)}K</div>
+              <div className="text-xs text-muted-foreground">Sessions</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-green-600">${platform.avg_cost.toFixed(3)}</div>
+              <div className="text-xs text-muted-foreground">Avg Cost/Task</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold">{platform.success_rate}%</div>
+              <div className="text-xs text-muted-foreground">Success Rate</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 mt-4">
+            <div className="text-center">
+              <div className="text-lg font-bold">{platform.avg_latency_ms.toFixed(0)}ms</div>
+              <div className="text-xs text-muted-foreground">Avg Latency</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold">{platform.error_rate}%</div>
+              <div className="text-xs text-muted-foreground">Error Rate</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold">{platform.users}</div>
+              <div className="text-xs text-muted-foreground">Users</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Radar Chart */}
+        <div className="rounded-lg border border-border p-4">
+          <h3 className="text-sm font-medium mb-2">Performance Radar</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
+              <PolarGrid className="stroke-border" />
+              <PolarAngleAxis dataKey="metric" className="text-xs" />
+              <PolarRadiusAxis domain={[0, 100]} className="text-xs" />
+              <Radar
+                dataKey="value"
+                stroke={COLORS[selected % COLORS.length]}
+                fill={COLORS[selected % COLORS.length]}
+                fillOpacity={0.15}
+                strokeWidth={2}
+              />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Comparison Table */}
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/30">
+              <th className="text-left p-3 font-medium">Platform</th>
+              <th className="text-left p-3 font-medium">Score</th>
+              <th className="text-left p-3 font-medium">Sessions</th>
+              <th className="text-left p-3 font-medium">Cost/Task</th>
+              <th className="text-left p-3 font-medium">Success</th>
+              <th className="text-left p-3 font-medium">Latency</th>
+            </tr>
+          </thead>
+          <tbody>
+            {platforms.map((p, i) => (
+              <tr
+                key={p.platform}
+                className={`border-b border-border cursor-pointer hover:bg-muted/20 ${i === selected ? "bg-muted/40" : ""}`}
+                onClick={() => setSelected(i)}
+              >
+                <td className="p-3 font-medium">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: COLORS[i % COLORS.length] }} />
+                    {p.platform}
+                  </div>
+                </td>
+                <td className="p-3 tabular-nums font-semibold">{p.composite_score}</td>
+                <td className="p-3 tabular-nums">{(p.sessions / 1000).toFixed(1)}K</td>
+                <td className="p-3 tabular-nums font-mono text-xs">${p.avg_cost.toFixed(3)}</td>
+                <td className="p-3 tabular-nums">{p.success_rate}%</td>
+                <td className="p-3 tabular-nums">{p.avg_latency_ms.toFixed(0)}ms</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

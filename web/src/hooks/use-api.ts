@@ -23,6 +23,7 @@ import {
   registry,
   review,
   dashboard,
+  exec,
   feedback,
   eval_,
   admin,
@@ -1043,4 +1044,38 @@ export function useRefreshModels() {
       toast.error(err.message || "Failed to refresh model catalog");
     },
   });
+}
+
+// ── Exec Dashboard ─────────────────────────────────────────────────
+
+export function useExecAdoption() {
+  return useQuery({ queryKey: ["exec", "adoption"], queryFn: exec.adoption });
+}
+
+export function useExecAgentCounts() {
+  return useQuery({ queryKey: ["exec", "agent-counts"], queryFn: exec.agentCounts });
+}
+
+export function useExecUsageByCategory(range?: string) {
+  return useQuery({ queryKey: ["exec", "usage-by-category", range], queryFn: () => exec.usageByCategory(range) });
+}
+
+export function useExecPlatformCoverage() {
+  return useQuery({ queryKey: ["exec", "platform-coverage"], queryFn: exec.platformCoverage });
+}
+
+export function useExecPlatforms() {
+  return useQuery({ queryKey: ["exec", "platforms"], queryFn: exec.platforms });
+}
+
+export function useExecVelocity() {
+  return useQuery({ queryKey: ["exec", "velocity"], queryFn: exec.velocity });
+}
+
+export function useExecTopAgents(limit?: number) {
+  return useQuery({ queryKey: ["exec", "top-agents", limit], queryFn: () => exec.topAgents(limit) });
+}
+
+export function useExecConfig() {
+  return useQuery({ queryKey: ["exec", "config"], queryFn: exec.config });
 }

@@ -773,3 +773,72 @@ export interface SystemWarning {
 	code: string;
 	message: string;
 }
+
+// ── Exec Dashboard ─────────────────────────────────────────────────
+
+export interface ExecAdoptionResponse {
+	monthly: { month: string; adoption_pct: number }[];
+	current_pct: number;
+	total_users: number;
+	active_users: number;
+	departments_covered: number;
+}
+
+export interface ExecAgentCounts {
+	total: number;
+	active: number;
+	published: number;
+	in_development: number;
+	by_category: { category: string; count: number }[];
+}
+
+export interface ExecUsageByCategory {
+	category: string;
+	sessions: number;
+	growth_pct: number;
+}
+
+export interface ExecPlatformCoverage {
+	platform: string;
+	users: number;
+	sessions: number;
+}
+
+export interface ExecPlatformScore {
+	platform: string;
+	composite_score: number;
+	sessions: number;
+	avg_cost: number;
+	avg_latency_ms: number;
+	success_rate: number;
+	error_rate: number;
+	users: number;
+}
+
+export interface ExecVelocityResponse {
+	weekly: { week: string; traces: number }[];
+	current_weekly_avg: number;
+	baseline_weekly_avg: number;
+	multiplier: number;
+}
+
+export interface ExecTopAgent {
+	id: string;
+	name: string;
+	category: string;
+	composite_score: number;
+	sessions: number;
+	downloads: number;
+	avg_rating: number | null;
+	weekly_trend: number[];
+}
+
+export interface ExecConfig {
+	id: string;
+	org_id: string;
+	hourly_dev_cost: number;
+	pre_ai_baselines: Record<string, number>;
+	department_budgets: Record<string, { headcount: number; monthly_budget: number }>;
+	target_adoption_pct: number;
+	target_adoption_date: string | null;
+}
