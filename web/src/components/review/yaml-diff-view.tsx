@@ -154,7 +154,7 @@ function DiffPane({
                 >
                   {num ?? ""}
                 </td>
-                <td className="px-3 whitespace-pre-wrap break-all">
+                <td className="px-3 whitespace-pre-wrap break-words leading-relaxed">
                   {text ?? ""}
                 </td>
               </tr>

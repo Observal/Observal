@@ -25,8 +25,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import Link from "next/link";
+import yaml from "js-yaml";
 import { YamlDiffView } from "./yaml-diff-view";
-import { useAgentVersions, useVersionDiff, useAgentVersionDetail, useComponentVersions, useComponentVersionDetail } from "@/hooks/use-api";
+import { useAgentVersions, useAgentVersionDetail, useComponentVersions, useComponentVersionDetail, useRegistryItem } from "@/hooks/use-api";
 import type { RegistryType } from "@/lib/api";
 import type { ReviewItem, ComponentChange } from "@/lib/types";
 
@@ -98,6 +100,101 @@ function ComponentChangesList({ changes }: { changes: ComponentChange[] }) {
     </div>
   );
 }
+
+const DIFF_METADATA_FIELDS = new Set([
+  "id", "listing_id", "download_count", "released_by", "released_at",
+  "created_at", "status", "rejection_reason", "is_prerelease", "promoted_from",
+]);
+
+function stripMeta(obj: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([k, v]) => !DIFF_METADATA_FIELDS.has(k) && v !== null && v !== undefined && v !== ""),
+  );
+}
+
+function toReviewYaml(obj: Record<string, unknown>): string {
+  try {
+    return yaml.dump(stripMeta(obj), { lineWidth: 120, indent: 2, noRefs: true }).trimEnd();
+  } catch {
+    return JSON.stringify(stripMeta(obj), null, 2);
+  }
+}
+
+
+const COMPONENT_CONTENT_KEYS = ["template", "skill_md_content", "handler_config", "input_schema", "output_schema", "source_url", "git_url", "config_json", "event", "execution_mode", "task_type", "slash_command"];
+
+function buildCleanYaml(detail: Record<string, unknown>): string {
+  const comps = (detail.components as Array<Record<string, unknown>> | undefined) ?? [];
+  const obj: Record<string, unknown> = {};
+  if (detail.version) obj.version = detail.version;
+  if (detail.description) obj.description = detail.description;
+  if (detail.model_name) obj.model_name = detail.model_name;
+  const byIde = detail.models_by_ide as Record<string, unknown> | undefined;
+  if (byIde && Object.keys(byIde).length) obj.models_by_ide = byIde;
+  const ides = detail.supported_ides as string[] | undefined;
+  if (ides?.length) obj.supported_ides = ides;
+  if (comps.length) {
+    obj.components = comps.map((c) => {
+      const entry: Record<string, unknown> = {};
+      if (c.component_type) entry.type = c.component_type;
+      if (c.name) entry.name = c.name;
+      if (c.description) entry.description = c.description;
+      if (c.version) entry.version = c.version;
+      for (const k of COMPONENT_CONTENT_KEYS) {
+        if (c[k]) entry[k] = c[k];
+      }
+      return entry;
+    });
+  }
+  if (detail.prompt) obj.prompt = detail.prompt;
+  try {
+    return yaml.dump(obj, { lineWidth: 120, indent: 2, noRefs: true }).trimEnd();
+  } catch {
+    return JSON.stringify(obj, null, 2);
+  }
+}
+
+
+const CONTENT_KEYS = ["template", "skill_md_content", "handler_config", "input_schema", "output_schema", "source_url", "config_json"] as const;
+const TYPE_MAP: Record<string, string> = { mcp: "mcps", skill: "skills", hook: "hooks", prompt: "prompts", sandbox: "sandboxes" };
+
+function LinkedComponentDetail({ componentType, componentId }: { componentType: string; componentId: string }) {
+  const registryType = (TYPE_MAP[componentType] ?? `${componentType}s`) as import("@/lib/api").RegistryType;
+  const { data: item } = useRegistryItem(registryType, componentId);
+  const name = item?.name ?? componentType;
+  const description = item?.description;
+  const contentEntries = item
+    ? CONTENT_KEYS.flatMap((k) => {
+        const v = (item as Record<string, unknown>)[k];
+        return v ? [[k, v] as [string, unknown]] : [];
+      })
+    : [];
+  const href = `/components/${componentId}?type=${registryType}`;
+
+  return (
+    <div className="rounded border border-border overflow-hidden text-xs">
+      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
+        <Badge variant="outline" className="text-[10px] shrink-0">{componentType}</Badge>
+        <Link href={href} className="font-medium hover:underline text-primary">{name}</Link>
+      </div>
+      {description && (
+        <p className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border/50">{description}</p>
+      )}
+      {contentEntries.length > 0 && (
+        <details open className="group">
+          <summary className="cursor-pointer select-none px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground list-none flex items-center gap-1">
+            <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+            Content
+          </summary>
+          <pre className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-auto max-h-60 bg-background border-t border-border/50 break-words whitespace-pre-wrap">
+            {contentEntries.map(([k, v]) => k + ":\n" + (typeof v === "string" ? v : yaml.dump(v, { lineWidth: 80, indent: 2 }))).join("\n\n")}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
 
 interface ReviewDiffSheetProps {
   item: ReviewItem | null;
@@ -177,17 +274,14 @@ function DiffDialogBody({
     return approved[0]?.version;
   }, [versionsItems, item.version]);
 
-  // Only agents have a server-side diff endpoint
-  const { data: diffData, isLoading: diffLoading } = useVersionDiff(
-    isAgent ? item.id : undefined,
-    isAgent ? previousVersion : undefined,
-    isAgent ? item.version : undefined,
-  );
-
-  // Agent version detail
+  // Agent version detail (current + previous for client-side diff)
   const { data: agentDetail, isLoading: agentDetailLoading } = useAgentVersionDetail(
     isAgent ? item.id : undefined,
     isAgent ? (item.version ?? null) : null,
+  );
+  const { data: agentPrevDetail } = useAgentVersionDetail(
+    isAgent ? item.id : undefined,
+    isAgent ? (previousVersion ?? null) : null,
   );
 
   // Component version detail
@@ -206,6 +300,33 @@ function DiffDialogBody({
 
   const detailLoading = isAgent ? agentDetailLoading : compDetailLoading;
 
+  // Build client-side diff for agents using clean YAML (no UUIDs, no metadata)
+  const agentDiff = useMemo(() => {
+    if (!isAgent || !agentDetail) return null;
+    const curr = buildCleanYaml(agentDetail as unknown as Record<string, unknown>);
+    if (!agentPrevDetail) return null;
+    const prev = buildCleanYaml(agentPrevDetail as unknown as Record<string, unknown>);
+    if (prev === curr) return "";
+    const prevLines = prev.split("\n");
+    const currLines = curr.split("\n");
+    const lines: string[] = [`--- v${previousVersion}`, `+++ v${item.version}`];
+    const hunks: string[] = [];
+    const maxLen = Math.max(prevLines.length, currLines.length);
+    let inHunk = false;
+    for (let i = 0; i < maxLen; i++) {
+      const pl = prevLines[i] ?? "";
+      const cl = currLines[i] ?? "";
+      if (pl !== cl) {
+        if (!inHunk) { hunks.push(`@@ -${i + 1} +${i + 1} @@`); inHunk = true; }
+        if (pl) hunks.push(`-${pl}`);
+        if (cl) hunks.push(`+${cl}`);
+      } else {
+        if (inHunk) { hunks.push(` ${cl}`); inHunk = false; }
+      }
+    }
+    return [...lines, ...hunks].join("\n");
+  }, [isAgent, agentDetail, agentPrevDetail, previousVersion, item.version]);
+
   const bumpType = useMemo(() => {
     if (!previousVersion || !item.version) return null;
     return semverBumpType(previousVersion, item.version);
@@ -213,8 +334,8 @@ function DiffDialogBody({
 
   const componentDiff = useMemo(() => {
     if (isAgent || !compDetail || !compPrevDetail || !previousVersion) return null;
-    const prev = JSON.stringify(compPrevDetail, null, 2);
-    const curr = JSON.stringify(compDetail, null, 2);
+    const prev = buildCleanYaml(compPrevDetail as unknown as Record<string, unknown>);
+    const curr = buildCleanYaml(compDetail as unknown as Record<string, unknown>);
     if (prev === curr) return "";
     const prevLines = prev.split("\n");
     const currLines = curr.split("\n");
@@ -257,14 +378,10 @@ function DiffDialogBody({
 
   const disableApprove = item.components_ready === false;
 
-  const isLoading = versionsLoading || detailLoading || (!!previousVersion && diffLoading);
+  const isLoading = versionsLoading || detailLoading;
 
   const detail = (isAgent ? agentDetail : compDetail) as Record<string, unknown> | undefined;
-  const yamlSnapshot = isAgent
-    ? (detail?.yaml_snapshot as string | null | undefined)
-    : detail
-      ? JSON.stringify(detail, null, 2)
-      : null;
+  const yamlSnapshot = detail ? buildCleanYaml(detail) : null;
   // Prefer version detail fields over the sparse review item fields
   const prompt = (detail?.prompt as string) || item.prompt || "";
   const modelName = (detail?.model_name as string) || item.model_name || "";
@@ -489,49 +606,31 @@ function DiffDialogBody({
             )}
 
             {/* Component changes (from diff) or component list */}
-            {diffData?.component_changes?.length ? (
+            {components.length ? (
               <>
                 <Separator />
                 <div className="space-y-2">
                   <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Component Changes ({diffData.component_changes.length})
-                  </h4>
-                  <ComponentChangesList changes={diffData.component_changes} />
-                </div>
-              </>
-            ) : components.length ? (
-              <>
-                <Separator />
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Components ({components.length})
+                    {`Components (${components.length})`}
                   </h4>
                   <div className="space-y-2">
-                    {components.map((c, i) => (
-                      <div
-                        key={i}
-                        className="text-xs rounded bg-muted/40 overflow-hidden"
-                      >
-                        <div className="flex items-center gap-2 py-1.5 px-2">
-                          <Badge variant="outline" className="text-[10px] shrink-0">
-                            {c.component_type}
-                          </Badge>
-                          <span className="font-medium truncate">
-                            {c.name || c.component_id}
-                          </span>
+                    {components.map((ch, i) => {
+                      const change = (ch as { change?: string }).change;
+                      return (
+                        <div key={i}>
+                          {change && change !== "context" && (
+                            <Badge variant="outline" className={`mb-1 text-[10px] flex items-center gap-1 w-fit ${changeBadgeClasses[change as keyof typeof changeBadgeClasses] ?? ""}`}>
+                              {changeIcon[change as keyof typeof changeIcon]}
+                              {change}
+                            </Badge>
+                          )}
+                          <LinkedComponentDetail
+                            componentType={(ch as {component_type?: string; type?: string}).component_type ?? (ch as {type?: string}).type ?? ""}
+                            componentId={(ch as {component_id?: string}).component_id ?? ""}
+                          />
                         </div>
-                        {c.template && (
-                          <pre className="px-3 pb-2 text-[11px] font-[family-name:var(--font-mono)] whitespace-pre-wrap break-words text-muted-foreground leading-relaxed">
-                            {c.template}
-                          </pre>
-                        )}
-                        {c.description && !c.template && (
-                          <p className="px-3 pb-2 text-[11px] text-muted-foreground">
-                            {c.description}
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </>
@@ -549,12 +648,16 @@ function DiffDialogBody({
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-3/4" />
             </div>
-          ) : diffData ? (
-            <YamlDiffView
-              diff={diffData.yaml_diff}
-              versionA={diffData.version_a}
-              versionB={diffData.version_b}
-            />
+          ) : agentDiff !== null && isAgent ? (
+            agentDiff ? (
+              <YamlDiffView
+                diff={agentDiff}
+                versionA={previousVersion ?? ""}
+                versionB={item.version ?? ""}
+              />
+            ) : (
+              <div className="flex items-center justify-center flex-1 text-sm text-muted-foreground">No changes detected.</div>
+            )
           ) : !previousVersion && !versionsLoading ? (
             <div className="flex flex-col h-full min-h-0">
               <div className="shrink-0 flex items-center px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground">
@@ -571,7 +674,7 @@ function DiffDialogBody({
                             <td className="select-none w-10 shrink-0 px-2 text-right tabular-nums text-muted-foreground/50 border-r border-border/40">
                               {i + 1}
                             </td>
-                            <td className="px-3 whitespace-pre-wrap break-all text-foreground">
+                            <td className="px-3 whitespace-pre-wrap break-words text-foreground leading-relaxed">
                               {line}
                             </td>
                           </tr>
@@ -586,8 +689,7 @@ function DiffDialogBody({
                     <table className="w-full border-collapse font-[family-name:var(--font-mono)] text-xs leading-5">
                       <tbody>
                         {(() => {
-                          const structural = JSON.stringify(
-                            {
+                          const structural = toReviewYaml({
                               description: item.description || undefined,
                               prompt: prompt || undefined,
                               model_name: modelName || undefined,
@@ -596,18 +698,15 @@ function DiffDialogBody({
                                 : undefined,
                               supported_ides: supportedIdes.length ? supportedIdes : undefined,
                               components: components.length
-                                ? components.map((c) => `${c.component_type}:${c.component_id}`)
+                                ? components.map((c) => `${c.component_type}: ${(c as Record<string, unknown>).name as string || c.component_id}`)
                                 : undefined,
-                            },
-                            null,
-                            2,
-                          );
-                          return structural.split("\n").map((line, i) => (
+                          } as Record<string, unknown>);
+                          return structural.split("\n").map((line: string, i: number) => (
                             <tr key={i} className="hover:bg-muted/30">
                               <td className="select-none w-10 shrink-0 px-2 text-right tabular-nums text-muted-foreground/50 border-r border-border/40">
                                 {i + 1}
                               </td>
-                              <td className="px-3 whitespace-pre-wrap break-all text-foreground">
+                              <td className="px-3 whitespace-pre-wrap break-words text-foreground leading-relaxed">
                                 {line}
                               </td>
                             </tr>
