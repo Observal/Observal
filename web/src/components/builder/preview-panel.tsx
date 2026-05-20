@@ -39,6 +39,7 @@ interface PreviewPanelProps {
   modelName?: string;
   selectedComponents: Record<string, { id: string; name: string }[]>;
   prompt?: string;
+  pendingComponentBodies?: Record<string, Record<string, unknown>>; // tempId -> body
   validationResult: ValidationResult | null;
 }
 
@@ -48,6 +49,7 @@ function buildMarkdownBody(
   description: string,
   selectedComponents: Record<string, { id: string; name: string }[]>,
   prompt?: string,
+  pendingBodies?: Record<string, Record<string, unknown>>,
 ): string {
   const lines: string[] = [];
 
@@ -60,7 +62,18 @@ function buildMarkdownBody(
     lines.push("");
     lines.push(`## ${heading}`);
     lines.push("");
-    items.forEach((item) => lines.push(`- **${item.name}**`));
+    items.forEach((item) => {
+      lines.push(`- **${item.name}**`);
+      // Inject content for in-memory pending components
+      const body = pendingBodies?.[item.id];
+      if (body) {
+        const content = (body.template ?? body.skill_md_content ?? body.handler_config) as string | undefined;
+        if (content && typeof content === "string") {
+          lines.push("");
+          lines.push(content.split("\n").map(l => `  ${l}`).join("\n"));
+        }
+      }
+    });
   }
 
   if (prompt?.trim()) {
@@ -320,6 +333,7 @@ export function PreviewPanel({
   modelName,
   selectedComponents,
   prompt,
+  pendingComponentBodies,
   validationResult,
 }: PreviewPanelProps) {
   const [ide, setIde] = useState<Ide>("claude-code");
@@ -331,7 +345,7 @@ export function PreviewPanel({
   const modalScrollRef = useRef<HTMLDivElement>(null);
 
   const mcps = selectedComponents.mcps ?? [];
-  const body = buildMarkdownBody(description, selectedComponents, prompt);
+  const body = buildMarkdownBody(description, selectedComponents, prompt, pendingComponentBodies);
 
   // Simplified mode: client-side generators
   let files: PreviewFile[];

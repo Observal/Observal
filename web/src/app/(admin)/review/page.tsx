@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { CheckCircle2, X, Trash2, LayoutGrid, TableProperties, Eye } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useReviewAgents, useReviewComponents, useReviewAction, useReviewDelete } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import type { ReviewItem } from "@/lib/types";
@@ -348,6 +349,7 @@ export default function ReviewPage() {
   const [activeTab, setActiveTab] = useState("agents");
   const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
   const [diffItem, setDiffItem] = useState<ReviewItem | null>(null);
+  const [nestedDiffItem, setNestedDiffItem] = useState<ReviewItem | null>(null);
 
   const agentCount = (agents ?? []).length;
   const componentCount = (components ?? []).length;
@@ -368,11 +370,46 @@ export default function ReviewPage() {
     [reviewDelete],
   );
 
+  const queryClient = useQueryClient();
+
   const handleItemClick = useCallback(
     (item: ReviewItem) => {
       setDiffItem(item);
     },
     [],
+  );
+
+  const handleOpenComponentReview = useCallback(
+    async (id: string, type: string) => {
+      const singularType = type.replace(/s$/, "");
+      let list = components ?? [];
+      // If not found yet, refetch first (component may have just been submitted)
+      if (!list.find((c) => c.id === id)) {
+        const result = await refetchComponents();
+        list = result.data ?? list;
+      }
+      const found = list.find((c) => c.id === id || (c.type === singularType && c.id === id));
+      if (found) setNestedDiffItem(found);
+    },
+    [components, refetchComponents],
+  );
+
+  const handleApproveWithRefetch = useCallback(
+    (id: string, type?: string) => {
+      reviewAction.mutate({ id, type, action: "approve" }, {
+        onSuccess: async () => {
+          setNestedDiffItem(null);
+          const [freshAgents] = await Promise.all([refetchAgents(), refetchComponents()]);
+          // Update diffItem in-place with fresh blocking_components so the sheet reflects the change
+          setDiffItem((prev) => {
+            if (!prev) return prev;
+            const updated = (freshAgents.data ?? []).find((a) => a.id === prev.id);
+            return updated ?? prev;
+          });
+        },
+      });
+    },
+    [reviewAction, refetchAgents, refetchComponents],
   );
 
   return (
@@ -492,6 +529,14 @@ export default function ReviewPage() {
         open={!!diffItem}
         onOpenChange={(open) => { if (!open) setDiffItem(null); }}
         onApprove={handleApprove}
+        onReject={handleReject}
+        onOpenComponentReview={handleOpenComponentReview}
+      />
+      <ReviewDiffSheet
+        item={nestedDiffItem}
+        open={!!nestedDiffItem}
+        onOpenChange={(open) => { if (!open) setNestedDiffItem(null); }}
+        onApprove={handleApproveWithRefetch}
         onReject={handleReject}
       />
     </>
