@@ -15,7 +15,7 @@ from __future__ import annotations
 IDE_REGISTRY: dict[str, dict] = {
     "cursor": {
         "display_name": "Cursor",
-        "session_parser": "claude-code",
+        "session_parser": "cursor",
         "features": {"hook_bridge", "mcp_servers", "rules"},
         "scopes": ["project", "user"],
         "default_scope": "project",
