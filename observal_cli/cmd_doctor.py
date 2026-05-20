@@ -48,6 +48,7 @@ _LEGACY_HOOK_MARKERS = (
     "observal_cli.hooks.flush_buffer",
     "observal_cli.hooks.session_push",
     "observal_cli.hooks.kiro_session_push",
+    "observal_cli.hooks.cursor_session_push",
     "/api/v1/telemetry/hooks",
     "/api/v1/otel/hooks",
 )
@@ -518,13 +519,16 @@ def doctor_patch(
     rprint("[bold]Observal Doctor — Patch[/bold]\n")
 
     for target in targets:
-        # ── Hooks (Claude Code + Kiro only) ──
+        # ── Hooks ──
         if do_hooks:
             if target == "claude-code":
                 changed = _patch_claude_code(dry_run)
                 any_changes = any_changes or changed
             elif target == "kiro":
                 changed = _patch_kiro(dry_run)
+                any_changes = any_changes or changed
+            elif target == "cursor":
+                changed = _patch_cursor(dry_run)
                 any_changes = any_changes or changed
 
         # ── Shims (all IDEs with home MCP config) ──
@@ -621,3 +625,71 @@ def _patch_kiro(dry_run: bool) -> bool:
             rprint(f"  [dim]{agent_name}: already up to date[/dim]")
 
     return changed
+
+
+def _patch_cursor(dry_run: bool) -> bool:
+    """Install session push hooks into ~/.cursor/hooks.json."""
+    import sys
+
+    rprint("[cyan]Cursor — session push hooks[/cyan]")
+
+    hooks_path = Path.home() / ".cursor" / "hooks.json"
+    if not hooks_path.parent.is_dir():
+        rprint("  [dim]No ~/.cursor/ directory — skipping[/dim]")
+        return False
+
+    # Use the current interpreter (from the observal CLI's venv) so that
+    # httpx and other dependencies are available when Cursor fires the hook.
+    cmd = f"{sys.executable} -m observal_cli.hooks.cursor_session_push"
+
+    desired = {
+        "version": 1,
+        "hooks": {
+            "beforeSubmitPrompt": [{"command": cmd, "type": "command"}],
+            "stop": [{"command": cmd, "type": "command"}],
+        },
+    }
+
+    # Load existing hooks.json if present
+    existing = {}
+    if hooks_path.exists():
+        try:
+            existing = json.loads(hooks_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Check if already patched
+    existing_hooks = existing.get("hooks", {})
+    needs_update = False
+
+    for event in ("beforeSubmitPrompt", "stop"):
+        entries = existing_hooks.get(event, [])
+        has_observal = any("cursor_session_push" in e.get("command", "") for e in entries)
+        if not has_observal:
+            needs_update = True
+            break
+
+    if not needs_update:
+        rprint("  [dim]Already up to date[/dim]")
+        return False
+
+    # Merge: keep existing non-Observal hooks, add ours
+    merged_hooks = existing_hooks.copy()
+    for event, desired_entries in desired["hooks"].items():
+        current = merged_hooks.get(event, [])
+        # Remove old Observal hooks
+        cleaned = [
+            h
+            for h in current
+            if "cursor_session_push" not in h.get("command", "") and "session_push" not in h.get("command", "")
+        ]
+        merged_hooks[event] = cleaned + desired_entries
+
+    result = {"version": 1, "hooks": merged_hooks}
+
+    if not dry_run:
+        hooks_path.write_text(json.dumps(result, indent=2) + "\n")
+
+    verb = "Would install" if dry_run else "Installed"
+    rprint(f"  {verb} hooks in {hooks_path}")
+    return True
