@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from .claude_code import parse_rows as _parse_claude_code
+from .cursor import parse_rows as _parse_cursor
 from .kiro import parse_rows as _parse_kiro
 
 # Maps session_parser ID -> parse_rows callable.
@@ -31,6 +32,7 @@ from .kiro import parse_rows as _parse_kiro
 _ParseFn = Callable[[list[dict]], list[dict]]
 _PARSERS: dict[str, _ParseFn] = {
     "claude-code": _parse_claude_code,
+    "cursor": _parse_cursor,
     "kiro": _parse_kiro,
 }
 

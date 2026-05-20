@@ -21,7 +21,7 @@ IDE_REGISTRY: dict[str, dict] = {
     "cursor": {
         "display_name": "Cursor",
         "features": {"hook_bridge", "mcp_servers", "rules"},
-        "session_parser": "claude-code",
+        "session_parser": "cursor",
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.cursor/rules/)", "user (~/.cursor/rules/)"),

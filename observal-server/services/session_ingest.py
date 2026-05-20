@@ -24,17 +24,20 @@ from services.session_parsers.ingest_classify import extract_timestamp, get_clas
 
 
 def _extract_usage_tokens(parsed: dict) -> dict:
-    """Extract input/output/cache token counts from a parsed JSONL line.
+    """Extract input/output/cache token counts and model from a parsed JSONL line.
 
     Claude Code embeds per-turn token counts in ``message.usage``.
+    Cursor injects a synthetic usage line from the hook payload on stop events.
     All other IDEs (Kiro, etc.) have no per-line token data and default to 0.
     """
-    usage = parsed.get("message", {}).get("usage") or {}
+    msg = parsed.get("message", {})
+    usage = msg.get("usage") or {}
     return {
         "input_tokens": int(usage.get("input_tokens") or 0),
         "output_tokens": int(usage.get("output_tokens") or 0),
         "cache_read_tokens": int(usage.get("cache_read_input_tokens") or 0),
         "cache_write_tokens": int(usage.get("cache_creation_input_tokens") or 0),
+        "model": str(msg.get("model") or parsed.get("model") or ""),
     }
 
 
@@ -144,7 +147,14 @@ async def ingest_session_lines(
         ts = extract_timestamp(ide, parsed)
         if ts is not None:
             last_real_ts = ts
-        timestamp = ts if ts is not None else (last_real_ts if last_real_ts is not None else "1970-01-01 00:00:00.000")
+        if ts is not None:
+            timestamp = ts
+        elif last_real_ts is not None:
+            timestamp = last_real_ts
+        else:
+            from datetime import UTC, datetime
+
+            timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
         rows.append(
             {

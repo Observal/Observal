@@ -237,6 +237,111 @@ def _tool_info_kiro(parsed: dict) -> tuple[str | None, str | None]:
 
 
 # ---------------------------------------------------------------------------
+# Cursor classifier
+# ---------------------------------------------------------------------------
+
+
+def _classify_cursor(parsed: dict) -> str | None:
+    """Classify one Cursor JSONL line.
+
+    Cursor uses ``role`` (not ``type``) with values matching Claude Code's
+    content block structure.  The ``message.content`` array contains blocks
+    with ``type: text|tool_use|tool_result|thinking``.
+    """
+    role = parsed.get("role", "")
+
+    if role == "user":
+        content = parsed.get("message", {}).get("content", [])
+        if not content:
+            return None
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_result":
+                    return "tool_result"
+            return "user_prompt"
+        return "user_prompt"
+
+    if role == "assistant":
+        content = parsed.get("message", {}).get("content", [])
+        if isinstance(content, list) and content:
+            for block in content:
+                if isinstance(block, dict):
+                    btype = block.get("type", "")
+                    if btype == "thinking":
+                        return "thinking"
+                    if btype == "tool_use":
+                        return "tool_call"
+                    if btype == "text":
+                        return "assistant_text"
+        return "assistant_text"
+
+    if not role:
+        return None
+
+    return "system"
+
+
+def _strip_cursor_xml_tags(text: str) -> str:
+    """Strip Cursor's XML wrapper tags from user prompts.
+
+    Cursor wraps user messages in <timestamp>...</timestamp> and
+    <user_query>...</user_query> tags.  Strip them for clean display.
+    """
+    import re
+
+    text = re.sub(r"<timestamp>.*?</timestamp>\s*", "", text, flags=re.DOTALL)
+    text = re.sub(r"</?user_query>\s*", "", text)
+    text = re.sub(r"</?system_reminder>\s*", "", text)
+    text = re.sub(r"</?attached_files>\s*", "", text)
+    return text.strip()
+
+
+def _preview_cursor(parsed: dict, event_type: str) -> str:
+    """Extract preview from Cursor JSONL (same content structure as Claude Code)."""
+    try:
+        content = parsed.get("message", {}).get("content", [])
+        if isinstance(content, str):
+            return _strip_cursor_xml_tags(content)[:_PREVIEW_MAX]
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type", "")
+                if btype == "text":
+                    text = block.get("text", "")
+                    if event_type == "user_prompt":
+                        text = _strip_cursor_xml_tags(text)
+                    parts.append(text[:_PREVIEW_MAX])
+                elif btype == "thinking":
+                    parts.append(block.get("thinking", "")[:_PREVIEW_MAX])
+                elif btype == "tool_use":
+                    parts.append(f"[tool_use: {block.get('name', '')}]")
+                elif btype == "tool_result":
+                    inner = block.get("content", "")
+                    if isinstance(inner, list):
+                        for item in inner:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                parts.append(item.get("text", "")[:_PREVIEW_MAX])
+                    elif isinstance(inner, str):
+                        parts.append(inner[:_PREVIEW_MAX])
+            return " ".join(parts)[:_PREVIEW_MAX]
+    except Exception:
+        pass
+    return ""
+
+
+def _tool_info_cursor(parsed: dict) -> tuple[str | None, str | None]:
+    content = parsed.get("message", {}).get("content", [])
+    if not isinstance(content, list):
+        return None, None
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "tool_use":
+            return block.get("name"), block.get("id")
+    return None, None
+
+
+# ---------------------------------------------------------------------------
 # Registry  -- add new parsers here, update ide_registry.py session_parser key
 # ---------------------------------------------------------------------------
 
@@ -249,6 +354,7 @@ _Classifier = tuple[_ClassifyFn, _PreviewFn, _ToolInfoFn]
 _CLASSIFIERS: dict[str, _Classifier] = {
     "claude-code": (_classify_claude_code, _preview_claude_code, _tool_info_claude_code),
     "kiro": (_classify_kiro, _preview_kiro, _tool_info_kiro),
+    "cursor": (_classify_cursor, _preview_cursor, _tool_info_cursor),
 }
 
 
@@ -325,9 +431,19 @@ def _ts_kiro(parsed: dict) -> str | None:
         return None
 
 
+def _ts_cursor(parsed: dict) -> str | None:
+    """Return ClickHouse timestamp string from a Cursor JSONL line, or None.
+
+    Cursor does not embed timestamps in its JSONL transcript lines.
+    Return None so the caller uses ingestion time (now) as fallback.
+    """
+    return None
+
+
 _TS_EXTRACTORS: dict[str, object] = {
     "claude-code": _ts_claude_code,
     "kiro": _ts_kiro,
+    "cursor": _ts_cursor,
 }
 
 
@@ -364,6 +480,7 @@ _ExtraRowsFn = Callable[..., list[dict]]
 _EXTRA_ROWS_HANDLERS: dict[str, _ExtraRowsFn] = {
     "kiro": _kiro_extra_rows,
     "claude-code": _no_extra_rows,
+    "cursor": _no_extra_rows,
 }
 
 
