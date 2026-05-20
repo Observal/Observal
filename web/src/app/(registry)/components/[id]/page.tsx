@@ -24,6 +24,8 @@ import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
 import { copyToClipboard } from "@/lib/utils";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ReviewForm } from "@/components/registry/review-form";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { ComponentEditForm } from "@/components/registry/component-edit-form";
@@ -344,7 +346,10 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
   if ("runtime" in item && item.runtime != null) fields.push({ label: "Runtime", value: String(item.runtime) });
   if ("image" in item && item.image != null) fields.push({ label: "Image", value: String(item.image), mono: true });
 
+  const skillMd = "skill_md_content" in item && item.skill_md_content ? String(item.skill_md_content) : null;
+  const promptTemplate = "template" in item && item.template ? String(item.template) : null;
   const promptText = "prompt_text" in item && item.prompt_text ? String(item.prompt_text) : null;
+  const markdownContent = skillMd || promptTemplate || promptText;
 
   return (
     <>
@@ -362,13 +367,15 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
           ))}
         </div>
       )}
-      {promptText && (
+      {markdownContent && (
         <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Prompt Content</h3>
-          <div className="rounded-md border border-border bg-muted/20 p-4">
-            <pre className="text-xs font-[family-name:var(--font-mono)] whitespace-pre-wrap break-words text-foreground/80 leading-relaxed max-h-[400px] overflow-y-auto">
-              {promptText}
-            </pre>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {skillMd ? "Skill File" : "Prompt Template"}
+          </h3>
+          <div className="rounded-md border border-border bg-muted/20 p-4 overflow-y-auto max-h-[600px]">
+            <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdownContent}</ReactMarkdown>
+            </div>
           </div>
         </div>
       )}

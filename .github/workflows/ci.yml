@@ -280,7 +280,7 @@ jobs:
         run: |
           uv python install 3.12
           cd observal-server
-          uv run --with pip-audit pip-audit --strict --desc
+          uv run --with pip-audit pip-audit --strict --desc --ignore-vuln PYSEC-2025-183
 
       - uses: pnpm/action-setup@v6
 

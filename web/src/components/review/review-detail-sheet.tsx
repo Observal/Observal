@@ -41,7 +41,16 @@ import {
 	useRelatedSkills,
 	useApproveWithSkills,
 } from "@/hooks/use-api";
+import yaml from "js-yaml";
 import type { ReviewItem } from "@/lib/types";
+
+function toYaml(value: unknown): string {
+	try {
+		return yaml.dump(value, { lineWidth: 120, indent: 2, noRefs: true }).trimEnd();
+	} catch {
+		return JSON.stringify(value, null, 2);
+	}
+}
 
 function reviewItemHref(item: ReviewItem): string {
 	if (item.type === "agent") return `/agents/${item.id}`;
@@ -58,7 +67,7 @@ function DetailField({ label, value }: { label: string; value: unknown }) {
 			<dd className="text-sm mt-0.5">
 				{typeof value === "object" ? (
 					<pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap">
-						{JSON.stringify(value, null, 2)}
+						{toYaml(value)}
 					</pre>
 				) : typeof value === "boolean" ? (
 					value ? (
@@ -143,7 +152,7 @@ function PromptConfigSection({ detail }: { detail: ReviewItem }) {
 						Template
 					</dt>
 					<dd className="mt-0.5">
-						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap">
+						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] font-mono leading-relaxed break-words">
 							{detail.template}
 						</pre>
 					</dd>
@@ -180,34 +189,41 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 			<DetailField label="Model Config" value={detail.model_config_json} />
 			{detail.components && detail.components.length > 0 && (
 				<div className="col-span-full">
-					<dt className="text-xs font-medium text-muted-foreground">
+					<dt className="text-xs font-medium text-muted-foreground mb-1">
 						Components ({detail.components.length})
 					</dt>
-					<dd className="mt-0.5 space-y-2">
-						{detail.components.map((c, i) => (
-							<div key={i} className="text-xs rounded bg-muted overflow-hidden">
-								<div className="flex items-center gap-2 px-2 py-1">
-									<Badge variant="outline" className="text-[10px]">
-										{c.component_type}
-									</Badge>
-									<span className="font-medium">
-										{(c as Record<string, string>).name ||
-											c.component_id.slice(0, 8)}
-									</span>
-								</div>
-								{(c as Record<string, string>).template && (
-									<pre className="px-3 pb-2 text-[11px] font-mono whitespace-pre-wrap break-words text-muted-foreground leading-relaxed">
-										{(c as Record<string, string>).template}
-									</pre>
-								)}
-								{(c as Record<string, string>).description &&
-									!(c as Record<string, string>).template && (
-										<p className="px-3 pb-2 text-[11px] text-muted-foreground">
-											{(c as Record<string, string>).description}
-										</p>
+					<dd className="space-y-2">
+						{detail.components.map((c, i) => {
+							const comp = c as Record<string, unknown>;
+							const name = (comp.name as string) || `${c.component_type} component`;
+							const description = comp.description as string | undefined;
+							const CONTENT_KEYS = ["template", "skill_md_content", "handler_config", "input_schema", "output_schema", "source_url", "git_url", "config_json"];
+							const contentEntries = Object.entries(comp).filter(([k]) => CONTENT_KEYS.includes(k) && comp[k]);
+							return (
+								<div key={i} className="rounded border border-border overflow-hidden">
+									<div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
+										<Badge variant="outline" className="text-[10px] shrink-0">
+											{c.component_type as string}
+										</Badge>
+										<span className="text-xs font-medium">{name}</span>
+									</div>
+									{description && (
+										<p className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border/50">{description}</p>
 									)}
-							</div>
-						))}
+									{contentEntries.length > 0 && (
+										<details open className="group">
+											<summary className="cursor-pointer select-none px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground list-none flex items-center gap-1">
+												<span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+												Content
+											</summary>
+											<pre className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-auto max-h-80 bg-background border-t border-border/50 break-words">
+												{toYaml(Object.fromEntries(contentEntries))}
+											</pre>
+										</details>
+									)}
+								</div>
+							);
+						})}
 					</dd>
 				</div>
 			)}
@@ -215,7 +231,7 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 				<div className="col-span-full">
 					<dt className="text-xs font-medium text-muted-foreground">Prompt</dt>
 					<dd className="mt-0.5">
-						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap">
+						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] font-mono leading-relaxed break-words">
 							{detail.prompt}
 						</pre>
 					</dd>
