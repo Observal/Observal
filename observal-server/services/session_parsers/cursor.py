@@ -14,19 +14,9 @@ to the Claude Code parser handlers.
 from __future__ import annotations
 
 import json
-import re
 
-from .base import basic_event, pick_timestamp
+from .base import basic_event, pick_timestamp, strip_cursor_xml_tags
 from .claude_code import _handle_assistant, _handle_user
-
-
-def _strip_cursor_tags(text: str) -> str:
-    """Remove Cursor's XML wrapper tags for clean display."""
-    text = re.sub(r"<timestamp>.*?</timestamp>\s*", "", text, flags=re.DOTALL)
-    text = re.sub(r"</?user_query>\s*", "", text)
-    text = re.sub(r"</?system_reminder>\s*", "", text)
-    text = re.sub(r"</?attached_files>\s*", "", text)
-    return text.strip()
 
 
 def _clean_user_content(line: dict) -> dict:
@@ -35,7 +25,7 @@ def _clean_user_content(line: dict) -> dict:
     if isinstance(content, list):
         for block in content:
             if isinstance(block, dict) and block.get("type") == "text":
-                block["text"] = _strip_cursor_tags(block.get("text", ""))
+                block["text"] = strip_cursor_xml_tags(block.get("text", ""))
     return line
 
 

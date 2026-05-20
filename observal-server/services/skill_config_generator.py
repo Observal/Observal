@@ -9,8 +9,7 @@ from __future__ import annotations
 import re
 
 from schemas.ide_registry import IDE_REGISTRY
-
-_SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
+from services.shared.utils import sanitize_name as _sanitize_name
 
 
 def _short_description(desc: str, max_len: int = 200) -> str:
@@ -31,11 +30,6 @@ def _short_description(desc: str, max_len: int = 200) -> str:
     sentence, _, _ = first_line.partition(".")
     return sentence.strip()
 
-
-def _sanitize_name(name: str) -> str:
-    if _SAFE_NAME.match(name):
-        return name
-    return re.sub(r"[^a-zA-Z0-9_-]", "-", name)
 
 
 def _generate_skill_file(skill_listing, ide: str, scope: str = "project") -> dict | None:

@@ -8,6 +8,7 @@ import re
 
 from models.mcp import McpListing
 from services.codex_config_generator import generate_codex_config
+from services.shared.utils import sanitize_name as _sanitize_name
 
 _SHELL_META_RE = re.compile(r"[|;&`><\n\r]|\$\(|\$\{")
 _DANGEROUS_CMD_RE = re.compile(
@@ -28,14 +29,8 @@ def validate_mcp_command(command: str, args: list[str] | None = None) -> None:
         raise ValueError(f"MCP command uses a disallowed program: {cmd_base!r}")
 
 
-_SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 _DOLLAR_VAR = re.compile(r"\$\{([A-Z][A-Z0-9_]+)\}|\$([A-Z][A-Z0-9_]+)")
 
-
-def _sanitize_name(name: str) -> str:
-    if _SAFE_NAME.match(name):
-        return name
-    return re.sub(r"[^a-zA-Z0-9_-]", "-", name)
 
 
 def _otlp_env(observal_url: str) -> dict:

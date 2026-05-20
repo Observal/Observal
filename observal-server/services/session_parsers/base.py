@@ -5,6 +5,18 @@
 
 from __future__ import annotations
 
+import re
+
+
+def strip_cursor_xml_tags(text: str) -> str:
+    """Remove Cursor's XML wrapper tags from user prompts for clean display."""
+    text = re.sub(r"<timestamp>.*?</timestamp>\s*", "", text, flags=re.DOTALL)
+    text = re.sub(r"</?user_query>\s*", "", text)
+    text = re.sub(r"</?system_reminder>\s*", "", text)
+    text = re.sub(r"</?attached_files>\s*", "", text)
+    return text.strip()
+
+
 _EPOCH_SENTINEL = "1970-01-01"
 
 

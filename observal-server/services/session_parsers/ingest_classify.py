@@ -281,19 +281,6 @@ def _classify_cursor(parsed: dict) -> str | None:
     return "system"
 
 
-def _strip_cursor_xml_tags(text: str) -> str:
-    """Strip Cursor's XML wrapper tags from user prompts.
-
-    Cursor wraps user messages in <timestamp>...</timestamp> and
-    <user_query>...</user_query> tags.  Strip them for clean display.
-    """
-    import re
-
-    text = re.sub(r"<timestamp>.*?</timestamp>\s*", "", text, flags=re.DOTALL)
-    text = re.sub(r"</?user_query>\s*", "", text)
-    text = re.sub(r"</?system_reminder>\s*", "", text)
-    text = re.sub(r"</?attached_files>\s*", "", text)
-    return text.strip()
 
 
 def _preview_cursor(parsed: dict, event_type: str) -> str:
@@ -301,7 +288,7 @@ def _preview_cursor(parsed: dict, event_type: str) -> str:
     try:
         content = parsed.get("message", {}).get("content", [])
         if isinstance(content, str):
-            return _strip_cursor_xml_tags(content)[:_PREVIEW_MAX]
+            return strip_cursor_xml_tags(content)[:_PREVIEW_MAX]
         if isinstance(content, list):
             parts: list[str] = []
             for block in content:
@@ -311,7 +298,7 @@ def _preview_cursor(parsed: dict, event_type: str) -> str:
                 if btype == "text":
                     text = block.get("text", "")
                     if event_type == "user_prompt":
-                        text = _strip_cursor_xml_tags(text)
+                        text = strip_cursor_xml_tags(text)
                     parts.append(text[:_PREVIEW_MAX])
                 elif btype == "thinking":
                     parts.append(block.get("thinking", "")[:_PREVIEW_MAX])

@@ -21,7 +21,6 @@ Generates IDE-specific agent files from a ResolvedAgent:
 """
 
 import logging
-import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -30,6 +29,7 @@ from schemas.ide_registry import IDE_REGISTRY, get_valid_ides
 from services.agent_config_generator import _wrap_kiro_prompt
 from services.agent_resolver import ResolvedAgent, ResolvedComponent
 from services.model_resolver import resolve_saved_value
+from services.shared.utils import sanitize_name as _sanitize_name
 
 logger = logging.getLogger(__name__)
 
@@ -311,13 +311,7 @@ def build_composition_summary(resolved: ResolvedAgent) -> dict:
 
 # ── IDE Agent File Generation ──────────────────────────────────────
 
-_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
-
-def _sanitize_name(name: str) -> str:
-    if _SAFE_NAME_RE.match(name):
-        return name
-    return re.sub(r"[^a-zA-Z0-9_-]", "-", name)
 
 
 def _build_mcp_entries(manifest: AgentManifest) -> dict:

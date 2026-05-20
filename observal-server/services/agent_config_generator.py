@@ -12,11 +12,11 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from schemas.constants import IDE_FEATURE_MATRIX
 from schemas.ide_registry import IDE_REGISTRY
+from services.shared.utils import sanitize_name as _sanitize_name
 
 if TYPE_CHECKING:
     from models.agent import Agent, AgentVersion
@@ -27,8 +27,6 @@ from services.config_generator import (
     _gemini_settings,
     generate_config,
 )
-
-_SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # Map from internal PascalCase event names to Kiro camelCase event names.
 _KIRO_EVENT_MAP = {
@@ -271,11 +269,6 @@ def _check_ide_compatibility(agent: Agent, ide: str) -> list[str]:
             )
     return warnings
 
-
-def _sanitize_name(name: str) -> str:
-    if _SAFE_NAME.match(name):
-        return name
-    return re.sub(r"[^a-zA-Z0-9_-]", "-", name)
 
 
 def _wrap_kiro_prompt(prompt: str, agent_name: str) -> str:
