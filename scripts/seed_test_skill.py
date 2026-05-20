@@ -127,9 +127,7 @@ agent_payload = {
     "supported_ides": ["claude-code", "cursor", "vscode", "kiro"],
     "components": [{"component_type": "skill", "component_id": skill_id}],
     "external_mcps": [],
-    "goal_template": {
-        "description": "Code review and assistance",
-        "sections": [{"name": "default", "description": "Default goal section"}],
+],
     },
 }
 r = requests.post(

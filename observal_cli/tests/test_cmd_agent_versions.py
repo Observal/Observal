@@ -35,7 +35,6 @@ def agent_yaml_dir(tmp_path: Path) -> Path:
         "prompt": "You are a helpful agent.",
         "supported_ides": ["claude-code"],
         "components": [{"component_type": "mcp", "component_id": "abc-123"}],
-        "goal_template": {"description": "Do things", "sections": [{"name": "default", "description": "default"}]},
     }
     (tmp_path / "observal-agent.yaml").write_text(yaml.dump(data))
     return tmp_path

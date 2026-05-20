@@ -79,12 +79,9 @@ INSERT_ORDER: list[str] = [
     "submissions",
     "alert_rules",
     # Tier 4 — FK to agents/agent_versions
-    "agent_goal_templates",
     "agent_download_records",
     "component_download_records",
     "dimension_weights",
-    # Tier 5 — FK to agent_goal_templates
-    "agent_goal_sections",
     # Tier 6 — FK to agent_versions (polymorphic component_id)
     "agent_components",
     # Tier 7 — FK to users (polymorphic listing_id)

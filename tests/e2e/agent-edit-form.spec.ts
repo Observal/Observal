@@ -24,10 +24,7 @@ test.describe("Agent Edit Form", () => {
         owner: "test",
         model_name: "claude-sonnet-4-20250514",
         visibility: "private",
-        components: [],
-        goal_template: {
-          description: "Test agent",
-          sections: [{ name: "Default", description: "Test" }],
+        components: []],
         },
       }),
     });

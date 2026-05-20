@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
-from models.agent import Agent, AgentGoalSection, AgentGoalTemplate, AgentStatus, AgentVersion, AgentVisibility
+from models.agent import Agent, AgentStatus, AgentVersion, AgentVisibility
 from models.agent_component import AgentComponent
 from models.user import User, UserRole
 from schemas.bulk import BulkAgentItem, BulkAgentRequest, BulkResult, BulkResultItem
@@ -73,26 +73,6 @@ async def _create_single_agent(
                 config_override=comp.get("config_override"),
             )
         )
-
-    # Attach goal template when provided
-    if item.goal_template:
-        goal = AgentGoalTemplate(
-            agent_version_id=version.id,
-            description=item.goal_template.get("description", ""),
-        )
-        db.add(goal)
-        await db.flush()
-
-        for j, sec in enumerate(item.goal_template.get("sections", [])):
-            db.add(
-                AgentGoalSection(
-                    goal_template_id=goal.id,
-                    name=sec.get("name", f"section-{j}"),
-                    description=sec.get("description"),
-                    grounding_required=sec.get("grounding_required", False),
-                    order=j,
-                )
-            )
 
     return agent
 

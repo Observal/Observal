@@ -34,11 +34,7 @@ test.describe("Review Diff Dialog Screenshots", () => {
         owner: "platform-team",
         model_name: "claude-sonnet-4-20250514",
         prompt: "## Security Review Agent\n\nYou are a security-focused code reviewer. Your job is to analyze code changes for vulnerabilities.\n\n## Focus Areas\n- SQL injection (A03)\n- Broken authentication (A07)\n- Sensitive data exposure (A02)\n\n## Output Format\nProvide findings as a structured report with severity levels.",
-        components: [],
-        goal_template: {
-          description: "Review code for security issues",
-          sections: [
-            { name: "Scan", description: "Scan for vulnerabilities" },
+        components: []
             { name: "Report", description: "Generate findings report" },
           ],
         },

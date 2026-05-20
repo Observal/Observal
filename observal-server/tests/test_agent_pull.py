@@ -104,7 +104,6 @@ def _make_agent(owner_id: uuid.UUID | None = None, *, with_approved_version: boo
         agent.status = AgentStatus.approved
         agent.rejection_reason = None
         agent.components = []
-        agent.goal_template = None
     else:
         agent.latest_version_id = None
         agent.latest_version = None
@@ -121,7 +120,6 @@ def _make_agent(owner_id: uuid.UUID | None = None, *, with_approved_version: boo
         agent.status = AgentStatus.draft
         agent.rejection_reason = None
         agent.components = []
-        agent.goal_template = None
 
     return agent
 

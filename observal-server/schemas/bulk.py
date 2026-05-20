@@ -21,7 +21,6 @@ class BulkAgentItem(BaseModel):
     supported_ides: list[str] = []
     components: list[dict] = []  # [{component_type, component_id}]
     external_mcps: list[dict] = []
-    goal_template: dict | None = None
 
 
 class BulkAgentRequest(BaseModel):

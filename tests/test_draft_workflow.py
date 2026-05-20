@@ -84,7 +84,6 @@ def _agent_mock(status=AgentStatus.draft, created_by=None, **extra):
     m.created_at = datetime.now(UTC)
     m.updated_at = datetime.now(UTC)
     m.components = extra.get("components", [])
-    m.goal_template = extra.get("goal_template")
     # Edit-lock fields on the latest_version mock
     m.latest_version.is_editing = False
     m.latest_version.editing_by = None
@@ -132,10 +131,6 @@ def _draft_request_body(**overrides) -> dict:
         "owner": "testowner",
         "prompt": "Do things",
         "model_name": "claude-sonnet-4",
-        "goal_template": {
-            "description": "Test goal",
-            "sections": [{"name": "section-1"}],
-        },
     }
     body.update(overrides)
     return body

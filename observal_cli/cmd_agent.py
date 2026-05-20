@@ -19,7 +19,6 @@ import yaml
 from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
-from rich.tree import Tree
 
 from observal_cli import client, config
 from observal_cli.constants import AGENT_NAME_REGEX, VALID_IDES
@@ -227,7 +226,6 @@ def agent_create(
                 "model_config_json": model_cfg,
                 "supported_ides": supported_ides,
                 "components": components,
-                "goal_template": {"description": goal_desc, "sections": sections},
             },
         )
     status = result.get("status", "pending")
@@ -504,19 +502,6 @@ def agent_show(
         for link in item["mcp_links"]:
             rprint(f"  [cyan]•[/cyan] {link.get('mcp_name', '')} [dim]({link.get('mcp_listing_id', '')})[/dim]")
 
-    # Goal template as tree
-    if item.get("goal_template"):
-        gt = item["goal_template"]
-        tree = Tree(f"[bold]Goal:[/bold] {gt.get('description', '')}")
-        for sec in gt.get("sections", []):
-            label = sec["name"]
-            if sec.get("grounding_required"):
-                label += " [yellow](grounding required)[/yellow]"
-            node = tree.add(label)
-            if sec.get("description"):
-                node.add(f"[dim]{sec['description']}[/dim]")
-        console.print(tree)
-
 
 @agent_app.command(name="install")
 def agent_install(
@@ -780,7 +765,6 @@ def agent_publish(
         "prompt": data.get("prompt", ""),
         "supported_ides": data.get("supported_ides", []),
         "components": data.get("components", []),
-        "goal_template": data.get("goal_template", {}),
     }
 
     if draft:
@@ -879,7 +863,6 @@ def agent_release(
         "external_mcps": data.get("external_mcps"),
         "supported_ides": data.get("supported_ides", []),
         "components": data.get("components", []),
-        "goal_template": data.get("goal_template"),
         "yaml_snapshot": raw_yaml,
     }
 

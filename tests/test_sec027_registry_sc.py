@@ -74,7 +74,6 @@ def _agent_mock(status=AgentStatus.pending, created_by=None, **extra):
     m.created_at = datetime.now(UTC)
     m.updated_at = datetime.now(UTC)
     m.components = extra.get("components", [])
-    m.goal_template = extra.get("goal_template")
     m.latest_version = MagicMock()
     m.latest_version.external_mcps = []
     m.latest_version.prompt = m.prompt
@@ -296,7 +295,6 @@ class TestCreateAgentMcpValidation:
             "owner": "testowner",
             "prompt": "Do things",
             "model_name": "claude-sonnet-4",
-            "goal_template": {"description": "Test goal", "sections": [{"name": "s1"}]},
             "external_mcps": [
                 {
                     "name": "evil-mcp",

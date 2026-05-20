@@ -123,7 +123,7 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 
 - `user.py` : User with UserRole enum (admin, developer, user); API key is hashed with SHA-256
 - `mcp.py` : McpListing, McpValidationResult, McpDownload; ListingStatus enum (shared by all models)
-- `agent.py` : Agent, AgentGoalTemplate, AgentGoalSection, AgentStatus enum
+- `agent.py` : Agent, AgentStatus enum
 - `alert.py` : AlertRule (metric threshold alerts with webhook URLs)
 - `alert_history.py` : AlertHistory (fired alert records with resolved timestamps)
 - `skill.py` : SkillListing, SkillDownload

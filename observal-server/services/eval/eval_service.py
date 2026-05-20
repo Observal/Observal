@@ -191,14 +191,9 @@ def build_fallback_scorecard(trace: dict) -> dict:
 
 
 async def evaluate_trace(agent: Agent, trace: dict) -> dict:
-    """Evaluate a single trace against the agent's goal template."""
-    goal_desc = agent.goal_template.description if agent.goal_template else "No goal template"
+    """Evaluate a single trace against the agent's system prompt."""
+    goal_desc = agent.prompt or "No system prompt"
     sections = ""
-    if agent.goal_template:
-        for s in agent.goal_template.sections:
-            grounding = " [grounding required]" if s.grounding_required else ""
-            sections += f"- {s.name}{grounding}\n"
-
     trace_str = json.dumps(trace, indent=2, default=str)
     prompt = JUDGE_PROMPT.format(goal_description=goal_desc, sections=sections, trace=trace_str)
 
@@ -306,13 +301,8 @@ async def run_structured_eval(
     if not isinstance(backend, FallbackBackend):
         slm_scorer = SLMScorer(backend)
         try:
-            goal_desc = ""
+            goal_desc = agent.prompt or ""
             required_sections: list[dict] = []
-            if agent.goal_template:
-                goal_desc = agent.goal_template.description
-                required_sections = [
-                    {"name": s.name, "grounding_required": s.grounding_required} for s in agent.goal_template.sections
-                ]
             if required_sections:
                 slm_penalties += await slm_scorer.score_goal_completion(
                     sanitized_trace, spans, goal_desc, required_sections
@@ -452,12 +442,6 @@ async def run_agent_scoped_eval(
         try:
             goal_desc = delegation_prompt or ""
             required_sections: list[dict] = []
-
-            if not goal_desc and agent.goal_template:
-                goal_desc = agent.goal_template.description
-                required_sections = [
-                    {"name": s.name, "grounding_required": s.grounding_required} for s in agent.goal_template.sections
-                ]
 
             # For agent-scoped eval, pass full_spans for grounding context
             # but the SLM prompt uses the delegation as the goal

@@ -71,7 +71,7 @@ class TestComponentLinkResponseSchema:
 
 class TestAgentCreateRequestWithComponents:
     def test_create_request_accepts_components(self):
-        from schemas.agent import AgentCreateRequest, ComponentRef, GoalSectionRequest, GoalTemplateRequest
+        from schemas.agent import AgentCreateRequest, ComponentRef
 
         cid = uuid.uuid4()
         req = AgentCreateRequest(
@@ -79,53 +79,44 @@ class TestAgentCreateRequestWithComponents:
             version="1.0.0",
             owner="test",
             model_name="claude-sonnet-4-6",
+            prompt="You are a test agent.",
             components=[
                 ComponentRef(component_type="mcp", component_id=cid),
                 ComponentRef(component_type="skill", component_id=uuid.uuid4()),
             ],
-            goal_template=GoalTemplateRequest(
-                description="test",
-                sections=[GoalSectionRequest(name="s1")],
-            ),
         )
         assert len(req.components) == 2
         assert req.components[0].component_type == "mcp"
 
     def test_create_request_backwards_compat(self):
         """mcp_server_ids should still work."""
-        from schemas.agent import AgentCreateRequest, GoalSectionRequest, GoalTemplateRequest
+        from schemas.agent import AgentCreateRequest
 
         req = AgentCreateRequest(
             name="legacy-agent",
             version="1.0.0",
             owner="test",
             model_name="claude-sonnet-4-6",
+            prompt="You are a test agent.",
             mcp_server_ids=[uuid.uuid4()],
-            goal_template=GoalTemplateRequest(
-                description="test",
-                sections=[GoalSectionRequest(name="s1")],
-            ),
         )
         assert len(req.mcp_server_ids) == 1
         assert len(req.components) == 0
 
     def test_create_request_both_fields(self):
         """Both mcp_server_ids and components can coexist."""
-        from schemas.agent import AgentCreateRequest, ComponentRef, GoalSectionRequest, GoalTemplateRequest
+        from schemas.agent import AgentCreateRequest, ComponentRef
 
         req = AgentCreateRequest(
             name="dual-agent",
             version="1.0.0",
             owner="test",
             model_name="claude-sonnet-4-6",
+            prompt="You are a test agent.",
             mcp_server_ids=[uuid.uuid4()],
             components=[
                 ComponentRef(component_type="skill", component_id=uuid.uuid4()),
             ],
-            goal_template=GoalTemplateRequest(
-                description="test",
-                sections=[GoalSectionRequest(name="s1")],
-            ),
         )
         assert len(req.mcp_server_ids) == 1
         assert len(req.components) == 1

@@ -94,9 +94,6 @@ class AgentVersion(Base):
         order_by="AgentComponent.order_index",
         cascade="all, delete-orphan",
     )
-    goal_template: Mapped["AgentGoalTemplate | None"] = relationship(
-        back_populates="agent_version", lazy="selectin", uselist=False, cascade="all, delete-orphan"
-    )
 
 
 class Agent(Base):
@@ -277,40 +274,6 @@ class Agent(Base):
     @property
     def components(self) -> list:
         return self.latest_version.components if self.latest_version else []
-
-    @property
-    def goal_template(self):
-        return self.latest_version.goal_template if self.latest_version else None
-
-
-class AgentGoalTemplate(Base):
-    __tablename__ = "agent_goal_templates"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_versions.id", ondelete="CASCADE"), unique=True, nullable=False
-    )
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-
-    agent_version: Mapped["AgentVersion"] = relationship(back_populates="goal_template")
-    sections: Mapped[list["AgentGoalSection"]] = relationship(
-        back_populates="goal_template", lazy="selectin", order_by="AgentGoalSection.order", cascade="all, delete-orphan"
-    )
-
-
-class AgentGoalSection(Base):
-    __tablename__ = "agent_goal_sections"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    goal_template_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_goal_templates.id", ondelete="CASCADE"), nullable=False
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    grounding_required: Mapped[bool] = mapped_column(Boolean, default=False)
-    order: Mapped[int] = mapped_column(Integer, default=0)
-
-    goal_template: Mapped["AgentGoalTemplate"] = relationship(back_populates="sections")
 
 
 from models.agent_component import AgentComponent  # noqa: E402

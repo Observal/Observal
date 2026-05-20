@@ -265,10 +265,7 @@ class TestAgentLifecycle:
                 "version": "1.0.0",
                 "owner": "admin",
                 "model_name": "claude-sonnet-4-20250514",
-                "goal_template": {
-                    "description": "Test agent",
-                    "sections": [{"name": "General", "description": "General purpose"}],
-                },
+                "prompt": "You are a test agent.",
             },
         )
         assert r.status_code == 200, f"Create failed: {r.text}"
@@ -296,10 +293,7 @@ class TestAgentLifecycle:
                 "version": "1.0.0",
                 "owner": "admin",
                 "model_name": "claude-sonnet-4-20250514",
-                "goal_template": {
-                    "description": "Test",
-                    "sections": [{"name": "General", "description": "x"}],
-                },
+                "prompt": "You are a test agent.",
             },
         )
         r = await client.delete(f"/api/v1/agents/{self.agent_name}", headers=admin_headers)

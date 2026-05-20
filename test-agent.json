@@ -6,23 +6,20 @@
   "prompt": "You are a helpful file management assistant.",
   "model_name": "claude-sonnet-4",
   "model_config_json": {},
-  "supported_ides": ["kiro"],
+  "supported_ides": [
+    "kiro"
+  ],
   "mcp_server_ids": [],
   "components": [],
   "external_mcps": [
     {
       "name": "filesystem",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
     }
-  ],
-  "goal_template": {
-    "description": "File management",
-    "sections": [
-      {
-        "name": "Task",
-        "description": "What to do"
-      }
-    ]
-  }
+  ]
 }

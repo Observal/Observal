@@ -33,7 +33,6 @@ def _make_agent(agent_id=None, version="1.0"):
     agent = MagicMock()
     agent.id = agent_id or uuid.uuid4()
     agent.version = version
-    agent.goal_template = None
     return agent
 
 

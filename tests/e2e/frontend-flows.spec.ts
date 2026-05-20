@@ -35,10 +35,7 @@ test.describe("Frontend Flows", () => {
           description: "Agent for frontend e2e tests",
           version: "1.0.0",
           owner: "admin",
-          model_name: "claude-sonnet-4-20250514",
-          goal_template: {
-            description: "E2E test agent",
-            sections: [{ name: "General", description: "General purpose" }],
+          model_name: "claude-sonnet-4-20250514"],
           },
         }),
       });

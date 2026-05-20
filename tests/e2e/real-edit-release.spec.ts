@@ -27,10 +27,7 @@ test.describe("Full Edit → Release → Review Flow", () => {
         owner: "test",
         model_name: "claude-sonnet-4-20250514",
         visibility: "private",
-        components: [],
-        goal_template: {
-          description: "Test agent goal",
-          sections: [{ name: "Default", description: "Default section" }],
+        components: []],
         },
       }),
     });

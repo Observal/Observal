@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from models.agent import Agent, AgentGoalSection, AgentGoalTemplate, AgentStatus, AgentTeamAccess, AgentVisibility
+from models.agent import Agent, AgentStatus, AgentTeamAccess, AgentVisibility
 from models.agent_component import AgentComponent
 from models.alert import AlertRule
 from models.alert_history import AlertHistory
@@ -48,8 +48,6 @@ __all__ = [
     "Agent",
     "AgentComponent",
     "AgentDownloadRecord",
-    "AgentGoalSection",
-    "AgentGoalTemplate",
     "AgentStatus",
     "AgentTeamAccess",
     "AgentVisibility",

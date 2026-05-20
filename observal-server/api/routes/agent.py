@@ -31,8 +31,6 @@ from api.sanitize import escape_like
 from config import settings
 from models.agent import (
     Agent,
-    AgentGoalSection,
-    AgentGoalTemplate,
     AgentStatus,
     AgentTeamAccess,
     AgentVersion,
@@ -53,8 +51,6 @@ from schemas.agent import (
     AgentUpdateRequest,
     AgentValidateRequest,
     ComponentLinkResponse,
-    GoalSectionResponse,
-    GoalTemplateResponse,
     McpLinkResponse,
     ValidationIssue,
     ValidationResult,
@@ -69,7 +65,7 @@ from services.registry_telemetry import emit_registry_event
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
 # Eager-load options for Agent queries to avoid MissingGreenlet in async.
-# Agent.latest_version (selectin) auto-loads AgentVersion.components and .goal_template.
+# Agent.latest_version (selectin) auto-loads AgentVersion.components.
 _agent_load_options = [
     selectinload(Agent.team_accesses),
 ]
@@ -165,17 +161,7 @@ def _agent_to_response(
         )
         for comp in agent.components
     ]
-    goal_template = None
-    if agent.goal_template:
-        sections = [
-            GoalSectionResponse(
-                name=s.name, description=s.description, grounding_required=s.grounding_required, order=s.order
-            )
-            for s in agent.goal_template.sections
-        ]
-        goal_template = GoalTemplateResponse(description=agent.goal_template.description, sections=sections)
-
-    # Build agent_dict from table columns (identity fields) plus version-delegate properties.
+    # Build agent_dict from table columns plus version-delegate properties.
     agent_dict = {c.key: getattr(agent, c.key) for c in Agent.__table__.columns}
     for field in (
         "version",
@@ -192,13 +178,10 @@ def _agent_to_response(
         "rejection_reason",
     ):
         agent_dict[field] = getattr(agent, field)
-    # Defensive: tests sometimes pass MagicMock agents that don't return real
-    # dicts for new fields. Fall back to an empty dict so AgentResponse parses.
     if not isinstance(agent_dict.get("models_by_ide"), dict):
         agent_dict["models_by_ide"] = {}
     agent_dict["mcp_links"] = mcp_links
     agent_dict["component_links"] = component_links
-    agent_dict["goal_template"] = goal_template
     agent_dict["visibility"] = agent.visibility
     agent_dict["team_accesses"] = [
         {"group_name": acc.group_name, "permission": acc.permission} for acc in getattr(agent, "team_accesses", [])
@@ -366,21 +349,6 @@ async def create_agent(
             )
         )
         order += 1
-
-    goal = AgentGoalTemplate(agent_version_id=version.id, description=req.goal_template.description)
-    db.add(goal)
-    await db.flush()
-
-    for i, sec in enumerate(req.goal_template.sections):
-        db.add(
-            AgentGoalSection(
-                goal_template_id=goal.id,
-                name=sec.name,
-                description=sec.description,
-                grounding_required=sec.grounding_required,
-                order=i,
-            )
-        )
 
     # Auto-infer IDE feature requirements from the request data
     # (avoid accessing agent.components which would trigger a lazy load)
@@ -861,38 +829,6 @@ async def update_agent(
                     component_name="",
                     resolved_version=listing.version,
                     order_index=i,
-                )
-            )
-
-    if req.goal_template is not None:
-        if not agent.latest_version:
-            raise HTTPException(status_code=400, detail="Agent has no version to update goal template on")
-        version_id = agent.latest_version.id
-        if agent.goal_template:
-            old_sections = (
-                (
-                    await db.execute(
-                        select(AgentGoalSection).where(AgentGoalSection.goal_template_id == agent.goal_template.id)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            for sec in old_sections:
-                await db.delete(sec)
-            await db.delete(agent.goal_template)
-            await db.flush()
-        goal = AgentGoalTemplate(agent_version_id=version_id, description=req.goal_template.description)
-        db.add(goal)
-        await db.flush()
-        for i, sec in enumerate(req.goal_template.sections):
-            db.add(
-                AgentGoalSection(
-                    goal_template_id=goal.id,
-                    name=sec.name,
-                    description=sec.description,
-                    grounding_required=sec.grounding_required,
-                    order=i,
                 )
             )
 
@@ -1488,20 +1424,6 @@ async def save_draft(
             )
         )
         order += 1
-    goal = AgentGoalTemplate(agent_version_id=version.id, description=req.goal_template.description)
-    db.add(goal)
-    await db.flush()
-    for i, sec in enumerate(req.goal_template.sections):
-        db.add(
-            AgentGoalSection(
-                goal_template_id=goal.id,
-                name=sec.name,
-                description=sec.description,
-                grounding_required=sec.grounding_required,
-                order=i,
-            )
-        )
-
     # Auto-infer IDE features for draft (use request data, not ORM relationship)
     all_crefs_draft = list(req.components) + [
         type("_Ref", (), {"component_type": "mcp", "component_id": mid})() for mid in req.mcp_server_ids

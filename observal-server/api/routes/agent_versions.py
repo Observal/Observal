@@ -25,8 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 from api.deps import get_db, get_effective_agent_permission, require_role
 from models.agent import (
     Agent,
-    AgentGoalSection,
-    AgentGoalTemplate,
     AgentStatus,
     AgentVersion,
 )
@@ -259,22 +257,6 @@ async def _create_agent_version(
             )
         )
 
-    # Create goal template if provided
-    if req.goal_template is not None:
-        goal = AgentGoalTemplate(agent_version_id=ver.id, description=req.goal_template.description)
-        db.add(goal)
-        await db.flush()
-        for i, sec in enumerate(req.goal_template.sections):
-            db.add(
-                AgentGoalSection(
-                    goal_template_id=goal.id,
-                    name=sec.name,
-                    description=sec.description,
-                    grounding_required=sec.grounding_required,
-                    order=i,
-                )
-            )
-
     # Infer IDE features from components
     skill_comp_ids = [c.component_id for c in req.components if c.component_type == "skill"]
     skill_listings_map: dict = {}
@@ -293,7 +275,7 @@ async def _create_agent_version(
     # path). Without this the reviewer's diff view is blank for everything
     # that wasn't published from the CLI.
     if not ver.yaml_snapshot:
-        # Flush pending AgentComponent/AgentGoalSection rows so the snapshot
+        # Flush pending AgentComponent rows so the snapshot
         # builder can re-query them from the session.
         await db.flush()
         from services.agent_snapshot import build_yaml_snapshot

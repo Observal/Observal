@@ -302,7 +302,6 @@ async def test_create_version_happy_path():
         external_mcps=[],
         supported_ides=["claude-code"],
         components=[],
-        goal_template=None,
     )
 
     # DB: dup check returns None, pending count returns 0

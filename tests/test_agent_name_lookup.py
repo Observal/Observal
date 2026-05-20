@@ -83,7 +83,6 @@ def _agent_mock(status=AgentStatus.approved, created_by=None, **extra):
     m.created_at = datetime.now(UTC)
     m.updated_at = datetime.now(UTC)
     m.components = extra.get("components", [])
-    m.goal_template = extra.get("goal_template")
     col_keys = [
         "id",
         "name",
@@ -182,7 +181,7 @@ class TestAgentNameValidation:
             description="test",
             owner="testowner",
             model_name="claude-sonnet-4",
-            goal_template={"description": "g", "sections": [{"name": "s"}]},
+            prompt="You are a test agent.",
         )
         assert req.name == "my-cool-agent"
 
@@ -195,7 +194,7 @@ class TestAgentNameValidation:
             description="test",
             owner="testowner",
             model_name="claude-sonnet-4",
-            goal_template={"description": "g", "sections": [{"name": "s"}]},
+            prompt="You are a test agent.",
         )
         assert req.name == "my-cool-agent-v2"
 
@@ -208,7 +207,7 @@ class TestAgentNameValidation:
             description="test",
             owner="testowner",
             model_name="claude-sonnet-4",
-            goal_template={"description": "g", "sections": [{"name": "s"}]},
+            prompt="You are a test agent.",
         )
         assert req.name == "a-b"
 
@@ -222,7 +221,7 @@ class TestAgentNameValidation:
                 description="test",
                 owner="testowner",
                 model_name="claude-sonnet-4",
-                goal_template={"description": "g", "sections": [{"name": "s"}]},
+                prompt="You are a test agent.",
             )
 
     def test_update_schema_accepts_hyphens(self):

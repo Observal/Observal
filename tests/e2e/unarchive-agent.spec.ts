@@ -22,10 +22,7 @@ test.describe("Agent unarchive", () => {
         description: "Agent to test unarchive flow",
         owner: "admin@demo.example",
         version: "1.0.0",
-        model_name: "claude-sonnet-4-20250514",
-        goal_template: {
-          description: "Test goal",
-          sections: [{ name: "Goal", description: "Test" }],
+        model_name: "claude-sonnet-4-20250514"],
         },
       }),
     });

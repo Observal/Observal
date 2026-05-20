@@ -677,10 +677,6 @@ def _make_agent_yaml(tmp_path: Path, **overrides) -> Path:
         "model_name": "claude-sonnet-4",
         "prompt": "You are helpful.",
         "components": [],
-        "goal_template": {
-            "description": "Goals for test-agent",
-            "sections": [{"name": "default", "description": "Default goal section"}],
-        },
     }
     data.update(overrides)
     yaml_path = tmp_path / "observal-agent.yaml"
@@ -719,8 +715,6 @@ class TestAgentInit:
         assert data["model_name"] == "claude-sonnet-4"
         assert data["prompt"] == "Do helpful things"
         assert data["components"] == []
-        assert data["goal_template"]["description"] == "Goals for my-agent"
-        assert data["goal_template"]["sections"][0]["name"] == "default"
 
     def test_aborts_if_file_exists_and_user_declines(self, tmp_path: Path):
         """If YAML already exists and user says no, exit code != 0."""
