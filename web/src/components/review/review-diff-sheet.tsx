@@ -26,9 +26,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import yaml from "js-yaml";
 import { YamlDiffView } from "./yaml-diff-view";
 import { useAgentVersions, useAgentVersionDetail, useComponentVersions, useComponentVersionDetail, useRegistryItem } from "@/hooks/use-api";
+import { registry } from "@/lib/api";
 import type { RegistryType } from "@/lib/api";
 import type { ReviewItem, ComponentChange } from "@/lib/types";
 
@@ -123,7 +125,29 @@ function toReviewYaml(obj: Record<string, unknown>): string {
 
 const COMPONENT_CONTENT_KEYS = ["template", "skill_md_content", "handler_config", "input_schema", "output_schema", "source_url", "git_url", "config_json", "event", "execution_mode", "task_type", "slash_command"];
 
-function buildCleanYaml(detail: Record<string, unknown>): string {
+// For non-agent component submissions — include all content fields
+const COMPONENT_SNAPSHOT_META = new Set([
+  "id", "listing_id", "download_count", "released_by", "released_at",
+  "created_at", "status", "rejection_reason", "is_prerelease",
+]);
+
+function buildComponentYaml(detail: Record<string, unknown>): string {
+  const obj = Object.fromEntries(
+    Object.entries(detail).filter(([k, v]) =>
+      !COMPONENT_SNAPSHOT_META.has(k) && v !== null && v !== undefined && v !== "" &&
+      !(Array.isArray(v) && (v as unknown[]).length === 0) &&
+      !(typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length === 0)
+    )
+  );
+  try {
+    return yaml.dump(obj, { lineWidth: 120, indent: 2, noRefs: true }).trimEnd();
+  } catch {
+    return JSON.stringify(obj, null, 2);
+  }
+}
+
+
+function buildCleanYaml(detail: Record<string, unknown>, componentDataMap?: Map<string, Record<string, unknown>>): string {
   const comps = (detail.components as Array<Record<string, unknown>> | undefined) ?? [];
   const obj: Record<string, unknown> = {};
   if (detail.version) obj.version = detail.version;
@@ -135,13 +159,16 @@ function buildCleanYaml(detail: Record<string, unknown>): string {
   if (ides?.length) obj.supported_ides = ides;
   if (comps.length) {
     obj.components = comps.map((c) => {
+      const cached = componentDataMap?.get(String(c.component_id ?? "")) as Record<string, unknown> | undefined;
+      const merged = cached ? { ...cached, ...c } : c;
       const entry: Record<string, unknown> = {};
-      if (c.component_type) entry.type = c.component_type;
-      if (c.name) entry.name = c.name;
-      if (c.description) entry.description = c.description;
-      if (c.version) entry.version = c.version;
+      if (merged.component_type) entry.type = merged.component_type;
+      entry.name = merged.name || merged.component_name || c.name || c.component_name || "(pending)";
+      const desc = merged.description ?? merged.component_description;
+      if (desc) entry.description = desc;
+      if (merged.version) entry.version = merged.version;
       for (const k of COMPONENT_CONTENT_KEYS) {
-        if (c[k]) entry[k] = c[k];
+        if (merged[k]) entry[k] = merged[k];
       }
       return entry;
     });
@@ -158,7 +185,7 @@ function buildCleanYaml(detail: Record<string, unknown>): string {
 const CONTENT_KEYS = ["template", "skill_md_content", "handler_config", "input_schema", "output_schema", "source_url", "config_json"] as const;
 const TYPE_MAP: Record<string, string> = { mcp: "mcps", skill: "skills", hook: "hooks", prompt: "prompts", sandbox: "sandboxes" };
 
-function LinkedComponentDetail({ componentType, componentId }: { componentType: string; componentId: string }) {
+function LinkedComponentDetail({ componentType, componentId, onPendingClick, isPending }: { componentType: string; componentId: string; onPendingClick?: (id: string, type: string) => void; isPending?: boolean }) {
   const registryType = (TYPE_MAP[componentType] ?? `${componentType}s`) as import("@/lib/api").RegistryType;
   const { data: item } = useRegistryItem(registryType, componentId);
   const name = item?.name ?? componentType;
@@ -175,7 +202,14 @@ function LinkedComponentDetail({ componentType, componentId }: { componentType: 
     <div className="rounded border border-border overflow-hidden text-xs">
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
         <Badge variant="outline" className="text-[10px] shrink-0">{componentType}</Badge>
-        <Link href={href} className="font-medium hover:underline text-primary">{name}</Link>
+        {isPending && onPendingClick ? (
+          <button type="button" onClick={() => onPendingClick(componentId, componentType)} className="font-medium hover:underline text-amber-500 text-left">
+            {name}
+            <span className="ml-1 text-[9px] opacity-70">(pending)</span>
+          </button>
+        ) : (
+          <Link href={href} className="font-medium hover:underline text-primary">{name}</Link>
+        )}
       </div>
       {description && (
         <p className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border/50">{description}</p>
@@ -196,12 +230,14 @@ function LinkedComponentDetail({ componentType, componentId }: { componentType: 
 }
 
 
+
 interface ReviewDiffSheetProps {
   item: ReviewItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onApprove: (id: string, type?: string) => void;
   onReject: (id: string, reason: string, type?: string) => void;
+  onOpenComponentReview?: (id: string, type: string) => void;
 }
 
 export function ReviewDiffSheet({
@@ -210,6 +246,7 @@ export function ReviewDiffSheet({
   onOpenChange,
   onApprove,
   onReject,
+  onOpenComponentReview,
 }: ReviewDiffSheetProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -221,6 +258,7 @@ export function ReviewDiffSheet({
             onOpenChange={onOpenChange}
             onApprove={onApprove}
             onReject={onReject}
+            onOpenComponentReview={onOpenComponentReview}
           />
         ) : (
           <div className="p-6 space-y-4">
@@ -238,11 +276,13 @@ function DiffDialogBody({
   onOpenChange,
   onApprove,
   onReject,
+  onOpenComponentReview,
 }: {
   item: ReviewItem;
   onOpenChange: (open: boolean) => void;
   onApprove: (id: string, type?: string) => void;
   onReject: (id: string, reason: string, type?: string) => void;
+  onOpenComponentReview?: (id: string, type: string) => void;
 }) {
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -300,32 +340,6 @@ function DiffDialogBody({
 
   const detailLoading = isAgent ? agentDetailLoading : compDetailLoading;
 
-  // Build client-side diff for agents using clean YAML (no UUIDs, no metadata)
-  const agentDiff = useMemo(() => {
-    if (!isAgent || !agentDetail) return null;
-    const curr = buildCleanYaml(agentDetail as unknown as Record<string, unknown>);
-    if (!agentPrevDetail) return null;
-    const prev = buildCleanYaml(agentPrevDetail as unknown as Record<string, unknown>);
-    if (prev === curr) return "";
-    const prevLines = prev.split("\n");
-    const currLines = curr.split("\n");
-    const lines: string[] = [`--- v${previousVersion}`, `+++ v${item.version}`];
-    const hunks: string[] = [];
-    const maxLen = Math.max(prevLines.length, currLines.length);
-    let inHunk = false;
-    for (let i = 0; i < maxLen; i++) {
-      const pl = prevLines[i] ?? "";
-      const cl = currLines[i] ?? "";
-      if (pl !== cl) {
-        if (!inHunk) { hunks.push(`@@ -${i + 1} +${i + 1} @@`); inHunk = true; }
-        if (pl) hunks.push(`-${pl}`);
-        if (cl) hunks.push(`+${cl}`);
-      } else {
-        if (inHunk) { hunks.push(` ${cl}`); inHunk = false; }
-      }
-    }
-    return [...lines, ...hunks].join("\n");
-  }, [isAgent, agentDetail, agentPrevDetail, previousVersion, item.version]);
 
   const bumpType = useMemo(() => {
     if (!previousVersion || !item.version) return null;
@@ -334,8 +348,8 @@ function DiffDialogBody({
 
   const componentDiff = useMemo(() => {
     if (isAgent || !compDetail || !compPrevDetail || !previousVersion) return null;
-    const prev = buildCleanYaml(compPrevDetail as unknown as Record<string, unknown>);
-    const curr = buildCleanYaml(compDetail as unknown as Record<string, unknown>);
+    const prev = buildComponentYaml(compPrevDetail as unknown as Record<string, unknown>);
+    const curr = buildComponentYaml(compDetail as unknown as Record<string, unknown>);
     if (prev === curr) return "";
     const prevLines = prev.split("\n");
     const currLines = curr.split("\n");
@@ -381,7 +395,6 @@ function DiffDialogBody({
   const isLoading = versionsLoading || detailLoading;
 
   const detail = (isAgent ? agentDetail : compDetail) as Record<string, unknown> | undefined;
-  const yamlSnapshot = detail ? buildCleanYaml(detail) : null;
   // Prefer version detail fields over the sparse review item fields
   const prompt = (detail?.prompt as string) || item.prompt || "";
   const modelName = (detail?.model_name as string) || item.model_name || "";
@@ -395,6 +408,46 @@ function DiffDialogBody({
   );
   const supportedIdes = (detail?.supported_ides as string[]) || item.supported_ides || [];
   const components = (detail?.components as { component_type: string; component_id: string; name?: string; template?: string; description?: string; category?: string }[]) || item.components || [];
+  const queryClient = useQueryClient();
+  const componentKey = components.map((c) => c.component_id).join(",");
+  const cachedComponentData = useMemo(() => {
+    const dataMap = new Map<string, Record<string, unknown>>();
+    components.forEach((comp) => {
+      const pluralType = TYPE_MAP[comp.component_type] ?? `${comp.component_type}s`;
+      const cached = queryClient.getQueryData(["registry", pluralType, comp.component_id]);
+      if (cached) dataMap.set(comp.component_id, cached as Record<string, unknown>);
+    });
+    return dataMap;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentKey, queryClient]);
+
+  // Build client-side diff for agents using clean YAML (no UUIDs, no metadata)
+  const agentDiff = useMemo(() => {
+    if (!isAgent || !agentDetail) return null;
+    const curr = buildCleanYaml(agentDetail as unknown as Record<string, unknown>, cachedComponentData);
+    if (!agentPrevDetail) return null;
+    const prev = buildCleanYaml(agentPrevDetail as unknown as Record<string, unknown>, cachedComponentData);
+    if (prev === curr) return "";
+    const prevLines = prev.split("\n");
+    const currLines = curr.split("\n");
+    const lines: string[] = [`--- v${previousVersion}`, `+++ v${item.version}`];
+    const hunks: string[] = [];
+    const maxLen = Math.max(prevLines.length, currLines.length);
+    let inHunk = false;
+    for (let i = 0; i < maxLen; i++) {
+      const pl = prevLines[i] ?? "";
+      const cl = currLines[i] ?? "";
+      if (pl !== cl) {
+        if (!inHunk) { hunks.push(`@@ -${i + 1} +${i + 1} @@`); inHunk = true; }
+        if (pl) hunks.push(`-${pl}`);
+        if (cl) hunks.push(`+${cl}`);
+      } else {
+        if (inHunk) { hunks.push(` ${cl}`); inHunk = false; }
+      }
+    }
+    return [...lines, ...hunks].join("\n");
+  }, [isAgent, agentDetail, agentPrevDetail, previousVersion, item.version]);
+  const yamlSnapshot = detail ? (isAgent ? buildCleanYaml(detail, cachedComponentData) : buildComponentYaml(detail)) : null;
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -627,6 +680,10 @@ function DiffDialogBody({
                           <LinkedComponentDetail
                             componentType={(ch as {component_type?: string; type?: string}).component_type ?? (ch as {type?: string}).type ?? ""}
                             componentId={(ch as {component_id?: string}).component_id ?? ""}
+                            onPendingClick={onOpenComponentReview}
+                            isPending={(item.blocking_components as Array<{component_id: string}> | undefined)?.some(
+                              (b) => b.component_id === (ch as {component_id?: string}).component_id
+                            ) ?? false}
                           />
                         </div>
                       );

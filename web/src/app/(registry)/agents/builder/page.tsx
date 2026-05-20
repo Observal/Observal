@@ -51,6 +51,7 @@ import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 const DRAFT_STORAGE_KEY = "observal_agent_draft";
 
 import { SortableComponentList } from "@/components/builder/sortable-component-list";
+import { SubmitComponentDialog } from "@/components/registry/submit-component-dialog";
 import { ValidationPanel } from "@/components/builder/validation-panel";
 import { PreviewPanel } from "@/components/builder/preview-panel";
 import { ModelPicker } from "@/components/builder/model-picker";
@@ -345,6 +346,14 @@ function AgentBuilderInner() {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [showRestoreBanner, setShowRestoreBanner] = useState(false);
+  // Components created in-builder, held in memory until agent submit
+  const [pendingComponents, setPendingComponents] = useState<Array<{
+    id: string; // local temp id
+    type: RegistryType;
+    name: string;
+    body: Record<string, unknown>;
+  }>>([]);
+  const [createDialogType, setCreateDialogType] = useState<RegistryType | null>(null);
   const saveDraft = useSaveDraft();
   const updateDraft = useUpdateDraft();
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -713,6 +722,26 @@ function AgentBuilderInner() {
 
     setPublishing(true);
     try {
+      // Flush in-memory components to registry first, collect real IDs
+      const flushedIds: { type: RegistryType; id: string; name: string }[] = [];
+      for (const pc of pendingComponents) {
+        const created = await registry.submit(pc.type, pc.body);
+        flushedIds.push({ type: pc.type, id: created.id, name: created.name });
+      }
+      if (flushedIds.length) {
+        // Merge flushed IDs into selectedComponents
+        const next = { ...selectedComponents };
+        for (const { type, id, name } of flushedIds) {
+          const plural = type as string;
+          next[plural] = [...(next[plural] ?? []), { id, name }];
+        }
+        // Update selected components synchronously via ref trick — rebuild body after
+        for (const { type, id, name } of flushedIds) {
+          const plural = type as string;
+          selectedComponents[plural] = [...(selectedComponents[plural] ?? []), { id, name }];
+        }
+        setPendingComponents([]);
+      }
       const body = buildRequestBody();
       if (draftId) {
         await updateDraft.mutateAsync({ id: draftId, body });
@@ -921,6 +950,28 @@ function AgentBuilderInner() {
                       selected={selectedIds}
                       onToggle={handleToggle(ct.value)}
                     />
+                    {/* In-memory components not yet submitted */}
+                    {pendingComponents.filter((p) => p.type === ct.value).map((p) => (
+                      <div key={p.id} className="mt-2 flex items-center gap-2 rounded border border-dashed border-border px-3 py-1.5 text-xs">
+                        <span className="font-medium">{p.name}</span>
+                        <span className="text-muted-foreground italic">not yet submitted</span>
+                        <button
+                          type="button"
+                          className="ml-auto text-muted-foreground hover:text-destructive"
+                          onClick={() => setPendingComponents((prev) => prev.filter((x) => x.id !== p.id))}
+                        >✕</button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setCreateDialogType(ct.value)}
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      Create new {ct.value.replace(/s$/, "")}
+                    </Button>
 
                     {/* Sortable selected list */}
                     {(selectedComponents[ct.value] ?? []).length > 0 && (
@@ -1088,17 +1139,54 @@ function AgentBuilderInner() {
                 description={description}
                 modelName={modelName}
                 selectedComponents={Object.fromEntries(
-                  Object.entries(selectedComponents).map(([k, v]) =>
-                    [k, v.map((item) => ({ id: item.id, name: item.name }))]
-                  ),
+                  Object.entries({
+                    ...Object.fromEntries(
+                      Object.entries(selectedComponents).map(([k, v]) =>
+                        [k, v.map((item) => ({ id: item.id, name: item.name }))]
+                      )
+                    ),
+                    // Merge in-memory pending components so they show in preview
+                    ...pendingComponents.reduce((acc, pc) => {
+                      acc[pc.type as string] = [...(acc[pc.type as string] ?? []), { id: pc.id, name: `${pc.name} (pending)` }];
+                      return acc;
+                    }, {} as Record<string, { id: string; name: string }[]>),
+                  }).map(([k, v]) => [k, v])
                 )}
                 prompt={systemPrompt}
+                pendingComponentBodies={Object.fromEntries(pendingComponents.map((pc) => [pc.id, pc.body]))}
                 validationResult={validationResult}
               />
             </div>
           </aside>
         </div>
       </div>
+
+      {/* Create in-memory component dialog */}
+      {createDialogType && (
+        <SubmitComponentDialog
+          key={createDialogType}
+          open={!!createDialogType}
+          onOpenChange={(v) => { if (!v) setCreateDialogType(null); }}
+          type={createDialogType}
+          editItem={null}
+          onSubmit={(body) => {
+            const tempId = Math.random().toString(36).slice(2);
+            const name = (body.name as string) || createDialogType.replace(/s$/, "");
+            setPendingComponents((prev) => [...prev, { id: tempId, type: createDialogType!, name, body }]);
+            setCreateDialogType(null);
+            toast.success(`${name} added — will be submitted with the agent.`);
+          }}
+          onSaveDraft={(body) => {
+            const tempId = Math.random().toString(36).slice(2);
+            const name = (body.name as string) || createDialogType.replace(/s$/, "");
+            setPendingComponents((prev) => [...prev, { id: tempId, type: createDialogType!, name, body }]);
+            setCreateDialogType(null);
+            toast.success(`${name} added — will be submitted with the agent.`);
+          }}
+          isSubmitting={false}
+          isSavingDraft={false}
+        />
+      )}
 
       {/* Version Bump Dialog — shown when updating an existing agent */}
       <VersionBumpDialog

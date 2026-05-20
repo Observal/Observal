@@ -302,6 +302,7 @@ export interface ReviewItem {
 	mcp_validated?: boolean;
 	validation_results?: McpValidationResult[];
 	components_ready?: boolean;
+	blocking_components?: Array<{ component_id: string; component_type: string; name: string; status: string }>;
 	component_blockers?: {
 		component_type: string;
 		component_id: string;

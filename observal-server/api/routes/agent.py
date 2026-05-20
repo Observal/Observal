@@ -259,6 +259,7 @@ async def create_agent(
         errors = await validate_component_ids(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
             db,
+            require_approved=False,
         )
         if errors:
             raise HTTPException(
@@ -769,6 +770,7 @@ async def update_agent(
         errors = await validate_component_ids(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
             db,
+            require_approved=False,
         )
         if errors:
             raise HTTPException(
@@ -1173,6 +1175,7 @@ async def validate_agent_composition(
     errors = await validate_component_ids(
         [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
         db,
+        require_approved=False,
     )
     issues = [
         ValidationIssue(
@@ -1651,6 +1654,7 @@ async def submit_draft(
         errors = await validate_component_ids(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in agent.components],
             db,
+            require_approved=False,
         )
         if errors:
             raise HTTPException(
