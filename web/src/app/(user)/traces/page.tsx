@@ -91,9 +91,14 @@ function fmtCredits(c: number | string | undefined | null): string | null {
 	return num < 0.01 ? num.toFixed(4) : num.toFixed(2);
 }
 
+const TS_UPPER_BOUND_MS = new Date("2099-01-01").getTime();
+
 function fmtDuration(first?: string, last?: string): string {
 	if (!first || !last) return "\u2013";
-	const ms = toDate(last).getTime() - toDate(first).getTime();
+	const t1 = toDate(first).getTime();
+	const t2 = toDate(last).getTime();
+	if (t1 >= TS_UPPER_BOUND_MS || t2 >= TS_UPPER_BOUND_MS) return "\u2013";
+	const ms = t2 - t1;
 	if (ms < 0) return "\u2013";
 	const mins = Math.floor(ms / 60_000);
 	const hours = Math.floor(mins / 60);
@@ -208,6 +213,7 @@ const columns: ColumnDef<Session>[] = [
 					);
 				}
 				const count = r.prompt_count ?? 0;
+				if (count === 0) return <span className="text-[13px] text-muted-foreground">{"\u2013"}</span>;
 				return (
 					<span className="text-[13px] text-muted-foreground">
 						{count} prompt{count !== 1 ? "s" : ""}

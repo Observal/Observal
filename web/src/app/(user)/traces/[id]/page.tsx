@@ -2060,10 +2060,11 @@ function isCopilotCliService(serviceName: string, sessionId: string): boolean {
 		sessionId.startsWith("copilot-cli-")
 	);
 }
-/** Unix epoch sentinel: timestamps at/before 1971 are placeholders with no real time. */
+/** Unix epoch sentinel: timestamps at/before 1971 or after 2099 are placeholders. */
 const EPOCH_CUTOFF_MS = new Date("1971-01-01").getTime();
+const TS_UPPER_BOUND_MS = new Date("2099-01-01").getTime();
 const isRealTs = (ts: string | undefined): ts is string =>
-	!!ts && new Date(ts).getTime() > EPOCH_CUTOFF_MS;
+	!!ts && new Date(ts).getTime() > EPOCH_CUTOFF_MS && new Date(ts).getTime() < TS_UPPER_BOUND_MS;
 
 function SessionInfoTab({
 	events,
