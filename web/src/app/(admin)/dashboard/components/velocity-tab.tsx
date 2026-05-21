@@ -5,7 +5,7 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line,
 } from "recharts";
-import { useExecVelocity, useExecTopAgents } from "@/hooks/use-api";
+import { useExecVelocity, useExecTopAgents, useExecTimeToValue } from "@/hooks/use-api";
 import { StatCard } from "./stat-card";
 
 function Sparkline({ data }: { data: number[] }) {
@@ -124,6 +124,66 @@ export function VelocityTab() {
           </table>
         )}
       </div>
+
+      {/* Time to Value */}
+      <TimeToValue />
+    </div>
+  );
+}
+
+function TimeToValue() {
+  const { data, isLoading } = useExecTimeToValue();
+
+  if (isLoading) {
+    return <div className="h-40 rounded-lg border border-border animate-pulse bg-muted/30" />;
+  }
+
+  if (!data || data.agents.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="p-4 border-b border-border flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-medium">Time to Value</h3>
+          <p className="text-xs text-muted-foreground">Days from deployment to reaching 100 sessions</p>
+        </div>
+        {data.avg_days_to_100 !== null && (
+          <div className="text-right">
+            <p className="text-lg font-bold tabular-nums">{data.avg_days_to_100} days</p>
+            <p className="text-[11px] text-muted-foreground">avg time to 100 sessions</p>
+          </div>
+        )}
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border bg-muted/30">
+            <th className="text-left p-3 font-medium">Agent</th>
+            <th className="text-left p-3 font-medium">Category</th>
+            <th className="text-left p-3 font-medium">Deployed</th>
+            <th className="text-left p-3 font-medium">Days to 100</th>
+            <th className="text-left p-3 font-medium">Sessions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.agents.slice(0, 10).map((agent) => (
+            <tr key={agent.id} className="border-b border-border last:border-0">
+              <td className="p-3 font-medium">{agent.name}</td>
+              <td className="p-3 text-muted-foreground">{agent.category}</td>
+              <td className="p-3 tabular-nums text-xs text-muted-foreground">{agent.created_at}</td>
+              <td className="p-3 tabular-nums">
+                {agent.days_to_100 !== null ? (
+                  <span className={agent.days_to_100 <= 7 ? "text-green-600 font-semibold" : agent.days_to_100 <= 30 ? "text-foreground" : "text-orange-500"}>
+                    {agent.days_to_100}d
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+              <td className="p-3 tabular-nums">{agent.current_sessions.toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

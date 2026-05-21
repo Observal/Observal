@@ -1558,3 +1558,257 @@ async def get_developer_breakdown(
         top_20_value_pct=top_20_value_pct,
         developers=developers,
     )
+
+
+# ---------------------------------------------------------------------------
+# Inactivity / Churn Alerts
+# ---------------------------------------------------------------------------
+
+
+class InactiveAgentItem(BaseModel):
+    id: str
+    name: str
+    category: str
+    last_session_days_ago: int
+    previous_sessions: int
+
+
+class InactiveUserItem(BaseModel):
+    user_id: str
+    name: str
+    department: str
+    last_session_days_ago: int
+    previous_sessions: int
+
+
+class InactivityAlertsResponse(BaseModel):
+    inactive_agents: list[InactiveAgentItem]
+    inactive_users: list[InactiveUserItem]
+
+
+@router.get("/inactivity-alerts", response_model=InactivityAlertsResponse)
+async def get_inactivity_alerts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Agents and users that were active in days 15-28 but inactive in last 14 days."""
+    org_id = current_user.org_id
+
+    # Agents active 15-28 days ago but NOT in last 14 days
+    prev_agent_rows = await _ch_json_scoped(
+        "SELECT agent_id, count() AS sessions "
+        "FROM traces FINAL WHERE project_id = 'default' AND is_deleted = 0 "
+        "AND agent_id != '' "
+        "AND start_time >= now() - INTERVAL 28 DAY "
+        "AND start_time < now() - INTERVAL 14 DAY "
+        "GROUP BY agent_id HAVING sessions >= 5",
+        current_user,
+    )
+
+    recent_agent_rows = await _ch_json_scoped(
+        "SELECT agent_id "
+        "FROM traces FINAL WHERE project_id = 'default' AND is_deleted = 0 "
+        "AND agent_id != '' "
+        "AND start_time >= now() - INTERVAL 14 DAY "
+        "GROUP BY agent_id",
+        current_user,
+    )
+    recently_active_agents = {r["agent_id"] for r in recent_agent_rows}
+
+    churned_agent_ids = [
+        r for r in prev_agent_rows if r["agent_id"] not in recently_active_agents
+    ]
+
+    # Resolve agent names
+    import uuid as _uuid
+
+    agent_ids_to_resolve = []
+    for r in churned_agent_ids:
+        try:
+            agent_ids_to_resolve.append(_uuid.UUID(r["agent_id"]))
+        except (ValueError, AttributeError):
+            pass
+
+    agent_info: dict[str, tuple[str, str]] = {}
+    if agent_ids_to_resolve:
+        info_stmt = select(Agent.id, Agent.name, Agent.category)
+        if org_id:
+            info_stmt = info_stmt.where(Agent.owner_org_id == org_id)
+        info_stmt = info_stmt.where(Agent.id.in_(agent_ids_to_resolve))
+        rows = (await db.execute(info_stmt)).all()
+        agent_info = {str(r.id): (r.name, r.category or "Uncategorized") for r in rows}
+
+    inactive_agents = []
+    for r in churned_agent_ids[:10]:
+        aid = r["agent_id"]
+        if aid in {str(k) for k in agent_ids_to_resolve} and aid in agent_info:
+            name, category = agent_info[aid]
+            inactive_agents.append(InactiveAgentItem(
+                id=aid,
+                name=name,
+                category=category,
+                last_session_days_ago=14,
+                previous_sessions=int(r["sessions"]),
+            ))
+
+    # Users active 15-28 days ago but NOT in last 14 days
+    prev_user_rows = await _ch_json_scoped(
+        "SELECT user_id, count() AS sessions "
+        "FROM traces FINAL WHERE project_id = 'default' AND is_deleted = 0 "
+        "AND start_time >= now() - INTERVAL 28 DAY "
+        "AND start_time < now() - INTERVAL 14 DAY "
+        "GROUP BY user_id HAVING sessions >= 5",
+        current_user,
+    )
+
+    recent_user_rows = await _ch_json_scoped(
+        "SELECT user_id "
+        "FROM traces FINAL WHERE project_id = 'default' AND is_deleted = 0 "
+        "AND start_time >= now() - INTERVAL 14 DAY "
+        "GROUP BY user_id",
+        current_user,
+    )
+    recently_active_users = {r["user_id"] for r in recent_user_rows}
+
+    churned_users = [
+        r for r in prev_user_rows if r["user_id"] not in recently_active_users
+    ]
+
+    # Resolve user names + departments
+    dept_map = await resolve_user_departments(db, org_id)
+    uid_to_dept: dict[str, str] = {}
+    for dept_name, uids in dept_map.items():
+        for uid in uids:
+            uid_to_dept[uid] = dept_name
+
+    user_ids_to_resolve = []
+    for r in churned_users[:10]:
+        try:
+            user_ids_to_resolve.append(_uuid.UUID(r["user_id"]))
+        except (ValueError, AttributeError):
+            pass
+
+    user_names: dict[str, str] = {}
+    if user_ids_to_resolve:
+        rows = (await db.execute(select(User.id, User.name).where(User.id.in_(user_ids_to_resolve)))).all()
+        user_names = {str(r.id): r.name for r in rows}
+
+    inactive_users = []
+    for r in churned_users[:10]:
+        uid = r["user_id"]
+        name = user_names.get(uid, "Unknown")
+        dept = uid_to_dept.get(uid, "Unassigned")
+        inactive_users.append(InactiveUserItem(
+            user_id=uid,
+            name=name,
+            department=dept,
+            last_session_days_ago=14,
+            previous_sessions=int(r["sessions"]),
+        ))
+
+    return InactivityAlertsResponse(
+        inactive_agents=inactive_agents,
+        inactive_users=inactive_users,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Time to Value
+# ---------------------------------------------------------------------------
+
+
+class TimeToValueItem(BaseModel):
+    id: str
+    name: str
+    category: str
+    created_at: str
+    days_to_100: int | None
+    current_sessions: int
+
+
+class TimeToValueResponse(BaseModel):
+    agents: list[TimeToValueItem]
+    avg_days_to_100: float | None
+
+
+@router.get("/time-to-value", response_model=TimeToValueResponse)
+async def get_time_to_value(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Days from agent deployment to reaching 100 sessions."""
+    org_id = current_user.org_id
+
+    # Get all agents with their created_at
+    agent_stmt = select(Agent.id, Agent.name, Agent.category, Agent.created_at)
+    if org_id:
+        agent_stmt = agent_stmt.where(Agent.owner_org_id == org_id)
+    agent_rows = (await db.execute(agent_stmt)).all()
+
+    if not agent_rows:
+        return TimeToValueResponse(agents=[], avg_days_to_100=None)
+
+    # Get cumulative session counts per agent per day
+    session_rows = await _ch_json_scoped(
+        "SELECT agent_id, min(start_time) AS first_session, count() AS total_sessions "
+        "FROM traces FINAL WHERE project_id = 'default' AND is_deleted = 0 "
+        "AND agent_id != '' "
+        "GROUP BY agent_id",
+        current_user,
+    )
+    session_map: dict[str, dict] = {
+        r["agent_id"]: {"first_session": r["first_session"], "total": int(r["total_sessions"])}
+        for r in session_rows
+    }
+
+    # For agents with >=100 sessions, find when they hit 100
+    agents_over_100 = [aid for aid, data in session_map.items() if data["total"] >= 100]
+    day_100_map: dict[str, str] = {}
+    if agents_over_100:
+        # Get the date of the 100th session for each agent
+        milestone_rows = await _ch_json_scoped(
+            "SELECT agent_id, start_time "
+            "FROM ("
+            "  SELECT agent_id, start_time, "
+            "    row_number() OVER (PARTITION BY agent_id ORDER BY start_time) AS rn "
+            "  FROM traces FINAL WHERE project_id = 'default' AND is_deleted = 0 "
+            "  AND agent_id IN ({aids:String})"
+            ") WHERE rn = 100",
+            current_user,
+            {"param_aids": ",".join(f"'{a}'" for a in agents_over_100[:20])},
+        )
+        for r in milestone_rows:
+            day_100_map[r["agent_id"]] = r["start_time"]
+
+    import datetime as _dt
+
+    items = []
+    days_list = []
+    for agent in agent_rows:
+        aid = str(agent.id)
+        data = session_map.get(aid)
+        current_sessions = data["total"] if data else 0
+
+        days_to_100: int | None = None
+        if aid in day_100_map and agent.created_at:
+            try:
+                milestone_dt = _dt.datetime.fromisoformat(str(day_100_map[aid]).replace("Z", "+00:00"))
+                created = agent.created_at if agent.created_at.tzinfo else agent.created_at.replace(tzinfo=_dt.timezone.utc)
+                days_to_100 = max(0, (milestone_dt - created).days)
+                days_list.append(days_to_100)
+            except (ValueError, TypeError):
+                pass
+
+        items.append(TimeToValueItem(
+            id=aid,
+            name=agent.name,
+            category=agent.category or "Uncategorized",
+            created_at=str(agent.created_at)[:10] if agent.created_at else "",
+            days_to_100=days_to_100,
+            current_sessions=current_sessions,
+        ))
+
+    items.sort(key=lambda x: x.current_sessions, reverse=True)
+    avg_days = round(sum(days_list) / len(days_list), 1) if days_list else None
+
+    return TimeToValueResponse(agents=items[:20], avg_days_to_100=avg_days)

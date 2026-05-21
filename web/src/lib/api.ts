@@ -63,6 +63,8 @@ import type {
   ExecROIProjectionsResponse,
   ExecStrategicInsightsResponse,
   ExecDeveloperBreakdown,
+  ExecInactivityAlerts,
+  ExecTimeToValueResponse,
 } from "./types";
 
 const API = "/api/v1";
@@ -684,6 +686,8 @@ export const exec = {
   roiProjections: () => get<ExecROIProjectionsResponse>("/exec/roi-projections"),
   strategicInsights: () => get<ExecStrategicInsightsResponse>("/exec/strategic-insights"),
   developerBreakdown: (limit?: number) => get<ExecDeveloperBreakdown>(`/exec/developer-breakdown${limit ? `?limit=${limit}` : ""}`),
+  inactivityAlerts: () => get<ExecInactivityAlerts>("/exec/inactivity-alerts"),
+  timeToValue: () => get<ExecTimeToValueResponse>("/exec/time-to-value"),
   config: () => get<ExecConfig | null>("/exec/config"),
   updateConfig: (data: Partial<ExecConfig>) => put<ExecConfig>("/exec/config", data),
 };

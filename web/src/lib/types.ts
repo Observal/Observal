@@ -954,3 +954,38 @@ export interface ExecDeveloperBreakdown {
 	top_20_value_pct: number;
 	developers: ExecDeveloperItem[];
 }
+
+export interface ExecInactiveAgent {
+	id: string;
+	name: string;
+	category: string;
+	last_session_days_ago: number;
+	previous_sessions: number;
+}
+
+export interface ExecInactiveUser {
+	user_id: string;
+	name: string;
+	department: string;
+	last_session_days_ago: number;
+	previous_sessions: number;
+}
+
+export interface ExecInactivityAlerts {
+	inactive_agents: ExecInactiveAgent[];
+	inactive_users: ExecInactiveUser[];
+}
+
+export interface ExecTimeToValueItem {
+	id: string;
+	name: string;
+	category: string;
+	created_at: string;
+	days_to_100: number | null;
+	current_sessions: number;
+}
+
+export interface ExecTimeToValueResponse {
+	agents: ExecTimeToValueItem[];
+	avg_days_to_100: number | null;
+}

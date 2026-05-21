@@ -1118,3 +1118,11 @@ export function useExecStrategicInsights() {
 export function useExecDeveloperBreakdown(limit?: number) {
   return useQuery({ queryKey: ["exec", "developer-breakdown", limit], queryFn: () => exec.developerBreakdown(limit) });
 }
+
+export function useExecInactivityAlerts() {
+  return useQuery({ queryKey: ["exec", "inactivity-alerts"], queryFn: exec.inactivityAlerts });
+}
+
+export function useExecTimeToValue() {
+  return useQuery({ queryKey: ["exec", "time-to-value"], queryFn: exec.timeToValue });
+}

@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useExecStrategicInsights, useExecDeveloperBreakdown, useRegistryList, useInsightReports, useGenerateInsight } from "@/hooks/use-api";
+import { useExecStrategicInsights, useExecDeveloperBreakdown, useExecInactivityAlerts, useRegistryList, useInsightReports, useGenerateInsight } from "@/hooks/use-api";
 import type { RegistryItem, InsightReportListItem } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "./stat-card";
@@ -212,6 +212,9 @@ function StrategicInsights() {
 
       {/* Developer Breakdown */}
       <DeveloperBreakdown />
+
+      {/* Inactivity Alerts */}
+      <InactivityAlerts />
     </div>
   );
 }
@@ -274,6 +277,65 @@ function DeveloperBreakdown() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function InactivityAlerts() {
+  const { data, isLoading } = useExecInactivityAlerts();
+
+  if (isLoading) {
+    return <div className="h-32 rounded-lg border border-border animate-pulse bg-muted/30" />;
+  }
+
+  const agents = data?.inactive_agents ?? [];
+  const users = data?.inactive_users ?? [];
+
+  if (agents.length === 0 && users.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <AlertTriangle className="h-4 w-4 text-orange-400" />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-orange-400">Churn Risk</span>
+      </div>
+      <h3 className="text-sm font-semibold mb-4">
+        Recently inactive — were active 2-4 weeks ago, silent in last 14 days
+      </h3>
+
+      {agents.length > 0 && (
+        <div className="mb-4">
+          <p className="text-xs font-medium text-muted-foreground mb-2">Agents ({agents.length})</p>
+          <div className="space-y-1.5">
+            {agents.map((a) => (
+              <div key={a.id} className="flex items-center justify-between text-sm p-2 rounded-md bg-muted/20">
+                <div>
+                  <span className="font-medium">{a.name}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{a.category}</span>
+                </div>
+                <span className="text-xs text-muted-foreground">{a.previous_sessions} sessions before going silent</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {users.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-2">Users ({users.length})</p>
+          <div className="space-y-1.5">
+            {users.map((u) => (
+              <div key={u.user_id} className="flex items-center justify-between text-sm p-2 rounded-md bg-muted/20">
+                <div>
+                  <span className="font-medium">{u.name}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{u.department}</span>
+                </div>
+                <span className="text-xs text-muted-foreground">{u.previous_sessions} sessions before going silent</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
