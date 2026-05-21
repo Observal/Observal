@@ -203,7 +203,7 @@ services:
   observal-lb:
     image: nginx:alpine
     ports:
-      - "${API_HOST_PORT:-8000}:80"
+      - "${LB_HOST_PORT:-80}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
