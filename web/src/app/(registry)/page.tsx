@@ -5,6 +5,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
   Search,
@@ -37,6 +38,7 @@ import { CardSkeleton, TableSkeleton } from "@/components/shared/skeleton-layout
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { compactNumber } from "@/lib/utils";
+import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import type { LeaderboardWindow, TopAgentItem, RegistryItem } from "@/lib/types";
 
 export default function RegistryHome() {
@@ -56,6 +58,7 @@ export default function RegistryHome() {
   const { data: stats } = useOverviewStats();
   const { data: leaderboard, isLoading: leaderboardLoading } =
     useLeaderboard(leaderboardWindow, 10);
+  const { brandingAppName, brandingWordmark } = useDeploymentConfig();
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -91,9 +94,13 @@ export default function RegistryHome() {
         {/* Hero section */}
         <section className="animate-in space-y-6 pt-2">
           <div className="space-y-3 max-w-2xl">
-            <h1 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-foreground">
-              Observal
-            </h1>
+            {brandingWordmark ? (
+              <Image src={brandingWordmark} alt={brandingAppName || "Observal"} width={224} height={32} className="h-8 max-w-56 object-contain object-left" unoptimized />
+            ) : (
+              <h1 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-foreground">
+                {brandingAppName || "Observal"}
+              </h1>
+            )}
             <p className="text-base text-muted-foreground leading-relaxed max-w-lg">
               The open registry for AI agents. Browse, install, and evaluate
               agents across your team.

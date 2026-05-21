@@ -4,10 +4,12 @@
 "use client";
 
 import { Suspense, useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "@/lib/api";
+import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +21,7 @@ function DeviceContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const { brandingAppName, brandingLogo, brandingWordmark } = useDeploymentConfig();
 
   const formatCode = useCallback((raw: string): string => {
     const stripped = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
@@ -86,9 +89,18 @@ function DeviceContent() {
         <div className="rounded-lg border bg-card shadow-sm">
           {/* Brand header */}
           <div className="flex flex-col items-center gap-2 border-b px-8 pb-6 pt-8 animate-in">
-            <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
-              Observal
-            </h1>
+            {brandingLogo ? (
+              <Image src={brandingLogo} alt="" width={32} height={32} className="object-contain" unoptimized />
+            ) : (
+              <Image src="/observal-logo.svg" alt="" width={32} height={32} className="object-contain" />
+            )}
+            {brandingWordmark ? (
+              <Image src={brandingWordmark} alt={brandingAppName || "Observal"} width={192} height={24} className="h-6 max-w-48 object-contain" unoptimized />
+            ) : (
+              <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
+                {brandingAppName || "Observal"}
+              </h1>
+            )}
             <p className="text-sm text-muted-foreground">
               Authorize Device
             </p>

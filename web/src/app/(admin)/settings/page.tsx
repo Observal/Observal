@@ -6,6 +6,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import Image from "next/image";
 import { Settings, Plus, Pencil, Trash2, Save, X, Loader2, Info, Database, Activity, BookOpen, Shield, HelpCircle, Eye, Upload, RotateCcw, Palette, AlertTriangle, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -473,7 +474,7 @@ export default function SettingsPage() {
                   onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImageFile(f, setLogoOverride); }}
                 >
                   {logoPreview ? (
-                    <img src={logoPreview} alt="Icon" className="w-8 h-8 object-contain" />
+                    <Image src={logoPreview} alt="Icon" width={32} height={32} className="object-contain" unoptimized />
                   ) : (
                     <Upload className="h-4 w-4 text-muted-foreground" />
                   )}
@@ -494,7 +495,7 @@ export default function SettingsPage() {
                   onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImageFile(f, setWordmarkOverride); }}
                 >
                   {wordmarkPreview ? (
-                    <img src={wordmarkPreview} alt="Wordmark" className="h-6 max-w-24 object-contain" />
+                    <Image src={wordmarkPreview} alt="Wordmark" width={96} height={24} className="h-6 max-w-24 object-contain" unoptimized />
                   ) : (
                     <Upload className="h-4 w-4 text-muted-foreground" />
                   )}
@@ -523,13 +524,13 @@ export default function SettingsPage() {
               <div className="rounded bg-sidebar px-3 py-2 inline-flex items-center gap-2">
                 <div className="flex size-8 shrink-0 items-center justify-center">
                   {logoPreview ? (
-                    <img src={logoPreview} alt="" className="w-5 h-5 object-contain" />
+                    <Image src={logoPreview} alt="" width={20} height={20} className="object-contain" unoptimized />
                   ) : (
-                    <img src="/favicon.ico" alt="" className="w-5 h-5" />
+                    <Image src="/observal-logo.svg" alt="" width={20} height={20} className="object-contain" />
                   )}
                 </div>
                 {wordmarkPreview ? (
-                  <img src={wordmarkPreview} alt="" className="h-4 max-w-35 object-contain object-left" />
+                  <Image src={wordmarkPreview} alt="" width={140} height={16} className="h-4 max-w-35 object-contain object-left" unoptimized />
                 ) : (
                   <span className="text-sm font-semibold tracking-tight font-display text-sidebar-foreground truncate max-w-35">
                     {appNameDraft.trim() || "Observal"}

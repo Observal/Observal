@@ -8,6 +8,7 @@
 "use client";
 
 import { Suspense, useState, useEffect } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -20,7 +21,7 @@ import { Label } from "@/components/ui/label";
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { ssoEnabled, ssoOnly, samlEnabled } = useDeploymentConfig();
+  const { ssoEnabled, ssoOnly, samlEnabled, brandingAppName, brandingLogo, brandingWordmark } = useDeploymentConfig();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -167,9 +168,18 @@ function LoginContent() {
         <div className="w-full max-w-md">
           <div className="rounded-lg border bg-card shadow-sm">
             <div className="flex flex-col items-center gap-2 border-b px-8 pb-6 pt-8 animate-in">
-              <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
-                Observal
-              </h1>
+              {brandingLogo ? (
+                <Image src={brandingLogo} alt="" width={32} height={32} className="object-contain" unoptimized />
+              ) : (
+                <Image src="/observal-logo.svg" alt="" width={32} height={32} className="object-contain" />
+              )}
+              {brandingWordmark ? (
+                <Image src={brandingWordmark} alt={brandingAppName || "Observal"} width={192} height={24} className="h-6 max-w-48 object-contain" unoptimized />
+              ) : (
+                <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
+                  {brandingAppName || "Observal"}
+                </h1>
+              )}
               <p className="text-sm text-muted-foreground">
                 You must change your password before continuing
               </p>
@@ -247,9 +257,18 @@ function LoginContent() {
       <div className="w-full max-w-md">
         <div className="rounded-lg border bg-card shadow-sm">
           <div className="flex flex-col items-center gap-2 border-b px-8 pb-6 pt-8 animate-in">
-            <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
-              Observal
-            </h1>
+            {brandingLogo ? (
+              <Image src={brandingLogo} alt="" width={32} height={32} className="object-contain" unoptimized />
+            ) : (
+              <Image src="/observal-logo.svg" alt="" width={32} height={32} className="object-contain" />
+            )}
+            {brandingWordmark ? (
+              <Image src={brandingWordmark} alt={brandingAppName || "Observal"} width={192} height={24} className="h-6 max-w-48 object-contain" unoptimized />
+            ) : (
+              <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-display)]">
+                {brandingAppName || "Observal"}
+              </h1>
+            )}
             <p className="text-sm text-muted-foreground">
               Sign in to your account
             </p>
