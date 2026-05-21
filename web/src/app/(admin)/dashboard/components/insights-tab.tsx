@@ -4,12 +4,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useExecStrategicInsights, useRegistryList, useInsightReports, useGenerateInsight } from "@/hooks/use-api";
+import { useExecStrategicInsights, useExecDeveloperBreakdown, useRegistryList, useInsightReports, useGenerateInsight } from "@/hooks/use-api";
 import type { RegistryItem, InsightReportListItem } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "./stat-card";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { AlertTriangle, TrendingUp, Zap, Users, Cpu, FileText, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, TrendingUp, Zap, Users, Cpu, FileText, Loader2, Sparkles, Crown } from "lucide-react";
 
 const effortColors: Record<string, { bg: string; text: string; label: string }> = {
   low: { bg: "bg-emerald-500/10", text: "text-emerald-500", label: "Quick Win" },
@@ -209,6 +209,71 @@ function StrategicInsights() {
           </p>
         </div>
       )}
+
+      {/* Developer Breakdown */}
+      <DeveloperBreakdown />
+    </div>
+  );
+}
+
+function DeveloperBreakdown() {
+  const { data, isLoading } = useExecDeveloperBreakdown(20);
+
+  if (isLoading) {
+    return <div className="h-48 rounded-lg border border-border animate-pulse bg-muted/30" />;
+  }
+
+  if (!data || data.active_developers === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Crown className="h-4 w-4 text-amber-400" />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-400">Developer Activity</span>
+      </div>
+      <h3 className="text-sm font-semibold mb-1">
+        {data.active_developers} active developers — top 20% drive {data.top_20_value_pct}% of value
+      </h3>
+      <p className="text-xs text-muted-foreground mb-4">
+        {data.total_developers} total developers in org, {data.active_developers} active in the last 30 days.
+      </p>
+
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/30">
+              <th className="text-left p-2.5 font-medium text-xs">#</th>
+              <th className="text-left p-2.5 font-medium text-xs">Developer</th>
+              <th className="text-left p-2.5 font-medium text-xs">Department</th>
+              <th className="text-left p-2.5 font-medium text-xs">Sessions</th>
+              <th className="text-left p-2.5 font-medium text-xs">Tokens</th>
+              <th className="text-left p-2.5 font-medium text-xs">Cost</th>
+              <th className="text-left p-2.5 font-medium text-xs">Percentile</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.developers.map((dev, i) => (
+              <tr key={dev.user_id} className="border-b border-border last:border-0">
+                <td className="p-2.5 text-muted-foreground font-mono text-xs">{i + 1}</td>
+                <td className="p-2.5 font-medium">{dev.name}</td>
+                <td className="p-2.5 text-muted-foreground">{dev.department}</td>
+                <td className="p-2.5 tabular-nums">{dev.sessions.toLocaleString()}</td>
+                <td className="p-2.5 tabular-nums text-xs">{(dev.tokens_consumed / 1000).toFixed(0)}K</td>
+                <td className="p-2.5 tabular-nums text-xs font-mono">${dev.cost.toFixed(3)}</td>
+                <td className="p-2.5">
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    dev.percentile >= 80 ? "bg-emerald-500/10 text-emerald-500" :
+                    dev.percentile >= 50 ? "bg-blue-500/10 text-blue-500" :
+                    "bg-muted text-muted-foreground"
+                  }`}>
+                    Top {100 - dev.percentile}%
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -7,8 +7,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from "recharts";
-import { useExecPlatforms } from "@/hooks/use-api";
-import type { ExecPlatformScore } from "@/lib/types";
+import { useExecPlatforms, useExecStrategicInsights } from "@/hooks/use-api";
+import type { ExecPlatformScore, ExecModelComparison } from "@/lib/types";
 
 const COLORS = ["#2563eb", "#7c3aed", "#0d9488", "#f59e0b", "#e11d48", "#6366f1", "#84cc16"];
 
@@ -178,6 +178,115 @@ export function InvestmentsTab() {
                 <td className="p-3 tabular-nums font-mono text-xs">${p.avg_cost.toFixed(3)}</td>
                 <td className="p-3 tabular-nums">{p.success_rate}%</td>
                 <td className="p-3 tabular-nums">{p.avg_latency_ms.toFixed(0)}ms</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Model Provider Comparison */}
+      <ModelComparison />
+    </div>
+  );
+}
+
+function ModelComparison() {
+  const { data: insights } = useExecStrategicInsights();
+  const [selectedModel, setSelectedModel] = useState(0);
+
+  const models = insights?.model_comparison ?? [];
+
+  if (models.length === 0) return null;
+
+  const model = models[selectedModel];
+  const maxSessions = Math.max(...models.map((m) => m.sessions)) || 1;
+
+  const radarData = [
+    { metric: "Success Rate", value: model?.success_rate ?? 0 },
+    { metric: "Cost Efficiency", value: model ? Math.max(0, 100 - (model.avg_cost * 2000)) : 0 },
+    { metric: "Token Efficiency", value: model ? Math.max(0, 100 - (model.avg_tokens / 100)) : 0 },
+    { metric: "Volume", value: model ? (model.sessions / maxSessions) * 100 : 0 },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="text-sm font-medium mb-1">Model Provider Comparison</h3>
+        <p className="text-xs text-muted-foreground mb-4">Performance and cost by AI model (from actual usage)</p>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Model list */}
+          <div className="space-y-2">
+            {models.slice(0, 8).map((m, i) => (
+              <div
+                key={m.model}
+                onClick={() => setSelectedModel(i)}
+                className={`flex items-center justify-between p-3 rounded-md border cursor-pointer transition-colors ${
+                  i === selectedModel ? "border-primary bg-primary/5" : "border-border hover:bg-muted/20"
+                }`}
+              >
+                <div>
+                  <p className="text-sm font-medium">{m.model}</p>
+                  <p className="text-[11px] text-muted-foreground">{m.best_at}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold tabular-nums">${m.avg_cost.toFixed(4)}</p>
+                  <p className="text-[11px] text-muted-foreground">{m.success_rate}% · {m.sessions} sessions</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Radar for selected model */}
+          <div>
+            <ResponsiveContainer width="100%" height={260}>
+              <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
+                <PolarGrid className="stroke-border" />
+                <PolarAngleAxis dataKey="metric" className="text-xs" />
+                <PolarRadiusAxis domain={[0, 100]} className="text-xs" />
+                <Radar
+                  dataKey="value"
+                  stroke={COLORS[selectedModel % COLORS.length]}
+                  fill={COLORS[selectedModel % COLORS.length]}
+                  fillOpacity={0.15}
+                  strokeWidth={2}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+            <div className="text-center mt-2">
+              <p className="text-sm font-semibold">{model?.model}</p>
+              <p className="text-xs text-muted-foreground">{model?.avg_tokens.toLocaleString()} avg tokens/session</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Model comparison table */}
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/30">
+              <th className="text-left p-3 font-medium">Model</th>
+              <th className="text-left p-3 font-medium">Sessions</th>
+              <th className="text-left p-3 font-medium">Avg Cost</th>
+              <th className="text-left p-3 font-medium">Avg Tokens</th>
+              <th className="text-left p-3 font-medium">Success Rate</th>
+              <th className="text-left p-3 font-medium">Best For</th>
+            </tr>
+          </thead>
+          <tbody>
+            {models.map((m, i) => (
+              <tr
+                key={m.model}
+                className={`border-b border-border cursor-pointer hover:bg-muted/20 ${i === selectedModel ? "bg-muted/40" : ""}`}
+                onClick={() => setSelectedModel(i)}
+              >
+                <td className="p-3 font-medium">{m.model}</td>
+                <td className="p-3 tabular-nums">{m.sessions.toLocaleString()}</td>
+                <td className="p-3 tabular-nums font-mono text-xs">${m.avg_cost.toFixed(4)}</td>
+                <td className="p-3 tabular-nums">{m.avg_tokens.toLocaleString()}</td>
+                <td className="p-3 tabular-nums">{m.success_rate}%</td>
+                <td className="p-3 text-xs text-muted-foreground">{m.best_at}</td>
               </tr>
             ))}
           </tbody>

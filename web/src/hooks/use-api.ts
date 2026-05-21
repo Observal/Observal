@@ -1114,3 +1114,7 @@ export function useExecROIProjections() {
 export function useExecStrategicInsights() {
   return useQuery({ queryKey: ["exec", "strategic-insights"], queryFn: exec.strategicInsights });
 }
+
+export function useExecDeveloperBreakdown(limit?: number) {
+  return useQuery({ queryKey: ["exec", "developer-breakdown", limit], queryFn: () => exec.developerBreakdown(limit) });
+}

@@ -1449,3 +1449,112 @@ async def get_strategic_insights(
         total_active_users=total_active,
         automatable_pct=automatable_pct,
     )
+
+
+# ---------------------------------------------------------------------------
+# Developer Breakdown
+# ---------------------------------------------------------------------------
+
+
+class DeveloperActivityItem(BaseModel):
+    user_id: str
+    name: str
+    department: str
+    sessions: int
+    tokens_consumed: int
+    cost: float
+    percentile: int
+
+
+class DeveloperBreakdownResponse(BaseModel):
+    total_developers: int
+    active_developers: int
+    top_20_value_pct: float
+    developers: list[DeveloperActivityItem]
+
+
+@router.get("/developer-breakdown", response_model=DeveloperBreakdownResponse)
+async def get_developer_breakdown(
+    limit: int = Query(20, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Per-developer activity breakdown with percentile ranking."""
+    org_id = current_user.org_id
+
+    # Total users in org
+    user_stmt = select(func.count(User.id))
+    if org_id:
+        user_stmt = user_stmt.where(User.org_id == org_id)
+    total_developers = await db.scalar(user_stmt) or 0
+
+    # Per-user activity from ClickHouse (last 30 days)
+    user_rows = await _ch_json_scoped(
+        "SELECT user_id, "
+        "count() AS sessions, "
+        "sumIf(input_tokens + output_tokens, input_tokens IS NOT NULL) AS tokens, "
+        "sum(total_credits) AS cost "
+        "FROM session_stats_agg "
+        "WHERE project_id = 'default' "
+        "AND first_event_time >= now() - INTERVAL 30 DAY "
+        "GROUP BY user_id "
+        "ORDER BY sessions DESC",
+        current_user,
+    )
+
+    active_developers = len(user_rows)
+
+    # Top 20% value calculation
+    total_value = sum(int(r.get("sessions", 0)) for r in user_rows)
+    top_20_count = max(1, len(user_rows) // 5)
+    top_20_value = sum(int(r.get("sessions", 0)) for r in user_rows[:top_20_count])
+    top_20_value_pct = round((top_20_value / total_value) * 100, 1) if total_value > 0 else 0
+
+    # Resolve user names + departments from PG
+    user_ids = [r["user_id"] for r in user_rows[:limit]]
+    user_info: dict[str, tuple[str, str]] = {}
+    if user_ids:
+        import uuid as _uuid
+
+        valid_ids = []
+        for uid in user_ids:
+            try:
+                valid_ids.append(_uuid.UUID(uid))
+            except (ValueError, AttributeError):
+                pass
+        if valid_ids:
+            info_rows = (await db.execute(
+                select(User.id, User.name, User.department).where(User.id.in_(valid_ids))
+            )).all()
+            user_info = {str(r.id): (r.name, r.department or "Unassigned") for r in info_rows}
+
+    # Also check user_groups for SSO department
+    dept_map = await resolve_user_departments(db, org_id)
+    uid_to_dept: dict[str, str] = {}
+    for dept_name, uids in dept_map.items():
+        for uid in uids:
+            uid_to_dept[uid] = dept_name
+
+    developers = []
+    for i, r in enumerate(user_rows[:limit]):
+        uid = r["user_id"]
+        name, fallback_dept = user_info.get(uid, ("Unknown", "Unassigned"))
+        department = uid_to_dept.get(uid, fallback_dept)
+        percentile = max(1, 100 - int((i / max(len(user_rows), 1)) * 100))
+
+        developers.append(DeveloperActivityItem(
+            user_id=uid,
+            name=name,
+            department=department,
+            sessions=int(r.get("sessions", 0)),
+            tokens_consumed=int(r.get("tokens", 0)),
+            cost=round(float(r.get("cost") or 0), 4),
+            percentile=percentile,
+        ))
+
+    return DeveloperBreakdownResponse(
+        total_developers=total_developers,
+        active_developers=active_developers,
+        top_20_value_pct=top_20_value_pct,
+        developers=developers,
+    )

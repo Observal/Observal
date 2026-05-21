@@ -937,3 +937,20 @@ export interface ExecStrategicInsightsResponse {
 	total_active_users: number;
 	automatable_pct: number;
 }
+
+export interface ExecDeveloperItem {
+	user_id: string;
+	name: string;
+	department: string;
+	sessions: number;
+	tokens_consumed: number;
+	cost: number;
+	percentile: number;
+}
+
+export interface ExecDeveloperBreakdown {
+	total_developers: number;
+	active_developers: number;
+	top_20_value_pct: number;
+	developers: ExecDeveloperItem[];
+}

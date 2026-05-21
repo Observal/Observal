@@ -62,6 +62,7 @@ import type {
   ExecCostSummary,
   ExecROIProjectionsResponse,
   ExecStrategicInsightsResponse,
+  ExecDeveloperBreakdown,
 } from "./types";
 
 const API = "/api/v1";
@@ -680,6 +681,7 @@ export const exec = {
   costSummary: (range?: string) => get<ExecCostSummary>(`/exec/cost-summary${range ? `?range=${range}` : ""}`),
   roiProjections: () => get<ExecROIProjectionsResponse>("/exec/roi-projections"),
   strategicInsights: () => get<ExecStrategicInsightsResponse>("/exec/strategic-insights"),
+  developerBreakdown: (limit?: number) => get<ExecDeveloperBreakdown>(`/exec/developer-breakdown${limit ? `?limit=${limit}` : ""}`),
   config: () => get<ExecConfig | null>("/exec/config"),
   updateConfig: (data: Partial<ExecConfig>) => put<ExecConfig>("/exec/config", data),
 };
