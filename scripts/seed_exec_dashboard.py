@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 """Seed exec dashboard test data into PostgreSQL + ClickHouse.
@@ -97,7 +96,7 @@ USER_ACTIVITY = {
 }
 
 WEEKS_OF_DATA = 8
-PROJECT_ID = "default"
+PROJECT_ID = "52eb7062-11f8-444e-8f6e-4c906e8d7649"
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +162,7 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
                 oid,
             )
             await conn.execute(
-                "DELETE FROM feedback WHERE listing_id IN (SELECT id FROM agents WHERE owner_org_id = $1)"
+                "DELETE FROM feedback WHERE listing_id IN (SELECT id FROM agents WHERE owner_org_id = $1)", oid
             )
             await conn.execute(
                 "DELETE FROM agent_team_access WHERE agent_id IN (SELECT id FROM agents WHERE owner_org_id = $1)", oid
@@ -181,8 +180,8 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
         for email, name, dept, _ in USERS:
             uid = uuid.uuid4()
             await conn.execute(
-                "INSERT INTO users (id, email, name, role, org_id, department, auth_provider) "
-                "VALUES ($1, $2, $3, 'user', $4, $5, 'local') ON CONFLICT (email) DO UPDATE SET department = $5 RETURNING id",
+                "INSERT INTO users (id, email, name, role, org_id, department, auth_provider, created_at) "
+                "VALUES ($1, $2, $3, 'user', $4, $5, 'local', NOW()) ON CONFLICT (email) DO UPDATE SET department = $5 RETURNING id",
                 uid,
                 email,
                 name,
@@ -202,7 +201,7 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
         for email, _, dept, _ in USERS:
             uid = user_map[email]
             await conn.execute(
-                "INSERT INTO user_groups (id, user_id, group_name) VALUES ($1, $2, $3) "
+                "INSERT INTO user_groups (id, user_id, group_name, synced_at) VALUES ($1, $2, $3, NOW()) "
                 "ON CONFLICT (user_id, group_name) DO NOTHING",
                 uuid.uuid4(),
                 uid,
@@ -217,8 +216,8 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
             version_id = uuid.uuid4()
 
             await conn.execute(
-                "INSERT INTO agents (id, name, owner, category, created_by, owner_org_id, visibility) "
-                "VALUES ($1, $2, $3, $4, $5, $6, 'public') ON CONFLICT DO NOTHING",
+                "INSERT INTO agents (id, name, owner, category, created_by, owner_org_id, visibility, co_maintainers, created_at, updated_at) "
+                "VALUES ($1, $2, $3, $4, $5, $6, 'public', '[]'::jsonb, NOW(), NOW()) ON CONFLICT DO NOTHING",
                 agent_id,
                 agent_name,
                 "acme",
@@ -231,8 +230,8 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
             agent_map[agent_name] = agent_id
 
             await conn.execute(
-                "INSERT INTO agent_versions (id, agent_id, version, description, status, released_by) "
-                "VALUES ($1, $2, '1.0.0', $3, $4, $5) ON CONFLICT DO NOTHING",
+                "INSERT INTO agent_versions (id, agent_id, version, description, prompt, model_name, model_config_json, models_by_ide, external_mcps, supported_ides, required_ide_features, inferred_supported_ides, status, is_prerelease, download_count, released_by, released_at, created_at, is_editing) "
+                "VALUES ($1, $2, '1.0.0', $3, '', '', '{}', '{}', '[]', '[]', '[]', '[]', $4, false, 0, $5, NOW(), NOW(), false) ON CONFLICT DO NOTHING",
                 version_id,
                 agent_id,
                 f"{agent_name} agent",
@@ -269,7 +268,7 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
                 continue
             for _ in range(count):
                 await conn.execute(
-                    "INSERT INTO agent_download_records (id, agent_id, user_id, installed_at) VALUES ($1, $2, $3, $4)",
+                    "INSERT INTO agent_download_records (id, agent_id, user_id, source, installed_at) VALUES ($1, $2, $3, 'cli', $4) ON CONFLICT DO NOTHING",
                     uuid.uuid4(),
                     aid,
                     admin_id,
@@ -285,7 +284,7 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
                 continue
             for rating in ratings:
                 await conn.execute(
-                    "INSERT INTO feedback (id, listing_id, listing_type, user_id, rating, comment) VALUES ($1, $2, 'agent', $3, $4, 'Good')",
+                    "INSERT INTO feedback (id, listing_id, listing_type, user_id, rating, comment, created_at) VALUES ($1, $2, 'agent', $3, $4, 'Good', NOW())",
                     uuid.uuid4(),
                     aid,
                     admin_id,
@@ -295,8 +294,8 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
 
         # Exec dashboard config
         await conn.execute(
-            "INSERT INTO exec_dashboard_config (id, org_id, hourly_dev_cost, pre_ai_baselines, department_budgets, target_adoption_pct) "
-            "VALUES ($1, $2, 85.00, $3, $4, 80) ON CONFLICT (org_id) DO UPDATE SET hourly_dev_cost = 85.00, pre_ai_baselines = $3",
+            "INSERT INTO exec_dashboard_config (id, org_id, hourly_dev_cost, pre_ai_baselines, department_budgets, target_adoption_pct, created_at, updated_at) "
+            "VALUES ($1, $2, 85.00, $3, $4, 80, NOW(), NOW()) ON CONFLICT (org_id) DO UPDATE SET hourly_dev_cost = 85.00, pre_ai_baselines = $3",
             uuid.uuid4(),
             oid,
             json.dumps(
@@ -377,11 +376,11 @@ async def seed_clickhouse(ch_url: str, user_map: dict, agent_map: dict, clean: b
                                 "agent_id": agent_id,
                                 "user_id": uid,
                                 "ide": ide,
-                                "start_time": start_time.isoformat(),
+                                "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
                                 "trace_type": "agent",
                                 "name": agent_name,
                                 "is_deleted": 0,
-                                "event_ts": start_time.isoformat(),
+                                "event_ts": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
                             }
                         )
                     )
@@ -414,7 +413,7 @@ async def seed_clickhouse(ch_url: str, user_map: dict, agent_map: dict, clean: b
                                     "user_id": uid,
                                     "type": "llm",
                                     "name": model,
-                                    "start_time": (start_time + timedelta(seconds=s_idx)).isoformat(),
+                                    "start_time": (start_time + timedelta(seconds=s_idx)).strftime("%Y-%m-%dT%H:%M:%S"),
                                     "latency_ms": latency,
                                     "status": status,
                                     "cost": cost,
@@ -423,7 +422,7 @@ async def seed_clickhouse(ch_url: str, user_map: dict, agent_map: dict, clean: b
                                     "token_count_total": input_tokens + output_tokens,
                                     "ide": ide,
                                     "is_deleted": 0,
-                                    "event_ts": (start_time + timedelta(seconds=s_idx)).isoformat(),
+                                    "event_ts": (start_time + timedelta(seconds=s_idx)).strftime("%Y-%m-%dT%H:%M:%S"),
                                 }
                             )
                         )
@@ -440,7 +439,7 @@ async def seed_clickhouse(ch_url: str, user_map: dict, agent_map: dict, clean: b
                                 "model": model,
                                 "agent_id": agent_id,
                                 "event_type": "session_end",
-                                "timestamp": start_time.isoformat(),
+                                "timestamp": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
                                 "input_tokens": session_tokens // 2,
                                 "output_tokens": session_tokens // 2,
                                 "credits": session_cost,
