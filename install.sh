@@ -25,37 +25,52 @@ LICENSE_PUBLIC_KEY="X5Ia46wxT2AxZ6nFlvFnT7ZE6vXoVI208Io3TDoX6N8="
 
 # ── Helpers ──────────────────────────────────────────────────
 
-info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn()  { printf '\033[1;33mWARN:\033[0m %s\n' "$*"; }
+info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; }
-die()   { error "$@"; exit 1; }
+die() {
+    error "$@"
+    exit 1
+}
 
 # ── Parse arguments ──────────────────────────────────────────
 
 LICENSE_KEY="${OBSERVAL_LICENSE_KEY:-}"
 VERSION="${OBSERVAL_VERSION:-latest}"
 BIN_DIR="${OBSERVAL_BIN_DIR:-/usr/local/bin}"
-BASE_URL="${OBSERVAL_BASE_URL:-}"  # Override for testing (e.g. http://localhost:9999)
+BASE_URL="${OBSERVAL_BASE_URL:-}" # Override for testing (e.g. http://localhost:9999)
 
 while [ $# -gt 0 ]; do
-  case "$1" in
+    case "$1" in
     --license-key)
-      [ -n "${2:-}" ] || die "--license-key requires a value"
-      LICENSE_KEY="$2"; shift 2 ;;
+        [ -n "${2:-}" ] || die "--license-key requires a value"
+        LICENSE_KEY="$2"
+        shift 2
+        ;;
     --license-key=*)
-      LICENSE_KEY="${1#--license-key=}"; shift ;;
+        LICENSE_KEY="${1#--license-key=}"
+        shift
+        ;;
     --version)
-      [ -n "${2:-}" ] || die "--version requires a value"
-      VERSION="$2"; shift 2 ;;
+        [ -n "${2:-}" ] || die "--version requires a value"
+        VERSION="$2"
+        shift 2
+        ;;
     --version=*)
-      VERSION="${1#--version=}"; shift ;;
+        VERSION="${1#--version=}"
+        shift
+        ;;
     --bin-dir)
-      [ -n "${2:-}" ] || die "--bin-dir requires a value"
-      BIN_DIR="$2"; shift 2 ;;
+        [ -n "${2:-}" ] || die "--bin-dir requires a value"
+        BIN_DIR="$2"
+        shift 2
+        ;;
     --bin-dir=*)
-      BIN_DIR="${1#--bin-dir=}"; shift ;;
-    -h|--help)
-      cat <<'HELP'
+        BIN_DIR="${1#--bin-dir=}"
+        shift
+        ;;
+    -h | --help)
+        cat <<'HELP'
 Observal CLI Installer
 Usage: curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash -s -- [OPTIONS]
 
@@ -69,10 +84,12 @@ Environment variable overrides (lower priority than flags):
   OBSERVAL_VERSION       Version to install
   OBSERVAL_BIN_DIR       Install directory
 HELP
-      exit 0 ;;
+        exit 0
+        ;;
     *)
-      die "Unknown option: $1" ;;
-  esac
+        die "Unknown option: $1"
+        ;;
+    esac
 done
 
 # ── License validation ───────────────────────────────────────
@@ -83,19 +100,19 @@ EDITION="community"
 # docker/server-package/setup.sh. If you change the validation logic,
 # update all three files together.
 validate_license() {
-  local key="$1"
+    local key="$1"
 
-  # License format: base64url(json_payload).base64url(ed25519_signature)
-  local payload_b64 sig_b64
-  payload_b64="${key%%.*}"
-  sig_b64="${key#*.}"
+    # License format: base64url(json_payload).base64url(ed25519_signature)
+    local payload_b64 sig_b64
+    payload_b64="${key%%.*}"
+    sig_b64="${key#*.}"
 
-  if [ -z "$payload_b64" ] || [ -z "$sig_b64" ] || [ "$payload_b64" = "$sig_b64" ]; then
-    return 1
-  fi
+    if [ -z "$payload_b64" ] || [ -z "$sig_b64" ] || [ "$payload_b64" = "$sig_b64" ]; then
+        return 1
+    fi
 
-  # Verify signature and check expiry using Python (available on macOS and most Linux)
-  python3 - "$payload_b64" "$sig_b64" "$LICENSE_PUBLIC_KEY" 2>/dev/null <<'PYTHON'
+    # Verify signature and check expiry using Python (available on macOS and most Linux)
+    python3 - "$payload_b64" "$sig_b64" "$LICENSE_PUBLIC_KEY" 2>/dev/null <<'PYTHON'
 import base64, json, sys, time
 
 payload_b64, sig_b64, pub_key_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -141,44 +158,44 @@ PYTHON
 }
 
 if [ -n "$LICENSE_KEY" ]; then
-  info "Validating license key..."
-  ORG_ID=""
-  if ORG_ID=$(validate_license "$LICENSE_KEY"); then
-    EDITION="enterprise"
-    info "Valid enterprise license (org: $ORG_ID)"
-  else
-    EXIT_CODE=$?
-    if [ "$EXIT_CODE" -eq 2 ]; then
-      die "License key has expired. Contact sales@observal.dev to renew."
-    elif [ "$EXIT_CODE" -eq 3 ]; then
-      warn "Cannot verify license locally (python3 cryptography package not found)."
-      warn "Proceeding with enterprise install — the server will validate at startup."
-      EDITION="enterprise"
+    info "Validating license key..."
+    ORG_ID=""
+    if ORG_ID=$(validate_license "$LICENSE_KEY"); then
+        EDITION="enterprise"
+        info "Valid enterprise license (org: $ORG_ID)"
     else
-      die "Invalid license key. Check your key or contact support@observal.dev"
+        EXIT_CODE=$?
+        if [ "$EXIT_CODE" -eq 2 ]; then
+            die "License key has expired. Contact sales@observal.dev to renew."
+        elif [ "$EXIT_CODE" -eq 3 ]; then
+            warn "Cannot verify license locally (python3 cryptography package not found)."
+            warn "Proceeding with enterprise install — the server will validate at startup."
+            EDITION="enterprise"
+        else
+            die "Invalid license key. Check your key or contact support@observal.dev"
+        fi
     fi
-  fi
 else
-  info "No license key provided — installing community edition"
+    info "No license key provided — installing community edition"
 fi
 
 # ── Detect platform ──────────────────────────────────────────
 
 detect_os() {
-  case "$(uname -s)" in
-    Linux*)  echo "linux" ;;
+    case "$(uname -s)" in
+    Linux*) echo "linux" ;;
     Darwin*) echo "macos" ;;
-    MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
+    MINGW* | MSYS* | CYGWIN*) echo "windows" ;;
     *) die "Unsupported OS: $(uname -s)" ;;
-  esac
+    esac
 }
 
 detect_arch() {
-  case "$(uname -m)" in
-    x86_64|amd64)  echo "x64" ;;
-    aarch64|arm64) echo "arm64" ;;
+    case "$(uname -m)" in
+    x86_64 | amd64) echo "x64" ;;
+    aarch64 | arm64) echo "arm64" ;;
     *) die "Unsupported architecture: $(uname -m)" ;;
-  esac
+    esac
 }
 
 OS=$(detect_os)
@@ -189,9 +206,9 @@ ARCH=$(detect_arch)
 command -v curl >/dev/null 2>&1 || die "'curl' is required but not found."
 
 if [ "$VERSION" = "latest" ]; then
-  VERSION=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" \
-    | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-  [ -n "$VERSION" ] || die "Could not determine latest version"
+    VERSION=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" |
+        grep '"tag_name"' | head -1 | cut -d'"' -f4)
+    [ -n "$VERSION" ] || die "Could not determine latest version"
 fi
 
 info "Installing Observal CLI $VERSION ($OS/$ARCH) [$EDITION edition]"
@@ -202,17 +219,17 @@ EXT=""
 [ "$OS" = "windows" ] && EXT=".exe"
 
 if [ "$EDITION" = "enterprise" ]; then
-  ARTIFACT="observal-enterprise-${OS}-${ARCH}${EXT}"
+    ARTIFACT="observal-enterprise-${OS}-${ARCH}${EXT}"
 else
-  ARTIFACT="observal-${OS}-${ARCH}${EXT}"
+    ARTIFACT="observal-${OS}-${ARCH}${EXT}"
 fi
 
 if [ -n "$BASE_URL" ]; then
-  URL="${BASE_URL}/${ARTIFACT}"
-  CHECKSUM_URL="${BASE_URL}/checksums.txt"
+    URL="${BASE_URL}/${ARTIFACT}"
+    CHECKSUM_URL="${BASE_URL}/checksums.txt"
 else
-  URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$ARTIFACT"
-  CHECKSUM_URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/checksums.txt"
+    URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$ARTIFACT"
+    CHECKSUM_URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/checksums.txt"
 fi
 
 TMPDIR=$(mktemp -d)
@@ -220,50 +237,50 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 info "Downloading $ARTIFACT..."
 if ! curl -fsSL -o "$TMPDIR/$ARTIFACT" "$URL"; then
-  if [ "$EDITION" = "enterprise" ]; then
-    die "Enterprise artifact '$ARTIFACT' was not found for $VERSION. Check https://github.com/$GITHUB_REPO/releases or re-run without --license-key to install community edition."
-  else
-    die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
-  fi
+    if [ "$EDITION" = "enterprise" ]; then
+        die "Enterprise artifact '$ARTIFACT' was not found for $VERSION. Check https://github.com/$GITHUB_REPO/releases or re-run without --license-key to install community edition."
+    else
+        die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
+    fi
 fi
 
 info "Verifying checksum..."
 curl -fsSL -o "$TMPDIR/checksums.txt" "$CHECKSUM_URL" || warn "Could not download checksums -- skipping verification"
 if [ -f "$TMPDIR/checksums.txt" ]; then
-  EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/checksums.txt" | awk '{print $1}')
-  if [ -n "$EXPECTED" ]; then
-    if command -v sha256sum >/dev/null 2>&1; then
-      ACTUAL=$(sha256sum "$TMPDIR/$ARTIFACT" | awk '{print $1}')
-    else
-      ACTUAL=$(shasum -a 256 "$TMPDIR/$ARTIFACT" | awk '{print $1}')
+    EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/checksums.txt" | awk '{print $1}')
+    if [ -n "$EXPECTED" ]; then
+        if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL=$(sha256sum "$TMPDIR/$ARTIFACT" | awk '{print $1}')
+        else
+            ACTUAL=$(shasum -a 256 "$TMPDIR/$ARTIFACT" | awk '{print $1}')
+        fi
+        [ "$ACTUAL" = "$EXPECTED" ] || die "Checksum mismatch! Expected: $EXPECTED Got: $ACTUAL"
+        info "Checksum verified"
     fi
-    [ "$ACTUAL" = "$EXPECTED" ] || die "Checksum mismatch! Expected: $EXPECTED Got: $ACTUAL"
-    info "Checksum verified"
-  fi
 fi
 
 # ── Install ──────────────────────────────────────────────────
 
 INSTALL_PATH="${BIN_DIR}/observal${EXT}"
 if [ -w "$BIN_DIR" ]; then
-  mv "$TMPDIR/$ARTIFACT" "$INSTALL_PATH"
-  chmod +x "$INSTALL_PATH"
+    mv "$TMPDIR/$ARTIFACT" "$INSTALL_PATH"
+    chmod +x "$INSTALL_PATH"
 else
-  info "Installing to $BIN_DIR requires sudo"
-  sudo mv "$TMPDIR/$ARTIFACT" "$INSTALL_PATH"
-  sudo chmod +x "$INSTALL_PATH"
+    info "Installing to $BIN_DIR requires sudo"
+    sudo mv "$TMPDIR/$ARTIFACT" "$INSTALL_PATH"
+    sudo chmod +x "$INSTALL_PATH"
 fi
 
 # ── Write license key to config ──────────────────────────────
 
 if [ "$EDITION" = "enterprise" ] && [ -n "$LICENSE_KEY" ]; then
-  CONFIG_DIR="${HOME}/.observal"
-  mkdir -p "$CONFIG_DIR"
-  CONFIG_FILE="$CONFIG_DIR/config.json"
+    CONFIG_DIR="${HOME}/.observal"
+    mkdir -p "$CONFIG_DIR"
+    CONFIG_FILE="$CONFIG_DIR/config.json"
 
-  if [ -f "$CONFIG_FILE" ]; then
-    # Merge license key into existing config
-    OBSERVAL_KEY_VALUE="$LICENSE_KEY" python3 -c "
+    if [ -f "$CONFIG_FILE" ]; then
+        # Merge license key into existing config
+        OBSERVAL_KEY_VALUE="$LICENSE_KEY" python3 -c "
 import json, os
 try:
     with open('$CONFIG_FILE') as f:
@@ -274,11 +291,11 @@ config['license_key'] = os.environ['OBSERVAL_KEY_VALUE']
 with open('$CONFIG_FILE', 'w') as f:
     json.dump(config, f, indent=2)
 " 2>/dev/null || true
-  else
-    printf '{\n  "license_key": "%s"\n}\n' "$LICENSE_KEY" > "$CONFIG_FILE"
-  fi
-  chmod 600 "$CONFIG_FILE"
-  info "License key saved to $CONFIG_FILE"
+    else
+        printf '{\n  "license_key": "%s"\n}\n' "$LICENSE_KEY" >"$CONFIG_FILE"
+    fi
+    chmod 600 "$CONFIG_FILE"
+    info "License key saved to $CONFIG_FILE"
 fi
 
 # ── Done ─────────────────────────────────────────────────────
@@ -286,5 +303,5 @@ fi
 info "Installed observal ($EDITION) to $INSTALL_PATH"
 info "Run 'observal --version' to verify."
 if [ "$EDITION" = "enterprise" ]; then
-  info "Enterprise features are active. Set OBSERVAL_LICENSE_KEY in your server .env as well."
+    info "Enterprise features are active. Set OBSERVAL_LICENSE_KEY in your server .env as well."
 fi

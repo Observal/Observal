@@ -29,7 +29,6 @@
   <img src="https://img.shields.io/badge/python-3.11+-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python">
   <a href="https://pypi.org/project/observal-cli/"><img src="https://img.shields.io/pypi/v/observal-cli?style=flat-square&logo=pypi&logoColor=white&label=pypi" alt="PyPI version"></a>
   <a href="https://codecov.io/gh/BlazeUp-AI/Observal"><img src="https://img.shields.io/codecov/c/github/BlazeUp-AI/Observal?style=flat-square&logo=codecov" alt="Coverage"></a>
-  <a href="https://github.com/BlazeUp-AI/Observal/stargazers"><img src="https://img.shields.io/github/stars/BlazeUp-AI/Observal?style=flat-square&logo=github" alt="Stars"></a>
   <a href="https://github.com/BlazeUp-AI/Observal/graphs/contributors"><img src="https://img.shields.io/github/contributors/BlazeUp-AI/Observal?style=flat-square&logo=github" alt="Contributors"></a>
   <a href="https://discord.observal.io"><img src="https://img.shields.io/badge/discord-chat-5865f2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://github.com/orgs/BlazeUp-AI/packages?repo_name=Observal"><img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Haz3-jolt/b28aba6d0efebb0b430d43c8068feb91/raw/ghcr-pulls.json&style=flat-square" alt="GHCR pulls"></a>
@@ -127,8 +126,16 @@ See [CHANGELOG.md](CHANGELOG.md) for recent updates.
 
 ### One-line install (recommended)
 
+**Community edition:**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash
+```
+
+**Enterprise edition** (requires a valid license key):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash -s -- --license-key YOUR_KEY
 ```
 
 Downloads a lightweight config package, runs a guided setup, pulls pre-built Docker images from GHCR, and starts the full stack. No repo clone required.

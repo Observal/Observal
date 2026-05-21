@@ -27,10 +27,13 @@ LICENSE_PUBLIC_KEY="X5Ia46wxT2AxZ6nFlvFnT7ZE6vXoVI208Io3TDoX6N8="
 
 # ── Helpers ──────────────────────────────────────────────────
 
-info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn()  { printf '\033[1;33mWARN:\033[0m %s\n' "$*"; }
+info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; }
-die()   { error "$@"; exit 1; }
+die() {
+    error "$@"
+    exit 1
+}
 
 # ── Parse arguments ──────────────────────────────────────────
 
@@ -41,35 +44,49 @@ BASE_URL="${OBSERVAL_BASE_URL:-}"
 
 # Default install directory
 if [ -z "${OBSERVAL_INSTALL_DIR:-}" ]; then
-  case "$(uname -s)" in
+    case "$(uname -s)" in
     Darwin) INSTALL_DIR="$HOME/.observal" ;;
-    *)      INSTALL_DIR="/opt/observal" ;;
-  esac
+    *) INSTALL_DIR="/opt/observal" ;;
+    esac
 else
-  INSTALL_DIR="$OBSERVAL_INSTALL_DIR"
+    INSTALL_DIR="$OBSERVAL_INSTALL_DIR"
 fi
 
 while [ $# -gt 0 ]; do
-  case "$1" in
+    case "$1" in
     --license-key)
-      [ -n "${2:-}" ] || die "--license-key requires a value"
-      LICENSE_KEY="$2"; shift 2 ;;
+        [ -n "${2:-}" ] || die "--license-key requires a value"
+        LICENSE_KEY="$2"
+        shift 2
+        ;;
     --license-key=*)
-      LICENSE_KEY="${1#--license-key=}"; shift ;;
+        LICENSE_KEY="${1#--license-key=}"
+        shift
+        ;;
     --version)
-      [ -n "${2:-}" ] || die "--version requires a value"
-      VERSION="$2"; shift 2 ;;
+        [ -n "${2:-}" ] || die "--version requires a value"
+        VERSION="$2"
+        shift 2
+        ;;
     --version=*)
-      VERSION="${1#--version=}"; shift ;;
+        VERSION="${1#--version=}"
+        shift
+        ;;
     --install-dir)
-      [ -n "${2:-}" ] || die "--install-dir requires a value"
-      INSTALL_DIR="$2"; shift 2 ;;
+        [ -n "${2:-}" ] || die "--install-dir requires a value"
+        INSTALL_DIR="$2"
+        shift 2
+        ;;
     --install-dir=*)
-      INSTALL_DIR="${1#--install-dir=}"; shift ;;
+        INSTALL_DIR="${1#--install-dir=}"
+        shift
+        ;;
     --force)
-      FORCE=1; shift ;;
-    -h|--help)
-      cat <<'HELP'
+        FORCE=1
+        shift
+        ;;
+    -h | --help)
+        cat <<'HELP'
 Observal Server Installer
 Usage: curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash -s -- [OPTIONS]
 
@@ -85,10 +102,12 @@ Environment variable overrides (lower priority than flags):
   OBSERVAL_INSTALL_DIR   Install directory
   OBSERVAL_FORCE=1       Skip overwrite confirmation
 HELP
-      exit 0 ;;
+        exit 0
+        ;;
     *)
-      die "Unknown option: $1" ;;
-  esac
+        die "Unknown option: $1"
+        ;;
+    esac
 done
 
 # ── License validation ───────────────────────────────────────
@@ -99,18 +118,18 @@ EDITION="community"
 # docker/server-package/setup.sh. If you change the validation logic,
 # update all three files together.
 validate_license() {
-  local key="$1"
+    local key="$1"
 
-  # License format: base64url(json_payload).base64url(ed25519_signature)
-  local payload_b64 sig_b64
-  payload_b64="${key%%.*}"
-  sig_b64="${key#*.}"
+    # License format: base64url(json_payload).base64url(ed25519_signature)
+    local payload_b64 sig_b64
+    payload_b64="${key%%.*}"
+    sig_b64="${key#*.}"
 
-  if [ -z "$payload_b64" ] || [ -z "$sig_b64" ] || [ "$payload_b64" = "$sig_b64" ]; then
-    return 1
-  fi
+    if [ -z "$payload_b64" ] || [ -z "$sig_b64" ] || [ "$payload_b64" = "$sig_b64" ]; then
+        return 1
+    fi
 
-  python3 - "$payload_b64" "$sig_b64" "$LICENSE_PUBLIC_KEY" 2>/dev/null <<'PYTHON'
+    python3 - "$payload_b64" "$sig_b64" "$LICENSE_PUBLIC_KEY" 2>/dev/null <<'PYTHON'
 import base64, json, sys, time
 
 payload_b64, sig_b64, pub_key_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -150,25 +169,25 @@ PYTHON
 }
 
 if [ -n "$LICENSE_KEY" ]; then
-  info "Validating license key..."
-  ORG_ID=""
-  if ORG_ID=$(validate_license "$LICENSE_KEY"); then
-    EDITION="enterprise"
-    info "Valid enterprise license (org: $ORG_ID)"
-  else
-    EXIT_CODE=$?
-    if [ "$EXIT_CODE" -eq 2 ]; then
-      die "License key has expired. Contact sales@observal.dev to renew."
-    elif [ "$EXIT_CODE" -eq 3 ]; then
-      warn "Cannot verify license locally (python3 cryptography package not found)."
-      warn "Proceeding with enterprise install — the server will validate at startup."
-      EDITION="enterprise"
+    info "Validating license key..."
+    ORG_ID=""
+    if ORG_ID=$(validate_license "$LICENSE_KEY"); then
+        EDITION="enterprise"
+        info "Valid enterprise license (org: $ORG_ID)"
     else
-      die "Invalid license key. Check your key or contact support@observal.dev"
+        EXIT_CODE=$?
+        if [ "$EXIT_CODE" -eq 2 ]; then
+            die "License key has expired. Contact sales@observal.dev to renew."
+        elif [ "$EXIT_CODE" -eq 3 ]; then
+            warn "Cannot verify license locally (python3 cryptography package not found)."
+            warn "Proceeding with enterprise install — the server will validate at startup."
+            EDITION="enterprise"
+        else
+            die "Invalid license key. Check your key or contact support@observal.dev"
+        fi
     fi
-  fi
 else
-  info "No license key provided — installing community edition"
+    info "No license key provided — installing community edition"
 fi
 
 # ── Pre-flight ───────────────────────────────────────────────
@@ -180,9 +199,9 @@ docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required."
 # ── Resolve version ──────────────────────────────────────────
 
 if [ "$VERSION" = "latest" ]; then
-  VERSION=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" \
-    | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-  [ -n "$VERSION" ] || die "Could not determine latest version"
+    VERSION=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" |
+        grep '"tag_name"' | head -1 | cut -d'"' -f4)
+    [ -n "$VERSION" ] || die "Could not determine latest version"
 fi
 
 info "Installing Observal Server $VERSION [$EDITION edition]"
@@ -190,15 +209,15 @@ info "Installing Observal Server $VERSION [$EDITION edition]"
 # ── Download ─────────────────────────────────────────────────
 
 if [ "$EDITION" = "enterprise" ]; then
-  ARTIFACT="observal-server-enterprise-${VERSION}.tar.gz"
+    ARTIFACT="observal-server-enterprise-${VERSION}.tar.gz"
 else
-  ARTIFACT="observal-server-${VERSION}.tar.gz"
+    ARTIFACT="observal-server-${VERSION}.tar.gz"
 fi
 
 if [ -n "$BASE_URL" ]; then
-  URL="${BASE_URL}/${ARTIFACT}"
+    URL="${BASE_URL}/${ARTIFACT}"
 else
-  URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$ARTIFACT"
+    URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$ARTIFACT"
 fi
 
 TMPDIR=$(mktemp -d)
@@ -206,40 +225,40 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 info "Downloading server package ($EDITION)..."
 if ! curl -fsSL -o "$TMPDIR/$ARTIFACT" "$URL"; then
-  if [ "$EDITION" = "enterprise" ]; then
-    die "Enterprise package '$ARTIFACT' was not found for $VERSION. Check https://github.com/$GITHUB_REPO/releases or re-run without --license-key to install community edition."
-  else
-    die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
-  fi
+    if [ "$EDITION" = "enterprise" ]; then
+        die "Enterprise package '$ARTIFACT' was not found for $VERSION. Check https://github.com/$GITHUB_REPO/releases or re-run without --license-key to install community edition."
+    else
+        die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
+    fi
 fi
 
 # ── Unpack ───────────────────────────────────────────────────
 
 if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
-  if [ "$FORCE" = "1" ]; then
-    info "Overwriting existing installation at $INSTALL_DIR"
-  else
-    warn "Directory $INSTALL_DIR already exists and is not empty."
-    printf 'Overwrite? [y/N]: '
-    read -r confirm </dev/tty
-    [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || die "Aborted."
-  fi
+    if [ "$FORCE" = "1" ]; then
+        info "Overwriting existing installation at $INSTALL_DIR"
+    else
+        warn "Directory $INSTALL_DIR already exists and is not empty."
+        printf 'Overwrite? [y/N]: '
+        read -r confirm </dev/tty
+        [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || die "Aborted."
+    fi
 fi
 
 info "Unpacking to $INSTALL_DIR..."
 if [ -w "$(dirname "$INSTALL_DIR")" ]; then
-  mkdir -p "$INSTALL_DIR"
-  tar -xzf "$TMPDIR/$ARTIFACT" -C "$INSTALL_DIR" --strip-components=1
+    mkdir -p "$INSTALL_DIR"
+    tar -xzf "$TMPDIR/$ARTIFACT" -C "$INSTALL_DIR" --strip-components=1
 else
-  sudo mkdir -p "$INSTALL_DIR"
-  sudo tar -xzf "$TMPDIR/$ARTIFACT" -C "$INSTALL_DIR" --strip-components=1
-  sudo chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
+    sudo mkdir -p "$INSTALL_DIR"
+    sudo tar -xzf "$TMPDIR/$ARTIFACT" -C "$INSTALL_DIR" --strip-components=1
+    sudo chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
 fi
 
 # ── Run setup (pass license key and edition) ─────────────────
 
 info "Running guided setup..."
 OBSERVAL_INSTALL_DIR="$INSTALL_DIR" \
-  OBSERVAL_LICENSE_KEY="$LICENSE_KEY" \
-  OBSERVAL_EDITION="$EDITION" \
-  bash "$INSTALL_DIR/setup.sh" </dev/tty
+    OBSERVAL_LICENSE_KEY="$LICENSE_KEY" \
+    OBSERVAL_EDITION="$EDITION" \
+    bash "$INSTALL_DIR/setup.sh" </dev/tty
