@@ -231,11 +231,10 @@ export function CostTab() {
   return (
     <div className="space-y-6 pt-4">
       {/* KPI Row */}
-      <div className="flex items-center justify-between mb-2">
-        <div />
+      <div className="flex items-center justify-end mb-2">
         <button
           onClick={() => setShowEditBaselines(true)}
-          className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+          className="inline-flex items-center px-3 py-1.5 text-[11px] font-medium rounded-md border border-border hover:bg-muted/50 transition-colors"
         >
           Edit baselines
         </button>
@@ -294,21 +293,21 @@ export function CostTab() {
           <h3 className="text-sm font-medium mb-1">Cost per Task by Category</h3>
           <p className="text-xs text-muted-foreground mb-4">Pre-AI baseline vs actual AI cost</p>
           <div className="space-y-4">
-            {cost.by_category.map((cat) => (
+            {(() => { const maxCost = Math.max(...cost.by_category.map((c) => Math.max(c.baseline_cost, c.actual_cost)), 1); return cost.by_category.map((cat) => (
               <div key={cat.category} className="flex items-center gap-3">
                 <span className="text-sm w-32 truncate font-medium">{cat.category}</span>
                 <div className="flex-1 space-y-1">
                   <div className="flex items-center gap-2">
                     <div
                       className="h-1.5 bg-muted-foreground/30 rounded-full"
-                      style={{ width: `${Math.min((cat.baseline_cost / (cost.by_category[0]?.baseline_cost || 1)) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((cat.baseline_cost / maxCost) * 100, 100)}%` }}
                     />
                     <span className="text-xs text-muted-foreground">${cat.baseline_cost.toFixed(2)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div
                       className="h-1.5 bg-green-600 rounded-full"
-                      style={{ width: `${Math.min((cat.actual_cost / (cost.by_category[0]?.baseline_cost || 1)) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((cat.actual_cost / maxCost) * 100, 100)}%` }}
                     />
                     <span className="text-xs text-green-600 font-semibold">${cat.actual_cost.toFixed(2)}</span>
                   </div>
@@ -317,7 +316,7 @@ export function CostTab() {
                   {cat.saved_pct}%
                 </span>
               </div>
-            ))}
+            )); })()}
           </div>
           <div className="flex gap-4 mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
             <div className="flex items-center gap-2">

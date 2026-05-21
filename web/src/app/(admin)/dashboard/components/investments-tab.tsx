@@ -176,7 +176,7 @@ export function InvestmentsTab() {
                     {p.platform}
                   </div>
                 </td>
-                <td className="p-3 tabular-nums font-semibold">{(p.sessions / 1000).toFixed(1)}K</td>
+                <td className="p-3 tabular-nums font-semibold">{p.sessions >= 1000 ? `${(p.sessions / 1000).toFixed(1)}K` : p.sessions}</td>
                 <td className="p-3 tabular-nums">{p.users}</td>
                 <td className="p-3 tabular-nums font-mono text-xs">${p.avg_cost.toFixed(3)}</td>
                 <td className="p-3 tabular-nums">{p.success_rate}%</td>
