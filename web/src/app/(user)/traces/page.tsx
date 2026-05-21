@@ -212,16 +212,12 @@ const columns: ColumnDef<Session>[] = [
 						</span>
 					);
 				}
-				const count = r.prompt_count ?? 0;
-				if (count === 0) return <span className="text-[13px] text-muted-foreground">{"\u2013"}</span>;
-				return (
-					<span className="text-[13px] text-muted-foreground">
-						{count} prompt{count !== 1 ? "s" : ""}
-					</span>
-				);
+				return <span className="text-[13px] text-muted-foreground">{"\u2013"}</span>;
 			}
 			if (!r.total_input_tokens && !r.total_output_tokens) {
-				return <span className="text-[13px] text-muted-foreground">{"\u2014"}</span>;
+				return (
+					<span className="text-[13px] text-muted-foreground">{"\u2014"}</span>
+				);
 			}
 			const inp = fmtTokens(r.total_input_tokens);
 			const out = fmtTokens(r.total_output_tokens);
