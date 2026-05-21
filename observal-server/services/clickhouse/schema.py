@@ -10,6 +10,7 @@ the SQL constant cannot be compressed further.
 import structlog
 
 import services.clickhouse.client as _client
+from config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -507,7 +508,6 @@ async def init_clickhouse():
     Raises on unreachable server so startup fails fast.
     """
     from services.clickhouse.client import clickhouse_health
-    settings = _client.settings
 
     if not await clickhouse_health():
         raise RuntimeError(f"ClickHouse unreachable at {_client.CLICKHOUSE_HTTP}")

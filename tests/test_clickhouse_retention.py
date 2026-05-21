@@ -19,7 +19,7 @@ def _mock_response(status_code=200):
 async def test_retention_ttl_applied():
     """init_clickhouse applies TTL when DATA_RETENTION_DAYS > 0."""
     with (
-        patch("services.clickhouse.client.settings") as mock_settings,
+        patch("services.clickhouse.schema.settings") as mock_settings,
         patch("services.clickhouse.client._query", new_callable=AsyncMock) as mock_query,
     ):
         mock_settings.DATA_RETENTION_DAYS = 90
@@ -43,7 +43,7 @@ async def test_retention_ttl_applied():
 async def test_retention_disabled_when_zero():
     """init_clickhouse skips TTL when DATA_RETENTION_DAYS=0."""
     with (
-        patch("services.clickhouse.client.settings") as mock_settings,
+        patch("services.clickhouse.schema.settings") as mock_settings,
         patch("services.clickhouse.client._query", new_callable=AsyncMock) as mock_query,
     ):
         mock_settings.DATA_RETENTION_DAYS = 0
@@ -64,7 +64,7 @@ async def test_retention_tables_covered():
     expected_tables = {"traces", "spans", "scores", "otel_logs", "session_events"}
 
     with (
-        patch("services.clickhouse.client.settings") as mock_settings,
+        patch("services.clickhouse.schema.settings") as mock_settings,
         patch("services.clickhouse.client._query", new_callable=AsyncMock) as mock_query,
     ):
         mock_settings.DATA_RETENTION_DAYS = 30
