@@ -72,6 +72,7 @@ const IDES = [
   "claude-code",
   "kiro",
   "cursor",
+  "opencode",
   "gemini-cli",
   "vscode",
   "codex",
