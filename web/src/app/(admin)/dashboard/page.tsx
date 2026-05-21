@@ -91,7 +91,7 @@ function ExportDropdown({ activeTab }: { activeTab: string }) {
     // Collect visible table data from the DOM
     const tables = document.querySelectorAll("table");
     if (tables.length === 0) {
-      alert("No table data to export on this tab.");
+      alert("No table data on this tab. Switch to Departments, Velocity, or Investments for exportable data.");
       return;
     }
     const rows: string[] = [];

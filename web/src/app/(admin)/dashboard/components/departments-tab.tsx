@@ -56,7 +56,7 @@ export function DepartmentsTab() {
             {deptCosts.slice(0, 8).map((d) => (
               <div key={d.name} className="rounded-md border border-border p-3 text-center">
                 <p className="text-xs text-muted-foreground truncate">{d.name}</p>
-                <p className="text-lg font-bold tabular-nums">${d.totalCost.toFixed(0)}</p>
+                <p className="text-lg font-bold tabular-nums">${d.totalCost >= 1000000 ? `${(d.totalCost / 1000000).toFixed(1)}M` : d.totalCost >= 1000 ? `${(d.totalCost / 1000).toFixed(1)}K` : d.totalCost.toFixed(0)}</p>
                 <p className="text-[11px] text-muted-foreground">
                   {totalOrgCost > 0 ? `${((d.totalCost / totalOrgCost) * 100).toFixed(0)}% of total` : ""}
                 </p>
@@ -140,7 +140,7 @@ export function DepartmentsTab() {
               {tokens.map((t) => (
                 <tr key={t.department} className="border-b border-border">
                   <td className="p-3 font-semibold">{t.department}</td>
-                  <td className="p-3 tabular-nums">{(t.tokens_used / 1000).toFixed(0)}K</td>
+                  <td className="p-3 tabular-nums">{t.tokens_used >= 1000000 ? `${(t.tokens_used / 1000000).toFixed(1)}M` : `${(t.tokens_used / 1000).toFixed(0)}K`}</td>
                   <td className="p-3 tabular-nums font-mono text-xs">${t.cost_per_task.toFixed(3)}</td>
                   <td className="p-3 tabular-nums">{t.sessions_per_user}</td>
                   <td className="p-3">

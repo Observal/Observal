@@ -90,7 +90,14 @@ export function VelocityTab() {
                   <td className="p-3 text-muted-foreground font-mono text-xs">{i + 1}</td>
                   <td className="p-3 font-semibold">{agent.name}</td>
                   <td className="p-3 text-muted-foreground">{agent.category}</td>
-                  <td className="p-3 tabular-nums font-semibold">{agent.composite_score}</td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full" style={{ width: `${agent.composite_score}%` }} />
+                      </div>
+                      <span className="text-xs tabular-nums text-muted-foreground">{agent.composite_score}</span>
+                    </div>
+                  </td>
                   <td className="p-3 tabular-nums">{agent.sessions.toLocaleString()}</td>
                   <td className="p-3 tabular-nums">{agent.downloads.toLocaleString()}</td>
                   <td className="p-3 tabular-nums">{agent.avg_rating ? `${agent.avg_rating}/5` : "—"}</td>
