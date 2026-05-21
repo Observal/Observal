@@ -45,7 +45,6 @@ from api.routes.config import router as config_router
 from api.routes.dashboard import router as dashboard_router
 from api.routes.device_auth import router as device_auth_router
 from api.routes.eval import router as eval_router
-from api.routes.exec_dashboard import router as exec_dashboard_router
 from api.routes.feedback import router as feedback_router
 from api.routes.hook import router as hook_router
 from api.routes.ingest import router as ingest_router
@@ -309,10 +308,10 @@ if settings.DEPLOYMENT_MODE == "enterprise":
 
         register_enterprise_middleware(app, settings)
         mount_ee_routes(app)
-    except ImportError:
+    except (ImportError, RuntimeError) as _ee_err:
         _logger = structlog.get_logger("observal")
-        _logger.error("enterprise_module_missing", detail="DEPLOYMENT_MODE=enterprise but ee/ module not found")
-        app.state.enterprise_issues = ["ee/ module not installed"]
+        _logger.warning("enterprise_features_unavailable", detail=str(_ee_err))
+        app.state.enterprise_issues = [str(_ee_err)]
 
 # GraphQL (replaces REST dashboard endpoints)
 graphql_app = GraphQLRouter(schema, context_getter=get_context_dep)
@@ -332,7 +331,6 @@ app.include_router(prompt_router)
 app.include_router(sandbox_router)
 app.include_router(telemetry_router)
 app.include_router(dashboard_router)
-app.include_router(exec_dashboard_router)
 app.include_router(feedback_router)
 app.include_router(eval_router)
 app.include_router(insights_router)

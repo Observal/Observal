@@ -49,7 +49,7 @@ import { getUserRole, getUserName, getUserEmail, getUserUsername } from "@/lib/a
 import { hasMinRole, type Role } from "@/hooks/use-role-guard";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
-type NavItem = { title: string; href: string; icon: typeof Home; requiresAuth?: boolean; minRole?: Role; enterpriseOnly?: boolean; requiresInsights?: boolean };
+type NavItem = { title: string; href: string; icon: typeof Home; requiresAuth?: boolean; minRole?: Role; enterpriseOnly?: boolean; requiresInsights?: boolean; requiresExecDashboard?: boolean };
 
 const registryNav: NavItem[] = [
   { title: "Home", href: "/", icon: Home },
@@ -68,7 +68,7 @@ const userNav: NavItem[] = [
 ];
 
 const adminNav: NavItem[] = [
-  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, minRole: "admin", enterpriseOnly: true },
+  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, minRole: "admin", requiresExecDashboard: true },
   { title: "Evals", href: "/eval", icon: FlaskConical, minRole: "admin" },
   { title: "Insights", href: "/insights", icon: Lightbulb, minRole: "admin", requiresInsights: true },
   { title: "Users", href: "/users", icon: Users, minRole: "admin" },
@@ -99,7 +99,7 @@ export function RegistrySidebar() {
   const snap = useSyncExternalStore(storeSub, getAuthSnap, getServerSnap);
   const [token, role, userName, userEmail, userUsername] = snap.split("|");
   const isAuthenticated = !!token;
-  const { deploymentMode, insightsAvailable, brandingLogo, brandingAppName, brandingWordmark } = useDeploymentConfig();
+  const { deploymentMode, insightsAvailable, execDashboardAvailable, brandingLogo, brandingAppName, brandingWordmark } = useDeploymentConfig();
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
@@ -129,7 +129,8 @@ export function RegistrySidebar() {
         (item) =>
           (!item.minRole || hasMinRole(role, item.minRole)) &&
           (!item.enterpriseOnly || deploymentMode === "enterprise") &&
-          (!item.requiresInsights || insightsAvailable),
+          (!item.requiresInsights || insightsAvailable) &&
+          (!item.requiresExecDashboard || execDashboardAvailable),
       )
     : [];
 

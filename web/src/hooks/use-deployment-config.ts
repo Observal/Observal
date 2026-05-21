@@ -23,6 +23,7 @@ export function useDeploymentConfig() {
     samlEnabled: data?.saml_enabled ?? false,
     evalConfigured: data?.eval_configured ?? false,
     insightsAvailable: data?.insights_available ?? false,
+    execDashboardAvailable: data?.exec_dashboard_available ?? false,
     brandingLogo: data?.branding_logo ?? null,
     brandingAppName: data?.branding_app_name ?? null,
     brandingWordmark: data?.branding_wordmark ?? null,

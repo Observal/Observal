@@ -627,6 +627,7 @@ export type PublicConfig = {
   saml_enabled: boolean;
   eval_configured: boolean;
   insights_available: boolean;
+  exec_dashboard_available: boolean;
   branding_logo: string | null;
   branding_app_name: string | null;
   branding_wordmark: string | null;

@@ -99,6 +99,7 @@ async def get_public_config(db=Depends(get_db)):
     from services.insights import licensed_features as _lf
 
     licensed_features: list[str] = _lf()
+    exec_dashboard_available = "all" in licensed_features or "exec_dashboard" in licensed_features
 
     return {
         "deployment_mode": settings.DEPLOYMENT_MODE,
@@ -107,6 +108,7 @@ async def get_public_config(db=Depends(get_db)):
         "saml_enabled": saml_enabled,
         "eval_configured": bool(settings.EVAL_MODEL_NAME),
         "insights_available": INSIGHTS_AVAILABLE,
+        "exec_dashboard_available": exec_dashboard_available,
         "licensed_features": licensed_features,
         "branding_logo": branding_logo,
         "branding_app_name": branding_app_name,

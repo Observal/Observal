@@ -45,6 +45,7 @@ from services.username_generator import generate_unique_username
 
 logger = logging.getLogger("observal.ee.scim")
 
+
 router = APIRouter(prefix="/api/v1/scim", tags=["enterprise-scim"])
 
 SCIM_CONTENT_TYPE = "application/scim+json"
