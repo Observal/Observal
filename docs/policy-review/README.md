@@ -1,3 +1,5 @@
+<!-- SPDX-FileCopyrightText: 2026 Gokul krishnan <gokulkri247@gmail.com> -->
+
 # Annual Policy Review Process
 
 ## Purpose
