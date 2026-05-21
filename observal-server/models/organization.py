@@ -6,7 +6,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,3 +27,9 @@ class Organization(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+    # Data retention configuration
+    retention_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    data_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_trace_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
