@@ -86,17 +86,29 @@ def _now_ms() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 
+_TS_SENTINEL_CUTOFF = datetime(2099, 1, 1, tzinfo=UTC)
+
+
 def _normalize_ts(value: str | None) -> str | None:
     """Normalize a timestamp string for ClickHouse DateTime64 compatibility.
 
     ClickHouse JSONEachRow cannot parse ISO 8601 ``T``/``Z`` separators,
     so we convert ``2026-04-21T07:35:00Z`` -> ``2026-04-21 07:35:00.000``.
+
+    Also clamps future sentinel timestamps (e.g. Kiro emits far-future
+    placeholders) to now so session_stats_agg stores a real last_event_time.
     """
     if value is None:
         return None
     v = value.replace("T", " ").rstrip("Z")
     if "." not in v:
         v += ".000"
+    try:
+        parsed = datetime.fromisoformat(v.replace(" ", "T") + "+00:00")
+        if parsed >= _TS_SENTINEL_CUTOFF:
+            v = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:23]
+    except ValueError:
+        pass
     return v
 
 
