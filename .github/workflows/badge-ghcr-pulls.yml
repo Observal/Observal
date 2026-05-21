@@ -1,0 +1,109 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Fetches combined GHCR pull counts for observal-api and observal-web,
+# then writes a shields.io endpoint JSON to a Gist so the README badge
+# stays live without exposing credentials.
+#
+# One-time setup required (see SETUP.md or repo wiki):
+#   1. Create a public Gist with a file named ghcr-pulls.json
+#   2. Generate a PAT with scopes: read:packages + gist
+#   3. Add two repo secrets:
+#        BADGE_GIST_ID    — the Gist ID (alphanumeric hash in the URL)
+#        BADGE_GIST_TOKEN — the PAT created above
+
+name: Update GHCR pulls badge
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # daily at 03:00 UTC
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  packages: read
+
+jobs:
+  update:
+    name: Fetch counts and update Gist
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch pull counts from GHCR
+        id: counts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess, json, sys
+
+          def gh_api(path):
+              result = subprocess.run(
+                  ["gh", "api", path],
+                  capture_output=True, text=True
+              )
+              if result.returncode != 0:
+                  print(f"Warning: {path} returned error: {result.stderr}", file=sys.stderr)
+                  return {}
+              return json.loads(result.stdout)
+
+          api = gh_api("/orgs/BlazeUp-AI/packages/container/observal-api")
+          web = gh_api("/orgs/BlazeUp-AI/packages/container/observal-web")
+
+          total = api.get("download_count", 0) + web.get("download_count", 0)
+
+          if total >= 1_000_000:
+              label = f"{total / 1_000_000:.1f}M"
+          elif total >= 1_000:
+              label = f"{total / 1_000:.1f}k"
+          else:
+              label = str(total)
+
+          print(f"observal-api pulls: {api.get('download_count', 0)}")
+          print(f"observal-web pulls: {web.get('download_count', 0)}")
+          print(f"Total: {total} ({label})")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"label={label}\n")
+              f.write(f"total={total}\n")
+          PY
+
+      - name: Write shields.io JSON to Gist
+        env:
+          GIST_TOKEN: ${{ secrets.BADGE_GIST_TOKEN }}
+          GIST_ID: ${{ secrets.BADGE_GIST_ID }}
+          LABEL: ${{ steps.counts.outputs.label }}
+        run: |
+          python3 - <<'PY'
+          import os, json, urllib.request
+
+          payload = {
+              "files": {
+                  "ghcr-pulls.json": {
+                      "content": json.dumps({
+                          "schemaVersion": 1,
+                          "label": "GHCR pulls",
+                          "message": os.environ["LABEL"],
+                          "color": "0db7ed",
+                          "namedLogo": "docker",
+                          "logoColor": "white",
+                      })
+                  }
+              }
+          }
+
+          req = urllib.request.Request(
+              f"https://api.github.com/gists/{os.environ['GIST_ID']}",
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Authorization": f"token {os.environ['GIST_TOKEN']}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              method="PATCH",
+          )
+
+          with urllib.request.urlopen(req) as resp:
+              print(f"Gist updated: HTTP {resp.status}")
+          PY
