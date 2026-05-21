@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-# Fetches combined GHCR pull counts for observal-api and observal-web,
-# then writes a shields.io endpoint JSON to a Gist so the README badge
-# stays live without exposing credentials.
+# Fetches combined GHCR pull counts for observal-api and observal-web by
+# scraping the public package pages (no auth needed — the count is in the HTML).
+# Writes a shields.io endpoint JSON to a Gist so the README badge stays live.
 #
 # One-time setup required:
 #   1. Create a public Gist with a file named ghcr-pulls.json
-#   2. Generate a PAT with scopes: read:packages + read:org + gist
+#   2. Generate a PAT with scope: gist only
 #   3. Add two repo secrets:
 #        BADGE_GIST_ID    — the Gist ID (alphanumeric hash in the URL)
 #        BADGE_GIST_TOKEN — the PAT created above
@@ -21,8 +21,7 @@ on:
     types: [published]
   workflow_dispatch:
 
-permissions:
-  packages: read
+permissions: {}
 
 jobs:
   update:
@@ -32,49 +31,25 @@ jobs:
     steps:
       - name: Fetch pull counts from GHCR
         id: counts
-        env:
-          GH_TOKEN: ${{ secrets.BADGE_GIST_TOKEN }}
         run: |
           python3 - <<'PY'
-          import os, subprocess, json, sys
+          import os, re, urllib.request
 
-          def gh_graphql(query):
-              result = subprocess.run(
-                  ["gh", "api", "graphql", "-f", f"query={query}"],
-                  capture_output=True, text=True
-              )
-              if result.returncode != 0:
-                  print(f"Warning: graphql error: {result.stderr}", file=sys.stderr)
-                  return {}
-              return json.loads(result.stdout)
+          def scrape_count(package):
+              url = f"https://github.com/orgs/BlazeUp-AI/packages/container/package/{package}"
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              with urllib.request.urlopen(req) as resp:
+                  html = resp.read().decode()
+              match = re.search(r'Total downloads[^<]*</span>\s*<h3 title="(\d+)"', html)
+              return int(match.group(1)) if match else 0
 
-          query = """
-          {
-            organization(login: "BlazeUp-AI") {
-              packages(packageType: DOCKER, first: 10) {
-                nodes {
-                  name
-                  statistics { downloadsTotalCount }
-                }
-              }
-            }
-          }
-          """
-          resp = gh_graphql(query)
-          nodes = resp.get("data", {}).get("organization", {}).get("packages", {}).get("nodes", [])
-
-          api_count = 0
-          web_count = 0
-          for node in nodes:
-              name = node.get("name", "")
-              count = node.get("statistics", {}).get("downloadsTotalCount", 0) or 0
-              print(f"{name}: {count}")
-              if name == "observal-api":
-                  api_count = count
-              elif name == "observal-web":
-                  web_count = count
-
+          api_count = scrape_count("observal-api")
+          web_count = scrape_count("observal-web")
           total = api_count + web_count
+
+          print(f"observal-api: {api_count}")
+          print(f"observal-web: {web_count}")
+          print(f"Total: {total}")
 
           if total >= 1_000_000:
               label = f"{total / 1_000_000:.1f}M"
@@ -82,8 +57,6 @@ jobs:
               label = f"{total / 1_000:.1f}k"
           else:
               label = str(total)
-
-          print(f"Total: {total} ({label})")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"label={label}\n")
