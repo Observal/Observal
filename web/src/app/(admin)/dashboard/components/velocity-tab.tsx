@@ -154,7 +154,7 @@ function VelocityChart({ weekly }: { weekly: { week: string; traces: number }[] 
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
               <XAxis dataKey="week" className="text-xs" />
               <YAxis className="text-xs" />
-              <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name === "baseline" ? "Baseline (first 4 weeks)" : "Traces"]} />
+              <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name === "baseline" ? "Baseline (first 4 weeks)" : "Traces"]} contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
               <Area type="monotone" dataKey="traces" stroke="hsl(var(--primary))" strokeWidth={2.5} fill="url(#velGrad)" />
               {showBaseline && (
                 <Line type="monotone" dataKey="baseline" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />

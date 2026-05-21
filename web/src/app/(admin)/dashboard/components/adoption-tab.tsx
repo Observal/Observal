@@ -161,7 +161,7 @@ function AdoptionChart({ monthly }: { monthly: { month: string; adoption_pct: nu
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
               <XAxis dataKey="month" className="text-xs" />
               <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} className="text-xs" />
-              <Tooltip formatter={(value, name) => [`${value}%`, name === "previous_pct" ? "Previous Period" : "Current"]} />
+              <Tooltip formatter={(value, name) => [`${value}%`, name === "previous_pct" ? "Previous Period" : "Current"]} contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
               <Area type="monotone" dataKey="adoption_pct" stroke="hsl(var(--primary))" strokeWidth={2.5} fill="url(#adoptionGrad)" />
               {showPrevious && (
                 <Line type="monotone" dataKey="previous_pct" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls={false} />

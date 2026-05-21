@@ -173,8 +173,10 @@ function ROIProjections() {
               `$${(Number(value) / 1000).toFixed(1)}K`,
               name === "projected_savings" ? "Quarterly Savings" : "Cumulative",
             ]}
+            contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+            cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
           />
-          <Bar dataKey="projected_savings" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="projected_savings" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} activeBar={false} />
         </BarChart>
       </ResponsiveContainer>
 
@@ -251,7 +253,7 @@ export function CostTab() {
         <p className="text-xs text-muted-foreground mb-4">Monthly savings generated vs platform spend</p>
         {cost.monthly_trend.length > 0 ? (
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={cost.monthly_trend} margin={{ top: 10, right: 10, bottom: 0, left: -10 }}>
+            <AreaChart data={cost.monthly_trend} margin={{ top: 10, right: 10, bottom: 0, left: 10 }}>
               <defs>
                 <linearGradient id="savingsGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#16a34a" stopOpacity={0.15} />
@@ -263,6 +265,7 @@ export function CostTab() {
               <YAxis className="text-xs" tickFormatter={(v) => `$${(v / 1000).toFixed(1)}K`} />
               <Tooltip
                 formatter={(value, name) => [`$${Number(value).toFixed(2)}`, name === "savings" ? "Savings" : "AI Spend"]}
+                contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
               />
               <Area type="monotone" dataKey="savings" stroke="#16a34a" strokeWidth={2.5} fill="url(#savingsGrad)" />
               <Line type="monotone" dataKey="ai_spend" stroke="#e11d48" strokeWidth={2} strokeDasharray="4 4" dot={false} />
