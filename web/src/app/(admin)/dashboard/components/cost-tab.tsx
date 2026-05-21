@@ -207,6 +207,7 @@ function ROIProjections() {
 export function CostTab() {
   const range = useContext(DashboardRangeContext);
   const { data: cost, isLoading, refetch } = useExecCostSummary(range);
+  const [showEditBaselines, setShowEditBaselines] = useState(false);
 
   if (isLoading) {
     return (
@@ -221,13 +222,22 @@ export function CostTab() {
     );
   }
 
-  if (!cost?.configured) {
-    return <BaselinesConfigForm onSaved={() => refetch()} />;
+  if (!cost?.configured || showEditBaselines) {
+    return <BaselinesConfigForm onSaved={() => { refetch(); setShowEditBaselines(false); }} />;
   }
 
   return (
     <div className="space-y-6 pt-4">
       {/* KPI Row */}
+      <div className="flex items-center justify-between mb-2">
+        <div />
+        <button
+          onClick={() => setShowEditBaselines(true)}
+          className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+        >
+          Edit baselines
+        </button>
+      </div>
       <div className="grid grid-cols-4 gap-4">
         <StatCard label="Monthly Savings" value={`$${(cost.monthly_savings / 1000).toFixed(1)}K`} />
         <StatCard label="Cost Reduction" value={`${cost.cost_reduction_pct}%`} />
