@@ -22,54 +22,57 @@ LICENSE_PUBLIC_KEY="X5Ia46wxT2AxZ6nFlvFnT7ZE6vXoVI208Io3TDoX6N8="
 
 # ── Helpers ──────────────────────────────────────────────────
 
-info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn()  { printf '\033[1;33mWARN:\033[0m %s\n' "$*"; }
+info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; }
-die()   { error "$@"; exit 1; }
+die() {
+    error "$@"
+    exit 1
+}
 
 prompt_with_default() {
-  local var_name="$1" prompt_text="$2" default="$3"
-  local value
-  printf '%s [%s]: ' "$prompt_text" "$default"
-  read -r value
-  value="${value:-$default}"
-  eval "$var_name=\"\$value\""
+    local var_name="$1" prompt_text="$2" default="$3"
+    local value
+    printf '%s [%s]: ' "$prompt_text" "$default"
+    read -r value
+    value="${value:-$default}"
+    eval "$var_name=\"\$value\""
 }
 
 prompt_secret() {
-  local var_name="$1" prompt_text="$2" default="$3"
-  local value
-  if [ -n "$default" ]; then
-    printf '%s [auto-generated]: ' "$prompt_text"
-  else
-    printf '%s: ' "$prompt_text"
-  fi
-  read -r value
-  value="${value:-$default}"
-  eval "$var_name=\"\$value\""
+    local var_name="$1" prompt_text="$2" default="$3"
+    local value
+    if [ -n "$default" ]; then
+        printf '%s [auto-generated]: ' "$prompt_text"
+    else
+        printf '%s: ' "$prompt_text"
+    fi
+    read -r value
+    value="${value:-$default}"
+    eval "$var_name=\"\$value\""
 }
 
 generate_secret() {
-  python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null \
-    || openssl rand -base64 32 2>/dev/null \
-    || head -c 32 /dev/urandom | base64
+    python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null ||
+        openssl rand -base64 32 2>/dev/null ||
+        head -c 32 /dev/urandom | base64
 }
 
 # NOTE: This function is identical in install.sh, install-server.sh, and
 # docker/server-package/setup.sh. If you change the validation logic,
 # update all three files together.
 validate_license() {
-  local key="$1"
+    local key="$1"
 
-  local payload_b64 sig_b64
-  payload_b64="${key%%.*}"
-  sig_b64="${key#*.}"
+    local payload_b64 sig_b64
+    payload_b64="${key%%.*}"
+    sig_b64="${key#*.}"
 
-  if [ -z "$payload_b64" ] || [ -z "$sig_b64" ] || [ "$payload_b64" = "$sig_b64" ]; then
-    return 1
-  fi
+    if [ -z "$payload_b64" ] || [ -z "$sig_b64" ] || [ "$payload_b64" = "$sig_b64" ]; then
+        return 1
+    fi
 
-  python3 - "$payload_b64" "$sig_b64" "$LICENSE_PUBLIC_KEY" 2>/dev/null <<'PYTHON'
+    python3 - "$payload_b64" "$sig_b64" "$LICENSE_PUBLIC_KEY" 2>/dev/null <<'PYTHON'
 import base64, json, sys, time
 
 payload_b64, sig_b64, pub_key_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -114,45 +117,48 @@ command -v docker >/dev/null 2>&1 || die "Docker is required. Install: https://d
 docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required."
 
 if [ -f "$ENV_FILE" ]; then
-  warn "Existing .env found at $ENV_FILE"
-  printf 'Overwrite? [y/N]: '
-  read -r confirm
-  [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { info "Keeping existing config. Run 'docker compose up -d' to start."; exit 0; }
+    warn "Existing .env found at $ENV_FILE"
+    printf 'Overwrite? [y/N]: '
+    read -r confirm
+    [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || {
+        info "Keeping existing config. Run 'docker compose up -d' to start."
+        exit 0
+    }
 fi
 
 # ── License key prompt (if not already provided) ─────────────
 
 if [ -z "$LICENSE_KEY" ]; then
-  echo ""
-  info "License key determines your edition:"
-  info "  • With a valid key: Enterprise edition (SAML, SCIM, insights, self-learning)"
-  info "  • Without a key:    Community edition (full open-source feature set)"
-  echo ""
-  printf 'Enterprise license key (leave blank for community): '
-  read -r LICENSE_KEY
+    echo ""
+    info "License key determines your edition:"
+    info "  • With a valid key: Enterprise edition (SAML, SCIM, insights, self-learning)"
+    info "  • Without a key:    Community edition (full open-source feature set)"
+    echo ""
+    printf 'Enterprise license key (leave blank for community): '
+    read -r LICENSE_KEY
 
-  if [ -n "$LICENSE_KEY" ]; then
-    info "Validating license key..."
-    ORG_ID=""
-    if ORG_ID=$(validate_license "$LICENSE_KEY"); then
-      EDITION="enterprise"
-      info "Valid enterprise license (org: $ORG_ID)"
+    if [ -n "$LICENSE_KEY" ]; then
+        info "Validating license key..."
+        ORG_ID=""
+        if ORG_ID=$(validate_license "$LICENSE_KEY"); then
+            EDITION="enterprise"
+            info "Valid enterprise license (org: $ORG_ID)"
+        else
+            EXIT_CODE=$?
+            if [ "$EXIT_CODE" -eq 2 ]; then
+                die "License key has expired. Contact sales@observal.dev to renew."
+            elif [ "$EXIT_CODE" -eq 3 ]; then
+                warn "Cannot verify license locally (python3 cryptography not found)."
+                warn "Proceeding with enterprise — the server will validate at startup."
+                EDITION="enterprise"
+            else
+                die "Invalid license key. Check your key or contact support@observal.dev"
+            fi
+        fi
     else
-      EXIT_CODE=$?
-      if [ "$EXIT_CODE" -eq 2 ]; then
-        die "License key has expired. Contact sales@observal.dev to renew."
-      elif [ "$EXIT_CODE" -eq 3 ]; then
-        warn "Cannot verify license locally (python3 cryptography not found)."
-        warn "Proceeding with enterprise — the server will validate at startup."
-        EDITION="enterprise"
-      else
-        die "Invalid license key. Check your key or contact support@observal.dev"
-      fi
+        EDITION="community"
+        info "Installing community edition"
     fi
-  else
-    EDITION="community"
-    info "Installing community edition"
-  fi
 fi
 
 # ── Gather configuration ────────────────────────────────────
@@ -165,9 +171,9 @@ POSTGRES_PW_DEFAULT=$(generate_secret | head -c 24)
 CLICKHOUSE_PW_DEFAULT=$(generate_secret | head -c 24)
 
 if [ "$EDITION" = "enterprise" ]; then
-  DEPLOYMENT_MODE_DEFAULT="enterprise"
+    DEPLOYMENT_MODE_DEFAULT="enterprise"
 else
-  DEPLOYMENT_MODE_DEFAULT="local"
+    DEPLOYMENT_MODE_DEFAULT="local"
 fi
 
 prompt_with_default DEPLOYMENT_MODE "Deployment mode (local/enterprise)" "$DEPLOYMENT_MODE_DEFAULT"
@@ -185,19 +191,19 @@ info "Writing configuration to $ENV_FILE"
 cp "$INSTALL_DIR/env.template" "$ENV_FILE"
 
 sed -i.bak \
-  -e "s|__SECRET_KEY__|$SECRET_KEY|g" \
-  -e "s|__POSTGRES_PASSWORD__|$POSTGRES_PASSWORD|g" \
-  -e "s|__CLICKHOUSE_PASSWORD__|$CLICKHOUSE_PASSWORD|g" \
-  -e "s|__DEPLOYMENT_MODE__|$DEPLOYMENT_MODE|g" \
-  -e "s|__FRONTEND_URL__|$FRONTEND_URL|g" \
-  "$ENV_FILE"
+    -e "s|__SECRET_KEY__|$SECRET_KEY|g" \
+    -e "s|__POSTGRES_PASSWORD__|$POSTGRES_PASSWORD|g" \
+    -e "s|__CLICKHOUSE_PASSWORD__|$CLICKHOUSE_PASSWORD|g" \
+    -e "s|__DEPLOYMENT_MODE__|$DEPLOYMENT_MODE|g" \
+    -e "s|__FRONTEND_URL__|$FRONTEND_URL|g" \
+    "$ENV_FILE"
 rm -f "$ENV_FILE.bak"
 
 # Append license key if enterprise
 if [ "$EDITION" = "enterprise" ] && [ -n "$LICENSE_KEY" ]; then
-  echo "" >> "$ENV_FILE"
-  echo "# Enterprise license key" >> "$ENV_FILE"
-  echo "OBSERVAL_LICENSE_KEY=$LICENSE_KEY" >> "$ENV_FILE"
+    echo "" >>"$ENV_FILE"
+    echo "# Enterprise license key" >>"$ENV_FILE"
+    echo "OBSERVAL_LICENSE_KEY=$LICENSE_KEY" >>"$ENV_FILE"
 fi
 
 chmod 600 "$ENV_FILE"
@@ -207,19 +213,19 @@ chmod 600 "$ENV_FILE"
 COMPOSE_FILES="-f docker-compose.yml"
 
 if [ "$EDITION" = "enterprise" ]; then
-  # Enterprise uses the enterprise compose overlay with ee/ services
-  if [ -f "$INSTALL_DIR/docker-compose.enterprise.yml" ]; then
-    COMPOSE_FILES="-f docker-compose.yml -f docker-compose.enterprise.yml"
-    info "Enterprise compose overlay enabled."
-  fi
+    # Enterprise uses the enterprise compose overlay with ee/ services
+    if [ -f "$INSTALL_DIR/docker-compose.enterprise.yml" ]; then
+        COMPOSE_FILES="-f docker-compose.yml -f docker-compose.enterprise.yml"
+        info "Enterprise compose overlay enabled."
+    fi
 
-  # Authenticate to private container registry if needed
-  if echo "$LICENSE_KEY" | docker login ghcr.io -u observal-customer --password-stdin 2>/dev/null; then
-    info "Authenticated with enterprise container registry."
-  else
-    warn "Could not authenticate with container registry. Enterprise images may not pull."
-    warn "If you see pull errors, contact support@observal.dev"
-  fi
+    # Authenticate to private container registry if needed
+    if echo "$LICENSE_KEY" | docker login ghcr.io -u observal-customer --password-stdin 2>/dev/null; then
+        info "Authenticated with enterprise container registry."
+    else
+        warn "Could not authenticate with container registry. Enterprise images may not pull."
+        warn "If you see pull errors, contact support@observal.dev"
+    fi
 fi
 
 # ── Start services ───────────────────────────────────────────
@@ -231,14 +237,14 @@ docker compose $COMPOSE_FILES --env-file .env up -d
 
 info "Waiting for API to be healthy..."
 for i in $(seq 1 60); do
-  if docker compose $COMPOSE_FILES exec -T observal-api \
-    python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')" 2>/dev/null; then
-    break
-  fi
-  if [ "$i" -eq 60 ]; then
-    die "API did not become healthy in 5 minutes. Check logs: docker compose $COMPOSE_FILES logs"
-  fi
-  sleep 5
+    if docker compose $COMPOSE_FILES exec -T observal-api \
+        python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')" 2>/dev/null; then
+        break
+    fi
+    if [ "$i" -eq 60 ]; then
+        die "API did not become healthy in 5 minutes. Check logs: docker compose $COMPOSE_FILES logs"
+    fi
+    sleep 5
 done
 
 # Restart LB to pick up new API container IP
@@ -258,8 +264,8 @@ info "  Stop:       cd $INSTALL_DIR && docker compose $COMPOSE_FILES down"
 info "  Logs:       cd $INSTALL_DIR && docker compose $COMPOSE_FILES logs -f"
 info ""
 if [ "$EDITION" = "enterprise" ]; then
-  info "Enterprise features: SAML, SCIM, insights, self-learning"
-  info "Manage license: observal admin settings"
+    info "Enterprise features: SAML, SCIM, insights, self-learning"
+    info "Manage license: observal admin settings"
 fi
 info ""
 info "Login:  $FRONTEND_URL"

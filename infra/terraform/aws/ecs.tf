@@ -52,7 +52,7 @@ locals {
     { name = "CLICKHOUSE_URL", valueFrom = aws_ssm_parameter.urls["CLICKHOUSE_URL"].arn },
     { name = "CLICKHOUSE_PASSWORD", valueFrom = aws_ssm_parameter.app["CLICKHOUSE_PASSWORD"].arn },
     { name = "SECRET_KEY", valueFrom = aws_ssm_parameter.app["SECRET_KEY"].arn },
-  ], local.is_enterprise ? [
+    ], local.is_enterprise ? [
     { name = "OBSERVAL_LICENSE_KEY", valueFrom = aws_ssm_parameter.license_key[0].arn },
   ] : [])
 }

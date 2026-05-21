@@ -85,5 +85,6 @@ output "log_group_names" {
 
 output "edition" {
   description = "Deployed edition: community or enterprise."
+  sensitive   = true
   value       = local.effective_edition
 }
