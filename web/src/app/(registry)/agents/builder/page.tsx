@@ -1181,8 +1181,7 @@ function AgentBuilderInner() {
                 )}
                 prompt={systemPrompt}
                 pendingComponentBodies={Object.fromEntries(pendingComponents.map((pc) => [pc.id, pc.body]))}
-                goalSections={goalSections}
-                customPrompts={customPrompts}
+                validationResult={validationResult}
               />
             </div>
           </aside>

@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0010"
-down_revision = "0008"
+down_revision = "0009"
 branch_labels = None
 depends_on = None
 
@@ -22,8 +22,18 @@ def upgrade() -> None:
     # user_groups table (SSO group persistence)
     op.create_table(
         "user_groups",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", sa.dialects.postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "user_id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("group_name", sa.String(255), nullable=False),
         sa.Column("synced_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.UniqueConstraint("user_id", "group_name", name="uq_user_groups_user_group"),
@@ -34,8 +44,18 @@ def upgrade() -> None:
     # exec_dashboard_config table (cost baselines)
     op.create_table(
         "exec_dashboard_config",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("org_id", sa.dialects.postgresql.UUID(as_uuid=True), sa.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "org_id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("hourly_dev_cost", sa.Numeric(10, 2), server_default="75.00"),
         sa.Column("pre_ai_baselines", sa.dialects.postgresql.JSON, server_default="{}"),
         sa.Column("department_budgets", sa.dialects.postgresql.JSON, server_default="{}"),

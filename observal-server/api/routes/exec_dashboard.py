@@ -79,15 +79,20 @@ async def resolve_user_departments(db: AsyncSession, org_id: uuid.UUID | None) -
     if org_id:
         dept_rows = (
             await db.execute(
-                select(User.id, User.department)
-                .where(User.org_id == org_id, User.department.isnot(None), User.id.notin_(assigned_user_ids) if assigned_user_ids else User.department.isnot(None))
+                select(User.id, User.department).where(
+                    User.org_id == org_id,
+                    User.department.isnot(None),
+                    User.id.notin_(assigned_user_ids) if assigned_user_ids else User.department.isnot(None),
+                )
             )
         ).all()
     else:
         dept_rows = (
             await db.execute(
-                select(User.id, User.department)
-                .where(User.department.isnot(None), User.id.notin_(assigned_user_ids) if assigned_user_ids else User.department.isnot(None))
+                select(User.id, User.department).where(
+                    User.department.isnot(None),
+                    User.id.notin_(assigned_user_ids) if assigned_user_ids else User.department.isnot(None),
+                )
             )
         ).all()
 
@@ -145,9 +150,7 @@ async def get_exec_config(
     if not current_user.org_id:
         return None
 
-    result = await db.execute(
-        select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == current_user.org_id)
-    )
+    result = await db.execute(select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == current_user.org_id))
     config = result.scalar_one_or_none()
     if not config:
         return None
@@ -165,9 +168,7 @@ async def update_exec_config(
     if not current_user.org_id:
         raise HTTPException(status_code=400, detail="User has no organization")
 
-    result = await db.execute(
-        select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == current_user.org_id)
-    )
+    result = await db.execute(select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == current_user.org_id))
     config = result.scalar_one_or_none()
 
     if not config:
@@ -332,10 +333,7 @@ async def get_agent_counts(
     if org_id:
         cat_stmt = cat_stmt.where(Agent.owner_org_id == org_id)
     cat_rows = (await db.execute(cat_stmt)).all()
-    by_category = [
-        {"category": row[0] or "Uncategorized", "count": row[1]}
-        for row in cat_rows
-    ]
+    by_category = [{"category": row[0] or "Uncategorized", "count": row[1]} for row in cat_rows]
 
     return AgentCountBreakdown(
         total=total,
@@ -436,10 +434,7 @@ async def get_platform_coverage(
         "GROUP BY ide ORDER BY sessions DESC",
         current_user,
     )
-    return [
-        PlatformCoverageItem(platform=r["ide"], users=int(r["users"]), sessions=int(r["sessions"]))
-        for r in rows
-    ]
+    return [PlatformCoverageItem(platform=r["ide"], users=int(r["users"]), sessions=int(r["sessions"])) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -494,16 +489,18 @@ async def get_platforms(
         error_rate = round(errors / total_spans, 4)
         success_rate = round(1 - error_rate, 4)
 
-        results.append(PlatformScore(
-            platform=r["ide"],
-            composite_score=0,
-            sessions=sessions,
-            avg_cost=avg_cost,
-            avg_latency_ms=avg_latency,
-            success_rate=round(success_rate * 100, 1),
-            error_rate=round(error_rate * 100, 2),
-            users=users,
-        ))
+        results.append(
+            PlatformScore(
+                platform=r["ide"],
+                composite_score=0,
+                sessions=sessions,
+                avg_cost=avg_cost,
+                avg_latency_ms=avg_latency,
+                success_rate=round(success_rate * 100, 1),
+                error_rate=round(error_rate * 100, 2),
+                users=users,
+            )
+        )
 
     # Score = session-based rank (most adopted = highest score, no opaque weighting)
     if results:
@@ -589,9 +586,8 @@ async def get_top_agents(
     org_id = current_user.org_id
 
     # Downloads from PG
-    dl_stmt = (
-        select(AgentDownloadRecord.agent_id, func.count(AgentDownloadRecord.id).label("downloads"))
-        .group_by(AgentDownloadRecord.agent_id)
+    dl_stmt = select(AgentDownloadRecord.agent_id, func.count(AgentDownloadRecord.id).label("downloads")).group_by(
+        AgentDownloadRecord.agent_id
     )
     dl_rows = (await db.execute(dl_stmt)).all()
     dl_map = {str(r.agent_id): r.downloads for r in dl_rows}
@@ -668,16 +664,18 @@ async def get_top_agents(
 
         composite = round(dl_norm * 0.3 + sess_norm * 0.4 + rating_norm * 0.3, 1)
 
-        scored.append(TopAgentScored(
-            id=aid,
-            name=name,
-            category=category,
-            composite_score=composite,
-            sessions=sessions,
-            downloads=downloads,
-            avg_rating=rating,
-            weekly_trend=trend_map.get(aid, []),
-        ))
+        scored.append(
+            TopAgentScored(
+                id=aid,
+                name=name,
+                category=category,
+                composite_score=composite,
+                sessions=sessions,
+                downloads=downloads,
+                avg_rating=rating,
+                weekly_trend=trend_map.get(aid, []),
+            )
+        )
 
     scored.sort(key=lambda x: -x.composite_score)
     return scored[:limit]
@@ -717,8 +715,9 @@ async def get_departments(
     # Agent count per department (via AgentTeamAccess)
     agent_access_rows = (
         await db.execute(
-            select(AgentTeamAccess.group_name, func.count(AgentTeamAccess.agent_id.distinct()))
-            .group_by(AgentTeamAccess.group_name)
+            select(AgentTeamAccess.group_name, func.count(AgentTeamAccess.agent_id.distinct())).group_by(
+                AgentTeamAccess.group_name
+            )
         )
     ).all()
     agent_count_by_dept: dict[str, int] = {r[0]: r[1] for r in agent_access_rows}
@@ -754,13 +753,15 @@ async def get_departments(
         total_sessions = sum(user_sessions.get(uid, 0) for uid in user_ids)
         sessions_per_user = round(total_sessions / user_count, 1) if user_count > 0 else 0.0
 
-        departments.append(DepartmentItem(
-            department=dept_name,
-            user_count=user_count,
-            agent_count=agent_count,
-            utilization_pct=utilization,
-            sessions_per_user=sessions_per_user,
-        ))
+        departments.append(
+            DepartmentItem(
+                department=dept_name,
+                user_count=user_count,
+                agent_count=agent_count,
+                utilization_pct=utilization,
+                sessions_per_user=sessions_per_user,
+            )
+        )
 
     return DepartmentsResponse(departments=departments)
 
@@ -833,13 +834,15 @@ async def get_dept_tokens(
         sessions_per_user = round(traces / user_count, 1) if user_count > 0 else 0.0
         trend = compute_trend_percent(tokens, prev_tokens)
 
-        result.append(DeptTokenItem(
-            department=dept_name,
-            tokens_used=tokens,
-            cost_per_task=cost_per_task,
-            sessions_per_user=sessions_per_user,
-            trend_pct=trend,
-        ))
+        result.append(
+            DeptTokenItem(
+                department=dept_name,
+                tokens_used=tokens,
+                cost_per_task=cost_per_task,
+                sessions_per_user=sessions_per_user,
+                trend_pct=trend,
+            )
+        )
 
     return result
 
@@ -885,9 +888,7 @@ async def get_cost_summary(
     # Load config
     config = None
     if org_id:
-        result = await db.execute(
-            select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == org_id)
-        )
+        result = await db.execute(select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == org_id))
         config = result.scalar_one_or_none()
 
     if not config:
@@ -924,11 +925,13 @@ async def get_cost_summary(
         spend = float(r.get("spend") or 0)
         traces = int(r.get("traces") or 0)
         savings = max(0, (avg_baseline * traces) - spend) if avg_baseline > 0 else 0
-        monthly_trend.append(MonthlyCostPoint(
-            month=str(r["month"])[:7],
-            ai_spend=round(spend, 2),
-            savings=round(savings, 2),
-        ))
+        monthly_trend.append(
+            MonthlyCostPoint(
+                month=str(r["month"])[:7],
+                ai_spend=round(spend, 2),
+                savings=round(savings, 2),
+            )
+        )
         total_spend += spend
         total_traces += traces
 
@@ -998,12 +1001,14 @@ async def get_cost_summary(
         actual = round(sum(costs) / len(costs), 4) if costs else 0
         baseline = baselines.get(cat, avg_baseline)
         saved = round(((baseline - actual) / baseline) * 100, 1) if baseline > 0 else 0
-        by_category.append(CostByCategory(
-            category=cat,
-            baseline_cost=round(baseline, 2),
-            actual_cost=actual,
-            saved_pct=max(saved, 0),
-        ))
+        by_category.append(
+            CostByCategory(
+                category=cat,
+                baseline_cost=round(baseline, 2),
+                actual_cost=actual,
+                saved_pct=max(saved, 0),
+            )
+        )
 
     return CostSummaryResponse(
         monthly_savings=round(monthly_savings, 2),
@@ -1047,15 +1052,17 @@ async def get_roi_projections(
 
     config = None
     if org_id:
-        result = await db.execute(
-            select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == org_id)
-        )
+        result = await db.execute(select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == org_id))
         config = result.scalar_one_or_none()
 
     if not config:
         return ROIProjectionsResponse(
-            projections=[], growth_rate_pct=0, time_to_breakeven_months=None,
-            total_invested=0, total_saved=0, roi_multiple=0,
+            projections=[],
+            growth_rate_pct=0,
+            time_to_breakeven_months=None,
+            total_invested=0,
+            total_saved=0,
+            roi_multiple=0,
         )
 
     baselines = config.pre_ai_baselines or {}
@@ -1073,8 +1080,12 @@ async def get_roi_projections(
 
     if not monthly_rows or avg_baseline == 0:
         return ROIProjectionsResponse(
-            projections=[], growth_rate_pct=0, time_to_breakeven_months=None,
-            total_invested=0, total_saved=0, roi_multiple=0,
+            projections=[],
+            growth_rate_pct=0,
+            time_to_breakeven_months=None,
+            total_invested=0,
+            total_saved=0,
+            roi_multiple=0,
         )
 
     monthly_savings_list: list[float] = []
@@ -1109,7 +1120,7 @@ async def get_roi_projections(
     y_mean = sum(monthly_savings_list) / n if n > 0 else 0
     if n >= 3 and y_mean > 0:
         variance = sum((y - y_mean) ** 2 for y in monthly_savings_list) / n
-        std_dev = variance ** 0.5
+        std_dev = variance**0.5
         cv = std_dev / y_mean
         decay_per_quarter = min(0.20, max(0.05, cv))
     else:
@@ -1134,12 +1145,14 @@ async def get_roi_projections(
         quarter_year = now.year + ((now.month - 1) // 3 + q_offset) // 4
         quarter_label = f"Q{quarter_num} {quarter_year}"
 
-        projections.append(ROIProjectionPoint(
-            quarter=quarter_label,
-            projected_savings=round(quarter_savings, 2),
-            cumulative_savings=round(cumulative, 2),
-            confidence=round(confidence, 2),
-        ))
+        projections.append(
+            ROIProjectionPoint(
+                quarter=quarter_label,
+                projected_savings=round(quarter_savings, 2),
+                cumulative_savings=round(cumulative, 2),
+                confidence=round(confidence, 2),
+            )
+        )
 
     # Time to breakeven
     if total_invested > total_saved and slope > 0:
@@ -1244,7 +1257,8 @@ async def get_strategic_insights(
     )
     model_success_map = {
         r["model"]: round(int(r["successes"]) / int(r["total"]) * 100, 1)
-        for r in model_success_rows if int(r.get("total", 0)) > 0
+        for r in model_success_rows
+        if int(r.get("total", 0)) > 0
     }
 
     model_comparison = []
@@ -1268,14 +1282,16 @@ async def get_strategic_insights(
             else:
                 best_at = "General purpose"
 
-            model_comparison.append(ModelComparisonItem(
-                model=model_name,
-                sessions=sessions,
-                avg_cost=avg_cost,
-                avg_tokens=avg_tokens,
-                success_rate=success,
-                best_at=best_at,
-            ))
+            model_comparison.append(
+                ModelComparisonItem(
+                    model=model_name,
+                    sessions=sessions,
+                    avg_cost=avg_cost,
+                    avg_tokens=avg_tokens,
+                    success_rate=success,
+                    best_at=best_at,
+                )
+            )
 
     # 2. Department gaps
     dept_map = await resolve_user_departments(db, org_id)
@@ -1284,10 +1300,7 @@ async def get_strategic_insights(
         all_user_ids.extend(uids)
 
     user_session_rows = await _ch_json_scoped(
-        "SELECT user_id, count() AS sessions "
-        "FROM session_stats_agg "
-        "WHERE project_id = 'default' "
-        "GROUP BY user_id",
+        "SELECT user_id, count() AS sessions FROM session_stats_agg WHERE project_id = 'default' GROUP BY user_id",
         current_user,
     )
     user_sessions = {r["user_id"]: int(r["sessions"]) for r in user_session_rows}
@@ -1308,12 +1321,14 @@ async def get_strategic_insights(
         else:
             opportunity = "High adoption — focus on optimization"
 
-        department_gaps.append(DepartmentGap(
-            department=dept_name,
-            adoption_pct=adoption,
-            sessions=total_sessions,
-            opportunity=opportunity,
-        ))
+        department_gaps.append(
+            DepartmentGap(
+                department=dept_name,
+                adoption_pct=adoption,
+                sessions=total_sessions,
+                opportunity=opportunity,
+            )
+        )
 
     department_gaps.sort(key=lambda d: d.adoption_pct)
 
@@ -1339,13 +1354,15 @@ async def get_strategic_insights(
         cheap_cost = sessions * 0.04
         savings = total_cost - cheap_cost
         if savings > 10:
-            quick_wins.append(QuickWin(
-                title=f"Route simple tasks away from {r['model']}",
-                detail=f"{sessions} sessions with <2K tokens are using an expensive model. "
-                       f"A cheaper model handles these identically.",
-                estimated_savings=round(savings, 2),
-                effort="low",
-            ))
+            quick_wins.append(
+                QuickWin(
+                    title=f"Route simple tasks away from {r['model']}",
+                    detail=f"{sessions} sessions with <2K tokens are using an expensive model. "
+                    f"A cheaper model handles these identically.",
+                    estimated_savings=round(savings, 2),
+                    effort="low",
+                )
+            )
 
     # Win: inactive agents still consuming resources
     inactive_agent_rows = await _ch_json_scoped(
@@ -1360,13 +1377,15 @@ async def get_strategic_insights(
         current_user,
     )
     for r in inactive_agent_rows:
-        quick_wins.append(QuickWin(
-            title="Decommission low-usage agent",
-            detail=f"Agent with only {r['sessions']} sessions in 14 days is still costing ${r['cost']}. "
-                   f"Consider retiring or consolidating.",
-            estimated_savings=float(r["cost"]),
-            effort="low",
-        ))
+        quick_wins.append(
+            QuickWin(
+                title="Decommission low-usage agent",
+                detail=f"Agent with only {r['sessions']} sessions in 14 days is still costing ${r['cost']}. "
+                f"Consider retiring or consolidating.",
+                estimated_savings=float(r["cost"]),
+                effort="low",
+            )
+        )
 
     # Win: high error-rate patterns
     error_rows = await _ch_json_scoped(
@@ -1387,13 +1406,15 @@ async def get_strategic_insights(
         errors = int(r["errors"])
         total = int(r["total"])
         error_pct = round(errors / total * 100)
-        quick_wins.append(QuickWin(
-            title="Fix high-error agent to recover wasted spend",
-            detail=f"Agent has {error_pct}% error rate ({errors}/{total} calls). "
-                   f"Fixing this recovers ~${r['wasted_cost']} in failed request costs.",
-            estimated_savings=float(r["wasted_cost"]),
-            effort="medium",
-        ))
+        quick_wins.append(
+            QuickWin(
+                title="Fix high-error agent to recover wasted spend",
+                detail=f"Agent has {error_pct}% error rate ({errors}/{total} calls). "
+                f"Fixing this recovers ~${r['wasted_cost']} in failed request costs.",
+                estimated_savings=float(r["wasted_cost"]),
+                effort="medium",
+            )
+        )
 
     # 4. Platform comparison (task completion speed)
     platform_rows = await _ch_json_scoped(
@@ -1537,9 +1558,9 @@ async def get_developer_breakdown(
             except (ValueError, AttributeError):
                 pass
         if valid_ids:
-            info_rows = (await db.execute(
-                select(User.id, User.name, User.department).where(User.id.in_(valid_ids))
-            )).all()
+            info_rows = (
+                await db.execute(select(User.id, User.name, User.department).where(User.id.in_(valid_ids)))
+            ).all()
             user_info = {str(r.id): (r.name, r.department or "Unassigned") for r in info_rows}
 
     # Also check user_groups for SSO department
@@ -1556,15 +1577,17 @@ async def get_developer_breakdown(
         department = uid_to_dept.get(uid, fallback_dept)
         percentile = max(1, 100 - int((i / max(len(user_rows), 1)) * 100))
 
-        developers.append(DeveloperActivityItem(
-            user_id=uid,
-            name=name,
-            department=department,
-            sessions=int(r.get("sessions", 0)),
-            tokens_consumed=int(r.get("tokens", 0)),
-            cost=round(float(r.get("cost") or 0), 4),
-            percentile=percentile,
-        ))
+        developers.append(
+            DeveloperActivityItem(
+                user_id=uid,
+                name=name,
+                department=department,
+                sessions=int(r.get("sessions", 0)),
+                tokens_consumed=int(r.get("tokens", 0)),
+                cost=round(float(r.get("cost") or 0), 4),
+                percentile=percentile,
+            )
+        )
 
     return DeveloperBreakdownResponse(
         total_developers=total_developers,
@@ -1629,9 +1652,7 @@ async def get_inactivity_alerts(
     )
     recently_active_agents = {r["agent_id"] for r in recent_agent_rows}
 
-    churned_agent_ids = [
-        r for r in prev_agent_rows if r["agent_id"] not in recently_active_agents
-    ]
+    churned_agent_ids = [r for r in prev_agent_rows if r["agent_id"] not in recently_active_agents]
 
     # Resolve agent names
     import uuid as _uuid
@@ -1657,13 +1678,15 @@ async def get_inactivity_alerts(
         aid = r["agent_id"]
         if aid in {str(k) for k in agent_ids_to_resolve} and aid in agent_info:
             name, category = agent_info[aid]
-            inactive_agents.append(InactiveAgentItem(
-                id=aid,
-                name=name,
-                category=category,
-                last_session_days_ago=14,
-                previous_sessions=int(r["sessions"]),
-            ))
+            inactive_agents.append(
+                InactiveAgentItem(
+                    id=aid,
+                    name=name,
+                    category=category,
+                    last_session_days_ago=14,
+                    previous_sessions=int(r["sessions"]),
+                )
+            )
 
     # Users active 15-28 days ago but NOT in last 14 days
     prev_user_rows = await _ch_json_scoped(
@@ -1684,9 +1707,7 @@ async def get_inactivity_alerts(
     )
     recently_active_users = {r["user_id"] for r in recent_user_rows}
 
-    churned_users = [
-        r for r in prev_user_rows if r["user_id"] not in recently_active_users
-    ]
+    churned_users = [r for r in prev_user_rows if r["user_id"] not in recently_active_users]
 
     # Resolve user names + departments
     dept_map = await resolve_user_departments(db, org_id)
@@ -1712,13 +1733,15 @@ async def get_inactivity_alerts(
         uid = r["user_id"]
         name = user_names.get(uid, "Unknown")
         dept = uid_to_dept.get(uid, "Unassigned")
-        inactive_users.append(InactiveUserItem(
-            user_id=uid,
-            name=name,
-            department=dept,
-            last_session_days_ago=14,
-            previous_sessions=int(r["sessions"]),
-        ))
+        inactive_users.append(
+            InactiveUserItem(
+                user_id=uid,
+                name=name,
+                department=dept,
+                last_session_days_ago=14,
+                previous_sessions=int(r["sessions"]),
+            )
+        )
 
     return InactivityAlertsResponse(
         inactive_agents=inactive_agents,
@@ -1771,8 +1794,7 @@ async def get_time_to_value(
         current_user,
     )
     session_map: dict[str, dict] = {
-        r["agent_id"]: {"first_session": r["first_session"], "total": int(r["total_sessions"])}
-        for r in session_rows
+        r["agent_id"]: {"first_session": r["first_session"], "total": int(r["total_sessions"])} for r in session_rows
     }
 
     # For agents with >=100 sessions, find when they hit 100
@@ -1813,19 +1835,23 @@ async def get_time_to_value(
             except (ValueError, TypeError):
                 pass
 
-        items.append(TimeToValueItem(
-            id=aid,
-            name=agent.name,
-            category=agent.category or "Uncategorized",
-            created_at=str(agent.created_at)[:10] if agent.created_at else "",
-            days_to_100=days_to_100,
-            current_sessions=current_sessions,
-        ))
+        items.append(
+            TimeToValueItem(
+                id=aid,
+                name=agent.name,
+                category=agent.category or "Uncategorized",
+                created_at=str(agent.created_at)[:10] if agent.created_at else "",
+                days_to_100=days_to_100,
+                current_sessions=current_sessions,
+            )
+        )
 
     items.sort(key=lambda x: x.current_sessions, reverse=True)
     avg_days = round(sum(days_list) / len(days_list), 1) if days_list else None
 
     return TimeToValueResponse(agents=items[:20], avg_days_to_100=avg_days)
+
+
 # AI Insights (LLM-generated strategic recommendations)
 # ---------------------------------------------------------------------------
 
@@ -1914,13 +1940,15 @@ async def get_ai_insights(
         active_count = sum(1 for uid in user_ids if user_sessions.get(uid, 0) > 0)
         dept_adoption = round((active_count / user_count) * 100, 1) if user_count > 0 else 0
         total_sessions = sum(user_sessions.get(uid, 0) for uid in user_ids)
-        dept_data.append({
-            "department": dept_name,
-            "users": user_count,
-            "active_users": active_count,
-            "adoption_pct": dept_adoption,
-            "sessions": total_sessions,
-        })
+        dept_data.append(
+            {
+                "department": dept_name,
+                "users": user_count,
+                "active_users": active_count,
+                "adoption_pct": dept_adoption,
+                "sessions": total_sessions,
+            }
+        )
 
     # 5. Expensive simple tasks (quick win candidates)
     expensive_rows = await _ch_json_scoped(
@@ -1966,22 +1994,31 @@ async def get_ai_insights(
             "adoption_pct": adoption_pct,
         },
         "model_comparison": [
-            {"model": r["model"], "sessions": int(r["sessions"]),
-             "avg_cost": float(r.get("avg_cost") or 0),
-             "avg_tokens": int(float(r.get("avg_tokens") or 0))}
+            {
+                "model": r["model"],
+                "sessions": int(r["sessions"]),
+                "avg_cost": float(r.get("avg_cost") or 0),
+                "avg_tokens": int(float(r.get("avg_tokens") or 0)),
+            }
             for r in model_rows
         ],
         "platform_comparison": [
-            {"platform": r["ide"], "sessions": int(r["sessions"]),
-             "users": int(r["users"]),
-             "avg_task_seconds": float(r.get("avg_task_seconds") or 0)}
+            {
+                "platform": r["ide"],
+                "sessions": int(r["sessions"]),
+                "users": int(r["users"]),
+                "avg_task_seconds": float(r.get("avg_task_seconds") or 0),
+            }
             for r in platform_rows
         ],
         "department_gaps": dept_data,
         "quick_win_candidates": [
-            {"model": r["model"], "sessions": int(r["sessions"]),
-             "total_cost": float(r["total_cost"]),
-             "avg_tokens": int(float(r.get("avg_tokens") or 0))}
+            {
+                "model": r["model"],
+                "sessions": int(r["sessions"]),
+                "total_cost": float(r["total_cost"]),
+                "avg_tokens": int(float(r.get("avg_tokens") or 0)),
+            }
             for r in expensive_rows
         ],
         "automatable": {
@@ -1993,7 +2030,7 @@ async def get_ai_insights(
             "total_active": len(dev_rows),
             "total_sessions": sum(int(r.get("sessions", 0)) for r in dev_rows),
             "total_cost": round(sum(float(r.get("cost") or 0) for r in dev_rows), 2),
-            "top_20_sessions": sum(int(r.get("sessions", 0)) for r in dev_rows[:max(1, len(dev_rows) // 5)]),
+            "top_20_sessions": sum(int(r.get("sessions", 0)) for r in dev_rows[: max(1, len(dev_rows) // 5)]),
         },
     }
 
@@ -2003,9 +2040,15 @@ async def get_ai_insights(
         return AIInsightsResponse(
             quick_wins=[],
             adoption_gaps=[],
-            platform_insight={"title": "Insufficient data", "detail": "Configure EVAL_MODEL_NAME to enable AI insights."},
+            platform_insight={
+                "title": "Insufficient data",
+                "detail": "Configure EVAL_MODEL_NAME to enable AI insights.",
+            },
             model_insight={"title": "Insufficient data", "detail": "Configure EVAL_MODEL_NAME to enable AI insights."},
-            automation_opportunity={"title": "Insufficient data", "detail": "Configure EVAL_MODEL_NAME to enable AI insights."},
+            automation_opportunity={
+                "title": "Insufficient data",
+                "detail": "Configure EVAL_MODEL_NAME to enable AI insights.",
+            },
             usage_pattern={"title": "Insufficient data", "detail": "Configure EVAL_MODEL_NAME to enable AI insights."},
             generated=False,
         )

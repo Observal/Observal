@@ -14,9 +14,7 @@ from models.base import Base
 
 class UserGroup(Base):
     __tablename__ = "user_groups"
-    __table_args__ = (
-        UniqueConstraint("user_id", "group_name", name="uq_user_groups_user_group"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "group_name", name="uq_user_groups_user_group"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
