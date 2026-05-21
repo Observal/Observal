@@ -33,7 +33,7 @@ class TestClickHouseRetry:
             ]
         )
 
-        with patch("services.clickhouse._get_client", return_value=mock_client):
+        with patch("services.clickhouse.client._get_client", return_value=mock_client):
             resp = await _query("SELECT 1")
             assert resp.status_code == 200
             assert mock_client.post.call_count == 3
@@ -46,7 +46,7 @@ class TestClickHouseRetry:
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(side_effect=httpx.ConnectError("conn refused"))
 
-        with patch("services.clickhouse._get_client", return_value=mock_client):
+        with patch("services.clickhouse.client._get_client", return_value=mock_client):
             with pytest.raises(httpx.ConnectError):
                 await _query("SELECT 1")
             assert mock_client.post.call_count == 3
@@ -61,7 +61,7 @@ class TestClickHouseRetry:
         mock_resp.status_code = 200
         mock_client.post = AsyncMock(side_effect=[httpx.ConnectTimeout("timeout"), mock_resp])
 
-        with patch("services.clickhouse._get_client", return_value=mock_client):
+        with patch("services.clickhouse.client._get_client", return_value=mock_client):
             resp = await _query("SELECT 1")
             assert resp.status_code == 200
             assert mock_client.post.call_count == 2
@@ -74,7 +74,7 @@ class TestClickHouseRetry:
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(side_effect=httpx.ReadError("broken pipe"))
 
-        with patch("services.clickhouse._get_client", return_value=mock_client):
+        with patch("services.clickhouse.client._get_client", return_value=mock_client):
             with pytest.raises(httpx.ReadError):
                 await _query("SELECT 1")
             assert mock_client.post.call_count == 1
@@ -95,7 +95,7 @@ class TestClickHouseHealth:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("services.clickhouse._query", new_callable=AsyncMock, return_value=mock_resp):
+        with patch("services.clickhouse.client._query", new_callable=AsyncMock, return_value=mock_resp):
             assert await clickhouse_health() is True
 
     @pytest.mark.asyncio
@@ -116,7 +116,7 @@ class TestClickHouseHealth:
         mock_resp = MagicMock()
         mock_resp.status_code = 500
 
-        with patch("services.clickhouse._query", new_callable=AsyncMock, return_value=mock_resp):
+        with patch("services.clickhouse.client._query", new_callable=AsyncMock, return_value=mock_resp):
             assert await clickhouse_health() is False
 
 

@@ -15,6 +15,7 @@ from arq.cron import cron
 from logging_config import setup_logging
 from services.alert_evaluator import evaluate_alerts
 from services.redis import parse_redis_settings, publish
+from services.retention import run_retention_purge
 
 setup_logging()
 logger = structlog.get_logger(__name__)
@@ -104,9 +105,9 @@ async def maintain_clickhouse(ctx: dict):
     month-long agent session accumulates thousands of tiny parts that
     bloat memory during merges and FINAL queries.
     """
-    from services.clickhouse import _query
+    from services.clickhouse.client import _query
 
-    tables = ["traces", "spans", "scores"]
+    tables = ["traces", "spans", "scores", "session_events", "session_stats_agg"]
     for table in tables:
         try:
             await _query(f"OPTIMIZE TABLE {table}")
@@ -211,6 +212,7 @@ class WorkerSettings:
         generate_insight_report,
         batch_generate_insights,
         refresh_model_catalog,
+        run_retention_purge,
     ]
     cron_jobs = [
         cron(sync_component_sources, hour={0, 6, 12, 18}),  # Every 6 hours
@@ -218,6 +220,9 @@ class WorkerSettings:
         cron(maintain_clickhouse, hour={0, 4, 8, 12, 16, 20}, timeout=120),  # Every 4 hours
         cron(batch_generate_insights, weekday={0}, hour={6}, minute={0}, timeout=300),  # Weekly Monday 6AM
         cron(refresh_model_catalog, hour={0, 6, 12, 18}, minute={5}, timeout=30),  # Every 6 hours (offset)
+        cron(
+            run_retention_purge, hour={1, 7, 13, 19}, minute={30}, timeout=3600, unique=True
+        ),  # Every 6 hours (retention)
     ]
     on_startup = startup
     on_shutdown = shutdown
