@@ -105,7 +105,7 @@ if settings.OAUTH_CLIENT_ID and settings.OAUTH_CLIENT_SECRET and settings.OAUTH_
         client_secret=settings.OAUTH_CLIENT_SECRET,
         server_metadata_url=settings.OAUTH_SERVER_METADATA_URL,
         client_kwargs={
-            "scope": "openid email profile",
+            "scope": "openid email profile groups",
         },
     )
 
