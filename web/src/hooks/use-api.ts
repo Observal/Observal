@@ -31,8 +31,10 @@ import {
   graphql,
   insights,
   models,
+  getUserRole,
   type RegistryType,
 } from "@/lib/api";
+import { hasMinRole } from "@/hooks/use-role-guard";
 import type { LeaderboardWindow } from "@/lib/types";
 
 // ── Dashboard ───────────────────────────────────────────────────────
@@ -377,6 +379,26 @@ export function useSystemWarnings() {
     queryKey: ["admin", "system-warnings"],
     queryFn: admin.systemWarnings,
     refetchInterval: 60_000,
+  });
+}
+
+// ── Retention ────────────────────────────────────────────────────────
+
+export function useRetentionStats() {
+  const role = getUserRole();
+  return useQuery({
+    queryKey: ["admin", "retention", "stats"],
+    queryFn: admin.getRetentionStats,
+    enabled: hasMinRole(role, "admin"),
+  });
+}
+
+export function useRetentionWarnings() {
+  const role = getUserRole();
+  return useQuery({
+    queryKey: ["admin", "retention", "warnings"],
+    queryFn: admin.getRetentionWarnings,
+    enabled: hasMinRole(role, "admin"),
   });
 }
 

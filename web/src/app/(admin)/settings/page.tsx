@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import { Settings, Plus, Pencil, Trash2, Save, X, Loader2, Info, Database, Activity, BookOpen, Shield, HelpCircle, Eye, Upload, RotateCcw, Palette, AlertTriangle, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +16,8 @@ import { useRoleGuard, hasMinRole } from "@/hooks/use-role-guard";
 import type { AdminSetting, SystemWarning } from "@/lib/types";
 import { admin, getUserRole } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/layouts/page-header";
@@ -207,8 +209,19 @@ export default function SettingsPage() {
   const [tracePrivacyLoading, setTracePrivacyLoading] = useState(true);
   const [tracePrivacyToggling, setTracePrivacyToggling] = useState(false);
   const [registeredAgentsOnly, setRegisteredAgentsOnly] = useState(false);
-  const [registeredAgentsOnlyLoading, setRegisteredAgentsOnlyLoading] = useState(true);
+  const [registeredAgentsOnlyLoading, setRegisteredAgentsOnlyLoading] = useState(() => hasMinRole(getUserRole(), "super_admin"));
   const [registeredAgentsOnlyToggling, setRegisteredAgentsOnlyToggling] = useState(false);
+  const [retentionEnabled, setRetentionEnabled] = useState(false);
+  const [retentionDays, setRetentionDays] = useState<string>("");
+  const [scoreRetentionDays, setScoreRetentionDays] = useState<string>("");
+  const [maxTraceCount, setMaxTraceCount] = useState<string>("");
+  const [retentionGlobal, setRetentionGlobal] = useState(90);
+  const [retentionLoading, setRetentionLoading] = useState(true);
+  const [retentionSaving, setRetentionSaving] = useState(false);
+  const [showRetentionConfirm, setShowRetentionConfirm] = useState(false);
+  const [retentionConfirmChecked, setRetentionConfirmChecked] = useState(false);
+  const [retentionPreview, setRetentionPreview] = useState<Record<string, number | string> | null>(null);
+  const retentionWasEnabled = useRef(false);
   const [logoOverride, setLogoOverride] = useState<string | null | undefined>(undefined);
   const [wordmarkOverride, setWordmarkOverride] = useState<string | null | undefined>(undefined);
   const [appNameOverride, setAppNameOverride] = useState<string | undefined>(undefined);
@@ -230,9 +243,18 @@ export default function SettingsPage() {
         .then((res) => setRegisteredAgentsOnly(res.registered_agents_only))
         .catch(() => {})
         .finally(() => setRegisteredAgentsOnlyLoading(false));
-    } else {
-      setRegisteredAgentsOnlyLoading(false);
     }
+    admin.getRetention()
+      .then((res) => {
+        setRetentionEnabled(res.retention_enabled);
+        retentionWasEnabled.current = res.retention_enabled;
+        setRetentionDays(res.data_retention_days?.toString() || "");
+        setScoreRetentionDays(res.score_retention_days?.toString() || "");
+        setMaxTraceCount(res.max_trace_count?.toString() || "");
+        setRetentionGlobal(res.global_retention_days);
+      })
+      .catch(() => {})
+      .finally(() => setRetentionLoading(false));
   }, []);
 
   const handleTracePrivacyToggle = useCallback(async (checked: boolean) => {
@@ -260,6 +282,96 @@ export default function SettingsPage() {
       setRegisteredAgentsOnlyToggling(false);
     }
   }, []);
+
+  const retentionErrors = useMemo(() => {
+    const errors: { data_retention_days?: string; score_retention_days?: string; max_trace_count?: string; general?: string } = {};
+    const days = retentionDays ? parseInt(retentionDays, 10) : null;
+    const scoreDays = scoreRetentionDays ? parseInt(scoreRetentionDays, 10) : null;
+    const maxCount = maxTraceCount ? parseInt(maxTraceCount, 10) : null;
+
+    if (days !== null && !isNaN(days)) {
+      if (days < 7) errors.data_retention_days = "Minimum 7 days";
+      else if (retentionGlobal > 0 && days > retentionGlobal)
+        errors.data_retention_days = `Cannot exceed global limit of ${retentionGlobal} days`;
+    }
+    if (scoreDays !== null && !isNaN(scoreDays)) {
+      if (scoreDays < 7) errors.score_retention_days = "Minimum 7 days";
+      else if (days && scoreDays < days)
+        errors.score_retention_days = `Must be ≥ trace retention (${days} days)`;
+    }
+    if (maxCount !== null && !isNaN(maxCount)) {
+      if (maxCount < 1000) errors.max_trace_count = "Minimum 1,000 traces";
+    }
+    if (retentionEnabled && !days && !maxCount) {
+      errors.general = "Set at least one retention threshold to enable";
+    }
+
+    return errors;
+  }, [retentionDays, scoreRetentionDays, maxTraceCount, retentionEnabled, retentionGlobal]);
+
+  const hasRetentionErrors = Object.keys(retentionErrors).length > 0;
+
+  const handleRetentionSave = useCallback(async () => {
+    const days = retentionDays ? parseInt(retentionDays, 10) : null;
+    const scoreDays = scoreRetentionDays ? parseInt(scoreRetentionDays, 10) : null;
+    const maxCount = maxTraceCount ? parseInt(maxTraceCount, 10) : null;
+
+    if (retentionEnabled && !retentionWasEnabled.current && days) {
+      setShowRetentionConfirm(true);
+      admin.previewRetention(days).then(setRetentionPreview).catch(() => setRetentionPreview(null));
+      return;
+    }
+
+    setRetentionSaving(true);
+    try {
+      const res = await admin.setRetention({
+        retention_enabled: retentionEnabled,
+        data_retention_days: days,
+        score_retention_days: scoreDays,
+        max_trace_count: maxCount,
+      });
+      setRetentionEnabled(res.retention_enabled);
+      retentionWasEnabled.current = res.retention_enabled;
+      setRetentionDays(res.data_retention_days?.toString() || "");
+      setScoreRetentionDays(res.score_retention_days?.toString() || "");
+      setMaxTraceCount(res.max_trace_count?.toString() || "");
+      queryClient.invalidateQueries({ queryKey: ["admin", "retention"] });
+      toast.success("Retention settings updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update retention");
+    } finally {
+      setRetentionSaving(false);
+    }
+  }, [retentionEnabled, retentionDays, scoreRetentionDays, maxTraceCount, queryClient]);
+
+  const handleRetentionConfirm = useCallback(async () => {
+    setShowRetentionConfirm(false);
+    setRetentionConfirmChecked(false);
+    setRetentionSaving(true);
+    const days = retentionDays ? parseInt(retentionDays, 10) : null;
+    const scoreDays = scoreRetentionDays ? parseInt(scoreRetentionDays, 10) : null;
+    const maxCount = maxTraceCount ? parseInt(maxTraceCount, 10) : null;
+    try {
+      const res = await admin.setRetention({
+        retention_enabled: true,
+        data_retention_days: days,
+        score_retention_days: scoreDays,
+        max_trace_count: maxCount,
+      });
+      setRetentionEnabled(res.retention_enabled);
+      retentionWasEnabled.current = res.retention_enabled;
+      setRetentionDays(res.data_retention_days?.toString() || "");
+      setScoreRetentionDays(res.score_retention_days?.toString() || "");
+      setMaxTraceCount(res.max_trace_count?.toString() || "");
+      queryClient.invalidateQueries({ queryKey: ["admin", "retention"] });
+      toast.success("Data retention enabled");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to enable retention");
+    } finally {
+      setRetentionSaving(false);
+      setRetentionPreview(null);
+    }
+  }, [retentionDays, scoreRetentionDays, maxTraceCount, queryClient]);
 
   const handleImageFile = useCallback((file: File, setter: (v: string) => void) => {
     if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
@@ -600,6 +712,137 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+        </section>
+        )}
+
+        {/* Data Retention — super_admin only */}
+        {hasMinRole(getUserRole(), "super_admin") && (
+        <section className="animate-in">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+            <Database className="h-3.5 w-3.5" />
+            Data Retention
+          </h3>
+          <div className="rounded-md border border-border bg-card p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium">Enable data retention</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Automatically purge telemetry data older than the configured period.
+                  Global ceiling: {retentionGlobal > 0 ? `${retentionGlobal} days` : "disabled"}.
+                </p>
+              </div>
+              <Switch
+                checked={retentionEnabled}
+                onCheckedChange={setRetentionEnabled}
+                disabled={retentionLoading}
+              />
+            </div>
+
+            {retentionEnabled && (
+              <div className="space-y-3 pt-2 border-t border-border/50">
+                <div>
+                  <label className="text-xs text-muted-foreground">Trace retention (days)</label>
+                  <Input
+                    type="number"
+                    min={7}
+                    max={retentionGlobal > 0 ? retentionGlobal : undefined}
+                    value={retentionDays}
+                    onChange={(e) => setRetentionDays(e.target.value)}
+                    placeholder="e.g. 30"
+                    className="h-8 text-sm mt-1 max-w-[200px]"
+                  />
+                  {retentionErrors.data_retention_days && (
+                    <p className="text-xs text-destructive mt-1">{retentionErrors.data_retention_days}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Score & insight retention (days)</label>
+                  <Input
+                    type="number"
+                    min={7}
+                    value={scoreRetentionDays}
+                    onChange={(e) => setScoreRetentionDays(e.target.value)}
+                    placeholder="e.g. 30 (default: 2x trace retention)"
+                    className="h-8 text-sm mt-1 max-w-[200px]"
+                  />
+                  {retentionErrors.score_retention_days && (
+                    <p className="text-xs text-destructive mt-1">{retentionErrors.score_retention_days}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Max trace count (optional)</label>
+                  <Input
+                    type="number"
+                    min={1000}
+                    value={maxTraceCount}
+                    onChange={(e) => setMaxTraceCount(e.target.value)}
+                    placeholder="e.g. 100000"
+                    className="h-8 text-sm mt-1 max-w-[200px]"
+                  />
+                  {retentionErrors.max_trace_count && (
+                    <p className="text-xs text-destructive mt-1">{retentionErrors.max_trace_count}</p>
+                  )}
+                </div>
+                {retentionErrors.general && (
+                  <p className="text-xs text-destructive">{retentionErrors.general}</p>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button
+                size="sm"
+                className="h-8"
+                onClick={handleRetentionSave}
+                disabled={retentionLoading || retentionSaving || hasRetentionErrors}
+              >
+                {retentionSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                Save
+              </Button>
+            </div>
+          </div>
+
+          {/* Confirmation dialog */}
+          <Dialog
+            open={showRetentionConfirm}
+            onOpenChange={(open) => { if (!open) { setShowRetentionConfirm(false); setRetentionPreview(null); } }}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  Enable Data Retention?
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  This will permanently delete telemetry data older than {retentionDays} days.
+                  Purges run automatically every 6 hours. This action cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              {retentionPreview && (
+                <div className="rounded bg-muted/50 p-3 text-xs space-y-1">
+                  <p className="font-medium text-muted-foreground">Estimated deletions:</p>
+                  {Object.entries(retentionPreview).filter(([k]) => !k.startsWith("_")).map(([k, v]) => (
+                    <p key={k}>{k}: {typeof v === "number" ? v.toLocaleString() : v} rows</p>
+                  ))}
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <Checkbox
+                  checked={retentionConfirmChecked}
+                  onCheckedChange={(checked) => setRetentionConfirmChecked(checked === true)}
+                />
+                I understand this will permanently delete data
+              </label>
+              <DialogFooter>
+                <Button size="sm" variant="outline" onClick={() => { setShowRetentionConfirm(false); setRetentionPreview(null); }}>
+                  Cancel
+                </Button>
+                <Button size="sm" variant="destructive" onClick={handleRetentionConfirm} disabled={!retentionConfirmChecked}>
+                  Enable Retention
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </section>
         )}
 
