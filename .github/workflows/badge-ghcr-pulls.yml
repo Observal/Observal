@@ -5,9 +5,9 @@
 # then writes a shields.io endpoint JSON to a Gist so the README badge
 # stays live without exposing credentials.
 #
-# One-time setup required (see SETUP.md or repo wiki):
+# One-time setup required:
 #   1. Create a public Gist with a file named ghcr-pulls.json
-#   2. Generate a PAT with scopes: read:packages + gist
+#   2. Generate a PAT with scopes: read:packages + read:org + gist
 #   3. Add two repo secrets:
 #        BADGE_GIST_ID    — the Gist ID (alphanumeric hash in the URL)
 #        BADGE_GIST_TOKEN — the PAT created above
@@ -33,25 +33,48 @@ jobs:
       - name: Fetch pull counts from GHCR
         id: counts
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.BADGE_GIST_TOKEN }}
         run: |
           python3 - <<'PY'
           import os, subprocess, json, sys
 
-          def gh_api(path):
+          def gh_graphql(query):
               result = subprocess.run(
-                  ["gh", "api", path],
+                  ["gh", "api", "graphql", "-f", f"query={query}"],
                   capture_output=True, text=True
               )
               if result.returncode != 0:
-                  print(f"Warning: {path} returned error: {result.stderr}", file=sys.stderr)
+                  print(f"Warning: graphql error: {result.stderr}", file=sys.stderr)
                   return {}
               return json.loads(result.stdout)
 
-          api = gh_api("/orgs/BlazeUp-AI/packages/container/observal-api")
-          web = gh_api("/orgs/BlazeUp-AI/packages/container/observal-web")
+          query = """
+          {
+            organization(login: "BlazeUp-AI") {
+              packages(packageType: DOCKER, first: 10) {
+                nodes {
+                  name
+                  statistics { downloadsTotalCount }
+                }
+              }
+            }
+          }
+          """
+          resp = gh_graphql(query)
+          nodes = resp.get("data", {}).get("organization", {}).get("packages", {}).get("nodes", [])
 
-          total = api.get("download_count", 0) + web.get("download_count", 0)
+          api_count = 0
+          web_count = 0
+          for node in nodes:
+              name = node.get("name", "")
+              count = node.get("statistics", {}).get("downloadsTotalCount", 0) or 0
+              print(f"{name}: {count}")
+              if name == "observal-api":
+                  api_count = count
+              elif name == "observal-web":
+                  web_count = count
+
+          total = api_count + web_count
 
           if total >= 1_000_000:
               label = f"{total / 1_000_000:.1f}M"
@@ -60,8 +83,6 @@ jobs:
           else:
               label = str(total)
 
-          print(f"observal-api pulls: {api.get('download_count', 0)}")
-          print(f"observal-web pulls: {web.get('download_count', 0)}")
           print(f"Total: {total} ({label})")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
