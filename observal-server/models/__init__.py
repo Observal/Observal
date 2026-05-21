@@ -14,8 +14,8 @@ from models.component_bundle import ComponentBundle
 from models.component_source import ComponentSource
 from models.download import AgentDownloadRecord, ComponentDownloadRecord
 from models.enterprise_config import EnterpriseConfig
-from models.exec_config import ExecDashboardConfig
 from models.eval import EvalRun, EvalRunStatus, Scorecard, ScorecardDimension
+from models.exec_config import ExecDashboardConfig
 from models.exporter_config import ExporterConfig
 from models.feedback import Feedback
 from models.hook import HookDownload, HookListing
@@ -61,9 +61,9 @@ __all__ = [
     "ComponentSource",
     "DimensionWeight",
     "EnterpriseConfig",
-    "ExecDashboardConfig",
     "EvalRun",
     "EvalRunStatus",
+    "ExecDashboardConfig",
     "ExporterConfig",
     "Feedback",
     "HookDownload",

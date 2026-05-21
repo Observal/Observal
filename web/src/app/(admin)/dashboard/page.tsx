@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+// SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 "use client";
@@ -15,7 +17,7 @@ import { DepartmentsTab } from "./components/departments-tab";
 import { VelocityTab } from "./components/velocity-tab";
 import { useExecAdoption, useExecAgentCounts, useExecConfig } from "@/hooks/use-api";
 import { RefreshCw, Calendar, Rocket, Download } from "lucide-react";
-import { useState, useCallback, useRef, createContext, useContext } from "react";
+import { useState, useCallback, createContext } from "react";
 
 const TABS = ["adoption", "cost", "investments", "insights", "departments", "velocity"] as const;
 type TabId = typeof TABS[number];

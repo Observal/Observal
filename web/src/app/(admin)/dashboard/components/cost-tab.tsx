@@ -1,10 +1,12 @@
+// SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+// SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 "use client";
 
 import { useState, useContext } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, BarChart, Bar } from "recharts";
-import { useExecCostSummary, useExecConfig, useExecROIProjections } from "@/hooks/use-api";
+import { useExecCostSummary, useExecROIProjections } from "@/hooks/use-api";
 import { exec } from "@/lib/api";
 import { StatCard } from "./stat-card";
 import { Loader2, TrendingUp } from "lucide-react";
@@ -70,7 +72,7 @@ function BaselinesConfigForm({ onSaved }: { onSaved: () => void }) {
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Pre-AI Cost per Task by Category ($)</label>
             <p className="text-[11px] text-muted-foreground mb-2">
-              Average cost to complete one task manually, before AI. Leave blank for categories that don't apply.
+              Average cost to complete one task manually, before AI. Leave blank for categories that don&apos;t apply.
             </p>
             <div className="grid grid-cols-2 gap-3">
               {DEFAULT_CATEGORIES.map((cat) => (
@@ -205,7 +207,6 @@ function ROIProjections() {
 export function CostTab() {
   const range = useContext(DashboardRangeContext);
   const { data: cost, isLoading, refetch } = useExecCostSummary(range);
-  const { data: config } = useExecConfig();
 
   if (isLoading) {
     return (

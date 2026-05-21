@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Executive Dashboard API endpoints."""
@@ -14,12 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
 from api.routes.dashboard import _ch_json_scoped, _range_days
-from config import settings
-from models.agent import Agent, AgentTeamAccess, AgentVersion, AgentStatus
+from models.agent import Agent, AgentStatus, AgentTeamAccess, AgentVersion
 from models.download import AgentDownloadRecord
 from models.exec_config import ExecDashboardConfig
 from models.feedback import Feedback
-from models.organization import Organization
 from models.user import User, UserRole
 from models.user_group import UserGroup
 
@@ -952,7 +952,7 @@ async def get_cost_summary(
     baseline_total = avg_baseline * total_traces if avg_baseline > 0 else 0
     cost_reduction_pct = round(((baseline_total - total_spend) / baseline_total) * 100, 1) if baseline_total > 0 else 0
 
-    # Projected annual (latest month × 12)
+    # Projected annual (latest month x 12)
     projected_annual = round(monthly_savings * 12, 2)
 
     # Cost by category
@@ -1807,7 +1807,7 @@ async def get_time_to_value(
         if aid in day_100_map and agent.created_at:
             try:
                 milestone_dt = _dt.datetime.fromisoformat(str(day_100_map[aid]).replace("Z", "+00:00"))
-                created = agent.created_at if agent.created_at.tzinfo else agent.created_at.replace(tzinfo=_dt.timezone.utc)
+                created = agent.created_at if agent.created_at.tzinfo else agent.created_at.replace(tzinfo=_dt.UTC)
                 days_to_100 = max(0, (milestone_dt - created).days)
                 days_list.append(days_to_100)
             except (ValueError, TypeError):

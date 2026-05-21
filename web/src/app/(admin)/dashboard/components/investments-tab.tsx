@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+// SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 "use client";
@@ -8,7 +10,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from "recharts";
 import { useExecPlatforms, useExecStrategicInsights } from "@/hooks/use-api";
-import type { ExecPlatformScore, ExecModelComparison } from "@/lib/types";
+import type { ExecPlatformScore } from "@/lib/types";
 
 const COLORS = ["#2563eb", "#7c3aed", "#0d9488", "#f59e0b", "#e11d48", "#6366f1", "#84cc16"];
 

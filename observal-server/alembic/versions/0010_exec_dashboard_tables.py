@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 """Add exec dashboard tables: user_groups, exec_dashboard_config, users.department, agents.category.
 
@@ -7,6 +9,7 @@ Create Date: 2026-05-20
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0010"

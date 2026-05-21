@@ -1,10 +1,12 @@
+// SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+// SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 "use client";
 
 import { useState } from "react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line,
 } from "recharts";
 import { useExecVelocity, useExecTopAgents, useExecTimeToValue } from "@/hooks/use-api";
 import { StatCard } from "./stat-card";

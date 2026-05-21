@@ -348,9 +348,9 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
     # Persist SSO groups for exec dashboard department mapping
     if groups:
         try:
-            from models.user_group import UserGroup
-
             from sqlalchemy import delete as sa_delete
+
+            from models.user_group import UserGroup
 
             await db.execute(sa_delete(UserGroup).where(UserGroup.user_id == user.id))
             db.add_all([UserGroup(user_id=user.id, group_name=g) for g in groups])

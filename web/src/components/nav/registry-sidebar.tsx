@@ -38,7 +38,6 @@ import {
   ShieldCheck,
   Users,
   Settings,
-  AlertTriangle,
   ScrollText,
   ShieldAlert,
   Stethoscope,
