@@ -296,13 +296,13 @@ function AnalyticsTab({ agentId }: { agentId: string }) {
 }
 
 function AccessSettingsWidget({ agentId, visibility, teamAccesses, canEdit }: { agentId: string; visibility?: string; teamAccesses?: { group_name: string; permission: "view" | "edit" }[]; canEdit: boolean }) {
-  const { deploymentMode } = useDeploymentConfig();
+  const { isLicensed } = useDeploymentConfig();
   const [isEditing, setIsEditing] = useState(false);
   const [editVisibility, setEditVisibility] = useState<"public" | "private">(visibility === "public" ? "public" : "private");
   const [editTeamAccesses, setEditTeamAccesses] = useState<{ group_name: string; permission: "view" | "edit" }[]>(teamAccesses ?? []);
   const updateAgent = useUpdateAgent();
 
-  if (deploymentMode !== "enterprise") return null;
+  if (!isLicensed) return null;
 
   async function handleSave() {
     try {
