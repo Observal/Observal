@@ -132,10 +132,10 @@ class TestInstallAgentStatusGating:
 
     @pytest.mark.asyncio
     @patch("api.routes.agent._load_agent")
-    @patch("api.routes.agent.settings")
+    @patch("api.routes.agent._ds")
     async def test_pending_agent_returns_404_for_non_owner(self, mock_settings, mock_load):
         """Non-owner cannot install a pending agent when ALLOW_DRAFT_INSTALL=False."""
-        mock_settings.ALLOW_DRAFT_INSTALL = False
+        mock_settings.get_sync_bool.return_value = False
 
         owner_id = uuid.uuid4()
         user = _user()  # different user
@@ -151,10 +151,10 @@ class TestInstallAgentStatusGating:
 
     @pytest.mark.asyncio
     @patch("api.routes.agent._load_agent")
-    @patch("api.routes.agent.settings")
+    @patch("api.routes.agent._ds")
     async def test_pending_agent_returns_404_for_owner_when_flag_off(self, mock_settings, mock_load):
         """Owner also cannot install a pending agent when ALLOW_DRAFT_INSTALL=False."""
-        mock_settings.ALLOW_DRAFT_INSTALL = False
+        mock_settings.get_sync_bool.return_value = False
 
         user = _user()
         agent = _agent_mock(status=AgentStatus.pending, created_by=user.id)
@@ -170,11 +170,10 @@ class TestInstallAgentStatusGating:
     @pytest.mark.asyncio
     @patch("services.download_tracker.record_agent_download", new_callable=AsyncMock)
     @patch("api.routes.agent._load_agent")
-    @patch("api.routes.agent.settings")
+    @patch("api.routes.agent._ds")
     async def test_pending_agent_owner_can_install_when_flag_on(self, mock_settings, mock_load, _mock_download):
         """When ALLOW_DRAFT_INSTALL=True, the owner may install their own pending agent."""
-        mock_settings.ALLOW_DRAFT_INSTALL = True
-        mock_settings.ALLOW_INTERNAL_GIT_URLS = False
+        mock_settings.get_sync_bool.return_value = True
 
         user = _user()
         agent = _agent_mock(status=AgentStatus.pending, created_by=user.id)
@@ -194,11 +193,10 @@ class TestInstallAgentStatusGating:
 
     @pytest.mark.asyncio
     @patch("api.routes.agent._load_agent")
-    @patch("api.routes.agent.settings")
+    @patch("api.routes.agent._ds")
     async def test_approved_agent_always_installable(self, mock_settings, mock_load):
         """Approved agents install regardless of ALLOW_DRAFT_INSTALL flag."""
-        mock_settings.ALLOW_DRAFT_INSTALL = False
-        mock_settings.ALLOW_INTERNAL_GIT_URLS = False
+        mock_settings.get_sync_bool.return_value = False
 
         user = _user()
         agent = _agent_mock(status=AgentStatus.approved, created_by=uuid.uuid4())

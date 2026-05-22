@@ -64,7 +64,7 @@ async def derive_endpoints(request: Request | None = None) -> dict[str, str]:
 
 @router.get("/endpoints")
 async def get_endpoints(request: Request):
-    """Endpoint discovery — returns all service URLs. No auth required."""
+    """Endpoint discovery: returns all service URLs. No auth required."""
     return await derive_endpoints(request)
 
 
@@ -109,7 +109,7 @@ async def get_public_config(db=Depends(get_db)):
     except Exception:
         pass
 
-    # Feature availability derived from license — no env var
+    # Feature availability derived from license, no env var
     from services.insights import INSIGHTS_AVAILABLE
     from services.insights import licensed_features as _get_licensed
 

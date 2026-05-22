@@ -101,8 +101,8 @@ class TestGetRetentionConfig:
         db = _mock_db(org)
         app, _, _ = _app_with(user=user, db=db)
 
-        with patch("api.routes.admin.settings") as mock_settings:
-            mock_settings.DATA_RETENTION_DAYS = 45
+        with patch("api.routes.admin.ds") as mock_ds:
+            mock_ds.get_int = AsyncMock(return_value=45)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
                 resp = await c.get("/api/v1/admin/org/retention")
 
@@ -122,11 +122,11 @@ class TestUpdateRetentionConfig:
         app, _, _ = _app_with(user=user, db=db)
 
         with (
-            patch("api.routes.admin.settings") as mock_settings,
+            patch("api.routes.admin.ds") as mock_ds,
             patch("api.routes.admin.emit_security_event", new_callable=AsyncMock),
             patch("api.routes.admin.audit", new_callable=AsyncMock),
         ):
-            mock_settings.DATA_RETENTION_DAYS = 90
+            mock_ds.get_int = AsyncMock(return_value=90)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
                 resp = await c.put(
                     "/api/v1/admin/org/retention",
@@ -149,8 +149,8 @@ class TestUpdateRetentionConfig:
         db = _mock_db(org)
         app, _, _ = _app_with(user=user, db=db)
 
-        with patch("api.routes.admin.settings") as mock_settings:
-            mock_settings.DATA_RETENTION_DAYS = 10
+        with patch("api.routes.admin.ds") as mock_ds:
+            mock_ds.get_int = AsyncMock(return_value=10)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
                 resp = await c.put(
                     "/api/v1/admin/org/retention",
@@ -171,11 +171,11 @@ class TestUpdateRetentionConfig:
         app, _, _ = _app_with(user=user, db=db)
 
         with (
-            patch("api.routes.admin.settings") as mock_settings,
+            patch("api.routes.admin.ds") as mock_ds,
             patch("api.routes.admin.emit_security_event", new_callable=AsyncMock),
             patch("api.routes.admin.audit", new_callable=AsyncMock),
         ):
-            mock_settings.DATA_RETENTION_DAYS = 0
+            mock_ds.get_int = AsyncMock(return_value=0)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
                 resp = await c.put(
                     "/api/v1/admin/org/retention",

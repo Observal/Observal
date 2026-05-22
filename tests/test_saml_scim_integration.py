@@ -237,21 +237,27 @@ class TestAdminSamlConfigAPI:
 
         with (
             patch(
-                "ee.observal_server.routes.admin_sso.settings",
+                "ee.observal_server.routes.admin_sso.ds",
             ) as mock_settings,
             patch(
                 "ee.observal_server.routes.admin_sso.audit",
                 new_callable=AsyncMock,
             ),
         ):
-            mock_settings.SAML_IDP_ENTITY_ID = "https://idp.example.com"
-            mock_settings.SAML_IDP_SSO_URL = "https://idp.example.com/sso"
-            mock_settings.SAML_IDP_SLO_URL = "https://idp.example.com/slo"
-            mock_settings.SAML_SP_ENTITY_ID = "https://app.example.com/saml/metadata"
-            mock_settings.SAML_SP_ACS_URL = "https://app.example.com/saml/acs"
-            mock_settings.SAML_JIT_PROVISIONING = True
-            mock_settings.SAML_DEFAULT_ROLE = "user"
-            mock_settings.SAML_IDP_X509_CERT = "MIICmzCCAYM..."
+            mock_settings.get_sync.side_effect = lambda key, *a, **kw: {
+                "saml.idp_entity_id": "https://idp.example.com",
+                "saml.idp_sso_url": "https://idp.example.com/sso",
+                "saml.idp_slo_url": "https://idp.example.com/slo",
+                "saml.sp_entity_id": "https://app.example.com/saml/metadata",
+                "saml.sp_acs_url": "https://app.example.com/saml/acs",
+                "saml.default_role": "user",
+                "saml.idp_x509_cert": "MIICmzCCAYM...",
+                "saml.sp_key_encryption_password": "test",
+                "deployment.frontend_url": "https://app.example.com",
+            }.get(key, a[0] if a else "")
+            mock_settings.get_sync_bool.side_effect = lambda key, *a, **kw: {
+                "saml.jit_provisioning": True,
+            }.get(key, a[0] if a else False)
 
             async with AsyncClient(
                 transport=ASGITransport(app=app),
@@ -280,21 +286,15 @@ class TestAdminSamlConfigAPI:
 
         with (
             patch(
-                "ee.observal_server.routes.admin_sso.settings",
+                "ee.observal_server.routes.admin_sso.ds",
             ) as mock_settings,
             patch(
                 "ee.observal_server.routes.admin_sso.audit",
                 new_callable=AsyncMock,
             ),
         ):
-            mock_settings.SAML_IDP_ENTITY_ID = ""
-            mock_settings.SAML_IDP_SSO_URL = ""
-            mock_settings.SAML_IDP_SLO_URL = ""
-            mock_settings.SAML_SP_ENTITY_ID = ""
-            mock_settings.SAML_SP_ACS_URL = ""
-            mock_settings.SAML_JIT_PROVISIONING = False
-            mock_settings.SAML_DEFAULT_ROLE = "user"
-            mock_settings.SAML_IDP_X509_CERT = ""
+            mock_settings.get_sync.side_effect = lambda key, *a, **kw: a[0] if a else ""
+            mock_settings.get_sync_bool.side_effect = lambda key, *a, **kw: a[0] if a else False
 
             async with AsyncClient(
                 transport=ASGITransport(app=app),
@@ -648,6 +648,34 @@ class TestAdminScimTokenAPI:
 class TestConfigValidatorSaml:
     """Test enterprise config_validator for SAML-specific scenarios."""
 
+    def _make_ds(self, **overrides):
+        """Create a mock ds module for the config validator."""
+        defaults = {
+            "deployment.sso_only": "false",
+            "deployment.frontend_url": "https://app.example.com",
+            "saml.idp_entity_id": "",
+            "saml.idp_sso_url": "",
+            "saml.idp_x509_cert": "",
+            "saml.sp_key_encryption_password": "strong-pass",
+            "saml.sp_acs_url": "https://app.example.com/api/v1/sso/saml/acs",
+        }
+        defaults.update(overrides)
+        mock = MagicMock()
+        mock.get_sync.side_effect = lambda key, *a, **kw: defaults.get(key, a[0] if a else "")
+        mock.get_sync_bool.side_effect = lambda key, *a, **kw: defaults.get(key, "false").lower() in ("true", "1")
+        return mock
+
+    def _make_settings(self, **overrides):
+        """Create a mock Settings object with sensible defaults."""
+        s = MagicMock()
+        s.SECRET_KEY = "proper-random-secret-key"
+        s.OAUTH_CLIENT_ID = "id"
+        s.OAUTH_CLIENT_SECRET = "secret"
+        s.OAUTH_SERVER_METADATA_URL = "https://idp.example.com"
+        for k, v in overrides.items():
+            setattr(s, k, v)
+        return s
+
     def _make_settings(self, **overrides):
         """Create a mock Settings object with sensible defaults."""
         s = MagicMock()
@@ -670,8 +698,14 @@ class TestConfigValidatorSaml:
             SAML_IDP_ENTITY_ID="https://idp.example.com",
             SAML_IDP_SSO_URL="",
         )
-        issues = validate_enterprise_config(settings)
-        assert any("SAML_IDP_SSO_URL" in i for i in issues)
+        with patch(
+            "ee.observal_server.services.config_validator.ds",
+            self._make_ds(
+                **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
+            ),
+        ):
+            issues = validate_enterprise_config(settings)
+        assert any("saml.idp_sso_url" in i for i in issues)
 
     def test_saml_sso_url_without_entity_id(self):
         from ee.observal_server.services.config_validator import validate_enterprise_config
@@ -680,8 +714,14 @@ class TestConfigValidatorSaml:
             SAML_IDP_ENTITY_ID="",
             SAML_IDP_SSO_URL="https://idp.example.com/sso",
         )
-        issues = validate_enterprise_config(settings)
-        assert any("SAML_IDP_ENTITY_ID" in i for i in issues)
+        with patch(
+            "ee.observal_server.services.config_validator.ds",
+            self._make_ds(
+                **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
+            ),
+        ):
+            issues = validate_enterprise_config(settings)
+        assert any("saml.idp_entity_id" in i for i in issues)
 
     def test_saml_configured_without_cert(self):
         from ee.observal_server.services.config_validator import validate_enterprise_config
@@ -691,8 +731,14 @@ class TestConfigValidatorSaml:
             SAML_IDP_SSO_URL="https://idp.example.com/sso",
             SAML_IDP_X509_CERT="",
         )
-        issues = validate_enterprise_config(settings)
-        assert any("SAML_IDP_X509_CERT" in i for i in issues)
+        with patch(
+            "ee.observal_server.services.config_validator.ds",
+            self._make_ds(
+                **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
+            ),
+        ):
+            issues = validate_enterprise_config(settings)
+        assert any("saml.idp_x509_cert" in i for i in issues)
 
     def test_saml_configured_without_encryption_password(self):
         from ee.observal_server.services.config_validator import validate_enterprise_config
@@ -703,8 +749,14 @@ class TestConfigValidatorSaml:
             SAML_IDP_X509_CERT="MIICmzCCAYM...",
             SAML_SP_KEY_ENCRYPTION_PASSWORD="",
         )
-        issues = validate_enterprise_config(settings)
-        assert any("SAML_SP_KEY_ENCRYPTION_PASSWORD" in i for i in issues)
+        with patch(
+            "ee.observal_server.services.config_validator.ds",
+            self._make_ds(
+                **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
+            ),
+        ):
+            issues = validate_enterprise_config(settings)
+        assert any("sp_key_encryption_password" in i for i in issues)
 
     def test_saml_acs_url_not_https(self):
         from ee.observal_server.services.config_validator import validate_enterprise_config
@@ -716,8 +768,14 @@ class TestConfigValidatorSaml:
             SAML_SP_KEY_ENCRYPTION_PASSWORD="supersecret",
             SAML_SP_ACS_URL="http://app.example.com/saml/acs",
         )
-        issues = validate_enterprise_config(settings)
-        assert any("SAML_SP_ACS_URL" in i and "HTTPS" in i for i in issues)
+        with patch(
+            "ee.observal_server.services.config_validator.ds",
+            self._make_ds(
+                **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
+            ),
+        ):
+            issues = validate_enterprise_config(settings)
+        assert any("saml.sp_acs_url" in i and "HTTPS" in i.upper() for i in issues)
 
     def test_complete_saml_config_no_saml_issues(self):
         from ee.observal_server.services.config_validator import validate_enterprise_config
@@ -729,7 +787,13 @@ class TestConfigValidatorSaml:
             SAML_SP_KEY_ENCRYPTION_PASSWORD="supersecret",
             SAML_SP_ACS_URL="https://app.example.com/saml/acs",
         )
-        issues = validate_enterprise_config(settings)
+        with patch(
+            "ee.observal_server.services.config_validator.ds",
+            self._make_ds(
+                **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
+            ),
+        ):
+            issues = validate_enterprise_config(settings)
         # Should have no SAML-related issues
         saml_issues = [i for i in issues if "SAML" in i]
         assert len(saml_issues) == 0
@@ -741,7 +805,13 @@ class TestConfigValidatorSaml:
             SAML_IDP_ENTITY_ID="",
             SAML_IDP_SSO_URL="",
         )
-        issues = validate_enterprise_config(settings)
+        with patch(
+            "ee.observal_server.services.config_validator.ds",
+            self._make_ds(
+                **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
+            ),
+        ):
+            issues = validate_enterprise_config(settings)
         saml_issues = [i for i in issues if "SAML" in i]
         assert len(saml_issues) == 0
 

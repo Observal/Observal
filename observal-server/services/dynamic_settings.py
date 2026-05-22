@@ -1,10 +1,10 @@
-# SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Dynamic settings service — DB-backed runtime configuration with Redis cache.
+"""Dynamic settings service: DB-backed runtime configuration with Redis cache.
 
 All non-boot-time settings are stored in the `enterprise_config` table and
-accessed through this module. No env-var fallback — if a setting isn't in the
+accessed through this module. No env-var fallback; if a setting isn't in the
 DB, the hardcoded default is used.
 
 Usage:
@@ -127,7 +127,7 @@ async def reencrypt_on_key_rotation() -> int:
             for cfg in result.scalars().all():
                 if not cfg.value or not cfg.value.startswith(_ENC_PREFIX):
                     continue
-                # Try current key — if it works, already rotated
+                # Try current key: if it works, already rotated
                 ciphertext = cfg.value[len(_ENC_PREFIX) :].encode()
                 try:
                     _get_fernet().decrypt(ciphertext)
@@ -150,7 +150,7 @@ async def reencrypt_on_key_rotation() -> int:
 
 # Redis key namespace for settings cache
 _CACHE_PREFIX = "settings:"
-_CACHE_TTL = 30  # seconds — short TTL for consistency, Redis is fast
+_CACHE_TTL = 30  # seconds, short TTL for consistency, Redis is fast
 
 # ─── Default values (hardcoded, no env fallback) ─────────────────────────────
 # These match the old env-var defaults from config.py. When a key is not in the
@@ -175,7 +175,7 @@ DEFAULTS: dict[str, str] = {
     "insights.min_sessions": "5",
     "insights.facet_max_calls": "100",
     "insights.facet_concurrency": "25",
-    # Deployment (runtime-tunable — mode itself is boot-time env var)
+    # Deployment (runtime-tunable, mode itself is boot-time env var)
     "deployment.sso_only": "false",
     "deployment.frontend_url": "http://localhost:3000",
     "deployment.public_url": "",
@@ -225,7 +225,7 @@ DEFAULTS: dict[str, str] = {
     "misc.git_mirror_base_path": "",
 }
 
-# Sensitive keys — values are masked in API responses unless explicitly revealed
+# Sensitive keys: values are masked in API responses unless explicitly revealed
 SENSITIVE_KEYS: set[str] = {
     "eval.model_api_key",
     "eval.aws_access_key_id",
@@ -335,7 +335,7 @@ async def get(key: str, default: str | None = None) -> str:
         if cached is not None:
             return cached
     except Exception:
-        # Redis down — fall through to DB
+        # Redis down, fall through to DB
         pass
 
     # 2. Read from DB

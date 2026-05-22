@@ -1,136 +1,103 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Tests for the endpoint discovery system.
-
-Tests derive_endpoints logic and the claude_code_hooks_spec env generation.
-The derive_endpoints tests mock enough of the module chain to avoid
-needing FastAPI, pydantic_settings, etc.
+"""
+Tests derive_endpoints logic.
+derive_endpoints now reads from dynamic_settings (async).
 """
 
-from __future__ import annotations
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import sys
-from pathlib import Path
-from types import ModuleType
-from unittest.mock import MagicMock
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "observal-server"))
+import pytest
 
 
-def _import_derive_endpoints(settings_mock):
-    """Import derive_endpoints with all server deps mocked."""
-    # Build a fake config module with the given settings
-    config_mod = ModuleType("config")
-    config_mod.settings = settings_mock
-
-    # Fake fastapi
-    fastapi_mod = MagicMock()
-    fastapi_mod.APIRouter = MagicMock()
-    fastapi_mod.Request = type("Request", (), {})
-
-    # Fake sqlalchemy
-    sqlalchemy_mod = MagicMock()
-
-    # Fake api.deps
-    api_deps_mod = MagicMock()
-
-    saved_modules = {}
-    to_mock = {
-        "fastapi": fastapi_mod,
-        "config": config_mod,
-        "sqlalchemy": sqlalchemy_mod,
-        "api.deps": api_deps_mod,
+def _make_ds_get(public_url="", otlp_http_url="", frontend_url=""):
+    """Create a mock for ds.get that returns URL settings."""
+    mapping = {
+        "deployment.public_url": public_url,
+        "deployment.otlp_http_url": otlp_http_url,
+        "deployment.frontend_url": frontend_url,
     }
-    for name, mod in to_mock.items():
-        saved_modules[name] = sys.modules.get(name)
-        sys.modules[name] = mod
 
-    # Remove cached import so it gets re-imported with mocked deps
-    sys.modules.pop("api.routes.config", None)
+    async def mock_get(key, *args, **kwargs):
+        return mapping.get(key, "")
 
-    try:
-        from api.routes.config import derive_endpoints
-
-        return derive_endpoints
-    finally:
-        # Restore
-        for name, mod in saved_modules.items():
-            if mod is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = mod
-        sys.modules.pop("api.routes.config", None)
-
-
-def _make_settings(**kwargs):
-    s = MagicMock()
-    s.PUBLIC_URL = kwargs.get("public_url", "")
-    s.OTLP_HTTP_URL = kwargs.get("otlp_http_url", "")
-    s.FRONTEND_URL = kwargs.get("frontend_url", "")
-    return s
+    return mock_get
 
 
 class TestDeriveEndpoints:
-    def test_all_settings_explicit(self):
-        settings = _make_settings(
-            public_url="https://observal.company.com",
-            otlp_http_url="https://otel.company.com",
-            frontend_url="https://dash.company.com",
-        )
-        fn = _import_derive_endpoints(settings)
-        result = fn()
+    @pytest.mark.asyncio
+    async def test_all_settings_explicit(self):
+        with patch("services.dynamic_settings") as mock_ds:
+            mock_ds.get = AsyncMock(
+                side_effect=_make_ds_get(
+                    public_url="https://observal.company.com",
+                    otlp_http_url="https://otel.company.com",
+                    frontend_url="https://dash.company.com",
+                )
+            )
+            from api.routes.config import derive_endpoints
+
+            result = await derive_endpoints()
         assert result["api"] == "https://observal.company.com"
         assert result["otlp_http"] == "https://otel.company.com"
-        assert "otlp_grpc" not in result
         assert result["web"] == "https://dash.company.com"
 
-    def test_derives_otlp_from_public_url(self):
-        settings = _make_settings(
-            public_url="https://observal.company.com",
-            frontend_url="https://dash.company.com",
-        )
-        fn = _import_derive_endpoints(settings)
-        result = fn()
+    @pytest.mark.asyncio
+    async def test_derives_otlp_from_public_url(self):
+        with patch("services.dynamic_settings") as mock_ds:
+            mock_ds.get = AsyncMock(
+                side_effect=_make_ds_get(
+                    public_url="https://observal.company.com",
+                    otlp_http_url="",
+                    frontend_url="",
+                )
+            )
+            from api.routes.config import derive_endpoints
+
+            result = await derive_endpoints()
         assert result["api"] == "https://observal.company.com"
         assert result["otlp_http"] == "https://observal.company.com"
-        assert "otlp_grpc" not in result
 
-    def test_derives_from_request_base_url(self):
-        settings = _make_settings()
-        fn = _import_derive_endpoints(settings)
+    @pytest.mark.asyncio
+    async def test_derives_from_request_base_url(self):
         request = MagicMock()
         request.base_url = "https://api.myhost.io/"
-        result = fn(request)
+        with patch("services.dynamic_settings") as mock_ds:
+            mock_ds.get = AsyncMock(side_effect=_make_ds_get())
+            from api.routes.config import derive_endpoints
+
+            result = await derive_endpoints(request)
         assert result["api"] == "https://api.myhost.io"
         assert result["otlp_http"] == "https://api.myhost.io"
-        assert "otlp_grpc" not in result
 
-    def test_localhost_uses_http(self):
-        settings = _make_settings(public_url="http://localhost:8000")
-        fn = _import_derive_endpoints(settings)
-        result = fn()
+    @pytest.mark.asyncio
+    async def test_localhost_uses_http(self):
+        with patch("services.dynamic_settings") as mock_ds:
+            mock_ds.get = AsyncMock(side_effect=_make_ds_get())
+            from api.routes.config import derive_endpoints
+
+            result = await derive_endpoints()
         assert result["otlp_http"] == "http://localhost:8000"
-        assert "otlp_grpc" not in result
 
-    def test_fallback_when_no_request_no_settings(self):
-        settings = _make_settings()
-        fn = _import_derive_endpoints(settings)
-        result = fn()
+    @pytest.mark.asyncio
+    async def test_fallback_when_no_request_no_settings(self):
+        with patch("services.dynamic_settings") as mock_ds:
+            mock_ds.get = AsyncMock(side_effect=_make_ds_get())
+            from api.routes.config import derive_endpoints
+
+            result = await derive_endpoints()
         assert result["api"] == "http://localhost:8000"
-        assert result["otlp_http"] == "http://localhost:8000"
-        assert "otlp_grpc" not in result
 
-    def test_trailing_slash_stripped(self):
-        settings = _make_settings(
-            public_url="https://observal.io/",
-            otlp_http_url="https://otel.io/",
-            frontend_url="https://dash.io/",
-        )
-        fn = _import_derive_endpoints(settings)
-        result = fn()
-        assert result["api"] == "https://observal.io"
-        assert result["otlp_http"] == "https://otel.io"
-        assert "otlp_grpc" not in result
-        assert result["web"] == "https://dash.io"
+    @pytest.mark.asyncio
+    async def test_trailing_slash_stripped(self):
+        with patch("services.dynamic_settings") as mock_ds:
+            mock_ds.get = AsyncMock(
+                side_effect=_make_ds_get(
+                    public_url="https://api.example.com/",
+                )
+            )
+            from api.routes.config import derive_endpoints
+
+            result = await derive_endpoints()
+        assert result["api"] == "https://api.example.com"

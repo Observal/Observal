@@ -19,11 +19,12 @@ def _mock_response(status_code=200):
 async def test_retention_ttl_applied():
     """init_clickhouse applies TTL when DATA_RETENTION_DAYS > 0."""
     with (
-        patch("services.clickhouse.schema.settings") as mock_settings,
+        patch("services.dynamic_settings") as mock_ds,
         patch("services.clickhouse.client._query", new_callable=AsyncMock) as mock_query,
     ):
-        mock_settings.DATA_RETENTION_DAYS = 90
-        mock_settings.CLICKHOUSE_URL = "clickhouse://localhost:8123/observal"
+        mock_ds.get_int = AsyncMock(return_value=90)
+        mock_ds.get = AsyncMock(return_value="")
+
         mock_query.return_value = _mock_response()
 
         from services.clickhouse import init_clickhouse
@@ -43,11 +44,12 @@ async def test_retention_ttl_applied():
 async def test_retention_disabled_when_zero():
     """init_clickhouse skips TTL when DATA_RETENTION_DAYS=0."""
     with (
-        patch("services.clickhouse.schema.settings") as mock_settings,
+        patch("services.dynamic_settings") as mock_ds,
         patch("services.clickhouse.client._query", new_callable=AsyncMock) as mock_query,
     ):
-        mock_settings.DATA_RETENTION_DAYS = 0
-        mock_settings.CLICKHOUSE_URL = "clickhouse://localhost:8123/observal"
+        mock_ds.get_int = AsyncMock(return_value=0)
+        mock_ds.get = AsyncMock(return_value="")
+
         mock_query.return_value = _mock_response()
 
         from services.clickhouse import init_clickhouse
@@ -64,11 +66,12 @@ async def test_retention_tables_covered():
     expected_tables = {"traces", "spans", "scores", "otel_logs", "session_events"}
 
     with (
-        patch("services.clickhouse.schema.settings") as mock_settings,
+        patch("services.dynamic_settings") as mock_ds,
         patch("services.clickhouse.client._query", new_callable=AsyncMock) as mock_query,
     ):
-        mock_settings.DATA_RETENTION_DAYS = 30
-        mock_settings.CLICKHOUSE_URL = "clickhouse://localhost:8123/observal"
+        mock_ds.get_int = AsyncMock(return_value=30)
+        mock_ds.get = AsyncMock(return_value="")
+
         mock_query.return_value = _mock_response()
 
         from services.clickhouse import init_clickhouse

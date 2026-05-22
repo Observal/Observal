@@ -9,7 +9,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Boot-time configuration — env vars required to start the server.
+"""Boot-time configuration: env vars required to start the server.
 
 All runtime-tunable settings have been moved to the Settings page
 (stored in enterprise_config table, accessed via services.dynamic_settings).
@@ -35,32 +35,32 @@ class Settings(BaseSettings):
     # Crypto
     SECRET_KEY: str = "change-me-to-a-random-string"
 
-    # JWT key management (boot-time — keys loaded once at startup)
+    # JWT key management (boot-time, keys loaded once at startup)
     JWT_SIGNING_ALGORITHM: str = "ES256"
     JWT_KEY_DIR: str = "~/.observal/keys"
     JWT_KEY_PASSWORD: str | None = None
 
-    # OAuth / OIDC (used in middleware init — move to settings page later)
+    # OAuth / OIDC (used in middleware init, move to settings page later)
     OAUTH_CLIENT_ID: str | None = None
     OAUTH_CLIENT_SECRET: str | None = None
     OAUTH_SERVER_METADATA_URL: str | None = None
 
-    # Connection pool sizing (boot-time — pool created once at startup)
+    # Connection pool sizing (boot-time, pool created once at startup)
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     CLICKHOUSE_MAX_CONNECTIONS: int = 20
     CLICKHOUSE_MAX_KEEPALIVE: int = 10
     CLICKHOUSE_TIMEOUT: float = 10.0
 
-    # Logging (boot-time — configured before event loop starts)
+    # Logging (boot-time, configured before event loop starts)
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Literal["json", "console"] = "json"
 
-    # Deployment mode (boot-time — controls enterprise route registration)
+    # Deployment mode (boot-time, controls enterprise route registration)
     DEPLOYMENT_MODE: Literal["local", "enterprise"] = "local"
     SKIP_DDL_ON_STARTUP: bool = False
 
-    # Demo accounts (boot-time — needed to bootstrap first login)
+    # Demo accounts (boot-time, needed to bootstrap first login)
     SEED_DEMO_ACCOUNTS: bool = True
     DEMO_SUPER_ADMIN_EMAIL: str | None = None
     DEMO_SUPER_ADMIN_PASSWORD: str | None = None
