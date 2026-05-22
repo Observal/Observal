@@ -71,7 +71,8 @@ test.describe("Agents - Page loads and detail view (#936)", () => {
     if (await installTab.isVisible({ timeout: 5000 }).catch(() => false)) {
       await installTab.click();
       await page.waitForTimeout(500);
-      await expect(page.locator('[role="tabpanel"]')).toContainText("observal");
+      const activePanel = page.getByRole("tabpanel", { name: "Install" });
+      await expect(activePanel).toContainText("observal");
     }
   });
 });

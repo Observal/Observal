@@ -84,6 +84,8 @@ test.describe("Agents - IDE config and versioning (#939)", () => {
         version: "2.0.0",
         description: "Updated agent",
         changelog: "v2 changes",
+        model_name: "claude-sonnet-4-20250514",
+        prompt: "You are an updated test agent.",
       }),
     });
     expect(pubRes.status).toBeLessThan(300);
