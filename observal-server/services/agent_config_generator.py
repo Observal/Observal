@@ -487,6 +487,7 @@ _HOOK_SCRIPTS_DIR: dict[str, str] = {
     "copilot": ".github/hooks/scripts",
     "copilot-cli": ".github/hooks/scripts",
     "claude-code": ".claude/hooks",
+    "kiro": ".kiro/hooks",
 }
 
 
@@ -668,6 +669,10 @@ def generate_agent_config(
                 cmd = handler_config.get("command", "")
                 if not cmd:
                     continue
+                # Rewrite bare script filenames to the hooks directory
+                script_filename = hc.get("script_filename")
+                if script_filename and cmd == script_filename:
+                    cmd = f".kiro/hooks/{script_filename}"
                 entry: dict = {"command": cmd}
                 if kiro_event in ("preToolUse", "postToolUse"):
                     entry["matcher"] = handler_config.get("matcher", "*")
@@ -714,6 +719,10 @@ def generate_agent_config(
         if skill_files:
             result["skill_files"] = skill_files
             result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
+        # Collect hook script files for Kiro
+        kiro_hook_files = _collect_hook_script_files(hook_configs, hook_listings, "kiro")
+        if kiro_hook_files:
+            result["hook_files"] = kiro_hook_files
         warnings_combined = list(compatibility_warnings)
         warnings_combined.extend(options.get("_model_warnings") or [])
         if warnings_combined:
