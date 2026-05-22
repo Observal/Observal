@@ -101,7 +101,7 @@ class TestGetRetentionConfig:
         db = _mock_db(org)
         app, _, _ = _app_with(user=user, db=db)
 
-        with patch("api.routes.admin.ds") as mock_ds:
+        with patch("api.routes.admin.retention.ds") as mock_ds:
             mock_ds.get_int = AsyncMock(return_value=45)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
                 resp = await c.get("/api/v1/admin/org/retention")
@@ -122,9 +122,9 @@ class TestUpdateRetentionConfig:
         app, _, _ = _app_with(user=user, db=db)
 
         with (
-            patch("api.routes.admin.ds") as mock_ds,
-            patch("api.routes.admin.emit_security_event", new_callable=AsyncMock),
-            patch("api.routes.admin.audit", new_callable=AsyncMock),
+            patch("api.routes.admin.retention.ds") as mock_ds,
+            patch("api.routes.admin.retention.emit_security_event", new_callable=AsyncMock),
+            patch("api.routes.admin.retention.audit", new_callable=AsyncMock),
         ):
             mock_ds.get_int = AsyncMock(return_value=90)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -149,7 +149,7 @@ class TestUpdateRetentionConfig:
         db = _mock_db(org)
         app, _, _ = _app_with(user=user, db=db)
 
-        with patch("api.routes.admin.ds") as mock_ds:
+        with patch("api.routes.admin.retention.ds") as mock_ds:
             mock_ds.get_int = AsyncMock(return_value=10)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
                 resp = await c.put(
@@ -171,9 +171,9 @@ class TestUpdateRetentionConfig:
         app, _, _ = _app_with(user=user, db=db)
 
         with (
-            patch("api.routes.admin.ds") as mock_ds,
-            patch("api.routes.admin.emit_security_event", new_callable=AsyncMock),
-            patch("api.routes.admin.audit", new_callable=AsyncMock),
+            patch("api.routes.admin.retention.ds") as mock_ds,
+            patch("api.routes.admin.retention.emit_security_event", new_callable=AsyncMock),
+            patch("api.routes.admin.retention.audit", new_callable=AsyncMock),
         ):
             mock_ds.get_int = AsyncMock(return_value=0)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -202,7 +202,7 @@ class TestPreviewRetention:
         ch_resp = _clickhouse_response(data=[{"cnt": "42"}])
 
         with (
-            patch("api.routes.admin._get_user_org", new_callable=AsyncMock, return_value=org),
+            patch("api.routes.admin.retention._get_user_org", new_callable=AsyncMock, return_value=org),
             patch("services.clickhouse._query", new_callable=AsyncMock, return_value=ch_resp),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -235,7 +235,7 @@ class TestPreviewRetention:
         ch_resp = _clickhouse_response(status_code=500)
 
         with (
-            patch("api.routes.admin._get_user_org", new_callable=AsyncMock, return_value=org),
+            patch("api.routes.admin.retention._get_user_org", new_callable=AsyncMock, return_value=org),
             patch("services.clickhouse._query", new_callable=AsyncMock, return_value=ch_resp),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -276,7 +276,7 @@ class TestRetentionStats:
         ch_resp = _clickhouse_response(data=[{"cnt": "100", "age": "5"}])
 
         with (
-            patch("api.routes.admin._get_user_org", new_callable=AsyncMock, return_value=org),
+            patch("api.routes.admin.retention._get_user_org", new_callable=AsyncMock, return_value=org),
             patch("services.clickhouse._query", new_callable=AsyncMock, return_value=ch_resp),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -298,7 +298,7 @@ class TestRetentionStats:
         ch_resp = _clickhouse_response(data=[{"cnt": "0", "age": "20591"}])
 
         with (
-            patch("api.routes.admin._get_user_org", new_callable=AsyncMock, return_value=org),
+            patch("api.routes.admin.retention._get_user_org", new_callable=AsyncMock, return_value=org),
             patch("services.clickhouse._query", new_callable=AsyncMock, return_value=ch_resp),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -341,7 +341,7 @@ class TestRetentionWarnings:
         agents_result.scalar_one_or_none.return_value = org
         db.execute = AsyncMock(return_value=agents_result)
 
-        with patch("api.routes.admin._get_user_org", new_callable=AsyncMock, return_value=org):
+        with patch("api.routes.admin.retention._get_user_org", new_callable=AsyncMock, return_value=org):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
                 resp = await c.get("/api/v1/admin/org/retention/warnings")
 

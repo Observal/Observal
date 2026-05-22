@@ -131,8 +131,8 @@ class TestDiagnostics:
         app.dependency_overrides[get_current_user] = _mock_admin
         try:
             with (
-                patch("api.routes.admin.settings") as mock_settings,
-                patch("api.routes.admin.ds") as mock_ds,
+                patch("api.routes.admin.enterprise_settings.settings") as mock_settings,
+                patch("api.routes.admin.enterprise_settings.ds") as mock_ds,
             ):
                 mock_settings.DEPLOYMENT_MODE = "local"
                 mock_settings.JWT_SIGNING_ALGORITHM = "ES256"
@@ -194,8 +194,8 @@ class TestDiagnostics:
         app.dependency_overrides[get_current_user] = _mock_admin
         try:
             with (
-                patch("api.routes.admin.settings") as mock_settings,
-                patch("api.routes.admin.ds") as mock_ds,
+                patch("api.routes.admin.enterprise_settings.settings") as mock_settings,
+                patch("api.routes.admin.enterprise_settings.ds") as mock_ds,
             ):
                 mock_settings.DEPLOYMENT_MODE = "enterprise"
                 mock_settings.SECRET_KEY = "change-me-to-a-random-string"

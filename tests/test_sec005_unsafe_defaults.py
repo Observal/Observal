@@ -124,7 +124,7 @@ async def test_system_warnings_weak_secret_key():
     app.dependency_overrides[get_current_user] = lambda: admin
 
     try:
-        with patch("api.routes.admin.settings") as mock_settings:
+        with patch("api.routes.admin.enterprise_settings.settings") as mock_settings:
             mock_settings.SECRET_KEY = "changeme"
             mock_settings.DEPLOYMENT_MODE = "enterprise"
             async with _make_client() as client:
@@ -152,7 +152,7 @@ async def test_system_warnings_demo_accounts():
     app.dependency_overrides[get_current_user] = lambda: admin
 
     try:
-        with patch("api.routes.admin.settings") as mock_settings:
+        with patch("api.routes.admin.enterprise_settings.settings") as mock_settings:
             mock_settings.SECRET_KEY = "a-very-strong-random-secret-key-xyz!"
             mock_settings.DEPLOYMENT_MODE = "enterprise"
             async with _make_client() as client:
@@ -182,7 +182,7 @@ async def test_system_warnings_clean():
     app.dependency_overrides[get_current_user] = lambda: admin
 
     try:
-        with patch("api.routes.admin.settings") as mock_settings:
+        with patch("api.routes.admin.enterprise_settings.settings") as mock_settings:
             mock_settings.SECRET_KEY = "a-very-strong-random-secret-key-xyz!"
             mock_settings.DEPLOYMENT_MODE = "enterprise"
             async with _make_client() as client:
