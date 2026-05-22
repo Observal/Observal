@@ -15,11 +15,15 @@ HOOK_FIELDS = {
     "priority",
     "handler_type",
     "handler_config",
-    "input_schema",
-    "output_schema",
     "scope",
     "tool_filter",
-    "file_pattern",
+    "source_url",
+    "source_ref",
+    "source_path",
+    "resolved_sha",
+    "script_content",
+    "script_filename",
+    "requirements",
 }
 
 SKILL_FIELDS = {
@@ -60,6 +64,7 @@ SANDBOX_FIELDS = {
     "source_url",
     "source_ref",
     "resolved_sha",
+    "sandbox_path",
 }
 
 REQUIRED_FIELDS: dict[str, set[str]] = {

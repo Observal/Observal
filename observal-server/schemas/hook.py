@@ -29,12 +29,18 @@ class HookSubmitRequest(BaseModel):
     priority: int = 100
     handler_type: str
     handler_config: dict = {}
-    input_schema: dict | None = None
-    output_schema: dict | None = None
     scope: str = "agent"
     tool_filter: list[str] | None = None
-    file_pattern: list[str] | None = None
     supported_ides: list[str] = []
+    # Script delivery
+    script_content: str | None = None
+    script_filename: str | None = None
+    # Source tracking
+    source_url: str | None = None
+    source_ref: str | None = None
+    source_path: str | None = None
+    # Requirements
+    requirements: list[str] | None = None
 
     _validate_event = field_validator("event")(make_option_validator("event", VALID_HOOK_EVENTS))
     _validate_handler_type = field_validator("handler_type")(
@@ -52,17 +58,20 @@ class HookDraftRequest(BaseModel):
     version: str = "0.1.0"
     description: str = ""
     owner: str = ""
-    event: str = "on_tool_call"
+    event: str = "PreToolUse"
     execution_mode: str = "async"
     priority: int = 100
     handler_type: str = "command"
     handler_config: dict = {}
-    input_schema: dict | None = None
-    output_schema: dict | None = None
     scope: str = "agent"
     tool_filter: list[str] | None = None
-    file_pattern: list[str] | None = None
     supported_ides: list[str] = []
+    script_content: str | None = None
+    script_filename: str | None = None
+    source_url: str | None = None
+    source_ref: str | None = None
+    source_path: str | None = None
+    requirements: list[str] | None = None
 
     _validate_ides = field_validator("supported_ides")(make_ide_list_validator())
 
@@ -77,12 +86,15 @@ class HookUpdateRequest(BaseModel):
     priority: int | None = None
     handler_type: str | None = None
     handler_config: dict | None = None
-    input_schema: dict | None = None
-    output_schema: dict | None = None
     scope: str | None = None
     tool_filter: list[str] | None = None
-    file_pattern: list[str] | None = None
     supported_ides: list[str] | None = None
+    script_content: str | None = None
+    script_filename: str | None = None
+    source_url: str | None = None
+    source_ref: str | None = None
+    source_path: str | None = None
+    requirements: list[str] | None = None
 
 
 class HookListingResponse(BaseModel):
@@ -124,7 +136,18 @@ class HookInstallRequest(BaseModel):
     platform: str = ""  # e.g. "win32", "darwin", "linux" — empty = Unix default
 
 
+class HookFileEntry(BaseModel):
+    path: str
+    content: str
+    executable: bool = False
+
+
 class HookInstallResponse(BaseModel):
     listing_id: uuid.UUID
     ide: str
     config_snippet: dict
+    config_path: str = ""
+    files: list[HookFileEntry] = []
+    requirements: list[str] = []
+    source_fetch: dict | None = None
+    notes: list[str] = []

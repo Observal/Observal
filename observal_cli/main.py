@@ -105,6 +105,7 @@ from observal_cli.cmd_ops import (
     self_app,
 )
 from observal_cli.cmd_profile import register_use
+from observal_cli.cmd_hook import hook_app
 from observal_cli.cmd_prompt import prompt_app
 from observal_cli.cmd_pull import register_pull
 from observal_cli.cmd_sandbox import sandbox_app
@@ -125,6 +126,7 @@ registry_app = typer.Typer(
 
 registry_app.add_typer(mcp_app, name="mcp")
 registry_app.add_typer(skill_app, name="skill")
+registry_app.add_typer(hook_app, name="hook")
 registry_app.add_typer(prompt_app, name="prompt")
 registry_app.add_typer(sandbox_app, name="sandbox")
 registry_app.add_typer(models_app, name="models")

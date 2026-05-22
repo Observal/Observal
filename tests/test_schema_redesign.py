@@ -161,12 +161,11 @@ class TestComponentTableUpdates:
         "model_path,version_name",
         [
             ("models.skill", "SkillVersion"),
-            ("models.hook", "HookVersion"),
             ("models.prompt", "PromptVersion"),
         ],
     )
     def test_inline_versions_no_source_fields(self, model_path, version_name):
-        """Skills, hooks, and prompts are inline — no git source fields."""
+        """Skills and prompts are inline — no git source fields."""
         import importlib
 
         mod = importlib.import_module(model_path)

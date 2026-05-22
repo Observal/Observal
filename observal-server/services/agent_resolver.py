@@ -100,7 +100,7 @@ def _extract_extra(listing, component_type: str) -> dict:
             "skill_md_content": getattr(listing, "skill_md_content", None),
         }
     if component_type == "hook":
-        return {
+        extra = {
             "event": getattr(listing, "event", ""),
             "execution_mode": getattr(listing, "execution_mode", "async"),
             "priority": getattr(listing, "priority", 100),
@@ -108,6 +108,15 @@ def _extract_extra(listing, component_type: str) -> dict:
             "handler_config": getattr(listing, "handler_config", {}),
             "scope": getattr(listing, "scope", "agent"),
         }
+        if getattr(listing, "source_url", None):
+            extra["source_url"] = listing.source_url
+            extra["source_ref"] = getattr(listing, "source_ref", None)
+            extra["resolved_sha"] = getattr(listing, "resolved_sha", None)
+        if getattr(listing, "script_filename", None):
+            extra["script_filename"] = listing.script_filename
+        if getattr(listing, "requirements", None):
+            extra["requirements"] = listing.requirements
+        return extra
     if component_type == "prompt":
         return {
             "template": getattr(listing, "template", ""),
@@ -115,13 +124,16 @@ def _extract_extra(listing, component_type: str) -> dict:
             "category": getattr(listing, "category", ""),
         }
     if component_type == "sandbox":
-        return {
+        extra = {
             "runtime_type": getattr(listing, "runtime_type", ""),
             "image": getattr(listing, "image", ""),
             "resource_limits": getattr(listing, "resource_limits", {}),
             "network_policy": getattr(listing, "network_policy", "none"),
             "entrypoint": getattr(listing, "entrypoint", None),
         }
+        if getattr(listing, "sandbox_path", None):
+            extra["sandbox_path"] = listing.sandbox_path
+        return extra
     return {}
 
 
