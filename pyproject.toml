@@ -56,6 +56,7 @@ observal = "observal_cli.main:app"
 observal-shim = "observal_cli.shim:main"
 observal-proxy = "observal_cli.proxy:main"
 observal-sandbox-run = "observal_cli.sandbox_runner:main"
+observal-sandbox-mcp = "observal_cli.sandbox_mcp:main"
 #observal-graphrag-proxy = "observal_cli.graphrag_proxy:main"
 
 [build-system]

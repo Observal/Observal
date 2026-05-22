@@ -300,6 +300,39 @@ def _inject_agent_id(mcp_config: dict, agent_id: str):
             cfg["env"]["OBSERVAL_AGENT_ID"] = agent_id
 
 
+def _build_sandbox_mcp_entry(sandbox_listings: dict, ide: str) -> dict:
+    """Build an MCP server entry for sandbox components.
+
+    Returns a dict like {"observal-sandbox": {"command": ..., "args": [...]}}
+    that exposes sandboxes as callable tools via the sandbox MCP server.
+    """
+    if not sandbox_listings:
+        return {}
+
+    sandboxes_json = []
+    for _lid, listing in sandbox_listings.items():
+        sandboxes_json.append({
+            "id": str(_lid),
+            "name": getattr(listing, "name", ""),
+            "image": getattr(listing, "image", ""),
+            "timeout": (getattr(listing, "resource_limits", {}) or {}).get("timeout", 300),
+            "entrypoint": getattr(listing, "entrypoint", None) or "bash",
+            "network_policy": getattr(listing, "network_policy", "none"),
+        })
+
+    if not sandboxes_json:
+        return {}
+
+    import json as _json
+
+    return {
+        "observal-sandbox": {
+            "command": "python3",
+            "args": ["-m", "observal_cli.sandbox_mcp", "--sandboxes", _json.dumps(sandboxes_json)],
+        }
+    }
+
+
 def _build_mcp_configs(
     agent: Agent,
     ide: str,
@@ -669,6 +702,13 @@ def generate_agent_config(
     safe_name = _sanitize_name(agent.name)
     effective_otlp_http = otlp_http_url or observal_url
     mcp_configs = _build_mcp_configs(agent, ide, effective_otlp_http, mcp_listings=mcp_listings, env_values=env_values)
+
+    # Inject sandbox MCP server when agent has sandbox components
+    if sandbox_listings:
+        sandbox_mcp = _build_sandbox_mcp_entry(sandbox_listings, ide)
+        if sandbox_mcp:
+            mcp_configs.update(sandbox_mcp)
+
     rules_content = _build_rules_content(agent, component_names, prompt_listings, sandbox_listings)
     skill_configs = _build_skill_configs(agent, skill_listings)
     hook_configs = _build_hook_configs(agent, hook_listings)
