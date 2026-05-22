@@ -8,7 +8,6 @@
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-
 services:
   observal-init:
     build:
@@ -19,7 +18,7 @@ services:
     env_file:
       - ../.env
     environment:
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
+      - JWT_KEY_DIR=/data/keys
     depends_on:
       observal-db:
         condition: service_healthy
@@ -41,11 +40,23 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.api
     image: ghcr.io/blazeup-ai/observal-api:latest
-    command: ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    command:
+      [
+        "/app/.venv/bin/python",
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--proxy-headers",
+        "--forwarded-allow-ips",
+        "*",
+      ]
     env_file:
       - ../.env
     environment:
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
       - JWT_KEY_DIR=/data/keys
       - SKIP_DDL_ON_STARTUP=true
       - DEMO_SUPER_ADMIN_EMAIL=${DEMO_SUPER_ADMIN_EMAIL:-super@demo.example}
@@ -65,7 +76,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')\""]
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8000/readyz'')"',
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -119,7 +134,11 @@ services:
       - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
       - ./clickhouse/users.d:/etc/clickhouse-server/users.d
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --password ${CLICKHOUSE_PASSWORD:-clickhouse} --query 'SELECT 1'"]
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --password ${CLICKHOUSE_PASSWORD:-clickhouse} --query 'SELECT 1'",
+        ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -153,7 +172,12 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.api
     image: ghcr.io/blazeup-ai/observal-api:latest
-    command: ["/app/.venv/bin/python", "-c", "import asyncio; asyncio.set_event_loop(asyncio.new_event_loop()); from arq import run_worker; from worker import WorkerSettings; run_worker(WorkerSettings)"]
+    command:
+      [
+        "/app/.venv/bin/python",
+        "-c",
+        "import asyncio; asyncio.set_event_loop(asyncio.new_event_loop()); from arq import run_worker; from worker import WorkerSettings; run_worker(WorkerSettings)",
+      ]
     env_file:
       - ../.env
     depends_on:
