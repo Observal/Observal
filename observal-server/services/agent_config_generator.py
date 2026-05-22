@@ -747,6 +747,9 @@ def generate_agent_config(
             "---",
             f"name: {safe_name}",
         ]
+        agent_desc = getattr(agent, "description", "") or ""
+        if agent_desc:
+            frontmatter_lines.append(f'description: "{agent_desc}"')
         if model_choice:
             frontmatter_lines.append(f"model: {model_choice}")
         if tools:
