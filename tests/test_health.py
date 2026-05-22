@@ -130,9 +130,14 @@ class TestDiagnostics:
         app.dependency_overrides[get_db] = _mock_get_db
         app.dependency_overrides[get_current_user] = _mock_admin
         try:
-            with patch("api.routes.admin.settings") as mock_settings:
+            with (
+                patch("api.routes.admin.settings") as mock_settings,
+                patch("api.routes.admin.ds") as mock_ds,
+            ):
                 mock_settings.DEPLOYMENT_MODE = "local"
                 mock_settings.JWT_SIGNING_ALGORITHM = "ES256"
+                mock_ds.get_bool = AsyncMock(return_value=True)
+                mock_ds.get = AsyncMock(return_value="http://localhost:3000")
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                     r = await ac.get("/api/v1/admin/diagnostics")
             assert r.status_code == 200
@@ -188,12 +193,17 @@ class TestDiagnostics:
         app.dependency_overrides[get_db] = _mock_get_db
         app.dependency_overrides[get_current_user] = _mock_admin
         try:
-            with patch("api.routes.admin.settings") as mock_settings:
+            with (
+                patch("api.routes.admin.settings") as mock_settings,
+                patch("api.routes.admin.ds") as mock_ds,
+            ):
                 mock_settings.DEPLOYMENT_MODE = "enterprise"
                 mock_settings.SECRET_KEY = "change-me-to-a-random-string"
                 mock_settings.OAUTH_CLIENT_ID = None
                 mock_settings.FRONTEND_URL = "http://localhost:3000"
                 mock_settings.JWT_SIGNING_ALGORITHM = "ES256"
+                mock_ds.get_bool = AsyncMock(return_value=True)
+                mock_ds.get = AsyncMock(return_value="http://localhost:3000")
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                     r = await ac.get("/api/v1/admin/diagnostics")
             assert r.status_code == 200
@@ -203,6 +213,6 @@ class TestDiagnostics:
             issues = data["checks"]["enterprise"]["issues"]
             assert any("SECRET_KEY" in i for i in issues)
             assert any("OAUTH_CLIENT_ID" in i for i in issues)
-            assert any("FRONTEND_URL" in i for i in issues)
+            assert any("frontend" in i.lower() for i in issues)
         finally:
             app.dependency_overrides.clear()

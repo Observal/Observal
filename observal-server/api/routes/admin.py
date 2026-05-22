@@ -62,7 +62,7 @@ async def diagnostics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Authenticated system health — full status for ops dashboards."""
+    """Authenticated system health: full status for ops dashboards."""
     from services.crypto import get_key_manager
 
     deployment_mode = settings.DEPLOYMENT_MODE
@@ -297,7 +297,7 @@ async def list_settings(
 async def get_settings_schema(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Return the settings schema — section definitions, keys, descriptions, and metadata.
+    """Return the settings schema: section definitions, keys, descriptions, and metadata.
 
     Used by the frontend to render the settings page with proper grouping,
     danger-zone styling, and sensitive field masking.

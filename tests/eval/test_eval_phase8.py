@@ -87,13 +87,13 @@ class TestFallbackBackend:
 
 class TestGetBackend:
     def test_returns_fallback_when_no_model(self):
-        with patch("services.eval.eval_engine.settings") as mock_settings:
-            mock_settings.EVAL_MODEL_NAME = ""
+        with patch("services.dynamic_settings.get_sync", return_value="") as mock_get_sync:
+            mock_get_sync.return_value = ""
             assert isinstance(get_backend(), FallbackBackend)
 
     def test_returns_llm_when_model_set(self):
-        with patch("services.eval.eval_engine.settings") as mock_settings:
-            mock_settings.EVAL_MODEL_NAME = "gpt-4"
+        with patch("services.dynamic_settings.get_sync", return_value="") as mock_get_sync:
+            mock_get_sync.return_value = "gpt-4"
             assert isinstance(get_backend(), LLMJudgeBackend)
 
 
@@ -209,14 +209,18 @@ class TestMoonshotProvider:
                 return _Resp()
 
         with (
-            patch("services.eval.eval_engine.settings") as mock_settings,
+            patch(
+                "services.dynamic_settings.get",
+                new_callable=AsyncMock,
+                side_effect=lambda key, *a, **kw: {
+                    "eval.model_provider": "moonshot",
+                    "eval.model_name": "kimi-k2.5-preview",
+                    "eval.model_url": "",
+                    "eval.model_api_key": "sk-test",
+                }.get(key, ""),
+            ),
             patch("services.eval.eval_engine.httpx.AsyncClient", _Client),
         ):
-            mock_settings.EVAL_MODEL_PROVIDER = "moonshot"
-            mock_settings.EVAL_MODEL_NAME = "kimi-k2.5-preview"
-            mock_settings.EVAL_MODEL_URL = ""
-            mock_settings.EVAL_MODEL_API_KEY = "sk-test"
-
             result = await _call_model("score this")
 
         assert result == {"score": 0.75, "reason": "ok"}
@@ -254,14 +258,18 @@ class TestMoonshotProvider:
                 return _Resp()
 
         with (
-            patch("services.eval.eval_engine.settings") as mock_settings,
+            patch(
+                "services.dynamic_settings.get",
+                new_callable=AsyncMock,
+                side_effect=lambda key, *a, **kw: {
+                    "eval.model_provider": "",
+                    "eval.model_name": "Kimi-K2.5",
+                    "eval.model_url": "",
+                    "eval.model_api_key": "",
+                }.get(key, ""),
+            ),
             patch("services.eval.eval_engine.httpx.AsyncClient", _Client),
         ):
-            mock_settings.EVAL_MODEL_PROVIDER = ""
-            mock_settings.EVAL_MODEL_NAME = "Kimi-K2.5"
-            mock_settings.EVAL_MODEL_URL = ""
-            mock_settings.EVAL_MODEL_API_KEY = ""
-
             await _call_model("hi")
 
         assert captured["url"].startswith("https://api.moonshot.ai/v1")
@@ -299,16 +307,18 @@ class TestMoonshotEvalService:
                 return _Resp()
 
         with (
-            patch("services.eval.eval_service.settings") as svc_settings,
-            patch("services.eval.eval_engine.settings") as eng_settings,
+            patch(
+                "services.dynamic_settings.get",
+                new_callable=AsyncMock,
+                side_effect=lambda key, *a, **kw: {
+                    "eval.model_provider": "moonshot",
+                    "eval.model_name": "kimi-k2.5",
+                    "eval.model_url": "",
+                    "eval.model_api_key": "sk-svc",
+                }.get(key, ""),
+            ),
             patch("services.eval.eval_service.httpx.AsyncClient", _Client),
         ):
-            for s in (svc_settings, eng_settings):
-                s.EVAL_MODEL_PROVIDER = "moonshot"
-                s.EVAL_MODEL_NAME = "kimi-k2.5"
-                s.EVAL_MODEL_URL = ""
-                s.EVAL_MODEL_API_KEY = "sk-svc"
-
             result = await call_eval_model("test prompt")
 
         assert result == {"score": 0.9}

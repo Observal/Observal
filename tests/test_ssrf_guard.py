@@ -130,8 +130,8 @@ class TestGitMirrorUsesGuard:
 
         from services.git_mirror_service import clone_or_update
 
-        with _patch("services.git_mirror_service.settings") as mock_settings:
-            mock_settings.ALLOW_INTERNAL_GIT_URLS = True
+        with _patch("services.git_mirror_service.ds") as mock_ds:
+            mock_ds.get_sync_bool.return_value = True
             with _patch("services.git_mirror_service._run_git") as mock_git:
                 mock_git.return_value.returncode = 0
                 try:

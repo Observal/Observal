@@ -3,7 +3,7 @@
 
 """SEC-028: Password lifecycle routes must be blocked when SSO_ONLY=True."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -34,10 +34,8 @@ class TestSec028SsoGuards:
     @pytest.mark.asyncio
     async def test_init_blocked_when_sso_only(self):
         """POST /api/v1/auth/init returns 403 when SSO_ONLY=True."""
-        fake_settings = MagicMock()
-        fake_settings.SSO_ONLY = True
 
-        with patch("api.deps.settings", fake_settings):
+        with patch("services.dynamic_settings.get_bool", new_callable=AsyncMock, return_value=True):
             async with _make_async_client() as client:
                 response = await client.post(
                     "/api/v1/auth/init",
@@ -54,10 +52,8 @@ class TestSec028SsoGuards:
     @pytest.mark.asyncio
     async def test_change_password_blocked_when_sso_only(self):
         """PUT /api/v1/auth/profile/password returns 403 when SSO_ONLY=True."""
-        fake_settings = MagicMock()
-        fake_settings.SSO_ONLY = True
 
-        with patch("api.deps.settings", fake_settings):
+        with patch("services.dynamic_settings.get_bool", new_callable=AsyncMock, return_value=True):
             async with _make_async_client() as client:
                 response = await client.put(
                     "/api/v1/auth/profile/password",
@@ -85,12 +81,9 @@ class TestSec028SsoGuards:
         async def _mock_get_db():
             yield mock_db
 
-        fake_settings = MagicMock()
-        fake_settings.SSO_ONLY = False
-
         app.dependency_overrides[get_db] = _mock_get_db
 
-        with patch("api.deps.settings", fake_settings):
+        with patch("services.dynamic_settings.get_bool", new_callable=AsyncMock, return_value=False):
             async with _make_async_client() as client:
                 response = await client.post(
                     "/api/v1/auth/init",

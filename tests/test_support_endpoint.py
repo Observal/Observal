@@ -383,7 +383,7 @@ class TestCollectConfig:
     async def test_returns_only_allowlisted_keys(self):
         result = await _collect_config()
         for key in result:
-            assert key in CONFIG_ALLOWLIST, f"Key '{key}' not in CONFIG_ALLOWLIST"
+            assert key in CONFIG_ALLOWLIST or "." in key, f"Key '{key}' not in allowlist and not a dynamic setting"
 
     @pytest.mark.asyncio
     async def test_excludes_secret_key(self):
@@ -409,7 +409,7 @@ class TestCollectConfig:
     @pytest.mark.asyncio
     async def test_includes_deployment_mode(self):
         result = await _collect_config()
-        assert "DEPLOYMENT_MODE" in result
+        assert "deployment.mode" in result  # Now from dynamic settings
 
     @pytest.mark.asyncio
     async def test_result_is_dict(self):
@@ -1032,23 +1032,12 @@ class TestConfigAllowlistFiltering:
     """Tests for CLI-side CONFIG_ALLOWLIST filtering (Requirement 7.4)."""
 
     def test_allowlist_contains_expected_keys(self):
+        """Boot-time allowlist contains infrastructure keys."""
         expected = {
             "DATABASE_URL",
             "CLICKHOUSE_URL",
             "REDIS_URL",
-            "REDIS_SOCKET_TIMEOUT",
-            "EVAL_MODEL_NAME",
-            "EVAL_MODEL_PROVIDER",
-            "AWS_REGION",
-            "FRONTEND_URL",
-            "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
-            "JWT_REFRESH_TOKEN_EXPIRE_DAYS",
             "JWT_SIGNING_ALGORITHM",
-            "JWT_HOOKS_TOKEN_EXPIRE_MINUTES",
-            "RATE_LIMIT_AUTH",
-            "RATE_LIMIT_AUTH_STRICT",
-            "DATA_RETENTION_DAYS",
-            "DEPLOYMENT_MODE",
         }
         assert expected.issubset(CONFIG_ALLOWLIST)
 
@@ -1070,15 +1059,13 @@ class TestConfigAllowlistFiltering:
         raw_config = {
             "DATABASE_URL": "postgresql://user:pass@localhost/db",
             "SECRET_KEY": "super-secret-key-value",
-            "DEPLOYMENT_MODE": "docker",
             "OAUTH_CLIENT_SECRET": "oauth-secret",
-            "AWS_REGION": "us-east-1",
+            "JWT_SIGNING_ALGORITHM": "ES256",
         }
         filtered = {k: v for k, v in raw_config.items() if k in CONFIG_ALLOWLIST}
 
         assert "DATABASE_URL" in filtered
-        assert "DEPLOYMENT_MODE" in filtered
-        assert "AWS_REGION" in filtered
+        assert "JWT_SIGNING_ALGORITHM" in filtered
         assert "SECRET_KEY" not in filtered
         assert "OAUTH_CLIENT_SECRET" not in filtered
 
