@@ -465,6 +465,91 @@ def _build_hook_configs(
     return hooks
 
 
+_HOOK_EVENTS_MAP: dict[str, dict[str, str]] = {
+    "cursor": {"PreToolUse": "preToolUse", "PostToolUse": "postToolUse", "Stop": "sessionEnd", "SessionStart": "sessionStart", "UserPromptSubmit": "beforeSubmitPrompt"},
+    "vscode": {"PreToolUse": "PreToolUse", "PostToolUse": "PostToolUse", "Stop": "SessionEnd", "SessionStart": "SessionStart"},
+    "gemini-cli": {"PreToolUse": "BeforeTool", "PostToolUse": "AfterTool", "Stop": "SessionEnd", "SessionStart": "SessionStart", "UserPromptSubmit": "BeforeAgent"},
+    "codex": {"PreToolUse": "pre_tool_use", "PostToolUse": "post_tool_use", "Stop": "session_stop", "UserPromptSubmit": "user_prompt_submit"},
+    "copilot": {"PreToolUse": "preToolUse", "PostToolUse": "postToolUse", "Stop": "sessionEnd", "SessionStart": "sessionStart"},
+    "copilot-cli": {"PreToolUse": "preToolUse", "PostToolUse": "postToolUse", "Stop": "sessionEnd", "SessionStart": "sessionStart"},
+}
+
+_HOOK_SCRIPTS_DIR: dict[str, str] = {
+    "cursor": ".cursor/hooks",
+    "vscode": ".github/hooks/scripts",
+    "gemini-cli": ".gemini/hooks",
+    "codex": ".codex/hooks",
+    "copilot": ".github/hooks/scripts",
+    "copilot-cli": ".github/hooks/scripts",
+    "claude-code": ".claude/hooks",
+}
+
+
+def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[dict], ide: str) -> None:
+    """Merge user-submitted hook components into the IDE hooks config dict (in-place)."""
+    events_map = _HOOK_EVENTS_MAP.get(ide, {})
+    scripts_dir = _HOOK_SCRIPTS_DIR.get(ide, "")
+    hooks_dict = hooks_content.setdefault("hooks", {})
+
+    for hc in hook_configs:
+        event = hc.get("event")
+        if not event:
+            continue
+        ide_event = events_map.get(event, event)
+        handler_config = hc.get("handler_config", {})
+        command = handler_config.get("command", "")
+        if not command:
+            continue
+
+        # If hook has a script_filename, rewrite command to the IDE scripts dir
+        script_filename = hc.get("script_filename")
+        if script_filename and scripts_dir:
+            command = f"{scripts_dir}/{script_filename}"
+
+        if ide == "cursor":
+            hooks_dict.setdefault(ide_event, []).append({"command": command})
+        elif ide in ("vscode", "copilot", "copilot-cli"):
+            hooks_dict.setdefault(ide_event, []).append({"type": "command", "command": command})
+        elif ide == "gemini-cli":
+            entry: dict = {"matcher": "*", "command": command}
+            timeout = handler_config.get("timeout")
+            if timeout:
+                entry["timeout"] = timeout
+            hooks_dict.setdefault(ide_event, []).append(entry)
+        else:
+            hooks_dict.setdefault(ide_event, []).append({"command": command})
+
+
+def _collect_hook_script_files(hook_configs: list[dict], hook_listings: dict | None, ide: str) -> list[dict]:
+    """Collect script files from hook components that need to be written on install."""
+    scripts_dir = _HOOK_SCRIPTS_DIR.get(ide, "")
+    if not scripts_dir or not hook_listings:
+        return []
+
+    files: list[dict] = []
+    for hc in hook_configs:
+        name = hc.get("name", "")
+        # Find the listing to check for script_content
+        listing = None
+        for lid, l in hook_listings.items():
+            if getattr(l, "name", None) == name:
+                listing = l
+                break
+        if not listing:
+            continue
+
+        script_content = getattr(listing, "script_content", None)
+        script_filename = getattr(listing, "script_filename", None)
+        if script_content and script_filename:
+            files.append({
+                "path": f"{scripts_dir}/{script_filename}",
+                "content": script_content,
+                "executable": True,
+            })
+
+    return files
+
+
 def _build_rules_content(
     agent: Agent,
     component_names: dict | None = None,
@@ -912,15 +997,29 @@ def generate_agent_config(
     # Add hooks config for IDEs with command hook support
     if ide == "cursor":
         hooks_path = ".cursor/hooks.json" if ide_scope == "project" else "~/.cursor/hooks.json"
+        hooks_content = _cursor_hooks_config(platform=platform)
+        # Merge hook components into the hooks config
+        _merge_hook_components_into_config(hooks_content, hook_configs, ide)
         result["hooks_config"] = {
             "path": hooks_path,
-            "content": _cursor_hooks_config(platform=platform),
+            "content": hooks_content,
+            "merge": True,
         }
     elif ide == "vscode":
+        hooks_content = _vscode_copilot_hooks_config()
+        _merge_hook_components_into_config(hooks_content, hook_configs, ide)
         result["hooks_config"] = {
             "path": ".github/hooks/observal.json",
-            "content": _vscode_copilot_hooks_config(),
+            "content": hooks_content,
         }
+    elif ide in ("gemini-cli", "gemini_cli") and hook_configs:
+        # Gemini hooks are in the same settings.json — already handled above
+        pass
+
+    # Write hook script files for hook components that have scripts
+    hook_files = _collect_hook_script_files(hook_configs, hook_listings, ide)
+    if hook_files:
+        result["hook_files"] = hook_files
     if skill_files:
         result["skill_files"] = skill_files
         result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
