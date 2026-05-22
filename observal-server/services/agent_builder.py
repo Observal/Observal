@@ -423,7 +423,9 @@ def _build_rules_markdown(manifest: AgentManifest) -> str:
     return "\n\n".join(sections)
 
 
-def _materialize_hook_components(manifest: AgentManifest, ide: str) -> tuple[list[HookInstallEntry], list[HookConfigEntry]]:
+def _materialize_hook_components(
+    manifest: AgentManifest, ide: str
+) -> tuple[list[HookInstallEntry], list[HookConfigEntry]]:
     """Generate hook files + configs for all hook components in an agent manifest.
 
     Uses the IDE registry to map events and determine script paths.
@@ -460,18 +462,24 @@ def _materialize_hook_components(manifest: AgentManifest, ide: str) -> tuple[lis
         handler_type = hook.handler_type or "command"
         command = hook.handler_config.get("command", "")
         timeout = hook.handler_config.get("timeout")
-        script_filename = getattr(hook, "script_filename", None) or hook.config_override.get("script_filename") if hook.config_override else None
-        script_content = getattr(hook, "script_content", None) or hook.config_override.get("script_content") if hook.config_override else None
+        script_filename = getattr(hook, "script_filename", None) or (getattr(hook, "config_override", None) or {}).get(
+            "script_filename"
+        )
+        script_content = getattr(hook, "script_content", None) or (getattr(hook, "config_override", None) or {}).get(
+            "script_content"
+        )
 
         # If hook has a script, write it and rewrite the command
         actual_command = command
         if script_content and script_filename and hook_scripts_dir:
             script_path = f"{hook_scripts_dir}/{script_filename}"
-            hook_files.append(HookInstallEntry(
-                path=script_path,
-                content=script_content,
-                executable=True,
-            ))
+            hook_files.append(
+                HookInstallEntry(
+                    path=script_path,
+                    content=script_content,
+                    executable=True,
+                )
+            )
             actual_command = script_path
 
         # Build IDE-specific hook entry
@@ -479,9 +487,7 @@ def _materialize_hook_components(manifest: AgentManifest, ide: str) -> tuple[lis
             hook_entry: dict = {"type": handler_type, "command": actual_command}
             if timeout:
                 hook_entry["timeout"] = timeout
-            all_hook_entries.setdefault(ide_event, []).append(
-                {"matcher": "*", "hooks": [hook_entry]}
-            )
+            all_hook_entries.setdefault(ide_event, []).append({"matcher": "*", "hooks": [hook_entry]})
         elif ide == "cursor":
             all_hook_entries.setdefault(ide_event, []).append({"command": actual_command})
         elif ide == "gemini-cli":
@@ -495,17 +501,17 @@ def _materialize_hook_components(manifest: AgentManifest, ide: str) -> tuple[lis
     # Build the merged config snippet
     hook_configs: list[HookConfigEntry] = []
     if all_hook_entries and config_path:
-        if ide == "cursor":
-            snippet = {"version": 1, "hooks": all_hook_entries}
-        else:
-            snippet = {"hooks": all_hook_entries}
-        hook_configs.append(HookConfigEntry(
-            config_path=config_path,
-            config_snippet=snippet,
-            merge=True,
-        ))
+        snippet = {"version": 1, "hooks": all_hook_entries} if ide == "cursor" else {"hooks": all_hook_entries}
+        hook_configs.append(
+            HookConfigEntry(
+                config_path=config_path,
+                config_snippet=snippet,
+                merge=True,
+            )
+        )
 
     return hook_files, hook_configs
+
 
 def _generate_claude_code(manifest: AgentManifest) -> IdeAgentConfig:
     """Generate Claude Code agent config (.claude/agents/<name>.md + MCP commands)."""

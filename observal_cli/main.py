@@ -96,6 +96,7 @@ from observal_cli.cmd_agent import agent_app
 from observal_cli.cmd_auth import auth_app, register_config
 from observal_cli.cmd_component import component_app
 from observal_cli.cmd_doctor import doctor_app
+from observal_cli.cmd_hook import hook_app
 from observal_cli.cmd_mcp import mcp_app
 from observal_cli.cmd_migrate import migrate_app
 from observal_cli.cmd_models import models_app
@@ -105,7 +106,6 @@ from observal_cli.cmd_ops import (
     self_app,
 )
 from observal_cli.cmd_profile import register_use
-from observal_cli.cmd_hook import hook_app
 from observal_cli.cmd_prompt import prompt_app
 from observal_cli.cmd_pull import register_pull
 from observal_cli.cmd_sandbox import sandbox_app

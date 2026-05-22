@@ -68,11 +68,11 @@ async def validate_sandbox_source(
     if not parsed:
         return ValidatorResult(
             valid=False,
-            message=f"Unsupported git forge. Only GitHub, GitLab, and Bitbucket URLs are supported for validation.",
+            message="Unsupported git forge. Only GitHub, GitLab, and Bitbucket URLs are supported for validation.",
         )
 
     forge, owner, repo = parsed
-    ref = source_ref or "main"
+    ref = source_ref or "main"  # Note: defaults to 'main'; repos using 'master' must pass source_ref explicitly
 
     # Build path to Dockerfile
     if sandbox_path:

@@ -311,14 +311,16 @@ def _build_sandbox_mcp_entry(sandbox_listings: dict, ide: str) -> dict:
 
     sandboxes_json = []
     for _lid, listing in sandbox_listings.items():
-        sandboxes_json.append({
-            "id": str(_lid),
-            "name": getattr(listing, "name", ""),
-            "image": getattr(listing, "image", ""),
-            "timeout": (getattr(listing, "resource_limits", {}) or {}).get("timeout", 300),
-            "entrypoint": getattr(listing, "entrypoint", None) or "bash",
-            "network_policy": getattr(listing, "network_policy", "none"),
-        })
+        sandboxes_json.append(
+            {
+                "id": str(_lid),
+                "name": getattr(listing, "name", ""),
+                "image": getattr(listing, "image", ""),
+                "timeout": (getattr(listing, "resource_limits", {}) or {}).get("timeout", 300),
+                "entrypoint": getattr(listing, "entrypoint", None) or "bash",
+                "network_policy": getattr(listing, "network_policy", "none"),
+            }
+        )
 
     if not sandboxes_json:
         return {}
@@ -503,14 +505,15 @@ def _build_hook_configs(
     return hooks
 
 
-_HOOK_EVENTS_MAP: dict[str, dict[str, str]] = {
-    "cursor": {"PreToolUse": "preToolUse", "PostToolUse": "postToolUse", "Stop": "sessionEnd", "SessionStart": "sessionStart", "UserPromptSubmit": "beforeSubmitPrompt"},
-    "vscode": {"PreToolUse": "PreToolUse", "PostToolUse": "PostToolUse", "Stop": "SessionEnd", "SessionStart": "SessionStart"},
-    "gemini-cli": {"PreToolUse": "BeforeTool", "PostToolUse": "AfterTool", "Stop": "SessionEnd", "SessionStart": "SessionStart", "UserPromptSubmit": "BeforeAgent"},
-    "codex": {"PreToolUse": "pre_tool_use", "PostToolUse": "post_tool_use", "Stop": "session_stop", "UserPromptSubmit": "user_prompt_submit"},
-    "copilot": {"PreToolUse": "preToolUse", "PostToolUse": "postToolUse", "Stop": "sessionEnd", "SessionStart": "sessionStart"},
-    "copilot-cli": {"PreToolUse": "preToolUse", "PostToolUse": "postToolUse", "Stop": "sessionEnd", "SessionStart": "sessionStart"},
-}
+def _get_hook_events_map(ide: str) -> dict[str, str]:
+    """Get canonical event → IDE event mapping from the IDE registry."""
+    return IDE_REGISTRY.get(ide, {}).get("hook_events_map", {})
+
+
+def _get_hook_scripts_dir(ide: str) -> str:
+    """Get the hook scripts directory for an IDE from the registry."""
+    return IDE_REGISTRY.get(ide, {}).get("hook_scripts_dir", "")
+
 
 _HOOK_SCRIPTS_DIR: dict[str, str] = {
     "cursor": ".cursor/hooks",
@@ -526,7 +529,7 @@ _HOOK_SCRIPTS_DIR: dict[str, str] = {
 
 def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[dict], ide: str) -> None:
     """Merge user-submitted hook components into the IDE hooks config dict (in-place)."""
-    events_map = _HOOK_EVENTS_MAP.get(ide, {})
+    events_map = _get_hook_events_map(ide)
     scripts_dir = _HOOK_SCRIPTS_DIR.get(ide, "")
     hooks_dict = hooks_content.setdefault("hooks", {})
 
@@ -570,11 +573,13 @@ def _collect_hook_script_files(hook_configs: list[dict], hook_listings: dict | N
         script_content = hc.get("script_content")
         script_filename = hc.get("script_filename")
         if script_content and script_filename:
-            files.append({
-                "path": f"{scripts_dir}/{script_filename}",
-                "content": script_content,
-                "executable": True,
-            })
+            files.append(
+                {
+                    "path": f"{scripts_dir}/{script_filename}",
+                    "content": script_content,
+                    "executable": True,
+                }
+            )
 
     return files
 
@@ -641,7 +646,11 @@ def _build_rules_content(
             sections.append("\n".join(lines))
         elif comp_type == "sandbox" and sandbox_listings:
             # Inject sandbox usage instructions with run command
-            lines = ["## Sandboxes", "", "You have access to isolated execution environments. Use these to run code safely."]
+            lines = [
+                "## Sandboxes",
+                "",
+                "You have access to isolated execution environments. Use these to run code safely.",
+            ]
             for comp in agent.components:
                 if comp.component_type != "sandbox":
                     continue
@@ -662,7 +671,9 @@ def _build_rules_content(
                 lines.append(f"- **Timeout:** {timeout}s | **Memory:** {memory_mb}MB | **Network:** {network}")
                 if entrypoint:
                     lines.append(f"- **Default command:** `{entrypoint}`")
-                lines.append(f"- **Run:** `observal-sandbox-run --sandbox-id {sandbox_id} --image {image} --timeout {timeout} --command \"<your command>\"`")
+                lines.append(
+                    f'- **Run:** `observal-sandbox-run --sandbox-id {sandbox_id} --image {image} --timeout {timeout} --command "<your command>"`'
+                )
             sections.append("\n".join(lines))
         else:
             lines = [f"## {heading}", ""]

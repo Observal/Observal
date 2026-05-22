@@ -87,11 +87,13 @@ def generate_hook_install_config(
         # Tier 2: single-file script — write to IDE's hooks dir
         script_path = f"{hook_scripts_dir}/{script_filename}"
         actual_command = script_path
-        files.append({
-            "path": script_path,
-            "content": script_content,
-            "executable": True,
-        })
+        files.append(
+            {
+                "path": script_path,
+                "content": script_content,
+                "executable": True,
+            }
+        )
 
     # Build source_fetch for Tier 3 (multi-file git-sourced)
     source_fetch = None
@@ -144,13 +146,7 @@ def _build_config_snippet(
         hook_entry: dict = {"type": handler_type, "command": command}
         if timeout:
             hook_entry["timeout"] = timeout
-        return {
-            "hooks": {
-                ide_event: [
-                    {"matcher": "*", "hooks": [hook_entry]}
-                ]
-            }
-        }
+        return {"hooks": {ide_event: [{"matcher": "*", "hooks": [hook_entry]}]}}
 
     if ide == "cursor":
         hook_entry = {"command": command}
@@ -194,7 +190,7 @@ def _generate_plugin_instructions(hook_listing, ide_info: dict, ide_event: str) 
         "config_snippet": {
             "_manual_setup": True,
             "_instructions": [
-                f"OpenCode uses a plugin system for hooks.",
+                "OpenCode uses a plugin system for hooks.",
                 f"Create a plugin file in .opencode/plugins/{hook_listing.name}.ts",
                 f"Register the '{ide_event}' event handler.",
                 f"Command to execute: {command}",

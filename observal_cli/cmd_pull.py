@@ -528,12 +528,14 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
+                existed = p.exists()
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(hf["content"])
                 if hf.get("executable"):
                     import os
+
                     os.chmod(p, 0o755)
-                written.append((str(p), "created" if not p.exists() else "updated"))
+                written.append((str(p), "updated" if existed else "created"))
 
         # ── skill_files (Claude Code, Kiro, Cursor) ──────────
         # Use shared install_skill_from_git for each skill component.

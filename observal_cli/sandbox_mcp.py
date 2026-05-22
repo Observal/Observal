@@ -66,31 +66,34 @@ def main():
     args = parser.parse_args()
 
     sandboxes = json.loads(args.sandboxes)
-    sandbox_map = {s["name"]: s for s in sandboxes}
 
-    # Build tool definitions
+    # Build tool definitions + direct tool_name -> sandbox map
+    tool_to_sandbox: dict[str, dict] = {}
     tools = []
     for sb in sandboxes:
         tool_name = f"run_sandbox_{sb['name'].replace('-', '_')}"
-        tools.append({
-            "name": tool_name,
-            "description": (
-                f"Run a command in the '{sb['name']}' sandbox "
-                f"(Docker: {sb['image']}, timeout: {sb.get('timeout', 300)}s, "
-                f"network: {sb.get('network_policy', 'none')}). "
-                f"Default command: {sb.get('entrypoint', 'bash')}"
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": f"Command to run inside the container. Default: {sb.get('entrypoint', 'bash')}",
+        tool_to_sandbox[tool_name] = sb
+        tools.append(
+            {
+                "name": tool_name,
+                "description": (
+                    f"Run a command in the '{sb['name']}' sandbox "
+                    f"(Docker: {sb['image']}, timeout: {sb.get('timeout', 300)}s, "
+                    f"network: {sb.get('network_policy', 'none')}). "
+                    f"Default command: {sb.get('entrypoint', 'bash')}"
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": f"Command to run inside the container. Default: {sb.get('entrypoint', 'bash')}",
+                        },
                     },
+                    "required": [],
                 },
-                "required": [],
-            },
-        })
+            }
+        )
 
     while True:
         msg = _read_message()
@@ -101,11 +104,16 @@ def main():
         req_id = msg.get("id")
 
         if method == "initialize":
-            _send_message(_make_response(req_id, {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "observal-sandbox", "version": "1.0.0"},
-            }))
+            _send_message(
+                _make_response(
+                    req_id,
+                    {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "observal-sandbox", "version": "1.0.0"},
+                    },
+                )
+            )
         elif method == "notifications/initialized":
             pass  # no response needed
         elif method == "tools/list":
@@ -115,14 +123,18 @@ def main():
             tool_name = params.get("name", "")
             arguments = params.get("arguments", {})
 
-            # Extract sandbox name from tool name
-            sb_name = tool_name.replace("run_sandbox_", "").replace("_", "-")
-            sb = sandbox_map.get(sb_name)
+            # Direct lookup from tool name to sandbox spec
+            sb = tool_to_sandbox.get(tool_name)
             if not sb:
-                _send_message(_make_response(req_id, {
-                    "content": [{"type": "text", "text": f"Unknown sandbox: {sb_name}"}],
-                    "isError": True,
-                }))
+                _send_message(
+                    _make_response(
+                        req_id,
+                        {
+                            "content": [{"type": "text", "text": f"Unknown sandbox tool: {tool_name}"}],
+                            "isError": True,
+                        },
+                    )
+                )
                 continue
 
             command = arguments.get("command") or sb.get("entrypoint") or "bash"
@@ -135,10 +147,14 @@ def main():
                 result = subprocess.run(
                     [
                         "observal-sandbox-run",
-                        "--sandbox-id", sandbox_id,
-                        "--image", image,
-                        "--timeout", str(timeout),
-                        "--command", command,
+                        "--sandbox-id",
+                        sandbox_id,
+                        "--image",
+                        image,
+                        "--timeout",
+                        str(timeout),
+                        "--command",
+                        command,
                     ],
                     capture_output=True,
                     text=True,
@@ -149,25 +165,50 @@ def main():
                     output += f"\n[stderr]\n{result.stderr}"
                 if result.returncode != 0:
                     output += f"\n[exit code: {result.returncode}]"
-                _send_message(_make_response(req_id, {
-                    "content": [{"type": "text", "text": output or "(no output)"}],
-                    "isError": result.returncode != 0,
-                }))
+                _send_message(
+                    _make_response(
+                        req_id,
+                        {
+                            "content": [{"type": "text", "text": output or "(no output)"}],
+                            "isError": result.returncode != 0,
+                        },
+                    )
+                )
             except subprocess.TimeoutExpired:
-                _send_message(_make_response(req_id, {
-                    "content": [{"type": "text", "text": f"Sandbox timed out after {timeout}s"}],
-                    "isError": True,
-                }))
+                _send_message(
+                    _make_response(
+                        req_id,
+                        {
+                            "content": [{"type": "text", "text": f"Sandbox timed out after {timeout}s"}],
+                            "isError": True,
+                        },
+                    )
+                )
             except FileNotFoundError:
-                _send_message(_make_response(req_id, {
-                    "content": [{"type": "text", "text": "observal-sandbox-run not found. Install: pip install 'observal-cli[sandbox]'"}],
-                    "isError": True,
-                }))
+                _send_message(
+                    _make_response(
+                        req_id,
+                        {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "observal-sandbox-run not found. Install: pip install 'observal-cli[sandbox]'",
+                                }
+                            ],
+                            "isError": True,
+                        },
+                    )
+                )
             except Exception as e:
-                _send_message(_make_response(req_id, {
-                    "content": [{"type": "text", "text": f"Error: {e}"}],
-                    "isError": True,
-                }))
+                _send_message(
+                    _make_response(
+                        req_id,
+                        {
+                            "content": [{"type": "text", "text": f"Error: {e}"}],
+                            "isError": True,
+                        },
+                    )
+                )
         elif req_id is not None:
             _send_message(_make_error(req_id, -32601, f"Method not found: {method}"))
 

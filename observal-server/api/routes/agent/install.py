@@ -6,6 +6,7 @@
 from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 import services.dynamic_settings as _ds
 from api.deps import (
@@ -17,6 +18,8 @@ from api.deps import (
 from models.agent import AgentStatus
 from models.hook import HookListing
 from models.mcp import McpListing
+from models.prompt import PromptListing
+from models.sandbox import SandboxListing
 from models.skill import SkillListing
 from models.user import User, UserRole
 from schemas.agent import (
@@ -79,13 +82,11 @@ async def install_agent(
     hook_comp_ids = [c.component_id for c in agent.components if c.component_type == "hook"]
     hook_listings_map = {}
     if hook_comp_ids:
-        from sqlalchemy.orm import selectinload as _sel
-
         hook_rows = (
             (
                 await db.execute(
                     select(HookListing)
-                    .options(_sel(HookListing.latest_version))
+                    .options(selectinload(HookListing.latest_version))
                     .where(HookListing.id.in_(hook_comp_ids))
                 )
             )
@@ -98,15 +99,11 @@ async def install_agent(
     prompt_comp_ids = [c.component_id for c in agent.components if c.component_type == "prompt"]
     prompt_listings_map = {}
     if prompt_comp_ids:
-        from sqlalchemy.orm import selectinload as _sel2
-
-        from models.prompt import PromptListing
-
         prompt_rows = (
             (
                 await db.execute(
                     select(PromptListing)
-                    .options(_sel2(PromptListing.latest_version))
+                    .options(selectinload(PromptListing.latest_version))
                     .where(PromptListing.id.in_(prompt_comp_ids))
                 )
             )
@@ -119,15 +116,11 @@ async def install_agent(
     sandbox_comp_ids = [c.component_id for c in agent.components if c.component_type == "sandbox"]
     sandbox_listings_map = {}
     if sandbox_comp_ids:
-        from sqlalchemy.orm import selectinload as _sel4
-
-        from models.sandbox import SandboxListing
-
         sandbox_rows = (
             (
                 await db.execute(
                     select(SandboxListing)
-                    .options(_sel4(SandboxListing.latest_version))
+                    .options(selectinload(SandboxListing.latest_version))
                     .where(SandboxListing.id.in_(sandbox_comp_ids))
                 )
             )

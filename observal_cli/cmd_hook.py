@@ -297,10 +297,7 @@ def hook_install(
 
     # Write/merge config into the IDE's hooks config file
     if config_path and config_snippet:
-        if config_path.startswith("~/"):
-            cfg_file = Path(config_path).expanduser()
-        else:
-            cfg_file = project_dir / config_path
+        cfg_file = Path(config_path).expanduser() if config_path.startswith("~/") else project_dir / config_path
         cfg_file.parent.mkdir(parents=True, exist_ok=True)
 
         if cfg_file.exists():
@@ -329,7 +326,7 @@ def hook_install(
 
     # Print notes
     for note in notes:
-        rprint(f"[dim]ℹ {note}[/dim]")
+        rprint(f"[dim]i {note}[/dim]")
 
     rprint(f"\n[green]✓ Hook installed for {ide}![/green]")
 
