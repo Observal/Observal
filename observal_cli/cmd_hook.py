@@ -284,7 +284,11 @@ def hook_install(
     # Write script files to disk
     if files:
         for file_entry in files:
-            file_path = project_dir / file_entry["path"]
+            file_path = (project_dir / file_entry["path"]).resolve()
+            # Guard against path traversal
+            if not file_path.is_relative_to(project_dir.resolve()):
+                rprint(f"  [red]✗[/red] Skipped {file_entry['path']} (path traversal blocked)")
+                continue
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(file_entry["content"])
             if file_entry.get("executable"):
