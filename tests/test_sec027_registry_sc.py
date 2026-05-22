@@ -131,8 +131,8 @@ class TestInstallAgentStatusGating:
     """SEC-027: pending/draft agents should not be installable unless approved."""
 
     @pytest.mark.asyncio
-    @patch("api.routes.agent._load_agent")
-    @patch("api.routes.agent._ds")
+    @patch("api.routes.agent.install._load_agent")
+    @patch("api.routes.agent.install._ds")
     async def test_pending_agent_returns_404_for_non_owner(self, mock_settings, mock_load):
         """Non-owner cannot install a pending agent when ALLOW_DRAFT_INSTALL=False."""
         mock_settings.get_sync_bool.return_value = False
@@ -150,8 +150,8 @@ class TestInstallAgentStatusGating:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    @patch("api.routes.agent._load_agent")
-    @patch("api.routes.agent._ds")
+    @patch("api.routes.agent.install._load_agent")
+    @patch("api.routes.agent.install._ds")
     async def test_pending_agent_returns_404_for_owner_when_flag_off(self, mock_settings, mock_load):
         """Owner also cannot install a pending agent when ALLOW_DRAFT_INSTALL=False."""
         mock_settings.get_sync_bool.return_value = False
@@ -169,8 +169,8 @@ class TestInstallAgentStatusGating:
 
     @pytest.mark.asyncio
     @patch("services.download_tracker.record_agent_download", new_callable=AsyncMock)
-    @patch("api.routes.agent._load_agent")
-    @patch("api.routes.agent._ds")
+    @patch("api.routes.agent.install._load_agent")
+    @patch("api.routes.agent.install._ds")
     async def test_pending_agent_owner_can_install_when_flag_on(self, mock_settings, mock_load, _mock_download):
         """When ALLOW_DRAFT_INSTALL=True, the owner may install their own pending agent."""
         mock_settings.get_sync_bool.return_value = True
@@ -192,8 +192,8 @@ class TestInstallAgentStatusGating:
         assert r.status_code != 404
 
     @pytest.mark.asyncio
-    @patch("api.routes.agent._load_agent")
-    @patch("api.routes.agent._ds")
+    @patch("api.routes.agent.install._load_agent")
+    @patch("api.routes.agent.install._ds")
     async def test_approved_agent_always_installable(self, mock_settings, mock_load):
         """Approved agents install regardless of ALLOW_DRAFT_INSTALL flag."""
         mock_settings.get_sync_bool.return_value = False
@@ -279,7 +279,7 @@ class TestCreateAgentMcpValidation:
 
     @pytest.mark.asyncio
     @patch("services.agent_snapshot.build_yaml_snapshot", new=AsyncMock(return_value="snapshot"))
-    @patch("api.routes.agent._load_agent")
+    @patch("api.routes.agent.install._load_agent")
     async def test_shell_metachar_in_external_mcp_returns_422(self, mock_load):
         """Creating an agent with a shell metachar in external MCP command returns 422."""
         user = _user()

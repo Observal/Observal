@@ -105,7 +105,7 @@ async def test_delete_agent_scorecard_query_uses_selectinload_penalties():
     SQLAlchemy will trigger the lazy='raise' sentinel when the ORM cascade
     tries to access scorecard.penalties during db.delete(scorecard).
     """
-    from api.routes.agent import delete_agent
+    from api.routes.agent.crud import delete_agent
 
     agent = _make_agent()
     scorecard = _make_scorecard(agent.id)
@@ -126,10 +126,10 @@ async def test_delete_agent_scorecard_query_uses_selectinload_penalties():
     user = _make_user()
 
     with (
-        patch("api.routes.agent._load_agent", new=AsyncMock(return_value=agent)),
-        patch("api.routes.agent.get_effective_agent_permission", return_value="owner"),
-        patch("api.routes.agent.emit_registry_event"),
-        patch("api.routes.agent.audit", new=AsyncMock()),
+        patch("api.routes.agent.crud._load_agent", new=AsyncMock(return_value=agent)),
+        patch("api.routes.agent.crud.get_effective_agent_permission", return_value="owner"),
+        patch("api.routes.agent.crud.emit_registry_event"),
+        patch("api.routes.agent.crud.audit", new=AsyncMock()),
     ):
         result = await delete_agent(agent_id=str(agent.id), db=db, current_user=user)
 
@@ -153,7 +153,7 @@ async def test_delete_agent_evalrun_query_uses_selectinload_scorecards():
     SQLAlchemy will trigger the lazy='raise' sentinel when the ORM cascade
     tries to access eval_run.scorecards during db.delete(eval_run).
     """
-    from api.routes.agent import delete_agent
+    from api.routes.agent.crud import delete_agent
 
     agent = _make_agent()
     eval_run = _make_eval_run(agent.id)
@@ -172,10 +172,10 @@ async def test_delete_agent_evalrun_query_uses_selectinload_scorecards():
     user = _make_user()
 
     with (
-        patch("api.routes.agent._load_agent", new=AsyncMock(return_value=agent)),
-        patch("api.routes.agent.get_effective_agent_permission", return_value="owner"),
-        patch("api.routes.agent.emit_registry_event"),
-        patch("api.routes.agent.audit", new=AsyncMock()),
+        patch("api.routes.agent.crud._load_agent", new=AsyncMock(return_value=agent)),
+        patch("api.routes.agent.crud.get_effective_agent_permission", return_value="owner"),
+        patch("api.routes.agent.crud.emit_registry_event"),
+        patch("api.routes.agent.crud.audit", new=AsyncMock()),
     ):
         result = await delete_agent(agent_id=str(agent.id), db=db, current_user=user)
 
@@ -193,7 +193,7 @@ async def test_delete_agent_evalrun_query_uses_selectinload_scorecards():
 @pytest.mark.asyncio
 async def test_delete_agent_deletes_all_returned_records():
     """delete_agent deletes scorecards, eval_runs via ORM and agent+versions via SQL."""
-    from api.routes.agent import delete_agent
+    from api.routes.agent.crud import delete_agent
 
     agent = _make_agent()
     agent.versions = []  # No versions to simplify
@@ -221,10 +221,10 @@ async def test_delete_agent_deletes_all_returned_records():
     user = _make_user()
 
     with (
-        patch("api.routes.agent._load_agent", new=AsyncMock(return_value=agent)),
-        patch("api.routes.agent.get_effective_agent_permission", return_value="owner"),
-        patch("api.routes.agent.emit_registry_event"),
-        patch("api.routes.agent.audit", new=AsyncMock()),
+        patch("api.routes.agent.crud._load_agent", new=AsyncMock(return_value=agent)),
+        patch("api.routes.agent.crud.get_effective_agent_permission", return_value="owner"),
+        patch("api.routes.agent.crud.emit_registry_event"),
+        patch("api.routes.agent.crud.audit", new=AsyncMock()),
     ):
         result = await delete_agent(agent_id=str(agent.id), db=db, current_user=user)
 

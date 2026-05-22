@@ -124,8 +124,8 @@ class TestAgentNameLookup:
     """Ensure _load_agent resolves hyphenated and short names correctly."""
 
     @pytest.mark.asyncio
-    @patch("api.routes.agent._resolve_component_names", return_value={})
-    @patch("api.routes.agent._load_agent")
+    @patch("api.routes.agent.crud._resolve_component_names", return_value={})
+    @patch("api.routes.agent.crud._load_agent")
     async def test_hyphenated_name_resolves(self, mock_load, mock_names):
         """GET /agents/my-cool-agent resolves via name lookup."""
         user = _user()
@@ -147,8 +147,8 @@ class TestAgentNameLookup:
         assert r.json()["name"] == "my-cool-agent"
 
     @pytest.mark.asyncio
-    @patch("api.routes.agent._resolve_component_names", return_value={})
-    @patch("api.routes.agent._load_agent")
+    @patch("api.routes.agent.crud._resolve_component_names", return_value={})
+    @patch("api.routes.agent.crud._load_agent")
     async def test_short_hyphenated_name_resolves(self, mock_load, mock_names):
         """GET /agents/a-b resolves via name lookup (not rejected as short prefix)."""
         user = _user()
