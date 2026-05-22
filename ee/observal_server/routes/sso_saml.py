@@ -22,7 +22,8 @@ from api.deps import get_db, get_or_create_default_org
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-from config import settings
+
+import services.dynamic_settings as ds
 from ee.observal_server.services.saml import (
     build_saml_settings,
     decrypt_private_key,
@@ -47,6 +48,10 @@ from services.username_generator import generate_unique_username
 logger = logging.getLogger("observal.ee.saml")
 
 
+def _get_frontend_url() -> str:
+    return ds.get_sync("deployment.frontend_url", "http://localhost:3000")
+
+
 def _safe_redirect_path(value: str | None) -> str:
     """Sanitize a redirect target to prevent open redirects.
 
@@ -69,13 +74,13 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
     config = result.scalar_one_or_none()
     if config:
         return config
-    if settings.SAML_IDP_ENTITY_ID and settings.SAML_IDP_SSO_URL:
+    if ds.get_sync("saml.idp_entity_id") and ds.get_sync("saml.idp_sso_url"):
         if _env_saml_config_cache is not None:
             return _env_saml_config_cache
 
-        sp_entity_id = settings.SAML_SP_ENTITY_ID or f"{settings.FRONTEND_URL}/api/v1/sso/saml/metadata"
-        sp_acs_url = settings.SAML_SP_ACS_URL or f"{settings.FRONTEND_URL}/api/v1/sso/saml/acs"
-        enc_password = settings.SAML_SP_KEY_ENCRYPTION_PASSWORD
+        sp_entity_id = ds.get_sync("saml.sp_entity_id") or f"{_get_frontend_url()}/api/v1/sso/saml/metadata"
+        sp_acs_url = ds.get_sync("saml.sp_acs_url") or f"{_get_frontend_url()}/api/v1/sso/saml/acs"
+        enc_password = ds.get_sync("saml.sp_key_encryption_password")
         if not enc_password:
             logger.warning(
                 "SAML_SP_KEY_ENCRYPTION_PASSWORD is not set -- "
@@ -88,16 +93,16 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
             "EnvSamlConfig",
             (),
             {
-                "idp_entity_id": settings.SAML_IDP_ENTITY_ID,
-                "idp_sso_url": settings.SAML_IDP_SSO_URL,
-                "idp_slo_url": settings.SAML_IDP_SLO_URL,
-                "idp_x509_cert": settings.SAML_IDP_X509_CERT,
+                "idp_entity_id": ds.get_sync("saml.idp_entity_id"),
+                "idp_sso_url": ds.get_sync("saml.idp_sso_url"),
+                "idp_slo_url": ds.get_sync("saml.idp_slo_url"),
+                "idp_x509_cert": ds.get_sync("saml.idp_x509_cert"),
                 "sp_entity_id": sp_entity_id,
                 "sp_acs_url": sp_acs_url,
                 "sp_private_key_enc": sp_key_enc,
                 "sp_x509_cert": cert_pem,
-                "jit_provisioning": settings.SAML_JIT_PROVISIONING,
-                "default_role": settings.SAML_DEFAULT_ROLE,
+                "jit_provisioning": ds.get_sync_bool("saml.jit_provisioning", True),
+                "default_role": ds.get_sync("saml.default_role", "user"),
                 "org_id": None,
             },
         )()
@@ -107,12 +112,12 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
 
 
 def _decrypt_sp_key(config) -> str:
-    password = settings.SAML_SP_KEY_ENCRYPTION_PASSWORD
+    password = ds.get_sync("saml.sp_key_encryption_password")
     return decrypt_private_key(config.sp_private_key_enc, password)
 
 
 def _prepare_saml_request(request: Request) -> dict:
-    parsed = urlparse(settings.FRONTEND_URL)
+    parsed = urlparse(ds.get_sync("deployment.frontend_url", "http://localhost:3000"))
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     return {
         "https": "on" if parsed.scheme == "https" else "off",
@@ -134,7 +139,7 @@ async def _prepare_saml_request_with_body(request: Request) -> dict:
 def _build_auth(config, sp_private_key: str, request_data: dict) -> OneLogin_Saml2_Auth:
     sp_slo_url = ""
     if getattr(config, "idp_slo_url", ""):
-        sp_slo_url = f"{settings.FRONTEND_URL}/api/v1/sso/saml/sls"
+        sp_slo_url = f"{_get_frontend_url()}/api/v1/sso/saml/sls"
     saml_settings = build_saml_settings(
         idp_entity_id=config.idp_entity_id,
         idp_sso_url=config.idp_sso_url,
@@ -152,7 +157,7 @@ def _build_auth(config, sp_private_key: str, request_data: dict) -> OneLogin_Sam
 async def _issue_tokens(user: User) -> tuple[str, str, int]:
     access_token, expires_in = create_access_token(user.id, user.role)
     refresh_token, jti = create_refresh_token(user.id, user.role)
-    refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400
+    refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 7) * 86400
     redis = get_redis()
     await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
     return access_token, refresh_token, expires_in
@@ -378,7 +383,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
     relay_state = _safe_redirect_path(request_data["post_data"].get("RelayState"))
 
-    frontend_redirect = f"{settings.FRONTEND_URL}/login?code={code}&next={relay_state}"
+    frontend_redirect = f"{_get_frontend_url()}/login?code={code}&next={relay_state}"
     return RedirectResponse(url=frontend_redirect, status_code=302)
 
 
@@ -388,12 +393,12 @@ async def saml_logout(request: Request, db: AsyncSession = Depends(get_db)):
     config = await _get_saml_config(db)
     if not config or not getattr(config, "idp_slo_url", None):
         # No SLO configured, just redirect to login
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login", status_code=302)
+        return RedirectResponse(url=f"{_get_frontend_url()}/login", status_code=302)
 
     sp_key = _decrypt_sp_key(config)
     request_data = _prepare_saml_request(request)
     auth = _build_auth(config, sp_key, request_data)
-    redirect_url = auth.logout(return_to=f"{settings.FRONTEND_URL}/login")
+    redirect_url = auth.logout(return_to=f"{_get_frontend_url()}/login")
     return RedirectResponse(url=redirect_url, status_code=302)
 
 
@@ -402,7 +407,7 @@ async def saml_sls(request: Request, db: AsyncSession = Depends(get_db)):
     """SLO callback: handle LogoutResponse from IdP after logout completes."""
     config = await _get_saml_config(db)
     if not config:
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login", status_code=302)
+        return RedirectResponse(url=f"{_get_frontend_url()}/login", status_code=302)
 
     sp_key = _decrypt_sp_key(config)
     request_data = _prepare_saml_request(request)
@@ -413,8 +418,8 @@ async def saml_sls(request: Request, db: AsyncSession = Depends(get_db)):
     if errors:
         logger.warning("SAML SLO failed: %s", errors)
 
-    login_url = f"{settings.FRONTEND_URL}/login"
-    redirect_target = url if url and url.startswith(settings.FRONTEND_URL) else login_url
+    login_url = f"{_get_frontend_url()}/login"
+    redirect_target = url if url and url.startswith(_get_frontend_url()) else login_url
     return RedirectResponse(url=redirect_target, status_code=302)
 
 
