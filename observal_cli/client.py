@@ -19,10 +19,25 @@ from observal_cli import config
 console = Console(stderr=True)
 logger = logging.getLogger(__name__)
 
+# Cached server version for the process lifetime
+_server_version_cache: str | None = None
+
+
+def _get_cli_version() -> str:
+    """Get current CLI version string for request headers."""
+    try:
+        from importlib.metadata import version
+        return version("observal-cli")
+    except Exception:
+        return "0.0.0"
+
 
 def _client() -> tuple[str, dict]:
     cfg = config.get_or_exit()
-    return cfg["server_url"].rstrip("/"), {"Authorization": f"Bearer {cfg['access_token']}"}
+    return cfg["server_url"].rstrip("/"), {
+        "Authorization": f"Bearer {cfg['access_token']}",
+        "X-Observal-CLI-Version": _get_cli_version(),
+    }
 
 
 def _handle_error(e: httpx.HTTPStatusError, path: str = ""):
@@ -381,3 +396,30 @@ def check_version_compatibility(server_url: str) -> None:
             )
     except (ValueError, TypeError):
         pass
+
+
+def server_supports(feature: str) -> bool:
+    """Check if the connected server supports a given feature.
+
+    Uses version negotiation: effective = min(cli_version, server_version).
+    Feature availability is determined by the features registry.
+    """
+    global _server_version_cache
+    if _server_version_cache is None:
+        try:
+            data = get("/api/v1/config/version")
+            _server_version_cache = data.get("server_version", "0.0.0")
+        except Exception:
+            return False
+
+    from packaging.version import Version
+
+    from observal_cli.features import is_available
+
+    cli_ver = _get_cli_version()
+    try:
+        effective = str(min(Version(cli_ver), Version(_server_version_cache)))
+    except Exception:
+        effective = _server_version_cache
+
+    return is_available(feature, effective)

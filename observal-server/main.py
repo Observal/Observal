@@ -207,6 +207,44 @@ async def _set_rate_limit_defaults(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def _version_middleware(request: Request, call_next):
+    """Version negotiation middleware.
+
+    Computes effective = min(cli_version, server_version) and sets response headers.
+    Route handlers can access request.state.effective_version for feature gating.
+    """
+    from importlib.metadata import version as pkg_version
+
+    try:
+        server_ver = pkg_version("observal-server")
+    except Exception:
+        server_ver = "0.0.0"
+
+    cli_ver_str = request.headers.get("x-observal-cli-version")
+    effective = server_ver
+
+    if cli_ver_str:
+        try:
+            from packaging.version import Version
+            client_ver = Version(cli_ver_str)
+            sv = Version(server_ver)
+            effective = str(min(client_ver, sv))
+        except Exception:
+            pass
+
+    request.state.effective_version = effective
+
+    response = await call_next(request)
+
+    response.headers["X-Observal-Server"] = server_ver
+    response.headers["X-Observal-Effective"] = effective
+    # MIN_CLI_VERSION from dynamic settings is checked at the route level;
+    # here we use the boot-time fallback for the header.
+    response.headers["X-Observal-Min-CLI"] = "0.4.0"
+    return response
+
+
 logger = structlog.get_logger("observal")
 
 

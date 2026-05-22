@@ -25,13 +25,23 @@ def _server_version() -> str:
 
 @router.get("/version")
 async def get_version():
-    """Server version and minimum compatible CLI version. No auth required."""
+    """Server version and compatibility info. No auth required."""
     import services.dynamic_settings as ds
 
     min_cli = await ds.get("misc.min_cli_version")
+    max_cli = await ds.get("misc.max_cli_version")
+    api_version = await ds.get("misc.api_version")
+    frontend_version = await ds.get("misc.frontend_version")
+    recommended_cli = await ds.get("misc.recommended_cli_version")
+
+    server_ver = _server_version()
     return {
-        "server_version": _server_version(),
+        "server_version": server_ver,
         "min_cli_version": min_cli,
+        "max_cli_version": max_cli or None,
+        "api_version": api_version or None,
+        "frontend_version": frontend_version or server_ver,
+        "recommended_cli_version": recommended_cli or server_ver,
     }
 
 

@@ -222,6 +222,10 @@ DEFAULTS: dict[str, str] = {
     "observability.enable_metrics": "false",
     # Misc
     "misc.min_cli_version": "0.4.0",
+    "misc.max_cli_version": "",  # empty = no upper bound
+    "misc.api_version": "2026-05-01",  # date-based, bumped on breaking changes
+    "misc.frontend_version": "",  # expected frontend build version (empty = same as server)
+    "misc.recommended_cli_version": "",  # empty = same as server_version
     "misc.git_mirror_base_path": "",
 }
 
