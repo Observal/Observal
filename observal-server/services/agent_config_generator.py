@@ -550,6 +550,7 @@ def _build_rules_content(
     agent: Agent,
     component_names: dict | None = None,
     prompt_listings: dict | None = None,
+    sandbox_listings: dict | None = None,
 ) -> str:
     """Build markdown rules content from the agent and its components.
 
@@ -559,6 +560,8 @@ def _build_rules_content(
     Args:
         prompt_listings: optional {component_id: PromptListing} map. When provided,
             prompt components inject their full template content instead of a bullet name.
+        sandbox_listings: optional {component_id: SandboxListing} map. When provided,
+            sandbox components inject usage instructions with the run command.
     """
     sections: list[str] = []
 
@@ -603,6 +606,31 @@ def _build_rules_content(
                 else:
                     lines.append(f"- **{pname}**")
             sections.append("\n".join(lines))
+        elif comp_type == "sandbox" and sandbox_listings:
+            # Inject sandbox usage instructions with run command
+            lines = ["## Sandboxes", "", "You have access to isolated execution environments. Use these to run code safely."]
+            for comp in agent.components:
+                if comp.component_type != "sandbox":
+                    continue
+                listing = sandbox_listings.get(comp.component_id)
+                if not listing:
+                    continue
+                sname = names.get(str(comp.component_id), str(comp.component_id)[:8])
+                image = getattr(listing, "image", "") or ""
+                entrypoint = getattr(listing, "entrypoint", "") or ""
+                resource_limits = getattr(listing, "resource_limits", {}) or {}
+                timeout = resource_limits.get("timeout", 300)
+                memory_mb = resource_limits.get("memory_mb", 512)
+                network = getattr(listing, "network_policy", "none") or "none"
+                sandbox_id = str(comp.component_id)
+                lines.append("")
+                lines.append(f"### {sname}")
+                lines.append(f"- **Image:** `{image}`")
+                lines.append(f"- **Timeout:** {timeout}s | **Memory:** {memory_mb}MB | **Network:** {network}")
+                if entrypoint:
+                    lines.append(f"- **Default command:** `{entrypoint}`")
+                lines.append(f"- **Run:** `observal-sandbox-run --sandbox-id {sandbox_id} --image {image} --timeout {timeout} --command \"<your command>\"`")
+            sections.append("\n".join(lines))
         else:
             lines = [f"## {heading}", ""]
             for n in comp_names:
@@ -625,6 +653,7 @@ def generate_agent_config(
     hook_listings: dict | None = None,
     otlp_http_url: str = "",
     prompt_listings: dict | None = None,
+    sandbox_listings: dict | None = None,
 ) -> dict:
     """Generate IDE-specific config for an agent.
 
@@ -640,7 +669,7 @@ def generate_agent_config(
     safe_name = _sanitize_name(agent.name)
     effective_otlp_http = otlp_http_url or observal_url
     mcp_configs = _build_mcp_configs(agent, ide, effective_otlp_http, mcp_listings=mcp_listings, env_values=env_values)
-    rules_content = _build_rules_content(agent, component_names, prompt_listings)
+    rules_content = _build_rules_content(agent, component_names, prompt_listings, sandbox_listings)
     skill_configs = _build_skill_configs(agent, skill_listings)
     hook_configs = _build_hook_configs(agent, hook_listings)
     options = options or {}

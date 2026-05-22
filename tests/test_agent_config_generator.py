@@ -218,7 +218,7 @@ class TestGenerateClaudeCode:
         assert len(parts) >= 3
         fm = yaml.safe_load(parts[1])
         assert fm["name"] == "test-agent"
-        assert "description" not in fm
+        assert fm["description"] == "A test agent"
 
     def test_frontmatter_includes_mcp_servers(self):
         ext_mcps = [{"name": "my-ext", "command": "npx", "args": ["-y", "ext"]}]

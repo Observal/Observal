@@ -115,6 +115,27 @@ async def install_agent(
         )
         prompt_listings_map = {row.id: row for row in prompt_rows}
 
+    # Pre-load sandbox listings for rules content injection
+    sandbox_comp_ids = [c.component_id for c in agent.components if c.component_type == "sandbox"]
+    sandbox_listings_map = {}
+    if sandbox_comp_ids:
+        from sqlalchemy.orm import selectinload as _sel4
+
+        from models.sandbox import SandboxListing
+
+        sandbox_rows = (
+            (
+                await db.execute(
+                    select(SandboxListing)
+                    .options(_sel4(SandboxListing.latest_version))
+                    .where(SandboxListing.id.in_(sandbox_comp_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        sandbox_listings_map = {row.id: row for row in sandbox_rows}
+
     # Resolve all component names for rules file content
     name_map = await _resolve_component_names(agent.components, db)
 
@@ -149,6 +170,7 @@ async def install_agent(
         hook_listings=hook_listings_map,
         otlp_http_url=endpoints["otlp_http"],
         prompt_listings=prompt_listings_map,
+        sandbox_listings=sandbox_listings_map,
     )
 
     # Capture agent.id before any DB operations that might expire the ORM
