@@ -71,6 +71,8 @@ interface HookFieldState {
 	tool_filter: string;
 	source_url: string;
 	source_ref: string;
+	script_content: string;
+	script_filename: string;
 }
 
 interface SkillFieldState {
@@ -834,6 +836,8 @@ function EditFormInner({
 		tool_filter: safeJson(item.tool_filter),
 		source_url: (item.source_url as string) ?? "",
 		source_ref: (item.source_ref as string) ?? "",
+		script_content: (item.script_content as string) ?? "",
+		script_filename: (item.script_filename as string) ?? "",
 	};
 	const initialSkill: SkillFieldState = {
 		task_type: (item.task_type as string) ?? "",
@@ -916,6 +920,8 @@ function EditFormInner({
 				extra.tool_filter = tryParseJson(hookState.tool_filter);
 			if (hookState.source_url) extra.source_url = hookState.source_url;
 			if (hookState.source_ref) extra.source_ref = hookState.source_ref;
+			if (hookState.script_content) extra.script_content = hookState.script_content;
+			if (hookState.script_filename) extra.script_filename = hookState.script_filename;
 		} else if (singularType === "skill") {
 			if (skillState.task_type) extra.task_type = skillState.task_type;
 			if (skillState.skill_path) extra.skill_path = skillState.skill_path;
