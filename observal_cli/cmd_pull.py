@@ -521,6 +521,20 @@ def register_pull(app: typer.Typer):
                 status = _write_file(p, steering_file["content"])
                 written.append((str(p), status))
 
+        # ── hook_files (script files from hook components) ─────
+        hook_files = snippet.get("hook_files") or []
+        for hf in hook_files:
+            p = _resolve_path(hf["path"], target_dir, allow_home=is_user_scope)
+            if dry_run:
+                written.append((str(p), "would write"))
+            else:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(hf["content"])
+                if hf.get("executable"):
+                    import os
+                    os.chmod(p, 0o755)
+                written.append((str(p), "created" if not p.exists() else "updated"))
+
         # ── skill_files (Claude Code, Kiro, Cursor) ──────────
         # Use shared install_skill_from_git for each skill component.
         from observal_cli.cmd_skill import _sanitize_name, install_skill_from_git
