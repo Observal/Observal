@@ -157,6 +157,7 @@ def login(
             _configure_copilot(server_url)
             _configure_copilot_cli(server_url)
             _configure_opencode(server_url)
+            _install_observal_skill()
             _post_auth_onboarding()
 
         except httpx.HTTPStatusError as e:
@@ -479,6 +480,7 @@ def _do_password_login(server_url: str, email: str, password: str):
         _configure_copilot(server_url)
         _configure_copilot_cli(server_url)
         _configure_opencode(server_url)
+        _install_observal_skill()
         _post_auth_onboarding()
 
     except httpx.HTTPStatusError as e:
@@ -585,6 +587,7 @@ def _do_device_flow_login(server_url: str):
                 _configure_copilot(server_url)
                 _configure_copilot_cli(server_url)
                 _configure_opencode(server_url)
+                _install_observal_skill()
                 _post_auth_onboarding()
                 return
 
@@ -777,6 +780,80 @@ def _post_auth_onboarding():
 
     except Exception:
         pass
+
+
+def _install_observal_skill():
+    """Install the bundled Observal skill to all detected IDE skill directories.
+
+    This makes the 'observal' skill available to LLMs in every IDE that supports
+    skills, enabling commands like `/observal create an agent` or
+    `kiro-cli chat --agent observal`.
+    """
+    import json as _json
+
+    from observal_cli.ide_registry import IDE_REGISTRY
+
+    skill_source = Path(__file__).parent / "skills" / "observal" / "SKILL.md"
+    if not skill_source.exists():
+        return
+
+    content = skill_source.read_text(encoding="utf-8")
+    installed: list[str] = []
+
+    # Additional user-scope skill paths not formally in the registry but known to work.
+    # Kiro supports ~/.kiro/skills/<name>/SKILL.md at user scope even though the
+    # registry only documents the project-scope path.
+    _extra_user_paths: dict[str, str] = {
+        "kiro": "~/.kiro/skills/{name}/SKILL.md",
+    }
+
+    for ide, spec in IDE_REGISTRY.items():
+        skill_file_spec = spec.get("skill_file") or {}
+
+        # Install to user scope (global)
+        user_path = skill_file_spec.get("user") or _extra_user_paths.get(ide)
+        if not user_path:
+            continue
+
+        # Replace {name} placeholder with 'observal'
+        resolved = user_path.replace("{name}", "observal")
+        dest = Path(resolved.replace("~", str(Path.home())))
+
+        # Only install if the IDE directory exists (IDE is installed)
+        ide_config_dir = Path.home() / spec.get("config_dir", "")
+        if not ide_config_dir.exists():
+            continue
+
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+            installed.append(spec["display_name"])
+        except OSError:
+            pass
+
+    # Kiro-specific: ensure the active agent has skill resources wired up.
+    # Without this, skills in ~/.kiro/skills/ are invisible to the agent.
+    _kiro_skill_resource = "skill://~/.kiro/skills/*/SKILL.md"
+    kiro_settings = Path.home() / ".kiro" / "settings" / "cli.json"
+    if kiro_settings.exists():
+        try:
+            settings_data = _json.loads(kiro_settings.read_text())
+            active_agent = settings_data.get("chat.defaultAgent", "")
+            if active_agent:
+                agent_file = Path.home() / ".kiro" / "agents" / f"{active_agent}.json"
+                if agent_file.exists():
+                    agent_data = _json.loads(agent_file.read_text())
+                    resources = agent_data.get("resources", [])
+                    if _kiro_skill_resource not in resources:
+                        resources.append(_kiro_skill_resource)
+                        agent_data["resources"] = resources
+                        agent_file.write_text(_json.dumps(agent_data, indent=2) + "\n")
+        except (OSError, _json.JSONDecodeError):
+            pass
+
+    if installed:
+        rprint(f"\n[green]✓ Observal skill installed for:[/green] {', '.join(installed)}")
+        rprint('[dim]  LLMs can now use Observal commands directly (e.g. "create a PR agent for kiro")[/dim]')
 
 
 def _run_doctor_patch(ide_name: str):
