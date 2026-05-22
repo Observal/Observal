@@ -15,7 +15,9 @@ push session JSONL incrementally to the server.
 """
 
 import json
+import os
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -59,7 +61,7 @@ def _load_json(path: Path) -> dict | None:
 
 @doctor_app.callback(invoke_without_command=True)
 def doctor(ctx: typer.Context):
-    """Diagnose IDE and Observal settings for compatibility issues."""
+    """Diagnose IDE settings and offer to configure telemetry + AI skill."""
     if ctx.invoked_subcommand is not None:
         return
 
@@ -80,6 +82,14 @@ def doctor(ctx: typer.Context):
     rprint("[cyan]Checking Kiro...[/cyan]")
     _check_kiro(issues, warnings)
 
+    # 4. Check if observal skill is installed
+    skill_missing = _check_observal_skill_missing()
+    if skill_missing:
+        warnings.append(
+            f"Observal AI skill not installed for: {', '.join(skill_missing)}. "
+            "LLMs won't have /observal commands available."
+        )
+
     # Report
     rprint("")
     if not issues and not warnings:
@@ -96,7 +106,61 @@ def doctor(ctx: typer.Context):
         for i, warning in enumerate(warnings, 1):
             rprint(f"  [yellow]{i}.[/yellow] {warning}")
 
+    # Offer to fix everything in one go
+    fixable = len(warnings) > 0
+    if fixable and sys.stdin.isatty():
+        rprint("")
+        if typer.confirm(
+            "Fix all issues? (configures telemetry + installs AI skill for all detected IDEs)", default=True
+        ):
+            import subprocess
+
+            env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            subprocess.run(
+                [sys.executable, "-m", "observal_cli.main", "doctor", "patch", "--all", "--all-ides"],
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+                env=env,
+            )
+            # Install the observal skill
+            from observal_cli.cmd_auth import _install_observal_skill
+
+            _install_observal_skill()
+        else:
+            rprint("[dim]  Run [bold]observal doctor patch --all --all-ides[/bold] anytime to fix.[/dim]")
+
     raise typer.Exit(1 if issues else 0)
+
+
+def _check_observal_skill_missing() -> list[str]:
+    """Return list of IDE display names where the observal skill is not installed."""
+    from observal_cli.ide_registry import IDE_REGISTRY
+
+    skill_source = Path(__file__).parent / "skills" / "observal" / "SKILL.md"
+    if not skill_source.exists():
+        return []
+
+    _extra_user_paths: dict[str, str] = {"kiro": "~/.kiro/skills/{name}/SKILL.md"}
+    missing: list[str] = []
+
+    for ide, spec in IDE_REGISTRY.items():
+        skill_file_spec = spec.get("skill_file") or {}
+        user_path = skill_file_spec.get("user") or _extra_user_paths.get(ide)
+        if not user_path:
+            continue
+
+        resolved = user_path.replace("{name}", "observal")
+        dest = Path(resolved.replace("~", str(Path.home())))
+        ide_config_dir = Path.home() / spec.get("config_dir", "")
+        if not ide_config_dir.exists():
+            continue
+
+        if not dest.exists():
+            missing.append(spec["display_name"])
+
+    return missing
 
 
 def _check_observal_config(issues: list, warnings: list):

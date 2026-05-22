@@ -149,16 +149,7 @@ def login(
             rprint(f"[green]Logged in as {user['name']}[/green] ({user['email']}) [admin]")
             rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]\n")
             _fetch_server_public_key(server_url)
-            _configure_claude_code(server_url, data["access_token"])
-            _configure_cursor(server_url)
-            _configure_kiro(server_url)
-            _configure_gemini_cli(server_url)
-            _configure_codex(server_url)
-            _configure_copilot(server_url)
-            _configure_copilot_cli(server_url)
-            _configure_opencode(server_url)
-            _install_observal_skill()
-            _post_auth_onboarding()
+            _post_login_setup()
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 400 and "already initialized" in e.response.text.lower():
@@ -472,16 +463,7 @@ def _do_password_login(server_url: str, email: str, password: str):
         rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
 
         _fetch_server_public_key(server_url)
-        _configure_claude_code(server_url, data["access_token"])
-        _configure_cursor(server_url)
-        _configure_kiro(server_url)
-        _configure_gemini_cli(server_url)
-        _configure_codex(server_url)
-        _configure_copilot(server_url)
-        _configure_copilot_cli(server_url)
-        _configure_opencode(server_url)
-        _install_observal_skill()
-        _post_auth_onboarding()
+        _post_login_setup()
 
     except httpx.HTTPStatusError as e:
         detail = ""
@@ -579,16 +561,7 @@ def _do_device_flow_login(server_url: str):
                 rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
 
                 _fetch_server_public_key(server_url)
-                _configure_claude_code(server_url, token_data["access_token"])
-                _configure_cursor(server_url)
-                _configure_kiro(server_url)
-                _configure_gemini_cli(server_url)
-                _configure_codex(server_url)
-                _configure_copilot(server_url)
-                _configure_copilot_cli(server_url)
-                _configure_opencode(server_url)
-                _install_observal_skill()
-                _post_auth_onboarding()
+                _post_login_setup()
                 return
 
             if r.status_code == 428:
@@ -686,6 +659,27 @@ def register_config(app: typer.Typer):
             rprint(f"  @{name} -> [dim]{target}[/dim]")
 
     app.add_typer(config_app, name="config")
+
+
+def _post_login_setup():
+    """Post-login setup: run observal doctor which checks and offers to fix everything."""
+    import subprocess
+    import sys
+
+    rprint()
+    try:
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        subprocess.run(
+            [sys.executable, "-m", "observal_cli.main", "doctor"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            env=env,
+        )
+    except Exception as e:
+        rprint(f"[yellow]Could not run doctor: {e}[/yellow]")
+        rprint("  Run [bold]observal doctor[/bold] manually to configure your IDEs.")
 
 
 def _post_auth_onboarding():
