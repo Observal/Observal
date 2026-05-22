@@ -110,6 +110,10 @@ def _custom_hook_matcher_lines(hook: dict) -> list[str]:
         ]
     else:
         command = handler_config.get("command", "")
+        # Rewrite bare script filenames to the IDE hooks directory path
+        script_filename = hook.get("script_filename")
+        if script_filename and command == script_filename:
+            command = f".claude/hooks/{script_filename}"
         lines = ["    - hooks:", "        - type: command", f'          command: "{command}"'] if command else []
     return lines
 
