@@ -24,6 +24,9 @@ DEFAULTS = {
     "access_token": "",
     "refresh_token": "",
     "timeout": 30,
+    "update_check": True,
+    "update_check_interval": 86400,  # seconds (24h)
+    "update_check_repo": "",  # empty = BlazeUp-AI/Observal
 }
 
 

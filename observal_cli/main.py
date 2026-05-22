@@ -160,4 +160,47 @@ app.add_typer(migrate_app, name="migrate")
 
 
 if __name__ == "__main__":
-    app()
+    try:
+        app()
+    finally:
+        _show_update_banner()
+
+
+def _show_update_banner() -> None:
+    """Post-command hook: show update notification if available.
+
+    Only on interactive TTY, never during self/server commands, never in CI.
+    If connected to a server (enterprise): targets the server's version.
+    Otherwise: targets the latest GitHub release.
+    """
+    import sys as _sys
+
+    if not (_sys.stdout.isatty() and _sys.stderr.isatty()):
+        return
+    if len(_sys.argv) > 1 and _sys.argv[1] in ("self", "server"):
+        return
+    if os.environ.get("CI") or os.environ.get("OBSERVAL_NO_UPDATE_CHECK"):
+        return
+
+    try:
+        from observal_cli.version_check import maybe_check
+
+        update = maybe_check()
+        if not update:
+            return
+
+        from rich import print as _rprint
+
+        if update.source == "server":
+            _rprint(
+                f"\n[dim]Your server is v{update.latest}. "
+                f"Match it: [bold]observal self upgrade --version {update.latest}[/bold][/dim]"
+            )
+        else:
+            _rprint(
+                f"\n[dim]Update available: v{update.current} \u2192 "
+                f"[green]v{update.latest}[/green] \u2022 "
+                f"[bold]observal self upgrade[/bold][/dim]"
+            )
+    except Exception:
+        pass  # Never crash the CLI for a version check
