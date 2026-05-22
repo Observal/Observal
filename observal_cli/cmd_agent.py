@@ -101,8 +101,28 @@ agent_app = typer.Typer(help="Agent registry commands")
 @agent_app.command(name="create")
 def agent_create(
     from_file: str | None = typer.Option(None, "--from-file", "-f", help="Create from JSON file"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Agent name (lowercase, hyphens, underscores)"),
+    version: str | None = typer.Option(None, "--version", "-v", help="Version (semver, e.g. 1.0.0)"),
+    description: str | None = typer.Option(None, "--description", "-d", help="Short description"),
+    owner: str | None = typer.Option(None, "--owner", help="Owner / team name"),
+    prompt: str | None = typer.Option(None, "--prompt", "-p", help="System prompt text"),
+    prompt_file: str | None = typer.Option(None, "--prompt-file", help="Read system prompt from a file"),
+    model_name: str | None = typer.Option(None, "--model", "-m", help="Model name (e.g. claude-sonnet-4)"),
+    supported_ides: list[str] | None = typer.Option(None, "--ide", help="Supported IDEs (repeat for multiple)"),
 ):
-    """Create a new agent (interactive wizard or from file)."""
+    """Create a new agent (interactive wizard, from file, or via flags).
+
+    Three modes:
+      1. --from-file: load a complete JSON definition
+      2. --name + --prompt (or --prompt-file): non-interactive flag-based creation
+      3. No flags: interactive wizard
+
+    Examples:
+      observal agent create --from-file agent.json
+      observal agent create --name my-agent --prompt "You are..." --model claude-sonnet-4
+      observal agent create --name my-agent --prompt-file ./PROMPT.md --model claude-sonnet-4 --ide kiro --ide claude-code
+    """
+    # ── Path A: From JSON file ───────────────────────────────
     if from_file:
         import json
 
@@ -114,6 +134,66 @@ def agent_create(
         rprint(f"[green]✓ Agent submitted for review![/green] ID: [bold]{result['id']}[/bold]")
         rprint(f"[yellow]Status: {status} — an admin must approve it before it becomes visible.[/yellow]")
         return
+
+    # ── Path B: From flags (non-interactive) ─────────────────
+    if name or prompt or prompt_file:
+        # Resolve prompt from file if provided
+        _prompt = prompt or ""
+        if prompt_file:
+            from pathlib import Path as _Path
+
+            pf = _Path(prompt_file)
+            if not pf.exists():
+                rprint(f"[red]Error:[/red] Prompt file not found: {prompt_file}")
+                raise typer.Exit(1)
+            _prompt = pf.read_text(encoding="utf-8")
+
+        # Validate required fields
+        if not name:
+            rprint("[red]Error:[/red] --name is required when using --prompt or --prompt-file")
+            raise typer.Exit(1)
+        _name = _slugify(name)
+        err = _validate_name(_name)
+        if err:
+            rprint(f"[red]Error:[/red] {err}")
+            raise typer.Exit(1)
+        if not _prompt:
+            rprint("[red]Error:[/red] --prompt or --prompt-file is required")
+            raise typer.Exit(1)
+
+        # Default model
+        _model = model_name or "claude-sonnet-4"
+
+        # Resolve owner from whoami if not provided
+        _owner = owner or ""
+        if not _owner:
+            try:
+                whoami = client.get("/api/v1/auth/whoami")
+                _owner = whoami.get("name") or whoami.get("email", "unknown")
+            except (Exception, SystemExit):
+                _owner = "unknown"
+
+        payload = {
+            "name": _name,
+            "version": version or "1.0.0",
+            "description": description or "",
+            "owner": _owner,
+            "prompt": _prompt,
+            "model_name": _model,
+            "supported_ides": supported_ides or [],
+            "components": [],
+        }
+
+        with spinner("Creating agent..."):
+            result = client.post("/api/v1/agents", payload)
+        status = result.get("status", "pending")
+        rprint(f"[green]✓ Agent created![/green] ID: [bold]{result['id']}[/bold]")
+        rprint(f"[dim]Status: {status}[/dim]")
+        if _name != name:
+            rprint(f"[dim]Name slugified: {name} → {_name}[/dim]")
+        return
+
+    # ── Path C: Interactive wizard ───────────────────────────
 
     rprint("\n[bold cyan]Agent Builder[/bold cyan]\n")
 
@@ -852,9 +932,9 @@ def agent_release(
         "description": data.get("description", ""),
         "prompt": data.get("prompt", ""),
         "model_name": data.get("model_name", "claude-sonnet-4"),
-        "model_config_json": data.get("model_config_json"),
+        "model_config_json": data.get("model_config_json") or {},
         "models_by_ide": data.get("models_by_ide", {}) or {},
-        "external_mcps": data.get("external_mcps"),
+        "external_mcps": data.get("external_mcps") or [],
         "supported_ides": data.get("supported_ides", []),
         "components": data.get("components", []),
         "yaml_snapshot": raw_yaml,
