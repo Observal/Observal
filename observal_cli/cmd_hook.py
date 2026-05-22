@@ -262,8 +262,8 @@ def hook_install(
 ):
     """Install a hook for a specific IDE.
 
-    By default, writes script files to the IDE's hooks directory and prints
-    the config snippet to merge. Use --raw to just output JSON.
+    Writes script files and merges hook config into the IDE's settings.
+    Use --raw to just output JSON without writing anything.
     """
     resolved = config.resolve_alias(hook_id)
     with spinner(f"Generating {ide} config..."):
@@ -291,23 +291,40 @@ def hook_install(
                 os.chmod(file_path, 0o755)
             rprint(f"  [green]✓[/green] Wrote {file_entry['path']}")
 
+    # Write/merge config into the IDE's hooks config file
+    if config_path and config_snippet:
+        cfg_file = project_dir / config_path
+        cfg_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if cfg_file.exists():
+            try:
+                existing = _json.loads(cfg_file.read_text())
+            except (_json.JSONDecodeError, OSError):
+                existing = {}
+            # Merge hooks: append to existing event arrays
+            incoming_hooks = config_snippet.get("hooks", {})
+            existing_hooks = existing.setdefault("hooks", {})
+            for event, entries in incoming_hooks.items():
+                existing_hooks.setdefault(event, []).extend(entries)
+            if "version" in config_snippet:
+                existing["version"] = config_snippet["version"]
+            cfg_file.write_text(_json.dumps(existing, indent=2) + "\n")
+            rprint(f"  [green]✓[/green] Merged hook into {config_path}")
+        else:
+            cfg_file.write_text(_json.dumps(config_snippet, indent=2) + "\n")
+            rprint(f"  [green]✓[/green] Created {config_path}")
+
     # Print requirements warning
     if requirements:
         rprint("\n[yellow]⚠ Prerequisites required:[/yellow]")
         for req in requirements:
             rprint(f"  [dim]$[/dim] {req}")
-        rprint()
 
     # Print notes
     for note in notes:
         rprint(f"[dim]ℹ {note}[/dim]")
 
-    # Print config snippet
-    if config_path:
-        rprint(f"\n[bold]Add to {config_path}:[/bold]\n")
-    else:
-        rprint(f"\n[bold]Config for {ide}:[/bold]\n")
-    console.print_json(_json.dumps(config_snippet, indent=2))
+    rprint(f"\n[green]✓ Hook installed for {ide}![/green]")
 
 
 @hook_app.command(name="edit")
