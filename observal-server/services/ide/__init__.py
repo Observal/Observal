@@ -75,8 +75,16 @@ def register_adapter(adapter: IdeAdapter) -> None:
 
 
 def get_adapter(ide: str) -> IdeAdapter | None:
-    """Look up an adapter by IDE name. Returns None if not registered."""
-    return _ADAPTER_REGISTRY.get(ide)
+    """Look up an adapter by IDE name or alias. Returns None if not registered."""
+    return _ADAPTER_REGISTRY.get(ide) or _ADAPTER_REGISTRY.get(_IDE_ALIASES.get(ide, ""))
+
+
+# Underscore aliases for backward compatibility
+_IDE_ALIASES: dict[str, str] = {
+    "claude_code": "claude-code",
+    "gemini_cli": "gemini-cli",
+    "copilot_cli": "copilot-cli",
+}
 
 
 def get_all_adapters() -> dict[str, IdeAdapter]:
