@@ -402,6 +402,11 @@ def register_pull(app: typer.Typer):
         Calls the server to generate an install config for the specified IDE,
         then writes rules files, MCP configs, and agent files into the target
         directory.  Use --dry-run to preview without writing.
+
+        Examples:
+          observal agent pull my-agent --ide claude-code --no-prompt
+          observal agent pull my-agent --ide kiro --no-prompt --scope user
+          observal agent pull my-agent --ide cursor --no-prompt --dry-run
         """
         resolved = config.resolve_alias(agent_id)
         target_dir = Path(directory).resolve()

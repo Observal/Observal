@@ -813,7 +813,18 @@ def agent_publish(
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit: str | None = typer.Option(None, "--submit", help="Submit a draft agent for review (agent ID)"),
 ):
-    """Publish the agent definition to the server."""
+    """Publish the agent definition to the server.
+
+    Reads observal-agent.yaml from the specified directory and submits it.
+    Use --update to modify an existing agent (same name). Use --draft to
+    save without submitting for review.
+
+    Examples:
+      observal agent publish
+      observal agent publish --update
+      observal agent publish --draft
+      observal agent publish --dir /tmp/my-agent
+    """
     if draft and submit:
         rprint(
             "[red]Cannot use --draft and --submit together.[/red] Use --draft to save a new draft, or --submit to submit an existing draft."
@@ -896,7 +907,17 @@ def agent_release(
     bump: str = typer.Option(..., "--bump", help="Version bump type: patch, minor, or major"),
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
 ):
-    """Bump version and push a versioned release to the registry."""
+    """Bump version and push a versioned release to the registry.
+
+    Reads observal-agent.yaml, bumps the version, and submits a new version
+    to the review queue. The YAML must contain all required fields including
+    model_config_json: {} and external_mcps: [].
+
+    Examples:
+      observal agent release my-agent --bump patch
+      observal agent release my-agent --bump minor --dir /tmp/my-agent
+      observal agent release my-agent --bump major
+    """
     if bump not in ("patch", "minor", "major"):
         rprint("[red]Error:[/red] --bump must be one of: patch, minor, major")
         raise typer.Exit(code=1)
