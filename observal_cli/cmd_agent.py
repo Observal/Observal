@@ -319,7 +319,17 @@ def agent_bulk_create(
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without creating"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
-    """Bulk-create agents from a JSON file."""
+    """Bulk-create agents from a JSON file.
+
+    Accepts a JSON file containing an array of agent definitions, or an
+    object with an "agents" key. Shows a preview table before creating.
+    Use --dry-run to validate without actually creating agents.
+
+    Examples:
+      observal agent bulk-create --from-file agents.json
+      observal agent bulk-create --from-file agents.json --dry-run
+      observal agent bulk-create --from-file agents.json --yes
+    """
     import json
 
     path = Path(file_path)
@@ -434,7 +444,20 @@ def agent_list(
     full_id: bool = typer.Option(False, "--full-id", help="Show full UUID (implies --id)"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
-    """List active agents (paginated)."""
+    """List active agents (paginated).
+
+    Shows approved agents in the registry with pagination support.
+    Use --interactive for fuzzy search with arrow-key selection.
+    Results are cached locally for numeric shorthand in subsequent commands.
+
+    Examples:
+      observal agent list
+      observal agent list --search my-agent
+      observal agent list --page 2 --limit 20
+      observal agent list --interactive
+      observal agent list --output json
+      observal agent list --full-id
+    """
     params: dict = {"limit": limit, "offset": (page - 1) * limit}
     if search:
         params["search"] = search
@@ -512,7 +535,17 @@ def agent_list(
 def agent_my(
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
-    """List your own agents (all statuses)."""
+    """List your own agents (all statuses).
+
+    Shows all agents you created, including pending, approved, rejected,
+    and archived ones. Useful for checking the review status of your
+    submissions.
+
+    Examples:
+      observal agent my
+      observal agent my --output json
+      observal agent my --output plain
+    """
     with spinner("Fetching your agents..."):
         data = client.get("/api/v1/agents/my")
     if not data:
@@ -550,7 +583,19 @@ def agent_show(
     agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show full agent details."""
+    """Show full agent details.
+
+    Displays the complete agent profile: name, version, model, owner,
+    description, supported IDEs, linked MCP servers, and metadata.
+    Accepts a UUID, agent name, numeric row number from the last list,
+    or an @alias.
+
+    Examples:
+      observal agent show my-agent
+      observal agent show 3
+      observal agent show @myalias
+      observal agent show a1b2c3d4-... --output json
+    """
     resolved = config.resolve_alias(agent_id)
     with spinner():
         item = client.get(f"/api/v1/agents/{resolved}")
@@ -589,7 +634,19 @@ def agent_install(
     ide: str = typer.Option(..., "--ide", "-i", help="Target IDE"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
 ):
-    """Get install config for an agent."""
+    """Get install config for an agent.
+
+    Generates the IDE-specific configuration needed to use the agent.
+    Output includes rules files, MCP configs, skill files, and agent
+    files depending on the target IDE. Use --raw to pipe JSON directly
+    to a file.
+
+    Examples:
+      observal agent install my-agent --ide claude-code
+      observal agent install my-agent --ide kiro
+      observal agent install my-agent --ide cursor --raw > config.json
+      observal agent install @myalias --ide gemini-cli
+    """
     resolved = config.resolve_alias(agent_id)
     with spinner(f"Generating {ide} config..."):
         result = client.post(f"/api/v1/agents/{resolved}/install", {"ide": ide})
@@ -648,7 +705,17 @@ def agent_delete(
     agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
-    """Archive an agent (soft delete)."""
+    """Archive an agent (soft delete).
+
+    Marks the agent as archived. It will no longer appear in public
+    listings but can be restored with the unarchive command. Prompts
+    for confirmation unless --yes is provided.
+
+    Examples:
+      observal agent delete my-agent
+      observal agent delete my-agent --yes
+      observal agent delete @myalias
+    """
     resolved = config.resolve_alias(agent_id)
     if not yes:
         with spinner():
@@ -665,7 +732,17 @@ def agent_unarchive(
     agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
-    """Restore an archived agent back to active status."""
+    """Restore an archived agent back to active status.
+
+    Reverses a previous archive (soft delete) operation, making the
+    agent visible in public listings again. Prompts for confirmation
+    unless --yes is provided.
+
+    Examples:
+      observal agent unarchive my-agent
+      observal agent unarchive my-agent --yes
+      observal agent unarchive a1b2c3d4-...
+    """
     resolved = config.resolve_alias(agent_id)
     if not yes:
         with spinner():
@@ -687,7 +764,18 @@ def agent_init(
     directory: str = typer.Option(".", "--dir", "-d", help="Directory to scaffold in"),
     beta: bool = typer.Option(False, "--beta", help="Start at version 0.1.0 (beta)"),
 ):
-    """Scaffold an observal-agent.yaml definition file."""
+    """Scaffold an observal-agent.yaml definition file.
+
+    Runs an interactive wizard to collect agent metadata (name, version,
+    description, owner, model, system prompt) and writes the result as
+    observal-agent.yaml in the target directory. Use --beta to start
+    at version 0.1.0 instead of 1.0.0.
+
+    Examples:
+      observal agent init
+      observal agent init --dir ./my-agent
+      observal agent init --beta
+    """
     dir_path = Path(directory)
     yaml_path = dir_path / YAML_FILE
 
@@ -735,7 +823,17 @@ def agent_add(
     component_id: str = typer.Argument(..., help="Component ID (UUID)"),
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
 ):
-    """Add a component reference to observal-agent.yaml."""
+    """Add a component reference to observal-agent.yaml.
+
+    Appends a component entry to the components list in your local
+    observal-agent.yaml file. The component is referenced by type and
+    UUID. Duplicates are rejected.
+
+    Examples:
+      observal agent add mcp a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      observal agent add skill b2c3d4e5-f6a7-8901-bcde-f12345678901
+      observal agent add hook c3d4e5f6-... --dir ./my-agent
+    """
     if component_type not in VALID_COMPONENT_TYPES:
         rprint(
             f"[red]Error:[/red] Invalid component type '{component_type}'. "
@@ -762,7 +860,16 @@ def agent_add(
 def agent_build(
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
 ):
-    """Validate agent definition against the server (dry-run)."""
+    """Validate agent definition against the server (dry-run).
+
+    Reads observal-agent.yaml and checks each referenced component
+    against the registry API to confirm it exists and is accessible.
+    Exits with code 1 if any component fails validation.
+
+    Examples:
+      observal agent build
+      observal agent build --dir ./my-agent
+    """
     dir_path = Path(directory)
     data = _load_agent_yaml(dir_path)
 
@@ -976,7 +1083,17 @@ def agent_versions(
     name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
     output: str = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
-    """List all versions for an agent."""
+    """List all versions for an agent.
+
+    Shows the version history for a given agent, including version
+    number, review status, release date, author, and component count.
+    Accepts a UUID, agent name, row number, or @alias.
+
+    Examples:
+      observal agent versions my-agent
+      observal agent versions my-agent --output json
+      observal agent versions @myalias
+    """
     resolved = config.resolve_alias(name)
 
     with spinner("Fetching versions..."):
