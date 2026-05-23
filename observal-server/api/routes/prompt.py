@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger as optic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +48,7 @@ async def submit_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("prompt submit: name={}", req.name)
     existing = await db.execute(
         select(PromptListing).where(PromptListing.name == req.name, PromptListing.submitted_by == current_user.id)
     )
@@ -95,6 +97,7 @@ async def list_prompts(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(optional_current_user),
 ):
+    optic.debug("prompt list: search={}", search)
     stmt = (
         select(PromptListing)
         .join(PromptVersion, PromptListing.latest_version_id == PromptVersion.id)
@@ -117,6 +120,7 @@ async def my_prompts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("my_prompts called")
     stmt = (
         select(PromptListing)
         .where(PromptListing.submitted_by == current_user.id)
@@ -134,6 +138,7 @@ async def get_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(optional_current_user),
 ):
+    optic.debug("prompt get: listing_id={}", listing_id)
     listing = await resolve_listing(PromptListing, listing_id, db, require_status=ListingStatus.approved)
     if listing:
         await audit(
@@ -160,6 +165,7 @@ async def install_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("prompt install: listing_id={}", listing_id)
     listing = await resolve_listing(PromptListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(PromptListing, listing_id, db)
@@ -192,6 +198,7 @@ async def render_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("prompt render")
     listing = await resolve_listing(PromptListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(PromptListing, listing_id, db)
@@ -241,6 +248,7 @@ async def save_prompt_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("save_prompt_draft: req={}", req)
     listing = PromptListing(
         name=req.name,
         owner=req.owner or current_user.username or current_user.email,
@@ -287,6 +295,7 @@ async def update_prompt_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("update_prompt_draft: listing_id={}", listing_id)
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -351,6 +360,7 @@ async def start_edit_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("start_edit_prompt: listing_id={}", listing_id)
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -374,6 +384,7 @@ async def cancel_edit_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("cancel_edit_prompt: listing_id={}", listing_id)
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -393,6 +404,7 @@ async def submit_prompt_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("submit_prompt_draft: listing_id={}", listing_id)
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -425,6 +437,7 @@ async def delete_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("prompt delete: listing_id={}", listing_id)
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
