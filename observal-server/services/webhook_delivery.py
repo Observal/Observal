@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
+from loguru import logger as optic
 
 from services.alert_evaluator import is_private_url
 from services.webhook_signer import HEADER_EVENT_ID, build_headers
@@ -68,6 +69,7 @@ def _buffer_delivery_record(
     payload_size: int,
 ) -> None:
     """Buffer a delivery record for later batch-insert to ClickHouse."""
+    optic.debug("_buffer_delivery_record: alert_rule_id={}, event_id={}", alert_rule_id, event_id)
     from datetime import UTC, datetime
 
     record = {
@@ -89,7 +91,7 @@ def _buffer_delivery_record(
     if len(_delivery_buffer) >= _BUFFER_FLUSH_THRESHOLD:
         logger.info("Delivery buffer hit threshold (%d), scheduling flush", _BUFFER_FLUSH_THRESHOLD)
         # Note: actual flush is async and called by the evaluator at cycle end
-        # This is a safety net — in practice the evaluator flushes first
+        # This is a safety net - in practice the evaluator flushes first
 
 
 async def flush_delivery_records() -> int:
@@ -101,6 +103,7 @@ async def flush_delivery_records() -> int:
     Returns:
         Number of records flushed.
     """
+    optic.debug("flush_delivery_records called")
     if not _delivery_buffer:
         return 0
 
@@ -114,7 +117,7 @@ async def flush_delivery_records() -> int:
         logger.info("Flushed %d delivery records to ClickHouse", len(records))
     except Exception as e:
         logger.error("Failed to flush delivery records to ClickHouse: %s", e)
-        # Don't re-raise — delivery recording is best-effort
+        # Don't re-raise - delivery recording is best-effort
 
     return len(records)
 
@@ -146,6 +149,7 @@ async def deliver_webhook(
         DeliveryResult with outcome details.
     """
     # SSRF protection
+    optic.debug("webhook: delivery attempt")
     if is_private_url(webhook_url):
         return DeliveryResult(
             success=False,
@@ -201,7 +205,7 @@ async def deliver_webhook(
                         event_id=event_id,
                     )
 
-                # Don't retry 4xx (client error — retrying won't help)
+                # Don't retry 4xx (client error - retrying won't help)
                 if resp.status_code < 500:
                     last_error = f"HTTP {resp.status_code}"
                     break
