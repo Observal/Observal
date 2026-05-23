@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 import typer
+from loguru import logger
 from rich import print as rprint
 from rich.table import Table
 
@@ -28,6 +29,7 @@ skill_app = typer.Typer(help="Skill registry commands")
 
 
 def register_skill(app: typer.Typer):
+    logger.debug("register_skill called")
     app.add_typer(skill_app, name="skill")
 
 
