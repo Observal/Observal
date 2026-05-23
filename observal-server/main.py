@@ -214,12 +214,9 @@ async def _version_middleware(request: Request, call_next):
     Computes effective = min(cli_version, server_version) and sets response headers.
     Route handlers can access request.state.effective_version for feature gating.
     """
-    from importlib.metadata import version as pkg_version
+    from version import get_server_version
 
-    try:
-        server_ver = pkg_version("observal-server")
-    except Exception:
-        server_ver = "0.0.0"
+    server_ver = get_server_version()
 
     cli_ver_str = request.headers.get("x-observal-cli-version")
     effective = server_ver
@@ -227,6 +224,7 @@ async def _version_middleware(request: Request, call_next):
     if cli_ver_str:
         try:
             from packaging.version import Version
+
             client_ver = Version(cli_ver_str)
             sv = Version(server_ver)
             effective = str(min(client_ver, sv))
@@ -239,9 +237,6 @@ async def _version_middleware(request: Request, call_next):
 
     response.headers["X-Observal-Server"] = server_ver
     response.headers["X-Observal-Effective"] = effective
-    # MIN_CLI_VERSION from dynamic settings is checked at the route level;
-    # here we use the boot-time fallback for the header.
-    response.headers["X-Observal-Min-CLI"] = "0.4.0"
     return response
 
 

@@ -11,17 +11,28 @@ ClickHouse, and Redis.
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from observal_cli.server.constants import (
-    API_PORT,
-    CONFIG_DIR,
-    LOG_DIR,
-    OBSERVAL_HOME,
-)
+try:
+    from observal_cli.server.constants import (
+        API_PORT,
+        CONFIG_DIR,
+        LOG_DIR,
+        OBSERVAL_HOME,
+    )
+except ImportError:
+    # server.constants may not exist yet (feature not merged)
+    # Provide fallback values for the upgrade/rollback commands
+    from pathlib import Path as _Path
+
+    API_PORT = 8000
+    OBSERVAL_HOME = _Path.home() / ".observal"
+    CONFIG_DIR = OBSERVAL_HOME / "config"
+    LOG_DIR = OBSERVAL_HOME / "logs"
 
 server_app = typer.Typer(
     name="server",
@@ -85,7 +96,7 @@ def start(
 
     # Ensure dependencies are installed
     if not all_installed():
-        console.print("[blue]==>[/blue] First run — installing database dependencies...")
+        console.print("[blue]==>[/blue] First run - installing database dependencies...")
         console.print()
         install_dependencies()
         console.print()
@@ -161,11 +172,14 @@ def status() -> None:
         "not initialized": "[dim]not initialized[/dim]",
     }
 
-    from observal_cli.server.constants import (
-        CLICKHOUSE_HTTP_PORT,
-        POSTGRES_PORT,
-        REDIS_PORT,
-    )
+    try:
+        from observal_cli.server.constants import (
+            CLICKHOUSE_HTTP_PORT,
+            POSTGRES_PORT,
+            REDIS_PORT,
+        )
+    except ImportError:
+        POSTGRES_PORT, CLICKHOUSE_HTTP_PORT, REDIS_PORT = 5480, 8124, 6380  # noqa: N806
 
     port_map = {
         "postgres": str(POSTGRES_PORT),
@@ -178,7 +192,7 @@ def status() -> None:
         table.add_row(
             service.capitalize(),
             status_styles.get(state, state),
-            port_map.get(service, "—"),
+            port_map.get(service, "-"),
         )
 
     console.print(table)
@@ -294,11 +308,14 @@ def config() -> None:
     table.add_column("Setting", style="bold")
     table.add_column("Value")
 
-    from observal_cli.server.constants import (
-        CLICKHOUSE_HTTP_PORT,
-        POSTGRES_PORT,
-        REDIS_PORT,
-    )
+    try:
+        from observal_cli.server.constants import (
+            CLICKHOUSE_HTTP_PORT,
+            POSTGRES_PORT,
+            REDIS_PORT,
+        )
+    except ImportError:
+        POSTGRES_PORT, CLICKHOUSE_HTTP_PORT, REDIS_PORT = 5480, 8124, 6380  # noqa: N806
 
     table.add_row("Home directory", str(OBSERVAL_HOME))
     table.add_row("API port", str(API_PORT))
@@ -325,32 +342,64 @@ def _find_compose_dir() -> Path:
     """Find the Docker Compose directory for the Observal deployment."""
     # Check common locations
     candidates = [
-        Path("/opt/observal"),
+        Path.cwd() / "docker",  # dev: project root with docker/ subdir
+        Path.cwd(),  # production: cwd IS the compose dir
+        Path("/opt/observal"),  # server-package default install
         OBSERVAL_HOME / "docker",
-        Path.cwd(),
     ]
     for d in candidates:
         if (d / "docker-compose.yml").exists() or (d / "compose.yml").exists():
             return d
-    # Check if we're in the project root with docker/ subdir
-    if (Path.cwd() / "docker" / "docker-compose.yml").exists():
-        return Path.cwd() / "docker"
     return Path("/opt/observal")  # Default
 
 
 def _get_current_server_version(compose_dir: Path) -> str:
     """Get current OBSERVAL_VERSION from .env file."""
-    env_file = compose_dir / ".env"
+    # Check .env in compose dir first, then parent (dev setup has .env at project root)
+    candidates = [
+        compose_dir / ".env",
+        compose_dir.parent / ".env",
+    ]
+    for env_file in candidates:
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("OBSERVAL_VERSION="):
+                    return line.split("=", 1)[1].strip().strip('"')
+    return "unknown"
+
+
+def _find_env_file(compose_dir: Path) -> Path:
+    """Find the .env file (may be in compose dir or parent)."""
+    if (compose_dir / ".env").exists():
+        return compose_dir / ".env"
+    if (compose_dir.parent / ".env").exists():
+        return compose_dir.parent / ".env"
+    return compose_dir / ".env"  # Default (will be created)
+
+
+def _get_health_url(compose_dir: Path) -> str:
+    """Get the health check URL from .env or defaults.
+
+    Reads LB_HOST_PORT (preferred) or API_HOST_PORT from .env to determine
+    the correct port. Falls back to 8000 (standard API port) if neither is set.
+    """
+    env_file = _find_env_file(compose_dir)
+    lb_port = None
+    api_port = None
     if env_file.exists():
         for line in env_file.read_text().splitlines():
-            if line.startswith("OBSERVAL_VERSION="):
-                return line.split("=", 1)[1].strip().strip('"')
-    return "unknown"
+            line = line.strip()
+            if line.startswith("LB_HOST_PORT="):
+                lb_port = line.split("=", 1)[1].strip().strip('"') or None
+            elif line.startswith("API_HOST_PORT="):
+                api_port = line.split("=", 1)[1].strip().strip('"') or None
+    port = lb_port or api_port or "8000"
+    return f"http://localhost:{port}/readyz"
 
 
 def _update_env_version(compose_dir: Path, version: str) -> None:
     """Update OBSERVAL_VERSION in .env file."""
-    env_file = compose_dir / ".env"
+    env_file = _find_env_file(compose_dir)
     if not env_file.exists():
         env_file.write_text(f"OBSERVAL_VERSION={version}\n")
         return
@@ -478,7 +527,7 @@ def server_upgrade(
         for _ in range(24):  # 120s total
             time.sleep(5)
             try:
-                resp = httpx.get("http://localhost:8000/readyz", timeout=5)
+                resp = httpx.get(_get_health_url(compose_dir), timeout=5)
                 if resp.status_code == 200:
                     healthy = True
                     break
@@ -517,10 +566,7 @@ def server_rollback(
         console.print("[red]No backups found. Cannot rollback.[/red]")
         raise typer.Exit(1)
 
-    if from_backup:
-        backup_dir = Path(from_backup)
-    else:
-        backup_dir = Path(backups[0]["path"])  # Most recent
+    backup_dir = Path(from_backup) if from_backup else Path(backups[0]["path"])
 
     if not backup_dir.exists():
         console.print(f"[red]Backup not found: {backup_dir}[/red]")
@@ -569,7 +615,7 @@ def server_rollback(
         for _ in range(24):
             time.sleep(5)
             try:
-                resp = httpx.get("http://localhost:8000/readyz", timeout=5)
+                resp = httpx.get(_get_health_url(compose_dir), timeout=5)
                 if resp.status_code == 200:
                     healthy = True
                     break
@@ -615,8 +661,8 @@ def server_versions() -> None:
         table.add_row(
             current,
             "[green]← current[/green]",
-            "✓" if current in available else "—",
-            f"{backup_info.get('size_mb', 0)} MB" if backup_info else "—",
+            "✓" if current in available else "-",
+            f"{backup_info.get('size_mb', 0)} MB" if backup_info else "-",
         )
         shown.add(current)
 
@@ -628,7 +674,7 @@ def server_versions() -> None:
             ver,
             "",
             "✓",
-            f"{backup_info.get('size_mb', 0)} MB" if backup_info else "—",
+            f"{backup_info.get('size_mb', 0)} MB" if backup_info else "-",
         )
         shown.add(ver)
 

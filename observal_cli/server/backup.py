@@ -14,7 +14,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path  # noqa: TC003 - used at runtime
 
 from rich import print as rprint
 
@@ -46,8 +46,16 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
     rprint("[dim]  Backing up PostgreSQL...[/dim]")
     result = subprocess.run(
         [
-            "docker", "compose", "exec", "-T", "observal-db",
-            "pg_dump", "-U", "postgres", "-Fc", "observal",
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "observal-db",
+            "pg_dump",
+            "-U",
+            "postgres",
+            "-Fc",
+            "observal",
         ],
         capture_output=True,
         cwd=compose_dir,
@@ -60,7 +68,7 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
     pg_dump_path.write_bytes(result.stdout)
     if pg_dump_path.stat().st_size < 100:
         shutil.rmtree(backup_dir, ignore_errors=True)
-        raise RuntimeError("pg_dump produced empty/tiny file — backup may be invalid")
+        raise RuntimeError("pg_dump produced empty/tiny file - backup may be invalid")
 
     pg_size_mb = pg_dump_path.stat().st_size / (1024 * 1024)
     rprint(f"[dim]  PostgreSQL: {pg_size_mb:.1f} MB[/dim]")
@@ -71,8 +79,13 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
     try:
         result = subprocess.run(
             [
-                "docker", "compose", "exec", "-T", "observal-clickhouse",
-                "clickhouse-client", "--query",
+                "docker",
+                "compose",
+                "exec",
+                "-T",
+                "observal-clickhouse",
+                "clickhouse-client",
+                "--query",
                 "SELECT name, create_table_query FROM system.tables WHERE database = 'observal'",
             ],
             capture_output=True,
@@ -108,9 +121,18 @@ def restore_backup(backup_path: Path, compose_dir: Path) -> None:
     with pg_dump.open("rb") as f:
         result = subprocess.run(
             [
-                "docker", "compose", "exec", "-T", "observal-db",
-                "pg_restore", "-U", "postgres", "-d", "observal",
-                "--clean", "--if-exists",
+                "docker",
+                "compose",
+                "exec",
+                "-T",
+                "observal-db",
+                "pg_restore",
+                "-U",
+                "postgres",
+                "-d",
+                "observal",
+                "--clean",
+                "--if-exists",
             ],
             stdin=f,
             capture_output=True,
@@ -157,14 +179,16 @@ def list_backups() -> list[dict]:
             continue
         pg_dump = path / "pg.dump"
         size_bytes = pg_dump.stat().st_size if pg_dump.exists() else 0
-        results.append({
-            "path": str(path),
-            "name": path.name,
-            "size_bytes": size_bytes,
-            "size_mb": round(size_bytes / (1024 * 1024), 1),
-            "has_pg": pg_dump.exists(),
-            "has_ch": (path / "clickhouse_schema.sql").exists(),
-        })
+        results.append(
+            {
+                "path": str(path),
+                "name": path.name,
+                "size_bytes": size_bytes,
+                "size_mb": round(size_bytes / (1024 * 1024), 1),
+                "has_pg": pg_dump.exists(),
+                "has_ch": (path / "clickhouse_schema.sql").exists(),
+            }
+        )
     return results
 
 
@@ -173,8 +197,16 @@ def estimate_backup_size(compose_dir: Path) -> int:
     try:
         result = subprocess.run(
             [
-                "docker", "compose", "exec", "-T", "observal-db",
-                "psql", "-U", "postgres", "-t", "-c",
+                "docker",
+                "compose",
+                "exec",
+                "-T",
+                "observal-db",
+                "psql",
+                "-U",
+                "postgres",
+                "-t",
+                "-c",
                 "SELECT pg_database_size('observal');",
             ],
             capture_output=True,
