@@ -16,6 +16,7 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header
+from loguru import logger as optic
 
 from api.deps import get_project_id, require_role
 from models.user import User, UserRole
@@ -64,6 +65,12 @@ async def ingest(
     x_observal_environment: str = Header("default"),
 ):
     """Ingestion endpoint for shim/proxy telemetry (traces, spans, scores)."""
+    optic.debug(
+        "telemetry ingest: traces={}, spans={}, scores={}",
+        len(batch.traces) if batch.traces else 0,
+        len(batch.spans) if batch.spans else 0,
+        len(batch.scores) if batch.scores else 0,
+    )
     user_id = str(current_user.id)
     project_id = get_project_id(current_user)
     environment = x_observal_environment or "default"
@@ -288,11 +295,13 @@ async def ingest(
             logger.exception("Failed to insert scores")
             errors += len(batch.scores)
 
+    optic.info("telemetry ingest completed: ingested={}, errors={}", ingested, errors)
     return IngestResponse(ingested=ingested, errors=errors)
 
 
 @router.get("/status", response_model=TelemetryStatusResponse)
 async def telemetry_status(current_user: User = Depends(require_role(UserRole.admin))):
+    optic.debug("telemetry_status: user_id={}", current_user.id)
     counts = await query_recent_events(60)
     return TelemetryStatusResponse(
         tool_call_events=counts["tool_call_events"],
