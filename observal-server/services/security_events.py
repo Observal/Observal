@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from loguru import logger as optic
+
 logger = logging.getLogger("observal.security")
 
 
@@ -115,6 +117,7 @@ class SecurityEvent:
 
 async def emit_security_event(event: SecurityEvent) -> None:
     """Emit a security event to structured logging and ClickHouse."""
+    optic.debug("emit_security_event: type={}, severity={}", event.event_type, event.severity)
     log_data = event.to_log_dict()
 
     log_level = {
