@@ -122,10 +122,10 @@ class TestRowToSpan:
 class TestRowToScore:
     def test_basic(self):
         sc = _row_to_score(
-            {"score_id": "sc1", "name": "acc", "source": "eval", "value": "0.95", "timestamp": "2026-01-01"}
+            {"score_id": "sc1", "name": "acc", "source": "manual", "value": "0.95", "timestamp": "2026-01-01"}
         )
         assert sc.value == 0.95
-        assert sc.source == "eval"
+        assert sc.source == "manual"
 
 
 # --- DataLoaders ---
