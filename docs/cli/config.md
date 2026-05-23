@@ -115,5 +115,5 @@ observal config aliases
 
 ## Related
 
-* [Config files](../reference/config-files.md) — full schema of `~/.observal/`
-* [Environment variables](../reference/environment-variables.md) — env-var overrides
+* [Config files](../reference/config-files.md): full schema of `~/.observal/`
+* [Environment variables](../reference/environment-variables.md): env-var overrides

@@ -81,9 +81,18 @@ def login(
 ):
     """Connect to Observal.
 
-    On a fresh server: prompts for email, name, and password to create admin.
-    With email+password: logs in with credentials.
-    With --sso: authenticates via browser-based SSO using the device flow.
+    On a fresh server: prompts for email, name, and password to create the
+    first admin account. On an initialized server: logs in with credentials
+    or SSO. After login, runs `observal doctor` to check IDE instrumentation.
+
+    If the server has SSO enabled, you can choose browser-based login via
+    the device authorization flow (opens your default browser).
+
+    Examples:
+        observal auth login
+        observal auth login --server http://observal.internal:80
+        observal auth login -e admin@example.com -p 'MyP@ss1234!'
+        observal auth login --sso
     """
     welcome_banner()
     server_url = server or typer.prompt("Server URL", default="http://localhost:80")
@@ -204,7 +213,15 @@ def login(
 
 @auth_app.command()
 def init():
-    """[Removed] Use 'observal auth login' + 'observal agent pull' instead."""
+    """[Removed] Use 'observal auth login' + 'observal agent pull' instead.
+
+    This command has been removed. The login command now handles server
+    initialization automatically, and agent pull fetches configs.
+
+    Examples:
+        observal auth login
+        observal agent pull my-agent
+    """
     rprint("[yellow]'observal auth init' has been removed.[/yellow]")
     rprint()
     rprint("Use these commands instead:")
@@ -215,7 +232,16 @@ def init():
 
 @auth_app.command()
 def logout():
-    """Clear saved credentials."""
+    """Clear saved credentials.
+
+    Revokes tokens on the server (best-effort), then removes access and
+    refresh tokens from the local config file. The server URL and other
+    settings are preserved. IDE hooks will stop sending telemetry after
+    logout.
+
+    Examples:
+        observal auth logout
+    """
     # Best-effort: revoke tokens on the server before clearing locally
     if config.CONFIG_FILE.exists():
         import json
@@ -255,7 +281,15 @@ def logout():
 def whoami(
     output: str = typer.Option("table", "--output", "-o", help="Output format: table, json"),
 ):
-    """Show current authenticated user."""
+    """Show current authenticated user.
+
+    Queries the server for the user associated with the stored access
+    token. Displays username, email, role, and user ID.
+
+    Examples:
+        observal auth whoami
+        observal auth whoami --output json
+    """
     with spinner("Checking..."):
         user = client.get("/api/v1/auth/whoami")
     if output == "json":
@@ -278,7 +312,15 @@ def whoami(
 
 @auth_app.command()
 def status():
-    """Check server connectivity and health."""
+    """Check server connectivity and health.
+
+    Shows the configured server URL, whether auth is configured, server
+    reachability with latency, and local telemetry buffer stats. Useful
+    for diagnosing connectivity issues.
+
+    Examples:
+        observal auth status
+    """
     cfg = config.load()
     url = cfg.get("server_url", "not set")
     has_token = bool(cfg.get("access_token"))
@@ -313,7 +355,15 @@ def status():
 
 @auth_app.command(name="change-password")
 def change_password():
-    """Change your password."""
+    """Change your password.
+
+    Prompts for your current password, then asks for a new password that
+    meets the security requirements (12+ chars, uppercase, number, and
+    special character). Requires an active login session.
+
+    Examples:
+        observal auth change-password
+    """
     cfg = config.load()
     server_url = cfg.get("server_url")
     token = cfg.get("access_token")
@@ -352,7 +402,16 @@ def change_password():
 def set_username(
     username: str = typer.Argument(..., help="Username (3-32 chars, lowercase alphanumeric and hyphens)"),
 ):
-    """Set or update your username."""
+    """Set or update your username.
+
+    Usernames must be 3 to 32 characters, lowercase alphanumeric with
+    hyphens allowed. Once set, your username can be used for login and
+    is displayed as @username in the UI.
+
+    Examples:
+        observal auth set-username alice
+        observal auth set-username my-dev-handle
+    """
     from observal_cli import client as _client
 
     try:
@@ -599,7 +658,14 @@ def register_config(app: typer.Typer):
 
     @config_app.command(name="show")
     def config_show():
-        """Show current CLI configuration."""
+        """Show current CLI configuration.
+
+        Prints all config values as JSON. Access and refresh tokens are
+        masked for safety. The config file lives at ~/.observal/config.json.
+
+        Examples:
+            observal config show
+        """
         cfg = config.load()
         safe = dict(cfg)
         if safe.get("access_token"):
@@ -617,7 +683,17 @@ def register_config(app: typer.Typer):
         key: str = typer.Argument(..., help="Config key (output, color, server_url)"),
         value: str = typer.Argument(..., help="Config value"),
     ):
-        """Set a CLI config value."""
+        """Set a CLI config value.
+
+        Persists the given key/value pair to ~/.observal/config.json.
+        Common keys: output (table/json/plain), color (true/false),
+        server_url.
+
+        Examples:
+            observal config set output json
+            observal config set color false
+            observal config set server_url http://observal.internal:80
+        """
         if key == "color":
             config.save({key: value.lower() in ("true", "1", "yes")})
         else:
@@ -626,7 +702,15 @@ def register_config(app: typer.Typer):
 
     @config_app.command(name="path")
     def config_path():
-        """Show config file path."""
+        """Show config file path.
+
+        Prints the absolute path to the CLI config file. Useful for
+        scripting or manual edits.
+
+        Examples:
+            observal config path
+            cat $(observal config path)
+        """
         rprint(str(config.CONFIG_FILE))
 
     @config_app.command(name="alias")
@@ -634,7 +718,16 @@ def register_config(app: typer.Typer):
         name: str = typer.Argument(..., help="Alias name (used as @name)"),
         target: str = typer.Argument(None, help="Target ID (omit to remove)"),
     ):
-        """Set or remove an alias for an MCP/agent ID."""
+        """Set or remove an alias for an MCP/agent ID.
+
+        Aliases let you reference agents or components by short names
+        instead of UUIDs. Use @name in any command that accepts an ID.
+        Omit the target argument to remove an existing alias.
+
+        Examples:
+            observal config alias myagent 550e8400-e29b-41d4-a716-446655440000
+            observal config alias myagent
+        """
         aliases = config.load_aliases()
         if target:
             aliases[name] = target
@@ -650,7 +743,14 @@ def register_config(app: typer.Typer):
 
     @config_app.command(name="aliases")
     def config_aliases():
-        """List all aliases."""
+        """List all aliases.
+
+        Shows all configured @name to ID mappings. Aliases are stored
+        in ~/.observal/aliases.json.
+
+        Examples:
+            observal config aliases
+        """
         aliases = config.load_aliases()
         if not aliases:
             rprint("[dim]No aliases set. Use: observal config alias <name> <id>[/dim]")
