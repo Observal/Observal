@@ -6,6 +6,7 @@
 import json
 
 from fastapi import Depends, HTTPException
+from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,7 @@ async def get_retention_config(
     current_user: User = Depends(require_role(UserRole.admin)),
 ) -> RetentionConfigResponse:
     """Get the organization's data retention configuration."""
+    optic.debug("admin retention get")
     org = await _get_user_org(db, current_user)
     global_days = await ds.get_int("retention.global_days")
     return RetentionConfigResponse(
@@ -46,6 +48,7 @@ async def update_retention_config(
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ) -> RetentionConfigResponse:
     """Update the organization's data retention configuration. Super admin only."""
+    optic.debug("update_retention_config: body={}", body)
     global_days = await ds.get_int("retention.global_days")
     if body.data_retention_days is not None and global_days > 0 and body.data_retention_days > global_days:
         raise HTTPException(
@@ -106,6 +109,7 @@ async def preview_retention(
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ):
     """Preview approximate row counts that would be deleted for a given retention period."""
+    optic.debug("preview_retention: days={}", days)
     if days < 7:
         raise HTTPException(status_code=422, detail="days must be >= 7")
 
@@ -167,6 +171,7 @@ async def get_retention_stats(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Get retention statistics for the dashboard widget."""
+    optic.debug("get_retention_stats called")
     org = await _get_user_org(db, current_user)
     if not org.retention_enabled:
         return {
@@ -238,6 +243,7 @@ async def get_retention_warnings(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Get agents with unanalyzed traces approaching expiry."""
+    optic.debug("get_retention_warnings called")
     org = await _get_user_org(db, current_user)
     if not org.retention_enabled or not org.data_retention_days:
         return {"warnings": [], "retention_days": org.data_retention_days, "retention_enabled": org.retention_enabled}
