@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Session reconcile endpoint.
@@ -69,15 +70,16 @@ async def _session_has_data(session_id: str) -> bool:
         return False
 
 
-async def _already_reconciled(dedup_key: str, key_field: str) -> bool:
-    """Return True if a reconcile_enrichment row already exists for dedup_key."""
+async def _already_reconciled(dedup_key: str, key_field: str, user_id: str) -> bool:
+    """Return True if this user already has a reconcile_enrichment row for dedup_key."""
     sql = (
         "SELECT count() AS cnt FROM otel_logs "
         f"WHERE LogAttributes['event.name'] = 'reconcile_enrichment' "
-        f"AND LogAttributes['{key_field}'] = {{key:String}} FORMAT JSON"
+        f"AND LogAttributes['{key_field}'] = {{key:String}} "
+        "AND LogAttributes['user_id'] = {uid:String} FORMAT JSON"
     )
     try:
-        r = await _query(sql, {"param_key": dedup_key})
+        r = await _query(sql, {"param_key": dedup_key, "param_uid": user_id})
         r.raise_for_status()
         data = r.json().get("data", [{}])
         return int(data[0].get("cnt", 0)) > 0
@@ -125,12 +127,15 @@ async def reconcile_session(payload: ReconcilePayload, current_user: User = Depe
         dedup_key = payload.session_id
         key_field = "session_id"
 
-    if await _already_reconciled(dedup_key, key_field):
+    user_id = str(current_user.id)
+
+    if await _already_reconciled(dedup_key, key_field, user_id):
         return {"status": "skipped"}
 
     attrs: dict[str, str] = {
         "event.name": "reconcile_enrichment",
         "session_id": payload.session_id,
+        "user_id": user_id,
         "conversation_turns": str(payload.conversation_turns),
         "total_input_tokens": str(payload.total_input_tokens),
         "total_output_tokens": str(payload.total_output_tokens),

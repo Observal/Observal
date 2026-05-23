@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Subramania Raja <dhanpraja231@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Tests for subagent JSONL file discovery and parsing in the reconcile system."""
@@ -302,7 +303,7 @@ async def test_reconcile_endpoint_uses_subagent_id_for_dedup():
             "api.routes.reconcile._query",
             new_callable=AsyncMock,
             side_effect=[session_exists_resp, owned_resp, not_reconciled_resp],
-        ),
+        ) as mock_query,
         patch("api.routes.reconcile.insert_otel_logs", side_effect=mock_insert),
     ):
         app.dependency_overrides[get_current_user] = lambda: mock_user
@@ -319,8 +320,13 @@ async def test_reconcile_endpoint_uses_subagent_id_for_dedup():
     assert len(enrichment_rows) == 1
     attrs = enrichment_rows[0]["LogAttributes"]
     assert attrs.get("subagent_id") == "agent-unique-stem"
+    assert attrs.get("user_id") == str(mock_user.id)
     assert attrs.get("is_subagent") == "true"
     assert attrs.get("agent_type") == "superpowers:code-reviewer"
+
+    dedup_params = mock_query.await_args_list[2].args[1]
+    assert dedup_params["param_key"] == "agent-unique-stem"
+    assert dedup_params["param_uid"] == str(mock_user.id)
 
 
 @pytest.mark.asyncio
@@ -364,7 +370,7 @@ async def test_reconcile_endpoint_subagent_dedup_uses_subagent_id_not_session_id
         "api.routes.reconcile._query",
         new_callable=AsyncMock,
         side_effect=[session_exists_resp, owned_resp, already_reconciled_resp],
-    ):
+    ) as mock_query:
         app.dependency_overrides[get_current_user] = lambda: mock_user
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.post("/api/v1/telemetry/reconcile", json=payload)
@@ -373,6 +379,83 @@ async def test_reconcile_endpoint_subagent_dedup_uses_subagent_id_not_session_id
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "skipped"
+
+    dedup_sql = mock_query.await_args_list[2].args[0]
+    dedup_params = mock_query.await_args_list[2].args[1]
+    assert "LogAttributes['subagent_id'] = {key:String}" in dedup_sql
+    assert "LogAttributes['user_id'] = {uid:String}" in dedup_sql
+    assert dedup_params["param_key"] == "agent-already-done"
+    assert dedup_params["param_uid"] == str(mock_user.id)
+
+
+@pytest.mark.asyncio
+async def test_reconcile_endpoint_dedup_is_scoped_by_user():
+    """Top-level session dedup includes user_id so users cannot affect each other."""
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from api.routes.reconcile import router
+
+    app = FastAPI()
+    app.include_router(router)
+
+    session_exists_resp = MagicMock()
+    session_exists_resp.raise_for_status = MagicMock()
+    session_exists_resp.json = MagicMock(return_value={"data": [{"cnt": "5"}]})
+
+    owned_resp = MagicMock()
+    owned_resp.raise_for_status = MagicMock()
+    owned_resp.json = MagicMock(return_value={"data": [{"cnt": "1"}]})
+
+    not_reconciled_for_this_user_resp = MagicMock()
+    not_reconciled_for_this_user_resp.raise_for_status = MagicMock()
+    not_reconciled_for_this_user_resp.json = MagicMock(return_value={"data": [{"cnt": "0"}]})
+
+    payload = {
+        "session_id": "shared-session-id",
+        "conversation_turns": 2,
+    }
+
+    inserted_rows = []
+
+    async def mock_insert(rows):
+        inserted_rows.extend(rows)
+
+    import uuid
+
+    from api.deps import get_current_user
+
+    mock_user = MagicMock()
+    mock_user.id = uuid.uuid4()
+
+    with (
+        patch(
+            "api.routes.reconcile._query",
+            new_callable=AsyncMock,
+            side_effect=[session_exists_resp, owned_resp, not_reconciled_for_this_user_resp],
+        ) as mock_query,
+        patch("api.routes.reconcile.insert_otel_logs", side_effect=mock_insert),
+    ):
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.post("/api/v1/telemetry/reconcile", json=payload)
+        app.dependency_overrides.clear()
+
+    assert r.status_code == 200
+    assert r.json()["status"] == "reconciled"
+
+    dedup_sql = mock_query.await_args_list[2].args[0]
+    dedup_params = mock_query.await_args_list[2].args[1]
+    assert "LogAttributes['session_id'] = {key:String}" in dedup_sql
+    assert "LogAttributes['user_id'] = {uid:String}" in dedup_sql
+    assert dedup_params == {
+        "param_key": "shared-session-id",
+        "param_uid": str(mock_user.id),
+    }
+
+    attrs = inserted_rows[0]["LogAttributes"]
+    assert attrs["session_id"] == "shared-session-id"
+    assert attrs["user_id"] == str(mock_user.id)
 
 
 # ─── Server: SessionEnrichment dataclass ────────────────────────────────────
