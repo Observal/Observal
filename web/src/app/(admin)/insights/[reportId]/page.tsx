@@ -1191,7 +1191,7 @@ function ReportContent({ report }: { report: InsightReport }) {
 			{!narrative && metrics && (
 				<div className="rounded-lg border border-border bg-muted/30 p-5 text-center">
 					<p className="text-sm text-muted-foreground">
-						Narrative analysis unavailable. Configure an eval model to enable
+						Narrative analysis unavailable. Configure a model to enable
 						LLM-powered insights.
 					</p>
 				</div>

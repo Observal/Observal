@@ -21,7 +21,6 @@ export function useDeploymentConfig() {
 		ssoEnabled: data?.sso_enabled ?? false,
 		ssoOnly: data?.sso_only ?? false,
 		samlEnabled: data?.saml_enabled ?? false,
-		evalConfigured: data?.eval_configured ?? false,
 		insightsAvailable: data?.insights_available ?? false,
 		execDashboardAvailable: data?.exec_dashboard_available ?? false,
 		licensedFeatures: data?.licensed_features ?? [],

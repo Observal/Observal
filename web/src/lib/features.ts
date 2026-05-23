@@ -17,7 +17,6 @@ export const FEATURE_VERSIONS: Record<string, string> = {
 	bulkAgents: "0.6.0",
 	componentVersions: "0.6.0",
 	deviceAuth: "0.7.0",
-	evalRagas: "0.8.0",
 	mcpRegistry: "0.5.0",
 	reconcile: "0.7.0",
 	selfUpgrade: "0.8.0",

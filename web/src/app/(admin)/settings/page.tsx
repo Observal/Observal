@@ -58,10 +58,6 @@ import {
 
 // Sensitive keys that should be masked in display
 const SENSITIVE_KEYS = new Set([
-	"eval.model_api_key",
-	"eval.aws_access_key_id",
-	"eval.aws_secret_access_key",
-	"eval.aws_session_token",
 	"saml.idp_x509_cert",
 	"saml.sp_key_encryption_password",
 ]);
@@ -76,15 +72,6 @@ function maskValue(key: string, value: string): string {
 /** Generate a helpful placeholder for the value input based on the key */
 function getPlaceholder(key: string): string {
 	const placeholders: Record<string, string> = {
-		// Eval
-		"eval.model_url": "https://api.openai.com/v1",
-		"eval.model_api_key": "sk-... or leave blank for AWS credentials",
-		"eval.model_name": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-		"eval.model_provider": "bedrock | openai | moonshot",
-		"eval.aws_region": "us-east-1",
-		"eval.aws_access_key_id": "AKIA...",
-		"eval.aws_secret_access_key": "wJalr...",
-		"eval.aws_session_token": "FwoGZX... (optional, for temp creds)",
 		// Insights
 		"insights.model_sections": "us.anthropic.claude-opus-4-6-v1",
 		"insights.model_synthesis": "us.anthropic.claude-sonnet-4-6-v1",
@@ -182,19 +169,19 @@ const SETTING_SECTIONS: SettingSection[] = [
 		title: "LLM / Eval Engine",
 		icon: <Settings className="h-3.5 w-3.5" />,
 		description:
-			"Configure the LLM used for AI-powered agent scoring. Leave blank to use deterministic fallback scorer.",
+			"Configure the LLM used for AI-powered insights and analysis.",
 		settings: [
 			{
 				key: "eval.model_url",
 				label: "Model Endpoint URL",
-				subtitle: "OpenAI-compatible base URL for the eval model",
+				subtitle: "OpenAI-compatible base URL for the LLM",
 				tooltip:
 					"The base URL of your LLM API. For Bedrock, leave blank (uses AWS SDK). For OpenAI-compatible APIs (vLLM, Ollama, Moonshot), provide the base URL like https://api.openai.com/v1",
 			},
 			{
 				key: "eval.model_api_key",
 				label: "Model API Key",
-				subtitle: "Authentication key for the eval endpoint",
+				subtitle: "Authentication key for the LLM endpoint",
 				tooltip:
 					"API key sent as Bearer token. For AWS Bedrock, leave blank and configure AWS credentials instead. For OpenAI/Moonshot, use your API key (sk-...).",
 			},
@@ -203,7 +190,7 @@ const SETTING_SECTIONS: SettingSection[] = [
 				label: "Model Name",
 				subtitle: "Model identifier passed to the API",
 				tooltip:
-					"The model ID to use for evaluation scoring. Examples: us.anthropic.claude-haiku-4-5-20251001-v1:0 (Bedrock), gpt-4o (OpenAI), kimi-k2.5-preview (Moonshot).",
+					"The model ID to use. Examples: us.anthropic.claude-haiku-4-5-20251001-v1:0 (Bedrock), gpt-4o (OpenAI), kimi-k2.5-preview (Moonshot).",
 			},
 			{
 				key: "eval.model_provider",
@@ -253,21 +240,21 @@ const SETTING_SECTIONS: SettingSection[] = [
 				label: "Sections Model",
 				subtitle: "Model for detailed narrative report sections",
 				tooltip:
-					"A capable model (e.g., Claude Opus) used for writing detailed insight sections. Falls back to the eval model if blank. Use a high-quality model here for best report quality.",
+					"A capable model (e.g., Claude Opus) used for writing detailed insight sections. Falls back to the base model if blank. Use a high-quality model here for best report quality.",
 			},
 			{
 				key: "insights.model_synthesis",
 				label: "Synthesis Model",
 				subtitle: "Model for aggregating and summarizing insights",
 				tooltip:
-					"Model used for cross-user synthesis and strategic recommendations. Sonnet-class models offer good balance of quality and cost. Falls back to eval model.",
+					"Model used for cross-user synthesis and strategic recommendations. Sonnet-class models offer good balance of quality and cost. Falls back to the base model.",
 			},
 			{
 				key: "insights.model_facets",
 				label: "Facets Model",
 				subtitle: "Model for per-session facet extraction",
 				tooltip:
-					"Model used for extracting structured facets from individual sessions. Can be a smaller/cheaper model (e.g., Haiku) since it processes many sessions. Falls back to eval model.",
+					"Model used for extracting structured facets from individual sessions. Can be a smaller/cheaper model (e.g., Haiku) since it processes many sessions. Falls back to the base model.",
 			},
 			{
 				key: "insights.batch_enabled",
@@ -697,7 +684,6 @@ export default function SettingsPage() {
 		deploymentMode,
 		ssoEnabled,
 		samlEnabled,
-		evalConfigured,
 		isLicensed,
 		brandingLogo,
 		brandingAppName,
@@ -1136,14 +1122,6 @@ export default function SettingsPage() {
 								className={`text-xs font-medium ${samlEnabled ? "text-success" : "text-muted-foreground"}`}
 							>
 								{samlEnabled ? "Configured" : "Not configured"}
-							</span>
-						</div>
-						<div className="flex items-center justify-between py-1 border-t border-border">
-							<span className="text-xs text-muted-foreground">Eval Model</span>
-							<span
-								className={`text-xs font-medium ${evalConfigured ? "text-success" : "text-amber-500"}`}
-							>
-								{evalConfigured ? "Configured" : "Not configured"}
 							</span>
 						</div>
 					</div>

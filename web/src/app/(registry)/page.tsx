@@ -102,7 +102,7 @@ export default function RegistryHome() {
               </h1>
             )}
             <p className="text-base text-muted-foreground leading-relaxed max-w-lg">
-              The open registry for AI agents. Browse, install, and evaluate
+              The open registry for AI agents. Browse, install, and discover
               agents across your team.
             </p>
           </div>

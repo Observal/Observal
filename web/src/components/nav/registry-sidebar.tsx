@@ -34,7 +34,6 @@ import {
 	Trophy,
 	LayoutDashboard,
 	Activity,
-	FlaskConical,
 	ShieldCheck,
 	Users,
 	Settings,
@@ -94,7 +93,6 @@ const adminNav: NavItem[] = [
 		minRole: "admin",
 		requiresExecDashboard: true,
 	},
-	{ title: "Evals", href: "/eval", icon: FlaskConical, minRole: "admin" },
 	{
 		title: "Insights",
 		href: "/insights",

@@ -25,7 +25,7 @@ import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
 const RESOURCE_TYPES = [
   "all", "user", "session", "agent", "mcp", "skill", "hook", "prompt",
-  "sandbox", "listing", "alert", "eval", "feedback", "settings", "config",
+  "sandbox", "listing", "alert", "feedback", "settings", "config",
   "trace", "diagnostics", "dashboard", "component_source", "cache",
 ];
 

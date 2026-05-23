@@ -34,7 +34,6 @@ const EVENT_TYPES = [
   "admin.setting.changed",
   "admin.alert_rule.changed",
   "agent.injection_detected",
-  "agent.canary_parroted",
   "ingestion.secrets_redacted",
   "ingestion.malformed_otlp",
 ];

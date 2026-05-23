@@ -21,9 +21,6 @@ import type {
 	TokenStats,
 	FeedbackItem,
 	FeedbackSummary,
-	Scorecard,
-	TracePenalty,
-	AgentAggregate,
 	IdeUsageData,
 	AdminUser,
 	AdminSetting,
@@ -528,10 +525,6 @@ export const dashboard = {
 		get<unknown>(`/sessions/traces/${encodeURIComponent(id)}`),
 	sessionsStats: () => get<SessionsStats>("/sessions/stats"),
 	sessionsErrors: () => get<SessionErrorEvent[]>("/sessions/errors"),
-	sessionEfficiency: (sessionId: string) =>
-		get<Record<string, unknown>>(
-			`/sessions/${encodeURIComponent(sessionId)}/efficiency`,
-		),
 };
 
 // ── Feedback ────────────────────────────────────────────────────────
@@ -545,41 +538,6 @@ export const feedback = {
 	get: (type: string, id: string) =>
 		get<FeedbackItem[]>(`/feedback/${type}/${id}`),
 	summary: (id: string) => get<FeedbackSummary>(`/feedback/summary/${id}`),
-};
-
-// ── Eval ────────────────────────────────────────────────────────────
-export const eval_ = {
-	run: (agentId: string, body?: unknown) =>
-		post<unknown>(`/eval/agents/${agentId}`, body),
-	scorecards: (agentId: string, params?: Record<string, string>) => {
-		const qs = params ? `?${new URLSearchParams(params)}` : "";
-		return get<Scorecard[]>(`/eval/agents/${agentId}/scorecards${qs}`);
-	},
-	show: (scorecardId: string) =>
-		get<Scorecard>(`/eval/scorecards/${scorecardId}`),
-	compare: (agentId: string, params: Record<string, string>) => {
-		const qs = `?${new URLSearchParams(params)}`;
-		return get<unknown>(`/eval/agents/${agentId}/compare${qs}`);
-	},
-	aggregate: (agentId: string, windowSize?: number) => {
-		const qs = windowSize ? `?window_size=${windowSize}` : "";
-		return get<AgentAggregate>(`/eval/agents/${agentId}/aggregate${qs}`);
-	},
-	penalties: (scorecardId: string) =>
-		get<TracePenalty[]>(`/eval/scorecards/${scorecardId}/penalties`),
-	agentSessions: (agentId: string) =>
-		get<
-			Array<{
-				session_id: string;
-				trace_id: string;
-				evaluated_at: string;
-				start_time?: string;
-				end_time?: string;
-				event_count?: number;
-				first_prompt?: string;
-				service_name?: string;
-			}>
-		>(`/eval/agents/${agentId}/sessions`),
 };
 
 // ── Admin ───────────────────────────────────────────────────────────
@@ -740,7 +698,6 @@ export type PublicConfig = {
 	sso_enabled: boolean;
 	sso_only: boolean;
 	saml_enabled: boolean;
-	eval_configured: boolean;
 	insights_available: boolean;
 	exec_dashboard_available: boolean;
 	licensed_features: string[];

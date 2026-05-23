@@ -25,7 +25,6 @@ import {
   dashboard,
   exec,
   feedback,
-  eval_,
   admin,
   telemetry,
   bulk,
@@ -203,54 +202,6 @@ export function useReviewAction() {
     },
   });
 }
-
-// ── Eval ────────────────────────────────────────────────────────────
-
-export function useEvalRun() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { agentId: string; body?: unknown }) =>
-      eval_.run(vars.agentId, vars.body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["eval"] });
-      toast.success("Eval run started");
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || "Eval run failed");
-    },
-  });
-}
-
-export function useEvalScorecards(
-  agentId: string | undefined,
-  params?: Record<string, string>,
-) {
-  return useQuery({
-    queryKey: ["eval", "scorecards", agentId, params],
-    enabled: !!agentId,
-    queryFn: () => eval_.scorecards(agentId!, params),
-  });
-}
-
-export function useAgentEvaluatedSessions(agentId: string | undefined) {
-  return useQuery({
-    queryKey: ["eval", "agent-sessions", agentId],
-    enabled: !!agentId,
-    queryFn: () => eval_.agentSessions(agentId!),
-  });
-}
-
-export function useEvalCompare(
-  agentId: string | undefined,
-  params: Record<string, string>,
-) {
-  return useQuery({
-    queryKey: ["eval", "compare", agentId, params],
-    enabled: !!agentId && !!params.a && !!params.b,
-    queryFn: () => eval_.compare(agentId!, params),
-  });
-}
-
 // ── Feedback ────────────────────────────────────────────────────────
 
 export function useFeedback(type: string | undefined, id: string | undefined) {
@@ -477,28 +428,6 @@ export function useSessionsStats() {
 export function useSessionErrors() {
   return useQuery({ queryKey: ['sessions', 'errors'], queryFn: dashboard.sessionsErrors });
 }
-export interface SessionEfficiencyData {
-  efficiency_rating: number;
-  efficiency_metrics: Record<string, number | null>;
-  interpretation: Record<string, string>;
-  warnings: string[];
-  scorer_version: string;
-  dag?: {
-    nodes: { id: number; action_type: string; action_detail: string; status: "effective" | "reverted" | "waste"; parent_ids: number[]; trace_id: string | null; files_touched: string[]; latency_ms: number; reverted_by: number | null }[];
-    edges: { source: number; target: number; type: "causal" | "cross_trace" }[];
-    stats: { total_nodes: number; effective_nodes: number; reverted_nodes: number; waste_nodes: number };
-  };
-  waste_classifications?: { category: string; steps: number[] }[];
-  error?: string;
-}
-
-export function useSessionEfficiency(sessionId: string | undefined) {
-  return useQuery<SessionEfficiencyData>({
-    queryKey: ["session-efficiency", sessionId],
-    queryFn: () => dashboard.sessionEfficiency(sessionId!) as unknown as Promise<SessionEfficiencyData>,
-    enabled: !!sessionId,
-  });
-}
 
 export function useSessionSubscription() {
   const qc = useQueryClient();
@@ -559,14 +488,6 @@ export function useAgentDownloads(id: string) {
   });
 }
 
-export function useEvalAggregate(agentId: string) {
-  return useQuery({
-    queryKey: ["eval-aggregate", agentId],
-    queryFn: () => eval_.aggregate(agentId),
-    enabled: !!agentId,
-  });
-}
-
 export function useLeaderboard(window?: LeaderboardWindow, limit?: number, user?: string) {
   return useQuery({
     queryKey: ["leaderboard", window, limit, user],
@@ -594,23 +515,6 @@ export function useFeedbackSummary(listingId: string | undefined) {
     queryFn: () => feedback.summary(listingId!),
   });
 }
-
-export function useEvalPenalties(scorecardId: string | undefined) {
-  return useQuery({
-    queryKey: ["eval", "penalties", scorecardId],
-    enabled: !!scorecardId,
-    queryFn: () => eval_.penalties(scorecardId!),
-  });
-}
-
-export function useEvalScorecard(scorecardId: string | undefined) {
-  return useQuery({
-    queryKey: ["eval", "scorecard", scorecardId],
-    enabled: !!scorecardId,
-    queryFn: () => eval_.show(scorecardId!),
-  });
-}
-
 // ── Archive ────────────────────────────────────────────────────────
 
 export function useArchiveAgent() {
