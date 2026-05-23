@@ -5,10 +5,13 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+from loguru import logger as optic
+
 
 def generate_hook_telemetry_config(
     hook_listing, ide: str, server_url: str = "http://localhost:8000", platform: str = ""
 ) -> dict:
+    optic.debug("generating hook telemetry config: ide={}, event={}", ide, hook_listing.event)
     if ide in ("kiro", "kiro-cli"):
         event = str(hook_listing.event)
         # Map Claude Code PascalCase events to Kiro camelCase
