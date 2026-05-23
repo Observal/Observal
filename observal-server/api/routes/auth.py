@@ -18,6 +18,7 @@ import jwt as pyjwt
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from loguru import logger as optic
 from redis.exceptions import RedisError
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -85,6 +86,7 @@ _COMMON_WEAK_PASSWORDS = frozenset(
 
 
 def _validate_password_strength(password: str) -> None:
+    optic.debug("_validate_password_strength called")
     if len(password) < 12:
         raise HTTPException(status_code=422, detail="Password must be at least 12 characters")
     if not re.search(r"[A-Z]", password):
@@ -117,6 +119,7 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
     Returns (access_token, refresh_token, expires_in).
     Fails open: tokens are still returned if Redis is temporarily unreachable.
     """
+    optic.debug("_issue_tokens: user_id={}, groups={}", user.id, groups)
     access_token, expires_in = create_access_token(user.id, user.role, groups=groups)
     refresh_token, jti = create_refresh_token(user.id, user.role, groups=groups)
 
@@ -135,6 +138,7 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
 
 @router.post("/init", response_model=InitResponse, dependencies=[Depends(require_password_auth)])
 async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
+    optic.debug("init_admin: email={}", req.email)
     count = await db.scalar(select(func.count()).select_from(User))
     if count and count > 0:
         raise HTTPException(status_code=400, detail="System already initialized")
@@ -173,6 +177,7 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
 @limiter.limit("1/minute")
 async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
     """Auto-create admin account on a fresh server. No input needed."""
+    optic.debug("bootstrap called")
     client_host = request.client.host if request.client else None
     if client_host not in ("127.0.0.1", "::1", "localhost"):
         raise HTTPException(status_code=403, detail="Bootstrap is only available from localhost")
@@ -217,6 +222,7 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
 @limiter.limit("5/minute")
 async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Login with email/username + password. Returns user info and JWT tokens."""
+    optic.debug("auth login attempt")
     source_ip, user_agent = _extract_request_info(request)
     identifier = req.email
     if "@" in identifier:
@@ -275,6 +281,7 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
 @router.get("/oauth/login")
 async def oauth_login(request: Request):
     """Initiates the OAuth SSO flow"""
+    optic.debug("oauth_login called")
     if not oauth.oidc:
         raise HTTPException(status_code=500, detail="OAuth is not configured on the server")
 
@@ -290,6 +297,7 @@ async def oauth_login(request: Request):
 @router.get("/oauth/callback")
 async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
     """Handles the OAuth SSO callback, authenticates, and redirects to frontend with credentials"""
+    optic.debug("oauth_callback called")
     if not oauth.oidc:
         raise HTTPException(status_code=500, detail="OAuth is not configured on the server")
 
@@ -412,6 +420,7 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
     The code is stored in Redis with a 30-second TTL and is deleted after
     a single successful use, preventing replay attacks.
     """
+    optic.debug("exchange_code called")
     try:
         redis = get_redis()
         redis_key = f"oauth_code:{req.code}"
@@ -459,6 +468,7 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
 
 @router.get("/whoami", response_model=UserResponse)
 async def whoami(current_user: User = Depends(get_current_user)):
+    optic.debug("auth whoami")
     await audit(current_user, "auth.whoami", resource_type="auth", resource_id=str(current_user.id))
     return UserResponse.model_validate(current_user)
 
@@ -475,6 +485,7 @@ async def logout(
     and marks the user_id as revoked so hook scripts stop sending telemetry.
     """
     # Extract the raw token from the Authorization header so we can get jti/exp
+    optic.debug("auth logout")
     auth_header = request.headers.get("authorization", "")
     token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
 
@@ -537,6 +548,7 @@ async def logout(
 @limiter.limit(ds.get_sync("security.rate_limit_auth", "10/minute"))
 async def issue_token(request: Request, req: TokenRequest, db: AsyncSession = Depends(get_db)):
     """Exchange email/username + password for JWT access + refresh tokens."""
+    optic.debug("issue_token: email={}", req.email)
     source_ip, user_agent = _extract_request_info(request)
     identifier = req.email
     if "@" in identifier:
@@ -584,6 +596,7 @@ async def issue_token(request: Request, req: TokenRequest, db: AsyncSession = De
 @limiter.limit(ds.get_sync("security.rate_limit_auth", "10/minute"))
 async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession = Depends(get_db)):
     """Exchange a valid refresh token for a new access token (and rotated refresh token)."""
+    optic.debug("auth token refresh")
     try:
         payload = decode_refresh_token(req.refresh_token)
     except pyjwt.InvalidTokenError as exc:
@@ -641,6 +654,7 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
 @limiter.limit(ds.get_sync("security.rate_limit_auth", "10/minute"))
 async def revoke_token(request: Request, req: RevokeRequest):
     """Revoke a refresh token so it can no longer be used."""
+    optic.debug("revoke_token called")
     try:
         payload = decode_refresh_token(req.refresh_token)
     except pyjwt.InvalidTokenError as exc:
@@ -669,6 +683,7 @@ async def change_password(
     current_user: User = Depends(get_current_user),
 ):
     """Change the current user's password. Clears forced-change flag if set."""
+    optic.debug("change_password: user initiated password change")
     if not current_user.verify_password(req.current_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
@@ -698,6 +713,7 @@ async def set_username(
     current_user: User = Depends(get_current_user),
 ):
     """Set or update the current user's username."""
+    optic.debug("set_username: req={}", req)
     existing = await db.execute(select(User).where(User.username == req.username))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Username already taken")
@@ -726,6 +742,7 @@ async def create_hooks_token(current_user: User = Depends(get_current_user)):
     Hooks need a static token in the environment that can't do refresh
     mid-session, so this endpoint issues a 30-day access token by default.
     """
+    optic.debug("create_hooks_token: user_id={}", current_user.id)
     token, expires_in = create_access_token(
         current_user.id,
         current_user.role,
@@ -768,6 +785,7 @@ _AVATAR_MAGIC_BYTES: dict[str, list[bytes]] = {
 
 
 def _validate_avatar_data_url(value: str) -> None:
+    optic.debug("_validate_avatar_data_url: value={}", value)
     if len(value) > _MAX_AVATAR_DATA_URL_LEN:
         raise HTTPException(status_code=422, detail="Image data too large")
 
@@ -803,6 +821,7 @@ async def upload_avatar(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    optic.debug("upload_avatar called")
     body = await request.json()
     avatar_url = body.get("avatar_url")
     if not avatar_url or not isinstance(avatar_url, str):
@@ -828,6 +847,7 @@ async def delete_avatar(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    optic.debug("delete_avatar called")
     current_user.avatar_url = None
     await db.commit()
     await db.refresh(current_user)
