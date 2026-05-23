@@ -15,7 +15,6 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 
 class InstallMethod(Enum):
@@ -32,11 +31,11 @@ class InstallInfo:
     method: InstallMethod
     path: Path  # Path to the observal binary/script
     writable: bool  # Whether current user can write to it
-    managed_by: Optional[str]  # e.g., "brew", "apt", "uv", "pip"
+    managed_by: str | None  # e.g., "brew", "apt", "uv", "pip"
 
 
 # Module-level cache (detect once per process)
-_cached_info: Optional[InstallInfo] = None
+_cached_info: InstallInfo | None = None
 
 
 def detect() -> InstallInfo:
@@ -125,7 +124,7 @@ def _check_uv_tool_list() -> bool:
         return False
 
 
-def _detect_system_pkg_mgr() -> Optional[str]:
+def _detect_system_pkg_mgr() -> str | None:
     """Detect which system package manager owns the observal binary."""
     checks = [
         (["dpkg", "-S", "observal"], "apt"),

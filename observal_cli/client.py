@@ -27,6 +27,7 @@ def _get_cli_version() -> str:
     """Get current CLI version string for request headers."""
     try:
         from importlib.metadata import version
+
         return version("observal-cli")
     except Exception:
         return "0.0.0"

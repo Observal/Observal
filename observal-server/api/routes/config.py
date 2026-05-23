@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from importlib.metadata import version as pkg_version
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Request
@@ -12,15 +11,9 @@ from sqlalchemy import select
 from api.deps import get_db
 from config import settings
 from models.enterprise_config import EnterpriseConfig
+from version import get_server_version
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
-
-
-def _server_version() -> str:
-    try:
-        return pkg_version("observal-server")
-    except Exception:
-        return "dev"
 
 
 @router.get("/version")
@@ -34,7 +27,7 @@ async def get_version():
     frontend_version = await ds.get("misc.frontend_version")
     recommended_cli = await ds.get("misc.recommended_cli_version")
 
-    server_ver = _server_version()
+    server_ver = get_server_version()
     return {
         "server_version": server_ver,
         "min_cli_version": min_cli,

@@ -1665,172 +1665,11 @@ def _get_server_min_version() -> str | None:
 
 
 def _do_install(install_info, target_version: str, direction: str) -> None:
-    """Execute the actual version change for uv/pip/binary installs."""
-    import hashlib
-    import os
-    import platform
-    import subprocess
-    import sys
-    import tempfile
-    from pathlib import Path
-    from urllib.parse import urlparse
+    """Execute the actual version change. Delegates to upgrade_executor module."""
+    # Lazy import to avoid circular dependency (upgrade_executor imports from version_check)
+    from observal_cli.upgrade_executor import execute
 
-    from observal_cli.install_detector import InstallMethod
-    from observal_cli.version_check import REDIRECT_ALLOWLIST, get_current_version
-
-    GITHUB_REPO = "BlazeUp-AI/Observal"
-
-    if install_info.method == InstallMethod.UV_TOOL:
-        with spinner(f"{direction.capitalize()}ing to v{target_version}..."):
-            result = subprocess.run(
-                ["uv", "tool", "install", f"observal-cli=={target_version}", "--force"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        if result.returncode != 0:
-            rprint(f"[red]{direction.capitalize()} failed:[/red] {result.stderr.strip()}")
-            raise typer.Exit(1)
-
-    elif install_info.method == InstallMethod.PIP:
-        with spinner(f"{direction.capitalize()}ing to v{target_version}..."):
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", f"observal-cli=={target_version}", "--quiet"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        if result.returncode != 0:
-            rprint(f"[red]{direction.capitalize()} failed:[/red] {result.stderr.strip()}")
-            raise typer.Exit(1)
-
-    elif install_info.method == InstallMethod.BINARY:
-        # Determine platform artifact name
-        system = platform.system().lower()
-        machine = platform.machine().lower()
-        if machine in ("x86_64", "amd64"):
-            arch = "x64"
-        elif machine in ("aarch64", "arm64"):
-            arch = "arm64"
-        else:
-            rprint(f"[red]Unsupported architecture: {machine}[/red]")
-            raise typer.Exit(1)
-
-        os_name = {"linux": "linux", "darwin": "macos", "windows": "windows"}.get(system)
-        if not os_name:
-            rprint(f"[red]Unsupported OS: {system}[/red]")
-            raise typer.Exit(1)
-
-        suffix = ".exe" if system == "windows" else ""
-        artifact_name = f"observal-{os_name}-{arch}{suffix}"
-
-        # Fetch release by tag
-        with spinner("Fetching release info..."):
-            resp = httpx.get(
-                f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/v{target_version}",
-                timeout=15,
-                headers={"Accept": "application/vnd.github+json"},
-            )
-        if resp.status_code != 200:
-            rprint(f"[red]Release v{target_version} not found on GitHub.[/red]")
-            raise typer.Exit(1)
-
-        release_data = resp.json()
-        assets = {a["name"]: a["browser_download_url"] for a in release_data.get("assets", [])}
-
-        if artifact_name not in assets:
-            rprint(f"[red]Binary '{artifact_name}' not found in release assets.[/red]")
-            raise typer.Exit(1)
-
-        # Download checksums
-        checksums: dict[str, str] = {}
-        if "checksums.txt" in assets:
-            ck_resp = httpx.get(assets["checksums.txt"], timeout=15, follow_redirects=True)
-            if ck_resp.status_code == 200:
-                for line in ck_resp.text.strip().splitlines():
-                    parts = line.split()
-                    if len(parts) == 2:
-                        checksums[parts[1]] = parts[0]
-
-        # Download binary (with redirect validation)
-        download_url = assets[artifact_name]
-        with spinner(f"Downloading {artifact_name}..."):
-            bin_resp = httpx.get(download_url, timeout=120, follow_redirects=True)
-
-        if bin_resp.status_code != 200:
-            rprint("[red]Download failed.[/red]")
-            raise typer.Exit(1)
-
-        # Validate final URL domain
-        final_host = urlparse(str(bin_resp.url)).hostname
-        if final_host and final_host not in REDIRECT_ALLOWLIST:
-            rprint(f"[red]Download redirected to untrusted host: {final_host}[/red]")
-            raise typer.Exit(1)
-
-        # Verify checksum
-        actual_hash = hashlib.sha256(bin_resp.content).hexdigest()
-        expected_hash = checksums.get(artifact_name)
-        if expected_hash:
-            if actual_hash != expected_hash:
-                rprint("[red]✗ CHECKSUM MISMATCH — download may be corrupted or tampered.[/red]")
-                rprint(f"  Expected: {expected_hash}")
-                rprint(f"  Got:      {actual_hash}")
-                raise typer.Exit(1)
-            rprint(f"[dim]✓ SHA-256 verified: {actual_hash[:16]}...[/dim]")
-        else:
-            rprint("[yellow]⚠ No checksum available for verification.[/yellow]")
-            if not typer.confirm("Install without verification?", default=False):
-                raise typer.Abort()
-
-        # Backup current binary
-        target_path = install_info.path
-        if not install_info.writable:
-            rprint(f"[red]Cannot write to {target_path} — permission denied.[/red]")
-            raise typer.Exit(1)
-
-        backup_dir = config.CONFIG_DIR / "bin"
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        backup_path = backup_dir / "observal.prev"
-        if target_path.exists():
-            import shutil
-
-            shutil.copy2(str(target_path), str(backup_path))
-
-        # Atomic replacement
-        fd, tmp_path = tempfile.mkstemp(
-            dir=target_path.parent,
-            prefix=".observal-update-",
-            suffix=suffix,
-        )
-        try:
-            os.write(fd, bin_resp.content)
-            os.close(fd)
-            os.chmod(tmp_path, 0o755)
-
-            if system == "windows":
-                old_path = target_path.with_suffix(".old")
-                target_path.rename(old_path)
-                Path(tmp_path).rename(target_path)
-            else:
-                Path(tmp_path).rename(target_path)
-        except Exception as e:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            rprint(f"[red]Failed to replace binary: {e}[/red]")
-            raise typer.Exit(1)
-    else:
-        rprint(f"[red]Cannot {direction} — unsupported install method: {install_info.method.value}[/red]")
-        raise typer.Exit(1)
-
-    # Post-install verification
-    try:
-        result = subprocess.run(["observal", "--version"], capture_output=True, text=True, timeout=10)
-        new_version = result.stdout.strip().split()[-1] if result.returncode == 0 else "unknown"
-        rprint(f"[green]✓ {direction.capitalize()}d to v{new_version}[/green]")
-    except Exception:
-        rprint(f"[green]✓ {direction.capitalize()} complete. Restart your shell to use the new version.[/green]")
+    execute(install_info, target_version, direction, spinner)
 
 
 @self_app.command()
@@ -1946,6 +1785,7 @@ def downgrade(
             table.add_row(r["version"], r.get("published_at", "")[:10], status)
 
         from rich.console import Console
+
         Console().print(table)
         raise typer.Exit(0)
 
@@ -2055,7 +1895,7 @@ def status():
         latest = rel["latest_version"]
         if version_check._is_newer(latest, current):
             rprint(f"  Latest:   [green]v{latest}[/green] (update available)")
-            rprint(f"\n  Run: [bold]observal self upgrade[/bold]")
+            rprint("\n  Run: [bold]observal self upgrade[/bold]")
         else:
             rprint(f"  Latest:   [green]v{latest}[/green] (up to date)")
     else:

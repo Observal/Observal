@@ -28,11 +28,11 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 import httpx
 
-from observal_cli.config import CONFIG_DIR, load as load_config
+from observal_cli.config import CONFIG_DIR
+from observal_cli.config import load as load_config
 
 CACHE_FILE = CONFIG_DIR / "version_cache.json"
 GITHUB_REPO_DEFAULT = "BlazeUp-AI/Observal"
@@ -42,22 +42,25 @@ CHECK_INTERVAL_DEFAULT = 86400  # 24 hours
 CHECK_TIMEOUT = 3  # seconds — must never block CLI
 MAX_RESPONSE_SIZE = 1_048_576  # 1MB
 ASSET_NAME_RE = re.compile(r"^observal-[a-z]+-[a-z0-9]+(\.exe)?$")
-REDIRECT_ALLOWLIST = frozenset([
-    "github.com",
-    "objects.githubusercontent.com",
-    "github-releases.githubusercontent.com",
-])
+REDIRECT_ALLOWLIST = frozenset(
+    [
+        "github.com",
+        "objects.githubusercontent.com",
+        "github-releases.githubusercontent.com",
+    ]
+)
 
 
 @dataclass(frozen=True)
 class UpdateAvailable:
-    """Represents a newer version that the user should upgrade to."""
+    """Represents a version mismatch that the user should act on."""
 
     current: str
-    latest: str
+    latest: str  # target version (could be newer OR older for enterprise)
     release_url: str
     published_at: str
     source: str  # "server" or "github"
+    direction: str = "upgrade"  # "upgrade" or "downgrade"
 
 
 def get_current_version() -> str:
@@ -124,12 +127,19 @@ def _cache_hmac(data: bytes) -> str:
 # ── Cache read/write ────────────────────────────────────────────
 
 
-def _read_cache() -> Optional[dict]:
-    """Read and verify cache integrity. Returns None if missing/corrupt/tampered."""
+def _read_cache() -> dict | None:
+    """Read and verify cache integrity. Returns None if missing/corrupt/tampered.
+
+    Safe against concurrent writes: on POSIX, _write_cache uses atomic rename.
+    On Windows where rename is not atomic, a partial read will produce invalid
+    JSON which is caught here and treated as a cache miss.
+    """
     try:
         if not CACHE_FILE.exists():
             return None
         raw = CACHE_FILE.read_text()
+        if not raw.strip():
+            return None  # Empty file (partial write on Windows)
         data = json.loads(raw)
         if not isinstance(data, dict):
             return None
@@ -139,9 +149,9 @@ def _read_cache() -> Optional[dict]:
             payload = json.dumps(data, sort_keys=True).encode()
             expected = _cache_hmac(payload)
             if not _hmac.compare_digest(stored_hmac, expected):
-                return None  # Tampered — treat as missing
+                return None  # Tampered - treat as missing
         return data
-    except (json.JSONDecodeError, OSError, ValueError):
+    except (json.JSONDecodeError, OSError, ValueError, UnicodeDecodeError):
         return None
 
 
@@ -162,7 +172,7 @@ def _write_cache(data: dict) -> None:
         os.umask(old_umask)
 
 
-def _should_check(cache: Optional[dict], interval: int) -> bool:
+def _should_check(cache: dict | None, interval: int) -> bool:
     """Determine if a fresh check is needed based on cache staleness."""
     if cache is None:
         return True
@@ -183,7 +193,7 @@ def _should_check(cache: Optional[dict], interval: int) -> bool:
 # ── Fetch from server (enterprise mode) ────────────────────────
 
 
-def _fetch_from_server(server_url: str, token: str) -> Optional[dict]:
+def _fetch_from_server(server_url: str, token: str) -> dict | None:
     """Check connected server for recommended CLI version.
 
     Returns dict with latest_version, release_url, source="server" or None.
@@ -229,7 +239,7 @@ def _fetch_from_server(server_url: str, token: str) -> Optional[dict]:
 # ── Fetch from GitHub (community mode) ─────────────────────────
 
 
-def _fetch_from_github(include_pre: bool = False) -> Optional[dict]:
+def _fetch_from_github(include_pre: bool = False) -> dict | None:
     """Fetch latest release from GitHub Releases API.
 
     Returns dict with latest_version, release_url, etc. or None on failure.
@@ -365,7 +375,7 @@ def verify_server_image_exists(version: str) -> bool:
 # ── Resolve update source ───────────────────────────────────────
 
 
-def _resolve_update_source() -> Optional[dict]:
+def _resolve_update_source() -> dict | None:
     """Determine check mode and fetch the target version.
 
     - If server_url configured + reachable: server mode (enterprise)
@@ -388,7 +398,7 @@ def _resolve_update_source() -> Optional[dict]:
 # ── Public API ──────────────────────────────────────────────────
 
 
-def maybe_check() -> Optional[UpdateAvailable]:
+def maybe_check() -> UpdateAvailable | None:
     """Check for updates if enough time has passed since last check.
 
     Returns UpdateAvailable if a newer version exists, None otherwise.
@@ -408,13 +418,26 @@ def maybe_check() -> Optional[UpdateAvailable]:
             # Use cached result
             if cache and cache.get("latest_version"):
                 current = get_current_version()
-                if _is_newer(cache["latest_version"], current):
+                target = cache["latest_version"]
+                source = cache.get("source", "github")
+                if _is_newer(target, current):
                     return UpdateAvailable(
                         current=current,
-                        latest=cache["latest_version"],
+                        latest=target,
                         release_url=cache.get("release_url", ""),
                         published_at=cache.get("published_at", ""),
-                        source=cache.get("source", "github"),
+                        source=source,
+                        direction="upgrade",
+                    )
+                elif source == "server" and target != current:
+                    # Enterprise: server recommends an older/different version
+                    return UpdateAvailable(
+                        current=current,
+                        latest=target,
+                        release_url="",
+                        published_at=cache.get("published_at", ""),
+                        source=source,
+                        direction="downgrade",
                     )
             return None
 
@@ -428,24 +451,39 @@ def maybe_check() -> Optional[UpdateAvailable]:
             return None
 
         # Update cache
-        _write_cache({
-            "last_checked": now_iso,
-            "latest_version": release["latest_version"],
-            "release_url": release.get("release_url", ""),
-            "published_at": release.get("published_at", ""),
-            "source": release.get("source", "github"),
-            "server_version": release.get("server_version", ""),
-            "fetch_failed": False,
-        })
+        _write_cache(
+            {
+                "last_checked": now_iso,
+                "latest_version": release["latest_version"],
+                "release_url": release.get("release_url", ""),
+                "published_at": release.get("published_at", ""),
+                "source": release.get("source", "github"),
+                "server_version": release.get("server_version", ""),
+                "fetch_failed": False,
+            }
+        )
 
         current = get_current_version()
-        if _is_newer(release["latest_version"], current):
+        target = release["latest_version"]
+        source = release.get("source", "github")
+        if _is_newer(target, current):
             return UpdateAvailable(
                 current=current,
-                latest=release["latest_version"],
+                latest=target,
                 release_url=release.get("release_url", ""),
                 published_at=release.get("published_at", ""),
-                source=release.get("source", "github"),
+                source=source,
+                direction="upgrade",
+            )
+        elif source == "server" and target != current:
+            # Enterprise: server recommends a different (likely older) version
+            return UpdateAvailable(
+                current=current,
+                latest=target,
+                release_url="",
+                published_at=release.get("published_at", ""),
+                source=source,
+                direction="downgrade",
             )
         return None
     except Exception:
@@ -477,12 +515,14 @@ def fetch_all_releases(include_pre: bool = False) -> list[dict]:
                 if not include_pre and r.get("prerelease"):
                     continue
                 tag = r.get("tag_name", "").lstrip("v")
-                results.append({
-                    "version": tag,
-                    "published_at": r.get("published_at", ""),
-                    "prerelease": r.get("prerelease", False),
-                    "url": r.get("html_url", ""),
-                })
+                results.append(
+                    {
+                        "version": tag,
+                        "published_at": r.get("published_at", ""),
+                        "prerelease": r.get("prerelease", False),
+                        "url": r.get("html_url", ""),
+                    }
+                )
         except Exception:
             break
     return results

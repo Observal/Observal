@@ -10,6 +10,7 @@
 
 """Observal CLI: MCP Server & Agent Registry."""
 
+import atexit
 import logging
 import os
 import sys
@@ -158,12 +159,13 @@ app.add_typer(doctor_app, name="doctor")
 app.add_typer(support_app, name="support")
 app.add_typer(migrate_app, name="migrate")
 
+# Server management (embedded + Docker)
+try:
+    from observal_cli.cmd_server import server_app
 
-if __name__ == "__main__":
-    try:
-        app()
-    finally:
-        _show_update_banner()
+    app.add_typer(server_app, name="server")
+except ImportError:
+    pass  # server deps not installed
 
 
 def _show_update_banner() -> None:
@@ -192,10 +194,16 @@ def _show_update_banner() -> None:
         from rich import print as _rprint
 
         if update.source == "server":
-            _rprint(
-                f"\n[dim]Your server is v{update.latest}. "
-                f"Match it: [bold]observal self upgrade --version {update.latest}[/bold][/dim]"
-            )
+            if update.direction == "downgrade":
+                _rprint(
+                    f"\n[yellow]Your server recommends v{update.latest}. "
+                    f"Downgrade: [bold]observal self downgrade --version {update.latest}[/bold][/yellow]"
+                )
+            else:
+                _rprint(
+                    f"\n[dim]Your server is v{update.latest}. "
+                    f"Match it: [bold]observal self upgrade --version {update.latest}[/bold][/dim]"
+                )
         else:
             _rprint(
                 f"\n[dim]Update available: v{update.current} \u2192 "
@@ -204,3 +212,10 @@ def _show_update_banner() -> None:
             )
     except Exception:
         pass  # Never crash the CLI for a version check
+
+
+# Register update banner as atexit handler so it runs via any entry point
+atexit.register(_show_update_banner)
+
+if __name__ == "__main__":
+    app()
