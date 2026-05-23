@@ -8,19 +8,11 @@ from __future__ import annotations
 from schemas.ide_registry import IDE_REGISTRY
 from services.ide import ConfigContext, register_adapter
 from services.ide.helpers import (
+    _KIRO_EVENT_MAP,
     _collect_hook_script_files,
     _generate_skill_file,
     _wrap_kiro_prompt,
 )
-
-# Map from internal PascalCase event names to Kiro camelCase event names.
-_KIRO_EVENT_MAP = {
-    "SessionStart": "agentSpawn",
-    "UserPromptSubmit": "userPromptSubmit",
-    "PreToolUse": "preToolUse",
-    "PostToolUse": "postToolUse",
-    "Stop": "stop",
-}
 
 
 class KiroAdapter:

@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from schemas.ide_registry import IDE_REGISTRY, get_valid_ides
 from services.agent_resolver import ResolvedAgent, ResolvedComponent
-from services.ide.helpers import _wrap_kiro_prompt
+from services.ide.helpers import _KIRO_EVENT_MAP, _wrap_kiro_prompt
 from services.model_resolver import resolve_saved_value
 from services.shared.utils import sanitize_name as _sanitize_name
 
@@ -666,13 +666,6 @@ def _generate_gemini_cli(manifest: AgentManifest) -> IdeAgentConfig:
     )
 
 
-_KIRO_EVENT_MAP = {
-    "SessionStart": "agentSpawn",
-    "UserPromptSubmit": "userPromptSubmit",
-    "PreToolUse": "preToolUse",
-    "PostToolUse": "postToolUse",
-    "Stop": "stop",
-}
 
 
 def _build_kiro_hooks(safe_name: str, observal_url: str, platform: str = "") -> dict:
