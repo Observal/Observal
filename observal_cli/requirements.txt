@@ -4,3 +4,4 @@
 typer
 httpx
 rich
+loguru>=0.7.0
