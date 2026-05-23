@@ -10,6 +10,8 @@ for user-submitted registry hooks across all 8 IDEs.
 
 from __future__ import annotations
 
+from loguru import logger as optic
+
 from schemas.ide_registry import IDE_REGISTRY
 
 
@@ -28,6 +30,7 @@ def generate_hook_install_config(
       - source_fetch: git fetch info for multi-file hooks
       - notes: human-readable notes
     """
+    optic.debug("generating hook install config: hook={}, ide={}", hook_listing.name, ide)
     ide_info = IDE_REGISTRY.get(ide)
     if not ide_info:
         return {
@@ -62,7 +65,7 @@ def generate_hook_install_config(
             ],
         }
 
-    # OpenCode uses plugins, not command hooks — manual setup only
+    # OpenCode uses plugins, not command hooks - manual setup only
     if hook_type == "plugin":
         return _generate_plugin_instructions(hook_listing, ide_info, ide_event)
 
@@ -84,7 +87,7 @@ def generate_hook_install_config(
     actual_command = command
 
     if script_content and script_filename:
-        # Tier 2: single-file script — write to IDE's hooks dir
+        # Tier 2: single-file script - write to IDE's hooks dir
         script_path = f"{hook_scripts_dir}/{script_filename}"
         actual_command = script_path
         files.append(
@@ -142,6 +145,7 @@ def _build_config_snippet(
 ) -> dict:
     """Build the IDE-specific config snippet."""
 
+    optic.debug("_build_config_snippet: ide={}, ide_info={}", ide, ide_info)
     if ide == "claude-code":
         hook_entry: dict = {"type": handler_type, "command": command}
         if timeout:
@@ -183,6 +187,7 @@ def _build_config_snippet(
 
 def _generate_plugin_instructions(hook_listing, ide_info: dict, ide_event: str) -> dict:
     """Generate manual setup instructions for plugin-based IDEs (OpenCode)."""
+    optic.debug("_generate_plugin_instructions: hook_listing={}, ide_info={}", hook_listing, ide_info)
     handler_config = getattr(hook_listing, "handler_config", {}) or {}
     command = handler_config.get("command", "")
 
