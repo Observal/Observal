@@ -32,7 +32,7 @@ def validate_mcp_command(command: str, args: list[str] | None = None) -> None:
 _DOLLAR_VAR = re.compile(r"\$\{([A-Z][A-Z0-9_]+)\}|\$([A-Z][A-Z0-9_]+)")
 
 
-def _gemini_settings(observal_url: str) -> dict:
+def _gemini_settings() -> dict:
     """Gemini CLI .gemini/settings.json telemetry block.
 
     Native OTLP is disabled because Gemini CLI hardcodes gRPC export
@@ -172,7 +172,7 @@ def generate_config(
         if ide == "gemini-cli":
             return {
                 "mcpServers": {name: {"url": proxy_url, "env": server_env}},
-                "gemini_settings_snippet": _gemini_settings(observal_url),
+                "gemini_settings_snippet": _gemini_settings(),
             }
         if ide == "codex":
             return {
@@ -212,7 +212,7 @@ def generate_config(
             "mcpServers": {
                 name: {"command": "observal-shim", "args": shim_args, "env": server_env, **auto_approve_fields}
             },
-            "gemini_settings_snippet": _gemini_settings(observal_url),
+            "gemini_settings_snippet": _gemini_settings(),
         }
     if ide == "codex":
         return {

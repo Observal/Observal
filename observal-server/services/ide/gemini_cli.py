@@ -21,7 +21,6 @@ class GeminiCliAdapter:
         options = ctx.options
         mcp_configs = ctx.mcp_configs
         rules_content = ctx.rules_content
-        effective_otlp_http = ctx.effective_otlp_http
 
         gemini_spec = IDE_REGISTRY["gemini-cli"]
         gemini_scope = options.get("scope", gemini_spec["default_scope"])
@@ -41,7 +40,7 @@ class GeminiCliAdapter:
                 "path": hooks_path,
                 "content": _gemini_hooks_config(),
             },
-            "gemini_settings_snippet": _gemini_settings(effective_otlp_http),
+            "gemini_settings_snippet": _gemini_settings(),
             "scope": gemini_scope,
         }
 

@@ -1437,14 +1437,14 @@ class TestGeminiConfigGenerator:
     def test_gemini_settings_disables_native_otlp(self):
         from services.config_generator import _gemini_settings
 
-        settings = _gemini_settings("http://custom-host:8000")
+        settings = _gemini_settings()
         assert settings["telemetry"]["enabled"] is False
         assert settings["telemetry"]["logPrompts"] is True
 
     def test_gemini_settings_no_target(self):
         from services.config_generator import _gemini_settings
 
-        settings = _gemini_settings("http://localhost:8000")
+        settings = _gemini_settings()
         assert "target" not in settings["telemetry"]
         assert "otlpEndpoint" not in settings["telemetry"]
 
