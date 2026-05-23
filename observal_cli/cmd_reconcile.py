@@ -24,6 +24,8 @@ import json
 import time
 from pathlib import Path
 
+from loguru import logger
+
 from observal_cli.sessions.claude_code import find_sessions_dir as _find_claude_sessions_dir_impl
 from observal_cli.sessions.kiro import find_sessions_dir as _find_kiro_sessions_dir_impl
 
@@ -213,6 +215,7 @@ def find_stale_sessions(home: Path | None = None) -> list[dict]:
     - The JSONL mtime is between 2 minutes and 7 days old
       (avoids touching an actively-running session)
     """
+    logger.debug("find_stale_sessions: home={}", home)
     if home is None:
         home = Path.home()
 
