@@ -8,7 +8,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Session listing and detail endpoints — backed by session_events table.
+"""Session listing and detail endpoints - backed by session_events table.
 
 Reads from the session_events ClickHouse table populated by the
 /api/v1/ingest/session endpoint.  Uses session parsers to transform
@@ -21,6 +21,7 @@ import uuid as _uuid
 
 from fastapi import APIRouter, Depends, Query
 from fastapi_cache.decorator import cache
+from loguru import logger as optic
 from sqlalchemy import select
 
 import services.dynamic_settings as ds
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 
 
 async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
+    optic.debug("_ch_json: sql={}, params={}", sql, params)
     try:
         r = await _query(f"{sql} FORMAT JSON", params)
         if r.status_code == 200:
@@ -45,11 +47,13 @@ async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
 
 
 def _is_admin_user(user: User) -> bool:
+    optic.debug("_is_admin_user: user_id={}", user.id)
     return user.role in (UserRole.admin, UserRole.super_admin)
 
 
 def _has_admin_trace_access(user: User) -> bool:
     """Check if user has admin-level trace access."""
+    optic.debug("_has_admin_trace_access: user_id={}", user.id)
     if not _is_admin_user(user):
         return False
     if user.role == UserRole.super_admin:
@@ -60,6 +64,7 @@ def _has_admin_trace_access(user: User) -> bool:
 @router.get("/crypto/public-key")
 async def get_public_key():
     """Return the server's public key for client-side ECIES encryption."""
+    optic.debug("get_public_key called")
     from services.crypto import get_key_manager
 
     km = get_key_manager()
@@ -74,9 +79,18 @@ async def list_sessions(
     days: int | None = Query(None),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("list_sessions: status={}, platform={}", status, platform)
     is_admin = _has_admin_trace_access(current_user)
     uid_str = str(current_user.id)
     capped_days = min(days, 365) if days is not None and days > 0 else days
+
+    optic.debug(
+        "list_sessions: user={}, is_admin={}, platform={}, days={}",
+        uid_str,
+        is_admin,
+        platform,
+        capped_days,
+    )
 
     rows = await _list_sessions_query(
         platform=platform,
@@ -176,6 +190,7 @@ async def _list_sessions_query(
     FINAL merges parts at read time; at ~1 row per session this is fast and
     avoids illegal nested-aggregation errors with SimpleAggregateFunction columns.
     """
+    optic.debug("_list_sessions_query: platform={}, days={}, is_admin={}", platform, days, is_admin)
     where_parts = ["session_id != ''", "parent_session_id = ''", "prompt_count > 0"]
     params: dict[str, str] = {}
 
@@ -219,6 +234,7 @@ async def _list_sessions_query(
 async def sessions_summary(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    optic.debug("sessions_summary: user_id={}", current_user.id)
     is_admin = _has_admin_trace_access(current_user)
     user_filter = ""
     params: dict[str, str] = {}
@@ -226,7 +242,7 @@ async def sessions_summary(
         user_filter = "AND user_id = {uid:String} "
         params["param_uid"] = str(current_user.id)
 
-    # Use pre-aggregated session_stats_agg — avoids a full session_events FINAL scan.
+    # Use pre-aggregated session_stats_agg - avoids a full session_events FINAL scan.
     # AggregatingMergeTree + GROUP BY merges partial aggregates at read time; no FINAL needed.
     rows = await _ch_json(
         "SELECT "
@@ -250,9 +266,10 @@ async def sessions_summary(
 @router.get("/stats")
 @cache(expire=ds.get_sync_int("data.cache_ttl_default", 30), namespace="otel")
 async def sessions_stats(current_user: User = Depends(require_role(UserRole.admin))):
-    # Use pre-aggregated session_stats_agg — avoids a full session_events FINAL scan.
+    # Use pre-aggregated session_stats_agg - avoids a full session_events FINAL scan.
     # prompt_count / tool_call_count in the MV correspond to 'user_prompt' / 'tool_call'
     # event types (legacy otel names 'user' / 'tool_use' are not present in V3 events).
+    optic.debug("sessions_stats: user_id={}", current_user.id)
     rows = await _ch_json(
         "SELECT "
         "count() AS total_sessions, "
@@ -283,6 +300,7 @@ async def sessions_stats(current_user: User = Depends(require_role(UserRole.admi
 
 @router.get("/{session_id}")
 async def get_session(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
+    optic.debug("get_session: session_id={}", session_id)
     is_admin = _has_admin_trace_access(current_user)
     params: dict[str, str] = {"param_sid": session_id}
 
@@ -296,7 +314,7 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
         if not ownership:
             return {"session_id": session_id, "ide": "", "events": []}
 
-    # Fan out both FINAL scans in parallel — wall time ≈ max(t1, t2) not t1+t2.
+    # Fan out both FINAL scans in parallel - wall time ≈ max(t1, t2) not t1+t2.
     # do_not_merge_across_partitions_select_final=1 lets CH process each monthly
     # partition independently instead of a single cross-partition merge pass.
     # (ClickHouse docs benchmark: 2.3s → 0.99s on 59M rows with yearly partitioning)
@@ -336,7 +354,7 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
 
     # sub_rows_all was fetched concurrently above alongside the main query.
     # Each subagent's first row carries parent_uuid pointing at the Agent
-    # tool_call in the parent that spawned it — the frontend uses this to
+    # tool_call in the parent that spawned it - the frontend uses this to
     # nest the subagent inline at the right position.
     subagent_sessions = []
     if sub_rows_all:
@@ -374,6 +392,7 @@ async def bind_session_agent(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Explicitly bind a session to an agent name."""
+    optic.debug("bind_session_agent: session_id={}, agent_name={}", session_id, agent_name)
     is_admin = _is_admin_user(current_user)
     if not is_admin:
         params = {"param_sid": session_id, "param_uid": str(current_user.id)}
