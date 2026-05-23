@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from loguru import logger
+
 from schemas.constants import IDE_FEATURE_MATRIX
 
 
@@ -22,6 +24,7 @@ def infer_required_features(
     Returns:
         Sorted list of required feature strings (e.g. ``["mcp_servers", "rules"]``).
     """
+    logger.debug("infer_required_features: agent={}, skill_listings={}", agent, skill_listings)
     features: set[str] = set()
     skill_listings = skill_listings or {}
 
@@ -43,5 +46,6 @@ def infer_required_features(
 
 def compute_supported_ides(required_features: list[str]) -> list[str]:
     """Return sorted IDE names that support all *required_features*."""
+    logger.debug("compute_supported_ides: required_features={}", required_features)
     required = set(required_features)
     return sorted(ide for ide, capabilities in IDE_FEATURE_MATRIX.items() if required.issubset(capabilities))
