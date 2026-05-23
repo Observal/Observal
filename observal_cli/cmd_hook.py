@@ -173,7 +173,18 @@ def hook_list(
     search: str | None = typer.Option(None, "--search", "-s"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
-    """List approved hooks."""
+    """List approved hooks from the registry.
+
+    Returns all hooks visible to you (approved, plus your own pending/draft
+    submissions). Supports filtering by event type and free-text search.
+
+    \b
+    Examples:
+      observal registry hook list
+      observal registry hook list --event Stop
+      observal registry hook list --search guard --output json
+      observal registry hook list -o plain
+    """
     params = {}
     if event:
         params["event"] = event
@@ -218,7 +229,19 @@ def hook_show(
     hook_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show hook details."""
+    """Show detailed information for a single hook.
+
+    Displays event type, handler config, execution mode, owner, status,
+    and any associated script or source URL. Accepts ID, name, row number
+    from a previous list, or an @alias.
+
+    \b
+    Examples:
+      observal registry hook show my-hook
+      observal registry hook show 1              # Row number from last list
+      observal registry hook show @guard         # Using alias
+      observal registry hook show abc123 -o json
+    """
     resolved = config.resolve_alias(hook_id)
     with spinner():
         item = client.get(f"/api/v1/hooks/{resolved}")
@@ -263,7 +286,15 @@ def hook_install(
     """Install a hook for a specific IDE.
 
     Writes script files and merges hook config into the IDE's settings.
-    Use --raw to just output JSON without writing anything.
+    Use --raw to just output JSON without writing anything. The hook
+    config is merged into the IDE's hooks file (existing hooks are preserved).
+
+    \b
+    Examples:
+      observal registry hook install my-hook --ide claude-code
+      observal registry hook install @guard --ide kiro --dir ./project
+      observal registry hook install my-hook --ide cursor --raw
+      observal registry hook install my-hook --ide claude-code --platform darwin
     """
     resolved = config.resolve_alias(hook_id)
     with spinner(f"Generating {ide} config..."):
@@ -340,7 +371,19 @@ def hook_edit(
     version: str | None = typer.Option(None, "--version", "-v", help="New version string"),
     event: str | None = typer.Option(None, "--event", "-e", help="New event type"),
 ):
-    """Edit a draft, rejected, or pending hook submission."""
+    """Edit a draft, rejected, or pending hook submission.
+
+    Acquires an edit lock, applies changes, then releases the lock.
+    You can update individual fields with flags or supply a full JSON
+    file with --from-file. Only the hook owner can edit.
+
+    \b
+    Examples:
+      observal registry hook edit my-hook --description "Updated guard hook"
+      observal registry hook edit my-hook --event Stop --version 1.1.0
+      observal registry hook edit @guard --from-file updated-hook.json
+      observal registry hook edit 1 --name new-name
+    """
     resolved = config.resolve_alias(hook_id)
     if from_file:
         try:
@@ -391,7 +434,17 @@ def hook_delete(
     hook_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
-    """Delete a hook."""
+    """Delete a hook from the registry.
+
+    Permanently removes the hook listing. Prompts for confirmation
+    unless --yes is passed. Only the hook owner or an admin can delete.
+
+    \b
+    Examples:
+      observal registry hook delete my-hook
+      observal registry hook delete @guard --yes
+      observal registry hook delete abc12345
+    """
     resolved = config.resolve_alias(hook_id)
     if not yes:
         with spinner():

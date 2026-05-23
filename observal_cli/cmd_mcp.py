@@ -1098,10 +1098,33 @@ def submit(
 ):
     """Submit an MCP server to the registry.
 
-    By default, paste your server's JSON config (the same format you use in
-    your IDE). Use --git to analyze a git repository instead.
+    By default, opens an interactive JSON paste prompt where you provide
+    the same config format used in your IDE (e.g. mcpServers block). Use
+    --git to analyze a git repository instead, which auto-detects tools,
+    env vars, and startup commands.
 
     Only submit servers you created or are the point-of-contact for.
+    Submissions go into a pending review queue unless saved as a draft.
+    You can install your own submissions immediately without approval.
+
+    Environment variables containing $VAR or ${VAR} patterns in args or
+    header values are auto-detected and become install-time prompts.
+
+    Examples:
+        # Interactive JSON paste (default)
+        observal registry mcp submit
+
+        # Analyze a git repo with all defaults accepted
+        observal registry mcp submit --git https://github.com/org/mcp-server --yes
+
+        # Submit with name and category pre-filled
+        observal registry mcp submit --git https://github.com/org/server -n my-server -c ai
+
+        # Save as draft for later editing
+        observal registry mcp submit --draft
+
+        # Submit an existing draft for review
+        observal registry mcp submit --submit my-server
     """
     if draft and submit_draft:
         rprint(
@@ -1133,7 +1156,32 @@ def list_mcps(
     sort: str = typer.Option("name", "--sort", help="Sort by: name, category, version"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
-    """List approved MCP servers."""
+    """List approved MCP servers in the registry.
+
+    Shows publicly approved servers by default. Use --search for keyword
+    filtering, --category to narrow by type, and --sort to change ordering.
+    Results are cached locally so you can reference them by row number in
+    subsequent show/install/delete commands.
+
+    Interactive mode (--interactive) opens a fuzzy-search picker and
+    displays full details of the selected server.
+
+    Examples:
+        # List all approved servers
+        observal registry mcp list
+
+        # Search for database-related servers
+        observal registry mcp list --search postgres
+
+        # Filter by category, output as JSON
+        observal registry mcp list --category ai --output json
+
+        # Interactive fuzzy picker
+        observal registry mcp list --interactive
+
+        # Sort by category, limit to 10 results
+        observal registry mcp list --sort category --limit 10
+    """
     _list_impl(category, search, limit, sort, output, interactive=interactive)
 
 
@@ -1141,7 +1189,22 @@ def list_mcps(
 def mcp_my(
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
-    """List your own MCP servers (all statuses)."""
+    """List your own MCP servers across all statuses.
+
+    Shows servers you submitted regardless of approval state (pending,
+    approved, rejected, draft). Useful for checking submission status
+    or finding draft IDs to resume editing.
+
+    Examples:
+        # List your servers in a table
+        observal registry mcp my
+
+        # JSON output for scripting
+        observal registry mcp my --output json
+
+        # Plain output (one per line)
+        observal registry mcp my --output plain
+    """
     with spinner("Fetching your MCPs..."):
         data = client.get("/api/v1/mcps/my")
     if not data:
@@ -1179,7 +1242,25 @@ def show(
     mcp_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json"),
 ):
-    """Show full details of an MCP server."""
+    """Show full details of an MCP server.
+
+    Displays metadata, validation results, supported IDEs, env vars,
+    and timestamps for a given server. Accepts a UUID, server name,
+    row number from the last list command, or an @alias.
+
+    Examples:
+        # Show by name
+        observal registry mcp show my-server
+
+        # Show by row number from last list
+        observal registry mcp show 3
+
+        # Show by alias
+        observal registry mcp show @fav
+
+        # JSON output
+        observal registry mcp show my-server --output json
+    """
     _show_impl(mcp_id, output)
 
 
@@ -1189,7 +1270,28 @@ def install(
     ide: str = typer.Option(..., "--ide", "-i", help="Target IDE"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only (for piping)"),
 ):
-    """Get install config snippet for an MCP server."""
+    """Generate an install config snippet for an MCP server.
+
+    Produces IDE-specific configuration that you paste into your editor's
+    MCP settings file. Prompts for required environment variables and
+    headers interactively (unless --raw is used).
+
+    The --raw flag outputs bare JSON suitable for piping directly into
+    config files, with placeholder values for env vars.
+
+    Examples:
+        # Generate config for Claude Code
+        observal registry mcp install my-server --ide claude-code
+
+        # Generate for Cursor and pipe to config file
+        observal registry mcp install my-server --ide cursor --raw > .cursor/mcp.json
+
+        # Install by row number for VS Code
+        observal registry mcp install 2 --ide vscode
+
+        # Install using an alias
+        observal registry mcp install @db --ide kiro
+    """
     _install_impl(mcp_id, ide, raw)
 
 
@@ -1205,7 +1307,32 @@ def edit_mcp(
     command: str | None = typer.Option(None, "--command", help="New command"),
     url: str | None = typer.Option(None, "--url", help="New URL"),
 ):
-    """Edit a draft, rejected, or pending MCP server submission."""
+    """Edit an MCP server submission.
+
+    For draft, pending, or rejected listings: edits the submission in place.
+    For approved listings: publishes a new version with a semver bump
+    (you will be prompted to choose patch, minor, or major).
+
+    Without flags, opens an interactive JSON paste prompt (same format as
+    submit). You can also pass individual fields via options, or load a
+    complete update from a JSON file with --from-file.
+
+    Examples:
+        # Interactive JSON paste edit
+        observal registry mcp edit my-server
+
+        # Update description and category
+        observal registry mcp edit my-server -d "New description" -c databases
+
+        # Load updates from a file
+        observal registry mcp edit my-server --from-file updates.json
+
+        # Bump version on an approved listing
+        observal registry mcp edit my-server --version 1.2.0
+
+        # Change the git URL
+        observal registry mcp edit my-server --git-url https://github.com/org/new-repo
+    """
     resolved = config.resolve_alias(mcp_id)
     if from_file:
         try:
@@ -1373,5 +1500,23 @@ def delete_mcp(
     mcp_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
-    """Delete an MCP server."""
+    """Delete an MCP server from the registry.
+
+    Permanently removes the server listing and all associated data.
+    Prompts for confirmation unless --yes is passed. You can only
+    delete servers you own (or any server if you are an admin).
+
+    Examples:
+        # Delete with confirmation prompt
+        observal registry mcp delete my-server
+
+        # Delete by ID without confirmation
+        observal registry mcp delete abc123 --yes
+
+        # Delete by row number from last list
+        observal registry mcp delete 3 --yes
+
+        # Delete by alias
+        observal registry mcp delete @old-server
+    """
     _delete_impl(mcp_id, yes)

@@ -31,9 +31,19 @@ def sandbox_submit(
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (sandbox ID)"),
 ):
-    """Submit a new sandbox for review.
+    """Submit a new sandbox environment for review.
+
+    Sandboxes are containerized execution environments for agent tasks.
+    You can submit interactively, from a JSON file, or save as a draft
+    first and submit later with --submit.
 
     Only submit sandboxes you created or are the point-of-contact for.
+
+    Examples:
+        observal registry sandbox submit
+        observal registry sandbox submit --from-file sandbox.json
+        observal registry sandbox submit --draft
+        observal registry sandbox submit --submit abc123
     """
     rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
     if draft and submit_draft:
@@ -85,7 +95,17 @@ def sandbox_list(
     search: str | None = typer.Option(None, "--search", "-s"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
-    """List approved sandboxes."""
+    """List approved sandboxes in the registry.
+
+    Shows only sandboxes with approved status. Use --runtime or --search
+    to filter results. Row numbers from the output can be used as references
+    in subsequent commands.
+
+    Examples:
+        observal registry sandbox list
+        observal registry sandbox list --runtime docker
+        observal registry sandbox list --search "node" --output json
+    """
     params = {}
     if runtime:
         params["runtime"] = runtime
@@ -128,7 +148,17 @@ def sandbox_show(
     sandbox_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show sandbox details."""
+    """Show detailed information about a sandbox.
+
+    Displays metadata including runtime type, container image, resource
+    limits, status, and timestamps. Accepts a UUID, name, row number
+    from a previous list, or @alias.
+
+    Examples:
+        observal registry sandbox show my-sandbox
+        observal registry sandbox show 1
+        observal registry sandbox show @dev-env --output json
+    """
     resolved = config.resolve_alias(sandbox_id)
     with spinner():
         item = client.get(f"/api/v1/sandboxes/{resolved}")
@@ -158,11 +188,20 @@ def sandbox_install(
     ide: str = typer.Option(..., "--ide", "-i", help="Target IDE"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
 ):
-    """Get install config for a sandbox.
+    """Generate IDE install configuration for a sandbox.
 
-    [Deprecated] Sandboxes should be added as agent components instead.
-    Use: observal agent add --type sandbox --id <sandbox-id>
-    Then: observal agent pull <agent> --ide <ide>
+    [Deprecated] Standalone sandbox install is deprecated. Sandboxes should
+    be added as agent components instead.
+
+    Preferred workflow:
+      1. observal agent add --type sandbox --id <sandbox-id>
+      2. observal pull <agent-name> --ide <ide>
+
+    Use --raw to pipe the JSON directly to a file.
+
+    Examples:
+        observal registry sandbox install my-sandbox --ide claude-code
+        observal registry sandbox install @env --ide cursor --raw
     """
     rprint(
         "[yellow]\u26a0 Standalone sandbox install is deprecated.[/yellow]\n"
@@ -192,7 +231,17 @@ def sandbox_edit(
     runtime_type: str | None = typer.Option(None, "--runtime-type", "-r", help="New runtime type"),
     image: str | None = typer.Option(None, "--image", "-i", help="New container image"),
 ):
-    """Edit a draft, rejected, or pending sandbox submission."""
+    """Edit a draft, rejected, or pending sandbox submission.
+
+    Updates fields on a sandbox that has not yet been approved. You can
+    provide individual field options or load all updates from a JSON file.
+    Acquires an edit lock to prevent concurrent modifications.
+
+    Examples:
+        observal registry sandbox edit my-sandbox --image node:20-alpine
+        observal registry sandbox edit abc123 --from-file updates.json
+        observal registry sandbox edit @env --runtime-type docker --version 2.0.0
+    """
     resolved = config.resolve_alias(sandbox_id)
     if from_file:
         try:
@@ -245,7 +294,16 @@ def sandbox_delete(
     sandbox_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
-    """Delete a sandbox."""
+    """Delete a sandbox from the registry.
+
+    Permanently removes the sandbox. Sandboxes you own can be deleted
+    regardless of status. Requires confirmation unless --yes is passed.
+
+    Examples:
+        observal registry sandbox delete my-sandbox
+        observal registry sandbox delete abc123 --yes
+        observal registry sandbox delete @old-env -y
+    """
     resolved = config.resolve_alias(sandbox_id)
     if not yes:
         with spinner():

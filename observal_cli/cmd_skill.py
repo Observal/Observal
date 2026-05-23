@@ -78,13 +78,22 @@ def skill_submit(
 ):
     """Submit a new skill for review.
 
-    Preferred: provide --git-url (+ optional --skill-path / --git-ref) and let the
-    server fetch SKILL.md automatically.
+    Skills are reusable SKILL.md files that provide agents with task-specific
+    instructions. Preferred: provide --git-url (with optional --git-ref) and
+    let the server fetch SKILL.md automatically.
 
     Shortcut: provide --skill-md PATH to paste the SKILL.md content directly
-    (fields are auto-filled from frontmatter; --git-url is still required for install).
+    (fields are auto-filled from frontmatter; --git-url is still required
+    for install).
 
     Only submit skills you created or are the point-of-contact for.
+
+    Examples:
+        observal registry skill submit --git-url https://github.com/org/repo
+        observal registry skill submit --from-file skill.json
+        observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo
+        observal registry skill submit --draft
+        observal registry skill submit --submit abc123
     """
     rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
     if draft and submit_draft:
@@ -170,7 +179,18 @@ def skill_list(
     search: str | None = typer.Option(None, "--search", "-s"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
-    """List approved skills."""
+    """List approved skills in the registry.
+
+    Shows only skills with approved status. Use --task-type, --target-agent,
+    or --search to filter results. Row numbers from the output can be used
+    as references in subsequent commands.
+
+    Examples:
+        observal registry skill list
+        observal registry skill list --task-type coding
+        observal registry skill list --target-agent claude-code --output json
+        observal registry skill list --search "refactor"
+    """
     params = {}
     if task_type:
         params["task_type"] = task_type
@@ -214,7 +234,15 @@ def skill_list(
 def skill_my(
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
-    """List your own skills (all statuses)."""
+    """List your own skills across all statuses.
+
+    Shows drafts, pending, approved, and rejected skills you submitted.
+    Useful for tracking the review status of your submissions.
+
+    Examples:
+        observal registry skill my
+        observal registry skill my --output json
+    """
     with spinner("Fetching your skills..."):
         data = client.get("/api/v1/skills/my")
     if not data:
@@ -255,7 +283,17 @@ def skill_show(
     skill_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show skill details."""
+    """Show detailed information about a skill.
+
+    Displays metadata including validation status, task type, git source,
+    slash command, target agents, and timestamps. Accepts a UUID, name,
+    row number from a previous list, or @alias.
+
+    Examples:
+        observal registry skill show my-skill
+        observal registry skill show 1
+        observal registry skill show @refactor-skill --output json
+    """
     resolved = config.resolve_alias(skill_id)
     with spinner():
         item = client.get(f"/api/v1/skills/{resolved}")
@@ -339,15 +377,22 @@ def skill_install(
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
     no_write: bool = typer.Option(False, "--no-write", help="Print config without writing files"),
 ):
-    """Install a skill — fetches the full skill directory from git and writes it to disk.
+    """Install a skill by fetching the full skill directory from git.
+
+    Clones the skill directory (sparse checkout) from the configured git_url
+    and writes it to the appropriate IDE skill path. Falls back to cached
+    SKILL.md content if git clone fails.
 
     Scopes:
-      --scope user (default): writes to ~/.<ide>/skills/<name>/ (global, persists across projects).
-      --scope project: writes to .agents/skills/<name>/ in cwd,
-        symlinks to .<ide>/skills/<name>/ for each IDE config dir present.
+      --scope user (default): writes to ~/.<ide>/skills/<name>/ (global).
+      --scope project: writes to .agents/skills/<name>/ in cwd, then
+        symlinks into each IDE config dir found in the project.
 
-    Primary path: git sparse-clone using git_url + skill_path + git_ref.
-    Fallback: single SKILL.md from cached skill_md_content.
+    Examples:
+        observal registry skill install my-skill --ide claude-code
+        observal registry skill install @sk --ide kiro --scope project
+        observal registry skill install 2 --ide cursor --raw > config.json
+        observal registry skill install my-skill --ide gemini-cli --no-write
     """
     resolved = config.resolve_alias(skill_id)
     with spinner(f"Generating {ide} config..."):
@@ -490,7 +535,18 @@ def skill_edit(
     git_url: str | None = typer.Option(None, "--git-url", help="New git URL"),
     git_ref: str | None = typer.Option(None, "--git-ref", help="New git ref"),
 ):
-    """Edit a draft, rejected, or pending skill submission."""
+    """Edit a draft, rejected, or pending skill submission.
+
+    Updates fields on a skill that has not yet been approved. You can
+    provide individual field options or load all updates from a JSON file.
+    Acquires an edit lock to prevent concurrent modifications.
+
+    Examples:
+        observal registry skill edit my-skill --description "Better desc"
+        observal registry skill edit abc123 --from-file updates.json
+        observal registry skill edit @sk --git-url https://github.com/org/new-repo
+        observal registry skill edit 2 --version 2.0.0 --task-type debugging
+    """
     resolved = config.resolve_alias(skill_id)
     if from_file:
         try:
@@ -551,7 +607,16 @@ def skill_delete(
     skill_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
-    """Delete a skill."""
+    """Delete a skill from the registry.
+
+    Permanently removes the skill. Skills you own can be deleted regardless
+    of status. Requires confirmation unless --yes is passed.
+
+    Examples:
+        observal registry skill delete my-skill
+        observal registry skill delete abc123 --yes
+        observal registry skill delete @old-skill -y
+    """
     resolved = config.resolve_alias(skill_id)
     if not yes:
         with spinner():
