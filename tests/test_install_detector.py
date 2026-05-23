@@ -5,15 +5,10 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from observal_cli.install_detector import (
-    InstallInfo,
     InstallMethod,
     _detect_from_path,
 )
@@ -63,10 +58,11 @@ class TestDetectFromPath:
         monkeypatch.delattr("sys.frozen", raising=False)
         path = Path("/home/user/.venv/bin/observal")
         # Not under uv dir, not homebrew, not system, not frozen
-        with patch("os.access", return_value=True):
-            # Also need to mock _check_uv_tool_list to return False
-            with patch("observal_cli.install_detector._check_uv_tool_list", return_value=False):
-                result = _detect_from_path(path, str(path).lower())
+        with (
+            patch("os.access", return_value=True),
+            patch("observal_cli.install_detector._check_uv_tool_list", return_value=False),
+        ):
+            result = _detect_from_path(path, str(path).lower())
         assert result.method == InstallMethod.PIP
         assert result.managed_by == "pip"
 

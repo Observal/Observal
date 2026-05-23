@@ -5,9 +5,6 @@
 
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
-
 import pytest
 
 from observal_cli.server import backup

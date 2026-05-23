@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { Albert_Sans, Archivo, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
+import { VersionMismatchBanner } from "@/components/shared/version-mismatch-banner";
 
 const archivo = Archivo({
   subsets: ["latin"],
@@ -44,7 +45,10 @@ export default function RootLayout({
         className={`${archivo.variable} ${albertSans.variable} ${jetbrainsMono.variable} min-h-svh antialiased`}
         suppressHydrationWarning
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          <VersionMismatchBanner />
+        </Providers>
       </body>
     </html>
   );

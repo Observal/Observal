@@ -47,10 +47,14 @@ class TestStaleLock:
         """Lock older than STALE_THRESHOLD is automatically broken."""
         lock_path = isolated_lock_dir / ".cli-upgrade.lock"
         # Write a lock with old timestamp
-        lock_path.write_text(json.dumps({
-            "pid": 99999,
-            "timestamp": time.time() - 3600,  # 1 hour ago
-        }))
+        lock_path.write_text(
+            json.dumps(
+                {
+                    "pid": 99999,
+                    "timestamp": time.time() - 3600,  # 1 hour ago
+                }
+            )
+        )
 
         # Should succeed (breaks stale lock)
         lock = acquire_lock("cli")
@@ -63,10 +67,14 @@ class TestStaleLock:
         """Lock from a dead PID (within threshold) is broken."""
         lock_path = isolated_lock_dir / ".cli-upgrade.lock"
         # PID 1 is always init — use a likely-dead PID
-        lock_path.write_text(json.dumps({
-            "pid": 2147483647,  # Max PID, almost certainly dead
-            "timestamp": time.time(),  # Recent
-        }))
+        lock_path.write_text(
+            json.dumps(
+                {
+                    "pid": 2147483647,  # Max PID, almost certainly dead
+                    "timestamp": time.time(),  # Recent
+                }
+            )
+        )
 
         # Should succeed (dead PID)
         lock = acquire_lock("cli")
@@ -79,10 +87,14 @@ class TestConcurrentLock:
         """If another live process holds the lock, acquire fails."""
         lock_path = isolated_lock_dir / ".cli-upgrade.lock"
         # Write lock with current PID (simulates another thread/process)
-        lock_path.write_text(json.dumps({
-            "pid": os.getpid(),  # This PID IS alive
-            "timestamp": time.time(),
-        }))
+        lock_path.write_text(
+            json.dumps(
+                {
+                    "pid": os.getpid(),  # This PID IS alive
+                    "timestamp": time.time(),
+                }
+            )
+        )
 
         with pytest.raises(UpgradeLockError, match="Another upgrade is in progress"):
             acquire_lock("cli")

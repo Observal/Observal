@@ -6,10 +6,7 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import UTC, datetime
-from pathlib import Path
-from unittest.mock import patch
 
 import httpx
 import pytest
@@ -213,14 +210,16 @@ class TestCacheIntegrity:
     def test_tampered_cache_treated_as_missing(self, isolated_cache, monkeypatch, mock_config):
         mock_config()
         # Write a valid cache
-        version_check._write_cache({
-            "last_checked": datetime.now(UTC).isoformat(),
-            "latest_version": "0.8.0",
-            "release_url": "",
-            "published_at": "",
-            "source": "github",
-            "fetch_failed": False,
-        })
+        version_check._write_cache(
+            {
+                "last_checked": datetime.now(UTC).isoformat(),
+                "latest_version": "0.8.0",
+                "release_url": "",
+                "published_at": "",
+                "source": "github",
+                "fetch_failed": False,
+            }
+        )
         # Tamper with it
         data = json.loads(isolated_cache.read_text())
         data["latest_version"] = "99.0.0"  # Modify without updating HMAC
@@ -231,11 +230,13 @@ class TestCacheIntegrity:
 
     def test_valid_cache_reads_ok(self, isolated_cache, mock_config):
         mock_config()
-        version_check._write_cache({
-            "last_checked": datetime.now(UTC).isoformat(),
-            "latest_version": "0.8.0",
-            "fetch_failed": False,
-        })
+        version_check._write_cache(
+            {
+                "last_checked": datetime.now(UTC).isoformat(),
+                "latest_version": "0.8.0",
+                "fetch_failed": False,
+            }
+        )
         cache = version_check._read_cache()
         assert cache is not None
         assert cache["latest_version"] == "0.8.0"

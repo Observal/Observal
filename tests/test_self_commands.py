@@ -5,9 +5,7 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -62,6 +60,7 @@ def mock_lock(monkeypatch, tmp_path):
 def _get_app():
     """Import the app fresh (avoids circular import issues in tests)."""
     from observal_cli.main import app
+
     return app
 
 

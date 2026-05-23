@@ -67,3 +67,4 @@ observal-insights/
 node_modules
 .pi/
 .mcp.json
+*.bak

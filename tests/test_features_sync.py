@@ -48,7 +48,4 @@ class TestFeaturesSync:
         py_features_camel = {_to_camel_case(k) for k in FEATURE_VERSIONS}
 
         extra = ts_features - py_features_camel
-        assert not extra, (
-            f"TypeScript has features not in Python: {extra}. "
-            f"Regenerate: python scripts/sync_features.py"
-        )
+        assert not extra, f"TypeScript has features not in Python: {extra}. Regenerate: python scripts/sync_features.py"
