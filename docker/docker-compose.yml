@@ -69,6 +69,7 @@ services:
       - DEMO_USER_PASSWORD=${DEMO_USER_PASSWORD:-user-changeme}
     volumes:
       - apidata:/data
+      - ~/.observal/logs:/home/appuser/.observal/logs
     depends_on:
       observal-init:
         condition: service_completed_successfully
