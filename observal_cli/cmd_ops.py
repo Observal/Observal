@@ -18,6 +18,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
+from observal_cli.prompts import password_input
 from observal_cli.render import (
     console,
     kv_panel,
@@ -732,8 +733,8 @@ def admin_reset_password(
     if generate:
         body: dict = {"generate": True}
     else:
-        new_password = typer.prompt("New password", hide_input=True)
-        confirm = typer.prompt("Confirm password", hide_input=True)
+        new_password = password_input("New password")
+        confirm = password_input("Confirm password")
         if new_password != confirm:
             rprint("[red]Passwords do not match.[/red]")
             raise typer.Exit(1)

@@ -22,7 +22,7 @@ from rich.table import Table
 from observal_cli import client, config
 from observal_cli.analyzer import analyze_local
 from observal_cli.constants import VALID_IDES, VALID_MCP_CATEGORIES
-from observal_cli.prompts import fuzzy_select, select_one
+from observal_cli.prompts import fuzzy_select, select_one, text_input
 from observal_cli.render import (
     console,
     ide_tags,
@@ -88,12 +88,12 @@ def _configure_env_vars_interactive(detected: list[dict]) -> list[dict]:
             rprint("  2. Load from .env file")
             rprint("  3. Enter manually")
             rprint("  4. Skip (no env vars)")
-            raw = typer.prompt("Choose", default="1")
+            raw = text_input("Choose", default="1")
         else:
             rprint("  1. Load from .env file")
             rprint("  2. Enter manually")
             rprint("  3. Skip (no env vars)")
-            raw = typer.prompt("Choose", default="3")
+            raw = text_input("Choose", default="3")
         choice_map = {
             "1": "Review auto-detected vars" if detected else "Load from .env file",
             "2": "Load from .env file" if detected else "Enter manually",
@@ -106,7 +106,7 @@ def _configure_env_vars_interactive(detected: list[dict]) -> list[dict]:
         return []
 
     if choice == "Load from .env file":
-        file_path = typer.prompt("Path to .env file (e.g. .env.example)")
+        file_path = text_input("Path to .env file (e.g. .env.example)")
         env_vars = _parse_env_file(file_path)
         if not env_vars:
             rprint("[yellow]No variables found in file.[/yellow]")
@@ -129,10 +129,9 @@ def _review_env_vars(env_vars: list[dict]) -> list[dict]:
     rprint("\n[bold]Review each variable[/bold]\n")
 
     for ev in env_vars:
-        action = typer.prompt(
+        action = text_input(
             f"  {ev['name']} - keep? [Enter=keep / r=remove / o=optional]",
             default="",
-            show_default=False,
         )
         action = action.strip().lower()
 
@@ -143,7 +142,7 @@ def _review_env_vars(env_vars: list[dict]) -> list[dict]:
         required = action != "o"
         desc = ev.get("description", "")
         if not desc:
-            desc = typer.prompt(f"    Description for {ev['name']} (optional)", default="")
+            desc = text_input(f"    Description for {ev['name']} (optional)", default="")
 
         reviewed.append({"name": ev["name"], "description": desc, "required": required})
         status = "[green]required[/green]" if required else "[yellow]optional[/yellow]"
@@ -151,10 +150,10 @@ def _review_env_vars(env_vars: list[dict]) -> list[dict]:
 
     # Offer to add more
     while True:
-        add_more = typer.prompt("\n  Add another env var? (name or Enter to finish)", default="")
+        add_more = text_input("\n  Add another env var? (name or Enter to finish)", default="")
         if not add_more:
             break
-        desc = typer.prompt(f"    Description for {add_more} (optional)", default="")
+        desc = text_input(f"    Description for {add_more} (optional)", default="")
         req = typer.confirm("    Required?", default=True)
         reviewed.append({"name": add_more.strip().upper(), "description": desc, "required": req})
 
@@ -168,11 +167,11 @@ def _enter_env_vars_manually() -> list[dict]:
     rprint("\n[bold]Enter env vars one at a time[/bold] [dim](empty name to finish)[/dim]\n")
 
     while True:
-        name = typer.prompt("  Variable name (or Enter to finish)", default="")
+        name = text_input("  Variable name (or Enter to finish)", default="")
         if not name:
             break
         name = name.strip().upper()
-        desc = typer.prompt(f"    Description for {name} (optional)", default="")
+        desc = text_input(f"    Description for {name} (optional)", default="")
         req = typer.confirm("    Required?", default=True)
         env_vars.append({"name": name, "description": desc, "required": req})
 
@@ -531,14 +530,14 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
                 rprint("\n[bold]Confirm input dependencies:[/bold]")
                 parsed["environment_variables"] = _review_env_vars(parsed.get("environment_variables", []))
 
-            _name = name or typer.prompt("Server name", default=_name)
+            _name = name or text_input("Server name", default=_name)
             _desc_default = _parsed_desc or ""
-            _desc = typer.prompt("Description (what does this server do?)", default=_desc_default or None)
+            _desc = text_input("Description (what does this server do?)", default=_desc_default or "")
             while not _desc.strip():
                 rprint("[yellow]Description is required.[/yellow]")
-                _desc = typer.prompt("Description (what does this server do?)")
+                _desc = text_input("Description (what does this server do?)")
             _desc = _desc.strip()
-            _owner = typer.prompt(
+            _owner = text_input(
                 "Owner / Team (e.g. your GitHub username)", default=config.load().get("user_name", "default")
             )
             _category = category or select_one("Category", VALID_MCP_CATEGORIES, default="general")
@@ -750,10 +749,9 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
                     " was inferred from the GitHub URL - verify it exists)[/dim]"
                 )
             choice = (
-                typer.prompt(
+                text_input(
                     "Startup config looks correct? [Y/n/edit]",
                     default="Y",
-                    show_default=False,
                 )
                 .strip()
                 .lower()
@@ -761,8 +759,8 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
             if choice == "n":
                 raise typer.Abort()
             elif choice == "edit":
-                _command = typer.prompt("Command", default=detected_command or "")
-                raw_args = typer.prompt(
+                _command = text_input("Command", default=detected_command or "")
+                raw_args = text_input(
                     "Args (space-separated)",
                     default=" ".join(detected_args) if detected_args else "",
                 )
@@ -780,10 +778,10 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
                     _framework = "typescript"
         elif not detected_command:
             rprint("[dim]No startup command was detected.[/dim]")
-            custom_cmd = typer.prompt("Command (e.g. docker, python, npx - Enter to skip)", default="")
+            custom_cmd = text_input("Command (e.g. docker, python, npx - Enter to skip)", default="")
             if custom_cmd:
                 _command = custom_cmd
-                raw_args = typer.prompt("Args (space-separated)", default="")
+                raw_args = text_input("Args (space-separated)", default="")
                 _args = raw_args.split() if raw_args.strip() else []
                 if _command == "docker":
                     _framework = "docker"
@@ -803,7 +801,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
             _name = detected_name
             rprint(f"  Server name: [cyan]{_name}[/cyan] [dim](from analysis)[/dim]")
         else:
-            _name = typer.prompt("Server name")
+            _name = text_input("Server name")
 
         # Version: auto-accept detected
         _version = detected_ver
@@ -816,15 +814,15 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
                 f"  Description: [cyan]{_desc[:60]}{'...' if len(_desc) > 60 else ''}[/cyan] [dim](from analysis)[/dim]"
             )
         else:
-            _desc = typer.prompt("Description (what does this server do?)")
+            _desc = text_input("Description (what does this server do?)")
 
-        _owner = typer.prompt("\nOwner / Team (e.g. your GitHub username)", default=config.load().get("user_name", ""))
+        _owner = text_input("\nOwner / Team (e.g. your GitHub username)", default=config.load().get("user_name", ""))
         rprint()
 
         _category = category or select_one("Category", VALID_MCP_CATEGORIES, default="general")
 
-        _setup = typer.prompt("Setup instructions (optional, press Enter to skip)", default="")
-        _changelog = typer.prompt("Changelog", default="Initial release")
+        _setup = text_input("Setup instructions (optional, press Enter to skip)", default="")
+        _changelog = text_input("Changelog", default="Initial release")
 
         # Detect $VAR patterns in final args and merge into detected env vars
         dollar_vars = _extract_dollar_vars(_args or [], {})
@@ -1010,14 +1008,14 @@ def _install_impl(mcp_id, ide, raw):
             rprint(f"\n[bold]This server requires {len(required)} environment variable(s):[/bold]")
             for ev in required:
                 desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                val = typer.prompt(f"  {ev['name']}{desc}")
+                val = text_input(f"  {ev['name']}{desc}")
                 env_values[ev["name"]] = val
 
         if optional:
             rprint(f"\n[dim]{len(optional)} optional env var(s) available:[/dim]")
             for ev in optional:
                 desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                val = typer.prompt(f"  {ev['name']}{desc} (press Enter to skip)", default="")
+                val = text_input(f"  {ev['name']}{desc} (press Enter to skip)", default="")
                 if val:
                     env_values[ev["name"]] = val
     elif env_var_list and raw:
@@ -1035,13 +1033,13 @@ def _install_impl(mcp_id, ide, raw):
             rprint(f"\n[bold]This server requires {len(required_headers)} header(s):[/bold]")
             for h in required_headers:
                 desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
-                val = typer.prompt(f"  {h['name']}{desc}")
+                val = text_input(f"  {h['name']}{desc}")
                 header_values[h["name"]] = val
         if optional_headers:
             rprint(f"\n[dim]{len(optional_headers)} optional header(s) available:[/dim]")
             for h in optional_headers:
                 desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
-                val = typer.prompt(f"  {h['name']}{desc} (press Enter to skip)", default="")
+                val = text_input(f"  {h['name']}{desc} (press Enter to skip)", default="")
                 if val:
                     header_values[h["name"]] = val
     elif header_list and raw:
@@ -1478,7 +1476,7 @@ def edit_mcp(
             _new_version = "0.2.0"
 
         rprint(f"[bold]New version:[/bold] {_new_version}")
-        _changelog = typer.prompt("Changelog (what changed?)", default="")
+        _changelog = text_input("Changelog (what changed?)", default="")
 
         # Separate top-level fields from extra (version-specific) fields
         version_description = updates.pop("description", None) or (listing.get("description", "") if listing else "")

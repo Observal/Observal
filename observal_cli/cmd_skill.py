@@ -21,7 +21,7 @@ from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.constants import VALID_SKILL_TASK_TYPES
-from observal_cli.prompts import select_one
+from observal_cli.prompts import select_one, text_input
 from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
 from observal_cli.shared.utils import sanitize_name as _sanitize_name
 
@@ -145,15 +145,15 @@ def skill_submit(
                     f"description={str(prefill.get('description', ''))[:60]!r}"
                 )
 
-        agents_input = typer.prompt("Target agents (comma-separated)", default="")
+        agents_input = text_input("Target agents (comma-separated)", default="")
         payload = {
-            "name": typer.prompt("Skill name", default=prefill.get("name", "")),
-            "version": typer.prompt("Version", default="1.0.0"),
-            "description": typer.prompt("Description", default=prefill.get("description", "")),
-            "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
-            "git_url": git_url or typer.prompt("Git URL"),
-            "skill_path": typer.prompt("Skill path in repo", default="/"),
-            "git_ref": git_ref or typer.prompt("Git ref (branch/tag)", default="main"),
+            "name": text_input("Skill name", default=prefill.get("name", "")),
+            "version": text_input("Version", default="1.0.0"),
+            "description": text_input("Description", default=prefill.get("description", "")),
+            "owner": text_input("Owner", default=config.load().get("user_name", "")),
+            "git_url": git_url or text_input("Git URL"),
+            "skill_path": text_input("Skill path in repo", default="/"),
+            "git_ref": git_ref or text_input("Git ref (branch/tag)", default="main"),
             "task_type": select_one("Task type", VALID_SKILL_TASK_TYPES),
             "target_agents": [a.strip() for a in agents_input.split(",") if a.strip()],
         }

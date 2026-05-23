@@ -23,7 +23,7 @@ from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.constants import AGENT_NAME_REGEX, VALID_IDES
-from observal_cli.prompts import fuzzy_select, select_many, select_one
+from observal_cli.prompts import fuzzy_select, select_many, select_one, text_input
 from observal_cli.render import (
     console,
     ide_tags,
@@ -201,7 +201,7 @@ def agent_create(
 
     # ── Phase 1: Basics ─────────────────────────────────────
     rprint("[bold]1. Basics[/bold]")
-    raw_name = typer.prompt("  Agent name")
+    raw_name = text_input("  Agent name")
     name = _slugify(raw_name)
     if name != raw_name:
         rprint(f"  [dim]→ Slugified to:[/dim] [bold]{name}[/bold]")
@@ -210,8 +210,8 @@ def agent_create(
         rprint(f"  [red]Error:[/red] {err}")
         raise typer.Exit(1)
 
-    description = typer.prompt("  Description")
-    version = typer.prompt("  Version", default="1.0.0")
+    description = text_input("  Description")
+    version = text_input("  Version", default="1.0.0")
     model_name = select_one("  Model", _MODEL_CHOICES, default="claude-sonnet-4")
 
     # ── Phase 2: Components ──────────────────────────────────
@@ -245,13 +245,13 @@ def agent_create(
 
     # ── Phase 4: Goal Template ───────────────────────────────
     rprint("\n[bold]4. Goal Template[/bold]")
-    goal_desc = typer.prompt("  Goal description", default=description)
+    goal_desc = text_input("  Goal description", default=description)
     sections = []
     while True:
-        sec_name = typer.prompt("  Section name (or 'done' to finish)")
+        sec_name = text_input("  Section name (or 'done' to finish)")
         if sec_name.lower() == "done":
             break
-        sec_desc = typer.prompt(f"    Description for '{sec_name}'", default="")
+        sec_desc = text_input(f"    Description for '{sec_name}'", default="")
         sections.append({"name": sec_name, "description": sec_desc})
 
     if not sections:
@@ -267,10 +267,10 @@ def agent_create(
         default_owner = whoami.get("name") or whoami.get("email", "")
     except (Exception, SystemExit):
         pass
-    owner = typer.prompt("  Owner / Team", default=default_owner or "")
-    prompt_text = typer.prompt("  System prompt (optional)", default="")
-    max_tokens = typer.prompt("  Max tokens", default="4096")
-    temperature = typer.prompt("  Temperature", default="0.2")
+    owner = text_input("  Owner / Team", default=default_owner or "")
+    prompt_text = text_input("  System prompt (optional)", default="")
+    max_tokens = text_input("  Max tokens", default="4096")
+    temperature = text_input("  Temperature", default="0.2")
     model_cfg = {"max_tokens": int(max_tokens), "temperature": float(temperature)}
 
     # ── Phase 6: Review & Confirm ────────────────────────────
@@ -785,7 +785,7 @@ def agent_init(
         rprint("[yellow]Aborted.[/yellow]")
         raise typer.Exit(code=1)
 
-    raw_name = typer.prompt("Agent name")
+    raw_name = text_input("Agent name")
     name = _slugify(raw_name)
     if name != raw_name:
         rprint(f"  [dim]→ Slugified to:[/dim] [bold]{name}[/bold]")
@@ -795,11 +795,11 @@ def agent_init(
         raise typer.Exit(1)
 
     default_version = "0.1.0" if beta else "1.0.0"
-    version = typer.prompt("Version", default=default_version)
-    description = typer.prompt("Description")
-    owner = typer.prompt("Owner / Team")
-    model_name = typer.prompt("Model name", default="claude-sonnet-4")
-    prompt_text = typer.prompt("System prompt")
+    version = text_input("Version", default=default_version)
+    description = text_input("Description")
+    owner = text_input("Owner / Team")
+    model_name = text_input("Model name", default="claude-sonnet-4")
+    prompt_text = text_input("System prompt")
 
     data = {
         "name": name,
