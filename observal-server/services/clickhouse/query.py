@@ -3,6 +3,7 @@
 """ClickHouse query functions for all telemetry tables."""
 
 import structlog
+from loguru import logger as optic
 
 import services.clickhouse.client as _client
 
@@ -11,6 +12,7 @@ logger = structlog.get_logger(__name__)
 
 async def query_recent_events(minutes: int = 60) -> dict:
     """Get event counts from the last N minutes from the active telemetry tables."""
+    optic.debug("query_recent_events: minutes={}", minutes)
     minutes = int(minutes)
     tool_count = 0
     agent_count = 0
@@ -56,6 +58,7 @@ async def query_traces(
     offset: int = 0,
 ) -> list[dict]:
     """Query traces with optional filters."""
+    optic.debug("query_traces: project_id={}, trace_type={}, mcp_id={}", project_id, trace_type, mcp_id)
     conditions = ["project_id = {pid:String}", "is_deleted = 0"]
     params: dict[str, str] = {"param_pid": project_id}
     if trace_type:
@@ -89,6 +92,7 @@ async def query_traces(
 
 async def query_trace_by_id(project_id: str, trace_id: str, *, user_id: str | None = None) -> dict | None:
     """Get a single trace by ID, optionally scoped to a user."""
+    optic.debug("query_trace_by_id: project_id={}, trace_id={}, user_id={}", project_id, trace_id, user_id)
     conditions = [
         "project_id = {pid:String}",
         "trace_id = {tid:String}",
@@ -119,6 +123,7 @@ async def query_spans(
     limit: int = 200,
 ) -> list[dict]:
     """Query spans for a trace with optional filters."""
+    optic.debug("query_spans: project_id={}, trace_id={}, span_type={}", project_id, trace_id, span_type)
     conditions = [
         "project_id = {pid:String}",
         "trace_id = {tid:String}",
@@ -144,6 +149,7 @@ async def query_spans(
 
 async def query_span_by_id(project_id: str, span_id: str, *, user_id: str | None = None) -> dict | None:
     """Get a single span by ID, optionally scoped to a user."""
+    optic.debug("query_span_by_id: project_id={}, span_id={}, user_id={}", project_id, span_id, user_id)
     conditions = [
         "project_id = {pid:String}",
         "span_id = {sid:String}",
@@ -174,6 +180,7 @@ async def query_shim_spans_for_window(
 
     Used for query-time side-load when shim data has no session_id.
     """
+    optic.debug("query_shim_spans_for_window: user_id={}, start_time={}, end_time={}", user_id, start_time, end_time)
     sql = (
         "SELECT "
         "span_id, trace_id, name, type, method, "
@@ -219,6 +226,7 @@ async def query_scores(
     limit: int = 100,
 ) -> list[dict]:
     """Query scores with optional filters."""
+    optic.debug("query_scores: project_id={}, trace_id={}, span_id={}", project_id, trace_id, span_id)
     conditions = ["project_id = {pid:String}", "is_deleted = 0"]
     params: dict[str, str] = {"param_pid": project_id}
     if trace_id:
@@ -250,6 +258,7 @@ async def query_session_event_count(session_id: str, project_id: str) -> tuple[i
     Uses FINAL so ReplacingMergeTree dedup is applied before counting.
     Returns (0, -1) when no rows exist.
     """
+    optic.debug("query_session_event_count: session_id={}, project_id={}", session_id, project_id)
     sql = (
         "SELECT count() AS cnt, max(line_offset) AS max_off "
         "FROM session_events FINAL "
@@ -280,6 +289,9 @@ async def query_existing_for_dedup(
 
     Fail-open: returns (frozenset(), frozenset()) on any error.
     """
+    optic.debug(
+        "query_existing_for_dedup: session_id={}, project_id={}, min_offset={}", session_id, project_id, min_offset
+    )
     if min_offset > max_offset:
         return frozenset(), frozenset()
     sql = (
