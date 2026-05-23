@@ -8,6 +8,7 @@ import logging
 import uuid
 
 from fastapi import Depends, HTTPException
+from loguru import logger as optic
 from pydantic import BaseModel
 from redis.exceptions import RedisError
 from sqlalchemy import func, select
@@ -41,6 +42,7 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
+    optic.debug("admin users list")
     stmt = select(User).order_by(User.created_at.desc())
     if current_user.org_id is not None:
         stmt = stmt.where(User.org_id == current_user.org_id)
@@ -57,6 +59,7 @@ async def create_user(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Admin creates a new user and gets back their generated password."""
+    optic.debug("create_user: email={}, role={}", req.email, req.role)
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -125,6 +128,7 @@ async def update_user_role(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
+    optic.debug("admin user role change")
     try:
         new_role = UserRole(req.role)
     except ValueError:
@@ -180,6 +184,7 @@ async def update_user_department(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
+    optic.debug("update_user_department: user_id={}", user_id)
     stmt = select(User).where(User.id == user_id)
     if current_user.org_id is not None:
         stmt = stmt.where(User.org_id == current_user.org_id)
@@ -214,6 +219,7 @@ async def bulk_update_departments(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Bulk-assign departments to users by email."""
+    optic.debug("bulk_update_departments: req={}", req)
     updated = 0
     not_found = []
 
@@ -245,6 +251,7 @@ async def reset_user_password(
     Either provide new_password directly, or set generate=true to create
     a secure random password that doesn't collide with existing hashes.
     """
+    optic.debug("reset_user_password: user_id={}", user_id)
     stmt = select(User).where(User.id == user_id)
     if current_user.org_id is not None:
         stmt = stmt.where(User.org_id == current_user.org_id)
@@ -307,6 +314,7 @@ async def delete_user(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Admin deletes a user account and all associated data."""
+    optic.debug("admin user delete")
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
 
