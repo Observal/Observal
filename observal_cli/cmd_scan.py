@@ -22,6 +22,7 @@ import typer
 from rich import print as rprint
 from rich.table import Table
 
+from observal_cli.ide import DiscoveredAgent, DiscoveredHook, DiscoveredMcp, DiscoveredSkill
 from observal_cli.render import console, spinner
 from observal_cli.shared.utils import (
     _OBSERVAL_HOOK_MARKERS,
@@ -56,50 +57,6 @@ _IDE_PROJECT_CONFIGS = {
 
 
 # ── Data containers for discovered items ────────────────────
-
-
-class DiscoveredMcp:
-    def __init__(self, name: str, command: str | None, args: list[str], url: str | None, description: str, source: str):
-        self.name = name
-        self.command = command
-        self.args = args
-        self.url = url
-        self.description = description
-        self.source = source
-
-    def display_cmd(self) -> str:
-        if self.url:
-            return self.url[:60]
-        cmd = f"{self.command or '?'} {' '.join(self.args[:3])}"
-        return cmd[:60] + "..." if len(cmd) > 60 else cmd
-
-
-class DiscoveredSkill:
-    def __init__(self, name: str, description: str, source: str, task_type: str = "general"):
-        self.name = name
-        self.description = description
-        self.source = source
-        self.task_type = task_type
-
-
-class DiscoveredHook:
-    def __init__(self, name: str, event: str, handler_type: str, handler_config: dict, description: str, source: str):
-        self.name = name
-        self.event = event
-        self.handler_type = handler_type
-        self.handler_config = handler_config
-        self.description = description
-        self.source = source
-
-
-class DiscoveredAgent:
-    def __init__(self, name: str, description: str, model_name: str, prompt: str, source_file: str):
-        self.name = name
-        self.description = description
-        self.model_name = model_name
-        self.prompt = prompt
-        self.source_file = source_file
-
 
 # ── Claude Code ~/.claude scanner ───────────────────────────
 
