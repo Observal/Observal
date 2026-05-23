@@ -300,7 +300,16 @@ def doctor_cleanup(
     """Remove ALL Observal hooks, env vars, and legacy telemetry config.
 
     Strips Observal-managed hooks and OTEL env vars from Claude Code and
-    Kiro settings. Leaves non-Observal hooks untouched.
+    Kiro settings. Leaves non-Observal hooks untouched. Useful when you
+    want to fully uninstall Observal instrumentation from an IDE without
+    removing the IDE config files themselves.
+
+    \b
+    Examples:
+      observal doctor cleanup                          # Clean all supported IDEs
+      observal doctor cleanup --ide claude-code        # Claude Code only
+      observal doctor cleanup --ide kiro               # Kiro only
+      observal doctor cleanup --ide claude-code --dry-run  # Preview without changes
     """
     targets = [ide] if ide else ["claude-code", "kiro"]
     any_changes = False

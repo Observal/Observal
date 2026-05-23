@@ -852,6 +852,11 @@ def register_scan(app: typer.Typer):
 
         This command never modifies files. To instrument, run:
           observal doctor patch --all --all-ides
+
+        Examples:
+            observal scan
+            observal scan --ide claude-code
+            observal scan --ide kiro
         """
         all_mcps: list[DiscoveredMcp] = []
         all_skills: list[DiscoveredSkill] = []

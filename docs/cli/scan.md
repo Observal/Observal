@@ -90,7 +90,7 @@ observal doctor patch --all --all-ides --dry-run
 
 ## Related
 
-* [`observal doctor patch`](doctor.md) — instrument your IDEs (hooks, shims, OTel)
-* [`observal agent pull`](pull.md) — install a full agent (also wires up MCP servers)
-* [`observal doctor`](doctor.md) — diagnose instrumentation end-to-end
-* [Use Cases -- Observe MCP traffic](../use-cases/observe-mcp-traffic.md) — narrative walkthrough
+* [`observal doctor patch`](doctor.md): instrument your IDEs (hooks, shims, OTel)
+* [`observal agent pull`](pull.md): install a full agent (also wires up MCP servers)
+* [`observal doctor`](doctor.md): diagnose instrumentation end-to-end
+* [Use Cases -- Observe MCP traffic](../use-cases/observe-mcp-traffic.md): narrative walkthrough

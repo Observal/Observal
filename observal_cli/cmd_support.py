@@ -231,7 +231,20 @@ def bundle(
         help="Include OS/CPU/memory/disk metrics",
     ),
 ) -> None:
-    """Generate a diagnostic support bundle. No customer data or row contents are included."""
+    """Generate a diagnostic support bundle. No customer data or row contents included.
+
+    Collects version info, health probes, aggregate counts, recent logs, and
+    system metrics into a .tar.gz archive. No customer data or row contents
+    are included: all values pass through the Redaction Layer before writing.
+
+    The bundle is useful for sharing with support or diagnosing issues without
+    exposing sensitive data. Archive permissions are set to 0600.
+
+    Examples:
+        observal support bundle
+        observal support bundle -o /tmp/diag.tar.gz --logs-since 2h
+        observal support bundle --no-include-system
+    """
     # Determine output path
     if output is None:
         timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -516,7 +529,16 @@ def inspect(
         help="Print contents of a specific file from the archive",
     ),
 ) -> None:
-    """Inspect a support bundle. Displays the manifest, file tree, and optionally a single file."""
+    """Inspect a support bundle.
+
+    Displays the bundle manifest (schema version, collector results, redaction
+    counts), a file tree with sizes, and optionally prints the contents of a
+    specific file from the archive using --show.
+
+    Examples:
+        observal support inspect ./observal-support-20260101-120000.tar.gz
+        observal support inspect bundle.tar.gz --show health/postgres.json
+    """
     if not bundle_path.exists():
         render.error(f"Bundle not found: {bundle_path}")
         raise typer.Exit(1)

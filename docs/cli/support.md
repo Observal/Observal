@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 
 # observal support
 
-Generate and inspect diagnostic support bundles. Bundles contain **no customer data or row contents** — only aggregate counts, version info, sanitised configuration, health probes, and optional system metrics.
+Generate and inspect diagnostic support bundles. Bundles contain **no customer data or row contents**, only aggregate counts, version info, sanitised configuration, health probes, and optional system metrics.
 
 Use support bundles when filing issues or working with the Observal team to diagnose deployment problems.
 
@@ -33,12 +33,12 @@ observal support bundle [--output <path>] [--logs-since <duration>] [--include-s
 | Option | Short | Default | Description |
 | --- | --- | --- | --- |
 | `--output` | `-o` | `./observal-support-{timestamp}.tar.gz` | Archive output path |
-| `--logs-since` | — | `1h` | Duration of logs to include (e.g. `30s`, `30m`, `1h`, `2d`, `1h30m`) |
-| `--include-system` / `--no-include-system` | — | enabled | Include OS/CPU/memory/disk metrics |
+| `--logs-since` | - | `1h` | Duration of logs to include (e.g. `30s`, `30m`, `1h`, `2d`, `1h30m`) |
+| `--include-system` / `--no-include-system` | - | enabled | Include OS/CPU/memory/disk metrics |
 
 ### What it collects
 
-The bundle command contacts the Observal server and runs local collectors in parallel. Each collector has a 10-second timeout — partial failures are reported in the manifest without blocking the rest.
+The bundle command contacts the Observal server and runs local collectors in parallel. Each collector has a 10-second timeout; partial failures are reported in the manifest without blocking the rest.
 
 **Remote collectors** (from the server):
 
@@ -48,7 +48,7 @@ The bundle command contacts the Observal server and runs local collectors in par
 | `health` | Latency probes for PostgreSQL, ClickHouse, and Redis |
 | `config` | Allowlisted configuration keys only (see below) |
 | `aggregates` | Row counts per PostgreSQL and ClickHouse table |
-| `errors` | Up to 50 error fingerprints from the last 24 hours (stack templates only — no messages or arguments) |
+| `errors` | Up to 50 error fingerprints from the last 24 hours (stack templates only, no messages or arguments) |
 | `logs` | Structured log lines from the in-memory ring buffer, filtered by `--logs-since` |
 
 **Local collectors** (from the CLI machine):
@@ -76,11 +76,11 @@ Even allowlisted values pass through the redaction layer before being written.
 
 Every value in the bundle passes through a central redaction layer. The following patterns are automatically scrubbed:
 
-* **JWT tokens** — `eyJ...` three-segment base64url strings
-* **AWS access keys** — `AKIA` followed by 16 alphanumeric characters
-* **URL credentials** — `scheme://user:password@host` → `scheme://<REDACTED>@host`
-* **High-entropy strings** — Shannon entropy > 4.5 and length ≥ 32 (catches API keys, tokens, etc.)
-* **Sensitive JSON keys** — values under keys matching `password`, `secret`, `token`, `api_key`, `private_key`, `credential`, `authorization`, `client_secret`, `bearer` (case-insensitive)
+* **JWT tokens**: `eyJ...` three-segment base64url strings
+* **AWS access keys**: `AKIA` followed by 16 alphanumeric characters
+* **URL credentials**: `scheme://user:password@host` → `scheme://<REDACTED>@host`
+* **High-entropy strings**: Shannon entropy > 4.5 and length ≥ 32 (catches API keys, tokens, etc.)
+* **Sensitive JSON keys**: values under keys matching `password`, `secret`, `token`, `api_key`, `private_key`, `credential`, `authorization`, `client_secret`, `bearer` (case-insensitive)
 
 Redaction counts per file are recorded in the bundle manifest for auditability.
 
@@ -121,7 +121,7 @@ The `bundle_manifest.json` at the root of every archive contains:
 | `created_at` | ISO 8601 timestamp |
 | `cli_version` | CLI version that generated the bundle |
 | `host_os` | Operating system of the generating machine |
-| `node_id` | SHA-256 hash (first 12 chars) of the hostname — identifies the machine without revealing the hostname |
+| `node_id` | SHA-256 hash (first 12 chars) of the hostname, identifies the machine without revealing the hostname |
 | `flags_used` | Options passed to the `bundle` command |
 | `collector_results` | Per-collector status (`ok`, `duration_ms`, `error`) |
 | `redaction_counts` | Number of redactions applied per file |
@@ -129,7 +129,7 @@ The `bundle_manifest.json` at the root of every archive contains:
 
 ### Size budget
 
-If the uncompressed bundle exceeds 100 MB, you'll be prompted to confirm before writing. This is a safety check — typical bundles are well under 1 MB.
+If the uncompressed bundle exceeds 100 MB, you'll be prompted to confirm before writing. This is a safety check: typical bundles are well under 1 MB.
 
 ### Example
 
@@ -273,12 +273,12 @@ observal support inspect observal-support-20260510-143022.tar.gz --show health/p
 
 Support bundles are designed to be safe to share with third parties:
 
-* **No customer data** — no database row contents, no user messages, no trace payloads.
-* **No secrets** — passwords, tokens, API keys, and high-entropy strings are redacted.
-* **No hostnames or IPs** — the `node_id` is a truncated SHA-256 hash of the hostname.
-* **No usernames** — system info excludes the current user.
-* **Aggregate only** — table counts, not table contents; error fingerprints, not error messages.
-* **Auditable** — the manifest records exactly what was collected, what was redacted, and the SHA-256 hash of every file.
+* **No customer data**: no database row contents, no user messages, no trace payloads.
+* **No secrets**: passwords, tokens, API keys, and high-entropy strings are redacted.
+* **No hostnames or IPs**: the `node_id` is a truncated SHA-256 hash of the hostname.
+* **No usernames**: system info excludes the current user.
+* **Aggregate only**: table counts, not table contents; error fingerprints, not error messages.
+* **Auditable**: the manifest records exactly what was collected, what was redacted, and the SHA-256 hash of every file.
 
 ## Server endpoint
 
@@ -293,6 +293,6 @@ If your server does not have the support endpoint (older version), rebuild the s
 
 ## Related
 
-* [`observal doctor`](doctor.md) — diagnose IDE compatibility
-* [`observal ops telemetry status`](ops.md#observal-ops-telemetry-status) — check telemetry pipeline health
-* [Troubleshooting](../self-hosting/troubleshooting.md) — common deployment issues
+* [`observal doctor`](doctor.md): diagnose IDE compatibility
+* [`observal ops telemetry status`](ops.md#observal-ops-telemetry-status): check telemetry pipeline health
+* [Troubleshooting](../self-hosting/troubleshooting.md): common deployment issues
