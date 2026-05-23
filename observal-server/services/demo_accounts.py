@@ -19,6 +19,8 @@ from sqlalchemy import delete, func, select
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+from loguru import logger as optic
+
 from config import settings
 from models.organization import Organization
 from models.user import User, UserRole
@@ -27,7 +29,7 @@ from services.username_generator import generate_unique_username
 
 logger = logging.getLogger("observal.demo")
 
-# (env-var prefix, role) — order matters for seeding log readability
+# (env-var prefix, role) - order matters for seeding log readability
 DEMO_TIERS: list[tuple[str, UserRole]] = [
     ("DEMO_SUPER_ADMIN", UserRole.super_admin),
     ("DEMO_ADMIN", UserRole.admin),
@@ -39,10 +41,11 @@ DEMO_TIERS: list[tuple[str, UserRole]] = [
 async def seed_demo_accounts(db: AsyncSession) -> int:
     """Create demo accounts if no real users exist and env vars are set.
 
-    Returns the number of accounts created.  Idempotent — skips accounts
+    Returns the number of accounts created.  Idempotent - skips accounts
     that already exist.
     """
     # Bail out if ANY real (non-demo) user exists
+    optic.debug("demo_accounts: seeding")
     real_count = await db.scalar(select(func.count()).select_from(User).where(User.is_demo.is_(False)))
     if real_count and real_count > 0:
         return 0
@@ -80,7 +83,7 @@ async def seed_demo_accounts(db: AsyncSession) -> int:
     if created:
         await db.commit()
         logger.warning(
-            "Created %d demo account(s) — create a real super_admin to remove them",
+            "Created %d demo account(s) - create a real super_admin to remove them",
             created,
         )
 
@@ -95,6 +98,7 @@ async def cleanup_demo_accounts(db: AsyncSession, new_role: UserRole) -> int:
 
     Returns the number of deleted accounts.
     """
+    optic.debug("cleanup_demo_accounts: new_role={}", new_role)
     if new_role == UserRole.super_admin:
         stmt = delete(User).where(User.is_demo.is_(True))
     else:
@@ -118,6 +122,7 @@ async def cleanup_demo_accounts(db: AsyncSession, new_role: UserRole) -> int:
 @bus.on(UserCreated)
 async def _on_user_created(event: UserCreated) -> None:
     """Auto-cleanup demo accounts when a real user is created."""
+    optic.debug("_on_user_created: event={}", event)
     if event.is_demo:
         return  # Don't trigger cleanup for demo accounts themselves
 
