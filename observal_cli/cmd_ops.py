@@ -51,7 +51,7 @@ def _require_enterprise():
 
 
 # ═══════════════════════════════════════════════════════════
-# ops_app — Observability / operational commands group
+# ops_app: Observability / operational commands group
 # ═══════════════════════════════════════════════════════════
 
 ops_app = typer.Typer(
@@ -72,7 +72,23 @@ def review_list(
     tab: str = typer.Option(None, "--tab", help="Filter tab (agents, components)"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """List pending submissions."""
+    """List pending submissions awaiting admin review.
+
+    Shows all components and agents that have been submitted but not yet
+    approved or rejected. Use --type to filter by component type, or --tab
+    to separate agents from components.
+
+    Row numbers from the output can be used as shorthand in other review
+    commands (show, approve, reject).
+
+    Examples:
+
+        observal admin review list
+
+        observal admin review list --type mcp
+
+        observal admin review list --tab agents --output json
+    """
     params = {}
     if type_filter:
         params["type"] = type_filter
@@ -114,7 +130,20 @@ def review_show(
     review_id: str = typer.Argument(..., help="Name, row #, @alias, or UUID"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show review details for a component or agent."""
+    """Show review details for a component or agent.
+
+    Displays metadata, validation results, and status for a pending
+    submission. Accepts a row number from `review list`, a name,
+    an @alias, or a UUID.
+
+    Examples:
+
+        observal admin review show 1
+
+        observal admin review show my-mcp-server
+
+        observal admin review show @my-alias --output json
+    """
     resolved = config.resolve_alias(review_id)
     with spinner():
         item = client.get(f"/api/v1/review/{resolved}")
@@ -153,7 +182,18 @@ def review_approve(
     """Approve a submission (component, agent, or bundle).
 
     After `observal admin review list`, use a row number (e.g. 1),
-    the component/agent name, or a UUID prefix.
+    the component/agent name, or a UUID prefix. Approved items become
+    visible in the public registry.
+
+    Examples:
+
+        observal admin review approve 1
+
+        observal admin review approve my-mcp-server
+
+        observal admin review approve my-agent --agent
+
+        observal admin review approve my-bundle --bundle
     """
     resolved = config.resolve_alias(review_id)
     if agent:
@@ -181,7 +221,16 @@ def review_reject(
     """Reject a submission (component, agent, or bundle).
 
     After `observal admin review list`, use a row number (e.g. 1),
-    the component/agent name, or a UUID prefix.
+    the component/agent name, or a UUID prefix. A reason is required
+    so the submitter understands why.
+
+    Examples:
+
+        observal admin review reject 2 --reason "Missing README"
+
+        observal admin review reject my-agent --agent -r "Unsafe prompt"
+
+        observal admin review reject my-bundle --bundle -r "License issue"
     """
     resolved = config.resolve_alias(review_id)
     if not reason.strip():
@@ -209,7 +258,16 @@ telemetry_app = typer.Typer(help="Telemetry commands")
 
 @telemetry_app.command(name="status")
 def telemetry_status():
-    """Check telemetry data flow status."""
+    """Check telemetry data flow status.
+
+    Shows server-side event counts (tool calls, interactions) for the
+    last hour and local buffer statistics (pending, failed, sent events).
+    Useful for verifying that the shim is forwarding telemetry correctly.
+
+    Examples:
+
+        observal ops telemetry status
+    """
     with spinner("Checking telemetry..."):
         data = client.get("/api/v1/telemetry/status")
     rprint(f"  Status:       [green]{data.get('status', 'unknown')}[/green]")
@@ -240,7 +298,15 @@ def telemetry_status():
 
 @telemetry_app.command(name="test")
 def telemetry_test():
-    """Send a test telemetry event."""
+    """Send a test telemetry event.
+
+    Submits a synthetic tool call event to the server to verify that
+    the telemetry ingestion pipeline is working end to end.
+
+    Examples:
+
+        observal ops telemetry test
+    """
     with spinner("Sending test event..."):
         result = client.post(
             "/api/v1/telemetry/events",
@@ -264,7 +330,17 @@ def telemetry_test():
 
 @ops_app.command(name="overview")
 def _overview(output: str = typer.Option("table", "--output", "-o")):
-    """Show enterprise overview stats."""
+    """Show enterprise overview stats.
+
+    Displays high-level platform totals: MCP servers, agents, users,
+    tool calls, and agent interactions.
+
+    Examples:
+
+        observal ops overview
+
+        observal ops overview --output json
+    """
     with spinner("Loading overview..."):
         data = client.get("/api/v1/overview/stats")
     if output == "json":
@@ -286,7 +362,22 @@ def _metrics(
     output: str = typer.Option("table", "--output", "-o"),
     watch: bool = typer.Option(False, "--watch", "-w", help="Refresh every 5s"),
 ):
-    """Show metrics for an MCP server or agent."""
+    """Show metrics for an MCP server or agent.
+
+    Displays downloads, call counts, error rates, and latency percentiles
+    for the specified item. Use --watch to auto-refresh every 5 seconds
+    (Ctrl+C to stop).
+
+    Examples:
+
+        observal ops metrics my-mcp
+
+        observal ops metrics my-agent --type agent
+
+        observal ops metrics @mcp-alias --watch
+
+        observal ops metrics my-mcp --output json
+    """
     _metrics_impl(item_id, item_type, output, watch)
 
 
@@ -345,7 +436,19 @@ def _top(
     item_type: str = typer.Option("mcp", "--type", "-t", help="mcp or agent"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show top MCP servers or agents by usage."""
+    """Show top MCP servers or agents by usage.
+
+    Lists the highest-download items in descending order. Defaults to
+    MCP servers; use --type agent to see top agents instead.
+
+    Examples:
+
+        observal ops top
+
+        observal ops top --type agent
+
+        observal ops top --output json
+    """
     _top_impl(item_type, output)
 
 
@@ -380,7 +483,17 @@ def _rate(
     listing_type: str = typer.Option("mcp", "--type", "-t", help="mcp or agent"),
     comment: str | None = typer.Option(None, "--comment", "-c"),
 ):
-    """Rate an MCP server or agent."""
+    """Rate an MCP server or agent.
+
+    Submits a 1-5 star rating (with optional comment) for the specified
+    item. Ratings are dual-written to PostgreSQL and ClickHouse.
+
+    Examples:
+
+        observal ops rate my-mcp --stars 5
+
+        observal ops rate my-agent --type agent -s 4 -c "Great tool usage"
+    """
     _rate_impl(listing_id, stars, listing_type, comment)
 
 
@@ -405,7 +518,19 @@ def _feedback(
     listing_type: str = typer.Option("mcp", "--type", "-t"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show feedback for an MCP server or agent."""
+    """Show feedback for an MCP server or agent.
+
+    Displays the average rating, total review count, and individual
+    reviews (stars + comments) for the given item.
+
+    Examples:
+
+        observal ops feedback my-mcp
+
+        observal ops feedback my-agent --type agent
+
+        observal ops feedback my-mcp --output json
+    """
     _feedback_impl(listing_id, listing_type, output)
 
 
@@ -443,7 +568,18 @@ def eval_run(
     agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     trace_id: str | None = typer.Option(None, "--trace"),
 ):
-    """Run evaluation on an agent's traces."""
+    """Run evaluation on an agent's traces.
+
+    Triggers the eval engine on all recent traces for the agent (or a
+    specific trace if --trace is provided). Produces scorecards with
+    per-dimension grades.
+
+    Examples:
+
+        observal admin eval run my-agent
+
+        observal admin eval run my-agent --trace abc123
+    """
     resolved = config.resolve_alias(agent_id)
     body = {"trace_id": trace_id} if trace_id else {}
     with spinner("Running evaluation..."):
@@ -464,7 +600,20 @@ def eval_scorecards(
     version: str | None = typer.Option(None, "--version", "-v"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """List scorecards for an agent."""
+    """List scorecards for an agent.
+
+    Shows all eval scorecards produced for the agent, including overall
+    score, grade, bottleneck dimension, and evaluation time. Optionally
+    filter by agent version.
+
+    Examples:
+
+        observal admin eval scorecards my-agent
+
+        observal admin eval scorecards my-agent --version 1.2.0
+
+        observal admin eval scorecards my-agent --output json
+    """
     resolved = config.resolve_alias(agent_id)
     params = {"version": version} if version else {}
     with spinner():
@@ -506,7 +655,17 @@ def eval_show(
     scorecard_id: str = typer.Argument(...),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show scorecard details with dimension breakdown."""
+    """Show scorecard details with dimension breakdown.
+
+    Displays overall grade, composite score, dimension-level scores
+    with colored bars, recommendations, and top penalties with evidence.
+
+    Examples:
+
+        observal admin eval show abc12345-uuid
+
+        observal admin eval show abc12345-uuid --output json
+    """
     with spinner():
         sc = client.get(f"/api/v1/eval/scorecards/{scorecard_id}")
 
@@ -604,7 +763,7 @@ def eval_show(
             )
             rprint(
                 f"  [{severity_color}]{p.get('event_name', '?')}[/{severity_color}] "
-                f"({p.get('amount', 0)}) — {p.get('evidence', '')[:120]}"
+                f"({p.get('amount', 0)}) {p.get('evidence', '')[:120]}"
             )
 
 
@@ -615,7 +774,18 @@ def eval_compare(
     version_b: str = typer.Option(..., "--b"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Compare two agent versions with dimension breakdown."""
+    """Compare two agent versions with dimension breakdown.
+
+    Shows score delta and per-dimension changes between two versions
+    of the same agent. Useful for validating that a new version
+    improves (or at least does not regress) eval scores.
+
+    Examples:
+
+        observal admin eval compare my-agent --a 1.0.0 --b 1.1.0
+
+        observal admin eval compare my-agent --a 1.0.0 --b 1.1.0 --output json
+    """
     resolved = config.resolve_alias(agent_id)
     with spinner("Comparing versions..."):
         data = client.get(
@@ -663,7 +833,20 @@ def eval_aggregate(
     window: int = typer.Option(50, "--window", "-w", help="Number of recent scorecards"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show aggregate scoring stats for an agent."""
+    """Show aggregate scoring stats for an agent.
+
+    Computes mean composite score, standard deviation, 95% confidence
+    interval, weakest dimension, and drift detection over a rolling
+    window of recent scorecards.
+
+    Examples:
+
+        observal admin eval aggregate my-agent
+
+        observal admin eval aggregate my-agent --window 100
+
+        observal admin eval aggregate my-agent --output json
+    """
     resolved = config.resolve_alias(agent_id)
     with spinner("Computing aggregate..."):
         data = client.get(f"/api/v1/eval/agents/{resolved}/aggregate", params={"window_size": window})
@@ -721,7 +904,16 @@ admin_app = typer.Typer(help="Admin commands")
 
 @admin_app.command(name="settings")
 def admin_settings(output: str = typer.Option("table", "--output", "-o")):
-    """List enterprise settings."""
+    """List enterprise settings.
+
+    Displays all configured key-value enterprise settings on the server.
+
+    Examples:
+
+        observal admin settings
+
+        observal admin settings --output json
+    """
     with spinner():
         data = client.get("/api/v1/admin/settings")
     if output == "json":
@@ -743,7 +935,17 @@ def admin_set(
     key: str = typer.Argument(...),
     value: str = typer.Argument(...),
 ):
-    """Set an enterprise setting."""
+    """Set an enterprise setting.
+
+    Creates or updates a key-value enterprise configuration entry
+    on the server. Requires admin privileges.
+
+    Examples:
+
+        observal admin set max_agents_per_user 10
+
+        observal admin set telemetry_retention_days 90
+    """
     with spinner():
         client.put(f"/api/v1/admin/settings/{key}", {"value": value})
     rprint(f"[green]✓ {key} = {value}[/green]")
@@ -751,7 +953,17 @@ def admin_set(
 
 @admin_app.command(name="penalties")
 def admin_penalties(output: str = typer.Option("table", "--output", "-o")):
-    """List the penalty catalog."""
+    """List the penalty catalog.
+
+    Shows all configured eval penalty definitions with their event name,
+    dimension, amount, severity, and active status.
+
+    Examples:
+
+        observal admin penalties
+
+        observal admin penalties --output json
+    """
     with spinner():
         data = client.get("/api/v1/admin/penalties")
     if output == "json":
@@ -785,7 +997,19 @@ def admin_penalty_set(
     amount: int | None = typer.Option(None, "--amount", "-a"),
     active: bool | None = typer.Option(None, "--active"),
 ):
-    """Modify a penalty definition."""
+    """Modify a penalty definition.
+
+    Updates the amount or active status of an existing penalty in the
+    catalog. Identify the penalty by its event_name or UUID.
+
+    Examples:
+
+        observal admin penalty-set tool_timeout --amount 5
+
+        observal admin penalty-set tool_timeout --active false
+
+        observal admin penalty-set tool_timeout --amount 3 --active true
+    """
     # Look up by event name first
     with spinner():
         all_penalties = client.get("/api/v1/admin/penalties")
@@ -813,7 +1037,17 @@ def admin_penalty_set(
 
 @admin_app.command(name="weights")
 def admin_weights(output: str = typer.Option("table", "--output", "-o")):
-    """Show global dimension weights."""
+    """Show global dimension weights.
+
+    Lists the weight assigned to each eval dimension, indicating whether
+    each is a custom override or the system default.
+
+    Examples:
+
+        observal admin weights
+
+        observal admin weights --output json
+    """
     with spinner():
         data = client.get("/api/v1/admin/weights")
     if output == "json":
@@ -834,7 +1068,18 @@ def admin_weight_set(
     dimension: str = typer.Argument(..., help="Dimension name (e.g. goal_completion)"),
     weight: float = typer.Argument(..., help="New weight (0.0 - 1.0)"),
 ):
-    """Set a global dimension weight."""
+    """Set a global dimension weight.
+
+    Overrides the default weight for a scoring dimension. Weights
+    determine how much each dimension contributes to the composite
+    score (values between 0.0 and 1.0).
+
+    Examples:
+
+        observal admin weight-set goal_completion 0.35
+
+        observal admin weight-set tool_efficiency 0.20
+    """
     with spinner("Updating weight..."):
         result = client.put("/api/v1/admin/weights", {dimension: weight})
     updated = result.get("updated", {})
@@ -846,7 +1091,17 @@ def admin_weight_set(
 
 @admin_app.command(name="users")
 def admin_users(output: str = typer.Option("table", "--output", "-o")):
-    """List all users."""
+    """List all users.
+
+    Displays all registered users with their email, name, role, and ID.
+    Requires admin privileges.
+
+    Examples:
+
+        observal admin users
+
+        observal admin users --output json
+    """
     with spinner():
         data = client.get("/api/v1/admin/users")
     if output == "json":
@@ -908,7 +1163,7 @@ def admin_create_user(
     rprint(f"  [bold]Role:[/bold]     {data['role']}")
     rprint(f"  [bold]ID:[/bold]       {data['id']}")
     rprint(f"\n[yellow]Password:[/yellow] {data['password']}")
-    rprint("[dim]Save this — it will not be shown again.[/dim]")
+    rprint("[dim]Save this, it will not be shown again.[/dim]")
 
 
 @admin_app.command(name="reset-password")
@@ -920,6 +1175,12 @@ def admin_reset_password(
 
     Provide the user's email and either enter a new password interactively
     or use --generate to create a secure random password.
+
+    Examples:
+
+        observal admin reset-password alice@example.com
+
+        observal admin reset-password alice@example.com --generate
     """
     # Look up user ID by email
     with spinner("Looking up user..."):
@@ -945,7 +1206,7 @@ def admin_reset_password(
     rprint(f"[green]{result['message']}[/green]")
     if "generated_password" in result:
         rprint(f"\n[yellow]Generated password:[/yellow] {result['generated_password']}")
-        rprint("[dim]Save this — it will not be shown again.[/dim]")
+        rprint("[dim]Save this, it will not be shown again.[/dim]")
 
 
 @admin_app.command(name="delete-user")
@@ -956,6 +1217,12 @@ def admin_delete_user(
     """Delete a user account. Requires admin privileges.
 
     This permanently removes the user and all associated data (API keys, etc.).
+
+    Examples:
+
+        observal admin delete-user alice@example.com
+
+        observal admin delete-user alice@example.com --force
     """
     # Look up user ID by email
     with spinner("Looking up user..."):
@@ -965,7 +1232,7 @@ def admin_delete_user(
         rprint(f"[red]User not found:[/red] {email}")
         raise typer.Exit(1)
 
-    rprint(f"\n  [bold]{match['name']}[/bold] ({match['email']}) — {match['role']}")
+    rprint(f"\n  [bold]{match['name']}[/bold] ({match['email']}), {match['role']}")
     if not force:
         typer.confirm("\nPermanently delete this user?", abort=True)
 
@@ -980,7 +1247,17 @@ def admin_canaries(
     agent_id: str = typer.Argument(..., help="Agent ID to list canaries for"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """List canary configs for an agent."""
+    """List canary configs for an agent.
+
+    Shows all canary injection configurations defined for the specified
+    agent, including type, injection point, and enabled status.
+
+    Examples:
+
+        observal admin canaries my-agent
+
+        observal admin canaries my-agent --output json
+    """
     with spinner():
         data = client.get(f"/api/v1/admin/canaries/{agent_id}")
     if output == "json":
@@ -1015,7 +1292,20 @@ def admin_canary_add(
     canary_value: str = typer.Option("", "--value", "-v", help="Canary value to inject"),
     expected: str = typer.Option("flag_anomaly", "--expected", "-e", help="Expected agent behavior"),
 ):
-    """Add a canary config for an agent."""
+    """Add a canary config for an agent.
+
+    Creates a synthetic canary token injection rule. When the agent
+    encounters the injected value, its behavior is monitored to detect
+    parroting or manipulation.
+
+    Examples:
+
+        observal admin canary-add my-agent
+
+        observal admin canary-add my-agent --type entity --point context
+
+        observal admin canary-add my-agent -t instruction -v "ignore all" -e flag_anomaly
+    """
     body = {
         "agent_id": agent_id,
         "canary_type": canary_type,
@@ -1033,7 +1323,18 @@ def admin_canary_reports(
     agent_id: str = typer.Argument(..., help="Agent ID"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Show canary detection reports for an agent."""
+    """Show canary detection reports for an agent.
+
+    Lists results from canary injection tests, showing whether the
+    agent parroted, flagged, ignored, or corrected the canary token,
+    along with any penalties applied.
+
+    Examples:
+
+        observal admin canary-reports my-agent
+
+        observal admin canary-reports my-agent --output json
+    """
     with spinner():
         data = client.get(f"/api/v1/admin/canaries/{agent_id}/reports")
     if output == "json":
@@ -1068,7 +1369,14 @@ def admin_canary_reports(
 def admin_canary_delete(
     canary_id: str = typer.Argument(..., help="Canary config ID to delete"),
 ):
-    """Delete a canary config."""
+    """Delete a canary config.
+
+    Permanently removes a canary injection configuration by its ID.
+
+    Examples:
+
+        observal admin canary-delete abc12345-uuid
+    """
     with spinner("Deleting canary..."):
         client.delete(f"/api/v1/admin/canaries/{canary_id}")
     rprint(f"[green]Canary {canary_id[:8]}... deleted.[/green]")
@@ -1079,7 +1387,18 @@ def admin_canary_delete(
 
 @admin_app.command(name="diagnostics")
 def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
-    """Show system diagnostics and health status."""
+    """Show system diagnostics and health status.
+
+    Reports overall system health, database connectivity, JWT key status,
+    and enterprise configuration issues. Useful for troubleshooting
+    deployment problems.
+
+    Examples:
+
+        observal admin diagnostics
+
+        observal admin diagnostics --output json
+    """
     with spinner():
         data = client.get("/api/v1/admin/diagnostics")
     if output == "json":
@@ -1122,7 +1441,17 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
 
 @admin_app.command(name="saml-config")
 def admin_saml_config(output: str = typer.Option("table", "--output", "-o")):
-    """View current SAML SSO configuration. (Enterprise only)"""
+    """View current SAML SSO configuration. (Enterprise only)
+
+    Displays the IdP entity ID, SSO/SLO URLs, SP entity ID, and whether
+    SAML and JIT provisioning are active.
+
+    Examples:
+
+        observal admin saml-config
+
+        observal admin saml-config --output json
+    """
     _require_enterprise()
     with spinner():
         data = client.get("/api/v1/admin/saml-config")
@@ -1189,7 +1518,17 @@ def admin_saml_config_set(
 def admin_saml_config_delete(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
-    """Delete SAML SSO configuration. Disables SAML SSO. (Enterprise only)"""
+    """Delete SAML SSO configuration. Disables SAML SSO. (Enterprise only)
+
+    Removes the entire SAML configuration, disabling SSO for all users.
+    Prompts for confirmation unless --force is passed.
+
+    Examples:
+
+        observal admin saml-config-delete
+
+        observal admin saml-config-delete --force
+    """
     _require_enterprise()
     if not force:
         typer.confirm("This will disable SAML SSO for all users. Continue?", abort=True)
@@ -1203,7 +1542,17 @@ def admin_saml_config_delete(
 
 @admin_app.command(name="scim-tokens")
 def admin_scim_tokens(output: str = typer.Option("table", "--output", "-o")):
-    """List SCIM provisioning tokens. (Enterprise only)"""
+    """List SCIM provisioning tokens. (Enterprise only)
+
+    Shows all SCIM bearer tokens with their prefix, description,
+    active status, and creation date.
+
+    Examples:
+
+        observal admin scim-tokens
+
+        observal admin scim-tokens --output json
+    """
     _require_enterprise()
     with spinner():
         data = client.get("/api/v1/admin/scim-tokens")
@@ -1240,6 +1589,10 @@ def admin_scim_token_create(
     """Create a new SCIM provisioning token.
 
     The token is shown once on creation. Save it securely. (Enterprise only)
+
+    Examples:
+        observal admin scim-token-create
+        observal admin scim-token-create --description "Okta SCIM sync"
     """
     _require_enterprise()
     body: dict = {}
@@ -1259,7 +1612,17 @@ def admin_scim_token_revoke(
     token_id: str = typer.Argument(..., help="Token ID to revoke"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
-    """Revoke a SCIM provisioning token. (Enterprise only)"""
+    """Revoke a SCIM provisioning token. (Enterprise only)
+
+    Permanently disables the specified SCIM token so it can no longer
+    be used for provisioning. Prompts for confirmation unless --force.
+
+    Examples:
+
+        observal admin scim-token-revoke abc12345-uuid
+
+        observal admin scim-token-revoke abc12345-uuid --force
+    """
     _require_enterprise()
     if not force:
         typer.confirm(f"Revoke SCIM token {token_id[:8]}...?", abort=True)
@@ -1279,7 +1642,21 @@ def admin_security_events(
     limit: int = typer.Option(50, "--limit", "-n"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """View security events log."""
+    """View security events log.
+
+    Lists security-relevant events (login attempts, permission changes,
+    etc.) with optional filters on type, severity, and actor.
+
+    Examples:
+
+        observal admin security-events
+
+        observal admin security-events --type auth.login --severity critical
+
+        observal admin security-events --actor alice@example.com -n 100
+
+        observal admin security-events --output json
+    """
     params: dict = {"limit": str(limit)}
     if event_type:
         params["event_type"] = event_type
@@ -1335,7 +1712,22 @@ def admin_audit_log(
     limit: int = typer.Option(50, "--limit", "-n"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Query the audit log. (Enterprise only)"""
+    """Query the audit log. (Enterprise only)
+
+    Shows timestamped entries of admin and user actions with actor,
+    resource, IP address, and detail fields. Supports filtering by
+    action, actor, and resource type.
+
+    Examples:
+
+        observal admin audit-log
+
+        observal admin audit-log --action auth.login --limit 100
+
+        observal admin audit-log --actor alice@example.com -r agent
+
+        observal admin audit-log --output json
+    """
     _require_enterprise()
     from urllib.parse import urlencode
 
@@ -1385,7 +1777,19 @@ def admin_audit_log_export(
     actor: str = typer.Option(None, "--actor", help="Filter by actor email"),
     file: str = typer.Option(None, "--file", "-f", help="Write output to file"),
 ):
-    """Export audit log as CSV. (Enterprise only)"""
+    """Export audit log as CSV. (Enterprise only)
+
+    Downloads the audit log in CSV format. Prints to stdout by default,
+    or writes to a file with --file.
+
+    Examples:
+
+        observal admin audit-log-export
+
+        observal admin audit-log-export --file audit.csv
+
+        observal admin audit-log-export --action auth.login --actor bob@example.com
+    """
     _require_enterprise()
     from urllib.parse import urlencode
 
@@ -1413,7 +1817,15 @@ def admin_audit_log_export(
 
 @admin_app.command(name="trace-privacy")
 def admin_trace_privacy():
-    """View trace privacy setting."""
+    """View trace privacy setting.
+
+    Shows whether trace privacy (sensitive data redaction) is currently
+    enabled or disabled for the organization.
+
+    Examples:
+
+        observal admin trace-privacy
+    """
     with spinner():
         data = client.get("/api/v1/admin/org/trace-privacy")
     enabled = data.get("trace_privacy", False)
@@ -1425,7 +1837,17 @@ def admin_trace_privacy():
 def admin_trace_privacy_set(
     enabled: bool = typer.Argument(..., help="true or false"),
 ):
-    """Enable or disable trace privacy (redacts sensitive trace data)."""
+    """Enable or disable trace privacy (redacts sensitive trace data).
+
+    When enabled, the server scrubs PII and secrets from stored traces.
+    When disabled, traces are stored verbatim.
+
+    Examples:
+
+        observal admin trace-privacy-set true
+
+        observal admin trace-privacy-set false
+    """
     with spinner("Updating trace privacy..."):
         result = client.put("/api/v1/admin/org/trace-privacy", {"trace_privacy": enabled})
     status = "[green]enabled[/green]" if result.get("trace_privacy") else "[red]disabled[/red]"
@@ -1437,7 +1859,15 @@ def admin_trace_privacy_set(
 
 @admin_app.command(name="cache-clear")
 def admin_cache_clear():
-    """Clear all server caches."""
+    """Clear all server caches.
+
+    Flushes all in-memory and Redis caches on the server. Useful after
+    bulk data changes or when stale data is suspected.
+
+    Examples:
+
+        observal admin cache-clear
+    """
     with spinner("Clearing caches..."):
         client.post("/api/v1/admin/cache/clear")
     rprint("[green]All caches cleared.[/green]")
@@ -1451,7 +1881,17 @@ def admin_set_role(
     email: str = typer.Argument(..., help="Email of the user"),
     role: str = typer.Argument(..., help="New role: super_admin, admin, reviewer, or user"),
 ):
-    """Change a user's role."""
+    """Change a user's role.
+
+    Updates the role for the user identified by email. Valid roles are:
+    super_admin, admin, reviewer, user. Requires admin privileges.
+
+    Examples:
+
+        observal admin set-role alice@example.com admin
+
+        observal admin set-role bob@example.com reviewer
+    """
     with spinner("Looking up user..."):
         users = client.get("/api/v1/admin/users")
     match = next((u for u in users if u["email"] == email.strip().lower()), None)
@@ -1474,7 +1914,22 @@ def _traces(
     limit: int = typer.Option(20, "--limit", "-n"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """List recent traces."""
+    """List recent traces.
+
+    Queries the GraphQL API for recent telemetry traces. Results can be
+    filtered by trace type, MCP server, or agent. Shows span count,
+    error count, and tool call count per trace.
+
+    Examples:
+
+        observal ops traces
+
+        observal ops traces --type tool_call --limit 50
+
+        observal ops traces --mcp my-mcp
+
+        observal ops traces --agent my-agent --output json
+    """
     _traces_impl(trace_type, mcp_id, agent_id, limit, output)
 
 
@@ -1555,7 +2010,18 @@ def _spans(
     trace_id: str = typer.Argument(..., help="Trace ID"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """List spans for a trace."""
+    """List spans for a trace.
+
+    Shows all spans within a trace, including type, method, latency,
+    status, and schema validation result. Use a trace ID from
+    `observal ops traces` output.
+
+    Examples:
+
+        observal ops spans abc123-trace-id
+
+        observal ops spans abc123-trace-id --output json
+    """
     _spans_impl(trace_id, output)
 
 
@@ -1632,7 +2098,7 @@ def _spans_impl(trace_id, output):
 
 
 # ═══════════════════════════════════════════════════════════
-# self_app — CLI self-management commands
+# self_app: CLI self-management commands
 # ═══════════════════════════════════════════════════════════
 
 self_app = typer.Typer(
@@ -1674,11 +2140,27 @@ def _do_install(install_info, target_version: str, direction: str) -> None:
 
 @self_app.command()
 def upgrade(
-    version: str | None = typer.Option(None, "--version", "-v", help="Target version (default: latest stable)"),
-    pre: bool = typer.Option(False, "--pre", help="Include pre-release versions"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    version: str | None = typer.Option(
+        None, "--version", "-v", help="Target version to upgrade to (e.g. 0.9.0). Defaults to latest stable."
+    ),
+    pre: bool = typer.Option(False, "--pre", help="Include pre-release versions when resolving latest"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip interactive confirmation prompt"),
 ):
-    """Upgrade observal CLI to the latest (or specified) version."""
+    """Upgrade the observal CLI to the latest (or specified) version.
+
+    Downloads the new binary from GitHub releases, verifies its SHA-256
+    checksum, and atomically replaces the current binary. A backup of
+    the old version is kept for rollback.
+
+    Managed installs (Homebrew, system packages) are detected and
+    blocked with guidance to use the package manager instead.
+
+    Examples:
+        observal self upgrade
+        observal self upgrade --version 0.9.0
+        observal self upgrade --pre
+        observal self upgrade --force
+    """
     from packaging.version import InvalidVersion, Version
 
     from observal_cli import install_detector, version_check
@@ -1745,11 +2227,28 @@ def upgrade(
 
 @self_app.command()
 def downgrade(
-    version: str | None = typer.Option(None, "--version", "-v", help="Target version to downgrade to"),
-    list_versions: bool = typer.Option(False, "--list", "-l", help="List all available versions"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation and MIN_CLI_VERSION warning"),
+    version: str | None = typer.Option(None, "--version", "-v", help="Target version to downgrade to (required)"),
+    list_versions: bool = typer.Option(
+        False, "--list", "-l", help="List all available versions with compatibility status"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip confirmation and MIN_CLI_VERSION compatibility warning"
+    ),
 ):
-    """Downgrade observal CLI to a previous version."""
+    """Downgrade the observal CLI to a previous version.
+
+    Downloads and installs a specific older version from GitHub releases.
+    Warns if the target version is below the server's minimum supported
+    CLI version (API calls may fail).
+
+    Use --list to see all available versions with their publication dates
+    and compatibility status.
+
+    Examples:
+        observal self downgrade --version 0.7.0
+        observal self downgrade --list
+        observal self downgrade --version 0.7.0 --force
+    """
     from packaging.version import InvalidVersion, Version
 
     from observal_cli import install_detector, version_check
@@ -1845,7 +2344,14 @@ def downgrade(
 
 @self_app.command()
 def rollback():
-    """Restore CLI to the version before the last upgrade/downgrade."""
+    """Restore the CLI to the version before the last upgrade/downgrade.
+
+    Copies the backed-up binary (saved during the previous upgrade) back
+    over the current one. Only available for binary installs.
+
+    Examples:
+        observal self rollback
+    """
     from observal_cli import install_detector
     from observal_cli.install_detector import InstallMethod
 
@@ -1876,7 +2382,15 @@ def rollback():
 
 @self_app.command()
 def status():
-    """Show current CLI version and update availability."""
+    """Show current CLI version, install method, and update availability.
+
+    Checks GitHub for the latest release and shows whether an update is
+    available. Also displays the server's minimum CLI version requirement
+    if connected.
+
+    Examples:
+        observal self status
+    """
     from observal_cli import version_check
 
     current = version_check.get_current_version()
