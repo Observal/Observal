@@ -12,6 +12,7 @@ import time
 import uuid
 
 import structlog
+from loguru import logger as optic
 from sqlalchemy import select
 
 from database import async_session
@@ -95,6 +96,7 @@ async def _listen_for_invalidation() -> None:
 
 async def start() -> None:
     """Start background refresh and invalidation listener tasks."""
+    optic.debug("agent_registry_cache starting")
     global _refresh_task, _subscriber_task
     if _refresh_task is None or _refresh_task.done():
         _refresh_task = asyncio.create_task(_periodic_refresh())
@@ -104,6 +106,7 @@ async def start() -> None:
 
 async def stop() -> None:
     """Cancel background tasks."""
+    optic.debug("agent_registry_cache stopping")
     global _refresh_task, _subscriber_task
     if _refresh_task and not _refresh_task.done():
         _refresh_task.cancel()
