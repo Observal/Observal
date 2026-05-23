@@ -13,7 +13,7 @@ Observal is an agent-centric registry and observability platform for AI coding a
 
 All API routes accept either UUID or name for path parameters. Admin review controls public registry visibility only. Submitters can install and use their own items immediately without approval.
 
-The MCP validator supports multiple frameworks: FastMCP, standard MCP SDK (Python), TypeScript SDK (`@modelcontextprotocol/sdk`), and Go SDK (`mcp-go`). There is no framework enforcement — all MCP implementations are accepted.
+The MCP validator supports multiple frameworks: FastMCP, standard MCP SDK (Python), TypeScript SDK (`@modelcontextprotocol/sdk`), and Go SDK (`mcp-go`). There is no framework enforcement - all MCP implementations are accepted.
 
 The platform generates portable agent configs for 8 IDEs: Claude Code, Cursor, Gemini CLI, Kiro, VS Code, Codex CLI, GitHub Copilot, and OpenCode. The agent builder (`services/agent_builder.py`) and agent resolver (`services/agent_resolver.py`) compose and validate component bundles into IDE-specific output formats.
 
@@ -51,7 +51,8 @@ observal
 │   └── eval                 #   run, scorecards, show, compare, aggregate
 ├── migrate                  # ClickHouse telemetry migration tools
 ├── self                     # upgrade, downgrade
-└── doctor                   # diagnose IDE settings; `doctor patch` applies instrumentation
+├── doctor                   # diagnose IDE settings; `doctor patch` applies instrumentation
+└── logs                     # live dev log viewer (--level, --filter, --lines, --no-follow)
 ```
 
 Deprecated root-level aliases exist for backward compatibility (e.g. `observal submit` → `observal registry mcp submit`, `observal upgrade` → `observal self upgrade`). These are hidden from `--help` and print deprecation warnings.
@@ -103,7 +104,7 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `api/routes/sandbox.py` : Sandbox CRUD; install generates observal-sandbox-run config
 - `api/routes/review.py` : Admin approve/reject workflow (unified across all component types)
 - `api/routes/telemetry.py` : `POST /ingest` (batch traces/spans/scores) + legacy `/events` + `POST /hooks` (raw IDE hook JSON) + OTLP HTTP receiver (`/v1/traces`, `/v1/logs`, `/v1/metrics` → ClickHouse)
-- `api/routes/reconcile.py` : Session reconciliation endpoint — accepts full JSONL records from CLI after parsing local session files; stores assistant messages, user prompts, system messages, tool results, attachments
+- `api/routes/reconcile.py` : Session reconciliation endpoint - accepts full JSONL records from CLI after parsing local session files; stores assistant messages, user prompts, system messages, tool results, attachments
 - `api/routes/insights.py` : Agent insight report CRUD; triggers batch insight generation; returns per-agent usage analysis
 - `api/routes/dashboard.py` : MCP metrics, agent metrics, overview stats, top items, trends
 - `api/routes/feedback.py` : Ratings with dual-write to PostgreSQL + ClickHouse scores table
@@ -187,14 +188,14 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `agent_registry_cache.py` : Registry query cache for agent resolution
 - `request_context.py` : Request-scoped context (current user, request ID) for services
 
-**Eval pipeline (`services/eval/`)** — all eval services live in this subpackage:
+**Eval pipeline (`services/eval/`)** - all eval services live in this subpackage:
 
 - `eval_engine.py` : `EvalBackend` ABC; `LLMJudgeBackend` (Bedrock/OpenAI); `FallbackBackend` (deterministic); managed prompt templates
 - `eval_service.py` : Orchestrates eval runs: fetch traces, run backend, create scorecards
-- `eval_watchdog.py` : Meta-checker — detects dimensions that return perfect scores without evidence or skip dimensions entirely
-- `sanitizer.py` : `TraceSanitizer` — strips prompt injection attempts before they reach the LLM judge
+- `eval_watchdog.py` : Meta-checker - detects dimensions that return perfect scores without evidence or skip dimensions entirely
+- `sanitizer.py` : `TraceSanitizer` - strips prompt injection attempts before they reach the LLM judge
 - `adversarial_scorer.py` : Rule-based scoring for adversarial robustness dimension
-- `canary.py` : `CanaryDetector` — injects synthetic tokens, checks whether agents parrot them back
+- `canary.py` : `CanaryDetector` - injects synthetic tokens, checks whether agents parrot them back
 - `score_aggregator.py` : Weighted aggregation, penalty application, letter grade mapping
 - `slm_scorer.py` : LLM-as-judge scoring for goal completion, factual grounding, thought process
 - `structural_scorer.py` : Rule-based scoring for tool efficiency and tool failures; `MatchingEngine` with fuzzy comparison
@@ -212,7 +213,7 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 
 - Pydantic request/response models mirroring the API surface
 - `telemetry.py` : TraceIngest, SpanIngest, ScoreIngest, IngestBatch, IngestResponse
-- `ide_registry.py` : IDE registry schema — canonical source of IDE capabilities, config paths, hook specs; mirrored in `observal_cli/ide_registry.py`
+- `ide_registry.py` : IDE registry schema - canonical source of IDE capabilities, config paths, hook specs; mirrored in `observal_cli/ide_registry.py`
 - `insights.py` : InsightReport request/response schemas
 - `judge_output.py` : Structured output schemas for the LLM judge
 
@@ -222,10 +223,10 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `branding.py` : ASCII banner (`BANNER`) and `welcome_banner()` helper; used by `auth login`
 - `ide_registry.py` : Client-side mirror of `observal-server/schemas/ide_registry.py`; kept in sync by `tests/test_constants_sync.py`
 - `prompts.py` : Interactive prompt helpers using `questionary` for TTY arrow-key selection; falls back to `typer.prompt` in CI
-- `analyzer.py` : Local repo analysis for MCP submissions — clones with system git (inherits SSH keys, credential helpers), runs same AST/pattern detection as the server
+- `analyzer.py` : Local repo analysis for MCP submissions - clones with system git (inherits SSH keys, credential helpers), runs same AST/pattern detection as the server
 - `telemetry_buffer.py` : SQLite buffer (`~/.observal/telemetry_buffer.db`) for offline telemetry; stores events when server is unreachable and flushes on reconnect
-- `settings_reconciler.py` : Non-destructive reconciler for Claude Code `settings.json`; Terraform-style declarative reconciliation — reads current state, diffs against desired, applies only deltas
-- `cmd_auth.py` : `auth_app` subgroup: login (smart — auto-bootstrap on fresh server, supports --key for API keys, email+password), register, reset-password, logout, whoami, status. Also `config_app` subgroup: show, set, path, alias, aliases
+- `settings_reconciler.py` : Non-destructive reconciler for Claude Code `settings.json`; Terraform-style declarative reconciliation - reads current state, diffs against desired, applies only deltas
+- `cmd_auth.py` : `auth_app` subgroup: login (smart - auto-bootstrap on fresh server, supports --key for API keys, email+password), register, reset-password, logout, whoami, status. Also `config_app` subgroup: show, set, path, alias, aliases
 - `cmd_mcp.py` : `mcp_app` subgroup: submit (JSON paste default, --git for repo analysis, --draft, --yes for non-interactive), list (--sort, --limit, --output), show, install (--raw), delete
 - `cmd_agent.py` : `agent_app` subgroup: create (--from-file), list, show, install, delete; authoring: init, add, build, publish
 - `cmd_skill.py` : `skill_app` subgroup: submit, list, show, install, delete
@@ -248,19 +249,19 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 - `proxy.py` : `observal-proxy`: HTTP reverse proxy reusing ShimState; same telemetry pipeline
 - `sandbox_runner.py` : `observal-sandbox-run`: Docker SDK executor; captures stdout/stderr via container.logs(); reports exit code, OOM, container ID
 
-**IDE hook specs (`observal_cli/ide_specs/`)** — one module per IDE, each exporting hook generation helpers:
+**IDE hook specs (`observal_cli/ide_specs/`)** - one module per IDE, each exporting hook generation helpers:
 
 - `claude_code_hooks_spec.py`, `kiro_hooks_spec.py`, `cursor_hooks_spec.py`, `gemini_hooks_spec.py`, `vscode_hooks_spec.py`, `copilot_cli_hooks_spec.py`, `opencode_hooks_spec.py`
 
 ### Docker (`docker/`)
 
-- `docker-compose.yml` : Primary stack — 10 services: init (migrations), api, db (PostgreSQL 16), clickhouse, redis, worker (arq), web (Next.js), lb (nginx reverse proxy on port 8000), prometheus (9090), grafana (3001)
+- `docker-compose.yml` : Primary stack - 10 services: init (migrations), api, db (PostgreSQL 16), clickhouse, redis, worker (arq), web (Next.js), lb (nginx reverse proxy on port 8000), prometheus (9090), grafana (3001)
 - `docker-compose.dev.yml` : Development overrides (hot reload, bind mounts)
 - `docker-compose.production.yml` : Production overrides (resource limits, restart policies)
 - `docker-compose.enterprise.yml` : Enterprise stack additions (SAML, SCIM, SSO)
 - `Dockerfile.api` : uv-based Python build
 - `Dockerfile.web` : Node 24-alpine, multi-stage build with standalone output
-- `entrypoint.sh` : Init container entrypoint — runs Alembic migrations then exits
+- `entrypoint.sh` : Init container entrypoint - runs Alembic migrations then exits
 - `nginx.conf`, `nginx.dev.conf`, `nginx.production.conf` : Nginx reverse proxy configs
 
 ### Tests (`tests/`)
@@ -382,12 +383,12 @@ cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml -
 
 Four route groups organize the UI by access level:
 
-**`(auth)/`** — Login and device authorization
+**`(auth)/`** - Login and device authorization
 
 - `login/page.tsx` : Email/name login and first-run admin init
 - `device/page.tsx` : Device authorization confirmation page (OAuth device flow)
 
-**`(registry)/`** — Public agent browser (requires auth)
+**`(registry)/`** - Public agent browser (requires auth)
 
 - `page.tsx` : Registry home with search, trending agents, top rated
 - `agents/page.tsx` : Agent list table with search and filters
@@ -396,7 +397,7 @@ Four route groups organize the UI by access level:
 - `components/[id]/page.tsx` : Component detail view
 - `leaderboard/page.tsx` : Agent leaderboard ranked by eval score
 
-**`(admin)/`** — Admin dashboard (requires admin role)
+**`(admin)/`** - Admin dashboard (requires admin role)
 
 - `dashboard/page.tsx` : Overview stats, recent agents, latest traces, agent scores
 - `review/page.tsx` : Admin review queue with detail sheet
@@ -412,7 +413,7 @@ Four route groups organize the UI by access level:
 - `security-events/page.tsx` : Security event log
 - `diagnostics/page.tsx` : System diagnostics and health
 
-**`(user)/`** — User-scoped views (requires auth)
+**`(user)/`** - User-scoped views (requires auth)
 
 - `traces/page.tsx` : Session trace list with filtering and token sort
 - `traces/[id]/page.tsx` : Trace detail with turn grouping, event list, session info tab
@@ -449,7 +450,7 @@ Four route groups organize the UI by access level:
 
 ### Demo (`demo/`)
 
-- `test_all_types.sh` : Full e2e test — submit, approve, install, and test all component types with real Docker containers and ClickHouse verification
+- `test_all_types.sh` : Full e2e test - submit, approve, install, and test all component types with real Docker containers and ClickHouse verification
 - `run_demo.sh` : Automated demo script
 
 ### Enterprise (`ee/`)
@@ -491,13 +492,26 @@ NEVER guess or hallucinate library APIs. Lookup docs first to ensure code matche
 - The IDE registry (`schemas/ide_registry.py` server-side, `observal_cli/ide_registry.py` client-side) is the canonical source of truth for IDE capabilities, config file paths, agent file paths, MCP config paths, and skill paths. `tests/test_constants_sync.py` enforces they stay in sync.
 - Ruff is the Python linter and formatter. Line length is 120. Pre-commit hooks enforce it.
 - The `B008` ruff rule is suppressed because Typer requires function calls in argument defaults (`typer.Option(...)`, `typer.Argument(...)`).
+- No em-dashes (-) anywhere: not in code, comments, commit messages, PR descriptions, or documentation. Use hyphens (-) or rewrite the sentence.
 - The data model is agent-centric. Agents bundle components (MCPs, skills, hooks, prompts, sandboxes) via `agent_components`, a polymorphic junction table with NO foreign key on `component_id` (allows cross-type references). Agent downloads are deduplicated by `(user_id)` and `(fingerprint)` unique constraints; component downloads are not deduplicated. All components support organization ownership via `is_private` + `owner_org_id` fields. Git-based versioning: components require `git_url` + `git_ref` for reproducible installs.
 - The web frontend uses OKLCH color space for perceptually uniform theming. 5 themes are defined in `globals.css` using CSS custom properties. Theme switching is handled by `theme-switcher.tsx`. The design system uses a 4pt spacing scale, semantic color tokens (background, foreground, card, border, primary, secondary, accent, destructive, success, warning, info), and motion tokens for animations.
 - The web frontend proxies all API calls through Next.js rewrites (`/api/v1/*` → backend). The backend URL is configured via `NEXT_PUBLIC_API_URL` env var (defaults to `http://localhost:8000`). Auth state (API key, user role) is stored in localStorage. Role-based access is enforced client-side via AuthGuard, AdminGuard, and RoleGuard components, not Next.js middleware.
 - Alert rules support metric threshold monitoring with webhook delivery. The `alert_evaluator.py` service runs periodic checks against ClickHouse metrics and fires webhooks (with HMAC signing via `webhook_signer.py` and delivery retries via `webhook_delivery.py`) when thresholds are breached. SSRF protection prevents webhooks to private IP ranges.
 - Telemetry data is scrubbed by `secrets_redactor.py` before ClickHouse storage. Security events are logged via `security_events.py` for audit trails.
-- Server endpoint discovery (`api/routes/config.py`) eliminates hardcoded URLs — clients derive endpoints from server config at runtime.
-- The `observal reconcile` command parses local Claude Code session JSONL files and uploads enrichment data to the server — this is the mechanism for populating traces with full conversation context (assistant messages, thinking blocks, tool results) rather than just hook-captured metadata.
+- Server endpoint discovery (`api/routes/config.py`) eliminates hardcoded URLs - clients derive endpoints from server config at runtime.
+- The `observal reconcile` command parses local Claude Code session JSONL files and uploads enrichment data to the server - this is the mechanism for populating traces with full conversation context (assistant messages, thinking blocks, tool results) rather than just hook-captured metadata.
+
+### Optic dev logging
+
+- Optic is Observal's developer logging system built on loguru. It provides real-time visibility into what the server and CLI are doing, viewable via `observal logs`.
+- **Server config:** `observal-server/services/optic.py` - file sink (DEBUG+) to `~/.observal/logs/dev.log`, console sink (INFO+). Called from `main.py` on startup.
+- **CLI config:** `observal_cli/optic.py` - file sink only when `--debug` or `--verbose` flags are passed. Called from `observal_cli/main.py`.
+- **Log file:** `~/.observal/logs/dev.log` - rotated at 10MB, 5 backups kept (~50MB max disk). Docker containers access this via a volume mount.
+- **Viewing:** `observal logs` streams the log file with `--level` (filter by severity), `--filter` (text search), `--lines N` (show last N), `--no-follow` (exit after showing history).
+- **Import convention:** Files that already have `structlog` use `from loguru import logger as optic` to avoid shadowing. New files without structlog also use the `as optic` alias for consistency.
+- **Security rules:** NEVER log passwords, tokens, secrets, API keys, JWT payloads, or full request bodies that may contain credentials. Log only safe identifiers (email, listing_id, name). For large content (file bodies, configs), log `len()` not the content itself.
+- **Formatting:** Always use loguru positional style: `optic.debug("msg: x={}", x)`. Never use f-strings or `{name}` without kwargs (loguru will log an error instead of the value).
+- **Context:** Every log call should include at least one useful argument from the function scope (an id, name, or count). Bare `optic.debug("X called")` without context is only acceptable when no safe arguments exist (e.g., the only params are db/request/self).
 
 ### AI contribution policy
 
@@ -514,11 +528,15 @@ This repository has an explicit [AI Policy](AI_POLICY.md). Key rules that apply 
 
 The following paths are developer-local AI agent and IDE configurations. They are gitignored but listed here so agents don't try to remove the gitignore entries or create these files in PRs:
 
-- `.claude/`, `CLAUDE.md` — Claude Code
-- `.kiro/` — Kiro
-- `.cursor/`, `.cursorignore`, `.cursorindexingignore` — Cursor
-- `.gemini/`, `GEMINI.md` — Gemini CLI
-- `.opencode/` — OpenCode
-- `.github/copilot-instructions.md`, `.copilot/` — GitHub Copilot
-- `.vscode/` — VS Code
-- `.worktrees/` — Git worktree scratch area
+- `.claude/`, `CLAUDE.md` - Claude Code
+- `.kiro/` - Kiro
+- `.cursor/`, `.cursorignore`, `.cursorindexingignore` - Cursor
+- `.gemini/`, `GEMINI.md` - Gemini CLI
+- `.opencode/` - OpenCode
+- `.github/copilot-instructions.md`, `.copilot/` - GitHub Copilot
+- `.vscode/` - VS Code
+- `.worktrees/` - Git worktree scratch area
+
+### Branch workflow
+
+When a new feature is requested that is unrelated to the current branch, always create a new branch (with a git worktree if needed) rather than mixing unrelated changes. Each feature gets its own branch off `main`.
