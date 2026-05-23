@@ -11,7 +11,14 @@ a valid OBSERVAL_LICENSE_KEY with the "insights" feature is present.
 Feature availability is derived entirely from the license — no env var needed.
 """
 
+import json
+
+import httpx
+import structlog
+
 from config import settings
+
+logger = structlog.get_logger(__name__)
 
 _generate = None
 _render = None
@@ -58,6 +65,110 @@ def render_report_html(*args, **kwargs):
     return _render(*args, **kwargs)
 
 
+# ---------------------------------------------------------------------------
+# Generic LLM caller (Bedrock / OpenAI-compatible / Moonshot)
+# ---------------------------------------------------------------------------
+
+
+def _build_openai_body(model: str, prompt: str, provider: str = "", extra: dict | None = None) -> dict:
+    body: dict = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1}
+    if provider == "moonshot":
+        body["thinking"] = {"type": "disabled"}
+        body["temperature"] = 0.6
+    if extra:
+        body.update(extra)
+    return body
+
+
+def _openai_url_and_headers(provider: str = "", url_override: str = "", key_override: str = "") -> tuple[str, dict]:
+    default_url = "https://api.moonshot.ai/v1" if provider == "moonshot" else "http://localhost:11434/v1"
+    url = url_override or default_url
+    key = key_override or ""
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    return url, headers
+
+
+async def _call_bedrock(prompt: str, model_id: str, max_tokens: int = 4096) -> dict:
+    """Call AWS Bedrock Converse API."""
+    import asyncio
+
+    import services.dynamic_settings as ds
+
+    aws_region = await ds.get("eval.aws_region")
+
+    def _sync_call():
+        import boto3
+
+        client = boto3.client("bedrock-runtime", region_name=aws_region or "us-east-1")
+        response = client.converse(
+            modelId=model_id,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"temperature": 0.1, "maxTokens": max_tokens},
+        )
+        text = response["output"]["message"]["content"][0]["text"]
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0]
+        return json.loads(text.strip())
+
+    try:
+        return await asyncio.get_event_loop().run_in_executor(None, _sync_call)
+    except Exception as e:
+        logger.error("bedrock_call_failed", error=str(e), model=model_id)
+        return {}
+
+
+async def _call_openai_compatible(prompt: str, model: str, provider: str = "") -> dict:
+    """Call an OpenAI-compatible API."""
+    import services.dynamic_settings as ds
+
+    model_url = await ds.get("eval.model_url")
+    model_key = await ds.get("eval.model_api_key")
+    url, headers = _openai_url_and_headers(provider, url_override=model_url, key_override=model_key)
+    body = _build_openai_body(model, prompt, provider, extra={"response_format": {"type": "json_object"}})
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        try:
+            r = await client.post(f"{url}/chat/completions", headers=headers, json=body)
+            r.raise_for_status()
+            content = r.json()["choices"][0]["message"]["content"]
+            return json.loads(content)
+        except Exception as e:
+            logger.error("llm_call_failed", error=str(e))
+            return {}
+
+
+async def call_model(prompt: str, model_override: str | None = None, max_tokens: int = 4096) -> dict:
+    """Call the configured LLM. Supports Bedrock, Moonshot, and OpenAI-compatible APIs.
+
+    Args:
+        prompt: The prompt to send to the model.
+        model_override: Optional model ID to use instead of the configured model.
+        max_tokens: Maximum output tokens (default 4096).
+    """
+    import services.dynamic_settings as ds
+
+    provider = await ds.get("eval.model_provider")
+    model = model_override or await ds.get("eval.model_name")
+
+    if not model:
+        return {}
+
+    if provider == "bedrock" or (not provider and "anthropic" in model):
+        return await _call_bedrock(prompt, model, max_tokens=max_tokens)
+    if provider == "moonshot" or (not provider and "kimi" in model.lower()):
+        return await _call_openai_compatible(prompt, model, provider="moonshot")
+    return await _call_openai_compatible(prompt, model)
+
+
+# ---------------------------------------------------------------------------
+# Insights engine configuration
+# ---------------------------------------------------------------------------
+
+
 def configure_insights():
     """Wire up dependencies from the host app into the insights package.
 
@@ -72,12 +183,11 @@ def configure_insights():
     from models.insight_session_facets import InsightSessionFacets
     from models.insight_session_meta import InsightSessionMeta
     from services.clickhouse import _query
-    from services.eval.eval_service import call_eval_model
 
     configure(
         settings=settings,
         query_fn=_query,
-        call_model_fn=call_eval_model,
+        call_model_fn=call_model,
         db_session_factory=async_session,
         meta_model=InsightSessionMeta,
         facets_model=InsightSessionFacets,

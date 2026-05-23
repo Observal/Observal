@@ -5,7 +5,7 @@
 """Strategic AI Insights generator.
 
 Collects org-wide telemetry metrics, builds a data block, and calls the
-eval model to produce business-language strategic recommendations similar
+configured LLM to produce business-language strategic recommendations similar
 to a consulting report.
 """
 
@@ -15,7 +15,7 @@ import json
 
 import structlog
 
-from services.eval.eval_service import call_eval_model
+from services.insights import call_model
 
 logger = structlog.get_logger(__name__)
 
@@ -98,8 +98,8 @@ async def generate_strategic_insights(metrics_data: dict) -> dict:
     """
     import services.dynamic_settings as ds
 
-    eval_model = await ds.get("eval.model_name")
-    if not eval_model:
+    configured_model = await ds.get("eval.model_name")
+    if not configured_model:
         logger.warning("strategic_insights_no_model", reason="eval.model_name not configured")
         return {}
 
@@ -107,9 +107,9 @@ async def generate_strategic_insights(metrics_data: dict) -> dict:
     prompt = SYSTEM_PREAMBLE + "\n\n" + STRATEGIC_PROMPT.format(data_block=data_block)
 
     synthesis_model = await ds.get("insights.model_synthesis")
-    model = synthesis_model or eval_model
+    model = synthesis_model or configured_model
     try:
-        result = await call_eval_model(prompt, model_override=model, max_tokens=4096)
+        result = await call_model(prompt, model_override=model, max_tokens=4096)
         if result and isinstance(result, dict):
             logger.info("strategic_insights_generated", keys=list(result.keys()))
             return result
