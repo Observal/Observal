@@ -14,6 +14,10 @@ from observal_cli.cmd_tail_flush import _MAX_RETRIES, main, tail_flush
 
 SESSION_ID = "sandbox-123"
 
+_SESSIONS = "observal_cli.sessions.base"
+_CMD_RECONCILE = "observal_cli.cmd_reconcile"
+_SESSION_SUBAGENT = "observal_cli.sessions.claude_code"
+
 
 @pytest.fixture
 def home():
@@ -42,7 +46,7 @@ def read_cursor_values():
 
 def test_tail_flush_returns_when_config_missing(home):
     """load_config returns None → early return, no sleep."""
-    with patch("observal_cli.hooks.session_push.load_config") as mock_config:
+    with patch(f"{_SESSIONS}.load_config") as mock_config:
         mock_config.return_value = None
         result = tail_flush(SESSION_ID, home=home)
     assert result is None
@@ -52,8 +56,8 @@ def test_tail_flush_returns_when_config_missing(home):
 def test_tail_flush_returns_when_session_file_missing(home, payload):
     """_find_session_file returns None → early return after flush delay."""
     with (
-        patch("observal_cli.hooks.session_push.load_config") as mock_config,
-        patch("observal_cli.cmd_reconcile._find_session_file") as mock_session_file,
+        patch(f"{_SESSIONS}.load_config") as mock_config,
+        patch(f"{_CMD_RECONCILE}._find_session_file") as mock_session_file,
         patch("time.sleep") as mock_sleep,
     ):
         mock_config.return_value = payload
@@ -69,11 +73,11 @@ def test_tail_flush_finalizes_when_no_new_lines(home, payload, file_path, read_c
     """read_new_lines returns empty → cursor finalized, no POST."""
     offset, line_count = read_cursor_values
     with (
-        patch("observal_cli.hooks.session_push.load_config") as mock_config,
-        patch("observal_cli.cmd_reconcile._find_session_file") as mock_session_file,
-        patch("observal_cli.hooks.session_push.read_cursor") as mock_read,
-        patch("observal_cli.hooks.session_push.read_new_lines") as mock_read_new_lines,
-        patch("observal_cli.hooks.session_push.write_cursor") as mock_write_cursor,
+        patch(f"{_SESSIONS}.load_config") as mock_config,
+        patch(f"{_CMD_RECONCILE}._find_session_file") as mock_session_file,
+        patch(f"{_SESSIONS}.read_cursor") as mock_read,
+        patch(f"{_SESSIONS}.read_new_lines") as mock_read_new_lines,
+        patch(f"{_SESSIONS}.write_cursor") as mock_write_cursor,
         patch("time.sleep") as mock_sleep,
     ):
         mock_config.return_value = payload
@@ -94,14 +98,14 @@ def test_tail_flush_pushes_new_lines_successfully(home, payload, file_path, chan
     bytes_read = 38
     new_offset = offset + bytes_read
     with (
-        patch("observal_cli.hooks.session_push.load_config") as mock_config,
-        patch("observal_cli.cmd_reconcile._find_session_file") as mock_session_file,
-        patch("observal_cli.hooks.session_push.read_cursor") as mock_read,
-        patch("observal_cli.hooks.session_push.read_new_lines") as mock_read_new_lines,
-        patch("observal_cli.hooks.session_push.write_cursor") as mock_write_cursor,
-        patch("observal_cli.hooks.session_push.build_payload") as mock_build_payload,
-        patch("observal_cli.hooks.session_push.post_to_server") as mock_post,
-        patch("observal_cli.hooks.session_push.get_parent_session_id") as mock_parent_session_id,
+        patch(f"{_SESSIONS}.load_config") as mock_config,
+        patch(f"{_CMD_RECONCILE}._find_session_file") as mock_session_file,
+        patch(f"{_SESSIONS}.read_cursor") as mock_read,
+        patch(f"{_SESSIONS}.read_new_lines") as mock_read_new_lines,
+        patch(f"{_SESSIONS}.write_cursor") as mock_write_cursor,
+        patch(f"{_SESSIONS}.build_payload") as mock_build_payload,
+        patch(f"{_SESSIONS}.post_to_server") as mock_post,
+        patch(f"{_SESSION_SUBAGENT}.get_parent_session_id") as mock_parent_session_id,
         patch("time.sleep") as mock_sleep,
     ):
         mock_config.return_value = payload
@@ -127,15 +131,15 @@ def test_tail_flush_parent_id_missing(home, payload, file_path, changes, read_cu
     bytes_read = 38
     new_offset = offset + bytes_read
     with (
-        patch("observal_cli.hooks.session_push.load_config") as mock_config,
-        patch("observal_cli.cmd_reconcile._find_session_file") as mock_session_file,
-        patch("observal_cli.hooks.session_push.read_cursor") as mock_read,
-        patch("observal_cli.hooks.session_push.read_new_lines") as mock_read_new_lines,
-        patch("observal_cli.hooks.session_push.write_cursor") as mock_write_cursor,
-        patch("observal_cli.hooks.session_push.build_payload") as mock_build_payload,
-        patch("observal_cli.hooks.session_push.post_to_server") as mock_post,
-        patch("observal_cli.hooks.session_push.get_parent_session_id") as mock_parent_session_id,
-        patch("observal_cli.hooks.session_push.push_subagent_sessions") as mock_subagent_session,
+        patch(f"{_SESSIONS}.load_config") as mock_config,
+        patch(f"{_CMD_RECONCILE}._find_session_file") as mock_session_file,
+        patch(f"{_SESSIONS}.read_cursor") as mock_read,
+        patch(f"{_SESSIONS}.read_new_lines") as mock_read_new_lines,
+        patch(f"{_SESSIONS}.write_cursor") as mock_write_cursor,
+        patch(f"{_SESSIONS}.build_payload") as mock_build_payload,
+        patch(f"{_SESSIONS}.post_to_server") as mock_post,
+        patch(f"{_SESSION_SUBAGENT}.get_parent_session_id") as mock_parent_session_id,
+        patch(f"{_SESSION_SUBAGENT}.push_subagent_sessions") as mock_subagent_session,
         patch("time.sleep") as mock_sleep,
     ):
         mock_config.return_value = payload
@@ -159,14 +163,14 @@ def test_tail_flush_parent_id_missing(home, payload, file_path, changes, read_cu
 def test_tail_flush_retries_and_logs_failure(home, payload, file_path, changes, read_cursor_values):
     """POST fails on all retries → cursor left un-finalized, error logged."""
     with (
-        patch("observal_cli.hooks.session_push.load_config") as mock_config,
-        patch("observal_cli.cmd_reconcile._find_session_file") as mock_session_file,
-        patch("observal_cli.hooks.session_push.read_cursor") as mock_read,
-        patch("observal_cli.hooks.session_push.read_new_lines") as mock_read_new_lines,
-        patch("observal_cli.hooks.session_push.write_cursor") as mock_write_cursor,
-        patch("observal_cli.hooks.session_push.build_payload") as mock_build_payload,
-        patch("observal_cli.hooks.session_push.post_to_server") as mock_post,
-        patch("observal_cli.hooks.session_push.log_error") as mock_log_error,
+        patch(f"{_SESSIONS}.load_config") as mock_config,
+        patch(f"{_CMD_RECONCILE}._find_session_file") as mock_session_file,
+        patch(f"{_SESSIONS}.read_cursor") as mock_read,
+        patch(f"{_SESSIONS}.read_new_lines") as mock_read_new_lines,
+        patch(f"{_SESSIONS}.write_cursor") as mock_write_cursor,
+        patch(f"{_SESSIONS}.build_payload") as mock_build_payload,
+        patch(f"{_SESSIONS}.post_to_server") as mock_post,
+        patch(f"{_SESSIONS}.log_error") as mock_log_error,
         patch("time.sleep") as mock_sleep,
     ):
         mock_config.return_value = payload
@@ -194,13 +198,13 @@ def test_tail_flush_retries_success(home, payload, file_path, changes, read_curs
     bytes_read = 38
     new_offset = offset + bytes_read
     with (
-        patch("observal_cli.hooks.session_push.load_config") as mock_config,
-        patch("observal_cli.cmd_reconcile._find_session_file") as mock_session_file,
-        patch("observal_cli.hooks.session_push.read_cursor") as mock_read,
-        patch("observal_cli.hooks.session_push.read_new_lines") as mock_read_new_lines,
-        patch("observal_cli.hooks.session_push.write_cursor") as mock_write_cursor,
-        patch("observal_cli.hooks.session_push.build_payload") as mock_build_payload,
-        patch("observal_cli.hooks.session_push.post_to_server") as mock_post,
+        patch(f"{_SESSIONS}.load_config") as mock_config,
+        patch(f"{_CMD_RECONCILE}._find_session_file") as mock_session_file,
+        patch(f"{_SESSIONS}.read_cursor") as mock_read,
+        patch(f"{_SESSIONS}.read_new_lines") as mock_read_new_lines,
+        patch(f"{_SESSIONS}.write_cursor") as mock_write_cursor,
+        patch(f"{_SESSIONS}.build_payload") as mock_build_payload,
+        patch(f"{_SESSIONS}.post_to_server") as mock_post,
         patch("time.sleep") as mock_sleep,
     ):
         mock_config.return_value = payload
