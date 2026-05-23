@@ -21,6 +21,7 @@ import uuid
 from datetime import UTC, datetime
 
 import httpx
+from loguru import logger as optic
 
 from observal_cli.config import load as load_config
 
@@ -397,6 +398,7 @@ async def _emit_error_notification_async(message: str, ide_stdout) -> None:
 
 async def run_shim(mcp_id: str, command: list[str]):
     """Main shim entry point: spawn MCP process and relay stdio."""
+    optic.debug("shim started: mcp_id={}, command={}", mcp_id, command)
     # On Windows, asyncio.create_subprocess_exec cannot find .cmd/.bat
     # scripts (like npx.cmd) by PATH alone. Resolve the executable first.
     if sys.platform == "win32" and command:
