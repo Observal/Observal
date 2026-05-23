@@ -273,29 +273,7 @@ async function request<T = unknown>(
 
 	if (response.status === 204) return undefined as T;
 
-	// Version mismatch detection: check if server version differs from frontend build
-	_checkVersionMismatch(response);
-
 	return response.json() as Promise<T>;
-}
-
-/** Track whether we've already dispatched a version mismatch event this session */
-let _versionMismatchDispatched = false;
-
-function _checkVersionMismatch(response: Response): void {
-	if (_versionMismatchDispatched) return;
-	const serverVersion = response.headers.get("x-observal-server");
-	const buildVersion = process.env.NEXT_PUBLIC_APP_VERSION;
-	if (serverVersion && buildVersion && serverVersion !== buildVersion) {
-		_versionMismatchDispatched = true;
-		if (typeof window !== "undefined") {
-			window.dispatchEvent(
-				new CustomEvent("observal:version-mismatch", {
-					detail: { server: serverVersion, frontend: buildVersion },
-				}),
-			);
-		}
-	}
 }
 
 function get<T = unknown>(path: string) {

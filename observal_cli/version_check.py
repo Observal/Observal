@@ -114,7 +114,8 @@ def _machine_key() -> bytes:
                 return m.group(1).encode()
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
-    # Fallback: hostname
+    # Fallback: hostname. In containers where hostname changes between runs,
+    # this simply invalidates the cache and triggers a fresh version check.
     return socket.gethostname().encode()
 
 

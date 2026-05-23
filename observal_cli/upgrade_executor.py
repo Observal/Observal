@@ -66,6 +66,9 @@ def _install_via_uv(target_version: str, direction: str, spinner) -> None:
 
 
 def _install_via_pip(target_version: str, direction: str, spinner) -> None:
+    # Uses sys.executable to target the current Python environment. If the CLI
+    # is installed via uv (preferred), the uv path is used instead (see execute()).
+    # sys.executable is only reached for plain pip/pipx installs.
     with spinner(f"{direction.capitalize()}ing to v{target_version}..."):
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", f"observal-cli=={target_version}", "--quiet"],
