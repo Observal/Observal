@@ -19,6 +19,8 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
+from loguru import logger
+
 _CLONE_TIMEOUT = 120  # seconds
 
 # ---------------------------------------------------------------------------
@@ -497,6 +499,7 @@ def analyze_local(git_url: str) -> dict:
     Returns a dict matching the McpAnalyzeResponse shape:
     {name, description, version, tools, environment_variables, issues, error}
     """
+    logger.debug("analyze_local: git_url={}", git_url)
     _empty: dict = {"name": "", "description": "", "version": "0.1.0", "tools": []}
 
     tmp_dir = tempfile.mkdtemp(prefix="observal_cli_analyze_")
