@@ -10,11 +10,13 @@ from fastapi import HTTPException
 
 if TYPE_CHECKING:
     import uuid
+from loguru import logger
 
 LOCK_TTL_MINUTES = 30
 
 
 def _is_lock_expired(editing_since: datetime | None) -> bool:
+    logger.debug("_is_lock_expired: editing_since={}", editing_since)
     if not editing_since:
         return True
     return datetime.now(UTC) - editing_since > timedelta(minutes=LOCK_TTL_MINUTES)
@@ -25,6 +27,7 @@ def acquire_edit_lock(
     user_id: uuid.UUID,
 ) -> None:
     """Set is_editing on a version row. Raises 409 if already locked by another user."""
+    logger.debug("acquire_edit_lock: version={}, user_id={}", version, user_id)
     if version.is_editing and not _is_lock_expired(version.editing_since) and version.editing_by != user_id:
         raise HTTPException(
             status_code=409,
@@ -42,6 +45,7 @@ def release_edit_lock(
     force: bool = False,
 ) -> None:
     """Clear is_editing on a version row. Only the lock holder (or force) can release."""
+    logger.debug("release_edit_lock: version={}, user_id={}, force={}", version, user_id, force)
     if not version.is_editing:
         return
     if not force and version.editing_by != user_id:
@@ -53,6 +57,7 @@ def release_edit_lock(
 
 def is_actively_editing(version) -> bool:
     """Return True if the version is locked and the lock has not expired."""
+    logger.debug("is_actively_editing: version={}", version)
     if not getattr(version, "is_editing", False):
         return False
     editing_by = getattr(version, "editing_by", None)
