@@ -168,8 +168,6 @@ class GraphRagStats(BaseModel):
     recent_queries: list[GraphRagQuery]
 
 
-
-
 # --- Latency heatmap ---
 
 

@@ -80,24 +80,6 @@ All `{id}` parameters accept a UUID or a name.
 | `PATCH` | `/alerts/{id}` | Update alert rule |
 | `DELETE` | `/alerts/{id}` | Delete alert rule |
 | `GET` | `/alerts/{id}/history` | Alert firing history |
-
-## Evaluation
-
-| Method | Path | Description |
-| --- | --- | --- |
-| `POST` | `/eval/agents/{id}` | Run evaluation |
-| `GET` | `/eval/agents/{id}/scorecards` | List scorecards |
-| `GET` | `/eval/scorecards/{id}` | Scorecard details |
-| `GET` | `/eval/agents/{id}/compare` | Compare versions |
-| `GET` | `/eval/agents/{id}/aggregate` | Aggregate scoring stats |
-
-### Dashboard helpers
-
-| Method | Path | Description |
-| --- | --- | --- |
-| `POST` | `/dashboard/graphrag-ragas-eval` | Trigger RAGAS evaluation on GraphRAG spans |
-| `GET` | `/dashboard/graphrag-ragas-scores` | Retrieve RAGAS scores |
-
 ## Feedback
 
 | Method | Path | Description |
@@ -118,13 +100,8 @@ Requires `admin` or `super_admin` role.
 | `POST` | `/admin/users` | Create user |
 | `PUT` | `/admin/users/{id}/role` | Change role |
 | `PUT` | `/admin/users/{id}/password` | Reset user password (admin) |
-| `GET` | `/admin/penalties` | List penalty catalog |
-| `PUT` | `/admin/penalties/{id}` | Modify penalty |
 | `GET` | `/admin/weights` | Get dimension weights |
 | `PUT` | `/admin/weights` | Set dimension weights |
-| `GET` | `/admin/canaries/{agent_id}` | List canary configs |
-| `POST` | `/admin/canaries` | Create canary config |
-| `DELETE` | `/admin/canaries/{id}` | Delete canary config |
 | `GET` | `/admin/canaries/{agent_id}/reports` | Canary detection reports |
 
 ## GraphQL

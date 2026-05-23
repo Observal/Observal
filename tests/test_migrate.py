@@ -194,7 +194,7 @@ class TestPGEncoder:
 
 class TestConstants:
     def test_insert_order_has_43_entries(self):
-        assert len(INSERT_ORDER) == 41
+        assert len(INSERT_ORDER) == 35
 
     def test_insert_order_no_duplicates(self):
         assert len(INSERT_ORDER) == len(set(INSERT_ORDER))

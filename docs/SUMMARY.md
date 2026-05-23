@@ -17,7 +17,6 @@
 * [Overview](use-cases/README.md)
 * [Observe MCP traffic](use-cases/observe-mcp-traffic.md)
 * [Share agent configs across IDEs](use-cases/share-agent-configs.md)
-* [Evaluate and compare agents](use-cases/evaluate-agents.md)
 * [Debug agent failures](use-cases/debug-agent-failures.md)
 * [Run a team-wide agent registry](use-cases/team-registry.md)
 
@@ -50,7 +49,6 @@
 * [Ports and volumes](self-hosting/ports-and-volumes.md)
 * [Databases](self-hosting/databases.md)
 * [Authentication and SSO](self-hosting/authentication.md)
-* [Evaluation engine](self-hosting/evaluation-engine.md)
 * [Telemetry pipeline](self-hosting/telemetry-pipeline.md)
 * [Upgrades](self-hosting/upgrades.md)
 * [Backup and restore](self-hosting/backup-and-restore.md)
@@ -70,7 +68,6 @@
 
 * [Overview](concepts/README.md)
 * [Data model](concepts/data-model.md)
-* [Evaluation engine](concepts/evaluation.md)
 * [Shim vs proxy](concepts/shim-vs-proxy.md)
 
 ## Reference

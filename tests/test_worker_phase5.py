@@ -79,6 +79,7 @@ class TestWorkerSettings:
 
         assert WorkerSettings.max_jobs == 5
 
+
 # --- Docker compose ---
 
 COMPOSE_PATH = str(Path(__file__).resolve().parent.parent / "docker" / "docker-compose.yml")

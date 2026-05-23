@@ -557,6 +557,7 @@ def _feedback_impl(listing_id, listing_type, output):
         rprint(f"  {stars_str}{comment}")
     rprint()
 
+
 # ── Admin ────────────────────────────────────────────────
 
 admin_app = typer.Typer(help="Admin commands")
@@ -609,6 +610,7 @@ def admin_set(
     with spinner():
         client.put(f"/api/v1/admin/settings/{key}", {"value": value})
     rprint(f"[green]✓ {key} = {value}[/green]")
+
 
 @admin_app.command(name="users")
 def admin_users(output: str = typer.Option("table", "--output", "-o")):
@@ -761,6 +763,8 @@ def admin_delete_user(
         client.delete(f"/api/v1/admin/users/{match['id']}")
 
     rprint(f"[green]Deleted user {match['email']}[/green]")
+
+
 # ── Diagnostics ─────────────────────────────────────────
 
 
@@ -1757,4 +1761,3 @@ ops_app.add_typer(telemetry_app, name="telemetry")
 
 # review is a subgroup of admin
 admin_app.add_typer(review_app, name="review")
-

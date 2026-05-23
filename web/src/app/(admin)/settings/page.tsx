@@ -166,10 +166,10 @@ interface SettingSection {
 
 const SETTING_SECTIONS: SettingSection[] = [
 	{
-		title: "LLM / Eval Engine",
-		icon: <Settings className="h-3.5 w-3.5" />,
+		title: "Agent Insights",
+		icon: <Activity className="h-3.5 w-3.5" />,
 		description:
-			"Configure the LLM used for AI-powered insights and analysis.",
+			"Configure the LLM and batch processing for the insights engine. Requires 'insights' license feature.",
 		settings: [
 			{
 				key: "eval.model_url",
@@ -227,14 +227,6 @@ const SETTING_SECTIONS: SettingSection[] = [
 				tooltip:
 					"Only needed for temporary/assumed-role credentials (e.g., from STS AssumeRole). Leave blank for permanent IAM keys or instance roles.",
 			},
-		],
-	},
-	{
-		title: "Agent Insights",
-		icon: <Activity className="h-3.5 w-3.5" />,
-		description:
-			"Per-model overrides and batch processing for the insights engine. Requires 'insights' license feature.",
-		settings: [
 			{
 				key: "insights.model_sections",
 				label: "Sections Model",

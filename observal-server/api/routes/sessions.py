@@ -16,7 +16,6 @@ raw JSONL rows into frontend-friendly event dicts.
 """
 
 import asyncio
-import json
 import logging
 import uuid as _uuid
 
