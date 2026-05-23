@@ -5,8 +5,8 @@
 
 Portable migration tools for moving an Observal instance between environments. The workflow has two phases:
 
-* **Phase 1 (shallow copy)** — exports PostgreSQL registry data (users, agents, components, feedback, eval runs, etc.) to a `.tar.gz` archive of JSONL files.
-* **Phase 2 (deep copy)** — exports ClickHouse telemetry data (traces, spans, scores, audit logs, security events) to monthly Parquet files.
+* **Phase 1 (shallow copy)**: exports PostgreSQL registry data (users, agents, components, feedback, eval runs, etc.) to a `.tar.gz` archive of JSONL files.
+* **Phase 2 (deep copy)**: exports ClickHouse telemetry data (traces, spans, scores, audit logs, security events) to monthly Parquet files.
 
 Phase 2 depends on Phase 1. You must complete the shallow copy export and import before running the deep copy.
 
@@ -61,9 +61,9 @@ The export uses a `REPEATABLE READ` transaction for a consistent snapshot. No da
 
 The archive contains:
 
-* `manifest.json` — schema version, migration ID, table checksums, row counts, source Alembic version
-* `migration_manifest.json` — used by Phase 2 as a gate (must exist before telemetry export)
-* `pg/<table>.jsonl` — one JSONL file per table
+* `manifest.json`: schema version, migration ID, table checksums, row counts, source Alembic version
+* `migration_manifest.json`: used by Phase 2 as a gate (must exist before telemetry export)
+* `pg/<table>.jsonl`: one JSONL file per table
 
 A sidecar `<archive-name>.manifest.json` is written alongside the archive for Phase 2 consumption.
 
@@ -156,8 +156,8 @@ observal migrate validate --archive <path> [--db-url <postgres-url>]
 
 #### What it checks
 
-1. **Checksum verification** — SHA-256 of each JSONL file matches the manifest
-2. **Cross-database comparison** (when `--db-url` provided) — row counts in the archive vs the live database
+1. **Checksum verification**: SHA-256 of each JSONL file matches the manifest
+2. **Cross-database comparison** (when `--db-url` provided): row counts in the archive vs the live database
 
 #### Example
 
@@ -207,7 +207,7 @@ observal migrate export-telemetry \
 | Option | Description |
 | --- | --- |
 | `--clickhouse-url` | Source ClickHouse connection string (required). Format: `clickhouse://user:pass@host:port/db` |
-| `--manifest` | Path to the `migration_manifest.json` from Phase 1 (required). Acts as a gate — Phase 1 must be complete. |
+| `--manifest` | Path to the `migration_manifest.json` from Phase 1 (required). Acts as a gate; Phase 1 must be complete. |
 | `--output-dir` | Directory for exported Parquet files (required). Must be empty or non-existent. |
 
 #### What it exports
@@ -224,14 +224,14 @@ observal migrate export-telemetry \
 
 Data is partitioned by month. Each non-empty month produces one Parquet file (e.g. `traces_2025-01.parquet`).
 
-A cutoff timestamp is recorded at export start to ensure consistency — no data written after the export begins is included.
+A cutoff timestamp is recorded at export start to ensure consistency: no data written after the export begins is included.
 
 #### Output
 
 The output directory contains:
 
-* `<table>_<YYYY>-<MM>.parquet` — monthly Parquet files per table
-* `telemetry_manifest.json` — migration ID, checksums, row counts, time ranges, FK validation state
+* `<table>_<YYYY>-<MM>.parquet`: monthly Parquet files per table
+* `telemetry_manifest.json`: migration ID, checksums, row counts, time ranges, FK validation state
 
 #### Example
 
@@ -295,7 +295,7 @@ observal migrate import-telemetry \
 
 * Verifies checksums before importing anything
 * Skips partitions that already have data (idempotent)
-* Maintains resume state (`.import_state.json`) — safe to interrupt and re-run
+* Maintains resume state (`.import_state.json`), safe to interrupt and re-run
 * Validates resume state on restart (re-imports tables that lost data)
 
 #### Example
@@ -359,9 +359,9 @@ observal migrate validate-telemetry \
 
 #### What it checks
 
-1. **Checksum verification** — SHA-256 of each Parquet file matches the telemetry manifest
-2. **Row count comparison** (when `--clickhouse-url` provided) — manifest counts vs live ClickHouse
-3. **FK validation** (when `--target-db-url` provided) — checks that `agent_id`, `mcp_id`, and `user_id` references in telemetry data point to rows that exist in PostgreSQL. Orphaned IDs are reported (up to 10,000 per FK column).
+1. **Checksum verification**: SHA-256 of each Parquet file matches the telemetry manifest
+2. **Row count comparison** (when `--clickhouse-url` provided): manifest counts vs live ClickHouse
+3. **FK validation** (when `--target-db-url` provided): checks that `agent_id`, `mcp_id`, and `user_id` references in telemetry data point to rows that exist in PostgreSQL. Orphaned IDs are reported (up to 10,000 per FK column).
 
 #### Example
 
@@ -414,7 +414,7 @@ docker exec <target-db-container> psql -U postgres -d observal \
   -c "SELECT id FROM organizations LIMIT 1;" -t
 ```
 
-Save the org ID — you'll use it in steps 2 and 5.
+Save the org ID; you'll use it in steps 2 and 5.
 
 ### Phase 1: Shallow Copy (PostgreSQL registry data)
 
@@ -467,7 +467,7 @@ observal agent list
 observal ops traces --limit 5
 ```
 
-> **Note:** The `--org-id` and `--project-id` flags use the same value — your target org UUID. This ensures all imported data (PostgreSQL and ClickHouse) is scoped to the correct org and visible in the UI.
+> **Note:** The `--org-id` and `--project-id` flags use the same value, your target org UUID. This ensures all imported data (PostgreSQL and ClickHouse) is scoped to the correct org and visible in the UI.
 
 ## Connection String Formats
 
@@ -486,7 +486,7 @@ The `clickhouses://` scheme maps to HTTPS with a default port of 8443. Use it wh
 * Archives contain **hashed** credentials (SHA-256 API keys, bcrypt passwords). They cannot be reversed, but treat them as sensitive.
 * Parquet files may contain **PII** in trace input/output fields (user prompts, agent responses).
 * Store migration artifacts securely and delete after successful import and validation.
-* The `--project-id` flag on `import-telemetry` rewrites ownership — use it when migrating between orgs to avoid data leaking across tenants.
+* The `--project-id` flag on `import-telemetry` rewrites ownership. Use it when migrating between orgs to avoid data leaking across tenants.
 
 ## Managed Postgres Note
 
@@ -512,5 +512,5 @@ If you encounter a permission error during import, ask your DBA to grant the app
 
 ## Related
 
-* [`observal admin`](admin.md) — admin commands
-* [`observal auth`](auth.md) — authentication (must be logged in as super_admin)
+* [`observal admin`](admin.md): admin commands
+* [`observal auth`](auth.md): authentication (must be logged in as super_admin)

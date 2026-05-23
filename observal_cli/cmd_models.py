@@ -29,8 +29,17 @@ def list_models(
 ):
     """Show models from the registry.
 
-    Source order: file cache (1h TTL) → ``GET /api/v1/models`` → file cache (stale)
-    → vendored offline mirror. Each output line marks where the data came from.
+    Source order: file cache (1h TTL), then GET /api/v1/models, then stale
+    file cache, then vendored offline mirror. The output footer shows
+    which source was used.
+
+    \b
+    Examples:
+      observal registry models list
+      observal registry models list --ide claude-code
+      observal registry models list --output json
+      observal registry models list --refresh          # Bypass local cache
+      observal registry models list --ide cursor -o plain
     """
     catalog = model_catalog.fetch_catalog(refresh=refresh)
     rows = catalog.get("models") or []

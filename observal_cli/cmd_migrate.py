@@ -1739,7 +1739,19 @@ def export_cmd(
     db_url: str = typer.Option(..., "--db-url", help="Source PostgreSQL connection string"),
     output: str | None = typer.Option(None, "--output", "-o", help="Output archive path"),
 ) -> None:
-    """Export all PostgreSQL registry data to a portable archive."""
+    """Export all PostgreSQL registry data to a portable archive.
+
+    Connects to the source database, reads all tables in a consistent
+    REPEATABLE READ snapshot, and writes JSONL files packed into a
+    checksummed .tar.gz archive. Requires super_admin role.
+
+    The archive includes a manifest with SHA-256 checksums and the source
+    Alembic migration version for compatibility verification on import.
+
+    Examples:
+        observal migrate export --db-url postgresql://user:pass@host/observal
+        observal migrate export --db-url $DATABASE_URL -o backup.tar.gz
+    """
     _require_admin()
 
     # Default output filename
@@ -1784,7 +1796,19 @@ def import_cmd(
         help="Rewrite all org references to this UUID (use target org ID when source/target orgs differ)",
     ),
 ) -> None:
-    """Import a migration archive into the target database."""
+    """Import a migration archive into the target database.
+
+    Verifies checksums before inserting any data. Uses ON CONFLICT DO NOTHING
+    for idempotent imports: existing rows are skipped, not overwritten.
+    Requires super_admin role.
+
+    When migrating between instances with different organizations, use
+    --org-id to remap all organization references to the target org UUID.
+
+    Examples:
+        observal migrate import --db-url postgresql://user:pass@host/observal --archive backup.tar.gz
+        observal migrate import --db-url $DATABASE_URL -a backup.tar.gz --org-id 550e8400-...
+    """
     _require_admin()
 
     archive_path = Path(archive)
@@ -1825,7 +1849,16 @@ def validate_cmd(
     archive: str = typer.Option(..., "--archive", "-a", help="Path to .tar.gz archive"),
     db_url: str | None = typer.Option(None, "--db-url", help="Optional database for cross-validation"),
 ) -> None:
-    """Validate archive integrity and optionally compare against a database."""
+    """Validate archive integrity and optionally compare against a database.
+
+    Checks SHA-256 checksums for every table file in the archive. If --db-url
+    is provided, also compares row counts between the archive and the live
+    database to detect drift or partial imports. Requires super_admin role.
+
+    Examples:
+        observal migrate validate --archive backup.tar.gz
+        observal migrate validate -a backup.tar.gz --db-url $DATABASE_URL
+    """
     _require_admin()
 
     archive_path = Path(archive)
@@ -1880,7 +1913,21 @@ def export_telemetry_cmd(
     manifest: str = typer.Option(..., "--manifest", help="Path to Phase 1 migration_manifest.json"),
     output_dir: str = typer.Option(..., "--output-dir", help="Directory for exported Parquet files"),
 ) -> None:
-    """Export ClickHouse telemetry data to Parquet files."""
+    """Export ClickHouse telemetry data to Parquet files.
+
+    Phase 2 of migration: exports traces, spans, scores, and other telemetry
+    tables as monthly Parquet partitions. Requires a completed Phase 1 export
+    (the migration_manifest.json produced by 'observal migrate export').
+
+    Uses a time cutoff recorded at export start for consistency. The output
+    directory must be empty or non-existent. Requires super_admin role.
+
+    Examples:
+        observal migrate export-telemetry \\
+            --clickhouse-url clickhouse://default:@localhost:8123/observal \\
+            --manifest ./observal-export-20260101-120000.manifest.json \\
+            --output-dir ./telemetry-export
+    """
     _require_admin()
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -1907,7 +1954,24 @@ def import_telemetry_cmd(
         None, "--project-id", help="Rewrite project_id in all tables to this value (use when source/target orgs differ)"
     ),
 ) -> None:
-    """Import Parquet telemetry files into target ClickHouse."""
+    """Import Parquet telemetry files into target ClickHouse.
+
+    Phase 2 import: loads monthly Parquet partitions into the target ClickHouse.
+    Verifies checksums before importing. Skips partitions that already contain
+    data for idempotent re-runs. Persists resume state so interrupted imports
+    can continue where they left off. Requires super_admin role.
+
+    Use --project-id to normalize the project_id column when migrating between
+    instances with different organization identifiers.
+
+    Examples:
+        observal migrate import-telemetry \\
+            --clickhouse-url clickhouse://default:@localhost:8123/observal \\
+            --input-dir ./telemetry-export
+        observal migrate import-telemetry \\
+            --clickhouse-url $CLICKHOUSE_URL \\
+            --input-dir ./telemetry-export --project-id my-new-org-id
+    """
     _require_admin()
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -1944,7 +2008,20 @@ def validate_telemetry_cmd(
     ),
     target_db_url: str | None = typer.Option(None, "--target-db-url", help="Target PostgreSQL for FK validation"),
 ) -> None:
-    """Validate telemetry Parquet files and optionally check FK references."""
+    """Validate telemetry Parquet files and optionally check FK references.
+
+    Verifies SHA-256 checksums for all Parquet files in the export directory.
+    Optionally compares row counts against a live ClickHouse instance and
+    checks foreign key references (agent_id, mcp_id, user_id) against
+    PostgreSQL to detect orphaned telemetry records. Requires super_admin role.
+
+    Examples:
+        observal migrate validate-telemetry --input-dir ./telemetry-export
+        observal migrate validate-telemetry \\
+            --input-dir ./telemetry-export \\
+            --clickhouse-url $CLICKHOUSE_URL \\
+            --target-db-url $DATABASE_URL
+    """
     _require_admin()
     logging.getLogger("httpx").setLevel(logging.WARNING)
 

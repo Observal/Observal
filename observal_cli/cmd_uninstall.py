@@ -236,7 +236,21 @@ def register_uninstall(app: typer.Typer):
         keep_cli: bool = typer.Option(False, "--keep-cli", help="Keep the CLI tool installed."),
         keep_repo: bool = typer.Option(False, "--keep-repo", help="Keep the repo directory (still tears down Docker)."),
     ):
-        """Completely uninstall Observal: stop containers, remove volumes, delete repo and config."""
+        """Completely uninstall Observal: stop containers, remove volumes, delete repo and config.
+
+        Runs docker compose down -v --rmi all to stop all containers and remove
+        volumes and images. Then deletes the repo directory, config directory
+        (~/.observal), and uninstalls the CLI tool via uv.
+
+        Use --keep-config, --keep-cli, or --keep-repo to preserve specific parts.
+        Requires typing "confirm" to proceed. On Windows, file deletion is
+        deferred to a background PowerShell process after the CLI exits.
+
+        Examples:
+            observal uninstall
+            observal uninstall --keep-config --keep-cli
+            observal uninstall --repo-dir ~/code/Observal --keep-repo
+        """
         repo_root = _find_repo_root(repo_dir)
 
         # Require repo detection - Docker teardown is mandatory

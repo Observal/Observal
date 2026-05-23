@@ -298,7 +298,16 @@ def register_use(app: typer.Typer):
 
     @app.command("profile")
     def profile_status():
-        """Show active profile and backup info."""
+        """Show active profile and backup info.
+
+        Displays which profile is currently active, when it was applied,
+        lists cached profiles available for quick reuse, and shows recent
+        backups with file counts.
+
+        \b
+        Examples:
+          observal profile
+        """
         state = _load_state()
         active = state.get("active_profile_name")
         if active:

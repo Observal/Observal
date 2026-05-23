@@ -5,7 +5,7 @@
 
 # observal agent pull
 
-Install a complete agent — MCP servers, skills, hooks, prompts, sandboxes, and IDE-specific config — into an IDE in one command.
+Install a complete agent (MCP servers, skills, hooks, prompts, sandboxes, and IDE-specific config) into an IDE in one command.
 
 ## Synopsis
 
@@ -57,7 +57,7 @@ For Cursor / VS Code / Gemini CLI: primarily MCP config + rules files at the app
 Every MCP server the agent depends on may declare required env vars (GitHub token, API keys, etc.). The CLI prompts you for each one during pull:
 
 ```
-MCP github-mcp requires GITHUB_TOKEN — enter value (or leave blank to set later):
+MCP github-mcp requires GITHUB_TOKEN: enter value (or leave blank to set later):
 ```
 
 Values are written into your IDE config (not uploaded to Observal).
@@ -107,8 +107,8 @@ After pull, restart the IDE so it picks up the new config. Telemetry starts flow
 
 ## Related
 
-* [`observal agent`](agent.md) — author and publish agents
-* [`observal scan`](scan.md) -- discover the MCP servers you already have (read-only)
-* [`observal doctor patch`](doctor.md) -- instrument your IDEs (hooks, shims, OTel)
-* [`observal doctor`](doctor.md) — verify the pull wired up correctly
+* [`observal agent`](agent.md): author and publish agents
+* [`observal scan`](scan.md): discover the MCP servers you already have (read-only)
+* [`observal doctor patch`](doctor.md): instrument your IDEs (hooks, shims, OTel)
+* [`observal doctor`](doctor.md): verify the pull wired up correctly
 * [Use Cases → Share agent configs across IDEs](../use-cases/share-agent-configs.md)

@@ -13,7 +13,7 @@ Snapshot-style profile management for IDE configs. Swap between configs from a s
 | [`observal use`](#observal-use) | Switch to a git-hosted or local profile |
 | [`observal profile`](#observal-profile) | Show the active profile and backup info |
 
-Unlike `observal agent pull` (installs one agent), these work at **config-level** — your whole IDE setup.
+Unlike `observal agent pull` (installs one agent), these work at **config-level**, your whole IDE setup.
 
 ---
 
@@ -29,8 +29,8 @@ observal use <git-url|path>
 
 Accepts either:
 
-* A git URL — `observal use https://github.com/your-org/your-profile.git`
-* A local path — `observal use ./profiles/work`
+* A git URL: `observal use https://github.com/your-org/your-profile.git`
+* A local path: `observal use ./profiles/work`
 
 ### What it does
 
@@ -109,5 +109,5 @@ cp -r ~/.observal/backups/profile-before-20260421_143000/kiro/* .kiro/
 
 ## Related
 
-* [`observal agent pull`](pull.md) — the single-agent equivalent
+* [`observal agent pull`](pull.md): the single-agent equivalent
 * [Use Cases → Share agent configs](../use-cases/share-agent-configs.md)
