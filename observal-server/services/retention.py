@@ -14,6 +14,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
+from loguru import logger as optic
 from sqlalchemy import select
 
 from database import async_session
@@ -33,6 +34,7 @@ SCORE_TABLE = {"scores": "timestamp"}
 
 async def _delete_batch(table: str, time_col: str, project_id: str, cutoff_str: str) -> int:
     """Execute a lightweight DELETE. Returns 1 on success, 0 on failure."""
+    optic.debug("_delete_batch: table={}, time_col={}", table, time_col)
     from services.clickhouse import _query
 
     sql = (
@@ -48,7 +50,8 @@ async def _delete_batch(table: str, time_col: str, project_id: str, cutoff_str: 
 
 
 async def _has_data(project_id: str) -> bool:
-    """Quick existence check — does this org have any traces?"""
+    """Quick existence check - does this org have any traces?"""
+    optic.debug("_has_data: project_id={}", project_id)
     from services.clickhouse import _query
 
     resp = await _query(
@@ -63,6 +66,7 @@ async def _has_data(project_id: str) -> bool:
 
 async def _has_inflight_insights(org_id: uuid.UUID) -> bool:
     """Check if org has insight reports currently being generated."""
+    optic.debug("_has_inflight_insights: org_id={}", org_id)
     from models.agent import Agent
     from models.insight_report import InsightReport, InsightReportStatus
 
@@ -85,6 +89,7 @@ async def _has_inflight_insights(org_id: uuid.UUID) -> bool:
 
 async def _purge_time_based(project_id: str, cutoff_str: str, tables: dict[str, str]) -> dict[str, int]:
     """Delete rows older than cutoff from specified tables."""
+    optic.debug("_purge_time_based: project_id={}, cutoff_str={}", project_id, cutoff_str)
     stats = {}
     for table, time_col in tables.items():
         try:
@@ -97,6 +102,7 @@ async def _purge_time_based(project_id: str, cutoff_str: str, tables: dict[str, 
 
 async def _purge_session_stats_orphans(project_id: str) -> int:
     """Delete session_stats_agg entries whose sessions no longer have events."""
+    optic.debug("_purge_session_stats_orphans: project_id={}", project_id)
     from services.clickhouse import _query
 
     sql = (
@@ -116,6 +122,7 @@ async def _purge_session_stats_orphans(project_id: str) -> int:
 
 async def _purge_insight_reports(org_id: uuid.UUID, score_cutoff: datetime) -> int:
     """Delete old insight reports from PostgreSQL."""
+    optic.debug("_purge_insight_reports: org_id={}, score_cutoff={}", org_id, score_cutoff)
     from models.agent import Agent
     from models.insight_report import InsightReport, InsightReportStatus
 
@@ -152,6 +159,7 @@ async def _purge_insight_reports(org_id: uuid.UUID, score_cutoff: datetime) -> i
 
 async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
     """If trace count exceeds max, find cutoff day and purge oldest."""
+    optic.debug("_purge_count_based: project_id={}, max_trace_count={}", project_id, max_trace_count)
     from services.clickhouse import _query
 
     # Get daily trace counts, capped at 2 years to bound query cost.
@@ -195,6 +203,7 @@ async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
 
 async def run_retention_purge(ctx: dict | None = None):
     """Main entry point for the retention purge cron job."""
+    optic.debug("retention: purge started")
     async with async_session() as db:
         result = await db.execute(select(Organization).where(Organization.retention_enabled.is_(True)))
         orgs = result.scalars().all()
@@ -242,7 +251,7 @@ async def run_retention_purge(ctx: dict | None = None):
         if org.max_trace_count:
             org_stats["count_purge"] = await _purge_count_based(project_id, org.max_trace_count)
 
-        # Delete traces last (time-based) — children already deleted above
+        # Delete traces last (time-based) - children already deleted above
         if org.data_retention_days:
             await _delete_batch("traces", "start_time", project_id, data_cutoff_str)
 
