@@ -114,8 +114,6 @@ async def get_public_config(db=Depends(get_db)):
     licensed_features: list[str] = _get_licensed()
     exec_dashboard_available = "all" in licensed_features or "exec_dashboard" in licensed_features
 
-    # eval_configured: check dynamic settings
-    eval_model_name = await ds.get("eval.model_name")
     sso_only = await ds.get_bool("deployment.sso_only")
 
     return {
@@ -123,7 +121,6 @@ async def get_public_config(db=Depends(get_db)):
         "sso_enabled": bool(settings.OAUTH_CLIENT_ID),
         "sso_only": sso_only,
         "saml_enabled": saml_enabled,
-        "eval_configured": bool(eval_model_name),
         "insights_available": INSIGHTS_AVAILABLE,
         "exec_dashboard_available": exec_dashboard_available,
         "licensed_features": licensed_features,
