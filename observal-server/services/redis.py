@@ -111,17 +111,6 @@ async def _get_arq_pool() -> ArqRedis:
     return _arq_pool
 
 
-async def enqueue_eval(agent_id: str, trace_id: str | None = None):
-    """Enqueue an eval job via arq with dedup."""
-    pool = await _get_arq_pool()
-    await pool.enqueue_job(
-        "run_eval",
-        agent_id,
-        trace_id,
-        _job_id=f"eval:{agent_id}:{trace_id or 'all'}",
-    )
-
-
 async def ping() -> bool:
     """Check Redis connectivity. Returns True if healthy."""
     try:

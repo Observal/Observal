@@ -65,8 +65,6 @@ class EventType(str, Enum):
 
     # Agent security
     INJECTION_DETECTED = "agent.injection_detected"
-    CANARY_PARROTED = "agent.canary_parroted"
-    EVALUATOR_PATH_PROBE = "agent.evaluator_path_probe"
 
     # Ingestion
     SECRETS_REDACTED = "ingestion.secrets_redacted"

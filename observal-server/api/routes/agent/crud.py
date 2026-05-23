@@ -9,7 +9,6 @@ from fastapi import Depends, HTTPException, Query, Response
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from api.deps import (
     ROLE_HIERARCHY,
@@ -703,7 +702,6 @@ async def delete_agent(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    from models.eval import EvalRun, Scorecard
     from models.feedback import Feedback
 
     agent = await _load_agent(
@@ -723,28 +721,6 @@ async def delete_agent(
     # Delete related records with correct type filters
     for r in (
         (await db.execute(select(Feedback).where(Feedback.listing_id == agent.id, Feedback.listing_type == "agent")))
-        .scalars()
-        .all()
-    ):
-        await db.delete(r)
-    for r in (
-        (
-            await db.execute(
-                select(Scorecard).where(Scorecard.agent_id == agent.id).options(selectinload(Scorecard.penalties))
-            )
-        )
-        .scalars()
-        .all()
-    ):
-        await db.delete(r)
-    for r in (
-        (
-            await db.execute(
-                select(EvalRun)
-                .where(EvalRun.agent_id == agent.id)
-                .options(selectinload(EvalRun.scorecards).selectinload(Scorecard.penalties))
-            )
-        )
         .scalars()
         .all()
     ):

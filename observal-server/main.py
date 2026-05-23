@@ -45,7 +45,6 @@ from api.routes.component_source import router as component_source_router
 from api.routes.config import router as config_router
 from api.routes.dashboard import router as dashboard_router
 from api.routes.device_auth import router as device_auth_router
-from api.routes.eval import router as eval_router
 from api.routes.feedback import router as feedback_router
 from api.routes.hook import router as hook_router
 from api.routes.ingest import router as ingest_router
@@ -377,7 +376,6 @@ app.include_router(sandbox_router)
 app.include_router(telemetry_router)
 app.include_router(dashboard_router)
 app.include_router(feedback_router)
-app.include_router(eval_router)
 app.include_router(insights_router)
 app.include_router(reconcile_router)
 app.include_router(ingest_router)

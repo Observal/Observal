@@ -13,7 +13,6 @@ import structlog
 from arq.cron import cron
 
 from jobs.catalog import batch_generate_insights, generate_insight_report, refresh_model_catalog
-from jobs.eval import run_eval
 from jobs.maintenance import maintain_clickhouse, sync_component_sources
 from logging_config import setup_logging
 from services.alert_evaluator import evaluate_alerts
@@ -39,7 +38,6 @@ class WorkerSettings:
     """arq worker configuration."""
 
     functions = [
-        run_eval,
         sync_component_sources,
         evaluate_alerts,
         maintain_clickhouse,

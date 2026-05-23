@@ -368,69 +368,6 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
     }
 
 
-@router.get("/{session_id}/efficiency")
-async def get_session_efficiency(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
-    """Run kernel efficiency analysis on a session's events."""
-    if not session_id or not session_id.strip():
-        return {"error": "No session ID provided"}
-
-    is_admin = _is_admin_user(current_user)
-    params: dict[str, str] = {"param_sid": session_id}
-
-    if not is_admin:
-        params["param_uid"] = str(current_user.id)
-        ownership = await _ch_json(
-            "SELECT 1 FROM session_events WHERE session_id = {sid:String} AND user_id = {uid:String} LIMIT 1",
-            params,
-        )
-        if not ownership:
-            return {"error": "Session not found or access denied"}
-
-    rows = await _ch_json(
-        "SELECT "
-        "timestamp, "
-        "event_type AS event_name, "
-        "content_preview AS body, "
-        "raw_line, "
-        "ide AS service_name "
-        "FROM session_events FINAL "
-        "WHERE session_id = {sid:String} "
-        "ORDER BY line_offset ASC "
-        "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1",
-        params,
-    )
-
-    if not rows:
-        return {"error": "No events found for session", "session_id": session_id}
-
-    # Transform rows to event-shaped dicts for the efficiency analyzer
-    events = []
-    for r in rows:
-        attrs = {}
-        try:
-            parsed = json.loads(r.get("raw_line", "{}"))
-            attrs = {"event.name": r.get("event_name", ""), **parsed}
-        except Exception:
-            attrs = {"event.name": r.get("event_name", "")}
-        events.append(
-            {
-                "timestamp": r.get("timestamp", ""),
-                "event_name": r.get("event_name", ""),
-                "body": r.get("body", ""),
-                "attributes": attrs,
-                "service_name": r.get("service_name", ""),
-            }
-        )
-
-    from services.eval.kernel_bridge import analyze_session_efficiency
-
-    try:
-        return analyze_session_efficiency(events)
-    except Exception:
-        logger.exception("Session efficiency analysis failed for %s", session_id)
-        return {"error": "Analysis failed", "session_id": session_id}
-
-
 @router.post("/{session_id}/bind-agent")
 async def bind_session_agent(
     session_id: str,
