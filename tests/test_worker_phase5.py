@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.redis import close, enqueue_eval, get_redis, publish
+from services.redis import close, get_redis, publish
 
 # --- Redis client ---
 
@@ -42,35 +42,6 @@ class TestPublish:
         mock_redis.publish.side_effect = ConnectionError("connection refused")
         with patch("services.redis.get_redis", return_value=mock_redis):
             await publish("ch", {})  # should not raise
-
-
-# --- Enqueue ---
-
-
-class TestEnqueueEval:
-    @pytest.mark.asyncio
-    async def test_enqueues_via_arq(self):
-        mock_pool = AsyncMock()
-        with patch("services.redis._get_arq_pool", return_value=mock_pool):
-            await enqueue_eval("agent-1", "trace-1")
-            mock_pool.enqueue_job.assert_called_once_with(
-                "run_eval",
-                "agent-1",
-                "trace-1",
-                _job_id="eval:agent-1:trace-1",
-            )
-
-    @pytest.mark.asyncio
-    async def test_no_trace_id_dedup_key(self):
-        mock_pool = AsyncMock()
-        with patch("services.redis._get_arq_pool", return_value=mock_pool):
-            await enqueue_eval("agent-1")
-            mock_pool.enqueue_job.assert_called_once_with(
-                "run_eval",
-                "agent-1",
-                None,
-                _job_id="eval:agent-1:all",
-            )
 
 
 # --- Close ---
@@ -107,33 +78,6 @@ class TestWorkerSettings:
         from worker import WorkerSettings
 
         assert WorkerSettings.max_jobs == 5
-
-
-class TestRunEval:
-    @pytest.mark.asyncio
-    async def test_calls_eval_and_publishes(self):
-        from worker import run_eval
-
-        mock_traces = [{"trace_id": "t1", "spans": []}]
-        mock_result = {"score": 0.9}
-
-        with (
-            patch("services.eval.eval_service.fetch_traces", new_callable=AsyncMock, return_value=mock_traces),
-            patch("services.eval.eval_service.evaluate_trace", new_callable=AsyncMock, return_value=mock_result),
-            patch("services.redis.publish", new_callable=AsyncMock) as mock_pub,
-        ):
-            await run_eval({}, "agent-1", "t1")
-            mock_pub.assert_called_once()
-            channel = mock_pub.call_args[0][0]
-            assert channel == "eval:agent-1"
-
-    @pytest.mark.asyncio
-    async def test_handles_eval_error(self):
-        from worker import run_eval
-
-        with patch("services.eval.eval_service.fetch_traces", new_callable=AsyncMock, side_effect=Exception("db down")):
-            await run_eval({}, "agent-1")  # should not raise
-
 
 # --- Docker compose ---
 

@@ -256,38 +256,6 @@ class TestAdminOrgIsolation:
 
 
 # ---------------------------------------------------------------------------
-# Org-scoped eval isolation
-# ---------------------------------------------------------------------------
-
-
-class TestEvalOrgIsolation:
-    """Test that eval endpoints reject agents from other orgs."""
-
-    def setup_method(self):
-        self.org_a = _make_org("Org A", "org-a")
-        self.org_b = _make_org("Org B", "org-b")
-        self.admin_a = _make_user(org=self.org_a, role=UserRole.admin)
-        self.agent_b = _make_agent(_make_user(org=self.org_b), name="foreign-agent", org=self.org_b)
-
-    def test_cross_org_eval_is_blocked(self):
-        user = self.admin_a
-        agent = self.agent_b
-        if user.org_id is not None and agent.owner_org_id != user.org_id:
-            with pytest.raises(HTTPException) as exc_info:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Agent does not belong to your organization",
-                )
-            assert exc_info.value.status_code == 403
-
-    def test_same_org_eval_is_allowed(self):
-        user = self.admin_a
-        agent = _make_agent(user, name="own-agent", org=self.org_a)
-        assert user.org_id is not None
-        assert agent.owner_org_id == user.org_id
-
-
-# ---------------------------------------------------------------------------
 # Alert org-scoping
 # ---------------------------------------------------------------------------
 
