@@ -96,6 +96,7 @@ from observal_cli.cmd_agent import agent_app
 from observal_cli.cmd_auth import auth_app, register_config
 from observal_cli.cmd_component import component_app
 from observal_cli.cmd_doctor import doctor_app
+from observal_cli.cmd_hook import hook_app
 from observal_cli.cmd_mcp import mcp_app
 from observal_cli.cmd_migrate import migrate_app
 from observal_cli.cmd_models import models_app
@@ -125,6 +126,7 @@ registry_app = typer.Typer(
 
 registry_app.add_typer(mcp_app, name="mcp")
 registry_app.add_typer(skill_app, name="skill")
+registry_app.add_typer(hook_app, name="hook")
 registry_app.add_typer(prompt_app, name="prompt")
 registry_app.add_typer(sandbox_app, name="sandbox")
 registry_app.add_typer(models_app, name="models")

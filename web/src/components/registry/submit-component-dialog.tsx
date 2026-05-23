@@ -271,6 +271,12 @@ export function SubmitComponentDialog({
 			? JSON.stringify(d.handler_config, null, 2)
 			: "",
 	);
+	const [scriptContent, setScriptContent] = useState(
+		(d?.script_content as string) ?? "",
+	);
+	const [scriptFilename, setScriptFilename] = useState(
+		(d?.script_filename as string) ?? "",
+	);
 
 	// ── Prompt ──────────────────────────────────────────────
 	const [promptCategory, setPromptCategory] = useState(
@@ -440,6 +446,10 @@ export function SubmitComponentDialog({
 					} catch {
 						/* leave as default {} */
 					}
+				}
+				if (scriptContent.trim()) {
+					body.script_content = scriptContent;
+					body.script_filename = scriptFilename || undefined;
 				}
 				return body;
 			}
@@ -1061,6 +1071,34 @@ export function SubmitComponentDialog({
 									rows={3}
 									className="font-mono text-sm"
 								/>
+							</div>
+							<div className="space-y-1.5">
+								<Label htmlFor="hook-script-filename">Script Filename (optional)</Label>
+								<input
+									id="hook-script-filename"
+									type="text"
+									value={scriptFilename}
+									onChange={(e) => setScriptFilename(e.target.value)}
+									placeholder="my-hook.sh"
+									className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono"
+								/>
+								<p className="text-xs text-muted-foreground">
+									Name of the script file that will be written on install.
+								</p>
+							</div>
+							<div className="space-y-1.5">
+								<Label htmlFor="hook-script">Hook Script (optional)</Label>
+								<Textarea
+									id="hook-script"
+									value={scriptContent}
+									onChange={(e) => setScriptContent(e.target.value)}
+									placeholder={"#!/bin/bash\nINPUT=$(cat)\n# Your hook logic here\nexit 0"}
+									rows={8}
+									className="font-mono text-sm"
+								/>
+								<p className="text-xs text-muted-foreground">
+									Script content stored in the registry and delivered on install. Leave empty for inline commands.
+								</p>
 							</div>
 						</>
 					)}

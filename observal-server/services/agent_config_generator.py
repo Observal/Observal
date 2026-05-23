@@ -110,6 +110,10 @@ def _custom_hook_matcher_lines(hook: dict) -> list[str]:
         ]
     else:
         command = handler_config.get("command", "")
+        # Rewrite bare script filenames to the IDE hooks directory path
+        script_filename = hook.get("script_filename")
+        if script_filename and command == script_filename:
+            command = f".claude/hooks/{script_filename}"
         lines = ["    - hooks:", "        - type: command", f'          command: "{command}"'] if command else []
     return lines
 
@@ -296,6 +300,41 @@ def _inject_agent_id(mcp_config: dict, agent_id: str):
             cfg["env"]["OBSERVAL_AGENT_ID"] = agent_id
 
 
+def _build_sandbox_mcp_entry(sandbox_listings: dict, ide: str) -> dict:
+    """Build an MCP server entry for sandbox components.
+
+    Returns a dict like {"observal-sandbox": {"command": ..., "args": [...]}}
+    that exposes sandboxes as callable tools via the sandbox MCP server.
+    """
+    if not sandbox_listings:
+        return {}
+
+    sandboxes_json = []
+    for _lid, listing in sandbox_listings.items():
+        sandboxes_json.append(
+            {
+                "id": str(_lid),
+                "name": getattr(listing, "name", ""),
+                "image": getattr(listing, "image", ""),
+                "timeout": (getattr(listing, "resource_limits", {}) or {}).get("timeout", 300),
+                "entrypoint": getattr(listing, "entrypoint", None) or "bash",
+                "network_policy": getattr(listing, "network_policy", "none"),
+            }
+        )
+
+    if not sandboxes_json:
+        return {}
+
+    import json as _json
+
+    return {
+        "observal-sandbox": {
+            "command": "python3",
+            "args": ["-m", "observal_cli.sandbox_mcp", "--sandboxes", _json.dumps(sandboxes_json)],
+        }
+    }
+
+
 def _build_mcp_configs(
     agent: Agent,
     ide: str,
@@ -453,22 +492,103 @@ def _build_hook_configs(
         listing = hook_listings.get(comp.component_id)
         if not listing:
             continue
-        hooks.append(
-            {
-                "event": getattr(listing, "event", None),
-                "handler_type": getattr(listing, "handler_type", "command"),
-                "handler_config": getattr(listing, "handler_config", {}) or {},
-                "name": getattr(listing, "name", ""),
-            }
-        )
+        entry = {
+            "event": getattr(listing, "event", None),
+            "handler_type": getattr(listing, "handler_type", "command"),
+            "handler_config": getattr(listing, "handler_config", {}) or {},
+            "name": getattr(listing, "name", ""),
+            "script_filename": getattr(listing, "script_filename", None),
+            "script_content": getattr(listing, "script_content", None),
+        }
+        hooks.append(entry)
 
     return hooks
+
+
+def _get_hook_events_map(ide: str) -> dict[str, str]:
+    """Get canonical event → IDE event mapping from the IDE registry."""
+    return IDE_REGISTRY.get(ide, {}).get("hook_events_map", {})
+
+
+def _get_hook_scripts_dir(ide: str) -> str:
+    """Get the hook scripts directory for an IDE from the registry."""
+    return IDE_REGISTRY.get(ide, {}).get("hook_scripts_dir", "")
+
+
+_HOOK_SCRIPTS_DIR: dict[str, str] = {
+    "cursor": ".cursor/hooks",
+    "vscode": ".github/hooks/scripts",
+    "gemini-cli": ".gemini/hooks",
+    "codex": ".codex/hooks",
+    "copilot": ".github/hooks/scripts",
+    "copilot-cli": ".github/hooks/scripts",
+    "claude-code": ".claude/hooks",
+    "kiro": ".kiro/hooks",
+}
+
+
+def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[dict], ide: str) -> None:
+    """Merge user-submitted hook components into the IDE hooks config dict (in-place)."""
+    events_map = _get_hook_events_map(ide)
+    scripts_dir = _HOOK_SCRIPTS_DIR.get(ide, "")
+    hooks_dict = hooks_content.setdefault("hooks", {})
+
+    for hc in hook_configs:
+        event = hc.get("event")
+        if not event:
+            continue
+        ide_event = events_map.get(event, event)
+        handler_config = hc.get("handler_config", {})
+        command = handler_config.get("command", "")
+        if not command:
+            continue
+
+        # If hook has a script_filename, rewrite command to the IDE scripts dir
+        script_filename = hc.get("script_filename")
+        if script_filename and scripts_dir:
+            command = f"{scripts_dir}/{script_filename}"
+
+        if ide == "cursor":
+            hooks_dict.setdefault(ide_event, []).append({"command": command})
+        elif ide in ("vscode", "copilot", "copilot-cli"):
+            hooks_dict.setdefault(ide_event, []).append({"type": "command", "command": command})
+        elif ide == "gemini-cli":
+            entry: dict = {"matcher": "*", "command": command}
+            timeout = handler_config.get("timeout")
+            if timeout:
+                entry["timeout"] = timeout
+            hooks_dict.setdefault(ide_event, []).append(entry)
+        else:
+            hooks_dict.setdefault(ide_event, []).append({"command": command})
+
+
+def _collect_hook_script_files(hook_configs: list[dict], hook_listings: dict | None, ide: str) -> list[dict]:
+    """Collect script files from hook components that need to be written on install."""
+    scripts_dir = _HOOK_SCRIPTS_DIR.get(ide, "")
+    if not scripts_dir:
+        return []
+
+    files: list[dict] = []
+    for hc in hook_configs:
+        script_content = hc.get("script_content")
+        script_filename = hc.get("script_filename")
+        if script_content and script_filename:
+            files.append(
+                {
+                    "path": f"{scripts_dir}/{script_filename}",
+                    "content": script_content,
+                    "executable": True,
+                }
+            )
+
+    return files
 
 
 def _build_rules_content(
     agent: Agent,
     component_names: dict | None = None,
     prompt_listings: dict | None = None,
+    sandbox_listings: dict | None = None,
 ) -> str:
     """Build markdown rules content from the agent and its components.
 
@@ -478,6 +598,8 @@ def _build_rules_content(
     Args:
         prompt_listings: optional {component_id: PromptListing} map. When provided,
             prompt components inject their full template content instead of a bullet name.
+        sandbox_listings: optional {component_id: SandboxListing} map. When provided,
+            sandbox components inject usage instructions with the run command.
     """
     sections: list[str] = []
 
@@ -522,6 +644,37 @@ def _build_rules_content(
                 else:
                     lines.append(f"- **{pname}**")
             sections.append("\n".join(lines))
+        elif comp_type == "sandbox" and sandbox_listings:
+            # Inject sandbox usage instructions with run command
+            lines = [
+                "## Sandboxes",
+                "",
+                "You have access to isolated execution environments. Use these to run code safely.",
+            ]
+            for comp in agent.components:
+                if comp.component_type != "sandbox":
+                    continue
+                listing = sandbox_listings.get(comp.component_id)
+                if not listing:
+                    continue
+                sname = names.get(str(comp.component_id), str(comp.component_id)[:8])
+                image = getattr(listing, "image", "") or ""
+                entrypoint = getattr(listing, "entrypoint", "") or ""
+                resource_limits = getattr(listing, "resource_limits", {}) or {}
+                timeout = resource_limits.get("timeout", 300)
+                memory_mb = resource_limits.get("memory_mb", 512)
+                network = getattr(listing, "network_policy", "none") or "none"
+                sandbox_id = str(comp.component_id)
+                lines.append("")
+                lines.append(f"### {sname}")
+                lines.append(f"- **Image:** `{image}`")
+                lines.append(f"- **Timeout:** {timeout}s | **Memory:** {memory_mb}MB | **Network:** {network}")
+                if entrypoint:
+                    lines.append(f"- **Default command:** `{entrypoint}`")
+                lines.append(
+                    f'- **Run:** `observal-sandbox-run --sandbox-id {sandbox_id} --image {image} --timeout {timeout} --command "<your command>"`'
+                )
+            sections.append("\n".join(lines))
         else:
             lines = [f"## {heading}", ""]
             for n in comp_names:
@@ -544,6 +697,7 @@ def generate_agent_config(
     hook_listings: dict | None = None,
     otlp_http_url: str = "",
     prompt_listings: dict | None = None,
+    sandbox_listings: dict | None = None,
 ) -> dict:
     """Generate IDE-specific config for an agent.
 
@@ -559,7 +713,14 @@ def generate_agent_config(
     safe_name = _sanitize_name(agent.name)
     effective_otlp_http = otlp_http_url or observal_url
     mcp_configs = _build_mcp_configs(agent, ide, effective_otlp_http, mcp_listings=mcp_listings, env_values=env_values)
-    rules_content = _build_rules_content(agent, component_names, prompt_listings)
+
+    # Inject sandbox MCP server when agent has sandbox components
+    if sandbox_listings:
+        sandbox_mcp = _build_sandbox_mcp_entry(sandbox_listings, ide)
+        if sandbox_mcp:
+            mcp_configs.update(sandbox_mcp)
+
+    rules_content = _build_rules_content(agent, component_names, prompt_listings, sandbox_listings)
     skill_configs = _build_skill_configs(agent, skill_listings)
     hook_configs = _build_hook_configs(agent, hook_listings)
     options = options or {}
@@ -588,6 +749,10 @@ def generate_agent_config(
                 cmd = handler_config.get("command", "")
                 if not cmd:
                     continue
+                # Rewrite bare script filenames to the hooks directory
+                script_filename = hc.get("script_filename")
+                if script_filename and cmd == script_filename:
+                    cmd = f".kiro/hooks/{script_filename}"
                 entry: dict = {"command": cmd}
                 if kiro_event in ("preToolUse", "postToolUse"):
                     entry["matcher"] = handler_config.get("matcher", "*")
@@ -634,6 +799,10 @@ def generate_agent_config(
         if skill_files:
             result["skill_files"] = skill_files
             result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
+        # Collect hook script files for Kiro
+        kiro_hook_files = _collect_hook_script_files(hook_configs, hook_listings, "kiro")
+        if kiro_hook_files:
+            result["hook_files"] = kiro_hook_files
         warnings_combined = list(compatibility_warnings)
         warnings_combined.extend(options.get("_model_warnings") or [])
         if warnings_combined:
@@ -671,6 +840,9 @@ def generate_agent_config(
             "---",
             f"name: {safe_name}",
         ]
+        agent_desc = getattr(agent, "description", "") or ""
+        if agent_desc:
+            frontmatter_lines.append(f'description: "{agent_desc}"')
         if model_choice:
             frontmatter_lines.append(f"model: {model_choice}")
         if tools:
@@ -705,6 +877,10 @@ def generate_agent_config(
         if skill_files:
             result["skill_files"] = skill_files
             result["skill_components"] = [s for s in skill_configs if s.get("git_url")]
+        # Collect hook script files for Claude Code
+        cc_hook_files = _collect_hook_script_files(hook_configs, hook_listings, "claude-code")
+        if cc_hook_files:
+            result["hook_files"] = cc_hook_files
         warnings_combined = list(compatibility_warnings)
         warnings_combined.extend(options.get("_model_warnings") or [])
         if warnings_combined:
@@ -912,15 +1088,29 @@ def generate_agent_config(
     # Add hooks config for IDEs with command hook support
     if ide == "cursor":
         hooks_path = ".cursor/hooks.json" if ide_scope == "project" else "~/.cursor/hooks.json"
+        hooks_content = _cursor_hooks_config(platform=platform)
+        # Merge hook components into the hooks config
+        _merge_hook_components_into_config(hooks_content, hook_configs, ide)
         result["hooks_config"] = {
             "path": hooks_path,
-            "content": _cursor_hooks_config(platform=platform),
+            "content": hooks_content,
+            "merge": True,
         }
     elif ide == "vscode":
+        hooks_content = _vscode_copilot_hooks_config()
+        _merge_hook_components_into_config(hooks_content, hook_configs, ide)
         result["hooks_config"] = {
             "path": ".github/hooks/observal.json",
-            "content": _vscode_copilot_hooks_config(),
+            "content": hooks_content,
         }
+    elif ide in ("gemini-cli", "gemini_cli") and hook_configs:
+        # Gemini hooks are in the same settings.json — already handled above
+        pass
+
+    # Write hook script files for hook components that have scripts
+    hook_files = _collect_hook_script_files(hook_configs, hook_listings, ide)
+    if hook_files:
+        result["hook_files"] = hook_files
     if skill_files:
         result["skill_files"] = skill_files
         result["skill_components"] = [s for s in skill_configs if s.get("git_url")]

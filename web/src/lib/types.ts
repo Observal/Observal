@@ -189,11 +189,12 @@ export interface ComponentVersionSummary {
 	priority?: number;
 	handler_type?: string;
 	handler_config?: Record<string, unknown>;
-	input_schema?: Record<string, unknown>;
-	output_schema?: Record<string, unknown>;
 	scope?: string;
 	tool_filter?: Record<string, unknown>;
-	file_pattern?: string[];
+	script_content?: string;
+	script_filename?: string;
+	source_path?: string;
+	requirements?: string[];
 	// Skill fields
 	skill_path?: string;
 	git_url?: string;
@@ -344,12 +345,16 @@ export interface ReviewItem {
 	execution_mode?: string;
 	handler_type?: string;
 	handler_config?: Record<string, unknown>;
-	input_schema?: Record<string, unknown>;
-	output_schema?: Record<string, unknown>;
 	scope?: string;
 	tool_filter?: string[];
-	file_pattern?: string[];
 	priority?: number;
+	script_content?: string;
+	script_filename?: string;
+	source_url?: string;
+	source_ref?: string;
+	source_path?: string;
+	resolved_sha?: string;
+	requirements?: string[];
 
 	// Prompt-specific
 	category?: string;
@@ -361,12 +366,11 @@ export interface ReviewItem {
 	// Sandbox-specific
 	runtime_type?: string;
 	image?: string;
-	dockerfile_url?: string;
 	resource_limits?: Record<string, unknown>;
 	network_policy?: string;
-	allowed_mounts?: string[];
-	env_vars?: Record<string, unknown>;
 	entrypoint?: string;
+	sandbox_path?: string;
+	validated_at?: string;
 
 	// Agent-specific
 	prompt?: string;

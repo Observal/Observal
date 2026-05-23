@@ -124,6 +124,12 @@ VALID_HOOK_SCOPES: list[str] = [
     "global",
 ]
 
+HOOK_TIMEOUT_CAPS: dict[str, int] = {
+    "blocking": 30,
+    "sync": 10,
+    "async": 60,
+}
+
 # ── Prompts ─────────────────────────────────────────────────
 VALID_PROMPT_CATEGORIES: list[str] = [
     "system-prompt",

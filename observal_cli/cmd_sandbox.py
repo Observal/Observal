@@ -158,7 +158,19 @@ def sandbox_install(
     ide: str = typer.Option(..., "--ide", "-i", help="Target IDE"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
 ):
-    """Get install config for a sandbox."""
+    """Get install config for a sandbox.
+
+    [Deprecated] Sandboxes should be added as agent components instead.
+    Use: observal agent add --type sandbox --id <sandbox-id>
+    Then: observal agent pull <agent> --ide <ide>
+    """
+    rprint(
+        "[yellow]\u26a0 Standalone sandbox install is deprecated.[/yellow]\n"
+        "  Sandboxes work best as agent components. Add to an agent:\n"
+        "    observal agent add --type sandbox --id <sandbox-id>\n"
+        "  Then pull the agent:\n"
+        "    observal agent pull <agent-name> --ide <ide>\n"
+    )
     resolved = config.resolve_alias(sandbox_id)
     with spinner(f"Generating {ide} config..."):
         result = client.post(f"/api/v1/sandboxes/{resolved}/install", {"ide": ide})

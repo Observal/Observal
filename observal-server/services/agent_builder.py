@@ -172,6 +172,22 @@ class AgentFile(BaseModel):
     format: Literal["markdown", "json", "toml"] = "json"
 
 
+class HookInstallEntry(BaseModel):
+    """A hook to install as part of agent pull."""
+
+    path: str  # IDE-relative path for the script file
+    content: str  # Script content
+    executable: bool = False
+
+
+class HookConfigEntry(BaseModel):
+    """Hook config snippet to merge into the IDE's hooks config."""
+
+    config_path: str  # Where to write/merge config (e.g., .cursor/hooks.json)
+    config_snippet: dict  # The IDE-specific hook config
+    merge: bool = True  # Whether to merge into existing file
+
+
 class IdeAgentConfig(BaseModel):
     """Complete IDE-specific agent configuration output."""
 
@@ -180,6 +196,8 @@ class IdeAgentConfig(BaseModel):
     mcp_servers: dict = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
     setup_commands: list[list[str]] = Field(default_factory=list)
+    hook_files: list[HookInstallEntry] = Field(default_factory=list)
+    hook_configs: list[HookConfigEntry] = Field(default_factory=list)
 
 
 # ── Builder Functions ───────────────────────────────────────────────
@@ -403,6 +421,96 @@ def _build_rules_markdown(manifest: AgentManifest) -> str:
         sections.append("\n".join(lines))
 
     return "\n\n".join(sections)
+
+
+def _materialize_hook_components(
+    manifest: AgentManifest, ide: str
+) -> tuple[list[HookInstallEntry], list[HookConfigEntry]]:
+    """Generate hook files + configs for all hook components in an agent manifest.
+
+    Uses the IDE registry to map events and determine script paths.
+    Returns (hook_files, hook_configs) to be included in IdeAgentConfig.
+    """
+    from schemas.ide_registry import IDE_REGISTRY
+
+    if not manifest.components.hooks:
+        return [], []
+
+    ide_info = IDE_REGISTRY.get(ide, {})
+    events_map = ide_info.get("hook_events_map", {})
+    hook_scripts_dir = ide_info.get("hook_scripts_dir", "")
+    hook_config_path_dict = ide_info.get("hook_config_path", {})
+    hook_type = ide_info.get("hook_type")
+
+    # Can't generate for plugin-based IDEs
+    if hook_type == "plugin":
+        return [], []
+
+    config_path = hook_config_path_dict.get("project") or hook_config_path_dict.get("user") or ""
+
+    hook_files: list[HookInstallEntry] = []
+    all_hook_entries: dict[str, list] = {}  # ide_event -> list of hook entries
+
+    for hook in manifest.components.hooks:
+        if not hook.event or not hook.handler_config:
+            continue
+
+        ide_event = events_map.get(hook.event)
+        if not ide_event:
+            continue
+
+        handler_type = hook.handler_type or "command"
+        command = hook.handler_config.get("command", "")
+        timeout = hook.handler_config.get("timeout")
+        script_filename = getattr(hook, "script_filename", None) or (getattr(hook, "config_override", None) or {}).get(
+            "script_filename"
+        )
+        script_content = getattr(hook, "script_content", None) or (getattr(hook, "config_override", None) or {}).get(
+            "script_content"
+        )
+
+        # If hook has a script, write it and rewrite the command
+        actual_command = command
+        if script_content and script_filename and hook_scripts_dir:
+            script_path = f"{hook_scripts_dir}/{script_filename}"
+            hook_files.append(
+                HookInstallEntry(
+                    path=script_path,
+                    content=script_content,
+                    executable=True,
+                )
+            )
+            actual_command = script_path
+
+        # Build IDE-specific hook entry
+        if ide == "claude-code":
+            hook_entry: dict = {"type": handler_type, "command": actual_command}
+            if timeout:
+                hook_entry["timeout"] = timeout
+            all_hook_entries.setdefault(ide_event, []).append({"matcher": "*", "hooks": [hook_entry]})
+        elif ide == "cursor":
+            all_hook_entries.setdefault(ide_event, []).append({"command": actual_command})
+        elif ide == "gemini-cli":
+            entry: dict = {"matcher": "*", "command": actual_command}
+            if timeout:
+                entry["timeout"] = timeout
+            all_hook_entries.setdefault(ide_event, []).append(entry)
+        else:
+            all_hook_entries.setdefault(ide_event, []).append({"command": actual_command})
+
+    # Build the merged config snippet
+    hook_configs: list[HookConfigEntry] = []
+    if all_hook_entries and config_path:
+        snippet = {"version": 1, "hooks": all_hook_entries} if ide == "cursor" else {"hooks": all_hook_entries}
+        hook_configs.append(
+            HookConfigEntry(
+                config_path=config_path,
+                config_snippet=snippet,
+                merge=True,
+            )
+        )
+
+    return hook_files, hook_configs
 
 
 def _generate_claude_code(manifest: AgentManifest) -> IdeAgentConfig:
@@ -818,4 +926,12 @@ def generate_ide_agent_files(
         manifest._observal_url = observal_url  # type: ignore[attr-defined]
     if platform:
         manifest._platform = platform  # type: ignore[attr-defined]
-    return generator(manifest)
+    config = generator(manifest)
+
+    # Materialize hook components for all IDEs (except Kiro which does it inline)
+    if ide != "kiro" and manifest.components.hooks:
+        hook_files, hook_configs = _materialize_hook_components(manifest, ide)
+        config.hook_files = hook_files
+        config.hook_configs = hook_configs
+
+    return config

@@ -27,6 +27,7 @@ from models.mcp import ListingStatus
 from models.user import User, UserRole
 from schemas.hook import (
     HookDraftRequest,
+    HookFileEntry,
     HookInstallRequest,
     HookInstallResponse,
     HookListingResponse,
@@ -70,12 +71,15 @@ async def submit_hook(
         priority=req.priority,
         handler_type=req.handler_type,
         handler_config=req.handler_config,
-        input_schema=req.input_schema,
-        output_schema=req.output_schema,
         scope=req.scope,
         tool_filter=req.tool_filter,
-        file_pattern=req.file_pattern,
         supported_ides=req.supported_ides,
+        script_content=req.script_content,
+        script_filename=req.script_filename,
+        source_url=req.source_url,
+        source_ref=req.source_ref,
+        source_path=req.source_path,
+        requirements=req.requirements,
         status=ListingStatus.pending,
         released_by=current_user.id,
         released_at=datetime.now(UTC),
@@ -176,15 +180,22 @@ async def install_hook(
     db.add(HookDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     await db.commit()
 
-    from api.routes.config import derive_endpoints
-    from services.hook_config_generator import generate_hook_telemetry_config
+    from services.hook_install_generator import generate_hook_install_config
 
-    endpoints = await derive_endpoints(request)
-    config = generate_hook_telemetry_config(listing, req.ide, server_url=endpoints["api"], platform=req.platform)
+    result = generate_hook_install_config(listing, req.ide)
     await audit(
         current_user, "hook.install", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name
     )
-    return HookInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
+    return HookInstallResponse(
+        listing_id=listing.id,
+        ide=req.ide,
+        config_snippet=result.get("config_snippet", {}),
+        config_path=result.get("config_path", ""),
+        files=[HookFileEntry(**f) for f in result.get("files", [])],
+        requirements=result.get("requirements", []),
+        source_fetch=result.get("source_fetch"),
+        notes=result.get("notes", []),
+    )
 
 
 @router.post("/draft", response_model=HookListingResponse)
@@ -211,12 +222,15 @@ async def save_hook_draft(
         priority=req.priority,
         handler_type=req.handler_type,
         handler_config=req.handler_config,
-        input_schema=req.input_schema,
-        output_schema=req.output_schema,
         scope=req.scope,
         tool_filter=req.tool_filter,
-        file_pattern=req.file_pattern,
         supported_ides=req.supported_ides,
+        script_content=req.script_content,
+        script_filename=req.script_filename,
+        source_url=req.source_url,
+        source_ref=req.source_ref,
+        source_path=req.source_path,
+        requirements=req.requirements,
         status=ListingStatus.draft,
         released_by=current_user.id,
         released_at=datetime.now(UTC),
@@ -260,12 +274,15 @@ async def update_hook_draft(
         "priority",
         "handler_type",
         "handler_config",
-        "input_schema",
-        "output_schema",
         "scope",
         "tool_filter",
-        "file_pattern",
         "supported_ides",
+        "script_content",
+        "script_filename",
+        "source_url",
+        "source_ref",
+        "source_path",
+        "requirements",
     ):
         val = getattr(req, field)
         if val is not None:

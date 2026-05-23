@@ -161,26 +161,6 @@ class HookListing(Base):
         self.latest_version.handler_config = value
 
     @property
-    def input_schema(self) -> dict | None:
-        return self.latest_version.input_schema if self.latest_version else None
-
-    @input_schema.setter
-    def input_schema(self, value: dict | None) -> None:
-        if not self.latest_version:
-            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set input_schema")
-        self.latest_version.input_schema = value
-
-    @property
-    def output_schema(self) -> dict | None:
-        return self.latest_version.output_schema if self.latest_version else None
-
-    @output_schema.setter
-    def output_schema(self, value: dict | None) -> None:
-        if not self.latest_version:
-            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set output_schema")
-        self.latest_version.output_schema = value
-
-    @property
     def scope(self) -> str:
         return self.latest_version.scope if self.latest_version else "agent"
 
@@ -201,14 +181,74 @@ class HookListing(Base):
         self.latest_version.tool_filter = value
 
     @property
-    def file_pattern(self) -> list | None:
-        return self.latest_version.file_pattern if self.latest_version else None
+    def source_url(self) -> str | None:
+        return self.latest_version.source_url if self.latest_version else None
 
-    @file_pattern.setter
-    def file_pattern(self, value: list | None) -> None:
+    @source_url.setter
+    def source_url(self, value: str | None) -> None:
         if not self.latest_version:
-            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set file_pattern")
-        self.latest_version.file_pattern = value
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set source_url")
+        self.latest_version.source_url = value
+
+    @property
+    def source_ref(self) -> str | None:
+        return self.latest_version.source_ref if self.latest_version else None
+
+    @source_ref.setter
+    def source_ref(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set source_ref")
+        self.latest_version.source_ref = value
+
+    @property
+    def source_path(self) -> str | None:
+        return self.latest_version.source_path if self.latest_version else None
+
+    @source_path.setter
+    def source_path(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set source_path")
+        self.latest_version.source_path = value
+
+    @property
+    def resolved_sha(self) -> str | None:
+        return self.latest_version.resolved_sha if self.latest_version else None
+
+    @resolved_sha.setter
+    def resolved_sha(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set resolved_sha")
+        self.latest_version.resolved_sha = value
+
+    @property
+    def script_content(self) -> str | None:
+        return self.latest_version.script_content if self.latest_version else None
+
+    @script_content.setter
+    def script_content(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set script_content")
+        self.latest_version.script_content = value
+
+    @property
+    def script_filename(self) -> str | None:
+        return self.latest_version.script_filename if self.latest_version else None
+
+    @script_filename.setter
+    def script_filename(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set script_filename")
+        self.latest_version.script_filename = value
+
+    @property
+    def requirements(self) -> list | None:
+        return self.latest_version.requirements if self.latest_version else None
+
+    @requirements.setter
+    def requirements(self, value: list | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set requirements")
+        self.latest_version.requirements = value
 
 
 class HookDownload(Base):
@@ -250,11 +290,16 @@ class HookVersion(Base):
     priority: Mapped[int] = mapped_column(Integer, default=100)
     handler_type: Mapped[str] = mapped_column(String(20), nullable=False)
     handler_config: Mapped[dict] = mapped_column(JSON, default=dict)
-    input_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    output_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     scope: Mapped[str] = mapped_column(String(20), default="agent")
     tool_filter: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    file_pattern: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Source tracking + script delivery
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    resolved_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    script_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    script_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    requirements: Mapped[list | None] = mapped_column(JSON, nullable=True)
     is_editing: Mapped[bool] = mapped_column(Boolean, default=False)
     editing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     editing_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

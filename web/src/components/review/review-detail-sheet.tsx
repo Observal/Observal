@@ -131,10 +131,10 @@ function HookConfigSection({ detail }: { detail: ReviewItem }) {
 			<DetailField label="Handler Type" value={detail.handler_type} />
 			<DetailField label="Scope" value={detail.scope} />
 			<DetailField label="Tool Filter" value={detail.tool_filter} />
-			<DetailField label="File Pattern" value={detail.file_pattern} />
 			<DetailField label="Handler Config" value={detail.handler_config} />
-			<DetailField label="Input Schema" value={detail.input_schema} />
-			<DetailField label="Output Schema" value={detail.output_schema} />
+			{detail.script_filename && <DetailField label="Script" value={detail.script_filename} />}
+			{detail.source_url && <DetailField label="Source" value={`${detail.source_url}@${detail.source_ref || 'main'}`} />}
+			{detail.requirements && detail.requirements.length > 0 && <DetailField label="Requirements" value={detail.requirements.join(', ')} />}
 		</dl>
 	);
 }
@@ -167,12 +167,11 @@ function SandboxConfigSection({ detail }: { detail: ReviewItem }) {
 		<dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
 			<DetailField label="Runtime Type" value={detail.runtime_type} />
 			<DetailField label="Image" value={detail.image} />
-			<DetailField label="Dockerfile URL" value={detail.dockerfile_url} />
 			<DetailField label="Network Policy" value={detail.network_policy} />
 			<DetailField label="Entrypoint" value={detail.entrypoint} />
-			<DetailField label="Allowed Mounts" value={detail.allowed_mounts} />
 			<DetailField label="Resource Limits" value={detail.resource_limits} />
-			<DetailField label="Env Vars" value={detail.env_vars} />
+			{detail.sandbox_path && <DetailField label="Sandbox Path" value={detail.sandbox_path} />}
+			{detail.source_url && <DetailField label="Source" value={detail.source_url} />}
 		</dl>
 	);
 }
