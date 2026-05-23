@@ -18,6 +18,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
+from observal_cli.prompts import text_input
 from observal_cli.render import console, output_json, relative_time, spinner, status_badge
 
 # ── Constants ──────────────────────────────────────────────────
@@ -119,7 +120,7 @@ def version_publish(
             rprint(f"[dim]{hint}[/dim]")
         except (Exception, SystemExit):
             pass
-        version = typer.prompt("Version")
+        version = text_input("Version")
 
     # Build payload (only include optional keys when provided)
     payload: dict = {

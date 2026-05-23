@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Riya Rani <rr1182764@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Interactive prompt helpers for constrained fields.
@@ -94,3 +95,51 @@ def fuzzy_select(
     if result is None:
         raise KeyboardInterrupt
     return result
+
+
+def text_input(message: str, default: str = "") -> str:
+    """
+    Arrow-key-aware text input using prompt_toolkit.
+    Falls back to typer.prompt in non-interactive / CI environments.
+    """
+    if not sys.stdin.isatty():
+        import typer
+
+        return typer.prompt(message, default=default)
+
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.history import InMemoryHistory
+
+    result = pt_prompt(
+        f"{message} [{default}]: " if default else f"{message}: ",
+        default=default,
+        history=InMemoryHistory(),
+        style=_qstyle(),
+    )
+    return result.strip() or default
+
+
+def password_input(message: str) -> str:
+    """
+    Secure password input using prompt_toolkit (no echo).
+    Falls back to typer.prompt in non-interactive environments.
+    """
+    if not sys.stdin.isatty():
+        import typer
+
+        return typer.prompt(message, hide_input=True)
+
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.formatted_text import FormattedText
+
+    try:
+        result = pt_prompt(
+            FormattedText([("bold", f"{message}: ")]),
+            is_password=True,
+            style=_qstyle(),
+        )
+        if result is None:
+            raise KeyboardInterrupt
+        return result
+    except EOFError:
+        raise KeyboardInterrupt
