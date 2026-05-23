@@ -161,6 +161,7 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
                 "status": pending_ver.status.value,
                 "submitted_by": user_map.get(a.created_by, str(a.created_by)),
                 "created_at": pending_ver.created_at.isoformat() if pending_ver.created_at else "",
+                "prompt": pending_ver.prompt or "",
                 "component_count": len(pending_ver.components) if pending_ver.components else 0,
                 "components_ready": components_ready,
                 "blocking_components": blocking,

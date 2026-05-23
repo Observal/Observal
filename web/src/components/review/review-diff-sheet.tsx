@@ -152,6 +152,7 @@ function buildCleanYaml(detail: Record<string, unknown>, componentDataMap?: Map<
   const obj: Record<string, unknown> = {};
   if (detail.version) obj.version = detail.version;
   if (detail.description) obj.description = detail.description;
+  if (detail.prompt) obj.prompt = detail.prompt;
   if (detail.model_name) obj.model_name = detail.model_name;
   const byIde = detail.models_by_ide as Record<string, unknown> | undefined;
   if (byIde && Object.keys(byIde).length) obj.models_by_ide = byIde;
@@ -173,7 +174,6 @@ function buildCleanYaml(detail: Record<string, unknown>, componentDataMap?: Map<
       return entry;
     });
   }
-  if (detail.prompt) obj.prompt = detail.prompt;
   try {
     return yaml.dump(obj, { lineWidth: 120, indent: 2, noRefs: true }).trimEnd();
   } catch {
