@@ -94,7 +94,13 @@ export function InstallDialog({ type, id, name }: InstallDialogProps) {
         {config && (
           <div className="relative">
             <pre className="max-h-80 overflow-auto rounded-md bg-muted p-4 text-xs">{config}</pre>
-            <Button size="icon" variant="ghost" className="absolute right-2 top-2 h-7 w-7" onClick={handleCopy}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="absolute right-2 top-2 h-7 w-7"
+              onClick={handleCopy}
+              aria-label="Copy config"
+            >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </Button>
           </div>

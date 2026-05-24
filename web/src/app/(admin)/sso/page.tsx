@@ -271,7 +271,7 @@ function ScimTokensSection() {
               <code className="text-xs font-mono bg-background px-2 py-1 rounded border flex-1 break-all select-all">
                 {newToken}
               </code>
-              <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={copyToken}>
+              <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={copyToken} aria-label="Copy token">
                 <Copy className="h-3 w-3" />
               </Button>
             </div>

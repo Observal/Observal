@@ -181,6 +181,7 @@ Sidebar.displayName = "Sidebar"
 const SidebarTrigger = React.forwardRef<React.ComponentRef<typeof Button>, React.ComponentProps<typeof Button>>(
   ({ className, onClick, ...props }, ref) => {
     const { toggleSidebar } = useSidebar()
+    const ariaLabel = props["aria-label"] ?? "Toggle sidebar"
     return (
       <Button
         ref={ref}
@@ -189,6 +190,7 @@ const SidebarTrigger = React.forwardRef<React.ComponentRef<typeof Button>, React
         size="icon"
         className={cn("h-7 w-7", className)}
         onClick={(e) => { onClick?.(e); toggleSidebar() }}
+        aria-label={ariaLabel}
         {...props}
       >
         <PanelLeft />

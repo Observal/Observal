@@ -228,11 +228,17 @@ function AccessSettingsWidget({ agentId, visibility, teamAccesses, canEdit }: { 
             Access Settings
           </h3>
           {canEdit && (
-            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => {
-              setEditVisibility(visibility === "public" ? "public" : "private");
-              setEditTeamAccesses(teamAccesses ?? []);
-              setIsEditing(true);
-            }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground"
+              aria-label="Edit access settings"
+              onClick={() => {
+                setEditVisibility(visibility === "public" ? "public" : "private");
+                setEditTeamAccesses(teamAccesses ?? []);
+                setIsEditing(true);
+              }}
+            >
               <Edit className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -334,6 +340,7 @@ function AccessSettingsWidget({ agentId, visibility, teamAccesses, canEdit }: { 
                       setEditTeamAccesses(newAccess);
                     }}
                     className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    aria-label={`Remove ${access.group_name ? `${access.group_name} ` : ""}access`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
