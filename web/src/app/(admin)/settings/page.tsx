@@ -676,7 +676,7 @@ export default function SettingsPage() {
 		licensed,
 		ssoEnabled,
 		samlEnabled,
-		isLicensed,
+		licensedFeatures,
 		brandingLogo,
 		brandingAppName,
 		brandingWordmark,
@@ -1117,7 +1117,7 @@ export default function SettingsPage() {
 							</span>
 						</div>
 					</div>
-					{isLicensed && (
+					{licensedFeatures.length > 0 && (
 						<div className="flex items-start gap-2 mt-2 text-xs text-muted-foreground">
 							<Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
 							<span>
