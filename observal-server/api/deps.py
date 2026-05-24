@@ -114,6 +114,9 @@ async def get_current_user(
     if user.auth_provider == "deactivated":
         raise HTTPException(status_code=403, detail="Account deactivated")
 
+    # Expose user to audit middleware
+    request.state.audit_user = user
+
     # Enforce must_change_password — fail closed: if Redis is down we cannot
     # guarantee the gate is enforced, so block non-exempt requests.
     if request.url.path not in _PASSWORD_CHANGE_EXEMPT_PATHS:

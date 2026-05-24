@@ -33,6 +33,7 @@ from strawberry.fastapi import GraphQLRouter
 import services.dynamic_settings as ds
 from api.deps import get_db, get_or_create_default_org
 from api.graphql import get_context_dep, schema
+from api.middleware.audit import AuditMiddleware
 from api.middleware.content_type import ContentTypeMiddleware
 from api.middleware.request_id import RequestIDMiddleware
 from api.ratelimit import limiter
@@ -66,6 +67,7 @@ from database import engine
 from logging_config import setup_logging
 from models import Base
 from models.user import User
+from services.audit import AUDIT_LICENSED, setup_audit, shutdown_audit
 from services.cache import close_cache, init_cache
 from services.clickhouse import init_clickhouse
 from services.crypto import init_key_manager
@@ -145,6 +147,10 @@ async def lifespan(app: FastAPI):
     async with _session_factory() as db:
         await seed_demo_accounts(db)
 
+    # Initialize HIPAA audit system (enterprise, license-gated)
+    if AUDIT_LICENSED:
+        setup_audit()
+
     # Wire insights dependencies (no-op if package not installed)
     from services.insights import configure_insights
 
@@ -156,6 +162,9 @@ async def lifespan(app: FastAPI):
     await start_registry_cache()
 
     yield
+
+    if AUDIT_LICENSED:
+        await shutdown_audit()
 
     from services.agent_registry_cache import stop as stop_registry_cache
 
@@ -310,6 +319,10 @@ app.add_middleware(ContentTypeMiddleware)
 
 # --- Request ID ---
 app.add_middleware(RequestIDMiddleware)
+
+# --- Audit logging (HIPAA, enterprise license-gated) ---
+if AUDIT_LICENSED:
+    app.add_middleware(AuditMiddleware)
 
 # --- GZip compression for responses >= 500 bytes ---
 app.add_middleware(GZipMiddleware, minimum_size=500)
