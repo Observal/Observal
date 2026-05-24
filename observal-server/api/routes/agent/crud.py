@@ -38,7 +38,6 @@ from schemas.agent import (
     AgentSummary,
     AgentUpdateRequest,
 )
-from services.audit_helpers import audit
 from services.config_generator import validate_mcp_command
 from services.ide_feature_inference import compute_supported_ides, infer_required_features
 from services.registry_telemetry import emit_registry_event
@@ -220,10 +219,6 @@ async def create_agent(
         metadata={"agent_name": req.name, "version": req.version, "component_count": str(len(req.components))},
     )
 
-    await audit(
-        current_user, "agent.create", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
-
     return _agent_to_response(
         agent, name_map, created_by_email=current_user.email, created_by_username=current_user.username
     )
@@ -319,8 +314,6 @@ async def list_agents(
             email_map[r[0]] = r[1]
             username_map[r[0]] = r[2]
 
-    await audit(current_user, "agent.list", resource_type="agent")
-
     return [
         AgentSummary(
             id=a.id,
@@ -371,8 +364,6 @@ async def my_agents(
             .group_by(Feedback.listing_id)
         )
         rating_map = {r[0]: round(float(r[1]), 2) for r in rows.all()}
-
-    await audit(current_user, "agent.my_list", resource_type="agent")
 
     return [
         AgentSummary(
@@ -485,7 +476,6 @@ async def get_agent(
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
     name_map = await _resolve_component_names(agent.components, db)
     user_row = (await db.execute(select(User.email, User.username).where(User.id == agent.created_by))).first()
-    await audit(current_user, "agent.view", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name)
     return _agent_to_response(
         agent,
         name_map,
@@ -516,13 +506,6 @@ async def version_suggestions(
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
     from services.versioning import suggest_versions
 
-    await audit(
-        current_user,
-        "agent.version_suggestions",
-        resource_type="agent",
-        resource_id=str(agent.id),
-        resource_name=agent.name,
-    )
     return {"current": agent.version, "suggestions": suggest_versions(agent.version)}
 
 
@@ -695,10 +678,6 @@ async def update_agent(
         resource_name=agent.name,
     )
 
-    await audit(
-        current_user, "agent.update", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
-
     return _agent_to_response(
         agent, name_map, created_by_email=current_user.email, created_by_username=current_user.username
     )
@@ -764,8 +743,6 @@ async def delete_agent(
         resource_name=agent_name,
     )
 
-    await audit(current_user, "agent.delete", resource_type="agent", resource_id=agent_id_str, resource_name=agent_name)
-
     return {"deleted": agent_id_str}
 
 
@@ -800,10 +777,6 @@ async def archive_agent(
         user_role=current_user.role.value,
         agent_id=str(agent.id),
         resource_name=agent.name,
-    )
-
-    await audit(
-        current_user, "agent.archive", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
     )
 
     return {"id": str(agent.id), "name": agent.name, "status": "archived"}
@@ -842,10 +815,6 @@ async def unarchive_agent(
         user_role=current_user.role.value,
         agent_id=str(agent.id),
         resource_name=agent.name,
-    )
-
-    await audit(
-        current_user, "agent.unarchive", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
     )
 
     return {"id": str(agent.id), "name": agent.name, "status": "approved"}

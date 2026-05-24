@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-import json
 import logging
 
 from fastapi import APIRouter, Depends
@@ -14,7 +13,6 @@ from models.agent import Agent, AgentStatus, AgentVersion, AgentVisibility
 from models.agent_component import AgentComponent
 from models.user import User, UserRole
 from schemas.bulk import BulkAgentItem, BulkAgentRequest, BulkResult, BulkResultItem
-from services.audit_helpers import audit
 from services.registry_telemetry import emit_registry_event
 
 logger = logging.getLogger(__name__)
@@ -130,13 +128,6 @@ async def bulk_create_agents(
             user_email=current_user.email,
             user_role=current_user.role.value,
             metadata={"total": str(len(request.agents)), "created": str(created), "skipped": str(skipped)},
-        )
-
-        await audit(
-            current_user,
-            "agent.bulk_create",
-            resource_type="agent",
-            detail=json.dumps({"count": created, "skipped": skipped, "errors": errors}),
         )
 
     return BulkResult(

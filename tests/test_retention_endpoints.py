@@ -124,7 +124,6 @@ class TestUpdateRetentionConfig:
         with (
             patch("api.routes.admin.retention.ds") as mock_ds,
             patch("api.routes.admin.retention.emit_security_event", new_callable=AsyncMock),
-            patch("api.routes.admin.retention.audit", new_callable=AsyncMock),
         ):
             mock_ds.get_int = AsyncMock(return_value=90)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -173,7 +172,6 @@ class TestUpdateRetentionConfig:
         with (
             patch("api.routes.admin.retention.ds") as mock_ds,
             patch("api.routes.admin.retention.emit_security_event", new_callable=AsyncMock),
-            patch("api.routes.admin.retention.audit", new_callable=AsyncMock),
         ):
             mock_ds.get_int = AsyncMock(return_value=0)
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:

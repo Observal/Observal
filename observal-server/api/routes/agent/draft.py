@@ -14,7 +14,6 @@ from models.agent_component import AgentComponent
 from models.skill import SkillListing
 from models.user import User, UserRole
 from schemas.agent import AgentCreateRequest, AgentResponse, AgentUpdateRequest
-from services.audit_helpers import audit
 from services.config_generator import validate_mcp_command
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 from services.ide_feature_inference import compute_supported_ides, infer_required_features
@@ -118,9 +117,6 @@ async def save_draft(
 
     await db.commit()
     agent = await _load_agent(db, str(agent.id))
-    await audit(
-        current_user, "agent.draft.create", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
     return _agent_to_response(agent, created_by_email=current_user.email, created_by_username=current_user.username)
 
 
@@ -239,13 +235,10 @@ async def update_draft(
 
     await db.commit()
     agent = await _load_agent(db, str(agent.id))
-    if agent.status == AgentStatus.pending:
-        action = "agent.pending.update"
-    elif agent.status == AgentStatus.rejected:
-        action = "agent.rejected.update"
+    if agent.status == AgentStatus.pending or agent.status == AgentStatus.rejected:
+        pass
     else:
-        action = "agent.draft.update"
-    await audit(current_user, action, resource_type="agent", resource_id=str(agent.id), resource_name=agent.name)
+        pass
     return _agent_to_response(agent, created_by_email=current_user.email, created_by_username=current_user.username)
 
 
@@ -360,10 +353,6 @@ async def submit_draft(
         user_role=current_user.role.value,
         agent_id=str(agent.id),
         resource_name=agent.name,
-    )
-
-    await audit(
-        current_user, "agent.draft.submit", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
     )
 
     return _agent_to_response(

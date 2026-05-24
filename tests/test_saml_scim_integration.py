@@ -239,10 +239,6 @@ class TestAdminSamlConfigAPI:
             patch(
                 "ee.observal_server.routes.admin_sso.ds",
             ) as mock_settings,
-            patch(
-                "ee.observal_server.routes.admin_sso.audit",
-                new_callable=AsyncMock,
-            ),
         ):
             mock_settings.get_sync.side_effect = lambda key, *a, **kw: {
                 "saml.idp_entity_id": "https://idp.example.com",
@@ -288,10 +284,6 @@ class TestAdminSamlConfigAPI:
             patch(
                 "ee.observal_server.routes.admin_sso.ds",
             ) as mock_settings,
-            patch(
-                "ee.observal_server.routes.admin_sso.audit",
-                new_callable=AsyncMock,
-            ),
         ):
             mock_settings.get_sync.side_effect = lambda key, *a, **kw: a[0] if a else ""
             mock_settings.get_sync_bool.side_effect = lambda key, *a, **kw: a[0] if a else False
@@ -417,15 +409,11 @@ class TestAdminSamlConfigAPI:
 
         self._override_deps(app, mock_user, mock_db)
 
-        with patch(
-            "ee.observal_server.routes.admin_sso.audit",
-            new_callable=AsyncMock,
-        ):
-            async with AsyncClient(
-                transport=ASGITransport(app=app),
-                base_url="http://test",
-            ) as ac:
-                r = await ac.get("/api/v1/admin/saml-config")
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            r = await ac.get("/api/v1/admin/saml-config")
 
         assert r.status_code == 200
         data = r.json()
@@ -495,10 +483,6 @@ class TestAdminScimTokenAPI:
                 "ee.observal_server.routes.admin_sso.emit_security_event",
                 new_callable=AsyncMock,
             ),
-            patch(
-                "ee.observal_server.routes.admin_sso.audit",
-                new_callable=AsyncMock,
-            ),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app),
@@ -537,15 +521,11 @@ class TestAdminScimTokenAPI:
         mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        with patch(
-            "ee.observal_server.routes.admin_sso.audit",
-            new_callable=AsyncMock,
-        ):
-            async with AsyncClient(
-                transport=ASGITransport(app=app),
-                base_url="http://test",
-            ) as ac:
-                r = await ac.get("/api/v1/admin/scim-tokens")
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            r = await ac.get("/api/v1/admin/scim-tokens")
 
         assert r.status_code == 200
         data = r.json()
@@ -577,10 +557,6 @@ class TestAdminScimTokenAPI:
         with (
             patch(
                 "ee.observal_server.routes.admin_sso.emit_security_event",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "ee.observal_server.routes.admin_sso.audit",
                 new_callable=AsyncMock,
             ),
         ):

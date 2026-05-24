@@ -34,7 +34,6 @@ from schemas.sandbox import (
     SandboxSubmitRequest,
     SandboxUpdateRequest,
 )
-from services.audit_helpers import audit
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 
 router = APIRouter(prefix="/api/v1/sandboxes", tags=["sandboxes"])
@@ -85,9 +84,6 @@ async def submit_sandbox(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user, "sandbox.submit", resource_type="sandbox", resource_id=str(listing.id), resource_name=listing.name
-    )
     return SandboxListingResponse.model_validate(listing)
 
 
@@ -112,7 +108,6 @@ async def list_sandboxes(
     stmt = apply_visibility_filter(stmt, SandboxListing, current_user)
     result = await db.execute(stmt.order_by(SandboxListing.created_at.desc()))
     listings = [SandboxListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(None, "sandbox.list", resource_type="sandbox")
     return listings
 
 
@@ -129,7 +124,6 @@ async def my_sandboxes(
     )
     result = await db.execute(stmt)
     listings = [SandboxListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(current_user, "sandbox.my_list", resource_type="sandbox")
     return listings
 
 
@@ -142,13 +136,6 @@ async def get_sandbox(
     optic.debug("sandbox get: listing_id={}", listing_id)
     listing = await resolve_listing(SandboxListing, listing_id, db, require_status=ListingStatus.approved)
     if listing:
-        await audit(
-            current_user,
-            "sandbox.view",
-            resource_type="sandbox",
-            resource_id=str(listing.id),
-            resource_name=listing.name,
-        )
         return SandboxListingResponse.model_validate(listing)
 
     listing = await resolve_listing(SandboxListing, listing_id, db)
@@ -156,13 +143,6 @@ async def get_sandbox(
         raise HTTPException(status_code=404, detail="Listing not found")
 
     if check_listing_visibility(listing, current_user):
-        await audit(
-            current_user,
-            "sandbox.view",
-            resource_type="sandbox",
-            resource_id=str(listing.id),
-            resource_name=listing.name,
-        )
         return SandboxListingResponse.model_validate(listing)
 
     raise HTTPException(status_code=404, detail="Listing not found")
@@ -191,13 +171,6 @@ async def install_sandbox(
 
     endpoints = await derive_endpoints(request)
     config = generate_sandbox_config(listing, req.ide, server_url=endpoints["api"])
-    await audit(
-        current_user,
-        "sandbox.install",
-        resource_type="sandbox",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return SandboxInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
@@ -240,13 +213,6 @@ async def save_sandbox_draft(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user,
-        "sandbox.draft.create",
-        resource_type="sandbox",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return SandboxListingResponse.model_validate(listing)
 
 
@@ -303,19 +269,10 @@ async def update_sandbox_draft(
 
     await db.commit()
     await db.refresh(listing)
-    if listing.status == ListingStatus.pending:
-        action = "sandbox.pending.update"
-    elif listing.status == ListingStatus.rejected:
-        action = "sandbox.rejected.update"
+    if listing.status == ListingStatus.pending or listing.status == ListingStatus.rejected:
+        pass
     else:
-        action = "sandbox.draft.update"
-    await audit(
-        current_user,
-        action,
-        resource_type="sandbox",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
+        pass
     return SandboxListingResponse.model_validate(listing)
 
 
@@ -386,13 +343,6 @@ async def submit_sandbox_draft(
     listing.status = ListingStatus.pending
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user,
-        "sandbox.draft.submit",
-        resource_type="sandbox",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return SandboxListingResponse.model_validate(listing)
 
 
@@ -418,7 +368,6 @@ async def delete_sandbox(
         await db.delete(r)
 
     # Break the circular FK (listing → latest_version → listing) before delete
-    listing_name = listing.name
     listing.latest_version_id = None
     listing.latest_version = None
     await db.flush()
@@ -428,9 +377,6 @@ async def delete_sandbox(
     await db.flush()
     await db.delete(listing)
     await db.commit()
-    await audit(
-        current_user, "sandbox.delete", resource_type="sandbox", resource_id=str(listing_id), resource_name=listing_name
-    )
     return {"deleted": str(listing_id)}
 
 

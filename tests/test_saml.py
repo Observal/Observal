@@ -287,10 +287,6 @@ class TestSamlEndpoints:
                     new_callable=AsyncMock,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.audit",
-                    new_callable=AsyncMock,
-                ),
-                patch(
                     "ee.observal_server.routes.sso_saml.create_access_token",
                     return_value=("access-tok", 3600),
                 ),
@@ -673,10 +669,6 @@ class TestSamlRelayState:
                     new_callable=AsyncMock,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.audit",
-                    new_callable=AsyncMock,
-                ),
-                patch(
                     "ee.observal_server.routes.sso_saml.create_access_token",
                     return_value=("access-tok", 3600),
                 ),
@@ -764,10 +756,6 @@ class TestSamlRelayState:
                 ),
                 patch(
                     "ee.observal_server.routes.sso_saml.emit_security_event",
-                    new_callable=AsyncMock,
-                ),
-                patch(
-                    "ee.observal_server.routes.sso_saml.audit",
                     new_callable=AsyncMock,
                 ),
                 patch(

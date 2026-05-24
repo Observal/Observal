@@ -35,7 +35,6 @@ from schemas.skill import (
     SkillSubmitRequest,
     SkillUpdateRequest,
 )
-from services.audit_helpers import audit
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 from services.skill_validator import SkillValidationError, validate_skill_md
 
@@ -129,9 +128,6 @@ async def submit_skill(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user, "skill.submit", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
-    )
     return SkillListingResponse.model_validate(listing)
 
 
@@ -159,7 +155,6 @@ async def list_skills(
     stmt = apply_visibility_filter(stmt, SkillListing, current_user)
     result = await db.execute(stmt.order_by(SkillListing.created_at.desc()))
     listings = [SkillListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(None, "skill.list", resource_type="skill")
     return listings
 
 
@@ -176,7 +171,6 @@ async def my_skills(
     )
     result = await db.execute(stmt)
     listings = [SkillListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(current_user, "skill.my_list", resource_type="skill")
     return listings
 
 
@@ -189,9 +183,6 @@ async def get_skill(
     optic.debug("skill get: listing_id={}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db, require_status=ListingStatus.approved)
     if listing:
-        await audit(
-            current_user, "skill.view", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
-        )
         return SkillListingResponse.model_validate(listing)
 
     listing = await resolve_listing(SkillListing, listing_id, db)
@@ -199,9 +190,6 @@ async def get_skill(
         raise HTTPException(status_code=404, detail="Listing not found")
 
     if check_listing_visibility(listing, current_user):
-        await audit(
-            current_user, "skill.view", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
-        )
         return SkillListingResponse.model_validate(listing)
 
     raise HTTPException(status_code=404, detail="Listing not found")
@@ -230,9 +218,6 @@ async def install_skill(
 
     endpoints = await derive_endpoints(request)
     config = generate_skill_config(listing, req.ide, server_url=endpoints["api"], scope=req.scope)
-    await audit(
-        current_user, "skill.install", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
-    )
     return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
@@ -274,13 +259,6 @@ async def save_skill_draft(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user,
-        "skill.draft.create",
-        resource_type="skill",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return SkillListingResponse.model_validate(listing)
 
 
@@ -336,19 +314,10 @@ async def update_skill_draft(
 
     await db.commit()
     await db.refresh(listing)
-    if listing.status == ListingStatus.pending:
-        action = "skill.pending.update"
-    elif listing.status == ListingStatus.rejected:
-        action = "skill.rejected.update"
+    if listing.status == ListingStatus.pending or listing.status == ListingStatus.rejected:
+        pass
     else:
-        action = "skill.draft.update"
-    await audit(
-        current_user,
-        action,
-        resource_type="skill",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
+        pass
     return SkillListingResponse.model_validate(listing)
 
 
@@ -417,13 +386,6 @@ async def submit_skill_draft(
     listing.status = ListingStatus.pending
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user,
-        "skill.draft.submit",
-        resource_type="skill",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return SkillListingResponse.model_validate(listing)
 
 
@@ -447,7 +409,6 @@ async def delete_skill(
         await db.delete(r)
 
     # Break the circular FK (listing → latest_version → listing) before delete
-    listing_name = listing.name
     listing.latest_version_id = None
     listing.latest_version = None
     await db.flush()
@@ -457,9 +418,6 @@ async def delete_skill(
     await db.flush()
     await db.delete(listing)
     await db.commit()
-    await audit(
-        current_user, "skill.delete", resource_type="skill", resource_id=str(listing_id), resource_name=listing_name
-    )
     return {"deleted": str(listing_id)}
 
 

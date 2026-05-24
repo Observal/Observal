@@ -3,8 +3,6 @@
 
 """Admin settings, diagnostics, and resource tuning routes."""
 
-import json
-
 from fastapi import Depends, HTTPException
 from loguru import logger as optic
 from sqlalchemy import func, select, text
@@ -16,7 +14,6 @@ from config import HAS_LICENSE, settings
 from models.enterprise_config import EnterpriseConfig
 from models.user import User, UserRole
 from schemas.admin import EnterpriseConfigResponse, EnterpriseConfigUpdate
-from services.audit_helpers import audit
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
@@ -86,8 +83,6 @@ async def diagnostics(
         }
         if issues:
             diag["status"] = "degraded"
-
-    await audit(current_user, "admin.diagnostics.view", "diagnostics")
     return diag
 
 
@@ -131,7 +126,6 @@ async def list_settings(
     optic.debug("admin settings list")
     result = await db.execute(select(EnterpriseConfig).order_by(EnterpriseConfig.key))
     configs = [EnterpriseConfigResponse.model_validate(c) for c in result.scalars().all()]
-    await audit(current_user, "admin.settings.list", "settings")
     return configs
 
 
@@ -146,7 +140,6 @@ async def get_setting(
     cfg = result.scalar_one_or_none()
     if not cfg:
         raise HTTPException(status_code=404, detail="Setting not found")
-    await audit(current_user, "admin.settings.view", "settings", resource_name=key)
     return EnterpriseConfigResponse.model_validate(cfg)
 
 
@@ -184,7 +177,6 @@ async def upsert_setting(
             target_type="setting",
         )
     )
-    await audit(current_user, "admin.settings.update", "settings", resource_name=key)
     return EnterpriseConfigResponse.model_validate(cfg)
 
 
@@ -201,7 +193,6 @@ async def delete_setting(
         raise HTTPException(status_code=404, detail="Setting not found")
     await db.delete(cfg)
     await db.commit()
-    await audit(current_user, "admin.settings.delete", "settings", resource_name=key)
     return {"deleted": key}
 
 
@@ -234,12 +225,6 @@ async def apply_resources(
     )
 
     applied_keys = [k for k in current if k in RESOURCE_SETTINGS_MAP]
-    await audit(
-        current_user,
-        "admin.resources.apply",
-        "resources",
-        detail=json.dumps(applied_keys),
-    )
     return {
         "applied": {k: current[k] for k in applied_keys},
         "message": "ClickHouse resource settings applied",

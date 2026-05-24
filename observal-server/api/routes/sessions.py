@@ -28,7 +28,6 @@ import services.dynamic_settings as ds
 from api.deps import require_role
 from database import async_session
 from models.user import User, UserRole
-from services.audit_helpers import audit
 from services.clickhouse import _query
 
 logger = logging.getLogger(__name__)
@@ -172,8 +171,6 @@ async def list_sessions(
 
     if status == "active":
         rows = [r for r in rows if r["is_active"]]
-
-    await audit(current_user, "session.list", "session")
     return rows
 
 
@@ -256,7 +253,6 @@ async def sessions_summary(
         params or None,
     )
     row = rows[0] if rows else {}
-    await audit(current_user, "session.summary", "session")
     return {
         "total_sessions": int(row.get("total", 0)),
         "today_sessions": int(row.get("today_sessions", 0)),
@@ -288,7 +284,6 @@ async def sessions_stats(current_user: User = Depends(require_role(UserRole.admi
         ")"
     )
     row = rows[0] if rows else {}
-    await audit(current_user, "stats.view", "stats")
     return {
         "total_sessions": int(row.get("total_sessions", 0)),
         "total_prompts": int(row.get("total_prompts", 0)),
@@ -374,8 +369,6 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
                     "events": sub_events,
                 }
             )
-
-    await audit(current_user, "session.view", "session", resource_id=session_id)
     return {
         "session_id": session_id,
         "service_name": ide,
@@ -412,6 +405,4 @@ async def bind_session_agent(
         await redis.set(f"session_agent:{session_id}", agent_name, ex=86400)
     except RedisError:
         return {"session_id": session_id, "agent_name": agent_name, "bound": False, "error": "Redis unavailable"}
-
-    await audit(current_user, "session.bind_agent", "session", resource_id=session_id, detail=f"Bound to {agent_name}")
     return {"session_id": session_id, "agent_name": agent_name, "bound": True}

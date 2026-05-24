@@ -23,7 +23,6 @@ from api.deps import get_db, require_role, resolve_listing
 from models.mcp import ListingStatus
 from models.user import User, UserRole
 from schemas.component_version import VersionPublishRequest, VersionReviewRequest  # noqa: TC001
-from services.audit_helpers import audit
 from services.component_version_extras import ALLOWED_FIELDS, validate_and_extract
 
 # Semver pattern: X.Y.Z or X.Y.Z-prerelease
@@ -174,15 +173,6 @@ async def _publish_version(
     db.add(ver)
     await db.commit()
 
-    await audit(
-        current_user,
-        f"{component_type}.version.publish",
-        resource_type=component_type,
-        resource_id=str(listing.id),
-        resource_name=getattr(listing, "name", ""),
-        detail=req.version,
-    )
-
     return _version_to_dict(ver, component_type)
 
 
@@ -247,15 +237,6 @@ async def _review_version(
     ver.reviewed_at = datetime.now(UTC)
 
     await db.commit()
-
-    await audit(
-        current_user,
-        f"{component_type}.version.{req.action}",
-        resource_type=component_type,
-        resource_id=str(listing.id),
-        resource_name=getattr(listing, "name", ""),
-        detail=version,
-    )
 
     return {
         "version": version,

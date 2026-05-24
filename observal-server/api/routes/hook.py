@@ -36,7 +36,6 @@ from schemas.hook import (
     HookSubmitRequest,
     HookUpdateRequest,
 )
-from services.audit_helpers import audit
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 
 router = APIRouter(prefix="/api/v1/hooks", tags=["hooks"])
@@ -92,9 +91,6 @@ async def submit_hook(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user, "hook.submit", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name
-    )
     return HookListingResponse.model_validate(listing)
 
 
@@ -122,7 +118,6 @@ async def list_hooks(
     stmt = apply_visibility_filter(stmt, HookListing, current_user)
     result = await db.execute(stmt.order_by(HookListing.created_at.desc()))
     listings = [HookListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(None, "hook.list", resource_type="hook")
     return listings
 
 
@@ -137,7 +132,6 @@ async def my_hooks(
     )
     result = await db.execute(stmt)
     listings = [HookListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(current_user, "hook.my_list", resource_type="hook")
     return listings
 
 
@@ -150,9 +144,6 @@ async def get_hook(
     optic.debug("hook get: listing_id={}", listing_id)
     listing = await resolve_listing(HookListing, listing_id, db, require_status=ListingStatus.approved)
     if listing:
-        await audit(
-            current_user, "hook.view", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name
-        )
         return HookListingResponse.model_validate(listing)
 
     listing = await resolve_listing(HookListing, listing_id, db)
@@ -160,9 +151,6 @@ async def get_hook(
         raise HTTPException(status_code=404, detail="Listing not found")
 
     if check_listing_visibility(listing, current_user):
-        await audit(
-            current_user, "hook.view", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name
-        )
         return HookListingResponse.model_validate(listing)
 
     raise HTTPException(status_code=404, detail="Listing not found")
@@ -189,9 +177,6 @@ async def install_hook(
     from services.hook_install_generator import generate_hook_install_config
 
     result = generate_hook_install_config(listing, req.ide)
-    await audit(
-        current_user, "hook.install", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name
-    )
     return HookInstallResponse(
         listing_id=listing.id,
         ide=req.ide,
@@ -248,9 +233,6 @@ async def save_hook_draft(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user, "hook.draft.create", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name
-    )
     return HookListingResponse.model_validate(listing)
 
 
@@ -312,13 +294,10 @@ async def update_hook_draft(
 
     await db.commit()
     await db.refresh(listing)
-    if listing.status == ListingStatus.pending:
-        action = "hook.pending.update"
-    elif listing.status == ListingStatus.rejected:
-        action = "hook.rejected.update"
+    if listing.status == ListingStatus.pending or listing.status == ListingStatus.rejected:
+        pass
     else:
-        action = "hook.draft.update"
-    await audit(current_user, action, resource_type="hook", resource_id=str(listing.id), resource_name=listing.name)
+        pass
     return HookListingResponse.model_validate(listing)
 
 
@@ -387,9 +366,6 @@ async def submit_hook_draft(
     listing.status = ListingStatus.pending
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user, "hook.draft.submit", resource_type="hook", resource_id=str(listing.id), resource_name=listing.name
-    )
     return HookListingResponse.model_validate(listing)
 
 
@@ -413,7 +389,6 @@ async def delete_hook(
         await db.delete(r)
 
     # Break the circular FK (listing → latest_version → listing) before delete
-    listing_name = listing.name
     listing.latest_version_id = None
     listing.latest_version = None
     await db.flush()
@@ -423,9 +398,6 @@ async def delete_hook(
     await db.flush()
     await db.delete(listing)
     await db.commit()
-    await audit(
-        current_user, "hook.delete", resource_type="hook", resource_id=str(listing_id), resource_name=listing_name
-    )
     return {"deleted": str(listing_id)}
 
 

@@ -3,7 +3,6 @@
 
 """Admin organization settings routes: security events, trace privacy, registered agents, cache, resources."""
 
-import json
 import logging
 
 from fastapi import Depends, HTTPException
@@ -14,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.deps import get_db, require_role
 from models.organization import Organization
 from models.user import User, UserRole
-from services.audit_helpers import audit
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
@@ -59,11 +57,9 @@ async def get_security_events(
         r = await _query(sql, params)
         r.raise_for_status()
         data = r.json()
-        await audit(current_user, "admin.audit_log.view", "audit_log")
         return {"events": data.get("data", []), "total": data.get("rows", 0)}
     except Exception as e:
         logger.warning("Audit log query failed: %s", e)
-        await audit(current_user, "admin.audit_log.view", "audit_log", detail="query_failed")
         return {"events": [], "total": 0}
 
 
@@ -78,14 +74,11 @@ async def get_trace_privacy(
     """Get the trace privacy setting for the current user's organization."""
     optic.debug("org.get_trace_privacy called")
     if not current_user.org_id:
-        await audit(current_user, "admin.trace_privacy.view", "trace_privacy")
         return {"trace_privacy": False}
     result = await db.execute(select(Organization).where(Organization.id == current_user.org_id))
     org = result.scalar_one_or_none()
     if not org:
-        await audit(current_user, "admin.trace_privacy.view", "trace_privacy")
         return {"trace_privacy": False}
-    await audit(current_user, "admin.trace_privacy.view", "trace_privacy", resource_id=str(org.id))
     return {"trace_privacy": org.trace_privacy}
 
 
@@ -127,13 +120,6 @@ async def set_trace_privacy(
             detail=f"Trace privacy {'enabled' if enabled else 'disabled'}",
         )
     )
-    await audit(
-        current_user,
-        "admin.trace_privacy.update",
-        "trace_privacy",
-        resource_id=str(org.id),
-        detail=json.dumps({"enabled": enabled}),
-    )
     return {"trace_privacy": org.trace_privacy}
 
 
@@ -148,14 +134,11 @@ async def get_registered_agents_only(
     """Get the registered-agents-only setting for the current user's organization."""
     optic.debug("org.get_registered_agents_only called")
     if not current_user.org_id:
-        await audit(current_user, "admin.registered_agents_only.view", "registered_agents_only")
         return {"registered_agents_only": False}
     result = await db.execute(select(Organization).where(Organization.id == current_user.org_id))
     org = result.scalar_one_or_none()
     if not org:
-        await audit(current_user, "admin.registered_agents_only.view", "registered_agents_only")
         return {"registered_agents_only": False}
-    await audit(current_user, "admin.registered_agents_only.view", "registered_agents_only", resource_id=str(org.id))
     return {"registered_agents_only": org.registered_agents_only}
 
 
@@ -197,13 +180,6 @@ async def set_registered_agents_only(
             detail=f"Registered-agents-only {'enabled' if enabled else 'disabled'}",
         )
     )
-    await audit(
-        current_user,
-        "admin.registered_agents_only.update",
-        "registered_agents_only",
-        resource_id=str(org.id),
-        detail=json.dumps({"enabled": enabled}),
-    )
     # Invalidate registry cache so all server instances pick up the change immediately
     from services.agent_registry_cache import invalidate as invalidate_registry_cache
 
@@ -218,7 +194,6 @@ async def clear_cache(current_user: User = Depends(require_role(UserRole.admin))
     from services.cache import invalidate_all
 
     deleted = await invalidate_all()
-    await audit(current_user, "admin.cache.clear", "cache", detail=json.dumps({"cleared": deleted}))
     return {"cleared": deleted}
 
 
@@ -241,5 +216,4 @@ async def fix_agent_org(
             agent.visibility = AgentVisibility.public
             fixed += 1
     await db.commit()
-    await audit(current_user, "admin.fix_agent_org", detail=json.dumps({"fixed": fixed}))
     return {"fixed": fixed, "total_checked": len(agents)}

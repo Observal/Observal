@@ -3,7 +3,6 @@
 
 """Admin user management routes."""
 
-import json
 import logging
 import uuid
 
@@ -25,7 +24,6 @@ from schemas.admin import (
     UserDepartmentUpdate,
     UserRoleUpdate,
 )
-from services.audit_helpers import audit
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 from services.username_generator import generate_unique_username
 
@@ -48,7 +46,6 @@ async def list_users(
         stmt = stmt.where(User.org_id == current_user.org_id)
     result = await db.execute(stmt)
     users = [UserAdminResponse.model_validate(u) for u in result.scalars().all()]
-    await audit(current_user, "admin.users.list", "user")
     return users
 
 
@@ -102,14 +99,6 @@ async def create_user(
             target_type="user",
             detail=f"Created user {user.email} with role {role.value}",
         )
-    )
-    await audit(
-        current_user,
-        "admin.users.create",
-        "user",
-        resource_id=str(user.id),
-        resource_name=user.email,
-        detail=json.dumps({"role": role.value}),
     )
     return UserCreateResponse(
         id=user.id,
@@ -165,14 +154,6 @@ async def update_user_role(
             target_type="user",
             detail=f"Role changed from {old_role} to {new_role.value}",
         )
-    )
-    await audit(
-        current_user,
-        "admin.users.role_update",
-        "user",
-        resource_id=str(user.id),
-        resource_name=user.email,
-        detail=json.dumps({"old_role": old_role, "new_role": new_role.value}),
     )
     return UserAdminResponse.model_validate(user)
 
@@ -292,13 +273,6 @@ async def reset_user_password(
         )
     )
     logger.warning("Admin %s reset password for user %s", current_user.email, user.email)
-    await audit(
-        current_user,
-        "admin.users.password_reset",
-        "user",
-        resource_id=str(user.id),
-        resource_name=user.email,
-    )
 
     resp: dict[str, str] = {"message": f"Password reset for {user.email}"}
     if req.generate:
@@ -352,13 +326,6 @@ async def delete_user(
     )
     await db.delete(user)
     await db.commit()
-    await audit(
-        current_user,
-        "admin.users.delete",
-        "user",
-        resource_id=deleted_user_id,
-        resource_name=deleted_user_email,
-    )
 
 
 # ── Penalty & Weight Customization ──────────────────────

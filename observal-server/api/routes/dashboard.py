@@ -51,7 +51,6 @@ from schemas.dashboard import (
     TrendPoint,
     UnannotatedTrace,
 )
-from services.audit_helpers import audit
 from services.clickhouse import _query
 
 logger = structlog.get_logger(__name__)
@@ -489,7 +488,6 @@ async def trends(
     all_dates = sorted(set(submissions) | set(users))
 
     result = [TrendPoint(date=d, submissions=submissions.get(d, 0), users=users.get(d, 0)) for d in all_dates]
-    await audit(current_user, "dashboard.trends", resource_type="dashboard")
     return result
 
 
@@ -629,8 +627,6 @@ async def token_stats(
     over_time = [
         TokenTimePoint(date=str(r["date"]), input=int(r["input"]), output=int(r["output"])) for r in over_time_rows
     ]
-
-    await audit(current_user, "dashboard.token_stats", resource_type="dashboard")
     return TokenStats(
         total_input=total_input,
         total_output=total_output,
@@ -675,7 +671,6 @@ async def ide_usage(
         )
         for r in rows
     ]
-    await audit(current_user, "dashboard.ide_usage", resource_type="dashboard")
     return IdeUsage(ides=ides)
 
 
@@ -739,8 +734,6 @@ async def sandbox_metrics(
         "GROUP BY date ORDER BY date",
         current_user,
     )
-
-    await audit(current_user, "dashboard.sandbox_metrics", resource_type="dashboard")
     return SandboxStats(
         total_runs=total_runs,
         oom_count=oom_count,
@@ -800,8 +793,6 @@ async def graphrag_metrics(
         "ORDER BY start_time DESC LIMIT 20",
         current_user,
     )
-
-    await audit(current_user, "dashboard.graphrag_metrics", resource_type="dashboard")
     return GraphRagStats(
         total_queries=int(a.get("total_queries", 0)),
         avg_entities=float(a["avg_entities"]) if a.get("avg_entities") else None,
@@ -859,7 +850,6 @@ async def latency_heatmap(
         LatencyCell(name=r["name"], hour=str(r["hour"]), p50=float(r["p50"]), p90=float(r["p90"]), p99=float(r["p99"]))
         for r in rows
     ]
-    await audit(current_user, "dashboard.latency_heatmap", resource_type="dashboard")
     return cells
 
 
@@ -896,5 +886,4 @@ async def unannotated_traces(
         )
         for r in rows
     ]
-    await audit(current_user, "dashboard.unannotated_traces", resource_type="dashboard")
     return traces

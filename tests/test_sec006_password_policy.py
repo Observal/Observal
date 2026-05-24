@@ -178,7 +178,6 @@ async def test_init_weak_password_returns_422():
                 ),
                 patch("api.routes.auth.generate_unique_username", new=AsyncMock(return_value="admin")),
                 patch("api.routes.auth.get_redis", return_value=fake_redis),
-                patch("api.routes.auth.audit", new=AsyncMock()),
             ):
                 resp = await client.post(
                     "/api/v1/auth/init",
@@ -217,7 +216,6 @@ async def test_change_password_weak_new_password_returns_422():
         async with _make_async_client() as client:
             with (
                 patch("api.routes.auth.get_redis", return_value=fake_redis),
-                patch("api.routes.auth.audit", new=AsyncMock()),
             ):
                 resp = await client.put(
                     "/api/v1/auth/profile/password",

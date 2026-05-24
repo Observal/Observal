@@ -145,15 +145,6 @@ async def lifespan(app: FastAPI):
     async with _session_factory() as db:
         await seed_demo_accounts(db)
 
-    # Register enterprise audit event bus handlers (legacy, supplements middleware)
-    if HAS_LICENSE:
-        try:
-            from ee.observal_server.services.audit import register_audit_handlers
-
-            register_audit_handlers()
-        except ImportError:
-            pass
-
     # Wire insights dependencies (no-op if package not installed)
     from services.insights import configure_insights
 
@@ -165,14 +156,6 @@ async def lifespan(app: FastAPI):
     await start_registry_cache()
 
     yield
-
-    if HAS_LICENSE:
-        try:
-            from ee.observal_server.services.audit import shutdown_audit
-
-            await shutdown_audit()
-        except ImportError:
-            pass
 
     from services.agent_registry_cache import stop as stop_registry_cache
 
