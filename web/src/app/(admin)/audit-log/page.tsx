@@ -3,8 +3,17 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
-import { ScrollText, Download, Search, ChevronDown, ChevronRight } from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
+import {
+  ScrollText,
+  Download,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Shield,
+  Clock,
+  AlertTriangle,
+} from "lucide-react";
 import { useAuditLog } from "@/hooks/use-api";
 import { admin } from "@/lib/api";
 import type { AuditLogEntry } from "@/lib/types";
@@ -12,82 +21,152 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
-const RESOURCE_TYPES = [
-  "all", "user", "session", "agent", "mcp", "skill", "hook", "prompt",
-  "sandbox", "listing", "alert", "feedback", "settings", "config",
-  "trace", "diagnostics", "dashboard", "component_source", "cache",
-];
-
 const PAGE_SIZE = 50;
+
+// Parse Discord-style search: actor:admin@x.com outcome:denied sensitivity:high
+// Supports quoted values: actor:"John Doe" action:"agent.pull"
+function parseSearchQuery(query: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  const tokens = query.match(/(\w+):(?:"([^"]*)"|([^\s]*))/g);
+  if (tokens) {
+    for (const token of tokens) {
+      const colonIdx = token.indexOf(":");
+      const key = token.slice(0, colonIdx);
+      let value = token.slice(colonIdx + 1);
+      // Strip quotes
+      if (value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1);
+      }
+      const keyMap: Record<string, string> = {
+        actor: "actor",
+        action: "action",
+        type: "resource_type",
+        resource: "resource_type",
+        outcome: "outcome",
+        sensitivity: "sensitivity",
+        source: "source",
+        method: "http_method",
+        ip: "ip_address",
+      };
+      const apiKey = keyMap[key.toLowerCase()];
+      if (apiKey) params[apiKey] = value;
+    }
+  }
+  return params;
+}
 
 function formatTimestamp(ts: string) {
   try {
-    return new Date(ts).toLocaleString();
+    // ClickHouse returns "YYYY-MM-DD HH:MM:SS.mmm" without timezone
+    const d = new Date(ts + "Z");
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
   } catch {
     return ts;
   }
 }
 
-function actionColor(action: string): "default" | "secondary" | "destructive" | "outline" {
-  if (action.includes("delete") || action.includes("reject")) return "destructive";
-  if (action.includes("create") || action.includes("approve")) return "default";
-  return "secondary";
+function outcomeBadge(outcome: string) {
+  switch (outcome) {
+    case "success":
+      return <Badge variant="default" className="text-[10px] bg-success/20 text-success border-success/30">{outcome}</Badge>;
+    case "denied":
+      return <Badge variant="destructive" className="text-[10px]">{outcome}</Badge>;
+    case "error":
+      return <Badge variant="destructive" className="text-[10px]">{outcome}</Badge>;
+    case "not_found":
+      return <Badge variant="outline" className="text-[10px]">{outcome}</Badge>;
+    default:
+      return <Badge variant="secondary" className="text-[10px]">{outcome || "unknown"}</Badge>;
+  }
+}
+
+function sensitivityBadge(level: string) {
+  switch (level) {
+    case "phi_adjacent":
+      return <Badge variant="destructive" className="text-[10px]">PHI</Badge>;
+    case "admin":
+      return <Badge className="text-[10px] bg-warning/20 text-warning border-warning/30">admin</Badge>;
+    case "high":
+      return <Badge className="text-[10px] bg-info/20 text-info border-info/30">high</Badge>;
+    case "standard":
+      return <Badge variant="secondary" className="text-[10px]">std</Badge>;
+    case "low":
+      return <Badge variant="outline" className="text-[10px]">low</Badge>;
+    default:
+      return <Badge variant="outline" className="text-[10px]">{level}</Badge>;
+  }
 }
 
 function DetailRow({ entry }: { entry: AuditLogEntry }) {
   const [open, setOpen] = useState(false);
-  const hasDetail = entry.detail && entry.detail !== "" && entry.detail !== "{}";
 
   return (
     <>
       <TableRow
-        className="cursor-pointer hover:bg-muted/50"
-        onClick={() => hasDetail && setOpen(!open)}
+        className="cursor-pointer hover:bg-muted/50 text-xs"
+        onClick={() => setOpen(!open)}
       >
-        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+        <TableCell className="text-muted-foreground whitespace-nowrap font-mono text-[11px]">
           {formatTimestamp(entry.timestamp)}
         </TableCell>
-        <TableCell className="text-xs">{entry.actor_email || entry.actor_id}</TableCell>
+        <TableCell className="max-w-[140px] truncate">
+          {entry.actor_email || <span className="text-muted-foreground italic">anonymous</span>}
+        </TableCell>
         <TableCell>
-          <Badge variant={actionColor(entry.action)} className="text-[10px]">
-            {entry.action}
-          </Badge>
+          <code className="text-[11px] bg-muted px-1 py-0.5 rounded">{entry.action}</code>
         </TableCell>
-        <TableCell className="text-xs">{entry.resource_type}</TableCell>
-        <TableCell className="text-xs truncate max-w-[300px]" title={entry.resource_name || entry.resource_id}>
-          {entry.resource_name || entry.resource_id || "-"}
+        <TableCell>{outcomeBadge(entry.outcome)}</TableCell>
+        <TableCell>{sensitivityBadge(entry.sensitivity)}</TableCell>
+        <TableCell className="text-muted-foreground font-mono text-[11px]">
+          {entry.status_code}
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground">{entry.ip_address || "-"}</TableCell>
-        <TableCell className="text-xs">
-          {hasDetail ? (
-            open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />
-          ) : null}
+        <TableCell className="text-muted-foreground font-mono text-[11px]">
+          {entry.duration_ms > 0 ? `${entry.duration_ms.toFixed(0)}ms` : "-"}
+        </TableCell>
+        <TableCell className="text-muted-foreground text-[11px]">
+          {entry.ip_address || "-"}
+        </TableCell>
+        <TableCell>
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </TableCell>
       </TableRow>
-      {open && hasDetail && (
+      {open && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-muted/30 px-6 py-3">
-            <div className="text-xs font-mono whitespace-pre-wrap break-all">
-              <span className="text-muted-foreground">HTTP: </span>
-              {entry.http_method} {entry.http_path}
-              {entry.status_code ? ` (${entry.status_code})` : ""}
-              <br />
-              <span className="text-muted-foreground">User-Agent: </span>
-              {entry.user_agent || "-"}
-              <br />
-              <span className="text-muted-foreground">Detail: </span>
-              {entry.detail}
+          <TableCell colSpan={9} className="bg-muted/30 px-6 py-3">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs font-mono">
+              <div><span className="text-muted-foreground">Event ID: </span>{entry.event_id}</div>
+              <div><span className="text-muted-foreground">Request ID: </span>{entry.request_id || "-"}</div>
+              <div><span className="text-muted-foreground">HTTP: </span>{entry.http_method} {entry.http_path}</div>
+              <div><span className="text-muted-foreground">Actor ID: </span>{entry.actor_id}</div>
+              <div><span className="text-muted-foreground">Role: </span>{entry.actor_role}</div>
+              <div><span className="text-muted-foreground">Org: </span>{entry.org_id || "-"}</div>
+              <div><span className="text-muted-foreground">Resource: </span>{entry.resource_type} {entry.resource_id ? `(${entry.resource_id})` : ""}</div>
+              <div><span className="text-muted-foreground">Source: </span>{entry.source}</div>
+              <div className="col-span-2"><span className="text-muted-foreground">User-Agent: </span>{entry.user_agent || "-"}</div>
+              {entry.detail && <div className="col-span-2"><span className="text-muted-foreground">Detail: </span>{entry.detail}</div>}
+              <div className="col-span-2 mt-1 pt-1 border-t border-border">
+                <span className="text-muted-foreground">Chain Hash: </span>
+                <span className="text-[10px] break-all">{entry.chain_hash || "-"}</span>
+              </div>
             </div>
           </TableCell>
         </TableRow>
@@ -98,42 +177,35 @@ function DetailRow({ entry }: { entry: AuditLogEntry }) {
 
 export default function AuditLogPage() {
   const { licensedFeatures } = useDeploymentConfig();
-  const [actor, setActor] = useState("");
-  const [action, setAction] = useState("");
-  const [resourceType, setResourceType] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
 
   const filters = useMemo(() => {
-    const f: Record<string, string> = {
+    const parsed = parseSearchQuery(searchQuery);
+    return {
+      ...parsed,
       limit: String(PAGE_SIZE),
       offset: String(page * PAGE_SIZE),
     };
-    if (actor.trim()) f.actor = actor.trim();
-    if (action.trim()) f.action = action.trim();
-    if (resourceType !== "all") f.resource_type = resourceType;
-    return f;
-  }, [actor, action, resourceType, page]);
+  }, [searchQuery, page]);
 
   const { data, isLoading, isError, error, refetch } = useAuditLog(filters);
 
-  const handleExport = async () => {
-    const params: Record<string, string> = {};
-    if (actor.trim()) params.actor = actor.trim();
-    if (action.trim()) params.action = action.trim();
-    if (resourceType !== "all") params.resource_type = resourceType;
+  const handleExport = useCallback(async () => {
+    const parsed = parseSearchQuery(searchQuery);
     try {
-      const csv = await admin.auditLogExport(params);
-      const blob = new Blob([csv as unknown as string], { type: "text/csv" });
+      const csv = await admin.auditLogExport(parsed);
+      const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "audit_log.csv";
+      a.download = "hipaa_audit_trail.csv";
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      // export failed silently
+      // export failed
     }
-  };
+  }, [searchQuery]);
 
   if (!licensedFeatures.includes("audit") && !licensedFeatures.includes("all")) {
     return (
@@ -146,7 +218,7 @@ export default function AuditLogPage() {
           <EmptyState
             icon={ScrollText}
             title="Enterprise feature"
-            description="HIPAA-level audit logging is available in enterprise mode."
+            description="HIPAA-level audit logging requires the audit license feature."
           />
         </div>
       </>
@@ -166,61 +238,75 @@ export default function AuditLogPage() {
         }
       />
       <div className="p-6 w-full mx-auto space-y-4">
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3 items-center">
+        {/* Search */}
+        <div className="space-y-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Actor email..."
-              value={actor}
-              onChange={(e) => { setActor(e.target.value); setPage(0); }}
-              className="pl-8 h-9 w-[200px] text-xs"
+              placeholder="Search: actor:email action:login outcome:denied sensitivity:phi_adjacent source:cli"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
+              className="pl-9 h-9 text-xs font-mono"
             />
           </div>
-          <Input
-            placeholder="Action (e.g. trace.view)..."
-            value={action}
-            onChange={(e) => { setAction(e.target.value); setPage(0); }}
-            className="h-9 w-[200px] text-xs"
-          />
-          <Select value={resourceType} onValueChange={(v) => { setResourceType(v); setPage(0); }}>
-            <SelectTrigger className="h-9 w-[160px] text-xs">
-              <SelectValue placeholder="Resource type" />
-            </SelectTrigger>
-            <SelectContent>
-              {RESOURCE_TYPES.map((t) => (
-                <SelectItem key={t} value={t} className="text-xs">
-                  {t === "all" ? "All types" : t}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-1.5 flex-wrap">
+            <span className="text-[10px] text-muted-foreground">Filters:</span>
+            {["actor:", "action:", "outcome:", "sensitivity:", "source:", "type:", "ip:"].map((hint) => (
+              <button
+                key={hint}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 font-mono transition-colors"
+                onClick={() => setSearchQuery((q) => q + (q && !q.endsWith(" ") ? " " : "") + hint)}
+              >
+                {hint}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* Stats bar */}
+        {data && data.length > 0 && (
+          <div className="flex gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {data.length} events
+            </span>
+            <span className="flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              {data.filter((e) => e.outcome === "denied").length} denied
+            </span>
+            <span className="flex items-center gap-1">
+              <Shield className="h-3 w-3" />
+              {data.filter((e) => e.sensitivity === "phi_adjacent").length} PHI-adjacent
+            </span>
+          </div>
+        )}
 
         {/* Table */}
         {isLoading ? (
-          <TableSkeleton rows={10} cols={7} />
+          <TableSkeleton rows={10} cols={9} />
         ) : isError ? (
           <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
         ) : !data?.length ? (
           <EmptyState
             icon={ScrollText}
             title="No audit events"
-            description="Events will appear here once actions are performed."
+            description="Events will appear here as API requests are made."
           />
         ) : (
           <>
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-xs w-[170px]">Timestamp</TableHead>
-                    <TableHead className="text-xs">Actor</TableHead>
-                    <TableHead className="text-xs">Action</TableHead>
-                    <TableHead className="text-xs">Resource</TableHead>
-                    <TableHead className="text-xs">Name / ID</TableHead>
-                    <TableHead className="text-xs">IP</TableHead>
-                    <TableHead className="text-xs w-8" />
+                    <TableHead className="text-[11px] w-[130px]">Time</TableHead>
+                    <TableHead className="text-[11px]">Actor</TableHead>
+                    <TableHead className="text-[11px]">Action</TableHead>
+                    <TableHead className="text-[11px]">Outcome</TableHead>
+                    <TableHead className="text-[11px]">Sensitivity</TableHead>
+                    <TableHead className="text-[11px] w-[50px]">Status</TableHead>
+                    <TableHead className="text-[11px] w-[60px]">Latency</TableHead>
+                    <TableHead className="text-[11px]">IP</TableHead>
+                    <TableHead className="text-[11px] w-8" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -234,7 +320,7 @@ export default function AuditLogPage() {
             {/* Pagination */}
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
-                Showing {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + data.length}
+                Page {page + 1} ({data.length} results)
               </p>
               <div className="flex gap-2">
                 <Button
