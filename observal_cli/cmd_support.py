@@ -64,7 +64,6 @@ CONFIG_ALLOWLIST = frozenset(
         "RATE_LIMIT_AUTH",
         "RATE_LIMIT_AUTH_STRICT",
         "DATA_RETENTION_DAYS",
-        "DEPLOYMENT_MODE",
     }
 )
 

@@ -17,7 +17,7 @@ export function useDeploymentConfig() {
 	});
 
 	return {
-		deploymentMode: data?.deployment_mode ?? "local",
+		licensed: data?.licensed ?? false,
 		ssoEnabled: data?.sso_enabled ?? false,
 		ssoOnly: data?.sso_only ?? false,
 		samlEnabled: data?.saml_enabled ?? false,

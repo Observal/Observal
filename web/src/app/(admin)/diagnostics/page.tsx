@@ -138,7 +138,7 @@ export default function DiagnosticsPage() {
                     <div>
                       <CardTitle className="text-lg">System Status</CardTitle>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Deployment: {data.deployment_mode}
+                        License: {data.licensed ? "Enterprise" : "Community"}
                         {dataUpdatedAt ? ` · Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
                       </p>
                     </div>

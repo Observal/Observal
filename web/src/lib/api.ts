@@ -694,7 +694,7 @@ export type RetentionWarnings = {
 
 // ── Config ─────────────────────────────────────────────────────────
 export type PublicConfig = {
-	deployment_mode: "local" | "enterprise";
+	licensed: boolean;
 	sso_enabled: boolean;
 	sso_only: boolean;
 	saml_enabled: boolean;

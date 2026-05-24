@@ -142,7 +142,7 @@ class TestDiagnostics:
                     r = await ac.get("/api/v1/admin/diagnostics")
             assert r.status_code == 200
             data = r.json()
-            assert data["deployment_mode"] == "local"
+            assert data["licensed"] is False
             assert data["status"] == "ok"
             assert "database" in data["checks"]
             assert "jwt_keys" in data["checks"]

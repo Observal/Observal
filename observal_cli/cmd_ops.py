@@ -39,7 +39,7 @@ def _require_enterprise():
         r = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
         if r.status_code == 200:
             pub = r.json()
-            if pub.get("deployment_mode") != "enterprise":
+            if not pub.get("licensed"):
                 rprint("[yellow]This feature requires an enterprise license.[/yellow]")
                 rprint("[dim]Set OBSERVAL_LICENSE_KEY on the server to enable.[/dim]")
                 raise typer.Exit(1)
@@ -793,7 +793,7 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
     overall = data.get("status", "unknown")
     color = {"ok": "green", "degraded": "yellow", "unhealthy": "red"}.get(overall, "white")
     rprint(f"\n  Overall: [{color}]{overall}[/{color}]")
-    rprint(f"  Mode:    {data.get('deployment_mode', 'unknown')}")
+    rprint(f"  Licensed: {'yes' if data.get('licensed') else 'no'}")
 
     checks = data.get("checks", {})
 

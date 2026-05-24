@@ -36,7 +36,7 @@ async def diagnostics(
 
     diag: dict[str, object] = {
         "status": "ok",
-        "deployment_mode": "enterprise" if HAS_LICENSE else "local",
+        "licensed": HAS_LICENSE,
         "checks": {},
     }
 

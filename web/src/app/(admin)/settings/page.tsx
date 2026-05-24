@@ -673,7 +673,7 @@ export default function SettingsPage() {
 	} = useAdminSettings();
 	const { data: systemWarnings } = useSystemWarnings();
 	const {
-		deploymentMode,
+		licensed,
 		ssoEnabled,
 		samlEnabled,
 		isLicensed,
@@ -1092,10 +1092,10 @@ export default function SettingsPage() {
 					<div className="rounded-md border border-border bg-card px-4 py-3 space-y-2">
 						<div className="flex items-center justify-between py-1">
 							<span className="text-xs text-muted-foreground">
-								Deployment Mode
+								License
 							</span>
 							<span className="text-xs font-medium font-[family-name:var(--font-mono)]">
-								{deploymentMode}
+								{licensed ? "Enterprise" : "Community"}
 							</span>
 						</div>
 						<div className="flex items-center justify-between py-1 border-t border-border">

@@ -481,7 +481,7 @@ export interface SecurityEvent {
 
 export interface DiagnosticsResponse {
 	status: "ok" | "degraded" | "unhealthy";
-	deployment_mode: string;
+	licensed: boolean;
 	checks: Record<string, Record<string, unknown>>;
 }
 

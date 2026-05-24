@@ -407,9 +407,9 @@ class TestCollectConfig:
         assert "DATABASE_URL" in result
 
     @pytest.mark.asyncio
-    async def test_includes_deployment_mode(self):
+    async def test_includes_licensed_flag(self):
         result = await _collect_config()
-        assert "deployment.mode" in result  # Now from dynamic settings
+        assert "licensed" in result
 
     @pytest.mark.asyncio
     async def test_result_is_dict(self):

@@ -80,7 +80,7 @@ async def get_public_config(db=Depends(get_db)):
     import services.dynamic_settings as ds
 
     # Deployment mode derived from license presence
-    deployment_mode = "enterprise" if HAS_LICENSE else "local"
+    licensed = HAS_LICENSE
 
     # SAML: check DB-backed dynamic settings, then fall back to SamlConfig model
     saml_idp_entity = await ds.get("saml.idp_entity_id")
@@ -125,7 +125,7 @@ async def get_public_config(db=Depends(get_db)):
     sso_only = await ds.get_bool("deployment.sso_only")
 
     return {
-        "deployment_mode": deployment_mode,
+        "licensed": licensed,
         "sso_enabled": bool(settings.OAUTH_CLIENT_ID),
         "sso_only": sso_only,
         "saml_enabled": saml_enabled,
