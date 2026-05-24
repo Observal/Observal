@@ -1,6 +1,3 @@
-<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
-
 ---
 name: observal
 command: observal
@@ -8,6 +5,9 @@ description: Use the Observal agent registry and component platform. Handles cre
 version: 1.1.0
 owner: observal
 ---
+
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Observal — Agent Registry & Component Platform
 
