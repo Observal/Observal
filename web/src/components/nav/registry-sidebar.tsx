@@ -59,9 +59,7 @@ type NavItem = {
 	icon: typeof Home;
 	requiresAuth?: boolean;
 	minRole?: Role;
-	requiresLicense?: boolean;
-	requiresInsights?: boolean;
-	requiresExecDashboard?: boolean;
+	requiresFeature?: string;
 };
 
 const registryNav: NavItem[] = [
@@ -91,14 +89,14 @@ const adminNav: NavItem[] = [
 		href: "/dashboard",
 		icon: LayoutDashboard,
 		minRole: "admin",
-		requiresExecDashboard: true,
+		requiresFeature: "exec_dashboard",
 	},
 	{
 		title: "Insights",
 		href: "/insights",
 		icon: Lightbulb,
 		minRole: "admin",
-		requiresInsights: true,
+		requiresFeature: "insights",
 	},
 	{ title: "Users", href: "/users", icon: Users, minRole: "admin" },
 	{
@@ -106,21 +104,21 @@ const adminNav: NavItem[] = [
 		href: "/audit-log",
 		icon: ScrollText,
 		minRole: "admin",
-		requiresLicense: true,
+		requiresFeature: "audit",
 	},
 	{
 		title: "Security",
 		href: "/security-events",
 		icon: ShieldAlert,
 		minRole: "admin",
-		requiresLicense: true,
+		requiresFeature: "security_events",
 	},
 	{
 		title: "SSO & SCIM",
 		href: "/sso",
 		icon: KeyRound,
 		minRole: "admin",
-		requiresLicense: true,
+		requiresFeature: "saml",
 	},
 	{
 		title: "Diagnostics",
@@ -152,9 +150,7 @@ export function RegistrySidebar() {
 	const [token, role, userName, userEmail, userUsername] = snap.split("|");
 	const isAuthenticated = !!token;
 	const {
-		insightsAvailable,
-		execDashboardAvailable,
-		isLicensed,
+		licensedFeatures,
 		brandingLogo,
 		brandingAppName,
 		brandingWordmark,
@@ -196,9 +192,7 @@ export function RegistrySidebar() {
 		? adminNav.filter(
 				(item) =>
 					(!item.minRole || hasMinRole(role, item.minRole)) &&
-					(!item.requiresLicense || isLicensed) &&
-					(!item.requiresInsights || insightsAvailable) &&
-					(!item.requiresExecDashboard || execDashboardAvailable),
+					(!item.requiresFeature || licensedFeatures.includes(item.requiresFeature) || licensedFeatures.includes("all")),
 			)
 		: [];
 

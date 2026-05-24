@@ -97,7 +97,7 @@ function DetailRow({ entry }: { entry: AuditLogEntry }) {
 }
 
 export default function AuditLogPage() {
-  const { isLicensed } = useDeploymentConfig();
+  const { licensedFeatures } = useDeploymentConfig();
   const [actor, setActor] = useState("");
   const [action, setAction] = useState("");
   const [resourceType, setResourceType] = useState("all");
@@ -135,7 +135,7 @@ export default function AuditLogPage() {
     }
   };
 
-  if (!isLicensed) {
+  if (!licensedFeatures.includes("audit") && !licensedFeatures.includes("all")) {
     return (
       <>
         <PageHeader

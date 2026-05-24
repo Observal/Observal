@@ -197,13 +197,13 @@ function AnalyticsTab({ agentId }: { agentId: string }) {
   );
 }
 function AccessSettingsWidget({ agentId, visibility, teamAccesses, canEdit }: { agentId: string; visibility?: string; teamAccesses?: { group_name: string; permission: "view" | "edit" }[]; canEdit: boolean }) {
-  const { isLicensed } = useDeploymentConfig();
+  const { licensedFeatures } = useDeploymentConfig();
   const [isEditing, setIsEditing] = useState(false);
   const [editVisibility, setEditVisibility] = useState<"public" | "private">(visibility === "public" ? "public" : "private");
   const [editTeamAccesses, setEditTeamAccesses] = useState<{ group_name: string; permission: "view" | "edit" }[]>(teamAccesses ?? []);
   const updateAgent = useUpdateAgent();
 
-  if (!isLicensed) return null;
+  if (!licensedFeatures.includes("rebac") && !licensedFeatures.includes("all")) return null;
 
   async function handleSave() {
     try {

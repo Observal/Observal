@@ -316,6 +316,7 @@ export default function AgentBuilderPage() {
 function AgentBuilderInner() {
   // Require auth for builder
   const { ready } = useAuthGuard();
+  const { licensedFeatures } = useDeploymentConfig();
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -323,7 +324,6 @@ function AgentBuilderInner() {
   const draftParam = searchParams.get("draft");
   const isEditMode = !!editId;
 
-  const { isLicensed } = useDeploymentConfig();
   const { data: whoami } = useWhoami();
   const { data: existingAgent } = useRegistryItem("agents", editId ?? draftParam ?? undefined);
 
@@ -1025,9 +1025,9 @@ function AgentBuilderInner() {
             </section>
 
 
-            {/* Visibility & Access */}
-            {isLicensed && (
-              <section className="space-y-4 animate-in stagger-2">
+            {/* Visibility & Access (requires rbac feature) */}
+            {(licensedFeatures.includes("rebac") || licensedFeatures.includes("all")) && (
+            <section className="space-y-4 animate-in stagger-2">
                 <div>
                   <h3 className="text-sm font-medium font-[family-name:var(--font-display)]">
                   Visibility & Access
@@ -1118,7 +1118,7 @@ function AgentBuilderInner() {
                 )}
               </div>
             </section>
-          )}
+            )}
 
             <Separator />
 
