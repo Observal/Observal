@@ -84,7 +84,7 @@ Not every issue is auto-fixable. Unfixable ones (server unreachable, CLI not ins
 
 * **Server unreachable** -- check `docker compose ps`. See [Self-Hosting -- Troubleshooting](../self-hosting/troubleshooting.md).
 * **API key invalid** -- `observal auth login` again.
-* **IDE CLI not installed** -- install the IDE CLI first ([Kiro](../integrations/kiro.md) / [Claude Code](../integrations/claude-code.md)).
+* **IDE CLI not installed** -- install the IDE CLI first.
 
 ---
 

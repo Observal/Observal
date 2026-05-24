@@ -177,7 +177,7 @@ See [SETUP.md](SETUP.md) for the full setup guide.
 | Copilot     | Planned                                    |
 | OpenCode    | Planned                                    |
 
-Compatibility matrix and per-IDE setup: [Integrations](docs/integrations/README.md).
+Compatibility matrix and per-IDE setup details are defined in `observal_cli/ide_registry.py`.
 
 ## Tech stack
 

@@ -76,7 +76,7 @@ Think Docker Hub, but for AI coding agents — publish, install, observe, and ev
 | Codex CLI   | Limited         | Rules                                                                 |
 | OpenCode    | Limited         | Hook bridge (JS plugin), MCP servers, rules                           |
 
-The full matrix lives in [Integrations](integrations/README.md).
+The full matrix is defined in `observal_cli/ide_registry.py`.
 
 ## Free & Open Source
 

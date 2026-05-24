@@ -89,13 +89,11 @@ observal agent pull <agent-id> --ide claude-code --tools Read,Write,Bash
 
 ## What portability actually means
 
-The [IDE feature matrix](../integrations/README.md) controls what each IDE supports. If an agent uses skills and the target IDE doesn't have skills, the installer:
+The IDE feature matrix (defined in `observal_cli/ide_registry.py`) controls what each IDE supports. If an agent uses skills and the target IDE doesn't have skills, the installer:
 
 * Installs the compatible parts cleanly
 * Warns about the unsupported parts
 * Exits non-zero if the agent *requires* something the IDE cannot provide
-
-Full compatibility breakdown per IDE lives in [Integrations](../integrations/README.md).
 
 ## Snapshot an entire IDE config as a profile
 

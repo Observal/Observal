@@ -158,4 +158,3 @@ A sync test (`tests/test_constants_sync.py`) ensures CLI and server stay in lock
 
 * [`observal registry hook`](../cli/registry.md)
 * [Telemetry pipeline](../self-hosting/telemetry-pipeline.md)
-* [Integrations → Claude Code](../integrations/claude-code.md) / [Kiro](../integrations/kiro.md)

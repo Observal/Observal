@@ -42,7 +42,7 @@ Two channels, one destination. **MCP tool calls** go through `observal-shim` (st
 
 ## Channel 1 — MCP traffic
 
-Full architecture in [Concepts → Shim vs proxy](../concepts/shim-vs-proxy.md).
+The shim and proxy are transparent interceptors that forward MCP traffic unchanged while recording spans asynchronously.
 
 Operational knobs:
 

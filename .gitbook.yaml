@@ -9,6 +9,3 @@ structure:
 
 redirects:
   cli: cli/README.md
-  eval: concepts/evaluation.md
-  kiro-setup: integrations/kiro.md
-  kiro-compatibility-matrix: integrations/kiro.md
