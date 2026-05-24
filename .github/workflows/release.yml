@@ -91,6 +91,13 @@ jobs:
             exit 1
           fi
 
+          # Validate version matches packages/pi-extension/package.json
+          NPM_VERSION=$(python3 -c "import json, pathlib; print(json.loads(pathlib.Path('packages/pi-extension/package.json').read_text())['version'])")
+          if [ "$VERSION" != "$NPM_VERSION" ]; then
+            echo "::error::Release version v$VERSION does not match packages/pi-extension/package.json ($NPM_VERSION)"
+            exit 1
+          fi
+
           # Detect bump type by comparing to previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "v0.0.0")
           PREV="${PREV_TAG#v}"
@@ -330,10 +337,38 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
+  # ── Job 5: npm publish (after approval) ────────────────────
+  npm:
+    name: Publish to npm
+    needs: [preflight, approve]
+    if: needs.approve.result == 'success'
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Sync version from release
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}"
+          cd packages/pi-extension
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Publish observal-pi
+        run: |
+          cd packages/pi-extension
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   # ── Final: Create GitHub Release with all artifacts ────────
   release:
     name: GitHub Release
-    needs: [preflight, cli-binaries, docker-merge, server-package, pypi, approve]
+    needs: [preflight, cli-binaries, docker-merge, server-package, pypi, npm, approve]
     if: needs.approve.result == 'success'
     runs-on: ubuntu-latest
     steps:
