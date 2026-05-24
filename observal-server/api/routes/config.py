@@ -12,6 +12,7 @@ from sqlalchemy import select
 from api.deps import get_db
 from config import HAS_LICENSE, settings
 from models.enterprise_config import EnterpriseConfig
+from schemas.ide_registry import IDE_REGISTRY
 from version import get_server_version
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
@@ -136,3 +137,20 @@ async def get_public_config(db=Depends(get_db)):
         "branding_app_name": branding_app_name,
         "branding_wordmark": branding_wordmark,
     }
+
+
+@router.get("/ides")
+async def get_ides():
+    """Return the canonical IDE list from IDE_REGISTRY. No auth required."""
+    optic.debug("config.get_ides called")
+    ides = []
+    for name, spec in IDE_REGISTRY.items():
+        ides.append(
+            {
+                "name": name,
+                "display_name": spec["display_name"],
+                "features": sorted(spec["features"]),
+                "accepts_model_choice": spec.get("accepts_model_choice", False),
+            }
+        )
+    return {"ides": ides}

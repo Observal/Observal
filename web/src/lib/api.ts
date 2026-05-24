@@ -711,8 +711,20 @@ export type PublicConfig = {
 	branding_wordmark: string | null;
 };
 
+export interface IdeEntry {
+	name: string;
+	display_name: string;
+	features: string[];
+	accepts_model_choice: boolean;
+}
+
+interface IdesResponse {
+	ides: IdeEntry[];
+}
+
 export const config = {
 	public: () => get<PublicConfig>("/config/public"),
+	ides: () => get<IdesResponse>("/config/ides").then((r) => r.ides),
 };
 
 // ── Models ─────────────────────────────────────────────────────────

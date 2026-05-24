@@ -56,12 +56,12 @@ import { ValidationPanel } from "@/components/builder/validation-panel";
 import { PreviewPanel } from "@/components/builder/preview-panel";
 import { ModelPicker } from "@/components/builder/model-picker";
 
-const COMPONENT_TYPES: { value: RegistryType; label: string }[] = [
-  { value: "mcps", label: "MCPs" },
-  { value: "skills", label: "Skills" },
-  { value: "hooks", label: "Hooks" },
-  { value: "prompts", label: "Prompts" },
-  { value: "sandboxes", label: "Sandboxes" },
+const COMPONENT_TYPES: { value: RegistryType; label: string; singular: string }[] = [
+  { value: "mcps", label: "MCPs", singular: "MCP" },
+  { value: "skills", label: "Skills", singular: "Skill" },
+  { value: "hooks", label: "Hooks", singular: "Hook" },
+  { value: "prompts", label: "Prompts", singular: "Prompt" },
+  { value: "sandboxes", label: "Sandboxes", singular: "Sandbox" },
 ];
 
 
@@ -196,12 +196,16 @@ function VersionBumpDialog({
 
 function ComponentPicker({
   type,
+  label,
   selected,
   onToggle,
+  onCreateNew,
 }: {
   type: RegistryType;
+  label: string;
   selected: Set<string>;
   onToggle: (item: RegistryItem) => void;
+  onCreateNew: () => void;
 }) {
   const { data: items, isLoading } = useRegistryList(type);
   const [search, setSearch] = useState("");
@@ -219,14 +223,26 @@ function ComponentPicker({
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={`Search ${type}...`}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-8 pl-9 text-sm"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder={`Search ${label}...`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-9 text-sm"
+          />
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 text-xs"
+          onClick={onCreateNew}
+        >
+          <Plus className="mr-1 h-3 w-3" />
+          Create new
+        </Button>
       </div>
       {isLoading ? (
         <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
@@ -855,6 +871,7 @@ function AgentBuilderInner() {
                   className="text-sm font-medium"
                 >
                   Description
+                  <span className="ml-1 text-destructive">*</span>
                 </Label>
                 <Textarea
                   id="agent-description"
@@ -974,8 +991,10 @@ function AgentBuilderInner() {
                   <TabsContent key={ct.value} value={ct.value}>
                     <ComponentPicker
                       type={ct.value}
+                      label={ct.label}
                       selected={selectedIds}
                       onToggle={handleToggle(ct.value)}
+                      onCreateNew={() => setCreateDialogType(ct.value)}
                     />
                     {/* In-memory components not yet submitted */}
                     {pendingComponents.filter((p) => p.type === ct.value).map((p) => (
@@ -989,16 +1008,6 @@ function AgentBuilderInner() {
                         >✕</button>
                       </div>
                     ))}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => setCreateDialogType(ct.value)}
-                    >
-                      <Plus className="mr-1 h-3 w-3" />
-                      Create new {ct.value.replace(/s$/, "")}
-                    </Button>
 
                     {/* Sortable selected list */}
                     {(selectedComponents[ct.value] ?? []).length > 0 && (

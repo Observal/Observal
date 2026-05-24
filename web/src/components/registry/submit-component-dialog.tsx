@@ -27,6 +27,7 @@ import { Check, Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import type { RegistryType } from "@/lib/api";
 import { useWhoami } from "@/hooks/use-api";
+import { useIdes } from "@/hooks/use-ides";
 import { parseMcpConfigJson, applyParsedConfig } from "@/lib/mcp-parser";
 import type { EnvVar } from "@/lib/mcp-parser";
 
@@ -55,16 +56,6 @@ const MCP_CATEGORIES = [
 const MCP_FRAMEWORKS = ["python", "docker", "typescript", "go"];
 
 const MCP_TRANSPORTS = ["stdio", "sse", "streamable-http"];
-
-const VALID_IDES = [
-	"cursor",
-	"kiro",
-	"claude-code",
-	"gemini-cli",
-	"codex",
-	"copilot",
-	"opencode",
-];
 
 const SKILL_TASK_TYPES = [
 	"code-review",
@@ -131,6 +122,7 @@ export function SubmitComponentDialog({
 }: SubmitComponentDialogProps) {
 	const d = editItem as Record<string, unknown> | null;
 	const { data: whoami } = useWhoami();
+	const { data: ideList } = useIdes();
 	const defaultOwner =
 		(d?.owner as string) ||
 		whoami?.name ||
@@ -1209,18 +1201,18 @@ export function SubmitComponentDialog({
 					<div className="space-y-1.5">
 						<Label>Supported IDEs</Label>
 						<div className="flex flex-wrap gap-1.5">
-							{VALID_IDES.map((ide) => (
+							{(ideList ?? []).map((ide) => (
 								<button
-									key={ide}
+									key={ide.name}
 									type="button"
-									onClick={() => toggleIde(ide)}
+									onClick={() => toggleIde(ide.name)}
 									className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-										supportedIdes.includes(ide)
+										supportedIdes.includes(ide.name)
 											? "bg-primary text-primary-foreground"
 											: "bg-muted/50 text-muted-foreground hover:bg-muted"
 									}`}
 								>
-									{ide}
+									{ide.display_name}
 								</button>
 							))}
 						</div>
