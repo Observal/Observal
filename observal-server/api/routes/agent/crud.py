@@ -20,7 +20,7 @@ from api.deps import (
     require_role,
 )
 from api.sanitize import escape_like
-from config import settings
+from config import HAS_LICENSE
 from models.agent import (
     Agent,
     AgentStatus,
@@ -244,7 +244,7 @@ async def list_agents(
     is_admin = False
     # Skip visibility only for authenticated users in local mode (dev convenience).
     # Anonymous callers always get the public-only filter regardless of mode.
-    skip_visibility = settings.DEPLOYMENT_MODE == "local" and current_user is not None
+    skip_visibility = not HAS_LICENSE and current_user is not None
     if current_user:
         user_role_level = ROLE_HIERARCHY.get(current_user.role, 999)
         if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:

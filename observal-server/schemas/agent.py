@@ -14,12 +14,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from config import settings
+from config import HAS_LICENSE
 from models.agent import AgentStatus, AgentVisibility
 from schemas.constants import AGENT_NAME_REGEX, make_name_validator
 from services.versioning import validate_semver
 
-_DEFAULT_VISIBILITY = AgentVisibility.public if settings.DEPLOYMENT_MODE == "local" else AgentVisibility.private
+_DEFAULT_VISIBILITY = AgentVisibility.public if not HAS_LICENSE else AgentVisibility.private
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
 

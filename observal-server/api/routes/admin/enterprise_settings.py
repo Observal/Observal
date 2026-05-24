@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
 from api.deps import get_db, require_role
-from config import settings
+from config import HAS_LICENSE, settings
 from models.enterprise_config import EnterpriseConfig
 from models.user import User, UserRole
 from schemas.admin import EnterpriseConfigResponse, EnterpriseConfigUpdate
@@ -36,7 +36,7 @@ async def diagnostics(
 
     diag: dict[str, object] = {
         "status": "ok",
-        "deployment_mode": settings.DEPLOYMENT_MODE,
+        "deployment_mode": "enterprise" if HAS_LICENSE else "local",
         "checks": {},
     }
 
@@ -68,7 +68,7 @@ async def diagnostics(
         }
 
     # Enterprise config
-    if settings.DEPLOYMENT_MODE == "enterprise":
+    if HAS_LICENSE:
         issues: list[str] = []
         if settings.SECRET_KEY == "change-me-to-a-random-string":
             issues.append("SECRET_KEY is using default value")

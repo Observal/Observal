@@ -45,11 +45,11 @@ hooks:  ## Install pre-commit hooks
 # ── Docker ───────────────────────────────────────────────
 
 # Auto-detect enterprise edition: if ee/observal_insights/ exists, include enterprise compose file.
-# NOTE: DEPLOYMENT_MODE is always sourced from .env — the enterprise file does NOT override it.
+# Enterprise features activate when OBSERVAL_LICENSE_KEY is set in .env.
 COMPOSE_FILES := -f docker-compose.yml
 ifneq (,$(wildcard ee/observal_insights/__init__.py))
   COMPOSE_FILES += -f docker-compose.enterprise.yml
-  $(info [enterprise mode] ee/observal_insights/ detected — DEPLOYMENT_MODE from .env)
+  $(info [enterprise mode] ee/observal_insights/ detected)
 endif
 
 up:  ## Start Docker stack
@@ -80,7 +80,7 @@ rebuild-enterprise:  ## Rebuild in enterprise mode (insights enabled)
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose -f docker-compose.yml -f docker-compose.enterprise.yml exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
 	cd docker && docker compose -f docker-compose.yml -f docker-compose.enterprise.yml restart observal-lb
-	@echo "✓ Running in enterprise mode (DEPLOYMENT_MODE=enterprise)"
+	@echo "✓ Running in enterprise mode (license key active)"
 
 rebuild-local:  ## Rebuild in local mode (no enterprise features)
 	cd docker && docker compose -f docker-compose.yml up --build -d

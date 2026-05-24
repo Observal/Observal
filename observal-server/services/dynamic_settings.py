@@ -216,9 +216,11 @@ DEFAULTS: dict[str, str] = {
     "data.cache_ttl_dashboard": "60",
     # Observability
     "observability.log_level": "INFO",
-    "observability.log_format": "json",
+    "observability.log_format": "json",  # 'json' or 'console' (colorized). Requires restart.
     "observability.enable_openapi": "false",
     "observability.enable_metrics": "false",
+    # Developer
+    "developer.default_agent_visibility": "public",
     # Misc
     "misc.max_cli_version": "",  # empty = no upper bound
     "misc.api_version": "2026-05-01",  # date-based, bumped on breaking changes
@@ -303,6 +305,13 @@ SECTIONS: list[dict[str, Any]] = [
         "description": "Logging and metrics configuration.",
         "icon": "activity",
         "keys": [k for k in DEFAULTS if k.startswith("observability.")],
+    },
+    {
+        "id": "developer",
+        "title": "Developer",
+        "description": "Development convenience settings. Controls API docs exposure, default visibility, and other developer-facing behavior.",
+        "icon": "code",
+        "keys": [k for k in DEFAULTS if k.startswith("developer.")],
     },
     {
         "id": "misc",

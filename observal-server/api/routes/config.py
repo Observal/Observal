@@ -10,7 +10,7 @@ from loguru import logger as optic
 from sqlalchemy import select
 
 from api.deps import get_db
-from config import settings
+from config import HAS_LICENSE, settings
 from models.enterprise_config import EnterpriseConfig
 from version import get_server_version
 
@@ -79,15 +79,15 @@ async def get_public_config(db=Depends(get_db)):
     optic.debug("config.get_public_config called")
     import services.dynamic_settings as ds
 
-    # Deployment mode is a boot-time env var (controls route registration)
-    deployment_mode = settings.DEPLOYMENT_MODE
+    # Deployment mode derived from license presence
+    deployment_mode = "enterprise" if HAS_LICENSE else "local"
 
     # SAML: check DB-backed dynamic settings, then fall back to SamlConfig model
     saml_idp_entity = await ds.get("saml.idp_entity_id")
     saml_idp_sso = await ds.get("saml.idp_sso_url")
     saml_enabled = bool(saml_idp_entity and saml_idp_sso)
 
-    if not saml_enabled and deployment_mode == "enterprise":
+    if not saml_enabled and HAS_LICENSE:
         try:
             from models.saml_config import SamlConfig
 

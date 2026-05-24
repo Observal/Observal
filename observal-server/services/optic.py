@@ -3,13 +3,19 @@
 
 """Optic: developer debug logging for Observal.
 
-Configures loguru sinks based on deployment mode. Call ``setup_optic()``
+Configures loguru sinks based on log format setting. Call ``setup_optic()``
 once at server startup. Then use ``from loguru import logger`` anywhere
 in the codebase to log actions.
 
 Terminal (stderr) gets INFO+ only to keep output clean.
-File (~/.observal/logs/dev.log) gets full DEBUG trace.
+File (~/.observal/logs/dev.log) gets full DEBUG trace in console mode.
 Production gets INFO+ with plain formatting (no colors).
+
+The log format is determined by:
+1. The ``observability.log_format`` dynamic setting (if the sync cache is loaded)
+2. Otherwise, derived from license key presence (no license = console, licensed = json)
+
+Changing the setting requires a server restart to take effect.
 """
 
 from __future__ import annotations
@@ -21,12 +27,26 @@ from loguru import logger
 
 
 def setup_optic(*, mode: str = "local", level: str = "DEBUG") -> None:
-    """Configure loguru sinks based on deployment mode.
+    """Configure loguru sinks based on log format.
 
     Args:
-        mode: Deployment mode ("local" or "enterprise").
+        mode: Fallback mode when dynamic setting is unavailable.
+              'local' = colorized console + debug file.
+              'enterprise' = plain JSON to stderr.
         level: Minimum log level for file sink (default: DEBUG).
     """
+    # Try to read the dynamic setting (sync cache may be loaded already)
+    try:
+        import services.dynamic_settings as ds
+
+        fmt = ds.get_sync("observability.log_format")
+        if fmt == "console":
+            mode = "local"
+        elif fmt == "json":
+            mode = "enterprise"
+    except Exception:
+        pass
+
     # Remove loguru's default stderr sink
     logger.remove()
 

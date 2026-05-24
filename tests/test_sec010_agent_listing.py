@@ -93,8 +93,7 @@ async def test_anonymous_cannot_see_private_agents_local_mode():
     app.dependency_overrides[optional_current_user] = lambda: None
 
     try:
-        with patch("api.routes.agent.crud.settings") as ms:
-            ms.DEPLOYMENT_MODE = "local"
+        with patch("api.routes.agent.crud.HAS_LICENSE", False):
             async with _make_client() as client:
                 r = await client.get("/api/v1/agents")
         assert r.status_code == 200
@@ -117,8 +116,7 @@ async def test_anonymous_cannot_see_private_agents_enterprise_mode():
     app.dependency_overrides[optional_current_user] = lambda: None
 
     try:
-        with patch("api.routes.agent.crud.settings") as ms:
-            ms.DEPLOYMENT_MODE = "enterprise"
+        with patch("api.routes.agent.crud.HAS_LICENSE", True):
             async with _make_client() as client:
                 r = await client.get("/api/v1/agents")
         assert r.status_code == 200
