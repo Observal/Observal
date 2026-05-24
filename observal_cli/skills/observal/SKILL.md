@@ -1,281 +1,161 @@
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 ---
 name: observal
 command: observal
-description: Use the Observal agent registry and component platform. Handles creating, updating, versioning, and pulling agents. Browse and submit MCPs, skills, and prompts. Use when the user asks to interact with their Observal server.
-version: 1.1.0
+description: "Core Observal CLI operations: pull agents into your IDE, scan installed components, diagnose and patch IDE configs, authenticate, and manage CLI settings. Use when the user wants to install an agent, check their IDE setup, login, or configure the CLI."
+version: 2.0.0
 owner: observal
 ---
 
-<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
-
-# Observal — Agent Registry & Component Platform
-
-You have the Observal CLI installed. Use it to manage agents and components on the registry server.
+# Observal: Core CLI Operations
 
 ## Critical Rules
 
-1. **EXECUTE commands** — run them in your shell, do not just display them
-2. **Set timeout to 60 seconds** — commands make HTTP calls
-3. **Use single quotes** for `--prompt` and `--description` values to avoid shell quoting issues
-4. **Do NOT run `observal auth status` before other commands** — they error clearly if auth is broken
-5. **Name conflict (409)?** → use `observal agent publish --update` or `observal agent release --bump`
-6. **Only fall back to local mode** if a command returns "Connection failed" or "Not configured"
+1. **EXECUTE commands**: run them in your shell, do not just display them.
+2. **Set timeout to 60 seconds**: most commands make HTTP calls.
+3. **Use single quotes** for `--prompt` and `--description` values to avoid shell quoting issues.
+4. **Do NOT run `observal auth status` first.** Other commands surface auth problems clearly on their own.
+5. **When in doubt about a flag, run `<command> --help` first.** Never guess flag names.
+6. **Pass `--output json` on every list/show command.** It is stable and machine readable.
+7. **Pass `--yes` / `-y` on destructive commands** so they do not block on a confirmation prompt.
+8. **Resolve 409 conflicts deterministically:** `--update` for in-place edits, `--bump` for versioned releases.
+9. **Only fall back to local file writes** if a command exits with `Connection failed` or `Not configured`.
+10. **Never invent `OTEL_*` or `CLAUDE_CODE_ENABLE_TELEMETRY` environment variables.** Telemetry flows through `observal-shim` and session push hooks only.
 
 ---
 
-## Agent Commands
+## Procedure: Pull Agent
 
-### Create a New Agent
-
-```bash
-observal agent create --name AGENT_NAME --description 'DESCRIPTION' --prompt 'SYSTEM PROMPT' --model claude-sonnet-4 --ide kiro --ide claude-code --ide cursor
-```
-
-Flags:
-- `--name` / `-n` — required. Lowercase `[a-z0-9_-]`, max 64 chars
-- `--prompt` / `-p` — required. System prompt text (supports multiline)
-- `--description` / `-d` — required by server. Short summary
-- `--model` / `-m` — default: `claude-sonnet-4`. Options: `claude-opus-4`, `claude-haiku-4-5`, `gemini-2.5-pro`, `gpt-4o`
-- `--owner` — auto-detected from auth if omitted
-- `--version` / `-v` — default: `1.0.0`
-- `--ide` — repeat for multiple. Omit for all IDEs
-- `--prompt-file` — read prompt from a file instead of inline
-- `--from-file` / `-f` — pass a complete JSON definition
-
-### Update an Existing Agent
-
-Two options when the name already exists (409 error):
-
-**Option A: Direct update (skips review queue, updates in-place):**
+Install an agent's full config (rules, MCP servers, hooks, skills) into a local IDE.
 
 ```bash
-observal agent publish --update --dir /path/to/yaml/dir
+observal agent pull AGENT_NAME --ide kiro --no-prompt --dir .
 ```
 
-**Option B: New version (goes to review queue):**
+**Flags:**
+- `--ide` (required): `claude-code`, `kiro`, `cursor`, `gemini-cli`, `vscode`, `codex`, `copilot`, `copilot-cli`, `opencode`
+- `--scope user|project`: install scope (Claude Code, Kiro, Gemini only)
+- `--model <name>` or `--model <ide>=<name>`: override saved model (repeatable)
+- `--tools t1,t2`: Claude Code tool whitelist
+- `--dry-run`: preview file writes without touching disk
+- `--no-prompt`: skip interactive confirmation
+- `--dir <path>`: target directory (default: current)
+
+**Merge behavior:** MCP configs are merged with existing IDE config files, not overwritten. Existing user entries are preserved.
+
+If the user did not specify an IDE, ask which one before running.
+
+---
+
+## Procedure: Scan IDEs
+
+Read-only inventory of installed components across all detected IDEs. **Never modifies any file.**
 
 ```bash
-observal agent release <name> --bump patch --dir /path/to/yaml/dir
+observal scan
+observal scan --ide kiro
+observal scan --ide claude-code
 ```
 
-Use Option B when the user wants changes reviewed. Use Option A for quick edits.
+Reports: detected IDEs, MCP servers (with shimmed status), skills, hooks, agents, and unregistered components.
 
-Both require an `observal-agent.yaml`. Write it like this:
+---
+
+## Procedure: Doctor
+
+Diagnose only. Does not fix anything.
 
 ```bash
-# 1. Write observal-agent.yaml (anywhere, e.g. /tmp/myagent/)
-mkdir -p /tmp/myagent && cat > /tmp/myagent/observal-agent.yaml << 'EOF'
-name: existing-agent-name
-version: "1.0.0"
-description: "Updated description"
-owner: "team-name"
-model_name: claude-sonnet-4
-model_config_json: {}
-models_by_ide: {}
-external_mcps: []
-prompt: |
-  Your updated system prompt here.
-  Can be multiline.
-supported_ides:
-  - kiro
-  - claude-code
-  - cursor
-components: []
-EOF
-
-# 2. Push the update
-observal agent publish --update --dir /tmp/myagent
+observal doctor
 ```
 
-### Release a New Version
+Reports: Observal config validity, server reachability, hook installation status per IDE, skill presence. Exits non-zero if issues found.
 
-To bump the version of an existing agent:
+---
+
+## Procedure: Doctor Patch
+
+Apply instrumentation. Run with `--dry-run` first when the user is unsure.
 
 ```bash
-# 1. Write the YAML with updated prompt/config
-mkdir -p /tmp/myagent && cat > /tmp/myagent/observal-agent.yaml << 'EOF'
-name: agent-name
-description: "What it does"
-model_name: claude-sonnet-4
-model_config_json: {}
-models_by_ide: {}
-external_mcps: []
-prompt: |
-  Your updated system prompt.
-supported_ides:
-  - kiro
-  - claude-code
-components: []
-EOF
-
-# 2. Release with version bump
-observal agent release agent-name --bump patch --dir /tmp/myagent
+observal doctor patch --all --all-ides --dry-run
+observal doctor patch --all --all-ides
+observal doctor patch --hook --shim --ide kiro
+observal doctor patch --all --ide claude-code
+observal doctor patch --hook --all-ides
+observal doctor patch --shim --all-ides
 ```
 
-Bump types: `patch` (1.0.0→1.0.1), `minor` (1.0.0→1.1.0), `major` (1.0.0→2.0.0)
+**Required:** at least one of `--hook` / `--shim` / `--all`, AND at least one of `--all-ides` / `--ide`. Creates timestamped backups before modifying any file.
 
-### observal-agent.yaml Schema
+---
 
-All fields:
+## Procedure: Doctor Cleanup
 
-```yaml
-name: my-agent                    # required, [a-z0-9_-]
-description: "What this agent does"  # required
-version: "1.0.0"                  # semver, auto-bumped by release
-owner: "team-name"                # required
-model_name: claude-sonnet-4       # required
-model_config_json: {}             # MUST be {} not omitted
-models_by_ide: {}                 # optional per-IDE overrides e.g. {kiro: claude-haiku-4-5}
-external_mcps: []                 # MUST be [] not omitted
-prompt: |                         # required, multiline supported
-  System prompt text here.
-supported_ides:                   # list of IDE slugs
-  - kiro
-  - claude-code
-  - cursor
-  - gemini-cli
-  - vscode
-  - codex
-  - copilot
-  - opencode
-components: []                    # component refs, empty for prompt-only agents
-```
-
-**Critical**: `model_config_json` MUST be `{}` and `external_mcps` MUST be `[]` — never omit them or set to null, or the API returns 422.
-
-### Pull an Agent
+Remove Observal-managed hooks and env vars from IDE configs. Leaves user content untouched.
 
 ```bash
-observal agent pull <name> --ide <ide> --no-prompt --dir .
-```
-
-Flags: `--model`, `--scope user|project`, `--dry-run`
-
-### Browse Agents
-
-```bash
-observal agent list --output json
-observal agent list --search "keyword" --output json
-observal agent my --output json
-observal agent show <name> --output json
-observal agent versions <name> --output json
-```
-
-### Delete / Archive
-
-```bash
-observal agent delete <name> --yes
-observal agent unarchive <name> --yes
+observal doctor cleanup --dry-run
+observal doctor cleanup
+observal doctor cleanup --ide kiro
 ```
 
 ---
 
-## Component Commands (MCPs, Skills, Prompts)
-
-### Browse Components
+## Procedure: Auth
 
 ```bash
-# MCPs
-observal mcp list --output json
-observal mcp list --search "github" --output json
-observal mcp list --category developer-tools --output json
-observal mcp show <name-or-id> --output json
-
-# Skills
-observal skill list --output json
-observal skill list --task-type code-review --output json
-observal skill show <name-or-id> --output json
-
-# Prompts
-observal prompt list --output json
-observal prompt show <name-or-id> --output json
+observal auth login
+observal auth login --server https://observal.example.com
+observal auth login --sso
+observal auth login --email me@x.com --password '...'
+observal auth whoami --output json
+observal auth status
+observal auth logout
+observal auth change-password
+observal auth set-username new-handle
 ```
 
-MCP categories: `browser-automation`, `cloud-platforms`, `code-execution`, `communication`, `databases`, `developer-tools`, `devops`, `file-systems`, `finance`, `knowledge-memory`, `monitoring`, `multimedia`, `productivity`, `search`, `security`, `version-control`, `ai-ml`, `data-analytics`, `general`
+On a fresh server, `auth login` auto-bootstraps an admin from localhost (no prompts needed).
 
-Skill task types: `code-review`, `code-generation`, `testing`, `documentation`, `debugging`, `refactoring`, `deployment`, `security-audit`, `performance`, `general`
+---
 
-### Submit an MCP Server
-
-From a git repo (recommended):
+## Procedure: CLI Config
 
 ```bash
-observal mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
-```
-
-From a JSON file:
-
-```bash
-observal mcp submit --from-file mcp.json
-```
-
-### Submit a Skill
-
-```bash
-observal skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --git-ref main
-```
-
-### Submit a Prompt
-
-```bash
-observal prompt submit --from-file prompt.json
-```
-
----
-
-## Supported IDEs
-
-| IDE Flag | Accepts `--model` | Accepts `--scope` |
-|----------|---|---|
-| `cursor` | No | Yes |
-| `kiro` | Yes | Yes |
-| `claude-code` | Yes | Yes |
-| `gemini-cli` | Yes | Yes |
-| `vscode` | No | No |
-| `codex` | Yes | No |
-| `copilot` | No | No |
-| `copilot-cli` | No | No |
-| `opencode` | Yes | Yes |
-
----
-
-## Local Fallback Mode
-
-If commands fail with "Connection failed", write configs directly:
-
-**Kiro** → `~/.kiro/agents/<name>.json`:
-```json
-{"name":"<name>","description":"<desc>","prompt":"<prompt>","model":"claude-sonnet-4-20250514","mcpServers":{},"tools":["*"],"resources":["skill://~/.kiro/skills/*/SKILL.md"]}
-```
-
-**Claude Code** → `.claude/agents/<name>.md`:
-```markdown
----
-name: <name>
-description: <desc>
----
-<prompt>
-```
-
-**Cursor** → `.cursor/rules/<name>.mdc`:
-```markdown
----
-name: <name>
-description: <desc>
----
-<prompt>
+observal config show
+observal config path
+observal config set output json
+observal config set server_url https://observal.example.com
+observal config aliases
+observal config alias MY_AGENT abc-123
 ```
 
 ---
 
 ## Error Reference
 
-| Error | Fix |
-|-------|-----|
-| 409 "already have an agent named X" | Use `observal agent publish --update` or `agent release --bump` |
-| 422 model_config_json/external_mcps | Ensure YAML has `model_config_json: {}` and `external_mcps: []` |
-| "Not configured" | User must run `observal auth login` |
-| "Connection failed" | Use Local Fallback Mode |
-| 404 Not found | Check name with `observal agent list --output json` |
-| "system prompt is required" | Add `--prompt` or `prompt:` in YAML |
+| Error | Action |
+|-------|--------|
+| `Connection failed` | Server unreachable. Use the `observal-advanced` skill's Local Fallback procedure |
+| `Not configured` / `No server` | Run `observal auth login` |
+| `403 Forbidden` | Check `observal auth whoami`; user lacks required role |
+| `404 Not found` | Verify name with `observal agent list --output json` |
+
+---
+
+## Output Contract
+
+For every CLI invocation, format your response:
+
+1. One sentence stating intent.
+2. The exact command in a fenced code block.
+3. The result: success / specific error.
+4. The next action, or "done".
+
+---
+
+For full command reference, read `references/commands.md`. For agent creation use the `observal-agents` skill. For registry operations use `observal-registry`. For observability use `observal-ops`. For admin tasks use `observal-admin`.

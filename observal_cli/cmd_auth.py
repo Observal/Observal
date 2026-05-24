@@ -851,10 +851,10 @@ def _post_auth_onboarding():
 
 
 def _install_observal_skill():
-    """Install the bundled Observal skill to all detected IDE skill directories.
+    """Install the bundled Observal skills to all detected IDE skill directories.
 
-    This makes the 'observal' skill available to LLMs in every IDE that supports
-    skills, enabling commands like `/observal create an agent` or
+    This makes the 'observal' family of skills available to LLMs in every IDE
+    that supports skills, enabling commands like `/observal create an agent` or
     `kiro-cli chat --agent observal`.
     """
     optic.debug("_install_observal_skill called")
@@ -862,11 +862,21 @@ def _install_observal_skill():
 
     from observal_cli.ide_registry import IDE_REGISTRY
 
-    skill_source = Path(__file__).parent / "skills" / "observal" / "SKILL.md"
-    if not skill_source.exists():
+    skills_base = Path(__file__).parent / "skills"
+    skill_dirs = [
+        "observal",
+        "observal-agents",
+        "observal-registry",
+        "observal-ops",
+        "observal-admin",
+        "observal-advanced",
+    ]
+
+    # Verify at least the core skill exists.
+    core_skill = skills_base / "observal" / "SKILL.md"
+    if not core_skill.exists():
         return
 
-    content = skill_source.read_text(encoding="utf-8")
     installed: list[str] = []
 
     # Additional user-scope skill paths not formally in the registry but known to work.
@@ -884,21 +894,27 @@ def _install_observal_skill():
         if not user_path:
             continue
 
-        # Replace {name} placeholder with 'observal'
-        resolved = user_path.replace("{name}", "observal")
-        dest = Path(resolved.replace("~", str(Path.home())))
-
         # Only install if the IDE directory exists (IDE is installed)
         ide_config_dir = Path.home() / spec.get("config_dir", "")
         if not ide_config_dir.exists():
             continue
 
-        try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(content, encoding="utf-8")
+        ide_installed = False
+        for skill_dir in skill_dirs:
+            source = skills_base / skill_dir / "SKILL.md"
+            if not source.exists():
+                continue
+            resolved = user_path.replace("{name}", skill_dir)
+            dest = Path(resolved.replace("~", str(Path.home())))
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+                ide_installed = True
+            except OSError:
+                pass
+
+        if ide_installed:
             installed.append(spec["display_name"])
-        except OSError:
-            pass
 
     # Kiro-specific: ensure the active agent has skill resources wired up.
     # Without this, skills in ~/.kiro/skills/ are invisible to the agent.

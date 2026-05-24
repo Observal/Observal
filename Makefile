@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate check-migrations new-migration reset rebuild rebuild-enterprise rebuild-local release-major release-feature release-patch
+.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate check-migrations new-migration reset rebuild rebuild-enterprise rebuild-local release-major release-feature release-patch sync-skill
 
 # ── Linting ──────────────────────────────────────────────
 
@@ -33,6 +34,9 @@ test-eval-completeness:  ## Run eval completeness tests
 	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/test_eval_completeness.py -v --tb=short
 
 test-all: test test-eval-completeness test-adversarial  ## Run all tests including adversarial and completeness
+
+sync-skill:  ## Regenerate the auto-generated command reference in the bundled Observal skill
+	cd observal-server && uv run --with typer --with rich --with loguru --with pyyaml python ../scripts/sync_observal_skill.py
 
 # ── Setup ────────────────────────────────────────────────
 
