@@ -605,9 +605,14 @@ export const admin = {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
 		return get<AuditLogEntry[]>(`/admin/audit-log${qs}`);
 	},
-	auditLogExport: (params?: Record<string, string>) => {
+	auditLogExport: async (params?: Record<string, string>) => {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
-		return get<string>(`/admin/audit-log/export${qs}`);
+		const token = getAccessToken();
+		const headers: Record<string, string> = {};
+		if (token) headers["Authorization"] = `Bearer ${token}`;
+		const res = await fetch(`${API}/admin/audit-log/export${qs}`, { headers });
+		if (!res.ok) throw new Error("Export failed");
+		return res.text();
 	},
 	securityEvents: (params?: Record<string, string>) => {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
