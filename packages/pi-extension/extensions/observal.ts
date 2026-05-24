@@ -34,6 +34,7 @@ interface CursorEntry {
   offset: number;
   line_count: number;
   finalized?: boolean;
+  last_pushed_at?: number;
 }
 
 interface ObservalState {
@@ -159,7 +160,7 @@ export default function (pi: ExtensionAPI) {
       if (fs.existsSync(SYNC_STATE_PATH)) {
         data = JSON.parse(fs.readFileSync(SYNC_STATE_PATH, "utf-8"));
       }
-      data[sessionId] = { offset, line_count: lineCount, finalized };
+      data[sessionId] = { offset, line_count: lineCount, finalized, last_pushed_at: Date.now() };
       fs.writeFileSync(SYNC_STATE_PATH, JSON.stringify(data, null, 2));
     } catch {
       // Fail-open
@@ -266,7 +267,7 @@ export default function (pi: ExtensionAPI) {
           (res) => {
             clearTimeout(timer);
             res.resume(); // drain response
-            resolve(res.statusCode === 200);
+            resolve(res.statusCode! >= 200 && res.statusCode! < 300);
           },
         );
 
@@ -290,10 +291,12 @@ export default function (pi: ExtensionAPI) {
         fs.readFileSync(SYNC_STATE_PATH, "utf-8"),
       );
 
+      // Use sessionManager to resolve session directory when available,
+      // falling back to the conventional path layout.
+      const sessionsDir = ctx.sessionManager.getSessionsDir?.()
+        ?? path.join(os.homedir(), ".pi", "agent", "sessions");
       const cwd = ctx.cwd;
       const projectKey = cwd.replace(/\//g, "-");
-      const sessionsDir = path.join(os.homedir(), ".pi", "agent", "sessions");
-      // Pi uses --<path>-- format for directory names
       const fullDir = path.join(sessionsDir, `-${projectKey}-`);
 
       if (!fs.existsSync(fullDir)) return;
@@ -369,8 +372,8 @@ export default function (pi: ExtensionAPI) {
       const entries = Object.entries(data);
       if (entries.length <= 50) return; // No pruning needed
 
-      // Keep only the 50 most recent entries (by offset as proxy for recency)
-      const sorted = entries.sort((a, b) => b[1].offset - a[1].offset);
+      // Keep only the 50 most recent entries (by last push time, falling back to offset)
+      const sorted = entries.sort((a, b) => (b[1].last_pushed_at ?? 0) - (a[1].last_pushed_at ?? 0));
       const pruned: Record<string, CursorEntry> = {};
       for (const [key, value] of sorted.slice(0, 50)) {
         pruned[key] = value;
