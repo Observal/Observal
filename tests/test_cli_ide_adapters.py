@@ -38,6 +38,7 @@ class TestAdapterRegistry:
             "copilot",
             "copilot-cli",
             "opencode",
+            "pi",
         }
         assert set(adapters.keys()) == expected
 
