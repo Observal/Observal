@@ -229,3 +229,29 @@ def _verify_install(direction: str) -> None:
         rprint(f"[green]{direction.capitalize()}d to v{new_version}[/green]")
     except (subprocess.TimeoutExpired, OSError, IndexError):
         rprint(f"[green]{direction.capitalize()} complete. Restart your shell to use the new version.[/green]")
+
+
+def execute_silent(install_info: InstallInfo, target_version: str, direction: str) -> bool:
+    """Non-interactive auto-update path. Returns True on success, False on failure.
+
+    Unlike execute(), this never prints to stdout/stderr and never raises typer.Exit.
+    Used by auto_update_if_needed() for background minor/patch updates.
+    """
+    try:
+        if install_info.method == InstallMethod.UV_TOOL:
+            result = subprocess.run(
+                ["uv", "tool", "install", f"observal-cli=={target_version}", "--force"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return result.returncode == 0
+        elif install_info.method == InstallMethod.PIP:
+            pip_cmd = [sys.executable, "-m", "pip", "install", f"observal-cli=={target_version}", "--quiet"]
+            result = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=30)
+            return result.returncode == 0
+        else:
+            # Binary and other methods are too complex for silent update
+            return False
+    except (subprocess.TimeoutExpired, OSError):
+        return False

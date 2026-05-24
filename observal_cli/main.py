@@ -94,6 +94,36 @@ def main(
     elif verbose:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
+    # Auto-update on minor/patch releases (non-blocking, exempt self/server commands)
+    _try_auto_update()
+
+
+def _try_auto_update() -> None:
+    """Attempt auto-update for minor/patch releases on startup.
+
+    Runs silently. Logs a message on success so the user knows the next
+    invocation will use the new version.
+    Exempt: self/server subcommands, CI, non-TTY.
+    """
+    # Skip exempt subcommands (check positional args, not flags)
+    positional_args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if positional_args and positional_args[0] in ("self", "server"):
+        return
+    if os.environ.get("CI") or os.environ.get("OBSERVAL_NO_UPDATE_CHECK"):
+        return
+    if not sys.stdout.isatty():
+        return  # Never auto-update in non-interactive environments
+
+    try:
+        from observal_cli.version_check import auto_update_if_needed
+
+        if auto_update_if_needed():
+            from rich import print as _rprint
+
+            _rprint("[dim]Updated. The new version will be used on your next command.[/dim]")
+    except Exception:
+        pass  # Never crash the CLI for auto-update
+
 
 # ── Register command groups ──────────────────────────────
 
@@ -175,11 +205,11 @@ except ImportError:
 
 
 def _show_update_banner() -> None:
-    """Post-command hook: show update notification if available.
+    """Post-command hook: show major version notification only.
 
-    Only on interactive TTY, never during self/server commands, never in CI.
-    If connected to a server (enterprise): targets the server's version.
-    Otherwise: targets the latest GitHub release.
+    Minor/patch mismatches are handled by auto-update.
+    Major.minor mismatches are hard-blocked by the version enforcement gate.
+    This banner only fires for major upgrades available in community mode.
     """
     import sys as _sys
 
@@ -197,25 +227,19 @@ def _show_update_banner() -> None:
         if not update:
             return
 
+        from packaging.version import Version
         from rich import print as _rprint
 
-        if update.source == "server":
-            if update.direction == "downgrade":
+        # Only show banner for major version upgrades (community mode)
+        # Hard block already handles minor mismatches; auto-update handles patches
+        if update.source == "github":
+            current_v = Version(update.current)
+            latest_v = Version(update.latest)
+            if latest_v.major > current_v.major:
                 _rprint(
-                    f"\n[yellow]Your server recommends v{update.latest}. "
-                    f"Downgrade: [bold]observal self downgrade --version {update.latest}[/bold][/yellow]"
+                    f"\n[yellow]Major update available: v{update.current} \u2192 v{update.latest}[/yellow]\n"
+                    f"  Run: [bold cyan]observal self upgrade --version {update.latest}[/bold cyan]"
                 )
-            else:
-                _rprint(
-                    f"\n[dim]Your server is v{update.latest}. "
-                    f"Match it: [bold]observal self upgrade --version {update.latest}[/bold][/dim]"
-                )
-        else:
-            _rprint(
-                f"\n[dim]Update available: v{update.current} \u2192 "
-                f"[green]v{update.latest}[/green] \u2022 "
-                f"[bold]observal self upgrade[/bold][/dim]"
-            )
     except Exception:
         pass  # Never crash the CLI for a version check
 

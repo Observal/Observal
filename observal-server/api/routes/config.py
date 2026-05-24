@@ -19,14 +19,16 @@ router = APIRouter(prefix="/api/v1/config", tags=["config"])
 
 @router.get("/version")
 async def get_version():
-    """Server version and compatibility info. No auth required."""
+    """Server version and compatibility info. No auth required.
+
+    The server_version is the canonical target: CLI and frontend must match it.
+    """
     optic.debug("config.get_version called")
     import services.dynamic_settings as ds
 
     max_cli = await ds.get("misc.max_cli_version")
     api_version = await ds.get("misc.api_version")
     frontend_version = await ds.get("misc.frontend_version")
-    recommended_cli = await ds.get("misc.recommended_cli_version")
 
     server_ver = get_server_version()
     return {
@@ -34,7 +36,8 @@ async def get_version():
         "max_cli_version": max_cli or None,
         "api_version": api_version or None,
         "frontend_version": frontend_version or server_ver,
-        "recommended_cli_version": recommended_cli or server_ver,
+        # Deprecated: kept for backward compat with CLIs < 1.0.0. Will be removed in 1.2.0.
+        "recommended_cli_version": server_ver,
     }
 
 

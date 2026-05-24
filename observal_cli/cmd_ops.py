@@ -1649,6 +1649,15 @@ def downgrade(
         rprint(f"[red]Invalid version: {version}[/red]")
         raise typer.Exit(1)
 
+    # Enforce version floor - cannot go below 1.0.0
+    if target < Version(version_check.VERSION_FLOOR):
+        rprint(
+            f"[bold red]\u2716 Cannot downgrade below v{version_check.VERSION_FLOOR}.[/bold red]\n"
+            f"  Versioning is not supported on earlier releases.\n"
+            f"  Minimum allowed version: [cyan]v{version_check.VERSION_FLOOR}[/cyan]"
+        )
+        raise typer.Exit(1)
+
     try:
         if target >= Version(current):
             rprint(f"[yellow]v{version} is not older than current v{current}.[/yellow]")
