@@ -1,4 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
 import uuid
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -43,6 +47,7 @@ def mock_user(org_id, groups=None):
 
 
 @pytest.mark.asyncio
+@patch("api.routes.agent.crud.settings.DEPLOYMENT_MODE", "enterprise")
 async def test_private_agents_not_leaked_to_org_members(db_session):
     """
     Validates that a private agent is NOT returned in the agent list for users
