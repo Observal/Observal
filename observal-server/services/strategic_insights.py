@@ -100,9 +100,9 @@ async def generate_strategic_insights(metrics_data: dict) -> dict:
     optic.debug("strategic_insights: generating")
     import services.dynamic_settings as ds
 
-    configured_model = await ds.get("eval.model_name")
+    configured_model = await ds.get("insights.model_synthesis") or await ds.get("insights.model_sections")
     if not configured_model:
-        logger.warning("strategic_insights_no_model", reason="eval.model_name not configured")
+        logger.warning("strategic_insights_no_model", reason="no insights model configured")
         return {}
 
     data_block = _build_data_block(metrics_data)

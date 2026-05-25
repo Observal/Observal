@@ -96,12 +96,22 @@ async def _call_bedrock(prompt: str, model_id: str, max_tokens: int = 4096) -> d
 
     import services.dynamic_settings as ds
 
-    aws_region = await ds.get("eval.aws_region")
+    aws_region = await ds.get("insights.aws_region")
+    aws_access_key = await ds.get("insights.aws_access_key_id")
+    aws_secret_key = await ds.get("insights.aws_secret_access_key")
+    aws_session_token = await ds.get("insights.aws_session_token")
 
     def _sync_call():
         import boto3
 
-        client = boto3.client("bedrock-runtime", region_name=aws_region or "us-east-1")
+        client_kwargs: dict = {"region_name": aws_region or "us-east-1"}
+        if aws_access_key and aws_secret_key:
+            client_kwargs["aws_access_key_id"] = aws_access_key
+            client_kwargs["aws_secret_access_key"] = aws_secret_key
+            if aws_session_token:
+                client_kwargs["aws_session_token"] = aws_session_token
+
+        client = boto3.client("bedrock-runtime", **client_kwargs)
         response = client.converse(
             modelId=model_id,
             messages=[{"role": "user", "content": [{"text": prompt}]}],
@@ -125,8 +135,8 @@ async def _call_openai_compatible(prompt: str, model: str, provider: str = "") -
     """Call an OpenAI-compatible API."""
     import services.dynamic_settings as ds
 
-    model_url = await ds.get("eval.model_url")
-    model_key = await ds.get("eval.model_api_key")
+    model_url = await ds.get("insights.model_url")
+    model_key = await ds.get("insights.model_api_key")
     url, headers = _openai_url_and_headers(provider, url_override=model_url, key_override=model_key)
     body = _build_openai_body(model, prompt, provider, extra={"response_format": {"type": "json_object"}})
 
@@ -142,24 +152,30 @@ async def _call_openai_compatible(prompt: str, model: str, provider: str = "") -
 
 
 async def call_model(prompt: str, model_override: str | None = None, max_tokens: int = 4096) -> dict:
-    """Call the configured LLM. Supports Bedrock, Moonshot, and OpenAI-compatible APIs.
+    """Call the configured LLM for insights generation.
+
+    Provider is auto-detected from the model ID:
+    - Contains 'anthropic' -> Bedrock
+    - Contains 'kimi' -> Moonshot (OpenAI-compatible)
+    - Otherwise -> generic OpenAI-compatible
 
     Args:
         prompt: The prompt to send to the model.
-        model_override: Optional model ID to use instead of the configured model.
+        model_override: Optional model ID to use instead of the default.
         max_tokens: Maximum output tokens (default 4096).
     """
     import services.dynamic_settings as ds
 
-    provider = await ds.get("eval.model_provider")
-    model = model_override or await ds.get("eval.model_name")
+    # Use override, or fall back to sections model as the default
+    model = model_override or await ds.get("insights.model_sections")
 
     if not model:
         return {}
 
-    if provider == "bedrock" or (not provider and "anthropic" in model):
+    # Auto-detect provider from model ID
+    if "anthropic" in model:
         return await _call_bedrock(prompt, model, max_tokens=max_tokens)
-    if provider == "moonshot" or (not provider and "kimi" in model.lower()):
+    if "kimi" in model.lower():
         return await _call_openai_compatible(prompt, model, provider="moonshot")
     return await _call_openai_compatible(prompt, model)
 

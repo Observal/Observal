@@ -14,6 +14,7 @@ default fallback.  Passing an unknown ``ide`` value raises ``KeyError``.
 
 import hashlib
 import json
+import uuid as _uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -111,6 +112,58 @@ def _extract_uuid(parsed: dict, ide: str = "claude-code") -> tuple[str | None, s
 logger = structlog.get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Agent ID resolution (name -> UUID)
+# ---------------------------------------------------------------------------
+
+
+def _is_uuid(value: str) -> bool:
+    """Return True if *value* is a valid UUID string."""
+    try:
+        _uuid.UUID(value)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
+async def _resolve_agent_id(agent_id: str | None) -> str | None:
+    """Resolve an agent name to its UUID if it isn't one already.
+
+    The session_events and session_stats_agg tables store agent_id as a
+    plain string.  The insights pipeline looks up sessions by agent UUID.
+    If a caller passes a human-readable name (e.g. from a bulk import or
+    misconfigured marker), resolve it here so downstream queries work.
+
+    Returns the original value unchanged if it is already a UUID, None,
+    or if the name cannot be resolved.
+    """
+    if not agent_id:
+        return agent_id
+    if _is_uuid(agent_id):
+        return agent_id
+
+    # Import lazily to avoid circular deps at module level
+    from sqlalchemy import select
+
+    from database import async_session
+    from models.agent import Agent
+
+    try:
+        async with async_session() as db:
+            stmt = select(Agent.id).where(Agent.name == agent_id).limit(1)
+            result = await db.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                resolved = str(row)
+                optic.debug("resolved agent name to UUID: {}={}", agent_id, resolved)
+                return resolved
+    except Exception as e:
+        optic.warning("agent_id resolution failed: {}", e)
+
+    # Return as-is if resolution fails (backwards compat)
+    return agent_id
+
+
 @dataclass
 class IngestResult:
     ingested: int
@@ -162,6 +215,11 @@ async def ingest_session_lines(
         ``errors`` counts.
     """
     optic.debug("ingest_session_lines: session_id={}, project_id={}", session_id, project_id)
+
+    # Normalize agent_id: resolve human-readable names to UUIDs so that
+    # downstream queries (insights, exec dashboard) can match by UUID.
+    agent_id = await _resolve_agent_id(agent_id)
+
     ingested = 0
     skipped = 0
     errors = 0

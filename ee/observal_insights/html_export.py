@@ -177,6 +177,8 @@ def render_report_html(report: dict) -> str:
     metrics.get("interruptions") or {}
     metrics.get("multi_session") or {}
     metrics.get("subagents") or {}
+    rich = metrics.get("rich") or {}
+    interaction_style = narrative.get("interaction_style") or {}
 
     sections_html = []
 
@@ -228,43 +230,73 @@ def render_report_html(report: dict) -> str:
     # ══════════════════════════════════════════════════════════════════════════
     # STATS ROW
     # ══════════════════════════════════════════════════════════════════════════
+    # Prefer rich metrics (from raw transcript analysis) over ClickHouse metrics
     total_sessions = overview.get("total_sessions", sessions_analyzed)
     avg_dur = duration.get("avg_duration_seconds", 0)
-    (avg_dur * total_sessions) / 3600 if avg_dur else 0
-    commits = git.get("commits", 0)
-    lines_added = git.get("lines_added", 0)
-    lines_removed = git.get("lines_removed", 0)
-    files_modified = git.get("files_modified", 0)
-    total_cost = cost.get("total_cost_usd", 0)
+    active_hours = rich.get("active_hours", 0) or ((avg_dur * total_sessions) / 3600 if avg_dur else 0)
+    days_active = rich.get("days_active", 0)
+    total_messages = rich.get("total_messages", 0)
+    commits = rich.get("git_commits", 0) or git.get("commits", 0)
+    git_pushes = rich.get("git_pushes", 0) or git.get("pushes", 0)
+    lines_added = rich.get("lines_added", 0) or git.get("lines_added", 0)
+    lines_removed = rich.get("lines_removed", 0) or git.get("lines_removed", 0)
+    files_modified = rich.get("files_modified", 0) or git.get("files_modified", 0)
+    total_cost = rich.get("total_cost_usd", 0) or cost.get("total_cost_usd", 0)
+    tool_errors_total = rich.get("tool_errors", 0)
+    interruptions_total = rich.get("interruptions", 0)
+    subagent_sessions = rich.get("subagent_sessions", 0)
+    rich_top_tools = rich.get("top_tools", [])
+    rich_top_langs = rich.get("top_languages", [])
+    rich_error_cats = rich.get("tool_error_categories", {})
+
+    def _fmt_tokens(n: int | float) -> str:
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.1f}M"
+        if n >= 1_000:
+            return f"{n / 1_000:.0f}k"
+        return _format_number(n)
+
+    # Build stats row with all the rich data (matching pi /insights)
+    stat_items = [
+        ("Sessions", _format_number(total_sessions), f"{days_active} active days" if days_active else ""),
+        (
+            "Messages",
+            _format_number(total_messages),
+            f"{total_messages / max(total_sessions, 1):.1f} per session" if total_messages else "",
+        ),
+        (
+            "Active Time",
+            f"{active_hours:.1f}h" if active_hours >= 1 else f"{active_hours * 60:.0f}m",
+            f"{active_hours / max(days_active, 1):.1f}h/day" if days_active else "",
+        ),
+        (
+            "Total Cost",
+            _format_cost(total_cost),
+            f"{_format_cost(total_cost / max(total_sessions, 1))}/session" if total_sessions else "",
+        ),
+        ("Lines Added", _fmt_tokens(lines_added), ""),
+        ("Lines Removed", _fmt_tokens(lines_removed), ""),
+        ("Git Commits", _format_number(commits), f"{git_pushes} pushes" if git_pushes else ""),
+        ("Files Modified", _fmt_tokens(files_modified), ""),
+        ("Tool Errors", _format_number(tool_errors_total), ""),
+        ("Interruptions", _format_number(interruptions_total), ""),
+    ]
+    if subagent_sessions:
+        stat_items.append(("Subagent Sessions", _format_number(subagent_sessions), ""))
+
+    stat_cells = ""
+    for label, value, sub in stat_items:
+        sub_html = f'<span class="stat-sub">{_esc(sub)}</span>' if sub else ""
+        stat_cells += f"""<div class="stat-item">
+      <span class="stat-value">{_esc(value)}</span>
+      <span class="stat-label">{_esc(label)}</span>
+      {sub_html}
+    </div>\n"""
 
     sections_html.append(f"""
 <section class="stats-row-section">
   <div class="stats-row">
-    <div class="stat-item">
-      <span class="stat-value">{_format_number(total_sessions)}</span>
-      <span class="stat-label">Sessions</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-value">{_format_duration_hours(avg_dur * total_sessions) if avg_dur else "0h"}</span>
-      <span class="stat-label">Total Hours</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-value">{_format_number(commits)}</span>
-      <span class="stat-label">Commits</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-value stat-positive">+{_format_number(lines_added)}</span>
-      <span class="stat-value stat-negative">-{_format_number(lines_removed)}</span>
-      <span class="stat-label">Lines +/-</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-value">{_format_number(files_modified)}</span>
-      <span class="stat-label">Files</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-value">{_format_cost(total_cost)}</span>
-      <span class="stat-label">Cost</span>
-    </div>
+    {stat_cells}
   </div>
 </section>""")
 
@@ -357,6 +389,43 @@ def render_report_html(report: dict) -> str:
       {_render_count_bar_chart(sat_items, "#8b5cf6")}
     </div>""")
 
+    # 6. Friction Types
+    friction_types = facets.get("friction_types", [])
+    if friction_types:
+        items = [(name, count) for name, count in friction_types[:8]]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Friction Types</h3>
+      {_render_count_bar_chart(items, "var(--red)")}
+    </div>""")
+
+    # 7. Tool Error Categories (from rich)
+    if rich_error_cats:
+        error_items = sorted(rich_error_cats.items(), key=lambda x: -x[1])[:8]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Tool Errors</h3>
+      {_render_count_bar_chart(error_items, "var(--red)")}
+    </div>""")
+
+    # 8. Top Tools (from rich)
+    if rich_top_tools:
+        tool_items = [(name, count) for name, count in rich_top_tools[:10]]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Top Tools</h3>
+      {_render_count_bar_chart(tool_items, "var(--purple)")}
+    </div>""")
+
+    # 9. Languages (from rich)
+    if rich_top_langs:
+        lang_items = [(name, count) for name, count in rich_top_langs[:10]]
+        charts_html_parts.append(f"""
+    <div class="chart-panel">
+      <h3>Languages</h3>
+      {_render_count_bar_chart(lang_items, "var(--green)")}
+    </div>""")
+
     if charts_html_parts:
         sections_html.append(f"""
 <section>
@@ -431,6 +500,28 @@ def render_report_html(report: dict) -> str:
 </section>""")
 
     # ══════════════════════════════════════════════════════════════════════════
+    # INTERACTION STYLE (V4: the most personal section)
+    # ══════════════════════════════════════════════════════════════════════════
+    if interaction_style:
+        style_narrative = interaction_style.get("narrative", "")
+        key_pattern = interaction_style.get("key_pattern", "")
+        if style_narrative:
+            key_pattern_html = ""
+            if key_pattern:
+                key_pattern_html = f"""
+      <div style="margin-top:16px;padding:14px 18px;background:var(--accent-bg);border:1px solid var(--accent-border);border-radius:var(--radius-sm);font-size:14px;font-style:italic;color:var(--accent)">
+        \"{_esc(key_pattern)}\"
+      </div>"""
+            sections_html.append(f"""
+<section>
+  <h2>Interaction Style</h2>
+  <div style="line-height:1.8;color:var(--text-secondary);font-size:14px">
+    {_esc(style_narrative).replace(chr(10) + chr(10), "</p><p>").replace(chr(10), "<br>")}
+  </div>
+  {key_pattern_html}
+</section>""")
+
+    # ══════════════════════════════════════════════════════════════════════════
     # WHAT'S WORKING
     # ══════════════════════════════════════════════════════════════════════════
     if what_works:
@@ -486,27 +577,88 @@ def render_report_html(report: dict) -> str:
     # SUGGESTIONS (with copy buttons)
     # ══════════════════════════════════════════════════════════════════════════
     if suggestions:
+        sugg_parts = []
+
+        # V4: Config Additions (with checkboxes, like pi /insights)
+        config_additions = suggestions.get("config_additions", [])
+        if config_additions:
+            cfg_cards = ""
+            for _idx, c in enumerate(config_additions):
+                if isinstance(c, dict):
+                    addition = c.get("addition", "")
+                    where = c.get("where", "system_prompt")
+                    why = c.get("why", "")
+                    addition_attr = html.escape(addition, quote=True) if addition else ""
+                    cfg_cards += f"""
+        <div class="suggestion-card" style="margin-bottom:10px">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <input type="checkbox" class="cfg-check" checked data-addition="{addition_attr}" style="margin-top:3px;accent-color:var(--accent);width:15px;height:15px;flex-shrink:0">
+            <div>
+              <span class="meta-badge" style="margin-bottom:6px;display:inline-block">{_esc(where)}</span>
+              <h4 style="font-size:14px;margin-bottom:4px">{_esc(addition)}</h4>
+              <p class="suggestion-why"><em>Why: {_esc(why)}</em></p>
+            </div>
+          </div>
+        </div>"""
+            sugg_parts.append(f"""
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:12px">Config Additions</h3>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Select the ones you want, then copy them all at once.</p>
+      <div id="config-list">{cfg_cards}</div>
+      <button class="copy-btn" style="margin-top:12px;padding:8px 18px;font-size:12px" onclick="
+        var checks=document.querySelectorAll('.cfg-check:checked');
+        var lines=['# Agent config additions (generated by Observal Insights)',''];
+        for(var ch of checks){{lines.push(ch.dataset.addition);lines.push('')}}
+        navigator.clipboard.writeText(lines.join(String.fromCharCode(10)));
+        this.textContent='Copied!';setTimeout(()=>this.textContent='Copy All Selected',1500)
+      ">Copy All Selected</button>""")
+
+        # V4: Features to Try (with code examples)
+        features = suggestions.get("features_to_try", [])
+        if features:
+            feat_cards = ""
+            for f in features:
+                if isinstance(f, dict):
+                    example = f.get("example", "")
+                    example_attr = html.escape(example, quote=True) if example else ""
+                    feat_cards += f"""
+        <div class="suggestion-card">
+          <span class="meta-badge" style="margin-bottom:8px;display:inline-block">{_esc(f.get("feature", ""))}</span>
+          <h4 style="font-size:14px;margin-bottom:4px">{_esc(f.get("one_liner", ""))}</h4>
+          <p style="font-size:13px;color:var(--text-secondary);margin-top:6px">{_esc(f.get("why_for_you", ""))}</p>
+          {f'<pre style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px 14px;font-family:monospace;font-size:12px;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;margin-top:10px">{_esc(example)}</pre><button class="copy-btn" style="margin-top:6px" onclick="navigator.clipboard.writeText(this.getAttribute(&quot;data-text&quot;)).then(()=>{{this.textContent=&quot;Copied!&quot;;setTimeout(()=>this.textContent=&quot;Copy&quot;,1500)}})" data-text="{example_attr}">Copy</button>' if example else ""}
+        </div>"""
+            sugg_parts.append(f"""
+      <h3 style="font-size:15px;font-weight:600;margin:24px 0 12px">Features to Try</h3>
+      <div class="areas-grid">{feat_cards}</div>""")
+
+        # V4: Usage Patterns (with copyable prompts)
+        patterns = suggestions.get("usage_patterns", [])
+        if patterns:
+            pat_cards = ""
+            for p in patterns:
+                if isinstance(p, dict):
+                    prompt = p.get("copyable_prompt", "")
+                    prompt_attr = html.escape(prompt, quote=True) if prompt else ""
+                    pat_cards += f"""
+        <div class="suggestion-card">
+          <h4 style="font-size:14px;margin-bottom:4px">{_esc(p.get("title", ""))}</h4>
+          <p style="font-size:13px;color:var(--text-secondary);margin-top:6px">{_esc(p.get("suggestion", ""))}</p>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:8px">{_esc(p.get("detail", ""))}</p>
+          {f'<pre style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px 14px;font-family:monospace;font-size:12px;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;margin-top:10px">{_esc(prompt)}</pre><button class="copy-btn" style="margin-top:6px" onclick="navigator.clipboard.writeText(this.getAttribute(&quot;data-text&quot;)).then(()=>{{this.textContent=&quot;Copied!&quot;;setTimeout(()=>this.textContent=&quot;Copy&quot;,1500)}})" data-text="{prompt_attr}">Copy</button>' if prompt else ""}
+        </div>"""
+            sugg_parts.append(f"""
+      <h3 style="font-size:15px;font-weight:600;margin:24px 0 12px">Usage Patterns</h3>
+      <div style="display:flex;flex-direction:column;gap:12px">{pat_cards}</div>""")
+
+        # V3 fallback: items array (backward compatibility)
         items = suggestions.get("items", [])
-        if items:
+        if items and not config_additions and not features and not patterns:
             suggestion_cards = ""
             for idx, item in enumerate(items, 1):
                 if isinstance(item, dict):
                     priority = item.get("priority", "medium")
-                    fix_type = item.get("fix_type", "")
-                    confidence = item.get("confidence", "")
-                    expected_impact = item.get("expected_impact", "")
                     action_text = item.get("action", "")
-                    # Escape for HTML attribute
                     action_attr = html.escape(action_text, quote=True) if action_text else ""
-
-                    meta_badges = ""
-                    if fix_type:
-                        meta_badges += f'<span class="meta-badge">{_esc(fix_type)}</span>'
-                    if confidence:
-                        meta_badges += f'<span class="meta-badge">Confidence: {_esc(confidence)}</span>'
-                    if expected_impact:
-                        meta_badges += f'<span class="meta-badge">Impact: {_esc(expected_impact)}</span>'
-
                     suggestion_cards += f"""
         <div class="suggestion-card">
           <div class="suggestion-header">
@@ -521,14 +673,14 @@ def render_report_html(report: dict) -> str:
             </div>
           </div>
           <p class="suggestion-why"><em>{_esc(item.get("why", ""))}</em></p>
-          {f'<div class="suggestion-meta">{meta_badges}</div>' if meta_badges else ""}
         </div>"""
+            sugg_parts.append(f"""<div class="suggestions-list">{suggestion_cards}</div>""")
+
+        if sugg_parts:
             sections_html.append(f"""
 <section>
   <h2>Suggestions</h2>
-  <p class="section-intro">{_esc(suggestions.get("intro", ""))}</p>
-  <div class="suggestions-list">{suggestion_cards}
-  </div>
+  {"".join(sugg_parts)}
 </section>""")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -962,6 +1114,13 @@ def render_report_html(report: dict) -> str:
       text-transform: uppercase;
       letter-spacing: 0.5px;
       font-weight: 600;
+    }}
+
+    .stat-sub {{
+      display: block;
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
     }}
 
     /* ─── Areas ─── */

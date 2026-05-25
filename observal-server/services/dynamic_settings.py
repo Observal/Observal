@@ -10,7 +10,7 @@ DB, the hardcoded default is used.
 Usage:
     from services.dynamic_settings import get, get_int, get_bool
 
-    model_name = get("eval.model_name")              # returns "" if not set
+    model_name = get("insights.model_sections")        # returns "" if not set
     batch_days = get_int("insights.batch_period_days")  # returns 14 if not set
     sso_only = get_bool("deployment.sso_only")       # returns False if not set
 """
@@ -158,19 +158,16 @@ _CACHE_TTL = 30  # seconds, short TTL for consistency, Redis is fast
 # DB, these are returned. Once configured via the settings page, DB values win.
 
 DEFAULTS: dict[str, str] = {
-    # LLM / Eval
-    "eval.model_url": "",
-    "eval.model_api_key": "",
-    "eval.model_name": "",
-    "eval.model_provider": "",
-    "eval.aws_region": "us-east-1",
-    "eval.aws_access_key_id": "",
-    "eval.aws_secret_access_key": "",
-    "eval.aws_session_token": "",
-    # Insights
+    # Insights — AWS Bedrock auth
+    "insights.aws_region": "us-east-1",
+    "insights.aws_access_key_id": "",
+    "insights.aws_secret_access_key": "",
+    "insights.aws_session_token": "",
+    # Insights — per-stage models (Bedrock model IDs)
     "insights.model_sections": "",
     "insights.model_synthesis": "",
     "insights.model_facets": "",
+    # Insights — batch processing
     "insights.batch_enabled": "true",
     "insights.batch_period_days": "14",
     "insights.min_sessions": "5",
@@ -230,10 +227,9 @@ DEFAULTS: dict[str, str] = {
 
 # Sensitive keys: values are masked in API responses unless explicitly revealed
 SENSITIVE_KEYS: set[str] = {
-    "eval.model_api_key",
-    "eval.aws_access_key_id",
-    "eval.aws_secret_access_key",
-    "eval.aws_session_token",
+    "insights.aws_access_key_id",
+    "insights.aws_secret_access_key",
+    "insights.aws_session_token",
     "saml.idp_x509_cert",
     "saml.sp_key_encryption_password",
 }
@@ -241,16 +237,9 @@ SENSITIVE_KEYS: set[str] = {
 # Section definitions for the settings schema endpoint
 SECTIONS: list[dict[str, Any]] = [
     {
-        "id": "eval",
-        "title": "LLM / Eval Engine",
-        "description": "Configure the LLM used for AI-powered agent scoring. Leave blank to use deterministic fallback scorer.",
-        "icon": "brain",
-        "keys": [k for k in DEFAULTS if k.startswith("eval.")],
-    },
-    {
         "id": "insights",
         "title": "Agent Insights",
-        "description": "Per-model overrides and batch processing settings for the insights engine. Requires 'insights' license feature.",
+        "description": "Configure AWS Bedrock credentials and models for the insights engine. Requires 'insights' license feature.",
         "icon": "sparkles",
         "keys": [k for k in DEFAULTS if k.startswith("insights.")],
     },
@@ -330,7 +319,7 @@ async def get(key: str, default: str | None = None) -> str:
     """Get a setting value. Checks Redis cache first, then DB, then hardcoded default.
 
     Args:
-        key: Dotted setting key (e.g., "eval.model_name")
+        key: Dotted setting key (e.g., "insights.model_sections")
         default: Override default (if None, uses DEFAULTS dict)
 
     Returns:
