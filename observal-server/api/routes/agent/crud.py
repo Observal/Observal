@@ -257,7 +257,9 @@ async def list_agents(
             user_groups = get_user_groups(current_user)
             visibility_filter = visibility_filter | (Agent.created_by == current_user.id)
             if current_user.org_id is not None:
-                visibility_filter = visibility_filter | (Agent.owner_org_id == current_user.org_id)
+                visibility_filter = visibility_filter | (
+                    (Agent.owner_org_id == current_user.org_id) & (Agent.visibility == AgentVisibility.public)
+                )
             if user_groups:
                 visibility_filter = visibility_filter | Agent.team_accesses.any(
                     AgentTeamAccess.group_name.in_(user_groups)

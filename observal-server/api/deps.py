@@ -207,9 +207,6 @@ def get_effective_agent_permission(agent: "Agent", user: User | None) -> str:  #
     if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:
         return "owner"  # admins can edit anything
 
-    if user.org_id is not None and agent.owner_org_id == user.org_id:
-        return "view"
-
     user_groups = get_user_groups(user)
     best_perm = "none"
     perm_levels = {"none": 0, "view": 1, "edit": 2, "owner": 3}
@@ -217,6 +214,10 @@ def get_effective_agent_permission(agent: "Agent", user: User | None) -> str:  #
     for access in getattr(agent, "team_accesses", []):
         if access.group_name in user_groups and perm_levels.get(access.permission, 0) > perm_levels[best_perm]:
             best_perm = access.permission
+
+    # Retain org ID check explicitly for public agents
+    if best_perm == "none" and user.org_id is not None and agent.owner_org_id == user.org_id and agent.visibility == AgentVisibility.public:
+        return "view"
 
     if best_perm == "none" and agent.visibility == AgentVisibility.public:
         return "view"
