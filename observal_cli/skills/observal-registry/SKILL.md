@@ -1,7 +1,6 @@
-<!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
-
 ---
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
 name: observal-registry
 command: observal
 description: Submit, browse, install, edit, delete, and version MCPs, skills, hooks, prompts, and sandboxes in the Observal registry. Use when the user wants to submit a component, install one, edit a draft, publish a new version, or browse the component library.

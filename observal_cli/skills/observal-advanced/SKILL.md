@@ -1,7 +1,6 @@
-<!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
-
 ---
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
 name: observal-advanced
 command: observal
 description: Advanced Observal operations including IDE profile swapping, session reconciliation, CLI upgrades and downgrades, complete uninstallation, and local fallback mode for offline use. Use when the user wants to swap IDE profiles, reconcile sessions, upgrade or downgrade the CLI, uninstall Observal, or write agent configs locally when the server is unreachable.

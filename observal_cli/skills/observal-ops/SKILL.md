@@ -1,7 +1,6 @@
-<!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
-
 ---
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
 name: observal-ops
 command: observal
 description: View traces, spans, metrics, feedback, and telemetry health for Observal agents and MCPs. Use when the user wants to see recent traces, check metrics, view top items, submit ratings, or diagnose telemetry pipeline issues.

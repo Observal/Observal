@@ -1,7 +1,6 @@
-<!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
-
 ---
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
 name: observal-agents
 command: observal
 description: Create, update, version, and manage Observal agents. Use when the user wants to create a new agent, update an existing one, release a new version, scaffold a YAML project, add components, build, publish, bulk-create, delete, or restore agents.
