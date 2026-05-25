@@ -10,6 +10,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-05-25
+
+### Added
+
+- add observal-pi package for session telemetry (**extension**) ([5debdf8](https://github.com/BlazeUp-AI/Observal/commit/5debdf81c2e1d3edbc088169515535a5dff3154b))
+- add Pi CLI adapter, doctor, and scan support (**cli**) ([f80042a](https://github.com/BlazeUp-AI/Observal/commit/f80042ac911acb69ae06d5d4a5e2436600006046))
+- add Pi to IDE_REGISTRY with server adapter (**registry**) ([ba0f39d](https://github.com/BlazeUp-AI/Observal/commit/ba0f39ddbcb71ba9437565b22eae69431676a253))
+- add Pi session JSONL classifier and read-path parser (**parser**) ([c071f97](https://github.com/BlazeUp-AI/Observal/commit/c071f976c64f84031e10e24a4242e67d2317f82b))
+- expand bundled Observal skill to cover full CLI surface (**skill**) ([b62c562](https://github.com/BlazeUp-AI/Observal/commit/b62c562fcd8c9aa4657c1fbb9c8656a0438fc310))
+- redesign audit log page with parameterized search (**web**) ([8376595](https://github.com/BlazeUp-AI/Observal/commit/8376595931f4cf95005541db7cac0ca213d422c7))
+- update ee/ audit route with HIPAA fields and export formats (**audit**) ([2edc1b3](https://github.com/BlazeUp-AI/Observal/commit/2edc1b33ead83deac56eb3f7c5ca52a9b232f937))
+- add CLI audit emission and server endpoint (**audit**) ([97cbdc0](https://github.com/BlazeUp-AI/Observal/commit/97cbdc006c9a2ac70b3f9b458064b24b3e40ea5f))
+- implement HIPAA loguru audit middleware (**audit**) ([cf32511](https://github.com/BlazeUp-AI/Observal/commit/cf32511548ef3aaf12e7e9c27b5a3ba9cbef7ad5))
+- version enforcement - hard block on CLI/server mismatch & auto-update ([be2d475](https://github.com/BlazeUp-AI/Observal/commit/be2d475511e201733bc426db6fcdceba8df28462))
+
+### CI
+
+- add npm publish step for observal-pi to release workflow ([52d2dbc](https://github.com/BlazeUp-AI/Observal/commit/52d2dbc80d9dc077909419b9c4311dfce245b377))
+
+### Changed
+
+- remove legacy event-bus audit system (**audit**) ([264a303](https://github.com/BlazeUp-AI/Observal/commit/264a30337cad9c1e6e52c53fb0d0bab80b527e03))
+- gate pages by specific licensed feature, not blanket boolean (**web**) ([9baa2b6](https://github.com/BlazeUp-AI/Observal/commit/9baa2b64568d1fa638d551e84f35706d1ac50ac6))
+- replace deployment_mode API field with licensed boolean ([8cc8eee](https://github.com/BlazeUp-AI/Observal/commit/8cc8eee9986a7f82284d4cf2ed6a42b606a8e354))
+- remove DEPLOYMENT_MODE, derive enterprise from license key ([5def2f6](https://github.com/BlazeUp-AI/Observal/commit/5def2f67beb4703c105537d8bee4e02727ee9926))
+
+### Documentation
+
+- update all AGENTS.md files to reflect current codebase state ([6d47495](https://github.com/BlazeUp-AI/Observal/commit/6d474954da81e28b0ccb072f4b55c35308452e2e))
+
+### Fixed
+
+- remove invalid OpenCode plugin import (**services**) ([034ffca](https://github.com/BlazeUp-AI/Observal/commit/034ffca6fbc6e4526d980d2b517d0e5ba99e974c))
+- improve resilience of pi telemetry extension (**extension**) ([7797dfc](https://github.com/BlazeUp-AI/Observal/commit/7797dfc0dec705822a11c5509fa3b1b8cb2cc315))
+- gate settings sections behind license features (**web**) ([e5bfb2b](https://github.com/BlazeUp-AI/Observal/commit/e5bfb2bad11ff6db4b34698cb35ed882528eb630))
+- use local fonts, serve IDE list from server, fix builder UI (**web**) ([0308654](https://github.com/BlazeUp-AI/Observal/commit/03086540f709b8c091887bc8734ebb9317c6d5dd))
+- use prompt_toolkit for arrow-key-aware input in login prompts (**auth**) ([ff201ec](https://github.com/BlazeUp-AI/Observal/commit/ff201ec5ca2656638bc914fdf5ec8d57bea1ba0c))
+- resolve names in ops rate, add auth to GraphQL queries (**cli**) ([7d6c120](https://github.com/BlazeUp-AI/Observal/commit/7d6c120e2ea281e2f0ec20637727861d47747449))
+- move SPDX header below frontmatter for Claude Code parsing (**skill**) ([32fb1d6](https://github.com/BlazeUp-AI/Observal/commit/32fb1d6667a0a872cf92063b2dcc5c629f1df72a))
+- address CI failures from DEPLOYMENT_MODE removal ([07f4bb1](https://github.com/BlazeUp-AI/Observal/commit/07f4bb1fa3b3782c72fbe10423e83c684921ba34))
+- remove DEPLOYMENT_MODE references from CLI messages (**cli**) ([c6df484](https://github.com/BlazeUp-AI/Observal/commit/c6df484b35a43e02c6f203a68d6bf73dcbd6edba))
+- add --yes flag and fix hint messages (**doctor**) ([a62f36f](https://github.com/BlazeUp-AI/Observal/commit/a62f36f19267cd363096fb3028e581b6649c7514))
+
+### Other
+
+- update github artifact actions (major) (#1185) (**deps**) ([eb46027](https://github.com/BlazeUp-AI/Observal/commit/eb46027ff1d8fe96a4bac8c92dae37d96992b7cd))
+- update dependency ruff to v0.15.14 (#1182) (**deps**) ([87cbce4](https://github.com/BlazeUp-AI/Observal/commit/87cbce473db48a0583dc90b6d78dcee67e1385ca))
+- update docker images (minor/patch) (#1183) (**deps**) ([5b4c472](https://github.com/BlazeUp-AI/Observal/commit/5b4c472b968c884c0a7f295e64cf91bde639d57b))
+- add .clabot to allowlist renovate and dependabot ([2cc8b24](https://github.com/BlazeUp-AI/Observal/commit/2cc8b240b58c698f3ae1be9fe61b07938aa34b42))
+
+### Testing
+
+- add prompt command tests (#986) (**cmd**) ([ac8f458](https://github.com/BlazeUp-AI/Observal/commit/ac8f458ed16d17141c83ff279d22629be29a5f7a))
+- add Pi to frontend features and unit tests ([274b3c2](https://github.com/BlazeUp-AI/Observal/commit/274b3c2eac9aa8cda27a93c48553d7c368490f5d))
+- add 32 tests for HIPAA audit system (**audit**) ([4100979](https://github.com/BlazeUp-AI/Observal/commit/410097934358cd0dcd17a9b1a45c0a0bb5354b15))
+- add Playwright tests for component detail and CRUD (#934) (**e2e**) ([41d4451](https://github.com/BlazeUp-AI/Observal/commit/41d44518987ef7f72cefddb10ca81e01a1bdd357))
+- add Playwright tests for auth login error and logout flow (#927) (**e2e**) ([2dd8a17](https://github.com/BlazeUp-AI/Observal/commit/2dd8a1766708f5710b784346465026369a52aee1))
+
+### Build
+
+- sync pi-extension version in release script ([5272303](https://github.com/BlazeUp-AI/Observal/commit/52723039dca6f86eb21ea856580864cca69ebdef))
 ## [1.0.0] - 2026-05-23
 
 ### Added
