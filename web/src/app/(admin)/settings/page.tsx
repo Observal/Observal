@@ -173,92 +173,57 @@ const SETTING_SECTIONS: SettingSection[] = [
 		title: "Agent Insights",
 		icon: <Activity className="h-3.5 w-3.5" />,
 		description:
-			"Configure the LLM and batch processing for the insights engine. Requires 'insights' license feature.",
+			"Configure AWS Bedrock credentials and models for the insights engine. Requires 'insights' license feature.",
 		requiresFeature: "insights",
 		settings: [
 			{
-				key: "eval.model_url",
-				label: "Model Endpoint URL",
-				subtitle: "OpenAI-compatible base URL for the LLM",
-				tooltip:
-					"The base URL of your LLM API. For Bedrock, leave blank (uses AWS SDK). For OpenAI-compatible APIs (vLLM, Ollama, Moonshot), provide the base URL like https://api.openai.com/v1",
-			},
-			{
-				key: "eval.model_api_key",
-				label: "Model API Key",
-				subtitle: "Authentication key for the LLM endpoint",
-				tooltip:
-					"API key sent as Bearer token. For AWS Bedrock, leave blank and configure AWS credentials instead. For OpenAI/Moonshot, use your API key (sk-...).",
-			},
-			{
-				key: "eval.model_name",
-				label: "Model Name",
-				subtitle: "Model identifier passed to the API",
-				tooltip:
-					"The model ID to use. Examples: us.anthropic.claude-haiku-4-5-20251001-v1:0 (Bedrock), gpt-4o (OpenAI), kimi-k2.5-preview (Moonshot).",
-			},
-			{
-				key: "eval.model_provider",
-				label: "Model Provider",
-				subtitle: "Which API protocol to use",
-				tooltip:
-					"Set to 'bedrock' for AWS Bedrock Converse API, 'openai' for OpenAI-compatible APIs, 'moonshot' for Kimi. Leave blank to auto-detect from model name.",
-			},
-			{
-				key: "eval.aws_region",
+				key: "insights.aws_region",
 				label: "AWS Region",
 				subtitle: "Region for Bedrock API calls",
 				tooltip:
-					"AWS region where Bedrock models are available. Common: us-east-1, us-west-2, eu-west-1. Only used when provider is bedrock.",
+					"AWS region where Bedrock models are available. Common: us-east-1, us-west-2, eu-west-1.",
 			},
 			{
-				key: "eval.aws_access_key_id",
+				key: "insights.aws_access_key_id",
 				label: "AWS Access Key ID",
 				subtitle: "IAM access key for Bedrock",
 				tooltip:
-					"AWS IAM access key with bedrock:InvokeModel permission. Leave blank to use instance role / ECS task role / environment credentials.",
+					"AWS IAM access key with bedrock:InvokeModel permission. Leave blank to use instance role / ECS task role.",
 			},
 			{
-				key: "eval.aws_secret_access_key",
+				key: "insights.aws_secret_access_key",
 				label: "AWS Secret Access Key",
 				subtitle: "IAM secret key for Bedrock",
 				tooltip:
 					"The secret key paired with the access key ID. Stored encrypted. Leave blank for instance role authentication.",
 			},
 			{
-				key: "eval.aws_session_token",
-				label: "AWS Session Token",
-				subtitle: "Temporary credentials token (optional)",
-				tooltip:
-					"Only needed for temporary/assumed-role credentials (e.g., from STS AssumeRole). Leave blank for permanent IAM keys or instance roles.",
-			},
-			{
 				key: "insights.model_sections",
 				label: "Sections Model",
-				subtitle: "Model for detailed narrative report sections",
+				subtitle: "Model for detailed narrative report sections (e.g. Opus)",
 				tooltip:
-					"A capable model (e.g., Claude Opus) used for writing detailed insight sections. Falls back to the base model if blank. Use a high-quality model here for best report quality.",
+					"Bedrock model ID for writing detailed insight sections. Example: us.anthropic.claude-opus-4-6-v1. This is the primary model used for analysis.",
 			},
 			{
 				key: "insights.model_synthesis",
 				label: "Synthesis Model",
-				subtitle: "Model for aggregating and summarizing insights",
+				subtitle: "Model for aggregation and At a Glance (e.g. Sonnet)",
 				tooltip:
-					"Model used for cross-user synthesis and strategic recommendations. Sonnet-class models offer good balance of quality and cost. Falls back to the base model.",
+					"Bedrock model ID for cross-user synthesis and strategic recommendations. Example: us.anthropic.claude-sonnet-4-6. Falls back to sections model.",
 			},
 			{
 				key: "insights.model_facets",
 				label: "Facets Model",
-				subtitle: "Model for per-session facet extraction",
+				subtitle: "Model for per-session facet extraction (e.g. Haiku)",
 				tooltip:
-					"Model used for extracting structured facets from individual sessions. Can be a smaller/cheaper model (e.g., Haiku) since it processes many sessions. Falls back to the base model.",
+					"Bedrock model ID for extracting structured facets from sessions. Use a cheap model here since it runs many times. Example: us.anthropic.claude-haiku-4-5-20251001-v1:0",
 			},
 			{
 				key: "insights.batch_enabled",
 				label: "Batch Processing",
 				subtitle: "Enable automatic insight report generation",
 				tooltip:
-					"When true, the system automatically generates insight reports on a schedule for agents with enough new sessions. Disable to only generate reports manually.",
+					"When true, the system automatically generates insight reports on a schedule for agents with enough new sessions.",
 			},
 			{
 				key: "insights.batch_period_days",
@@ -272,21 +237,21 @@ const SETTING_SECTIONS: SettingSection[] = [
 				label: "Minimum Sessions",
 				subtitle: "Sessions required to trigger a report",
 				tooltip:
-					"An agent needs at least this many new sessions since the last report before a new one is generated. Prevents thin reports with insufficient data.",
+					"An agent needs at least this many new sessions since the last report before a new one is generated.",
 			},
 			{
 				key: "insights.facet_max_calls",
 				label: "Max Facet Calls",
 				subtitle: "LLM call limit per report for facet extraction",
 				tooltip:
-					"Maximum number of LLM calls for extracting facets in a single report. Higher = more thorough but slower and costlier. Default 100.",
+					"Maximum number of LLM calls for extracting facets in a single report. Higher = more thorough but costlier. Default 100.",
 			},
 			{
 				key: "insights.facet_concurrency",
 				label: "Facet Concurrency",
 				subtitle: "Parallel LLM calls for facet extraction",
 				tooltip:
-					"How many facet extraction calls to run in parallel. Higher = faster but more API load. Keep below your provider's rate limit. Default 25.",
+					"How many facet extraction calls to run in parallel. Keep below your provider's rate limit. Default 25.",
 			},
 		],
 	},

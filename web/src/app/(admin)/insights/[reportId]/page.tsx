@@ -4,7 +4,7 @@
 
 "use client";
 
-import { use } from "react";
+import React, { use } from "react";
 import Link from "next/link";
 import {
 	ArrowLeft,
@@ -29,6 +29,9 @@ import {
 	Target,
 	Shield,
 	Download,
+	MessageSquare,
+	Copy,
+	Check,
 } from "lucide-react";
 import { useInsightReport } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
@@ -119,21 +122,21 @@ function AtAGlance({ data }: { data: unknown }) {
 		);
 	}
 
-	// V2 structured format
+	// V3 structured format (4-panel like pi /insights)
 	const obj = data as Record<string, string>;
-	const sections = [
-		{ key: "whats_working", label: "What's working", color: "text-success" },
-		{
-			key: "whats_hindering",
-			label: "What's hindering",
-			color: "text-destructive",
-		},
-		{ key: "quick_win", label: "Quick win", color: "text-primary-accent" },
+	const panels = [
+		{ key: "whats_working", label: "What's Working", color: "text-success", borderColor: "border-success/30" },
+		{ key: "whats_hindering", label: "What's Hindering", color: "text-destructive", borderColor: "border-destructive/30" },
+		{ key: "quick_win", label: "Quick Wins", color: "text-primary-accent", borderColor: "border-primary-accent/30" },
+		{ key: "ambitious_workflows", label: "Ambitious Workflows", color: "text-purple-400", borderColor: "border-purple-400/30" },
 	];
 
+	const hasContent = panels.some(({ key }) => obj[key]);
+	if (!hasContent) return null;
+
 	return (
-		<div className="rounded-lg border border-primary-accent/20 bg-primary-accent/5 p-5">
-			<div className="flex items-center justify-between mb-4">
+		<div className="rounded-lg border border-border overflow-hidden">
+			<div className="flex items-center justify-between px-5 py-3 border-b border-border bg-card">
 				<div className="flex items-center gap-2">
 					<Lightbulb className="h-4 w-4 text-primary-accent" />
 					<h3 className="font-[family-name:var(--font-display)] text-sm font-semibold">
@@ -154,15 +157,17 @@ function AtAGlance({ data }: { data: unknown }) {
 					</span>
 				)}
 			</div>
-			<div className="space-y-3">
-				{sections.map(
+			<div className="divide-y divide-border">
+				{panels.map(
 					({ key, label, color }) =>
 						obj[key] && (
-							<div key={key} className="flex gap-3 text-sm">
-								<span className={`font-semibold shrink-0 ${color}`}>
-									{label}:
-								</span>
-								<span className="text-foreground/80">{obj[key]}</span>
+							<div key={key} className="px-5 py-4">
+								<h4 className={`text-xs font-semibold uppercase tracking-wider mb-2 ${color}`}>
+									{label}
+								</h4>
+								<p className="text-sm text-foreground/80 leading-relaxed">
+									{obj[key]}
+								</p>
 							</div>
 						),
 				)}
@@ -414,7 +419,160 @@ function FrictionSection({ data }: { data: unknown }) {
 	);
 }
 
-// ── Suggestions Section ──────────────────────────────────────────────────
+// ── Copy Button helper ─────────────────────────────────────────────────
+
+function CopyButton({ text, className }: { text: string; className?: string }) {
+	const [copied, setCopied] = React.useState(false);
+	return (
+		<button
+			className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border border-border hover:bg-muted/50 text-muted-foreground transition-colors ${className || ""}`}
+			onClick={() => {
+				navigator.clipboard.writeText(text);
+				setCopied(true);
+				setTimeout(() => setCopied(false), 2000);
+			}}
+		>
+			{copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+			{copied ? "Copied" : "Copy"}
+		</button>
+	);
+}
+
+// ── Interaction Style Section ──────────────────────────────────────────
+
+function InteractionStyleSection({ data }: { data: unknown }) {
+	if (!data || typeof data !== "object") return null;
+	const obj = data as { narrative?: string; key_pattern?: string };
+	if (!obj.narrative) return null;
+
+	return (
+		<div className="rounded-lg border border-border bg-card">
+			<div className="flex items-center gap-2 px-5 py-3 border-b border-border">
+				<MessageSquare className="h-4 w-4 text-primary-accent" />
+				<h3 className="font-[family-name:var(--font-display)] text-sm font-semibold">
+					Interaction Style
+				</h3>
+			</div>
+			<div className="px-5 py-4 space-y-4">
+				<div
+					className="text-sm leading-relaxed text-foreground/80"
+					dangerouslySetInnerHTML={{
+						__html: obj.narrative
+							.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+							.replace(/\n\n/g, "</p><p>")
+							.replace(/\n/g, "<br>"),
+					}}
+				/>
+				{obj.key_pattern && (
+					<div className="px-4 py-3 rounded-md border border-primary-accent/20 bg-primary-accent/5 text-sm italic text-primary-accent">
+						&ldquo;{obj.key_pattern}&rdquo;
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
+// ── Facets Bar Chart Section ──────────────────────────────────────────
+
+function FacetsCharts({ facets }: { facets: Record<string, unknown> | undefined }) {
+	if (!facets) return null;
+
+	const goalCats = (facets.goal_categories || []) as [string, number][];
+	const outcomes = facets.outcomes as Record<string, number> | undefined;
+	const satisfaction = facets.satisfaction as Record<string, number> | undefined;
+	const frictionTypes = (facets.friction_types || []) as [string, number][];
+
+	const hasData = goalCats.length > 0 || outcomes || satisfaction || frictionTypes.length > 0;
+	if (!hasData) return null;
+
+	const renderBarChart = (items: [string, number][], color: string) => {
+		const max = items[0]?.[1] || 1;
+		return items.slice(0, 8).map(([name, count]) => (
+			<div key={name} className="flex items-center gap-2 mb-1.5 text-xs">
+				<span className="w-36 shrink-0 text-muted-foreground truncate capitalize">
+					{name.replace(/_/g, " ")}
+				</span>
+				<div className="flex-1 h-2.5 bg-muted/30 rounded-full overflow-hidden">
+					<div
+						className={`h-full rounded-full transition-all ${color}`}
+						style={{ width: `${(count / max) * 100}%` }}
+					/>
+				</div>
+				<span className="w-10 text-right text-muted-foreground tabular-nums font-mono">{count}</span>
+			</div>
+		));
+	};
+
+	const renderRecordChart = (rec: Record<string, number>, color: string) => {
+		const sorted = Object.entries(rec).sort((a, b) => b[1] - a[1]);
+		return renderBarChart(sorted as [string, number][], color);
+	};
+
+	return (
+		<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+			{goalCats.length > 0 && (
+				<div className="rounded-lg border border-border bg-card p-4">
+					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Goal Categories</h3>
+					{renderBarChart(goalCats, "bg-primary-accent")}
+				</div>
+			)}
+			{outcomes && Object.keys(outcomes).length > 0 && (
+				<div className="rounded-lg border border-border bg-card p-4">
+					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Outcomes</h3>
+					{renderRecordChart(outcomes, "bg-amber-400")}
+				</div>
+			)}
+			{satisfaction && Object.keys(satisfaction).length > 0 && (
+				<div className="rounded-lg border border-border bg-card p-4">
+					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Satisfaction</h3>
+					{renderRecordChart(satisfaction, "bg-violet-400")}
+				</div>
+			)}
+			{frictionTypes.length > 0 && (
+				<div className="rounded-lg border border-border bg-card p-4">
+					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Friction Types</h3>
+					{renderBarChart(frictionTypes, "bg-destructive/60")}
+				</div>
+			)}
+		</div>
+	);
+}
+
+// ── Project Areas Section ──────────────────────────────────────────────
+
+function ProjectAreas({ data }: { data: unknown }) {
+	if (!data || typeof data !== "object") return null;
+	const obj = data as { areas?: { name: string; sessions: number; description: string }[] };
+	const areas = obj.areas;
+	if (!areas || areas.length === 0) return null;
+
+	return (
+		<div className="rounded-lg border border-border bg-card">
+			<div className="flex items-center gap-2 px-5 py-3 border-b border-border">
+				<Target className="h-4 w-4 text-primary-accent" />
+				<h3 className="font-[family-name:var(--font-display)] text-sm font-semibold">
+					Project Areas
+				</h3>
+			</div>
+			<div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+				{areas.map((area, i) => (
+					<div key={i} className="rounded-md border border-border bg-muted/10 p-3">
+						<div className="flex items-center justify-between mb-1">
+							<div className="font-medium text-sm">{area.name}</div>
+							<span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+								{area.sessions} sessions
+							</span>
+						</div>
+						<p className="text-sm text-foreground/60">{area.description}</p>
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
+// ── Suggestions Section (V4: config_additions + features + patterns) ──
 
 function SuggestionsSection({ data }: { data: unknown }) {
 	if (!data) return null;
@@ -431,12 +589,18 @@ function SuggestionsSection({ data }: { data: unknown }) {
 	}
 
 	const obj = data as Record<string, unknown>;
-	const intro = obj.intro as string | undefined;
-	const items = obj.items as
-		| { title: string; action: string; why: string; priority: string }[]
-		| undefined;
 
-	if (!items || items.length === 0) return null;
+	// V4 format
+	const configAdditions = obj.config_additions as { addition: string; why: string; where: string }[] | undefined;
+	const featuresToTry = obj.features_to_try as { feature: string; one_liner: string; why_for_you: string; example: string }[] | undefined;
+	const usagePatterns = obj.usage_patterns as { title: string; suggestion: string; detail: string; copyable_prompt: string }[] | undefined;
+
+	// V3 fallback
+	const items = obj.items as { title: string; action: string; why: string; priority: string }[] | undefined;
+
+	const hasV4 = (configAdditions && configAdditions.length > 0) || (featuresToTry && featuresToTry.length > 0) || (usagePatterns && usagePatterns.length > 0);
+
+	if (!hasV4 && (!items || items.length === 0)) return null;
 
 	return (
 		<div className="rounded-lg border border-border bg-card">
@@ -446,9 +610,79 @@ function SuggestionsSection({ data }: { data: unknown }) {
 					Suggestions
 				</h3>
 			</div>
-			<div className="px-5 py-4 space-y-3">
-				{intro && <p className="text-sm text-muted-foreground mb-3">{intro}</p>}
-				{items.map((item, i) => (
+			<div className="px-5 py-4 space-y-6">
+				{/* V4: Config Additions */}
+				{configAdditions && configAdditions.length > 0 && (
+					<div>
+						<h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Config Additions</h4>
+						<p className="text-xs text-muted-foreground mb-3">Add these to your agent&apos;s system prompt or AGENTS.md.</p>
+						<div className="space-y-2">
+							{configAdditions.map((c, i) => (
+								<div key={i} className="rounded-md border border-border bg-muted/10 p-3">
+									<div className="flex items-start justify-between gap-3">
+										<div className="flex-1">
+											<span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground mr-2">{c.where}</span>
+											<span className="text-sm font-medium">{c.addition}</span>
+										</div>
+										<CopyButton text={c.addition} />
+									</div>
+									{c.why && <p className="text-xs text-muted-foreground mt-2 italic">Why: {c.why}</p>}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* V4: Features to Try */}
+				{featuresToTry && featuresToTry.length > 0 && (
+					<div>
+						<h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Features to Try</h4>
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+							{featuresToTry.map((f, i) => (
+								<div key={i} className="rounded-md border border-border bg-muted/10 p-3">
+									<span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{f.feature}</span>
+									<div className="font-medium text-sm mt-2">{f.one_liner}</div>
+									<p className="text-xs text-foreground/60 mt-1">{f.why_for_you}</p>
+									{f.example && (
+										<>
+											<pre className="mt-2 p-2 rounded bg-muted/30 text-xs font-[family-name:var(--font-mono)] text-foreground/70 whitespace-pre-wrap break-all">
+												{f.example}
+											</pre>
+											<CopyButton text={f.example} className="mt-1" />
+										</>
+									)}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* V4: Usage Patterns with copyable prompts */}
+				{usagePatterns && usagePatterns.length > 0 && (
+					<div>
+						<h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Usage Patterns</h4>
+						<div className="space-y-3">
+							{usagePatterns.map((p, i) => (
+								<div key={i} className="rounded-md border border-border bg-muted/10 p-3">
+									<div className="font-medium text-sm">{p.title}</div>
+									<p className="text-sm text-foreground/70 mt-1">{p.suggestion}</p>
+									<p className="text-xs text-muted-foreground mt-2">{p.detail}</p>
+									{p.copyable_prompt && (
+										<>
+											<pre className="mt-2 p-2 rounded bg-muted/30 text-xs font-[family-name:var(--font-mono)] text-foreground/70 whitespace-pre-wrap break-all">
+												{p.copyable_prompt}
+											</pre>
+											<CopyButton text={p.copyable_prompt} className="mt-1" />
+										</>
+									)}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* V3 fallback: items array */}
+				{!hasV4 && items && items.map((item, i) => (
 					<div
 						key={i}
 						className="rounded-md border border-border bg-muted/10 p-3"
@@ -472,6 +706,44 @@ function SuggestionsSection({ data }: { data: unknown }) {
 							<div className="text-xs text-muted-foreground mt-2 italic">
 								{item.why}
 							</div>
+						)}
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
+// ── On the Horizon Section ──────────────────────────────────────────────
+
+function OnTheHorizon({ data }: { data: unknown }) {
+	if (!data || typeof data !== "object") return null;
+	const obj = data as { intro?: string; opportunities?: { title: string; whats_possible: string; how_to_try: string; copyable_prompt: string }[] };
+	const opportunities = obj.opportunities;
+	if (!opportunities || opportunities.length === 0) return null;
+
+	return (
+		<div className="rounded-lg border border-border bg-card">
+			<div className="flex items-center gap-2 px-5 py-3 border-b border-border">
+				<Zap className="h-4 w-4 text-violet-400" />
+				<h3 className="font-[family-name:var(--font-display)] text-sm font-semibold">
+					On the Horizon
+				</h3>
+			</div>
+			<div className="px-5 py-4 space-y-4">
+				{obj.intro && <p className="text-sm text-muted-foreground">{obj.intro}</p>}
+				{opportunities.map((opp, i) => (
+					<div key={i} className="rounded-md border border-border bg-muted/10 p-4">
+						<div className="font-medium text-sm text-violet-300">{opp.title}</div>
+						<p className="text-sm text-foreground/70 mt-2">{opp.whats_possible}</p>
+						<p className="text-xs text-muted-foreground mt-2">{opp.how_to_try}</p>
+						{opp.copyable_prompt && (
+							<>
+								<pre className="mt-2 p-2 rounded bg-muted/30 text-xs font-[family-name:var(--font-mono)] text-foreground/70 whitespace-pre-wrap break-all">
+									{opp.copyable_prompt}
+								</pre>
+								<CopyButton text={opp.copyable_prompt} className="mt-1" />
+							</>
 						)}
 					</div>
 				))}
@@ -1110,73 +1382,161 @@ function formatItem(item: unknown): string {
 
 // ── Main Report Content ─────────────────────────────────────────────────
 
+// ── Main Report Content ─────────────────────────────────────────────────
+
 function ReportContent({ report }: { report: InsightReport }) {
 	const metrics = report.metrics;
 	const narrative = report.narrative;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const rich = (metrics as any)?.rich as Record<string, unknown> | undefined;
+	// facets_summary is stored inside aggregated_data by the batch job
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const aggData = (report as any)?.aggregated_data as Record<string, unknown> | undefined;
+	const facetsSummary = (aggData?.facets_summary || report.facets_summary) as Record<string, unknown> | undefined;
 
 	const totalSessions = Number(metrics?.overview?.total_sessions) || 0;
 	const uniqueUsers = Number(metrics?.overview?.unique_users) || 0;
-	const totalTokens = Number(metrics?.tokens?.total_tokens) || 0;
-	const avgDuration = Number(metrics?.duration?.avg_duration_seconds) || 0;
+	const inputTokens = Number(rich?.total_input_tokens || metrics?.tokens?.total_input_tokens) || 0;
+	const outputTokens = Number(rich?.total_output_tokens || metrics?.tokens?.total_output_tokens) || 0;
+	const cacheReadTokens = Number(rich?.total_cache_read_tokens || metrics?.tokens?.total_cache_read_tokens) || 0;
+	const cacheWriteTokens = Number(rich?.total_cache_write_tokens || metrics?.tokens?.total_cache_write_tokens) || 0;
+	const totalCost = Number(rich?.total_cost_usd || metrics?.cost?.total_cost_usd) || 0;
+	const activeHours = Number(rich?.active_hours) || 0;
+	const daysActive = Number(rich?.days_active) || 0;
+	const totalMessages = Number(rich?.total_messages) || 0;
+	const linesAdded = Number(rich?.lines_added) || 0;
+	const linesRemoved = Number(rich?.lines_removed) || 0;
+	const gitCommits = Number(rich?.git_commits) || 0;
+	const gitPushes = Number(rich?.git_pushes) || 0;
+	const filesModified = Number(rich?.files_modified) || 0;
+	const toolErrors = Number(rich?.tool_errors || metrics?.errors?.error_events) || 0;
+	const interruptions = Number(rich?.interruptions) || 0;
+	const subagentSessions = Number(rich?.subagent_sessions) || 0;
+	const mcpSessions = Number(rich?.mcp_sessions) || 0;
 	const toolCalls = Number(metrics?.errors?.total_tool_calls) || 0;
+	const topTools = (rich?.top_tools || []) as [string, number][];
+	const topLanguages = (rich?.top_languages || []) as [string, number][];
+	const toolErrorCats = (rich?.tool_error_categories || {}) as Record<string, number>;
 
-	const formatTokens = (n: number) => {
+	const fmt = (n: number) => {
 		if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-		if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+		if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
 		return n.toString();
 	};
 
-	const formatDuration = (seconds: number) => {
-		if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)}h`;
-		if (seconds >= 60) return `${(seconds / 60).toFixed(0)}m`;
-		return `${seconds.toFixed(0)}s`;
-	};
+	const fmtHours = (h: number) => h < 1 ? `${Math.round(h * 60)}m` : `${h.toFixed(1)}h`;
 
 	return (
 		<div className="space-y-6">
-			{/* At a Glance */}
+			{/* At a Glance (4-panel executive summary) */}
 			<AtAGlance data={narrative?.at_a_glance} />
 
-			{/* Metrics Grid */}
+			{/* Stats Overview (matching pi /insights layout) */}
 			<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-				<MetricCard label="Sessions" value={totalSessions} icon={Zap} />
-				<MetricCard label="Users" value={uniqueUsers} icon={Users} />
-				<MetricCard
-					label="Tokens"
-					value={formatTokens(totalTokens)}
-					icon={Database}
-				/>
-				<MetricCard label="Tool Calls" value={toolCalls} icon={Wrench} />
-				<MetricCard
-					label="Avg Duration"
-					value={formatDuration(avgDuration)}
-					icon={Timer}
-				/>
+				<MetricCard label="Sessions" value={totalSessions} icon={Zap} subtext={daysActive > 0 ? `${daysActive} active days` : uniqueUsers > 1 ? `${uniqueUsers} users` : undefined} />
+				<MetricCard label="Messages" value={fmt(totalMessages)} icon={Database} subtext={totalSessions > 0 ? `${(totalMessages / totalSessions).toFixed(1)} per session` : undefined} />
+				<MetricCard label="Active Time" value={fmtHours(activeHours)} icon={Timer} subtext={daysActive > 0 ? `${(activeHours / daysActive).toFixed(1)}h/day` : undefined} />
+				<MetricCard label="Tokens In" value={fmt(inputTokens)} icon={Database} />
+				<MetricCard label="Tokens Out" value={fmt(outputTokens)} icon={Database} />
+				<MetricCard label="Cache Read" value={fmt(cacheReadTokens)} icon={Database} />
+				<MetricCard label="Cache Write" value={fmt(cacheWriteTokens)} icon={Database} />
+				{cacheReadTokens > 0 && <MetricCard label="Cache Efficiency" value={`${((cacheReadTokens / (cacheReadTokens + inputTokens)) * 100).toFixed(1)}%`} icon={Zap} />}
+				<MetricCard label="Total Cost" value={`$${totalCost.toFixed(2)}`} icon={DollarSign} subtext={totalSessions > 0 ? `$${(totalCost / totalSessions).toFixed(2)}/session` : undefined} />
+				<MetricCard label="Lines Added" value={fmt(linesAdded)} icon={Zap} />
+				<MetricCard label="Lines Removed" value={fmt(linesRemoved)} icon={AlertTriangle} />
+				<MetricCard label="Git Commits" value={gitCommits} icon={Wrench} subtext={gitPushes > 0 ? `${gitPushes} pushes` : undefined} />
+				<MetricCard label="Files Modified" value={fmt(filesModified)} icon={Database} />
+				<MetricCard label="Tool Errors" value={toolErrors} icon={AlertTriangle} />
+				<MetricCard label="Interruptions" value={interruptions} icon={AlertTriangle} />
+				{subagentSessions > 0 && <MetricCard label="Subagent Sessions" value={subagentSessions} icon={Users} />}
+				{mcpSessions > 0 && <MetricCard label="MCP Sessions" value={mcpSessions} icon={Wrench} />}
 			</div>
+
+			{/* Top Tools + Languages (bar charts like pi /insights) */}
+			{(topTools.length > 0 || topLanguages.length > 0) && (
+				<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+					{topTools.length > 0 && (
+						<div className="rounded-lg border border-border bg-card p-4">
+							<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Top Tools</h3>
+							{topTools.slice(0, 10).map(([name, count]) => {
+								const max = topTools[0]?.[1] || 1;
+								return (
+									<div key={name} className="flex items-center gap-2 mb-1.5 text-xs">
+										<span className="w-32 shrink-0 text-muted-foreground truncate capitalize">{name}</span>
+										<div className="flex-1 h-2.5 bg-muted/30 rounded-full overflow-hidden">
+											<div className="h-full bg-primary-accent rounded-full transition-all" style={{ width: `${(count / max) * 100}%` }} />
+										</div>
+										<span className="w-12 text-right text-muted-foreground tabular-nums font-mono">{fmt(count)}</span>
+									</div>
+								);
+							})}
+						</div>
+					)}
+					{topLanguages.length > 0 && (
+						<div className="rounded-lg border border-border bg-card p-4">
+							<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Languages</h3>
+							{topLanguages.map(([name, count]) => {
+								const max = topLanguages[0]?.[1] || 1;
+								return (
+									<div key={name} className="flex items-center gap-2 mb-1.5 text-xs">
+										<span className="w-32 shrink-0 text-muted-foreground truncate">{name}</span>
+										<div className="flex-1 h-2.5 bg-muted/30 rounded-full overflow-hidden">
+											<div className="h-full bg-teal-400 rounded-full transition-all" style={{ width: `${(count / max) * 100}%` }} />
+										</div>
+										<span className="w-12 text-right text-muted-foreground tabular-nums font-mono">{fmt(count)}</span>
+									</div>
+								);
+							})}
+						</div>
+					)}
+				</div>
+			)}
+
+			{/* Tool Error Categories */}
+			{Object.keys(toolErrorCats).length > 0 && (
+				<div className="rounded-lg border border-border bg-card p-4">
+					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Tool Error Breakdown</h3>
+					{Object.entries(toolErrorCats).sort((a, b) => b[1] - a[1]).map(([cat, count]) => {
+						const max = Object.values(toolErrorCats).reduce((a, b) => Math.max(a, b), 1);
+						return (
+							<div key={cat} className="flex items-center gap-2 mb-1.5 text-xs">
+								<span className="w-32 shrink-0 text-muted-foreground truncate capitalize">{cat.replace(/_/g, " ")}</span>
+								<div className="flex-1 h-2.5 bg-muted/30 rounded-full overflow-hidden">
+									<div className="h-full bg-destructive/60 rounded-full" style={{ width: `${(count / max) * 100}%` }} />
+								</div>
+								<span className="w-12 text-right text-muted-foreground tabular-nums font-mono">{count}</span>
+							</div>
+						);
+					})}
+				</div>
+			)}
+
+			{/* Facets Charts (Goals, Outcomes, Satisfaction, Friction) */}
+			<FacetsCharts facets={facetsSummary} />
+
+			{/* Project Areas */}
+			<ProjectAreas data={narrative?.what_they_work_on} />
 
 			{/* Usage Patterns */}
 			<UsagePatterns data={narrative?.usage_patterns} />
 
-			{/* What Works */}
+			{/* Interaction Style */}
+			<InteractionStyleSection data={narrative?.interaction_style} />
+
+			{/* What Works (Impressive Workflows) */}
 			<StrengthsSection data={narrative?.what_works} />
 
-			{/* Friction */}
+			{/* Friction Analysis */}
 			<FrictionSection data={narrative?.friction_analysis} />
 
 			{/* Suggestions */}
 			<SuggestionsSection data={narrative?.suggestions} />
 
-			{/* Cost & Tokens */}
-			<TokenSection data={narrative?.token_optimization} metrics={metrics} />
+			{/* On the Horizon */}
+			<OnTheHorizon data={narrative?.on_the_horizon} />
 
-			{/* User Experience */}
-			<UserExperienceSection data={narrative?.user_experience} />
-
-			{/* Tools Table */}
-			<ToolsTable tools={metrics?.tools} />
-
-			{/* Error Categories */}
-			<ErrorCategories toolErrors={metrics?.tool_errors} />
+			{/* Cost & Token Efficiency */}
+			<TokenSection data={narrative?.usage_cost_analysis || narrative?.token_optimization} metrics={metrics} />
 
 			{/* Regression Detection */}
 			<RegressionSection
@@ -1191,8 +1551,8 @@ function ReportContent({ report }: { report: InsightReport }) {
 			{!narrative && metrics && (
 				<div className="rounded-lg border border-border bg-muted/30 p-5 text-center">
 					<p className="text-sm text-muted-foreground">
-						Narrative analysis unavailable. Configure a model to enable
-						LLM-powered insights.
+						Narrative analysis unavailable. Configure insights models in Settings to enable
+						LLM-powered analysis.
 					</p>
 				</div>
 			)}

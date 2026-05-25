@@ -634,17 +634,21 @@ export interface InsightMetrics {
 }
 
 export interface InsightNarrative {
-	// V2 structured format — each section is a structured object
+	// V3 structured format — each section is a structured object
 	// V1 fallback — each section is string[] | string
 	// The frontend handles both formats gracefully
 	at_a_glance: unknown;
+	what_they_work_on?: unknown;
 	usage_patterns: unknown;
+	interaction_style?: unknown;
 	user_experience?: unknown;
 	what_works?: unknown;
 	friction_analysis: unknown;
 	suggestions: unknown;
+	usage_cost_analysis?: unknown;
 	token_optimization?: unknown;
 	regression_detection?: unknown;
+	on_the_horizon?: unknown;
 	fun_ending?: unknown;
 	regressions?: InsightRegression[];
 }
@@ -667,6 +671,7 @@ export interface InsightReport {
 	period_end: string;
 	metrics: InsightMetrics | null;
 	narrative: InsightNarrative | null;
+	facets_summary: Record<string, unknown> | null;
 	sessions_analyzed: number;
 	llm_model_used: string | null;
 	error_message: string | null;
