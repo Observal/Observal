@@ -1,6 +1,6 @@
 {
   "name": "observal-pi",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Observal session telemetry for Pi \u2014 zero-dependency extension that pushes session traces to your Observal server",
   "keywords": [
     "pi-package",
