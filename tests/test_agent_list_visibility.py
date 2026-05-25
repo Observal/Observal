@@ -47,7 +47,6 @@ def mock_user(org_id, groups=None):
 
 
 @pytest.mark.asyncio
-@patch("api.routes.agent.crud.settings.DEPLOYMENT_MODE", "enterprise")
 async def test_private_agents_not_leaked_to_org_members(db_session):
     """
     Validates that a private agent is NOT returned in the agent list for users
@@ -124,35 +123,39 @@ async def test_private_agents_not_leaked_to_org_members(db_session):
     user1 = mock_user(org_id)
     app.dependency_overrides[optional_current_user] = lambda: user1
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
-    ) as client:
-        resp1 = await client.get("/api/v1/agents")
-        assert resp1.status_code == 200
-        data1 = resp1.json()
-        agent_names = [a["name"] for a in data1]
-
-        # User 1 should see the public agent, but NOT the private agents
-        assert "Public Agent" in agent_names
-        assert "Private Agent" not in agent_names
-        assert "Group Agent" not in agent_names
+    with patch("api.routes.agent.crud.settings") as ms:
+        ms.DEPLOYMENT_MODE = "enterprise"
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+        ) as client:
+            resp1 = await client.get("/api/v1/agents")
+            assert resp1.status_code == 200
+            data1 = resp1.json()
+            agent_names = [a["name"] for a in data1]
+    
+            # User 1 should see the public agent, but NOT the private agents
+            assert "Public Agent" in agent_names
+            assert "Private Agent" not in agent_names
+            assert "Group Agent" not in agent_names
 
     # User 2: User in the same org WITH "engineering" group
     user2 = mock_user(org_id, groups=["engineering"])
     app.dependency_overrides[optional_current_user] = lambda: user2
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
-    ) as client:
-        resp2 = await client.get("/api/v1/agents")
-        assert resp2.status_code == 200
-        data2 = resp2.json()
-        agent_names2 = [a["name"] for a in data2]
-
-        # User 2 should see the public agent AND the group agent, but NOT the strictly private agent
-        assert "Public Agent" in agent_names2
-        assert "Group Agent" in agent_names2
-        assert "Private Agent" not in agent_names2
+    with patch("api.routes.agent.crud.settings") as ms:
+        ms.DEPLOYMENT_MODE = "enterprise"
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+        ) as client:
+            resp2 = await client.get("/api/v1/agents")
+            assert resp2.status_code == 200
+            data2 = resp2.json()
+            agent_names2 = [a["name"] for a in data2]
+    
+            # User 2 should see the public agent AND the group agent, but NOT the strictly private agent
+            assert "Public Agent" in agent_names2
+            assert "Group Agent" in agent_names2
+            assert "Private Agent" not in agent_names2
 
     app.dependency_overrides.clear()
     print("\nSUCCESS: Agent listing API properly applies visibility filtering and group-based access control!")

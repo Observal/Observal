@@ -216,7 +216,12 @@ def get_effective_agent_permission(agent: "Agent", user: User | None) -> str:  #
             best_perm = access.permission
 
     # Retain org ID check explicitly for public agents
-    if best_perm == "none" and user.org_id is not None and agent.owner_org_id == user.org_id and agent.visibility == AgentVisibility.public:
+    if (
+        best_perm == "none"
+        and user.org_id is not None
+        and agent.owner_org_id == user.org_id
+        and agent.visibility == AgentVisibility.public
+    ):
         return "view"
 
     if best_perm == "none" and agent.visibility == AgentVisibility.public:
