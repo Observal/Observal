@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "observal-server"))
 
 # pyrefly: ignore [missing-import]
 from services.session_parsers import parse_raw_events
+
 # pyrefly: ignore [missing-import]
 from services.session_parsers.ingest_classify import get_classifier
 
@@ -244,9 +245,7 @@ class TestGeminiParserFixture:
         """
         events = self._events()
         fallthrough = [ev for ev in events if ev["event_name"] == ""]
-        assert fallthrough == [], (
-            f"Unexpected basic_event fallthroughs: {fallthrough!r}"
-        )
+        assert fallthrough == [], f"Unexpected basic_event fallthroughs: {fallthrough!r}"
 
     def test_fixture_event_count(self):
         """Verify the total event count for the full fixture.
@@ -291,9 +290,7 @@ class TestGeminiParserFixture:
         tool_events = [ev for ev in events if ev["event_name"] == "hook_posttooluse"]
         assert len(tool_events) == 1, f"Expected 1 posttooluse event, got {len(tool_events)}"
         tool_ev = tool_events[0]
-        assert "tool_response" in tool_ev["attributes"], (
-            "tool_response must be merged into posttooluse attributes"
-        )
+        assert "tool_response" in tool_ev["attributes"], "tool_response must be merged into posttooluse attributes"
         assert "Hello, world!" in tool_ev["attributes"]["tool_response"]
 
     def test_tool_use_attributes(self):
@@ -320,9 +317,7 @@ class TestGeminiParserFixture:
         """Timestamps from the JSONL should override the epoch sentinel row_ts."""
         events = self._events()
         for ev in events:
-            assert "1970-01-01" not in ev["timestamp"], (
-                f"Event should not carry epoch sentinel timestamp: {ev!r}"
-            )
+            assert "1970-01-01" not in ev["timestamp"], f"Event should not carry epoch sentinel timestamp: {ev!r}"
 
     def test_user_prompt_body(self):
         events = self._events()
@@ -412,7 +407,7 @@ class TestGeminiRegistryKey:
         spec = server_reg.IDE_REGISTRY["gemini-cli"]
         assert "session_parser" in spec, (
             "Server IDE_REGISTRY['gemini-cli'] is missing 'session_parser' key. "
-            "Add \"session_parser\": \"claude-code\" to observal-server/schemas/ide_registry.py"
+            'Add "session_parser": "claude-code" to observal-server/schemas/ide_registry.py'
         )
 
     def test_server_session_parser_is_claude_code(self):
@@ -433,9 +428,7 @@ class TestGeminiRegistryKey:
         cli_reg = importlib.import_module("observal_cli.ide_registry")
         server_val = server_reg.IDE_REGISTRY["gemini-cli"]["session_parser"]
         cli_val = cli_reg.IDE_REGISTRY["gemini-cli"]["session_parser"]
-        assert server_val == cli_val, (
-            f"session_parser mismatch: server={server_val!r}, cli={cli_val!r}"
-        )
+        assert server_val == cli_val, f"session_parser mismatch: server={server_val!r}, cli={cli_val!r}"
 
 
 # ---------------------------------------------------------------------------
