@@ -6,6 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Session listing and detail endpoints - backed by session_events table.
@@ -19,7 +20,7 @@ import asyncio
 import logging
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi_cache.decorator import cache
 from loguru import logger as optic
 from sqlalchemy import select
@@ -394,7 +395,7 @@ async def bind_session_agent(
             params,
         )
         if not ownership:
-            return {"error": "Session not found or access denied"}
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
 
     from redis.exceptions import RedisError
 
