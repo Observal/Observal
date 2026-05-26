@@ -198,9 +198,8 @@ async def _create_agent_version(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    is_owner = agent.created_by == current_user.id
-    is_co_maintainer = str(current_user.id) in [str(uid) for uid in (agent.co_maintainers or [])]
-    if not is_owner and not is_co_maintainer:
+    perm = get_effective_agent_permission(agent, current_user)
+    if perm != "owner":
         raise HTTPException(status_code=403, detail="Not authorized to release versions")
 
     # Duplicate check

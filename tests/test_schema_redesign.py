@@ -206,7 +206,7 @@ class TestAgentModelUpdate:
 
         cols = {c.name for c in Agent.__table__.columns}
         assert "latest_version_id" in cols
-        assert "co_maintainers" in cols
+        assert "co_authors" in cols
 
     def test_agent_version_has_download_metrics(self):
         from models.agent import AgentVersion

@@ -19,7 +19,7 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
-from api.deps import get_db, require_role, resolve_listing
+from api.deps import get_db, get_effective_component_permission, require_role, resolve_listing
 from models.mcp import ListingStatus
 from models.user import User, UserRole
 from schemas.component_version import VersionPublishRequest, VersionReviewRequest  # noqa: TC001
@@ -144,7 +144,7 @@ async def _publish_version(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Only the listing owner can publish versions")
 
     # Duplicate check

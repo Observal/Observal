@@ -126,7 +126,7 @@ const adminNav: NavItem[] = [
 		icon: Stethoscope,
 		minRole: "admin",
 	},
-	{ title: "Settings", href: "/settings", icon: Settings, minRole: "admin" },
+	{ title: "Settings", href: "/settings", icon: Settings, minRole: "super_admin" },
 ];
 
 export const allNavItems = [

@@ -194,6 +194,33 @@ def get_effective_agent_permission(agent: "Agent", user: User | None) -> str:  #
     if agent.created_by == user.id:
         return "owner"
 
+    # Co-authors have full owner-level access
+    if str(user.id) in [str(uid) for uid in (agent.co_authors or [])]:
+        return "owner"
+
+    user_role_level = ROLE_HIERARCHY.get(user.role, 999)
+    if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:
+        return "owner"  # admins can edit anything
+
+    return "view"
+
+
+def get_effective_component_permission(listing, user: User | None) -> str:
+    """Evaluate effective permission for a component listing: 'owner', 'view', or 'none'.
+
+    Works with McpListing, HookListing, SandboxListing, PromptListing.
+    Co-authors have full owner-level access (can edit, publish, manage co-authors).
+    """
+    if not user:
+        return "view"
+
+    if listing.submitted_by == user.id:
+        return "owner"
+
+    # Co-authors have full owner-level access
+    if str(user.id) in [str(uid) for uid in (listing.co_authors or [])]:
+        return "owner"
+
     user_role_level = ROLE_HIERARCHY.get(user.role, 999)
     if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:
         return "owner"  # admins can edit anything

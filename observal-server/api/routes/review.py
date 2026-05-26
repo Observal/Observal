@@ -142,6 +142,7 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
     agents_map = {a.id: a for a in agents_result.scalars().all()}
 
     user_ids = {a.created_by for a in agents_map.values()}
+    user_ids.update(v.released_by for v in seen_agents.values())
     user_map: dict[uuid.UUID, str] = {}
     if user_ids:
         rows = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
@@ -162,7 +163,7 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
                 "version": pending_ver.version,
                 "owner": a.owner or "",
                 "status": pending_ver.status.value,
-                "submitted_by": user_map.get(a.created_by, str(a.created_by)),
+                "submitted_by": user_map.get(pending_ver.released_by, str(pending_ver.released_by)),
                 "created_at": pending_ver.created_at.isoformat() if pending_ver.created_at else "",
                 "prompt": pending_ver.prompt or "",
                 "component_count": len(pending_ver.components) if pending_ver.components else 0,
@@ -473,7 +474,7 @@ async def get_review(
             "version": (ver.version if ver else "") or agent.version or "",
             "owner": agent.owner or "",
             "status": (ver.status.value if ver else agent.status.value),
-            "submitted_by": str(agent.created_by),
+            "submitted_by": str(ver.released_by if ver else agent.created_by),
             "created_at": agent.created_at.isoformat() if agent.created_at else None,
             "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
             "git_url": getattr(agent, "git_url", None),

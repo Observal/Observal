@@ -135,6 +135,25 @@ After `list`, use row numbers (1, 2, 3...) in subsequent commands.
 
 ---
 
+## Procedure: Manage Co-Authors
+
+Co-authors have full edit and publish access (equal to owner).
+
+```bash
+# List co-authors
+observal co-authors list agents <agent-id-or-name>
+
+# Add by email or username
+observal co-authors add agents <agent-id-or-name> user@example.com
+observal co-authors add agents <agent-id-or-name> @username
+
+# Remove by user UUID (from list output)
+observal co-authors remove agents <agent-id-or-name> <user-uuid>
+```
+
+Works for all entity types: `agents`, `mcps`, `skills`, `hooks`, `prompts`, `sandboxes`.
+
+
 ## Error Reference
 
 | Error | Fix |

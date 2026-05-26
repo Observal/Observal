@@ -18,6 +18,7 @@ from api.deps import (
     apply_visibility_filter,
     check_listing_visibility,
     get_db,
+    get_effective_component_permission,
     optional_current_user,
     require_role,
     resolve_listing,
@@ -237,14 +238,18 @@ async def get_mcp(
     optic.debug("mcp get: listing_id={}", listing_id)
     listing = await resolve_listing(McpListing, listing_id, db, require_status=ListingStatus.approved)
     if listing:
-        return McpListingResponse.model_validate(listing)
+        resp = McpListingResponse.model_validate(listing)
+        resp.user_permission = get_effective_component_permission(listing, current_user)
+        return resp
 
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
     if check_listing_visibility(listing, current_user):
-        return McpListingResponse.model_validate(listing)
+        resp = McpListingResponse.model_validate(listing)
+        resp.user_permission = get_effective_component_permission(listing, current_user)
+        return resp
 
     raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -261,7 +266,7 @@ async def install_mcp(
     listing = await resolve_listing(McpListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(McpListing, listing_id, db)
-        if not listing or listing.submitted_by != current_user.id:
+        if not listing or get_effective_component_permission(listing, current_user) != "owner":
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
 
     db.add(McpDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
@@ -338,7 +343,7 @@ async def update_mcp_draft(
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     if listing.status not in (ListingStatus.draft, ListingStatus.rejected, ListingStatus.pending):
         raise HTTPException(status_code=400, detail="Only draft, rejected, or pending listings can be edited")
@@ -405,7 +410,7 @@ async def start_edit_mcp(
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     ver = listing.latest_version
     if not ver:
@@ -429,7 +434,7 @@ async def cancel_edit_mcp(
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     ver = listing.latest_version
     if not ver:
@@ -449,7 +454,7 @@ async def submit_mcp_draft(
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     if listing.status not in (ListingStatus.draft, ListingStatus.rejected):
         raise HTTPException(status_code=400, detail="Listing is not a draft")
@@ -478,7 +483,7 @@ async def delete_mcp(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
-    if listing.submitted_by != current_user.id and not is_admin:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not authorized")
     if listing.status == ListingStatus.approved and not is_admin:
         raise HTTPException(status_code=400, detail="Cannot delete an approved listing. Contact an admin.")

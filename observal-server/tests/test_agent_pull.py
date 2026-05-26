@@ -80,7 +80,7 @@ def _make_agent(owner_id: uuid.UUID | None = None, *, with_approved_version: boo
     agent.owner = "testuser"
     agent.created_by = owner_id
     agent.owner_org_id = None
-    agent.co_maintainers = []
+    agent.co_authors = []
 
     if with_approved_version:
         ver = _make_version(agent.id)

@@ -88,7 +88,7 @@ class Agent(Base):
     owner_org_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
     )
-    co_maintainers: Mapped[list] = mapped_column(JSON, default=list)
+    co_authors: Mapped[list] = mapped_column(JSON, default=list)
     latest_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("agent_versions.id", use_alter=True, ondelete="SET NULL"),

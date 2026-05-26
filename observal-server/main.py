@@ -45,6 +45,7 @@ from api.routes.alert import router as alert_router
 from api.routes.audit import router as audit_router
 from api.routes.auth import router as auth_router
 from api.routes.bulk import router as bulk_router
+from api.routes.co_authors import router as co_authors_router
 from api.routes.component_source import router as component_source_router
 from api.routes.config import router as config_router
 from api.routes.dashboard import router as dashboard_router
@@ -389,6 +390,7 @@ app.include_router(alert_router)
 app.include_router(sessions_router)
 app.include_router(component_source_router)
 app.include_router(bulk_router)
+app.include_router(co_authors_router)
 app.include_router(config_router)
 app.include_router(registry_models_router)
 app.include_router(support_router)

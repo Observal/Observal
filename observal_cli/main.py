@@ -129,6 +129,7 @@ def _try_auto_update() -> None:
 
 from observal_cli.cmd_agent import agent_app
 from observal_cli.cmd_auth import auth_app, register_config
+from observal_cli.cmd_co_authors import co_authors_app
 from observal_cli.cmd_component import component_app
 from observal_cli.cmd_doctor import doctor_app
 from observal_cli.cmd_hook import hook_app
@@ -192,6 +193,7 @@ app.add_typer(admin_app, name="admin")
 app.add_typer(self_app, name="self")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(support_app, name="support")
+app.add_typer(co_authors_app, name="co-authors")
 app.add_typer(migrate_app, name="migrate")
 app.add_typer(logs_app, name="logs")
 

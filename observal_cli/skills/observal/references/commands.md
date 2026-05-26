@@ -71,6 +71,12 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal auth change-password`: Change your password.
   - `observal auth set-username`: Set or update your username.
 
+**`observal co-authors`**: Manage co-authors for agents and components
+
+  - `observal co-authors add`: Add a co-author to an agent or component.
+  - `observal co-authors list`: List co-authors for an agent or component.
+  - `observal co-authors remove`: Remove a co-author from an agent or component.
+
 **`observal component`**: Component version commands
 
 - `observal component version`: Manage component versions
