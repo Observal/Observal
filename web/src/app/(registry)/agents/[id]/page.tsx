@@ -23,7 +23,7 @@ import {
   Activity,
   Trash2,
 } from "lucide-react";
-import { useState, useCallback, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -55,6 +55,7 @@ import { DetailSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { AgentEditForm, type AgentEditFormProps } from "@/components/registry/agent-edit-form";
+import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
 import { compactNumber, copyToClipboard } from "@/lib/utils";
 import { DIMENSION_META } from "@/components/dashboard/score-overview";
 
@@ -213,6 +214,18 @@ export default function AgentDetailPage({
   const { data: versionsData } = useAgentVersions(id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const { data: versionDetail } = useAgentVersionDetail(id, selectedVersion);
+
+  // Co-authors
+  const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
+  useEffect(() => {
+    const token = sessionStorage.getItem("observal_access_token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch(`/api/v1/agents/${id}/co-authors`, { headers })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setCoAuthors(data))
+      .catch(() => {});
+  }, [id]);
 
   const storeSub = useCallback((cb: () => void) => {
     window.addEventListener("storage", cb);
@@ -669,6 +682,32 @@ export default function AgentDetailPage({
                     Publisher
                   </h3>
                   <p className="text-sm">{a.owner}</p>
+                </div>
+              )}
+
+              {/* Co-Authors: visible to owner/co-authors */}
+              {(a?.user_permission === "owner") && (
+                <div className="border border-border rounded-md p-4 space-y-3">
+                  <CoAuthorInput
+                    entityType="agents"
+                    entityId={id}
+                    coAuthors={coAuthors}
+                    onChange={setCoAuthors}
+                    canManage={true}
+                  />
+                </div>
+              )}
+              {/* Show co-authors read-only to everyone if any exist */}
+              {a?.user_permission !== "owner" && coAuthors.length > 0 && (
+                <div className="border border-border rounded-md p-4 space-y-2">
+                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                    Co-Authors
+                  </h3>
+                  <div className="space-y-1">
+                    {coAuthors.map((c) => (
+                      <p key={c.id} className="text-sm text-muted-foreground">{c.username || c.email}</p>
+                    ))}
+                  </div>
                 </div>
               )}
             </aside>

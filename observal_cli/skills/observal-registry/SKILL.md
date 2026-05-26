@@ -151,6 +151,24 @@ observal sandbox delete NAME --yes
 
 ---
 
+## Procedure: Manage Co-Authors
+
+Co-authors have equal access to the component owner (edit, publish, manage co-authors).
+
+```bash
+# List
+observal co-authors list mcps <id-or-name>
+
+# Add
+observal co-authors add skills <id-or-name> user@example.com
+
+# Remove
+observal co-authors remove hooks <id-or-name> <user-uuid>
+```
+
+Entity types: `mcps`, `skills`, `hooks`, `prompts`, `sandboxes`.
+
+
 ## Error Reference
 
 | Error | Fix |

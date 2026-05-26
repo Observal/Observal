@@ -6,4 +6,5 @@
 # Import sub-modules so they register their routes on the shared router.
 from . import crud, draft, install  # noqa: F401
 from ._router import router  # noqa: F401
+from .helpers import _load_agent, _resolve_component_names  # noqa: F401
 from .install import install_agent  # noqa: F401

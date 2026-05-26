@@ -205,7 +205,7 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
             version_id = uuid.uuid4()
 
             await conn.execute(
-                "INSERT INTO agents (id, name, owner, category, created_by, owner_org_id, co_maintainers, created_at, updated_at) "
+                "INSERT INTO agents (id, name, owner, category, created_by, owner_org_id, co_authors, created_at, updated_at) "
                 "VALUES ($1, $2, $3, $4, $5, $6, '[]'::jsonb, NOW(), NOW()) ON CONFLICT DO NOTHING",
                 agent_id,
                 agent_name,

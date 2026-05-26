@@ -9,8 +9,8 @@
 
 import { use } from "react";
 import { useSearchParams } from "next/navigation";
-import { useState, useCallback, useSyncExternalStore } from "react";
-import { Star, Check, Copy, ArrowLeft, History, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { Star, Check, Copy, ArrowLeft, History, Loader2, ArrowDownToLine, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   useRegistryItem,
@@ -37,6 +37,9 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { DetailSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
+import { IdeBadges } from "@/components/registry/ide-badges";
+import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
+import { compactNumber } from "@/lib/utils";
 
 function statusVariant(status?: string) {
   if (status === "approved") return "default" as const;
@@ -66,6 +69,19 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
     () => !!sessionStorage.getItem("observal_access_token"),
     () => false,
   );
+  const canEdit = isAuthenticated && (item?.user_permission === "owner");
+
+  // Co-authors
+  const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
+  useEffect(() => {
+    const token = sessionStorage.getItem("observal_access_token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch(`/api/v1/${type}/${id}/co-authors`, { headers })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setCoAuthors(data))
+      .catch(() => {});
+  }, [type, id]);
 
   const versions = versionsData?.items ?? [];
   // VersionDropdown expects AgentVersionSummary shape; ComponentVersionSummary is compatible
@@ -147,6 +163,8 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
               )}
             </div>
 
+            {/* Grid: Main + Sidebar */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8 items-start">
             {/* Tabs */}
             <Tabs defaultValue="overview">
               <TabsList>
@@ -168,13 +186,12 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
                     </span>
                   )}
                 </TabsTrigger>
-                {isAuthenticated && <TabsTrigger value="edit">Edit</TabsTrigger>}
+                {canEdit && <TabsTrigger value="edit">Edit</TabsTrigger>}
               </TabsList>
 
               <TabsContent value="overview" forceMount className="mt-6 data-[state=inactive]:hidden">
                 <div className="space-y-6 w-full min-h-[400px]">
                   <ComponentMetadata item={effectiveItem ?? item} />
-                  <MetricsSection entries={metricsEntries} />
                 </div>
               </TabsContent>
 
@@ -313,7 +330,7 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
                 </div>
               </TabsContent>
 
-              {isAuthenticated && (
+              {canEdit && (
                 <TabsContent value="edit" forceMount className="mt-6 data-[state=inactive]:hidden">
                   <div className="w-full min-h-[400px]">
                     <ComponentEditForm
@@ -327,6 +344,95 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
                 </TabsContent>
               )}
             </Tabs>
+
+            {/* Sidebar */}
+            <aside className="hidden lg:block space-y-5">
+              {/* Stats */}
+              <div className="border border-border rounded-md p-4 space-y-4">
+                <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                  Stats
+                </h3>
+                <div className="space-y-3">
+                  {effectiveVersion && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Version</span>
+                      <span className="font-mono font-medium">{effectiveVersion}</span>
+                    </div>
+                  )}
+                  {item.created_at && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Created</span>
+                      <span className="font-mono font-medium text-xs">{new Date(item.created_at).toLocaleDateString()}</span>
+                    </div>
+                  )}
+                  {metricsEntries.map(([key, val]) => (
+                    <div key={key} className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground capitalize">{key.replace(/_/g, " ")}</span>
+                      <span className="font-mono font-medium">{val}</span>
+                    </div>
+                  ))}
+                  {avgRating != null && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="inline-flex items-center gap-2 text-muted-foreground">
+                        <Star className="h-3.5 w-3.5" />
+                        Rating
+                      </span>
+                      <span className="font-mono font-medium">
+                        {avgRating.toFixed(1)}{" "}
+                        <span className="text-xs text-muted-foreground font-normal">({totalReviews})</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* IDE Compatibility */}
+              {Array.isArray(item.supported_ides) && (item.supported_ides as string[]).length > 0 && (
+                <div className="border border-border rounded-md p-4 space-y-3">
+                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                    IDE Compatibility
+                  </h3>
+                  <IdeBadges supportedIdes={item.supported_ides as string[]} max={7} />
+                </div>
+              )}
+
+              {/* Publisher */}
+              {!!item.owner && (
+                <div className="border border-border rounded-md p-4 space-y-2">
+                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                    Publisher
+                  </h3>
+                  <p className="text-sm">{String(item.owner)}</p>
+                </div>
+              )}
+
+              {/* Co-Authors (manageable by owner/co-author/admin) */}
+              {canEdit && (
+                <div className="border border-border rounded-md p-4 space-y-3">
+                  <CoAuthorInput
+                    entityType={type}
+                    entityId={id}
+                    coAuthors={coAuthors}
+                    onChange={setCoAuthors}
+                    canManage={true}
+                  />
+                </div>
+              )}
+              {/* Read-only co-authors for non-owners */}
+              {!canEdit && coAuthors.length > 0 && (
+                <div className="border border-border rounded-md p-4 space-y-2">
+                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                    Co-Authors
+                  </h3>
+                  <div className="space-y-1">
+                    {coAuthors.map((c) => (
+                      <p key={c.id} className="text-sm text-muted-foreground">{c.username || c.email}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </aside>
+            </div>
           </div>
         )}
       </div>
@@ -336,20 +442,34 @@ export default function ComponentDetailPage({ params }: { params: Promise<{ id: 
 
 function ComponentMetadata({ item }: { item: RegistryItem }) {
   const fields: { label: string; value: string; mono?: boolean; href?: string }[] = [];
-  if ("version" in item && item.version != null) fields.push({ label: "Version", value: String(item.version), mono: true });
   if ("git_url" in item && item.git_url != null) fields.push({ label: "Source", value: String(item.git_url), href: String(item.git_url) });
+  if ("command" in item && item.command != null) fields.push({ label: "Command", value: String(item.command), mono: true });
+  if ("url" in item && item.url != null) fields.push({ label: "URL", value: String(item.url), href: String(item.url) });
   if ("transport" in item && item.transport != null) fields.push({ label: "Transport", value: String(item.transport) });
-  if (item.created_at) fields.push({ label: "Created", value: new Date(item.created_at).toLocaleDateString() });
-  if ("owner" in item && item.owner != null) fields.push({ label: "Owner", value: String(item.owner) });
+  if ("framework" in item && item.framework != null) fields.push({ label: "Framework", value: String(item.framework) });
+  if ("docker_image" in item && item.docker_image != null) fields.push({ label: "Docker Image", value: String(item.docker_image), mono: true });
   if ("hook_type" in item && item.hook_type != null) fields.push({ label: "Hook Type", value: String(item.hook_type) });
   if ("trigger_event" in item && item.trigger_event != null) fields.push({ label: "Trigger Event", value: String(item.trigger_event) });
   if ("runtime" in item && item.runtime != null) fields.push({ label: "Runtime", value: String(item.runtime) });
   if ("image" in item && item.image != null) fields.push({ label: "Image", value: String(item.image), mono: true });
 
+  const setupInstructions = "setup_instructions" in item && item.setup_instructions ? String(item.setup_instructions) : null;
+  const changelog = "changelog" in item && item.changelog ? String(item.changelog) : null;
   const skillMd = "skill_md_content" in item && item.skill_md_content ? String(item.skill_md_content) : null;
   const promptTemplate = "template" in item && item.template ? String(item.template) : null;
   const promptText = "prompt_text" in item && item.prompt_text ? String(item.prompt_text) : null;
   const markdownContent = skillMd || promptTemplate || promptText;
+  const envVars = "environment_variables" in item && Array.isArray(item.environment_variables) ? item.environment_variables as { name: string; description?: string; required?: boolean }[] : [];
+
+  const hasContent = fields.length > 0 || markdownContent || setupInstructions || changelog || envVars.length > 0;
+
+  if (!hasContent) {
+    return (
+      <div className="rounded-md border border-dashed border-border p-8 text-center">
+        <p className="text-sm text-muted-foreground">No additional details available for this component.</p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -367,6 +487,32 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
           ))}
         </div>
       )}
+      {envVars.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Environment Variables</h3>
+          <div className="rounded-md border border-border divide-y divide-border">
+            {envVars.map((ev) => (
+              <div key={ev.name} className="px-3 py-2 flex items-center justify-between text-sm">
+                <code className="font-mono text-xs">{ev.name}</code>
+                <div className="flex items-center gap-2">
+                  {ev.description && <span className="text-xs text-muted-foreground">{ev.description}</span>}
+                  {ev.required && <Badge variant="secondary" className="text-[10px]">required</Badge>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {setupInstructions && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Setup Instructions</h3>
+          <div className="rounded-md border border-border bg-muted/20 p-4 overflow-y-auto max-h-[400px]">
+            <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{setupInstructions}</ReactMarkdown>
+            </div>
+          </div>
+        </div>
+      )}
       {markdownContent && (
         <div className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -375,6 +521,16 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
           <div className="rounded-md border border-border bg-muted/20 p-4 overflow-y-auto max-h-[600px]">
             <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdownContent}</ReactMarkdown>
+            </div>
+          </div>
+        </div>
+      )}
+      {changelog && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Changelog</h3>
+          <div className="rounded-md border border-border bg-muted/20 p-4 overflow-y-auto max-h-[300px]">
+            <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{changelog}</ReactMarkdown>
             </div>
           </div>
         </div>

@@ -43,7 +43,7 @@ def _make_agent(owner_id: uuid.UUID | None = None):
     agent.id = uuid.uuid4()
     agent.name = "my-agent"
     agent.created_by = owner_id or uuid.uuid4()
-    agent.co_maintainers = []
+    agent.co_authors = []
     agent.latest_version_id = None
     agent.latest_version = None
     return agent
@@ -438,18 +438,18 @@ async def test_create_version_not_owner_403():
 
 
 @pytest.mark.asyncio
-async def test_create_version_co_maintainer_allowed():
+async def test_create_version_co_author_allowed():
     """create_agent_version succeeds for a co-maintainer (not just owner)."""
     from api.routes.agent_versions import _create_agent_version
     from schemas.agent import AgentVersionCreateRequest
 
     owner_id = uuid.uuid4()
-    co_maintainer_id = uuid.uuid4()
+    co_author_id = uuid.uuid4()
     agent = _make_agent(owner_id)
-    agent.co_maintainers = [str(co_maintainer_id)]
+    agent.co_authors = [str(co_author_id)]
 
     co_user = _make_user()
-    co_user.id = co_maintainer_id
+    co_user.id = co_author_id
 
     req = AgentVersionCreateRequest(
         version=SEMVER_VALID,
