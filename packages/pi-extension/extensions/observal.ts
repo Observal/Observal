@@ -28,6 +28,8 @@ import * as path from "node:path";
 interface ObservalConfig {
   server_url: string;
   access_token: string;
+  agent_id?: string;
+  agent_version?: string;
 }
 
 interface CursorEntry {
@@ -137,7 +139,10 @@ export default function (pi: ExtensionAPI) {
       const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
       const data = JSON.parse(raw);
       if (!data.server_url || !data.access_token) return null;
-      return { server_url: data.server_url, access_token: data.access_token };
+      const config: ObservalConfig = { server_url: data.server_url, access_token: data.access_token };
+      if (data.active_agent?.id) config.agent_id = data.active_agent.id;
+      if (data.active_agent?.version) config.agent_version = data.active_agent.version;
+      return config;
     } catch {
       return null;
     }
@@ -217,6 +222,8 @@ export default function (pi: ExtensionAPI) {
         const payload = JSON.stringify({
           session_id: s.sessionId,
           ide: "pi",
+          agent_id: s.config!.agent_id ?? null,
+          agent_version: s.config!.agent_version ?? null,
           lines: chunk,
           start_offset: s.lineCount + offset,
           hook_event: opts.final && isLastChunk ? "SessionShutdown" : "AgentEnd",
@@ -342,6 +349,8 @@ export default function (pi: ExtensionAPI) {
           const payload = JSON.stringify({
             session_id: sessionId,
             ide: "pi",
+            agent_id: s.config?.agent_id ?? null,
+            agent_version: s.config?.agent_version ?? null,
             lines,
             start_offset: entry.line_count,
             hook_event: "CrashRecovery",

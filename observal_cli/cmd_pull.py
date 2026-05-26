@@ -614,6 +614,19 @@ def register_pull(app: typer.Typer):
                 )
             )
 
+            # For IDEs without a project-scoped cwd (e.g. pi), write the binding
+            # into the global config so the telemetry extension can attribute sessions.
+            if ide == "pi":
+                from observal_cli.config import load, save
+
+                cfg = load()
+                cfg["active_agent"] = {
+                    "id": str(agent_uuid),
+                    "name": agent_detail.get("name", resolved),
+                    "version": agent_version,
+                }
+                save(cfg)
+
             from observal_cli.audit import emit_cli_audit
 
             emit_cli_audit(
