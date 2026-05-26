@@ -151,6 +151,36 @@ class SkillListing(Base):
         self.latest_version.skill_md_content = value
 
     @property
+    def delivery_mode(self) -> str:
+        return self.latest_version.delivery_mode if self.latest_version else "git_fetch"
+
+    @delivery_mode.setter
+    def delivery_mode(self, value: str) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set delivery_mode")
+        self.latest_version.delivery_mode = value
+
+    @property
+    def script_content(self) -> str | None:
+        return self.latest_version.script_content if self.latest_version else None
+
+    @script_content.setter
+    def script_content(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set script_content")
+        self.latest_version.script_content = value
+
+    @property
+    def script_filename(self) -> str | None:
+        return self.latest_version.script_filename if self.latest_version else None
+
+    @script_filename.setter
+    def script_filename(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set script_filename")
+        self.latest_version.script_filename = value
+
+    @property
     def validated(self) -> bool:
         return self.latest_version.validated if self.latest_version else False
 
@@ -229,6 +259,9 @@ class SkillVersion(Base):
     git_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     git_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     skill_md_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_mode: Mapped[str] = mapped_column(String(20), server_default="git_fetch", nullable=False)
+    script_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    script_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     validated: Mapped[bool] = mapped_column(Boolean, default=False)
     target_agents: Mapped[list] = mapped_column(JSON, default=list)
     task_type: Mapped[str] = mapped_column(String(100), nullable=False)

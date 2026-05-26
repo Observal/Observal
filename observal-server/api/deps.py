@@ -186,7 +186,6 @@ def require_role(min_role: UserRole):
     return _check
 
 
-
 def get_effective_agent_permission(agent: "Agent", user: User | None) -> str:  # noqa: F821
     """Evaluate effective permission for an agent: 'owner', 'edit', 'view', or 'none'."""
     if not user:

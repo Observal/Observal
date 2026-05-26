@@ -61,8 +61,32 @@ async def submit_skill(
     description = req.description
     slash_command = req.slash_command
     skill_path = req.skill_path
+    delivery_mode = req.delivery_mode or "git_fetch"
+    script_content = req.script_content
+    script_filename = req.script_filename
 
-    if req.git_url:
+    if delivery_mode == "registry_direct":
+        # Registry direct: skill_md_content is required, no git validation
+        if not skill_md_content:
+            raise HTTPException(status_code=422, detail="skill_md_content is required for registry_direct delivery")
+        # Parse frontmatter for auto-fill using simple string ops (no regex on user data)
+        import re as _re
+
+        fm_match = _re.match(r"^---\r?\n([\s\S]*?)\r?\n---", skill_md_content)
+        if fm_match:
+            for line in fm_match.group(1).split("\n"):
+                if line.startswith("name:") and not name:
+                    name = line[5:].strip()
+                elif line.startswith("description:") and not description:
+                    val = line[12:].strip()
+                    # Strip surrounding quotes
+                    if len(val) >= 2 and val[0] in ("'", '"') and val[-1] == val[0]:
+                        val = val[1:-1]
+                    description = val
+                elif line.startswith("command:") and slash_command is None:
+                    slash_command = line[8:].strip().lstrip("/")
+        validated = True  # Content is inline, no need to fetch from git
+    elif req.git_url:
         try:
             analysis = await validate_skill_md(
                 req.git_url,
@@ -113,6 +137,9 @@ async def submit_skill(
         git_url=req.git_url,
         git_ref=req.git_ref,
         skill_md_content=skill_md_content,
+        delivery_mode=delivery_mode,
+        script_content=script_content,
+        script_filename=script_filename,
         validated=validated,
         target_agents=req.target_agents,
         task_type=req.task_type,
@@ -245,6 +272,9 @@ async def save_skill_draft(
         git_url=req.git_url,
         git_ref=req.git_ref,
         skill_md_content=req.skill_md_content,
+        delivery_mode=req.delivery_mode or "git_fetch",
+        script_content=req.script_content,
+        script_filename=req.script_filename,
         target_agents=req.target_agents,
         task_type=req.task_type,
         slash_command=req.slash_command,
@@ -289,6 +319,9 @@ async def update_skill_draft(
         "git_url",
         "git_ref",
         "skill_md_content",
+        "delivery_mode",
+        "script_content",
+        "script_filename",
         "target_agents",
         "task_type",
         "slash_command",

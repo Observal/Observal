@@ -250,11 +250,7 @@ async def list_agents(
     total = (await db.execute(count_stmt)).scalar_one()
     response.headers["X-Total-Count"] = str(total)
 
-    stmt = (
-        select(Agent)
-        .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-        .where(base_filter)
-    )
+    stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(base_filter)
     if search_filter is not None:
         stmt = stmt.where(search_filter)
     if org_filter is not None:
@@ -315,11 +311,7 @@ async def my_agents(
     optic.debug("my_agents called")
     from models.feedback import Feedback
 
-    stmt = (
-        select(Agent)
-        .where(Agent.created_by == current_user.id)
-        .order_by(Agent.created_at.desc())
-    )
+    stmt = select(Agent).where(Agent.created_by == current_user.id).order_by(Agent.created_at.desc())
     agents = (await db.execute(stmt)).scalars().all()
 
     agent_ids = [a.id for a in agents]

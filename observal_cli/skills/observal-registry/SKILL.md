@@ -57,9 +57,17 @@ Without `--git`, opens interactive JSON paste (accepts IDE config block, named c
 
 ### Skill
 
+Git-based (server validates SKILL.md from repo):
 ```bash
 observal skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --git-ref main
 ```
+
+Registry direct (inline SKILL.md + optional script, no git repo needed):
+```bash
+observal skill submit --skill-md ./SKILL.md --script ./run.sh --delivery-mode registry_direct
+```
+
+On install, registry_direct skills write `<skill-name>/SKILL.md` and `<skill-name>/scripts/<filename>` into the IDE skills directory.
 
 ### Hook
 

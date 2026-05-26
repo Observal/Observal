@@ -192,7 +192,8 @@ class TestInstallAgentStatusGating:
     @pytest.mark.asyncio
     @patch("api.routes.agent.install._load_agent")
     @patch("api.routes.agent.install._ds")
-    async def test_approved_agent_always_installable(self, mock_settings, mock_load):
+    @patch("services.download_tracker.record_agent_download", new_callable=AsyncMock)
+    async def test_approved_agent_always_installable(self, mock_download, mock_settings, mock_load):
         """Approved agents install regardless of ALLOW_DRAFT_INSTALL flag."""
         mock_settings.get_sync_bool.return_value = False
 

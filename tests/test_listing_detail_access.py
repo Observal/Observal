@@ -100,6 +100,9 @@ def _listing_mock(status=ListingStatus.approved, submitted_by=None):
     m.skill_path = "/"
     m.git_ref = None
     m.skill_md_content = None
+    m.delivery_mode = "git_fetch"
+    m.script_content = None
+    m.script_filename = None
     m.validated = False
     m.slash_command = None
     m.event = "PreToolUse"

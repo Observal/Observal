@@ -23,6 +23,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import type { RegistryType } from "@/lib/api";
@@ -181,6 +182,12 @@ export function SubmitComponentDialog({
 	const [skillGitRef, setSkillGitRef] = useState((d?.git_ref as string) ?? "");
 	const [skillMdContent, setSkillMdContent] = useState(
 		(d?.skill_md_content as string) ?? "",
+	);
+	const [skillScriptContent, setSkillScriptContent] = useState(
+		(d?.script_content as string) ?? "",
+	);
+	const [skillScriptFilename, setSkillScriptFilename] = useState(
+		(d?.script_filename as string) ?? "",
 	);
 	const [skillMode, setSkillMode] = useState<"git" | "paste">("git");
 
@@ -369,6 +376,8 @@ export function SubmitComponentDialog({
 		setSkillPathHint(null);
 		setSkillGitRef("");
 		setSkillMdContent("");
+		setSkillScriptContent("");
+		setSkillScriptFilename("");
 		setSkillMode("git");
 		setEvent("PreToolUse");
 		setHandlerType("command");
@@ -416,11 +425,17 @@ export function SubmitComponentDialog({
 				const skillBody: Record<string, unknown> = {
 					...base,
 					task_type: taskType,
-					git_url: skillGitUrl || undefined,
-					skill_path: skillPath || "/",
+					delivery_mode: skillMode === "paste" ? "registry_direct" : "git_fetch",
 				};
-				if (skillGitRef) skillBody.git_ref = skillGitRef;
-				if (skillMdContent) skillBody.skill_md_content = skillMdContent;
+				if (skillMode === "git") {
+					skillBody.git_url = skillGitUrl || undefined;
+					skillBody.skill_path = skillPath || "/";
+					if (skillGitRef) skillBody.git_ref = skillGitRef;
+				} else {
+					if (skillMdContent) skillBody.skill_md_content = skillMdContent;
+					if (skillScriptContent) skillBody.script_content = skillScriptContent;
+					if (skillScriptFilename) skillBody.script_filename = skillScriptFilename;
+				}
 				return skillBody;
 			}
 			case "hooks": {
@@ -869,116 +884,122 @@ export function SubmitComponentDialog({
 								</Select>
 							</div>
 
-							{/* Toggle: git-ref mode vs paste SKILL.md */}
-							<div className="flex items-center gap-2 text-xs">
-								<button
-									type="button"
-									onClick={() => setSkillMode("git")}
-									className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-										skillMode === "git"
-											? "bg-primary text-primary-foreground"
-											: "bg-muted/50 text-muted-foreground hover:bg-muted"
-									}`}
-								>
-									Git URL
-								</button>
-								<button
-									type="button"
-									onClick={() => setSkillMode("paste")}
-									className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-										skillMode === "paste"
-											? "bg-primary text-primary-foreground"
-											: "bg-muted/50 text-muted-foreground hover:bg-muted"
-									}`}
-								>
-									Paste SKILL.md
-								</button>
-							</div>
+							<Tabs value={skillMode} onValueChange={(v) => setSkillMode(v as "git" | "paste")} className="w-full">
+								<TabsList className="grid w-full grid-cols-2">
+									<TabsTrigger value="git">Git Submit</TabsTrigger>
+									<TabsTrigger value="paste">Registry Submit</TabsTrigger>
+								</TabsList>
 
-							{skillMode === "paste" && (
-								<div className="space-y-1.5">
-									<Label htmlFor="skill-md-content">SKILL.md content</Label>
-									<Textarea
-										id="skill-md-content"
-										value={skillMdContent}
-										onChange={(e) => {
-											const raw = e.target.value;
-											setSkillMdContent(raw);
-											// Auto-fill name/description from frontmatter
-											const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-											if (fmMatch) {
-												const lines = fmMatch[1].split(/\r?\n/);
-												for (const line of lines) {
-													const nm = line.match(/^name:\s*(.+)$/);
-													if (nm && !name) setName(nm[1].trim());
-													const dm = line.match(
-														/^description:\s*["']?(.+?)["']?$/,
-													);
-													if (dm && !description) setDescription(dm[1].trim());
-												}
-											}
-										}}
-										placeholder={`---\nname: my-skill\ndescription: What this skill does\ncommand: /my-skill\n---\n\n## Instructions\n...`}
-										rows={10}
-										className="font-mono text-xs"
-									/>
-									<p className="text-xs text-muted-foreground">
-										Frontmatter auto-fills name and description above. Git URL
-										is still required for install.
-									</p>
-								</div>
-							)}
-
-							<div className="grid grid-cols-2 gap-3">
-								<div className="space-y-1.5">
-									<Label htmlFor="skill-git-url">
-										Git URL{" "}
-										{skillMode === "git" ? "*" : "(required for install)"}
-									</Label>
-									<Input
-										id="skill-git-url"
-										value={skillGitUrl}
-										onChange={(e) => handleSkillGitUrl(e.target.value)}
-										placeholder="https://github.com/org/skills"
-									/>
-									{skillDiscovering && (
-										<p className="text-xs text-muted-foreground flex items-center gap-1">
-											<Loader2 className="h-3 w-3 animate-spin" />
-											Looking for SKILL.md…
-										</p>
-									)}
-									{skillPathHint && !skillDiscovering && (
-										<p
-											className={`text-xs ${skillPathAuto ? "text-green-600" : "text-amber-600"}`}
-										>
-											{skillPathHint}
-										</p>
-									)}
-								</div>
-								{!skillPathAuto && (
+								<TabsContent value="git" className="space-y-3 pt-3">
+									<div className="grid grid-cols-2 gap-3">
+										<div className="space-y-1.5">
+											<Label htmlFor="skill-git-url">Git URL *</Label>
+											<Input
+												id="skill-git-url"
+												value={skillGitUrl}
+												onChange={(e) => handleSkillGitUrl(e.target.value)}
+												placeholder="https://github.com/org/skills"
+											/>
+											{skillDiscovering && (
+												<p className="text-xs text-muted-foreground flex items-center gap-1">
+													<Loader2 className="h-3 w-3 animate-spin" />
+													Looking for SKILL.md…
+												</p>
+											)}
+											{skillPathHint && !skillDiscovering && (
+												<p
+													className={`text-xs ${skillPathAuto ? "text-green-600" : "text-amber-600"}`}
+												>
+													{skillPathHint}
+												</p>
+											)}
+										</div>
+										{!skillPathAuto && (
+											<div className="space-y-1.5">
+												<Label htmlFor="skill-path">Skill Path</Label>
+												<Input
+													id="skill-path"
+													value={skillPath}
+													onChange={(e) => {
+														setSkillPath(e.target.value);
+														setSkillPathAuto(false);
+													}}
+													placeholder="skills/my-skill"
+												/>
+											</div>
+										)}
+									</div>
 									<div className="space-y-1.5">
-										<Label htmlFor="skill-path">Skill Path</Label>
+										<Label htmlFor="skill-git-ref">Git Ref (branch / tag)</Label>
 										<Input
-											id="skill-path"
-											value={skillPath}
-											onChange={(e) => {
-												setSkillPath(e.target.value);
-												setSkillPathAuto(false);
-											}}
-											placeholder="skills/my-skill"
+											id="skill-git-ref"
+											value={skillGitRef}
+											onChange={(e) => setSkillGitRef(e.target.value)}
+											placeholder="main"
 										/>
 									</div>
-								)}
-							</div>
-							<div className="space-y-1.5">
-								<Label htmlFor="skill-git-ref">Git Ref (branch / tag)</Label>
-								<Input
-									id="skill-git-ref"
-									value={skillGitRef}
-									onChange={(e) => setSkillGitRef(e.target.value)}
-									placeholder="main"
-								/>
-							</div>
+								</TabsContent>
+
+								<TabsContent value="paste" className="space-y-3 pt-3">
+									<div className="space-y-1.5">
+										<Label htmlFor="skill-md-content">SKILL.md *</Label>
+										<Textarea
+											id="skill-md-content"
+											value={skillMdContent}
+											onChange={(e) => {
+												const raw = e.target.value;
+												setSkillMdContent(raw);
+												// Auto-fill name/description from frontmatter
+												const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+												if (fmMatch) {
+													const lines = fmMatch[1].split(/\r?\n/);
+													for (const line of lines) {
+														const nm = line.match(/^name:\s*(.+)$/);
+														if (nm && !name) setName(nm[1].trim());
+														const dm = line.match(
+															/^description:\s*["']?(.+?)["']?$/,
+														);
+														if (dm && !description) setDescription(dm[1].trim());
+													}
+												}
+											}}
+											placeholder={`---\nname: my-skill\ndescription: What this skill does\ncommand: /my-skill\n---\n\n## Instructions\n\nYour skill instructions here...`}
+											rows={10}
+											className="font-mono text-xs"
+										/>
+										<p className="text-xs text-muted-foreground">
+											Frontmatter auto-fills name and description above.
+										</p>
+									</div>
+									<div className="space-y-1.5">
+										<Label htmlFor="skill-script-filename">Script Filename (optional)</Label>
+										<Input
+											id="skill-script-filename"
+											value={skillScriptFilename}
+											onChange={(e) => setSkillScriptFilename(e.target.value)}
+											placeholder="run.sh"
+											className="font-mono"
+										/>
+										<p className="text-xs text-muted-foreground">
+											Name of the script file that will be written on install.
+										</p>
+									</div>
+									<div className="space-y-1.5">
+										<Label htmlFor="skill-script-content">Script (optional)</Label>
+										<Textarea
+											id="skill-script-content"
+											value={skillScriptContent}
+											onChange={(e) => setSkillScriptContent(e.target.value)}
+											placeholder={"#!/bin/bash\n# Script that the skill can invoke\n# Stored in the registry and delivered on install"}
+											rows={8}
+											className="font-mono text-xs"
+										/>
+										<p className="text-xs text-muted-foreground">
+											Script content stored in the registry and delivered on install. Similar to hook scripts.
+										</p>
+									</div>
+								</TabsContent>
+							</Tabs>
 						</>
 					)}
 

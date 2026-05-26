@@ -39,18 +39,13 @@ async def _load_agent(
     (needed for unarchive, delete, etc.).
     """
     try:
-        return await resolve_prefix_id(
-            Agent, agent_id, db, extra_conditions=extra_conditions
-        )
+        return await resolve_prefix_id(Agent, agent_id, db, extra_conditions=extra_conditions)
     except HTTPException:
         pass
 
     # Try the caller's own agent first
     if prefer_user_id is not None:
-        stmt = (
-            select(Agent)
-            .where(Agent.name == agent_id, Agent.created_by == prefer_user_id)
-        )
+        stmt = select(Agent).where(Agent.name == agent_id, Agent.created_by == prefer_user_id)
         if extra_conditions:
             stmt = stmt.where(*extra_conditions)
         mine = (await db.execute(stmt)).scalar_one_or_none()
@@ -58,11 +53,7 @@ async def _load_agent(
             return mine
 
     # Fall back to global name lookup
-    stmt = (
-        select(Agent)
-        .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-        .where(Agent.name == agent_id)
-    )
+    stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(Agent.name == agent_id)
     if not include_all_statuses:
         stmt = stmt.where(AgentVersion.status == AgentStatus.approved)
     if extra_conditions:

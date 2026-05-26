@@ -724,11 +724,7 @@ async def get_departments(
     if all_dept_user_ids:
         from models.agent import Agent
 
-        agent_rows = (
-            await db.execute(
-                select(Agent.created_by, func.count(Agent.id)).group_by(Agent.created_by)
-            )
-        ).all()
+        agent_rows = (await db.execute(select(Agent.created_by, func.count(Agent.id)).group_by(Agent.created_by))).all()
         user_agent_count: dict[str, int] = {str(r[0]): r[1] for r in agent_rows}
         for dept_name, user_ids in dept_map.items():
             agent_count_by_dept[dept_name] = sum(user_agent_count.get(uid, 0) for uid in user_ids)
