@@ -136,9 +136,9 @@ def doctor(
             env=env,
         )
         # Install the observal skill
-        from observal_cli.cmd_auth import _install_observal_skill
+        from observal_cli.skill_installer import install_observal_skill
 
-        _install_observal_skill()
+        install_observal_skill()
     elif fixable and not should_fix:
         rprint("[dim]  Run [bold]observal doctor patch --all --all-ides[/bold] anytime to fix.[/dim]")
 
