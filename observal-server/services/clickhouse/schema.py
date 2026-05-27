@@ -422,14 +422,10 @@ RESOURCE_SETTINGS_MAP: dict[str, tuple[str, type]] = {
     "resource.join_memory_mb": ("max_bytes_in_join", int),
 }
 
-# Safety floor applied to every ClickHouse query (SEC-026).
-DEFAULT_QUERY_SETTINGS: dict[str, str] = {
-    "max_execution_time": "300",  # 5 min ceiling
-}
+import services.clickhouse._settings as _ch_settings
 
-# Per-query overrides injected into every HTTP request.
-# Populated from enterprise_config on startup and when admin clicks "Apply".
-_resource_overrides: dict[str, str] = {}
+# Re-export for backwards compat
+DEFAULT_QUERY_SETTINGS = _ch_settings.DEFAULT_QUERY_SETTINGS
 
 
 async def apply_resource_settings(overrides: dict[str, str] | None = None):
@@ -437,7 +433,6 @@ async def apply_resource_settings(overrides: dict[str, str] | None = None):
 
     Reads from enterprise_config (Postgres) unless *overrides* is supplied.
     """
-    global _resource_overrides
     resource_values: dict[str, str] = {}
 
     if overrides is not None:
@@ -472,7 +467,7 @@ async def apply_resource_settings(overrides: dict[str, str] | None = None):
         except (ValueError, TypeError):
             logger.warning("Invalid resource setting %s=%s, skipping", config_key, raw)
 
-    _resource_overrides = new_overrides
+    _ch_settings._resource_overrides = new_overrides
     logger.info("ClickHouse resource overrides loaded: %s", new_overrides)
 
 

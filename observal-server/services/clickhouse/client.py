@@ -54,9 +54,7 @@ async def _query(sql: str, params: dict | None = None, *, data: str | None = Non
             newline.  Used for ``INSERT ... FORMAT JSONEachRow`` where each
             line in *data* is a JSON object.
     """
-    # Import here to avoid a circular dep: schema.py sets _resource_overrides,
-    # which is read here. Importing from schema at module level would create a cycle.
-    from services.clickhouse.schema import DEFAULT_QUERY_SETTINGS, _resource_overrides
+    from services.clickhouse._settings import DEFAULT_QUERY_SETTINGS, _resource_overrides
 
     client = _get_client()
     query_params: dict[str, str] = {

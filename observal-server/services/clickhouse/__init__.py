@@ -44,10 +44,10 @@ from services.clickhouse.schema import (
     INIT_SQL,
     RESOURCE_SETTINGS_MAP,
     _materialize_if_needed,
-    _resource_overrides,
     apply_resource_settings,
     init_clickhouse,
 )
+from services.clickhouse._settings import _resource_overrides
 
 __all__ = [
     "CLICKHOUSE_DB",
