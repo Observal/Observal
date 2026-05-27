@@ -18,7 +18,7 @@ from uuid import UUID
 import httpx
 from loguru import logger as optic
 
-from services.alert_evaluator import is_private_url
+from services.ssrf_guard import is_private_url
 from services.webhook_signer import HEADER_EVENT_ID, build_headers
 
 logger = logging.getLogger(__name__)

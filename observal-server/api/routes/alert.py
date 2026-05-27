@@ -24,7 +24,7 @@ from schemas.alert import (
     WebhookSecretRotateResponse,
     WebhookTestResponse,
 )
-from services.alert_evaluator import is_private_url
+from services.ssrf_guard import is_private_url
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
 
