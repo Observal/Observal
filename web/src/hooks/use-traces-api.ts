@@ -90,6 +90,7 @@ export function useRegistryItem(type: RegistryType, id: string | undefined) {
     queryKey: ["registry", type, id],
     enabled: !!id,
     queryFn: () => registry.get(type, id!),
+    staleTime: 0,
   });
 }
 
