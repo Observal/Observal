@@ -21,6 +21,9 @@ class SkillSubmitRequest(BaseModel):
     git_url: str | None = None
     git_ref: str | None = None
     skill_md_content: str | None = None
+    delivery_mode: str = "git_fetch"
+    script_content: str | None = None
+    script_filename: str | None = None
     target_agents: list[str] = []
     task_type: str
     slash_command: str | None = None
@@ -39,6 +42,9 @@ class SkillDraftRequest(BaseModel):
     git_url: str | None = None
     git_ref: str | None = None
     skill_md_content: str | None = None
+    delivery_mode: str = "git_fetch"
+    script_content: str | None = None
+    script_filename: str | None = None
     target_agents: list[str] = []
     task_type: str = "general"
     slash_command: str | None = None
@@ -56,6 +62,9 @@ class SkillUpdateRequest(BaseModel):
     git_url: str | None = None
     git_ref: str | None = None
     skill_md_content: str | None = None
+    delivery_mode: str | None = None
+    script_content: str | None = None
+    script_filename: str | None = None
     target_agents: list[str] | None = None
     task_type: str | None = None
     slash_command: str | None = None
@@ -75,6 +84,9 @@ class SkillListingResponse(BaseModel):
     git_url: str | None = None
     git_ref: str | None = None
     skill_md_content: str | None = None
+    delivery_mode: str = "git_fetch"
+    script_content: str | None = None
+    script_filename: str | None = None
     validated: bool = False
     slash_command: str | None = None
     status: ListingStatus
@@ -82,6 +94,13 @@ class SkillListingResponse(BaseModel):
     submitted_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    user_permission: str | None = None
+
+    @field_validator("user_permission", mode="before")
+    @classmethod
+    def _coerce_user_permission(cls, v):
+        return v if isinstance(v, str) else None
+
     model_config = {"from_attributes": True}
 
 

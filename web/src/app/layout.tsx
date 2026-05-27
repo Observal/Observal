@@ -3,30 +3,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { Metadata } from "next";
-import { Albert_Sans, Archivo, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import Providers from "./providers";
 import { VersionMismatchBanner } from "@/components/shared/version-mismatch-banner";
 
-const archivo = Archivo({
-  subsets: ["latin"],
+const archivo = localFont({
+  src: "../../public/fonts/archivo-latin-variable.woff2",
   variable: "--font-display",
   display: "swap",
-  weight: ["400", "500", "600", "700", "800", "900"],
+  weight: "400 900",
 });
 
-const albertSans = Albert_Sans({
-  subsets: ["latin"],
+const albertSans = localFont({
+  src: "../../public/fonts/albert-sans-latin-variable.woff2",
   variable: "--font-body",
   display: "swap",
-  weight: ["300", "400", "500", "600", "700"],
+  weight: "300 700",
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
+const jetbrainsMono = localFont({
+  src: "../../public/fonts/jetbrains-mono-latin-variable.woff2",
   variable: "--font-mono",
   display: "swap",
-  weight: ["400", "500", "600"],
+  weight: "400 600",
 });
 
 export const metadata: Metadata = {

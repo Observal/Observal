@@ -17,27 +17,9 @@ import {
 	DialogTitle,
 	DialogDescription,
 } from "@/components/ui/dialog";
-import { IDE_DISPLAY_NAMES, type IdeName } from "@/lib/ide-features";
+import { useIdes } from "@/hooks/use-ides";
 import { registry } from "@/lib/api";
 import type { ValidationResult } from "@/lib/types";
-
-// Curated display order for the builder preview (copilot-cli excluded)
-const IDE_DISPLAY_ORDER = [
-	"claude-code",
-	"cursor",
-	"kiro",
-	"gemini-cli",
-	"codex",
-	"copilot",
-	"opencode",
-] as const satisfies readonly IdeName[];
-
-const IDE_OPTIONS = IDE_DISPLAY_ORDER.map((ide) => ({
-	value: ide,
-	label: IDE_DISPLAY_NAMES[ide],
-}));
-
-type Ide = (typeof IDE_DISPLAY_ORDER)[number];
 
 interface PreviewPanelProps {
 	name: string;
@@ -331,9 +313,10 @@ export function PreviewPanel({
 	pendingComponentBodies,
 	validationResult,
 }: PreviewPanelProps) {
-	const [ide, setIde] = useState<Ide>("claude-code");
+	const { data: ideList } = useIdes();
+	const [ide, setIde] = useState("claude-code");
 	const [modalOpen, setModalOpen] = useState(false);
-	const [modalIde, setModalIde] = useState<Ide>("claude-code");
+	const [modalIde, setModalIde] = useState("claude-code");
 	const [fullConfigs, setFullConfigs] = useState<Record<
 		string,
 		Record<string, string>
@@ -379,6 +362,9 @@ export function PreviewPanel({
 			break;
 		case "opencode":
 			files = generateOpenCode(mcps, body);
+			break;
+		default:
+			files = generateClaudeCode(name, description, modelName ?? "", mcps, body);
 			break;
 	}
 
@@ -483,18 +469,18 @@ export function PreviewPanel({
 
 			{/* IDE selector */}
 			<div className="flex flex-wrap gap-1">
-				{IDE_OPTIONS.map((opt) => (
+				{(ideList ?? []).map((opt) => (
 					<button
-						key={opt.value}
+						key={opt.name}
 						type="button"
-						onClick={() => setIde(opt.value)}
+						onClick={() => setIde(opt.name)}
 						className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-							ide === opt.value
+							ide === opt.name
 								? "bg-primary text-primary-foreground"
 								: "bg-muted/50 text-muted-foreground hover:bg-muted"
 						}`}
 					>
-						{opt.label}
+						{opt.display_name}
 					</button>
 				))}
 			</div>
@@ -540,21 +526,21 @@ export function PreviewPanel({
 
 					{/* IDE tabs inside modal */}
 					<div className="flex flex-wrap gap-1 px-6 pt-3">
-						{IDE_OPTIONS.map((opt) => (
+						{(ideList ?? []).map((opt) => (
 							<button
-								key={opt.value}
+								key={opt.name}
 								type="button"
 								onClick={() => {
-									setModalIde(opt.value);
+									setModalIde(opt.name);
 									modalScrollRef.current?.scrollTo({ top: 0 });
 								}}
 								className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-									modalIde === opt.value
+									modalIde === opt.name
 										? "bg-primary text-primary-foreground"
 										: "bg-muted/50 text-muted-foreground hover:bg-muted"
 								}`}
 							>
-								{opt.label}
+								{opt.display_name}
 							</button>
 						))}
 					</div>

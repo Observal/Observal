@@ -17,14 +17,11 @@ export function useDeploymentConfig() {
 	});
 
 	return {
-		deploymentMode: data?.deployment_mode ?? "local",
+		licensed: data?.licensed ?? false,
 		ssoEnabled: data?.sso_enabled ?? false,
 		ssoOnly: data?.sso_only ?? false,
 		samlEnabled: data?.saml_enabled ?? false,
-		insightsAvailable: data?.insights_available ?? false,
-		execDashboardAvailable: data?.exec_dashboard_available ?? false,
 		licensedFeatures: data?.licensed_features ?? [],
-		isLicensed: (data?.licensed_features?.length ?? 0) > 0,
 		brandingLogo: data?.branding_logo ?? null,
 		brandingAppName: data?.branding_app_name ?? null,
 		brandingWordmark: data?.branding_wordmark ?? null,

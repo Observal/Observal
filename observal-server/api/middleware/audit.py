@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+"""Audit middleware: captures every request lifecycle via loguru."""
+
+from __future__ import annotations
+
+import time
+import uuid
+from typing import TYPE_CHECKING
+
+from loguru import logger
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from services.audit.classification import classify_route
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
+
+class AuditMiddleware(BaseHTTPMiddleware):
+    """Emit a loguru audit record for every non-skipped HTTP request."""
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        event_id = str(uuid.uuid4())
+        request_id = getattr(request.state, "request_id", "")
+
+        sensitivity = classify_route(request.method, request.url.path)
+        if sensitivity == "skip":
+            return await call_next(request)
+
+        # Real IP is resolved by TrustedProxyMiddleware into request.scope["client"]
+        ip = request.client.host if request.client else "127.0.0.1"
+
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        user = getattr(request.state, "audit_user", None)
+
+        status = response.status_code
+        if status < 300:
+            outcome = "success"
+        elif status in (401, 403):
+            outcome = "denied"
+        elif status == 404:
+            outcome = "not_found"
+        elif status >= 500:
+            outcome = "error"
+        else:
+            outcome = "client_error"
+
+        action = getattr(request.state, "audit_action", f"{request.method.lower()}.{request.url.path}")
+        resource_type = getattr(request.state, "audit_resource_type", "")
+        resource_id = getattr(request.state, "audit_resource_id", "")
+        resource_name = getattr(request.state, "audit_resource_name", "")
+        detail = getattr(request.state, "audit_detail", "")
+
+        logger.bind(
+            audit=True,
+            event_id=event_id,
+            request_id=request_id,
+            http_method=request.method,
+            http_path=request.url.path,
+            ip_address=ip,
+            user_agent=request.headers.get("user-agent", "")[:256],
+            sensitivity=sensitivity,
+            source="server",
+            actor_id=str(user.id) if user else "anonymous",
+            actor_email=user.email if user else "",
+            actor_role=(
+                user.role.value if user and hasattr(user, "role") and hasattr(user.role, "value") else "anonymous"
+            ),
+            org_id=str(user.org_id) if user and hasattr(user, "org_id") and user.org_id else "",
+            status_code=status,
+            outcome=outcome,
+            duration_ms=round(duration_ms, 2),
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            resource_name=resource_name,
+            detail=detail,
+        ).info("audit")
+
+        return response

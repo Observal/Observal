@@ -13,15 +13,19 @@ export const FEATURE_VERSIONS: Record<string, string> = {
 	agentBuilder: "0.8.0",
 	agentInsights: "0.7.0",
 	agentSnapshots: "0.6.0",
+	autoUpdate: "1.0.0",
 	basicAgents: "0.5.0",
 	bulkAgents: "0.6.0",
 	componentVersions: "0.6.0",
 	deviceAuth: "0.7.0",
 	mcpRegistry: "0.5.0",
 	reconcile: "0.7.0",
-	selfUpgrade: "0.8.0",
+	selfUpgrade: "1.0.0",
+	serverUpgrade: "1.0.0",
 	skills: "0.7.0",
-	versionNegotiation: "0.8.0",
+	versionCheck: "1.0.0",
+	versionEnforcement: "1.0.0",
+	versionNegotiation: "1.0.0",
 };
 
 /**

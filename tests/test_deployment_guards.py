@@ -28,8 +28,7 @@ class TestRequireLocalMode:
     @pytest.mark.asyncio
     async def test_allows_request_in_local_mode(self):
         app = _make_app_with_guarded_route()
-        with patch("api.deps.settings") as mock_settings:
-            mock_settings.DEPLOYMENT_MODE = "local"
+        with patch("api.deps.HAS_LICENSE", False):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.post("/guarded")
         assert r.status_code == 200
@@ -38,8 +37,7 @@ class TestRequireLocalMode:
     @pytest.mark.asyncio
     async def test_blocks_request_in_enterprise_mode(self):
         app = _make_app_with_guarded_route()
-        with patch("api.deps.settings") as mock_settings:
-            mock_settings.DEPLOYMENT_MODE = "enterprise"
+        with patch("api.deps.HAS_LICENSE", True):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.post("/guarded")
         assert r.status_code == 403
@@ -59,8 +57,7 @@ class TestAuthRouteGuards:
         """All local-only auth endpoints return 403 in enterprise mode."""
         from main import app
 
-        with patch("api.deps.settings") as mock_settings:
-            mock_settings.DEPLOYMENT_MODE = "enterprise"
+        with patch("api.deps.HAS_LICENSE", True):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.request(method, path)
         assert r.status_code == 403

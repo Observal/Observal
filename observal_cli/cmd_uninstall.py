@@ -17,6 +17,7 @@ from loguru import logger
 from rich import print as rprint
 
 from observal_cli.config import CONFIG_DIR
+from observal_cli.prompts import text_input
 from observal_cli.render import spinner
 
 CONFIRMATION_PHRASE = "confirm"
@@ -275,12 +276,22 @@ def register_uninstall(app: typer.Typer):
         # ── Confirmation ───────────────────────────────────
         rprint("[bold red]WARNING: This action is irreversible.[/bold red]")
         rprint(f'Type [bold]"{CONFIRMATION_PHRASE}"[/bold] to confirm:\n')
-        user_input = typer.prompt("Confirm")
+        user_input = text_input("Confirm")
         if user_input.strip().lower() != CONFIRMATION_PHRASE:
             rprint("[yellow]Confirmation did not match. Aborting.[/yellow]")
             raise typer.Exit(1)
 
         rprint()
+
+        # Emit audit event before teardown (server may become unreachable after)
+        from observal_cli.audit import emit_cli_audit
+
+        emit_cli_audit(
+            "system.uninstall",
+            resource_type="system",
+            detail=f"keep_config={keep_config}, keep_cli={keep_cli}, keep_repo={keep_repo}",
+            sensitivity="admin",
+        )
 
         # ── Phase 1: Docker teardown ──────────────────────
         _docker_teardown(repo_root)

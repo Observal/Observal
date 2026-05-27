@@ -72,7 +72,6 @@ def _make_version(
 
 def _make_agent(owner_id: uuid.UUID | None = None, *, with_approved_version: bool = True):
     """Build a mock Agent.  If with_approved_version=True, attach an approved version."""
-    from models.agent import AgentVisibility
 
     owner_id = owner_id or uuid.uuid4()
     agent = MagicMock()
@@ -81,9 +80,7 @@ def _make_agent(owner_id: uuid.UUID | None = None, *, with_approved_version: boo
     agent.owner = "testuser"
     agent.created_by = owner_id
     agent.owner_org_id = None
-    agent.co_maintainers = []
-    agent.team_accesses = []
-    agent.visibility = AgentVisibility.public
+    agent.co_authors = []
 
     if with_approved_version:
         ver = _make_version(agent.id)

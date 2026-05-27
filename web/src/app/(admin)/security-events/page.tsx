@@ -111,7 +111,7 @@ function EventRow({ event }: { event: SecurityEvent }) {
 }
 
 export default function SecurityEventsPage() {
-  const { isLicensed } = useDeploymentConfig();
+  const { licensedFeatures } = useDeploymentConfig();
   const [eventType, setEventType] = useState("all");
   const [severity, setSeverity] = useState("all");
   const [actorEmail, setActorEmail] = useState("");
@@ -130,7 +130,7 @@ export default function SecurityEventsPage() {
 
   const { data, isLoading, isError, error, refetch } = useSecurityEvents(filters);
 
-  if (!isLicensed) {
+  if (!licensedFeatures.includes("security_events") && !licensedFeatures.includes("all")) {
     return (
       <>
         <PageHeader

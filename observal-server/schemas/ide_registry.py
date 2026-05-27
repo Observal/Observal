@@ -316,6 +316,39 @@ IDE_REGISTRY: dict[str, dict] = {
         "accepts_model_choice": True,
         "auto_sentinel": {"omit_field": True},
     },
+    "pi": {
+        "display_name": "Pi",
+        "features": {"skills", "hooks", "mcp_servers"},
+        "session_parser": "pi",
+        "scopes": ["project", "user"],
+        "default_scope": "user",
+        "scope_labels": ("project (.pi/)", "user (~/.pi/agent/)"),
+        "rules_file": {
+            "project": "AGENTS.md",
+            "user": "~/.pi/agent/AGENTS.md",
+        },
+        "rules_format": "markdown",
+        "mcp_config_path": {
+            "project": ".pi/mcp.json",
+            "user": "~/.pi/agent/mcp.json",
+        },
+        "mcp_servers_key": "mcpServers",
+        "skill_file": {
+            "project": ".pi/skills/{name}/SKILL.md",
+            "user": "~/.pi/agent/skills/{name}/SKILL.md",
+        },
+        "skill_format": "yaml_frontmatter",
+        "home_mcp_config": "~/.pi/agent/mcp.json",
+        "hook_type": "extension",
+        "hook_config_path": {
+            "user": "~/.pi/agent/settings.json",
+        },
+        "hook_scripts_dir": None,
+        "hook_events_map": {},
+        "config_dir": ".pi",
+        "accepts_model_choice": True,
+        "auto_sentinel": {"omit_field": True},
+    },
 }
 
 

@@ -67,7 +67,6 @@ def _agent_mock(status=AgentStatus.pending, created_by=None, **extra):
     m.rejection_reason = None
     m.download_count = 0
     m.unique_users = 0
-    m.visibility = "private"
     m.owner_org_id = None
     m.git_url = None
     m.created_by = created_by or uuid.uuid4()
@@ -91,7 +90,6 @@ def _agent_mock(status=AgentStatus.pending, created_by=None, **extra):
         "model_config_json",
         "external_mcps",
         "supported_ides",
-        "visibility",
         "owner_org_id",
         "status",
         "rejection_reason",
@@ -194,7 +192,8 @@ class TestInstallAgentStatusGating:
     @pytest.mark.asyncio
     @patch("api.routes.agent.install._load_agent")
     @patch("api.routes.agent.install._ds")
-    async def test_approved_agent_always_installable(self, mock_settings, mock_load):
+    @patch("services.download_tracker.record_agent_download", new_callable=AsyncMock)
+    async def test_approved_agent_always_installable(self, mock_download, mock_settings, mock_load):
         """Approved agents install regardless of ALLOW_DRAFT_INSTALL flag."""
         mock_settings.get_sync_bool.return_value = False
 

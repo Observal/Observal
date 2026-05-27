@@ -20,7 +20,6 @@ from models.insight_report import InsightReport, InsightReportStatus
 from models.insight_session_facets import InsightSessionFacets
 from models.user import User, UserRole
 from schemas.insights import GenerateInsightRequest, InsightReportListItem, InsightReportResponse
-from services.audit_helpers import audit
 from services.insights import INSIGHTS_AVAILABLE, render_report_html
 from services.redis import _get_arq_pool
 
@@ -86,8 +85,6 @@ async def generate_insight(
     # Enqueue background job
     pool = await _get_arq_pool()
     await pool.enqueue_job("generate_insight_report", str(report.id))
-
-    await audit(current_user, "insights.generate", resource_type="insight_report", resource_id=str(report.id))
     await db.commit()
 
     return InsightReportListItem.model_validate(report)
@@ -214,8 +211,6 @@ async def clear_agent_reports(
 
     # Delete meta cache
     cache_result = await db.execute(delete(InsightMetaCache).where(InsightMetaCache.agent_id == agent.id))
-
-    await audit(current_user, "insights.clear", resource_type="agent", resource_id=str(agent.id))
     await db.commit()
 
     return {
@@ -249,7 +244,6 @@ async def delete_report(
         raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
 
     await db.delete(report)
-    await audit(current_user, "insights.delete_report", resource_type="insight_report", resource_id=str(report.id))
     await db.commit()
 
     return {"deleted": True, "report_id": report_id}

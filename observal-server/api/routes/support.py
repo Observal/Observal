@@ -28,7 +28,7 @@ from sqlalchemy import text
 
 from api.deps import get_db, require_role
 from api.ratelimit import limiter
-from config import Settings, settings
+from config import HAS_LICENSE, Settings, settings
 from models.user import UserRole
 from services.clickhouse import CLICKHOUSE_DB, _query
 from services.redis import get_redis
@@ -211,7 +211,6 @@ _DYNAMIC_CONFIG_KEYS = [
     "security.rate_limit_auth",
     "security.rate_limit_auth_strict",
     "data.retention_days",
-    "deployment.mode",
 ]
 
 
@@ -232,6 +231,7 @@ async def _collect_config() -> dict:
     # Add dynamic settings
     for key in _DYNAMIC_CONFIG_KEYS:
         result[key] = await ds.get(key)
+    result["licensed"] = HAS_LICENSE
     return result
 
 

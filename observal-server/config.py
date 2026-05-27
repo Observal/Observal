@@ -56,8 +56,6 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Literal["json", "console"] = "json"
 
-    # Deployment mode (boot-time, controls enterprise route registration)
-    DEPLOYMENT_MODE: Literal["local", "enterprise"] = "local"
     SKIP_DDL_ON_STARTUP: bool = False
 
     # Demo accounts (boot-time, needed to bootstrap first login)
@@ -75,6 +73,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Derived: True when an enterprise license key is configured.
+# Used as the replacement for the removed DEPLOYMENT_MODE env var.
+# Feature availability is still gated by ee.license.is_feature_licensed();
+# this flag only controls "should we attempt to load ee/ packages."
+HAS_LICENSE: bool = bool(os.environ.get("OBSERVAL_LICENSE_KEY", ""))
 
 
 # ── Legacy Env Var Startup Guard ─────────────────────────────────────────────
@@ -128,6 +132,7 @@ _LEGACY_ENV_VARS = [
     "ENABLE_METRICS",
     "MIN_CLI_VERSION",
     "GIT_MIRROR_BASE_PATH",
+    "DEPLOYMENT_MODE",
 ]
 
 

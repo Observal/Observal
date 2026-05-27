@@ -10,7 +10,7 @@
 
 [project]
 name = "observal-cli"
-version = "1.0.0"
+version = "1.2.0"
 description = "Observal MCP Server Registry & Agent Registry CLI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -114,6 +114,7 @@ known-first-party = ["observal_cli", "models", "schemas", "services", "api", "ee
 "observal_cli/main.py" = ["E402"]       # imports after app = typer.Typer()
 "observal-server/main.py" = ["TID251"]  # main.py is the single allowed ee/ crossing point
 "observal-server/services/insights/__init__.py" = ["TID251"]  # insights loader imports from ee/
+"observal-server/services/audit/__init__.py" = ["TID251"]  # audit license gate imports from ee/
 "observal-server/api/routes/config.py" = ["TID251"]  # exposes licensed_features from ee/
 "observal-server/api/routes/ingest.py" = ["TID251"]  # ingest endpoint imports from ee/ gate
 "observal-server/worker.py" = ["TID251"]  # worker runs ee/ insight jobs
@@ -146,7 +147,7 @@ dev = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "sqlalchemy>=2.0.49",
-    "ruff==0.15.13",
+    "ruff==0.15.14",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=6.0",

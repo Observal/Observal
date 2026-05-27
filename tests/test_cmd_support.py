@@ -43,8 +43,8 @@ class TestConfigAllowlist:
     def test_allowlist_is_frozenset(self):
         assert isinstance(CONFIG_ALLOWLIST, frozenset)
 
-    def test_allowlist_has_16_keys(self):
-        assert len(CONFIG_ALLOWLIST) == 16
+    def test_allowlist_has_15_keys(self):
+        assert len(CONFIG_ALLOWLIST) == 15
 
     def test_allowlist_contains_expected_keys(self):
         expected = {
@@ -63,7 +63,6 @@ class TestConfigAllowlist:
             "RATE_LIMIT_AUTH",
             "RATE_LIMIT_AUTH_STRICT",
             "DATA_RETENTION_DAYS",
-            "DEPLOYMENT_MODE",
         }
         assert expected == CONFIG_ALLOWLIST
 
@@ -133,7 +132,6 @@ class TestConfigAllowlistedCollector:
                         "DATABASE_URL": "postgresql+asyncpg://user:pass@localhost/db",
                         "SECRET_KEY": "super-secret-value",
                         "AWS_REGION": "us-east-1",
-                        "DEPLOYMENT_MODE": "docker",
                     },
                 }
             }
@@ -146,7 +144,6 @@ class TestConfigAllowlistedCollector:
         assert "SECRET_KEY" not in result.data
         # Allowlisted keys should be present
         assert "AWS_REGION" in result.data
-        assert "DEPLOYMENT_MODE" in result.data
         # DATABASE_URL should be present but redacted (URL userinfo)
         assert "DATABASE_URL" in result.data
 

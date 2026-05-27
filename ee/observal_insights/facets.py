@@ -1,15 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: LicenseRef-Observal-Enterprise
 
-"""Session facet extraction and caching for Agent Insights (V3).
+"""Per-session facet extraction via LLM (Haiku).
 
-Facets are structured metadata extracted from session transcripts via LLM analysis.
-They power the qualitative sections of insight reports (friction, tool usage patterns,
-user satisfaction signals, goal categorisation, and repeated-instruction detection).
-
-V3 uses the full Claude Code taxonomy with expanded goal categories, friction types,
-outcome granularity, and new dimensions (helpfulness, session_type, repeated_instructions).
+Ported from pi /insights FACET_EXTRACT_PROMPT. Extracts structured metadata
+from session transcripts: goals, outcomes, satisfaction, friction, instructions.
 """
 
 from __future__ import annotations
@@ -18,25 +13,46 @@ from datetime import UTC, datetime
 
 import structlog
 
-from ._deps import get_call_model, get_facets_model, get_settings
+from ._deps import get_call_model, get_facets_model
 
 logger = structlog.get_logger(__name__)
 
-FACET_EXTRACTION_PROMPT = """\
-Analyze this AI coding agent session transcript and extract structured facets.
+FACET_PROMPT = """\
+Analyze this session and extract structured facets.
 
-## Session Metadata
-- Session ID: {session_id}
-- Duration: {duration_seconds}s
-- Tool calls: {tool_call_count}
-- Prompts: {prompt_count}
-- IDE: {ide}
+CRITICAL GUIDELINES:
 
-## Transcript
+1. goal_categories: Count ONLY what the USER explicitly asked for.
+   - DO NOT count autonomous exploration the assistant decided to do
+   - ONLY count when user says "can you...", "please...", "I need...", "let's..."
+
+2. user_satisfaction: Base ONLY on explicit user signals.
+   - "Yay!", "great!", "perfect!" -> happy
+   - "thanks", "looks good", "that works" -> satisfied
+   - "ok, now let's..." (continuing without complaint) -> likely_satisfied
+   - "that's not right", "try again" -> dissatisfied
+   - "this is broken", "I give up" -> frustrated
+
+3. friction_points: Be specific about what went wrong.
+   - misunderstood_request: assistant interpreted the request incorrectly
+   - wrong_approach: right goal, wrong solution method
+   - buggy_code: code didn't work correctly
+   - user_rejected_action: user said no/stop to a proposed action
+   - excessive_changes: over-engineered or changed too much
+   - slow_or_verbose: took too long or output too much text
+   - tool_failed: a tool call errored
+   - user_unclear: user's instructions were ambiguous
+   - external_issue: problem outside the agent's control
+
+4. repeated_instructions: direct instructions the user gave that should be remembered,
+   e.g. "always show diffs before editing". Include only reusable instructions (not one-off requests).
+
+5. If very short or just a warmup, use "warmup_minimal" for goal_categories.
+
+SESSION:
 {transcript}
 
-Extract the following as a JSON object. Base everything on transcript evidence.
-
+RESPOND WITH ONLY A VALID JSON OBJECT:
 {{
   "underlying_goal": "<what the user fundamentally wanted to accomplish>",
   "goal_categories": ["<from: debug_investigate, implement_feature, fix_bug, write_script_tool, refactor_code, configure_system, create_pr_commit, analyze_data, understand_codebase, write_tests, write_docs, deploy_infra, warmup_minimal>"],
@@ -47,27 +63,17 @@ Extract the following as a JSON object. Base everything on transcript evidence.
   "complexity": "<trivial | low | medium | high | very_high>",
   "friction_points": [
     {{
-      "type": "<from: misunderstood_request, wrong_approach, buggy_code, user_rejected_action, agent_got_blocked, user_stopped_early, wrong_file_or_location, excessive_changes, slow_or_verbose, tool_failed, user_unclear, external_issue>",
+      "type": "<type from list above>",
       "description": "<specific description of what happened>",
       "severity": "<blocking | major | minor>"
     }}
   ],
   "primary_success_factors": ["<from: fast_accurate_search, correct_code_edits, good_explanations, proactive_help, multi_file_changes, good_debugging>"],
   "tools_effective": ["<tool names that worked well>"],
-  "tools_problematic": [{{"tool": "<name>", "reason": "<why it was problematic>"}}],
-  "repeated_instructions": ["<instructions the user frequently repeats to the agent>"],
-  "notable_patterns": ["<interesting observations>"],
-  "brief_summary": "<one-sentence session summary>"
-}}
-
-Rules:
-- Base everything on transcript evidence, not assumptions
-- If insufficient data for a field, use "unclear" or empty arrays
-- Maximum 5 friction_points
-- Maximum 5 notable_patterns
-- Maximum 5 repeated_instructions
-- goal_categories can have 1-3 entries
-- primary_success_factors can have 0-3 entries"""
+  "tools_problematic": [{{"tool": "<name>", "reason": "<why>"}}],
+  "repeated_instructions": ["<instructions the user repeats to the agent>"],
+  "brief_summary": "<one sentence: what user wanted and whether they got it>"
+}}"""
 
 
 async def extract_facets(
@@ -75,70 +81,25 @@ async def extract_facets(
     transcript: str,
     meta: dict,
 ) -> dict:
-    """Extract structured facets from a session transcript using an LLM.
-
-    Args:
-        session_id: The session identifier.
-        transcript: Formatted session transcript text.
-        meta: Session metadata dict (duration_seconds, tool_call_count, prompt_count, ide, etc.).
-
-    Returns:
-        Dict of extracted facets, or empty dict on failure.
-    """
+    """Extract structured facets from a session transcript."""
     if not transcript or len(transcript.strip()) < 50:
-        logger.debug("facets_skip_short_transcript", session_id=session_id)
         return {}
 
     call_model = get_call_model()
-    settings = get_settings()
+    import services.dynamic_settings as ds
 
-    model_override = getattr(settings, "INSIGHT_MODEL_FACETS", None) or None
+    model_override = await ds.get("insights.model_facets") or None
 
-    prompt = FACET_EXTRACTION_PROMPT.format(
-        session_id=session_id,
-        duration_seconds=meta.get("duration_seconds", 0),
-        tool_call_count=meta.get("tool_call_count", 0),
-        prompt_count=meta.get("prompt_count", 0),
-        ide=meta.get("ide", "unknown"),
-        transcript=transcript,
-    )
+    prompt = FACET_PROMPT.format(transcript=transcript)
 
     try:
         result = await call_model(prompt, model_override=model_override, max_tokens=4096)
         if result and isinstance(result, dict):
             return result
-        logger.warning("facets_empty_response", session_id=session_id)
         return {}
     except Exception as e:
         logger.error("facets_extraction_failed", session_id=session_id, error=str(e))
         return {}
-
-
-async def load_cached_facets(
-    session_id: str,
-    db,
-) -> dict | None:
-    """Load previously extracted facets from the database.
-
-    Args:
-        session_id: The session to look up.
-        db: An AsyncSession instance.
-
-    Returns:
-        Facets dict if cached, None otherwise.
-    """
-    FacetsModel = get_facets_model()
-
-    from sqlalchemy import select
-
-    stmt = select(FacetsModel).where(FacetsModel.session_id == session_id)
-    result = await db.execute(stmt)
-    row = result.scalar_one_or_none()
-
-    if row is None:
-        return None
-
-    return row.facets if hasattr(row, "facets") else None
 
 
 async def store_facets(
@@ -147,77 +108,42 @@ async def store_facets(
     facets: dict,
     db,
 ) -> None:
-    """Persist extracted facets to the database.
-
-    Args:
-        session_id: The session identifier.
-        agent_id: The agent UUID (as string).
-        facets: The extracted facets dict.
-        db: An AsyncSession instance.
-    """
-    FacetsModel = get_facets_model()
+    """Persist extracted facets to the database."""
+    import uuid as _uuid
 
     from sqlalchemy import select
 
-    # Check if already exists
+    FacetsModel = get_facets_model()
+
     stmt = select(FacetsModel).where(FacetsModel.session_id == session_id)
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
 
     if existing:
         existing.facets = facets
-        existing.updated_at = datetime.now(UTC)
+        existing.extracted_at = datetime.now(UTC)
     else:
         record = FacetsModel(
             session_id=session_id,
-            agent_id=agent_id,
+            agent_id=_uuid.UUID(agent_id) if agent_id else None,
             facets=facets,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
         )
         db.add(record)
 
     await db.flush()
 
 
-async def should_re_extract(session_id: str, db) -> bool:
-    """Check if cached facets are stale because the session continued.
-
-    Compares the facets record's updated_at timestamp against the session's
-    last event time from ClickHouse to determine if re-extraction is needed.
-
-    Args:
-        session_id: The session identifier.
-        db: An AsyncSession instance.
-
-    Returns:
-        True if facets should be re-extracted, False if cache is still valid.
-    """
-    cached = await load_cached_facets(session_id, db)
-    if cached is None:
-        return True  # No cache -> must extract
-
-    # Get the cached record's updated_at timestamp
-    FacetsModel = get_facets_model()
+async def load_cached_facets(session_id: str, db) -> dict | None:
+    """Load previously extracted facets from DB."""
     from sqlalchemy import select
 
+    FacetsModel = get_facets_model()
     stmt = select(FacetsModel).where(FacetsModel.session_id == session_id)
     result = await db.execute(stmt)
     row = result.scalar_one_or_none()
     if row is None:
-        return True
-
-    facets_updated_at = row.updated_at
-
-    # Check if session has newer events
-    from .session_cache import get_session_last_event_time
-
-    session_last_event = await get_session_last_event_time(session_id)
-
-    if session_last_event is None:
-        return False  # Can't determine, use cached
-
-    return session_last_event > facets_updated_at
+        return None
+    return row.facets if hasattr(row, "facets") else None
 
 
 async def extract_and_cache_facets(
@@ -227,50 +153,23 @@ async def extract_and_cache_facets(
     agent_id: str,
     db,
 ) -> dict:
-    """Extract facets for a session, with staleness-aware caching.
+    """Extract facets with DB caching. Returns cached if available."""
+    cached = await load_cached_facets(session_id, db)
+    if cached:
+        return cached
 
-    Checks whether cached facets are stale (session continued since last
-    extraction). If not stale, returns cached facets. Otherwise, extracts
-    fresh facets via LLM and stores them.
-
-    Args:
-        session_id: The session identifier.
-        transcript: Session transcript text.
-        meta: Session metadata dict.
-        agent_id: The agent UUID (as string).
-        db: An AsyncSession instance.
-
-    Returns:
-        Extracted facets dict.
-    """
-    # Check cache with staleness
-    stale = await should_re_extract(session_id, db)
-    if not stale:
-        cached = await load_cached_facets(session_id, db)
-        if cached:
-            logger.debug("facets_cache_hit", session_id=session_id)
-            return cached
-
-    # Extract fresh
     facets = await extract_facets(session_id, transcript, meta)
     if facets:
         await store_facets(session_id, agent_id, facets, db)
-        logger.debug("facets_extracted_and_cached", session_id=session_id)
 
     return facets
 
 
 def aggregate_facets(all_facets: list[dict]) -> dict:
-    """Aggregate V3 facets across multiple sessions into summary statistics.
+    """Aggregate per-session facets into summary statistics.
 
-    Processes the expanded V3 taxonomy including goal categories, satisfaction,
-    helpfulness, session types, and repeated instructions.
-
-    Args:
-        all_facets: List of per-session facet dicts.
-
-    Returns:
-        Aggregated summary suitable for inclusion in the report data block.
+    Returns a dict suitable for the report's facets_summary field and
+    for inclusion in the LLM data block.
     """
     if not all_facets:
         return {}
@@ -315,7 +214,7 @@ def aggregate_facets(all_facets: list[dict]) -> dict:
         cx = f.get("complexity", "medium")
         complexities[cx] = complexities.get(cx, 0) + 1
 
-        # Friction
+        # Friction points
         for fp in f.get("friction_points", []):
             ft = fp.get("type", "unknown")
             friction_types[ft] = friction_types.get(ft, 0) + 1
@@ -324,9 +223,9 @@ def aggregate_facets(all_facets: list[dict]) -> dict:
         for sf in f.get("primary_success_factors", []):
             success_factors[sf] = success_factors.get(sf, 0) + 1
 
-        # Tools — LLM may return strings or dicts; normalize to strings
+        # Tools
         for tool in f.get("tools_effective", []):
-            name = tool if isinstance(tool, str) else str(tool.get("name", tool) if isinstance(tool, dict) else tool)
+            name = tool if isinstance(tool, str) else str(tool)
             tools_effective[name] = tools_effective.get(name, 0) + 1
         for tp in f.get("tools_problematic", []):
             tool_name = tp.get("tool", tp) if isinstance(tp, dict) else str(tp)
@@ -337,22 +236,20 @@ def aggregate_facets(all_facets: list[dict]) -> dict:
             if instr:
                 repeated_instructions_all.append(instr)
 
-    # Aggregate repeated instructions by frequency
+    # Deduplicate instructions by frequency
     instruction_counts: dict[str, int] = {}
     for instr in repeated_instructions_all:
-        # Normalize
         key = instr.strip().lower()
         instruction_counts[key] = instruction_counts.get(key, 0) + 1
 
-    repeated_instructions_summary = [
+    repeated_summary = [
         {"instruction": instr, "frequency": count}
         for instr, count in sorted(instruction_counts.items(), key=lambda x: -x[1])
-        if count >= 2  # Only surface if repeated
+        if count >= 2
     ][:10]
 
-    n = len(all_facets)
     return {
-        "sessions_with_facets": n,
+        "sessions_with_facets": len(all_facets),
         "goal_categories": sorted(goal_categories.items(), key=lambda x: -x[1]),
         "outcomes": outcomes,
         "satisfaction": satisfaction,
@@ -363,5 +260,5 @@ def aggregate_facets(all_facets: list[dict]) -> dict:
         "success_factors": sorted(success_factors.items(), key=lambda x: -x[1]),
         "tools_effective": sorted(tools_effective.items(), key=lambda x: -x[1])[:10],
         "tools_problematic": sorted(tools_problematic.items(), key=lambda x: -x[1])[:10],
-        "repeated_instructions": repeated_instructions_summary,
+        "repeated_instructions": repeated_summary,
     }

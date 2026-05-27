@@ -12,14 +12,11 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
-from config import settings
-from models.agent import AgentStatus, AgentVisibility
+from models.agent import AgentStatus
 from schemas.constants import AGENT_NAME_REGEX, make_name_validator
 from services.versioning import validate_semver
-
-_DEFAULT_VISIBILITY = AgentVisibility.public if settings.DEPLOYMENT_MODE == "local" else AgentVisibility.private
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
 
@@ -43,17 +40,6 @@ class ComponentRef(BaseModel):
     config_override: dict | None = None
 
 
-class TeamAccessRequest(BaseModel):
-    group_name: str = Field(min_length=1, max_length=255)
-    permission: Literal["view", "edit"]
-
-
-class TeamAccessResponse(BaseModel):
-    group_name: str
-    permission: str
-    model_config = {"from_attributes": True}
-
-
 class AgentCreateRequest(BaseModel):
     name: str
     version: str
@@ -68,8 +54,6 @@ class AgentCreateRequest(BaseModel):
     mcp_server_ids: list[uuid.UUID] = []  # kept for backwards compat
     components: list[ComponentRef] = []  # new: all component types
     external_mcps: list[ExternalMcp] = []
-    visibility: AgentVisibility = _DEFAULT_VISIBILITY
-    team_accesses: list[TeamAccessRequest] = []
 
     _validate_name = field_validator("name")(make_name_validator("name"))
 
@@ -105,8 +89,6 @@ class AgentUpdateRequest(BaseModel):
     mcp_server_ids: list[uuid.UUID] | None = None  # kept for backwards compat
     components: list[ComponentRef] | None = None  # new: all component types
     external_mcps: list[ExternalMcp] | None = None
-    visibility: AgentVisibility | None = None
-    team_accesses: list[TeamAccessRequest] | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -172,8 +154,6 @@ class AgentResponse(BaseModel):
     updated_at: datetime
     mcp_links: list[McpLinkResponse] = []
     component_links: list[ComponentLinkResponse] = []
-    visibility: AgentVisibility
-    team_accesses: list[TeamAccessResponse] = []
     user_permission: str | None = None
     latest_approved_version: str | None = None
     latest_version: str | None = None
@@ -203,7 +183,6 @@ class AgentSummary(BaseModel):
     updated_at: datetime | None = None
     components_ready: bool = True
     blocking_components: list = []
-    visibility: AgentVisibility
     model_config = {"from_attributes": True}
 
 

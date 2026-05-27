@@ -327,7 +327,7 @@ export default function TracesPage() {
 		error,
 		refetch,
 	} = useSessions2({
-		refetchInterval: 30_000,
+		refetchInterval: 1_000,
 		platform: platformParam,
 		days: daysParam,
 	});

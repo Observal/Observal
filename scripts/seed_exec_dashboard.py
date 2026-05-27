@@ -61,14 +61,6 @@ AGENTS = [
     ("PrototypeHelper", "Other", "draft"),
 ]
 
-AGENT_TEAM_ACCESS = {
-    "CodeReviewBot": ["Engineering"],
-    "TestGenerator": ["QA"],
-    "DocWriter": ["Engineering", "Data Science"],
-    "DataPipelineAgent": ["Data Science"],
-    "SecurityScanner": ["Engineering"],
-    "PrototypeHelper": ["Product"],
-}
 
 # user -> (traces/week, agents used, ide, model, cost_range, latency_range)
 USER_ACTIVITY = {
@@ -165,9 +157,6 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
                 "DELETE FROM feedback WHERE listing_id IN (SELECT id FROM agents WHERE owner_org_id = $1)", oid
             )
             await conn.execute(
-                "DELETE FROM agent_team_access WHERE agent_id IN (SELECT id FROM agents WHERE owner_org_id = $1)", oid
-            )
-            await conn.execute(
                 "DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE owner_org_id = $1)", oid
             )
             await conn.execute("DELETE FROM agents WHERE owner_org_id = $1", oid)
@@ -216,8 +205,8 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
             version_id = uuid.uuid4()
 
             await conn.execute(
-                "INSERT INTO agents (id, name, owner, category, created_by, owner_org_id, visibility, co_maintainers, created_at, updated_at) "
-                "VALUES ($1, $2, $3, $4, $5, $6, 'public', '[]'::jsonb, NOW(), NOW()) ON CONFLICT DO NOTHING",
+                "INSERT INTO agents (id, name, owner, category, created_by, owner_org_id, co_authors, created_at, updated_at) "
+                "VALUES ($1, $2, $3, $4, $5, $6, '[]'::jsonb, NOW(), NOW()) ON CONFLICT DO NOTHING",
                 agent_id,
                 agent_name,
                 "acme",
@@ -245,20 +234,6 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
                 await conn.execute("UPDATE agents SET latest_version_id = $1 WHERE id = $2", ver_row["id"], agent_id)
 
         print(f"  Created {len(agent_map)} agents")
-
-        # Team access
-        for agent_name, groups in AGENT_TEAM_ACCESS.items():
-            aid = agent_map.get(agent_name)
-            if not aid:
-                continue
-            for g in groups:
-                await conn.execute(
-                    "INSERT INTO agent_team_access (id, agent_id, group_name, permission) "
-                    "VALUES ($1, $2, $3, 'view') ON CONFLICT DO NOTHING",
-                    uuid.uuid4(),
-                    aid,
-                    g,
-                )
 
         # Downloads
         downloads = {"CodeReviewBot": 45, "TestGenerator": 22, "DocWriter": 35, "SecurityScanner": 15}

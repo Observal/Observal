@@ -403,11 +403,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/6d/b3/ce7c5d9f5e75257a3039ee1e38feb77bee29da3a1792c57d6ea1acb55d17/fastapi_cache2-0.2.2-py3-none-any.whl", hash = "sha256:e1fae86d8eaaa6c8501dfe08407f71d69e87cc6748042d59d51994000532846c", size = 25411, upload-time = "2024-07-24T15:47:19.065Z" },
 ]
 
-[package.optional-dependencies]
-redis = [
-    { name = "redis" },
-]
-
 [[package]]
 name = "gitdb"
 version = "4.0.12"
@@ -946,7 +941,7 @@ wheels = [
 
 [[package]]
 name = "observal-server"
-version = "0.8.0"
+version = "1.2.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -959,7 +954,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "email-validator" },
     { name = "fastapi" },
-    { name = "fastapi-cache2", extra = ["redis"] },
+    { name = "fastapi-cache2" },
     { name = "gitpython" },
     { name = "httpx" },
     { name = "idna" },
@@ -1005,7 +1000,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=44.0.0" },
     { name = "email-validator" },
     { name = "fastapi" },
-    { name = "fastapi-cache2", extras = ["redis"], specifier = ">=0.2.2" },
+    { name = "fastapi-cache2", specifier = ">=0.2.2" },
     { name = "gitpython", specifier = ">=3.1.50" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.15" },
@@ -1020,7 +1015,7 @@ requires-dist = [
     { name = "python-dotenv" },
     { name = "python-multipart", specifier = ">=0.0.26" },
     { name = "python3-saml", specifier = ">=1.16.0" },
-    { name = "redis", extras = ["hiredis"] },
+    { name = "redis", extras = ["hiredis"], specifier = ">=5.0" },
     { name = "slowapi" },
     { name = "sqlalchemy", extras = ["asyncio"] },
     { name = "strawberry-graphql", extras = ["fastapi"], specifier = ">=0.315.4" },
@@ -1422,14 +1417,15 @@ wheels = [
 
 [[package]]
 name = "redis"
-version = "4.6.0"
+version = "5.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "async-timeout", marker = "python_full_version <= '3.11.2'" },
+    { name = "async-timeout", marker = "python_full_version < '3.11.3'" },
+    { name = "pyjwt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/73/88/63d802c2b18dd9eaa5b846cbf18917c6b2882f20efda398cc16a7500b02c/redis-4.6.0.tar.gz", hash = "sha256:585dc516b9eb042a619ef0a39c3d7d55fe81bdb4df09a52c9cdde0d07bf1aa7d", size = 4561721, upload-time = "2023-06-25T13:13:57.139Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/cf/128b1b6d7086200c9f387bd4be9b2572a30b90745ef078bd8b235042dc9f/redis-5.3.1.tar.gz", hash = "sha256:ca49577a531ea64039b5a36db3d6cd1a0c7a60c34124d46924a45b956e8cf14c", size = 4626200, upload-time = "2025-07-25T08:06:27.778Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/2e/409703d645363352a20c944f5d119bdae3eb3034051a53724a7c5fee12b8/redis-4.6.0-py3-none-any.whl", hash = "sha256:e2b03db868160ee4591de3cb90d40ebb50a90dd302138775937f6a42b7ed183c", size = 241149, upload-time = "2023-06-25T13:13:54.563Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/26/5c5fa0e83c3621db835cfc1f1d789b37e7fa99ed54423b5f519beb931aa7/redis-5.3.1-py3-none-any.whl", hash = "sha256:dc1909bd24669cc31b5f67a039700b16ec30571096c5f1f0d9d2324bff31af97", size = 272833, upload-time = "2025-07-25T08:06:26.317Z" },
 ]
 
 [package.optional-dependencies]

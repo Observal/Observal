@@ -17,7 +17,7 @@ from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.constants import VALID_PROMPT_CATEGORIES
-from observal_cli.prompts import select_one
+from observal_cli.prompts import select_one, text_input
 from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
 
 prompt_app = typer.Typer(help="Prompt registry commands")
@@ -70,21 +70,21 @@ def prompt_submit(
             payload = _json.loads(content)
         except _json.JSONDecodeError:
             payload = {
-                "name": typer.prompt("Prompt name"),
-                "version": typer.prompt("Version", default="1.0.0"),
-                "description": typer.prompt("Description"),
-                "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
+                "name": text_input("Prompt name"),
+                "version": text_input("Version", default="1.0.0"),
+                "description": text_input("Description"),
+                "owner": text_input("Owner", default=config.load().get("user_name", "")),
                 "category": select_one("Category", VALID_PROMPT_CATEGORIES),
                 "template": content,
             }
     else:
         payload = {
-            "name": typer.prompt("Prompt name"),
-            "version": typer.prompt("Version", default="1.0.0"),
-            "description": typer.prompt("Description"),
-            "owner": typer.prompt("Owner", default=config.load().get("user_name", "")),
+            "name": text_input("Prompt name"),
+            "version": text_input("Version", default="1.0.0"),
+            "description": text_input("Description"),
+            "owner": text_input("Owner", default=config.load().get("user_name", "")),
             "category": select_one("Category", VALID_PROMPT_CATEGORIES),
-            "template": typer.prompt("Template"),
+            "template": text_input("Template"),
         }
 
     if draft:

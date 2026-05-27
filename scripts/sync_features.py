@@ -43,25 +43,28 @@ export const FEATURE_VERSIONS: Record<string, string> = {{
  * Check if a feature is available at the given effective version.
  * effective = min(cli_version, server_version)
  */
-export function isFeatureAvailable(feature: string, effectiveVersion: string): boolean {{
-  const minVersion = FEATURE_VERSIONS[feature];
-  if (!minVersion) return true; // Unknown features assumed available
-  return semverGte(effectiveVersion, minVersion);
+export function isFeatureAvailable(
+\tfeature: string,
+\teffectiveVersion: string,
+): boolean {{
+\tconst minVersion = FEATURE_VERSIONS[feature];
+\tif (!minVersion) return true; // Unknown features assumed available
+\treturn semverGte(effectiveVersion, minVersion);
 }}
 
 /**
  * Simple semver >= comparison (major.minor.patch only).
  */
 function semverGte(a: string, b: string): boolean {{
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {{
-    const av = pa[i] || 0;
-    const bv = pb[i] || 0;
-    if (av > bv) return true;
-    if (av < bv) return false;
-  }}
-  return true; // equal
+\tconst pa = a.split(".").map(Number);
+\tconst pb = b.split(".").map(Number);
+\tfor (let i = 0; i < 3; i++) {{
+\t\tconst av = pa[i] || 0;
+\t\tconst bv = pb[i] || 0;
+\t\tif (av > bv) return true;
+\t\tif (av < bv) return false;
+\t}}
+\treturn true; // equal
 }}
 """
 
@@ -72,7 +75,7 @@ def generate() -> str:
     for name, version in sorted(FEATURE_VERSIONS.items()):
         # Convert snake_case to camelCase for TS convention
         camel = _to_camel_case(name)
-        entries.append(f'  {camel}: "{version}",')
+        entries.append(f'\t{camel}: "{version}",')
     return TEMPLATE.format(entries="\n".join(entries))
 
 

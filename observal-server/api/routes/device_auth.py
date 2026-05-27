@@ -33,7 +33,6 @@ from schemas.auth import (
     DeviceConfirmRequest,
     DeviceTokenRequest,
 )
-from services.audit_helpers import audit
 from services.redis import get_redis
 
 logger = logging.getLogger(__name__)
@@ -242,14 +241,6 @@ async def device_confirm(
     except RedisError as e:
         logger.error("Redis unavailable during device confirm update: %s", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-    await audit(
-        current_user,
-        "auth.device_confirm",
-        resource_type="device_auth",
-        resource_id=device_code,
-        detail=f"Device code approved for user {current_user.email}",
-    )
 
     optic.info("device_confirm: device authorized for user={}", current_user.email)
     return {"message": "Device authorized"}

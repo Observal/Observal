@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
 from api.routes.dashboard import _ch_json_scoped, _range_days
-from models.agent import Agent, AgentStatus, AgentTeamAccess, AgentVersion
+from models.agent import Agent, AgentStatus, AgentVersion
 from models.download import AgentDownloadRecord
 from models.exec_config import ExecDashboardConfig
 from models.feedback import Feedback
@@ -716,15 +716,18 @@ async def get_departments(
     if not dept_map:
         return DepartmentsResponse(departments=[])
 
-    # Agent count per department (via AgentTeamAccess)
-    agent_access_rows = (
-        await db.execute(
-            select(AgentTeamAccess.group_name, func.count(AgentTeamAccess.agent_id.distinct())).group_by(
-                AgentTeamAccess.group_name
-            )
-        )
-    ).all()
-    agent_count_by_dept: dict[str, int] = {r[0]: r[1] for r in agent_access_rows}
+    # Agent count per department: count agents created by users in each group
+    agent_count_by_dept: dict[str, int] = {}
+    all_dept_user_ids: list[str] = []
+    for uids in dept_map.values():
+        all_dept_user_ids.extend(uids)
+    if all_dept_user_ids:
+        from models.agent import Agent
+
+        agent_rows = (await db.execute(select(Agent.created_by, func.count(Agent.id)).group_by(Agent.created_by))).all()
+        user_agent_count: dict[str, int] = {str(r[0]): r[1] for r in agent_rows}
+        for dept_name, user_ids in dept_map.items():
+            agent_count_by_dept[dept_name] = sum(user_agent_count.get(uid, 0) for uid in user_ids)
 
     # Get trace counts per user from ClickHouse
     all_user_ids = []

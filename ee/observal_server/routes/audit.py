@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: LicenseRef-Observal-Enterprise
 
-"""Enterprise audit log query endpoints."""
+"""Enterprise audit log query and export endpoints.
+
+HIPAA-compliant audit trail with tamper-detection chain hashes,
+sensitivity classification, and outcome tracking.
+"""
 
 import csv
 import io
@@ -17,6 +21,13 @@ from models.user import User, UserRole
 from services.clickhouse import _query
 
 router = APIRouter(prefix="/api/v1/admin/audit-log", tags=["audit"])
+
+_ALL_COLUMNS = (
+    "event_id, timestamp, actor_id, actor_email, actor_role, "
+    "action, resource_type, resource_id, resource_name, http_method, "
+    "http_path, status_code, ip_address, user_agent, detail, "
+    "org_id, sensitivity, request_id, outcome, duration_ms, chain_hash, source"
+)
 
 
 class AuditLogEntry(BaseModel):
@@ -35,6 +46,13 @@ class AuditLogEntry(BaseModel):
     ip_address: str
     user_agent: str
     detail: str
+    org_id: str = ""
+    sensitivity: str = "standard"
+    request_id: str = ""
+    outcome: str = ""
+    duration_ms: float = 0.0
+    chain_hash: str = ""
+    source: str = "server"
 
 
 @router.get("", response_model=list[AuditLogEntry])
@@ -42,6 +60,9 @@ async def list_audit_logs(
     actor: str | None = Query(None, description="Filter by actor email"),
     action: str | None = Query(None, description="Filter by action"),
     resource_type: str | None = Query(None, description="Filter by resource type"),
+    sensitivity: str | None = Query(None, description="Filter by sensitivity level"),
+    outcome: str | None = Query(None, description="Filter by outcome"),
+    source: str | None = Query(None, description="Filter by source (server/cli)"),
     start_date: datetime | None = Query(None, description="Start date filter"),
     end_date: datetime | None = Query(None, description="End date filter"),
     limit: int = Query(50, ge=1, le=500),
@@ -61,6 +82,15 @@ async def list_audit_logs(
     if resource_type:
         conditions.append("resource_type = {rtype:String}")
         params["param_rtype"] = resource_type
+    if sensitivity:
+        conditions.append("sensitivity = {sens:String}")
+        params["param_sens"] = sensitivity
+    if outcome:
+        conditions.append("outcome = {outc:String}")
+        params["param_outc"] = outcome
+    if source:
+        conditions.append("source = {src:String}")
+        params["param_src"] = source
     if start_date:
         conditions.append("timestamp >= {start:String}")
         params["param_start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
@@ -69,9 +99,7 @@ async def list_audit_logs(
         params["param_end"] = end_date.strftime("%Y-%m-%d %H:%M:%S")
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
-    sql = f"""SELECT event_id, timestamp, actor_id, actor_email, actor_role,
-              action, resource_type, resource_id, resource_name, http_method,
-              http_path, status_code, ip_address, user_agent, detail
+    sql = f"""SELECT {_ALL_COLUMNS}
               FROM audit_log
               WHERE {where_clause}
               ORDER BY timestamp DESC
@@ -99,11 +127,19 @@ async def export_audit_logs(
     actor: str | None = Query(None),
     action: str | None = Query(None),
     resource_type: str | None = Query(None),
+    sensitivity: str | None = Query(None),
+    outcome: str | None = Query(None),
+    source: str | None = Query(None),
     start_date: datetime | None = Query(None),
     end_date: datetime | None = Query(None),
+    format: str = Query("csv", description="Export format: csv or json"),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Export audit log as CSV."""
+    """Export audit log for HIPAA compliance review.
+
+    Supports CSV (default) and JSON formats. CSV uses headers matching
+    the HIPAA audit trail specification (45 CFR 164.312(b)).
+    """
     conditions = []
     params = {}
 
@@ -116,6 +152,15 @@ async def export_audit_logs(
     if resource_type:
         conditions.append("resource_type = {rtype:String}")
         params["param_rtype"] = resource_type
+    if sensitivity:
+        conditions.append("sensitivity = {sens:String}")
+        params["param_sens"] = sensitivity
+    if outcome:
+        conditions.append("outcome = {outc:String}")
+        params["param_outc"] = outcome
+    if source:
+        conditions.append("source = {src:String}")
+        params["param_src"] = source
     if start_date:
         conditions.append("timestamp >= {start:String}")
         params["param_start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
@@ -124,9 +169,7 @@ async def export_audit_logs(
         params["param_end"] = end_date.strftime("%Y-%m-%d %H:%M:%S")
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
-    sql = f"""SELECT event_id, timestamp, actor_id, actor_email, actor_role,
-              action, resource_type, resource_id, resource_name, http_method,
-              http_path, status_code, ip_address, user_agent, detail
+    sql = f"""SELECT {_ALL_COLUMNS}
               FROM audit_log WHERE {where_clause}
               ORDER BY timestamp DESC LIMIT 10000
               FORMAT JSONEachRow"""
@@ -142,14 +185,53 @@ async def export_audit_logs(
                 except json.JSONDecodeError:
                     continue
 
+    if format == "json":
+        return StreamingResponse(
+            iter(
+                [
+                    json.dumps(
+                        {"audit_trail": rows, "exported_at": datetime.utcnow().isoformat(), "record_count": len(rows)},
+                        indent=2,
+                    )
+                ]
+            ),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=hipaa_audit_trail.json"},
+        )
+
+    # CSV export with HIPAA-standard column headers
     output = io.StringIO()
-    if rows:
-        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
-        writer.writeheader()
-        writer.writerows(rows)
+    fieldnames = [
+        "event_id",
+        "timestamp",
+        "actor_id",
+        "actor_email",
+        "actor_role",
+        "action",
+        "resource_type",
+        "resource_id",
+        "resource_name",
+        "http_method",
+        "http_path",
+        "status_code",
+        "ip_address",
+        "user_agent",
+        "detail",
+        "org_id",
+        "sensitivity",
+        "request_id",
+        "outcome",
+        "duration_ms",
+        "chain_hash",
+        "source",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
 
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=audit_log.csv"},
+        headers={"Content-Disposition": "attachment; filename=hipaa_audit_trail.csv"},
     )

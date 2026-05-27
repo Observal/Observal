@@ -414,7 +414,15 @@ export function useSessionsSummary() {
   });
 }
 export function useSessionDetail(id: string | undefined) {
-  return useQuery({ queryKey: ['sessions', 'detail', id], queryFn: () => dashboard.session(id!), enabled: !!id });
+  return useQuery({
+    queryKey: ['sessions', 'detail', id],
+    queryFn: () => dashboard.session(id!),
+    enabled: !!id,
+    refetchInterval: 1_000,
+    refetchIntervalInBackground: true,
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
 }
 export function useSessionTraces() {
   return useQuery({ queryKey: ['sessions', 'traces'], queryFn: dashboard.traces });

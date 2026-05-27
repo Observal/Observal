@@ -17,6 +17,7 @@ from api.deps import (
     apply_visibility_filter,
     check_listing_visibility,
     get_db,
+    get_effective_component_permission,
     optional_current_user,
     require_role,
     resolve_listing,
@@ -35,7 +36,6 @@ from schemas.skill import (
     SkillSubmitRequest,
     SkillUpdateRequest,
 )
-from services.audit_helpers import audit
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 from services.skill_validator import SkillValidationError, validate_skill_md
 
@@ -62,8 +62,32 @@ async def submit_skill(
     description = req.description
     slash_command = req.slash_command
     skill_path = req.skill_path
+    delivery_mode = req.delivery_mode or "git_fetch"
+    script_content = req.script_content
+    script_filename = req.script_filename
 
-    if req.git_url:
+    if delivery_mode == "registry_direct":
+        # Registry direct: skill_md_content is required, no git validation
+        if not skill_md_content:
+            raise HTTPException(status_code=422, detail="skill_md_content is required for registry_direct delivery")
+        # Parse frontmatter for auto-fill using simple string ops (no regex on user data)
+        import re as _re
+
+        fm_match = _re.match(r"^---\r?\n([\s\S]*?)\r?\n---", skill_md_content)
+        if fm_match:
+            for line in fm_match.group(1).split("\n"):
+                if line.startswith("name:") and not name:
+                    name = line[5:].strip()
+                elif line.startswith("description:") and not description:
+                    val = line[12:].strip()
+                    # Strip surrounding quotes
+                    if len(val) >= 2 and val[0] in ("'", '"') and val[-1] == val[0]:
+                        val = val[1:-1]
+                    description = val
+                elif line.startswith("command:") and slash_command is None:
+                    slash_command = line[8:].strip().lstrip("/")
+        validated = True  # Content is inline, no need to fetch from git
+    elif req.git_url:
         try:
             analysis = await validate_skill_md(
                 req.git_url,
@@ -114,6 +138,9 @@ async def submit_skill(
         git_url=req.git_url,
         git_ref=req.git_ref,
         skill_md_content=skill_md_content,
+        delivery_mode=delivery_mode,
+        script_content=script_content,
+        script_filename=script_filename,
         validated=validated,
         target_agents=req.target_agents,
         task_type=req.task_type,
@@ -129,9 +156,6 @@ async def submit_skill(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user, "skill.submit", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
-    )
     return SkillListingResponse.model_validate(listing)
 
 
@@ -159,7 +183,6 @@ async def list_skills(
     stmt = apply_visibility_filter(stmt, SkillListing, current_user)
     result = await db.execute(stmt.order_by(SkillListing.created_at.desc()))
     listings = [SkillListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(None, "skill.list", resource_type="skill")
     return listings
 
 
@@ -176,7 +199,6 @@ async def my_skills(
     )
     result = await db.execute(stmt)
     listings = [SkillListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(current_user, "skill.my_list", resource_type="skill")
     return listings
 
 
@@ -189,20 +211,18 @@ async def get_skill(
     optic.debug("skill get: listing_id={}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db, require_status=ListingStatus.approved)
     if listing:
-        await audit(
-            current_user, "skill.view", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
-        )
-        return SkillListingResponse.model_validate(listing)
+        resp = SkillListingResponse.model_validate(listing)
+        resp.user_permission = get_effective_component_permission(listing, current_user)
+        return resp
 
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
     if check_listing_visibility(listing, current_user):
-        await audit(
-            current_user, "skill.view", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
-        )
-        return SkillListingResponse.model_validate(listing)
+        resp = SkillListingResponse.model_validate(listing)
+        resp.user_permission = get_effective_component_permission(listing, current_user)
+        return resp
 
     raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -219,7 +239,7 @@ async def install_skill(
     listing = await resolve_listing(SkillListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(SkillListing, listing_id, db)
-        if not listing or listing.submitted_by != current_user.id:
+        if not listing or get_effective_component_permission(listing, current_user) != "owner":
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
 
     db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
@@ -230,9 +250,6 @@ async def install_skill(
 
     endpoints = await derive_endpoints(request)
     config = generate_skill_config(listing, req.ide, server_url=endpoints["api"], scope=req.scope)
-    await audit(
-        current_user, "skill.install", resource_type="skill", resource_id=str(listing.id), resource_name=listing.name
-    )
     return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
@@ -260,6 +277,9 @@ async def save_skill_draft(
         git_url=req.git_url,
         git_ref=req.git_ref,
         skill_md_content=req.skill_md_content,
+        delivery_mode=req.delivery_mode or "git_fetch",
+        script_content=req.script_content,
+        script_filename=req.script_filename,
         target_agents=req.target_agents,
         task_type=req.task_type,
         slash_command=req.slash_command,
@@ -274,13 +294,6 @@ async def save_skill_draft(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user,
-        "skill.draft.create",
-        resource_type="skill",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return SkillListingResponse.model_validate(listing)
 
 
@@ -295,7 +308,7 @@ async def update_skill_draft(
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     if listing.status not in (ListingStatus.draft, ListingStatus.rejected, ListingStatus.pending):
         raise HTTPException(status_code=400, detail="Only draft, rejected, or pending listings can be edited")
@@ -311,6 +324,9 @@ async def update_skill_draft(
         "git_url",
         "git_ref",
         "skill_md_content",
+        "delivery_mode",
+        "script_content",
+        "script_filename",
         "target_agents",
         "task_type",
         "slash_command",
@@ -336,19 +352,10 @@ async def update_skill_draft(
 
     await db.commit()
     await db.refresh(listing)
-    if listing.status == ListingStatus.pending:
-        action = "skill.pending.update"
-    elif listing.status == ListingStatus.rejected:
-        action = "skill.rejected.update"
+    if listing.status == ListingStatus.pending or listing.status == ListingStatus.rejected:
+        pass
     else:
-        action = "skill.draft.update"
-    await audit(
-        current_user,
-        action,
-        resource_type="skill",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
+        pass
     return SkillListingResponse.model_validate(listing)
 
 
@@ -362,7 +369,7 @@ async def start_edit_skill(
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     ver = listing.latest_version
     if not ver:
@@ -386,7 +393,7 @@ async def cancel_edit_skill(
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     ver = listing.latest_version
     if not ver:
@@ -406,7 +413,7 @@ async def submit_skill_draft(
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     if listing.status not in (ListingStatus.draft, ListingStatus.rejected):
         raise HTTPException(status_code=400, detail="Listing is not a draft")
@@ -417,13 +424,6 @@ async def submit_skill_draft(
     listing.status = ListingStatus.pending
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user,
-        "skill.draft.submit",
-        resource_type="skill",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return SkillListingResponse.model_validate(listing)
 
 
@@ -438,7 +438,7 @@ async def delete_skill(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
-    if listing.submitted_by != current_user.id and not is_admin:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not authorized")
     if listing.status == ListingStatus.approved and not is_admin:
         raise HTTPException(status_code=400, detail="Cannot delete an approved listing. Contact an admin.")
@@ -447,7 +447,6 @@ async def delete_skill(
         await db.delete(r)
 
     # Break the circular FK (listing → latest_version → listing) before delete
-    listing_name = listing.name
     listing.latest_version_id = None
     listing.latest_version = None
     await db.flush()
@@ -457,9 +456,6 @@ async def delete_skill(
     await db.flush()
     await db.delete(listing)
     await db.commit()
-    await audit(
-        current_user, "skill.delete", resource_type="skill", resource_id=str(listing_id), resource_name=listing_name
-    )
     return {"deleted": str(listing_id)}
 
 

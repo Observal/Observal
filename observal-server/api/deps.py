@@ -18,7 +18,7 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from config import settings
+from config import HAS_LICENSE
 from database import async_session
 from models.organization import Organization
 from models.user import User, UserRole
@@ -114,6 +114,9 @@ async def get_current_user(
     if user.auth_provider == "deactivated":
         raise HTTPException(status_code=403, detail="Account deactivated")
 
+    # Expose user to audit middleware
+    request.state.audit_user = user
+
     # Enforce must_change_password — fail closed: if Redis is down we cannot
     # guarantee the gate is enforced, so block non-exempt requests.
     if request.url.path not in _PASSWORD_CHANGE_EXEMPT_PATHS:
@@ -183,45 +186,46 @@ def require_role(min_role: UserRole):
     return _check
 
 
-def get_user_groups(user: User | None) -> list[str]:
-    """Get user groups extracted from the JWT token during authentication."""
-    if not user:
-        return []
-    return getattr(user, "_groups", [])
-
-
 def get_effective_agent_permission(agent: "Agent", user: User | None) -> str:  # noqa: F821
     """Evaluate effective permission for an agent: 'owner', 'edit', 'view', or 'none'."""
-    # Local import to avoid circular dependency
-    from models.agent import AgentVisibility
-
     if not user:
-        if agent.visibility == AgentVisibility.public:
-            return "view"
-        return "none"
+        return "view"
 
     if agent.created_by == user.id:
+        return "owner"
+
+    # Co-authors have full owner-level access
+    if str(user.id) in [str(uid) for uid in (agent.co_authors or [])]:
         return "owner"
 
     user_role_level = ROLE_HIERARCHY.get(user.role, 999)
     if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:
         return "owner"  # admins can edit anything
 
-    if user.org_id is not None and agent.owner_org_id == user.org_id:
+    return "view"
+
+
+def get_effective_component_permission(listing, user: User | None) -> str:
+    """Evaluate effective permission for a component listing: 'owner', 'view', or 'none'.
+
+    Works with McpListing, HookListing, SandboxListing, PromptListing.
+    Co-authors have full owner-level access (can edit, publish, manage co-authors).
+    """
+    if not user:
         return "view"
 
-    user_groups = get_user_groups(user)
-    best_perm = "none"
-    perm_levels = {"none": 0, "view": 1, "edit": 2, "owner": 3}
+    if listing.submitted_by == user.id:
+        return "owner"
 
-    for access in getattr(agent, "team_accesses", []):
-        if access.group_name in user_groups and perm_levels.get(access.permission, 0) > perm_levels[best_perm]:
-            best_perm = access.permission
+    # Co-authors have full owner-level access
+    if str(user.id) in [str(uid) for uid in (listing.co_authors or [])]:
+        return "owner"
 
-    if best_perm == "none" and agent.visibility == AgentVisibility.public:
-        return "view"
+    user_role_level = ROLE_HIERARCHY.get(user.role, 999)
+    if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:
+        return "owner"  # admins can edit anything
 
-    return best_perm
+    return "view"
 
 
 # Convenience shorthand for super_admin-only endpoints
@@ -273,7 +277,7 @@ async def require_local_mode() -> None:
 
     Usage: @router.post("/bootstrap", dependencies=[Depends(require_local_mode)])
     """
-    if settings.DEPLOYMENT_MODE != "local":
+    if HAS_LICENSE:
         raise HTTPException(status_code=403, detail="Disabled in enterprise mode")
 
 

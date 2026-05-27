@@ -1,3 +1,4 @@
+
 // SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 // SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
@@ -196,6 +197,7 @@ async function request<T = unknown>(
 			method,
 			headers,
 			body: body !== undefined ? JSON.stringify(body) : undefined,
+			cache: "no-store",
 		});
 		if (res.status < 500) break;
 		// Brief pause before retry on 5xx
@@ -222,6 +224,7 @@ async function request<T = unknown>(
 					method,
 					headers,
 					body: body !== undefined ? JSON.stringify(body) : undefined,
+					cache: "no-store",
 				});
 				if (retryRes.ok) {
 					if (retryRes.status === 204) return undefined as T;
@@ -261,7 +264,10 @@ async function request<T = unknown>(
 						: JSON.stringify(parsed.error);
 			}
 		} catch {
-			// not JSON, use raw text
+			// not JSON, use raw text unless it's HTML or a 5xx error
+			if (response.status >= 500 || text.trim().startsWith("<")) {
+				detail = "Unable to reach the server. Please try again later.";
+			}
 		}
 		const err = new Error(detail);
 		(err as Error & { status: number }).status = response.status;
@@ -605,9 +611,14 @@ export const admin = {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
 		return get<AuditLogEntry[]>(`/admin/audit-log${qs}`);
 	},
-	auditLogExport: (params?: Record<string, string>) => {
+	auditLogExport: async (params?: Record<string, string>) => {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
-		return get<string>(`/admin/audit-log/export${qs}`);
+		const token = getAccessToken();
+		const headers: Record<string, string> = {};
+		if (token) headers["Authorization"] = `Bearer ${token}`;
+		const res = await fetch(`${API}/admin/audit-log/export${qs}`, { headers });
+		if (!res.ok) throw new Error("Export failed");
+		return res.text();
 	},
 	securityEvents: (params?: Record<string, string>) => {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
@@ -694,7 +705,7 @@ export type RetentionWarnings = {
 
 // ── Config ─────────────────────────────────────────────────────────
 export type PublicConfig = {
-	deployment_mode: "local" | "enterprise";
+	licensed: boolean;
 	sso_enabled: boolean;
 	sso_only: boolean;
 	saml_enabled: boolean;
@@ -706,8 +717,20 @@ export type PublicConfig = {
 	branding_wordmark: string | null;
 };
 
+export interface IdeEntry {
+	name: string;
+	display_name: string;
+	features: string[];
+	accepts_model_choice: boolean;
+}
+
+interface IdesResponse {
+	ides: IdeEntry[];
+}
+
 export const config = {
 	public: () => get<PublicConfig>("/config/public"),
+	ides: () => get<IdesResponse>("/config/ides").then((r) => r.ides),
 };
 
 // ── Models ─────────────────────────────────────────────────────────

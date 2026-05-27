@@ -12,20 +12,26 @@ from config import settings
 
 def _get_real_ip(request: Request) -> str:
     """Return the real client IP.
+
     Only trusts X-Forwarded-For when the direct TCP peer is in TRUSTED_PROXY_IPS.
     Without configured trusted proxies, uses the socket IP directly.
+    Supports both plain IPs and CIDR notation in the setting.
     """
+    from services.shared.ip_utils import is_trusted, parse_trusted
+
     client_ip = request.client.host if request.client else "127.0.0.1"
     trusted_str = ds.get_sync("security.trusted_proxy_ips")
-    trusted = [ip.strip() for ip in trusted_str.split(",") if ip.strip()] if trusted_str else []
-    if not trusted or client_ip not in trusted:
+    if not trusted_str:
+        return client_ip
+    exact, networks = parse_trusted(trusted_str)
+    if not is_trusted(client_ip, exact, networks):
         return client_ip
     forwarded = request.headers.get("x-forwarded-for", "")
     if not forwarded:
         return client_ip
     ips = [ip.strip() for ip in forwarded.split(",")]
     for ip in reversed(ips):
-        if ip not in trusted:
+        if not is_trusted(ip, exact, networks):
             return ip
     return client_ip
 

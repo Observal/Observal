@@ -26,9 +26,7 @@ test.describe("Full Edit → Release → Review Flow", () => {
         description: "Initial description",
         owner: "test",
         model_name: "claude-sonnet-4-20250514",
-        visibility: "private",
-        components: []],
-        },
+        components: [],
       }),
     });
 

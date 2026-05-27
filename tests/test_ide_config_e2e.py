@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Comprehensive end-to-end tests for issue #434: first-class IDE support.
@@ -394,6 +395,16 @@ class TestGenerateOpenCodeConfig:
         entry = cfg["mcp_config"]["content"]["mcp"]["my-server"]
         assert "args" not in entry, "OpenCode entries should not have separate 'args' key"
         assert isinstance(entry["command"], list), "OpenCode 'command' should be a flat array"
+
+    def test_hooks_plugin_is_valid_javascript_source(self):
+        agent = _make_agent()
+        cfg = generate_agent_config(agent, "opencode")
+        plugin = cfg["hooks_config"]["content"]
+        assert 'import { execSync } from "child_process";' in plugin
+        assert "from loguru import logger" not in plugin
+        assert "export const ObservalPlugin" in plugin
+        assert '"session.created"' in plugin
+        assert '"session.idle"' in plugin
 
 
 class TestGenerateGeminiConfig:

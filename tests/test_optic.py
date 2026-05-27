@@ -23,11 +23,11 @@ class TestServerOptic:
         logger.remove()
 
     def test_setup_local_mode_adds_stderr_and_file_sinks(self, tmp_path: Path):
-        """In local mode, setup_optic adds console (INFO+) and file (DEBUG+) sinks."""
+        """In dev mode, setup_optic adds console (INFO+) and file (DEBUG+) sinks."""
         from services.optic import setup_optic
 
         with patch("services.optic.Path.home", return_value=tmp_path):
-            setup_optic(mode="local")
+            setup_optic(mode="dev")
 
         # Verify file sink directory was created
         log_dir = tmp_path / ".observal" / "logs"
@@ -41,10 +41,10 @@ class TestServerOptic:
         assert any("test debug message" in str(m) for m in messages)
 
     def test_setup_enterprise_mode_no_debug_output(self, capsys):
-        """In enterprise mode, DEBUG messages are suppressed."""
+        """In prod mode, DEBUG messages are suppressed."""
         from services.optic import setup_optic
 
-        setup_optic(mode="enterprise")
+        setup_optic(mode="prod")
 
         logger.debug("this should be suppressed")
         logger.info("this should appear")
@@ -61,7 +61,7 @@ class TestServerOptic:
         logger.add(sys.stderr)
 
         # After setup, the old sink should be gone (replaced by our configured ones)
-        setup_optic(mode="enterprise")
+        setup_optic(mode="prod")
 
         # Logging should still work (our sink is active)
         logger.info("post-setup message")

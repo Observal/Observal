@@ -15,3 +15,4 @@ from services.ide import cursor as _cursor  # noqa: F401
 from services.ide import gemini_cli as _gemini_cli  # noqa: F401
 from services.ide import kiro as _kiro  # noqa: F401
 from services.ide import opencode as _opencode  # noqa: F401
+from services.ide import pi as _pi  # noqa: F401

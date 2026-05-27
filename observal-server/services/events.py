@@ -93,12 +93,10 @@ class AgentLifecycleEvent(Event):
 
 @dataclass(frozen=True, slots=True)
 class AuditableAction(Event):
-    """Generic audit event for HIPAA-level logging.
+    """Deprecated: retained only for ee/ backward compatibility.
 
-    Covers all reads and writes across every endpoint. The ``action``
-    field uses dotted strings like ``"trace.view"`` or ``"review.approve"``.
-    HTTP context (IP, user agent, method, path) is injected by the
-    ee/ audit handler via contextvars - not carried on this event.
+    The loguru-based audit middleware replaces all manual audit() calls.
+    This event type is no longer emitted by core code.
     """
 
     actor_id: str

@@ -78,7 +78,7 @@ You rarely call either one directly. `observal doctor patch --shim` (or `--all`)
 
 Interception is **transparent**: nothing is changed on the wire. If Observal is unreachable, the tool call still succeeds — the telemetry is queued locally (see [Telemetry buffer](#telemetry-buffer) below) and flushed later.
 
-For more on this, see [Shim vs proxy](../concepts/shim-vs-proxy.md).
+The shim handles stdio transport; the proxy handles HTTP/SSE transport. Both are installed as CLI entry points.
 
 ## Hooks (a different kind)
 
@@ -130,7 +130,7 @@ The eval engine scores each session on six dimensions:
 | Thought process | LLM-as-judge |
 | Adversarial robustness | Rule-based (injection detection, canary parroting) |
 
-Dimensions are weighted, penalties applied, and mapped to a letter grade (A–F). Weights and penalties are tunable via `observal admin weights` and `observal admin penalties`. Deep dive: [Evaluation engine](../concepts/evaluation.md).
+Dimensions are weighted, penalties applied, and mapped to a letter grade (A-F). Weights and penalties are tunable via `observal admin weights` and `observal admin penalties`.
 
 ## Next
 

@@ -9,7 +9,7 @@ Verifies that:
 """
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -97,17 +97,16 @@ async def test_add_source_ignores_client_owner_org_id():
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
-        with patch("api.routes.component_source.audit", new_callable=AsyncMock):
-            async with _make_client() as client:
-                r = await client.post(
-                    "/api/v1/component-sources",
-                    json={
-                        "url": "https://github.com/example/repo",
-                        "component_type": "mcp",
-                        "is_public": True,
-                        "owner_org_id": str(foreign_org),  # attacker supplies foreign org
-                    },
-                )
+        async with _make_client() as client:
+            r = await client.post(
+                "/api/v1/component-sources",
+                json={
+                    "url": "https://github.com/example/repo",
+                    "component_type": "mcp",
+                    "is_public": True,
+                    "owner_org_id": str(foreign_org),  # attacker supplies foreign org
+                },
+            )
         assert r.status_code in (201, 409)
         # The source added to DB must use the user's org, not the foreign one
         if "source" in captured:
@@ -157,9 +156,8 @@ async def test_list_sources_excludes_other_org_private_sources():
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
-        with patch("api.routes.component_source.audit", new_callable=AsyncMock):
-            async with _make_client() as client:
-                r = await client.get("/api/v1/component-sources")
+        async with _make_client() as client:
+            r = await client.get("/api/v1/component-sources")
         assert r.status_code == 200
         # The WHERE clause on the stmt should include org scoping
         assert len(executed_stmts) == 1
@@ -196,9 +194,8 @@ async def test_list_sources_no_org_user_sees_only_public():
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
-        with patch("api.routes.component_source.audit", new_callable=AsyncMock):
-            async with _make_client() as client:
-                r = await client.get("/api/v1/component-sources")
+        async with _make_client() as client:
+            r = await client.get("/api/v1/component-sources")
         assert r.status_code == 200
         assert len(executed_stmts) == 1
         # Query must filter to is_public = true only
@@ -233,9 +230,8 @@ async def test_get_source_private_other_org_returns_404():
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
-        with patch("api.routes.component_source.audit", new_callable=AsyncMock):
-            async with _make_client() as client:
-                r = await client.get(f"/api/v1/component-sources/{private_source.id}")
+        async with _make_client() as client:
+            r = await client.get(f"/api/v1/component-sources/{private_source.id}")
         assert r.status_code == 404
     finally:
         app.dependency_overrides.clear()
@@ -261,9 +257,8 @@ async def test_get_source_private_same_org_returns_200():
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
-        with patch("api.routes.component_source.audit", new_callable=AsyncMock):
-            async with _make_client() as client:
-                r = await client.get(f"/api/v1/component-sources/{private_source.id}")
+        async with _make_client() as client:
+            r = await client.get(f"/api/v1/component-sources/{private_source.id}")
         assert r.status_code == 200
     finally:
         app.dependency_overrides.clear()
@@ -288,9 +283,8 @@ async def test_get_source_public_any_org_returns_200():
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
-        with patch("api.routes.component_source.audit", new_callable=AsyncMock):
-            async with _make_client() as client:
-                r = await client.get(f"/api/v1/component-sources/{public_source.id}")
+        async with _make_client() as client:
+            r = await client.get(f"/api/v1/component-sources/{public_source.id}")
         assert r.status_code == 200
     finally:
         app.dependency_overrides.clear()

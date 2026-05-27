@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # Standalone Observal deployment — uses pre-built images from GHCR.
@@ -11,7 +12,6 @@ services:
     env_file:
       - ./.env
     environment:
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
       - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-90}
     depends_on:
       observal-db:
@@ -31,11 +31,10 @@ services:
 
   observal-api:
     image: ghcr.io/blazeup-ai/observal-api:${OBSERVAL_VERSION:-latest}
-    command: ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    command: ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     env_file:
       - ./.env
     environment:
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
       - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-90}
       - JWT_KEY_DIR=/data/keys
       - SKIP_DDL_ON_STARTUP=true
@@ -97,7 +96,7 @@ services:
       - observal-net
 
   observal-clickhouse:
-    image: clickhouse/clickhouse-server:26.4
+    image: clickhouse/clickhouse-server:26.5
     ports:
       - "${CLICKHOUSE_HOST_PORT:-8123}:8123"
     env_file:
@@ -145,7 +144,6 @@ services:
     env_file:
       - ./.env
     environment:
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
     depends_on:
       observal-init:
         condition: service_completed_successfully

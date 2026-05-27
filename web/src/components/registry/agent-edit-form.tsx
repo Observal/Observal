@@ -57,8 +57,6 @@ interface AgentDetail {
   status?: string;
   version?: string;
   owner?: string;
-  visibility?: string;
-  team_accesses?: { group_name: string; permission: "view" | "edit" }[];
   user_permission?: string;
   description?: string;
   prompt?: string;

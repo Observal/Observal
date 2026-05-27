@@ -25,6 +25,7 @@ from rich import print as rprint
 
 from observal_cli import client, config
 from observal_cli.ide_registry import get_scope_aware_ides
+from observal_cli.prompts import select_one, text_input
 from observal_cli.render import spinner
 
 # Hook script names used as placeholders in server-generated agent configs.
@@ -105,14 +106,14 @@ def _collect_mcp_env_vars(agent_detail: dict) -> dict[str, dict[str, str]]:
             rprint(f"\n[bold]{mcp_name}[/bold] requires {len(required)} environment variable(s):")
             for ev in required:
                 desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                val = typer.prompt(f"  {ev['name']}{desc}")
+                val = text_input(f"  {ev['name']}{desc}")
                 mcp_env[ev["name"]] = val
 
         if optional:
             rprint(f"\n[dim]{mcp_name}: {len(optional)} optional env var(s):[/dim]")
             for ev in optional:
                 desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                val = typer.prompt(f"  {ev['name']}{desc} (press Enter to skip)", default="")
+                val = text_input(f"  {ev['name']}{desc} (press Enter to skip)", default="")
                 if val:
                     mcp_env[ev["name"]] = val
 
@@ -320,7 +321,6 @@ def _collect_install_options(
     import sys
 
     from observal_cli.ide_registry import accepts_model_choice
-    from observal_cli.prompts import select_one
     from observal_cli.render import format_model as _format_model
 
     opts: dict = {}
@@ -612,6 +612,30 @@ def register_pull(app: typer.Typer):
                         "pulled_at": _dt.datetime.now(_dt.UTC).isoformat(),
                     }
                 )
+            )
+
+            # For IDEs without a project-scoped cwd (e.g. pi), write the binding
+            # into the global config so the telemetry extension can attribute sessions.
+            if ide == "pi":
+                from observal_cli.config import load, save
+
+                cfg = load()
+                cfg["active_agent"] = {
+                    "id": str(agent_uuid),
+                    "name": agent_detail.get("name", resolved),
+                    "version": agent_version,
+                }
+                save(cfg)
+
+            from observal_cli.audit import emit_cli_audit
+
+            emit_cli_audit(
+                "agent.pull",
+                resource_type="agent",
+                resource_id=str(agent_uuid),
+                resource_name=agent_detail.get("name", resolved),
+                detail=f"ide={ide}",
+                sensitivity="high",
             )
 
         # ── Output summary ──────────────────────────────────

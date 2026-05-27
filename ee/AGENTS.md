@@ -3,106 +3,97 @@
 
 # Enterprise Edition
 
-Source-available enterprise features for Observal. Loaded only when `DEPLOYMENT_MODE=enterprise`.
+Source-available enterprise features. Loaded when `OBSERVAL_LICENSE_KEY` is set and contains a valid signed JWT. Features are individually gated: the JWT's `features` array controls which capabilities activate.
 
-**License:** Separate enterprise license (`ee/LICENSE`). Commercial license required for production. Community contributions NOT accepted into this directory.
+**License:** `ee/LICENSE`. Commercial license required for production. No community contributions accepted here.
 
-**Critical constraint:** Core must NEVER import from `ee/`. Dependency is strictly one-way: `ee/` imports core, never the reverse. The open-source edition must be fully functional without `ee/`.
+**Critical constraint:** Core never imports from `ee/`. One-way dependency only. Open-source edition is fully functional without this directory.
 
 ## How it loads
 
-`observal-server/main.py` calls `register_enterprise(app, settings)` from `ee/__init__.py` which:
+`observal-server/main.py` calls `register_enterprise(app, settings)` from `ee/__init__.py`:
 
-1. Validates enterprise config via `config_validator.py`
-2. Mounts EE routes (`/api/v1/sso/saml/*`, `/api/v1/scim/*`, `/api/v1/admin/audit-log*`)
-3. Adds `EnterpriseGuardMiddleware` (returns 503 on EE routes if config is invalid)
-4. Registers audit event bus handlers on `services.events.bus`
-5. Stores config issues in `app.state.enterprise_issues`
+1. Validates license JWT via `ee/license.py` (checks signature, expiry, org_id, features)
+2. Mounts EE routes (SAML, SCIM, audit, SSO admin, exec dashboard)
+3. Adds `EnterpriseGuardMiddleware` (503 on EE routes if license invalid/expired)
 
-## Config validation
+## License key format
 
-Five settings checked on startup. If any fail, issues are stored and the guard middleware blocks EE routes with 503.
+Signed JWT containing:
 
-| Setting | Requirement |
-|---------|------------|
-| `SECRET_KEY` | Not the default `"change-me-to-a-random-string"` |
-| `OAUTH_CLIENT_ID` | Must be set |
-| `OAUTH_CLIENT_SECRET` | Must be set |
-| `OAUTH_SERVER_METADATA_URL` | Must be set (OIDC discovery) |
-| `FRONTEND_URL` | Not localhost or empty |
+```json
+{
+  "org_id": "uuid",
+  "features": ["insights", "saml", "scim", "audit", "exec_dashboard"],
+  "exp": 1750000000
+}
+```
 
-## Features
+Usage in code: `from ee.license import is_feature_licensed`. Returns bool. Generate keys with `ee/scripts/generate_license.py`.
 
-### Audit logging (implemented)
+## Feature inventory
 
-Listens to 8 event types on the core event bus (`services/events.py`):
-- `UserCreated`, `UserDeleted`
-- `LoginSuccess`, `LoginFailure`
-- `RoleChanged`, `SettingsChanged`
-- `AlertRuleChanged`, `AgentLifecycleEvent`
+### Insights (`ee/observal_insights/`)
 
-Each event → row in ClickHouse `audit_log` table with actor info, resource details, HTTP metadata, and freeform detail JSON.
+Full agent usage analysis pipeline. The open-source `services/insights/` returns empty stubs; this provides the real implementation.
 
-**API endpoints (admin-only):**
-- `GET /api/v1/admin/audit-log` — query with filters (actor, action, resource_type, date range), paginated
-- `GET /api/v1/admin/audit-log/export` — CSV download (max 10k rows)
+Key modules: `batch.py` (job orchestration), `generator.py` (LLM narrative), `sections.py` (report builders), `metrics.py` (aggregation), `facets.py` (session analysis), `enrichment.py` (trace enrichment), `reconcile.py` (session reconciliation), `shim_enrichment.py` (shim data), `trace_dedup.py` / `dedup.py` (deduplication), `cross_user.py` (pattern analysis), `session_cache.py` (caching), `transcript.py` (session transcripts), `html_export.py` (export), `pricing.py` (token costs), `regression.py` (performance regression), `anonymize.py` (data anonymization).
 
-### SAML 2.0 SSO (stub — returns 501)
+### Audit (HIPAA-compliant)
 
-- `POST /api/v1/sso/saml/login` — initiate SAML login
-- `POST /api/v1/sso/saml/acs` — Assertion Consumer Service callback
-- `GET /api/v1/sso/saml/metadata` — SP metadata
+Loguru-based middleware captures every API request. Events classified for HIPAA compliance.
 
-### SCIM 2.0 provisioning (stub — returns 501)
+- `ee/observal_server/routes/audit.py`: query + export (CSV/JSON, max 10k rows)
+- `ee/observal_server/services/audit.py`: sink to ClickHouse `audit_log` table
+- `api/middleware/audit.py` (core): the middleware itself
+- `services/audit/classification.py` (core): event classification rules
+- `observal_cli/audit.py`: CLI-side audit event emission
 
-- `GET /api/v1/scim/Users` — list users
-- `POST /api/v1/scim/Users` — create user
-- `GET /api/v1/scim/Users/{user_id}` — get user
-- `PUT /api/v1/scim/Users/{user_id}` — update user
-- `DELETE /api/v1/scim/Users/{user_id}` — delete user
+### SAML 2.0 SSO
 
-### Plugin registry (placeholder)
+Full implementation: login initiation, ACS callback, SP metadata, admin configuration.
 
-`ee/plugins/__init__.py` — future home for Grafana, Prometheus, Datadog, and SIEM integrations.
+- Routes: `sso_saml.py`, `admin_sso.py`
+- Service: `services/saml.py`
+
+### SCIM 2.0
+
+User provisioning: list, create, get, update, delete.
+
+- Route: `scim.py`
+- Service: `services/scim_service.py`
+
+### Exec dashboard
+
+Executive analytics dashboard. Route: `exec_dashboard.py`.
 
 ## Frontend architecture
 
-There is NO separate `web/ee/` directory. Enterprise frontend code lives in `web/src/` alongside core code, gated by `useDeploymentConfig()`.
-
-This follows the industry-standard pattern (Langfuse, PostHog, Infisical, Lago all do this). The `ee/` boundary is for backend licensing — the frontend is AGPL and gates features server-side, not by directory.
-
-**How enterprise features are gated in the frontend:**
-- `useDeploymentConfig()` hook returns `{ deploymentMode, ssoEnabled, samlEnabled }`
-- Pages check `deploymentMode === "enterprise"` and show upgrade prompts if not
-- SSO button in login page: conditional on `ssoEnabled`
-- Enterprise settings section: conditional on `deploymentMode`
-- API filters results server-side — frontend reads what it's given
-
-**Enterprise-only admin pages** (audit log viewer, diagnostics, SCIM config) should be regular pages in `web/src/app/(admin)/` that check deployment mode and show an upgrade prompt when not enterprise. Do NOT create a `web/ee/` directory.
-
-**Future resource-based access control** will follow PostHog's annotation pattern: include `user_access_level` on every API response object. The API filters results by team membership; the frontend reads the annotation. No CASL or client-side policy engine needed initially.
+NO `web/ee/` directory. Enterprise pages live in `web/src/app/(admin)/` and call license-gated endpoints. Server returns 403 for unlicensed features. Frontend shows upgrade prompts.
 
 ## Directory layout
 
 ```
 ee/
-├── __init__.py                         # register_enterprise() entrypoint
-├── LICENSE                             # Enterprise license
-├── AGENTS.md                           # This file
-├── README.md                           # Public-facing description
-├── docs/
-│   └── cli.md                          # EE configuration reference
+├── __init__.py                    # register_enterprise() entrypoint
+├── LICENSE
+├── license.py                     # is_feature_licensed(), require_license(), get_license_info()
+├── AGENTS.md
+├── README.md
+├── docs/cli.md
+├── scripts/generate_license.py
 ├── observal_server/
-│   ├── middleware/
-│   │   └── enterprise_guard.py         # 503 guard for misconfigured EE routes
-│   ├── routes/
-│   │   ├── __init__.py                 # mount_ee_routes() — mounts all EE routers
-│   │   ├── audit.py                    # Audit log query + CSV export
-│   │   ├── scim.py                     # SCIM 2.0 stubs
-│   │   └── sso_saml.py                # SAML 2.0 stubs
-│   └── services/
-│       ├── audit.py                    # Event bus handlers → ClickHouse audit_log writes
-│       └── config_validator.py         # Startup config validation
-└── plugins/
-    └── __init__.py                     # Future integrations placeholder
+│   ├── middleware/enterprise_guard.py
+│   ├── routes/ (audit, admin_sso, exec_dashboard, scim, sso_saml)
+│   └── services/ (audit, config_validator, saml, scim_service)
+├── observal_insights/ (~20 modules, see above)
+└── plugins/__init__.py            # Future integrations placeholder
 ```
+
+## Coding patterns for EE code
+
+- Import core freely: `from services.clickhouse.query import query`, `from models.user import User`
+- Never expose EE imports to core: if core needs to call EE functionality, use a stub pattern (core defines the interface, EE provides the implementation, loaded at runtime)
+- Gate routes with `require_license("feature_name")` dependency
+- All EE tests live in `ee/` or use `pytest.importorskip("ee")`
+- The `EnterpriseGuardMiddleware` is the last line of defense: even if a route is mounted, requests fail with 503 if the license is invalid

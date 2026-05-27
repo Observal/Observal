@@ -44,6 +44,7 @@ class TestReadiness:
         app.dependency_overrides[get_db] = _mock_get_db
         try:
             with (
+                patch("main.HAS_LICENSE", False),
                 patch("services.clickhouse.clickhouse_health", new_callable=AsyncMock, return_value=True),
                 patch("services.redis.ping", new_callable=AsyncMock, return_value=True),
             ):
@@ -73,11 +74,10 @@ class TestReadiness:
         app.state.enterprise_issues = ["SECRET_KEY is default"]
         try:
             with (
-                patch("main.settings") as mock_settings,
+                patch("main.HAS_LICENSE", True),
                 patch("services.clickhouse.clickhouse_health", new_callable=AsyncMock, return_value=True),
                 patch("services.redis.ping", new_callable=AsyncMock, return_value=True),
             ):
-                mock_settings.DEPLOYMENT_MODE = "enterprise"
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                     r = await ac.get("/health")
             # degraded is still 200 — the app CAN serve requests
@@ -131,10 +131,10 @@ class TestDiagnostics:
         app.dependency_overrides[get_current_user] = _mock_admin
         try:
             with (
+                patch("api.routes.admin.enterprise_settings.HAS_LICENSE", False),
                 patch("api.routes.admin.enterprise_settings.settings") as mock_settings,
                 patch("api.routes.admin.enterprise_settings.ds") as mock_ds,
             ):
-                mock_settings.DEPLOYMENT_MODE = "local"
                 mock_settings.JWT_SIGNING_ALGORITHM = "ES256"
                 mock_ds.get_bool = AsyncMock(return_value=True)
                 mock_ds.get = AsyncMock(return_value="http://localhost:3000")
@@ -142,7 +142,7 @@ class TestDiagnostics:
                     r = await ac.get("/api/v1/admin/diagnostics")
             assert r.status_code == 200
             data = r.json()
-            assert data["deployment_mode"] == "local"
+            assert data["licensed"] is False
             assert data["status"] == "ok"
             assert "database" in data["checks"]
             assert "jwt_keys" in data["checks"]
@@ -194,10 +194,10 @@ class TestDiagnostics:
         app.dependency_overrides[get_current_user] = _mock_admin
         try:
             with (
+                patch("api.routes.admin.enterprise_settings.HAS_LICENSE", True),
                 patch("api.routes.admin.enterprise_settings.settings") as mock_settings,
                 patch("api.routes.admin.enterprise_settings.ds") as mock_ds,
             ):
-                mock_settings.DEPLOYMENT_MODE = "enterprise"
                 mock_settings.SECRET_KEY = "change-me-to-a-random-string"
                 mock_settings.OAUTH_CLIENT_ID = None
                 mock_settings.FRONTEND_URL = "http://localhost:3000"

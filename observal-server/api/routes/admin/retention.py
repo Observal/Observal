@@ -3,8 +3,6 @@
 
 """Admin data retention routes."""
 
-import json
-
 from fastapi import Depends, HTTPException
 from loguru import logger as optic
 from sqlalchemy import func, select
@@ -14,7 +12,6 @@ import services.dynamic_settings as ds
 from api.deps import get_db, require_role
 from models.user import User, UserRole
 from schemas.retention import RetentionConfigResponse, RetentionConfigUpdate
-from services.audit_helpers import audit
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
@@ -77,20 +74,6 @@ async def update_retention_config(
             detail=f"Data retention {'enabled' if body.retention_enabled else 'disabled'}"
             f" (days={body.data_retention_days}, scores={body.score_retention_days}, max={body.max_trace_count})",
         )
-    )
-    await audit(
-        current_user,
-        "admin.retention.update",
-        "retention",
-        resource_id=str(org.id),
-        detail=json.dumps(
-            {
-                "retention_enabled": body.retention_enabled,
-                "data_retention_days": body.data_retention_days,
-                "score_retention_days": body.score_retention_days,
-                "max_trace_count": body.max_trace_count,
-            }
-        ),
     )
 
     return RetentionConfigResponse(

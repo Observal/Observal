@@ -96,7 +96,7 @@ export function InsightsTab() {
         <div className="rounded-md border border-border p-8 text-center text-muted-foreground">
           <Cpu className="h-8 w-8 mx-auto mb-3 opacity-50" />
           <p className="text-sm font-medium mb-1">AI Insights not available</p>
-          <p className="text-xs">Configure EVAL_MODEL_NAME in your environment to enable LLM-powered strategic recommendations.</p>
+          <p className="text-xs">Configure insights models in Settings to enable LLM-powered strategic recommendations.</p>
         </div>
       </div>
     );

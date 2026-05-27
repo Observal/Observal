@@ -78,7 +78,8 @@ def logs(
     if not LOG_PATH.exists():
         console.print(
             f"[yellow]No log file found at {LOG_PATH}[/yellow]\n"
-            "[dim]Start the server with DEPLOYMENT_MODE=local to generate logs.[/dim]"
+            "[dim]Logs are written when the server runs without a license key (dev mode).[/dim]\n"
+            "[dim]Set observability.log_format=console in Settings to enable file logging.[/dim]"
         )
         raise typer.Exit(1)
 

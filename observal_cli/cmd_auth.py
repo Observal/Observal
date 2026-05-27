@@ -8,6 +8,7 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Riya Rani <rr1182764@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Auth & config CLI commands."""
@@ -27,6 +28,7 @@ from rich import print as rprint
 
 from observal_cli import client, config
 from observal_cli.branding import welcome_banner
+from observal_cli.prompts import password_input, text_input
 from observal_cli.render import console, kv_panel, spinner, status_badge
 
 # ── Auth subgroup ───────────────────────────────────────────
@@ -65,7 +67,7 @@ def _prompt_password(prompt_text: str = "New password") -> str:
         rprint(f"  [dim]· {label}[/dim]")
 
     while True:
-        pw = typer.prompt(f"\n{prompt_text}", hide_input=True)
+        pw = password_input(prompt_text)
         failed = _validate_password(pw)
         if not failed:
             return pw
@@ -99,7 +101,8 @@ def login(
     """
     optic.debug("cli: auth login")
     welcome_banner()
-    server_url = server or typer.prompt("Server URL", default="http://localhost:80")
+
+    server_url = server or text_input("Server URL", default="http://localhost:80")
     server_url = server_url.rstrip("/")
 
     # 1. Check connectivity + initialization state
@@ -121,13 +124,13 @@ def login(
     if not initialized:
         rprint("[green]Connected.[/green] No users yet - let's set up your admin account.\n")
 
-        admin_email = email or typer.prompt("Admin email")
-        admin_name = name or typer.prompt("Admin name", default="admin")
+        admin_email = email or text_input("Admin email")
+        admin_name = name or text_input("Admin name", default="admin")
         if password:
             admin_password = password
         else:
             admin_password = _prompt_password("Admin password")
-            confirm = typer.prompt("Confirm password", hide_input=True)
+            confirm = password_input("Confirm password")
             if admin_password != confirm:
                 rprint("[red]Passwords do not match.[/red]")
                 raise typer.Exit(1)
@@ -192,7 +195,7 @@ def login(
         if sso_available:
             rprint("  [2] SSO (opens browser)")
         rprint("  [3] Sign in via browser")
-        choice = typer.prompt("Login method", default="1")
+        choice = text_input("Login method", default="1")
         if (choice == "2" and sso_available) or choice == "3":
             sso_mode = True
 
@@ -206,8 +209,9 @@ def login(
         return
 
     # 5. Interactive: prompt for email/username + password
-    login_email = email or typer.prompt("Email or username")
-    login_password = password or typer.prompt("Password", hide_input=True)
+    # In _do_password_login / login interactive section
+    login_email = email or text_input("Email or username")
+    login_password = password or password_input("Password")
     _do_password_login(server_url, login_email, login_password)
 
 
@@ -375,9 +379,9 @@ def change_password():
         rprint("[red]Not logged in.[/red] Run [bold]observal auth login[/bold] first.")
         raise typer.Exit(1)
 
-    current = typer.prompt("Current password", hide_input=True)
+    current = password_input("Current password")
     new_pw = _prompt_password("New password")
-    confirm = typer.prompt("Confirm new password", hide_input=True)
+    confirm = password_input("Confirm password")
     if new_pw != confirm:
         rprint("[red]Passwords do not match.[/red]")
         raise typer.Exit(1)
@@ -430,7 +434,6 @@ def set_username(
 
 def version_callback():
     """Show CLI version."""
-    optic.debug("version_callback called")
     from importlib.metadata import version as pkg_version
 
     try:
@@ -497,8 +500,8 @@ def _do_password_login(server_url: str, email: str, password: str):
         if data.get("must_change_password"):
             rprint("[yellow]Your admin has required a password change.[/yellow]\n")
             access_token = data["access_token"]
-            new_pw = typer.prompt("New password", hide_input=True)
-            confirm = typer.prompt("Confirm new password", hide_input=True)
+            new_pw = password_input("New password")
+            confirm = password_input("Confirm new password")
             if new_pw != confirm:
                 rprint("[red]Passwords do not match.[/red]")
                 raise typer.Exit(1)
@@ -775,22 +778,21 @@ def register_config(app: typer.Typer):
 
 
 def _post_login_setup():
-    """Post-login setup: run observal doctor which checks and offers to fix everything."""
+    """Post-login setup: run observal doctor which checks and offers to fix."""
     optic.debug("_post_login_setup called")
-    import subprocess
-    import sys
-
     rprint()
     try:
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        subprocess.run(
-            [sys.executable, "-m", "observal_cli.main", "doctor"],
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-            env=env,
-        )
+        from unittest.mock import MagicMock
+
+        from observal_cli.cmd_doctor import doctor
+
+        # Call doctor inline so stdin prompts work naturally.
+        # Pass a fake ctx with invoked_subcommand=None so it runs the check logic.
+        ctx = MagicMock()
+        ctx.invoked_subcommand = None
+        doctor(ctx=ctx, yes=False)
+    except (SystemExit, typer.Exit, typer.Abort):
+        pass  # Normal exit from doctor
     except Exception as e:
         rprint(f"[yellow]Could not run doctor: {e}[/yellow]")
         rprint("  Run [bold]observal doctor[/bold] manually to configure your IDEs.")
@@ -808,6 +810,7 @@ def _post_auth_onboarding():
             "Codex": (Path.home() / ".codex", "codex"),
             "Copilot": (Path.home() / ".vscode", "copilot"),
             "OpenCode": (Path.home() / ".config" / "opencode", "opencode"),
+            "Pi": (Path.home() / ".pi" / "agent", "pi"),
         }
 
         found: list[tuple[str, str, int, int]] = []  # (label, ide_key, agents, mcps)
@@ -849,10 +852,10 @@ def _post_auth_onboarding():
 
 
 def _install_observal_skill():
-    """Install the bundled Observal skill to all detected IDE skill directories.
+    """Install the bundled Observal skills to all detected IDE skill directories.
 
-    This makes the 'observal' skill available to LLMs in every IDE that supports
-    skills, enabling commands like `/observal create an agent` or
+    This makes the 'observal' family of skills available to LLMs in every IDE
+    that supports skills, enabling commands like `/observal create an agent` or
     `kiro-cli chat --agent observal`.
     """
     optic.debug("_install_observal_skill called")
@@ -860,11 +863,21 @@ def _install_observal_skill():
 
     from observal_cli.ide_registry import IDE_REGISTRY
 
-    skill_source = Path(__file__).parent / "skills" / "observal" / "SKILL.md"
-    if not skill_source.exists():
+    skills_base = Path(__file__).parent / "skills"
+    skill_dirs = [
+        "observal",
+        "observal-agents",
+        "observal-registry",
+        "observal-ops",
+        "observal-admin",
+        "observal-advanced",
+    ]
+
+    # Verify at least the core skill exists.
+    core_skill = skills_base / "observal" / "SKILL.md"
+    if not core_skill.exists():
         return
 
-    content = skill_source.read_text(encoding="utf-8")
     installed: list[str] = []
 
     # Additional user-scope skill paths not formally in the registry but known to work.
@@ -882,21 +895,27 @@ def _install_observal_skill():
         if not user_path:
             continue
 
-        # Replace {name} placeholder with 'observal'
-        resolved = user_path.replace("{name}", "observal")
-        dest = Path(resolved.replace("~", str(Path.home())))
-
         # Only install if the IDE directory exists (IDE is installed)
         ide_config_dir = Path.home() / spec.get("config_dir", "")
         if not ide_config_dir.exists():
             continue
 
-        try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(content, encoding="utf-8")
+        ide_installed = False
+        for skill_dir in skill_dirs:
+            source = skills_base / skill_dir / "SKILL.md"
+            if not source.exists():
+                continue
+            resolved = user_path.replace("{name}", skill_dir)
+            dest = Path(resolved.replace("~", str(Path.home())))
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+                ide_installed = True
+            except OSError:
+                pass
+
+        if ide_installed:
             installed.append(spec["display_name"])
-        except OSError:
-            pass
 
     # Kiro-specific: ensure the active agent has skill resources wired up.
     # Without this, skills in ~/.kiro/skills/ are invisible to the agent.

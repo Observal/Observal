@@ -30,7 +30,6 @@ from schemas.agent import (
     ValidationIssue,
     ValidationResult,
 )
-from services.audit_helpers import audit
 from services.ide import generate_agent_config
 from services.registry_telemetry import emit_registry_event
 
@@ -193,14 +192,6 @@ async def install_agent(
         metadata={"ide": req.ide},
     )
 
-    await audit(
-        current_user,
-        "agent.install",
-        resource_type="agent",
-        resource_id=str(resolved_agent_id),
-        resource_name=agent.name,
-    )
-
     warnings = snippet.pop("_warnings", [])
     return AgentInstallResponse(agent_id=resolved_agent_id, ide=req.ide, config_snippet=snippet, warnings=warnings)
 
@@ -227,9 +218,6 @@ async def agent_download_stats(
     from services.download_tracker import get_download_stats
 
     stats = await get_download_stats(agent.id, db)
-    await audit(
-        current_user, "agent.download_stats", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
     return stats
 
 
@@ -267,9 +255,6 @@ async def get_agent_traces(
         limit=limit,
         offset=offset,
     )
-    await audit(
-        current_user, "agent.traces", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
     return {"agent_id": str(agent.id), "traces": traces, "count": len(traces)}
 
 
@@ -293,9 +278,6 @@ async def resolve_agent_components(
     resolved = await resolve_agent(agent, db)
     from services.agent_builder import build_composition_summary
 
-    await audit(
-        current_user, "agent.resolve", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
     return build_composition_summary(resolved)
 
 
@@ -330,9 +312,6 @@ async def get_agent_manifest(
         )
     from services.agent_builder import build_agent_manifest
 
-    await audit(
-        current_user, "agent.manifest", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
     return build_agent_manifest(resolved)
 
 
@@ -363,5 +342,4 @@ async def validate_agent_composition(
         )
         for e in errors
     ]
-    await audit(current_user, "agent.validate", resource_type="agent")
     return ValidationResult(valid=len(issues) == 0, issues=issues)

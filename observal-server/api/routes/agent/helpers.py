@@ -8,7 +8,6 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from api.deps import resolve_prefix_id
 from models.agent import Agent, AgentStatus, AgentVersion
@@ -18,11 +17,6 @@ from schemas.agent import (
     ComponentLinkResponse,
     McpLinkResponse,
 )
-
-# Eager-load options for Agent queries to avoid MissingGreenlet in async.
-_agent_load_options = [
-    selectinload(Agent.team_accesses),
-]
 
 
 async def _load_agent(
@@ -45,19 +39,13 @@ async def _load_agent(
     (needed for unarchive, delete, etc.).
     """
     try:
-        return await resolve_prefix_id(
-            Agent, agent_id, db, load_options=_agent_load_options, extra_conditions=extra_conditions
-        )
+        return await resolve_prefix_id(Agent, agent_id, db, extra_conditions=extra_conditions)
     except HTTPException:
         pass
 
     # Try the caller's own agent first
     if prefer_user_id is not None:
-        stmt = (
-            select(Agent)
-            .where(Agent.name == agent_id, Agent.created_by == prefer_user_id)
-            .options(*_agent_load_options)
-        )
+        stmt = select(Agent).where(Agent.name == agent_id, Agent.created_by == prefer_user_id)
         if extra_conditions:
             stmt = stmt.where(*extra_conditions)
         mine = (await db.execute(stmt)).scalar_one_or_none()
@@ -65,12 +53,7 @@ async def _load_agent(
             return mine
 
     # Fall back to global name lookup
-    stmt = (
-        select(Agent)
-        .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-        .where(Agent.name == agent_id)
-        .options(*_agent_load_options)
-    )
+    stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(Agent.name == agent_id)
     if not include_all_statuses:
         stmt = stmt.where(AgentVersion.status == AgentStatus.approved)
     if extra_conditions:
@@ -136,10 +119,6 @@ def _agent_to_response(
         agent_dict["models_by_ide"] = {}
     agent_dict["mcp_links"] = mcp_links
     agent_dict["component_links"] = component_links
-    agent_dict["visibility"] = agent.visibility
-    agent_dict["team_accesses"] = [
-        {"group_name": acc.group_name, "permission": acc.permission} for acc in getattr(agent, "team_accesses", [])
-    ]
     agent_dict["created_by_email"] = created_by_email
     agent_dict["created_by_username"] = created_by_username
     agent_dict["user_permission"] = user_permission

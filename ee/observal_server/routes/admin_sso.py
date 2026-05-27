@@ -24,7 +24,6 @@ from ee.observal_server.services.scim_service import hash_scim_token
 from models.saml_config import SamlConfig
 from models.scim_token import ScimToken
 from models.user import User, UserRole
-from services.audit_helpers import audit
 from services.security_events import (
     EventType,
     SecurityEvent,
@@ -56,7 +55,6 @@ async def get_saml_config(
 
     if not config:
         has_env = bool(ds.get_sync("saml.idp_entity_id") and ds.get_sync("saml.idp_sso_url"))
-        await audit(current_user, "admin.saml_config.view", "saml_config")
         return {
             "configured": has_env,
             "source": "env" if has_env else "none",
@@ -70,13 +68,6 @@ async def get_saml_config(
             "has_idp_cert": bool(ds.get_sync("saml.idp_x509_cert")) if has_env else False,
             "has_sp_key": False,
         }
-
-    await audit(
-        current_user,
-        "admin.saml_config.view",
-        "saml_config",
-        resource_id=str(config.id),
-    )
     return {
         "configured": True,
         "source": "database",
@@ -176,12 +167,6 @@ async def upsert_saml_config(
             detail="SAML configuration updated",
         )
     )
-    await audit(
-        current_user,
-        "admin.saml_config.update",
-        "saml_config",
-        resource_id=str(config.id),
-    )
 
     return {
         "id": str(config.id),
@@ -226,12 +211,6 @@ async def delete_saml_config(
             detail="SAML configuration deleted",
         )
     )
-    await audit(
-        current_user,
-        "admin.saml_config.delete",
-        "saml_config",
-        resource_id=config_id,
-    )
     return {"deleted": config_id}
 
 
@@ -251,8 +230,6 @@ async def list_scim_tokens(
 
     result = await db.execute(select(ScimToken).where(ScimToken.org_id == org_id).order_by(ScimToken.created_at.desc()))
     tokens = result.scalars().all()
-
-    await audit(current_user, "admin.scim_tokens.list", "scim_token")
     return [
         {
             "id": str(t.id),
@@ -304,12 +281,6 @@ async def create_scim_token(
             detail="SCIM token created",
         )
     )
-    await audit(
-        current_user,
-        "admin.scim_tokens.create",
-        "scim_token",
-        resource_id=str(token.id),
-    )
 
     return {
         "id": str(token.id),
@@ -356,11 +327,5 @@ async def revoke_scim_token(
             target_type="scim_token",
             detail="SCIM token revoked",
         )
-    )
-    await audit(
-        current_user,
-        "admin.scim_tokens.revoke",
-        "scim_token",
-        resource_id=str(token.id),
     )
     return {"revoked": str(token.id)}

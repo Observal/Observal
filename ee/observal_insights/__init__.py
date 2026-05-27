@@ -1,13 +1,11 @@
-# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: LicenseRef-Observal-Enterprise
 
-"""Observal Insights — enterprise insight generation engine.
+"""Observal Insights, enterprise insight generation engine.
 
-This module lives under ee/ and is covered by the Observal Enterprise License.
-It requires a valid OBSERVAL_LICENSE_KEY to function.
-
-Usage:
-    from ee.observal_insights import configure, generate_report_content, render_report_html
+V5 ground-up rewrite modeled after pi /insights. Reads raw session JSONL
+from ClickHouse, extracts deterministic stats + LLM facets, generates
+personal narrative sections, and renders HTML reports.
 """
 
 from __future__ import annotations
@@ -17,7 +15,7 @@ from .generator import generate_report_content
 from .html_export import render_report_html
 
 INSIGHTS_AVAILABLE = True
-__version__ = "0.2.0"
+__version__ = "5.0.0"
 
 
 def configure(
@@ -30,10 +28,7 @@ def configure(
     facets_model=None,
     meta_cache_model=None,
 ):
-    """Wire up dependencies from the host application.
-
-    Must be called before any insight generation functions are used.
-    """
+    """Wire up dependencies from the host application."""
     _deps.settings = settings
     _deps.query = query_fn
     _deps.call_model = call_model_fn

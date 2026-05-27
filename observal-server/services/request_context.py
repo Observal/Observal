@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Per-request context propagation via contextvars.
@@ -27,9 +28,12 @@ class RequestContext(NamedTuple):
 
 
 def set_request_context(request) -> None:
-    """Populate contextvars from a Starlette/FastAPI Request."""
-    forwarded = request.headers.get("x-forwarded-for")
-    ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "127.0.0.1")
+    """Populate contextvars from a Starlette/FastAPI Request.
+
+    NOTE: relies on TrustedProxyMiddleware having already resolved the real
+    client IP into request.scope["client"].  Do not parse X-Forwarded-For here.
+    """
+    ip = request.client.host if request.client else "127.0.0.1"
 
     _request_ip.set(ip)
     _request_user_agent.set(request.headers.get("user-agent", ""))

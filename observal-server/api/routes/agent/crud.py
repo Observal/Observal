@@ -15,18 +15,14 @@ from api.deps import (
     ROLE_HIERARCHY,
     get_db,
     get_effective_agent_permission,
-    get_user_groups,
     optional_current_user,
     require_role,
 )
 from api.sanitize import escape_like
-from config import settings
 from models.agent import (
     Agent,
     AgentStatus,
-    AgentTeamAccess,
     AgentVersion,
-    AgentVisibility,
 )
 from models.agent_component import AgentComponent
 from models.download import AgentDownloadRecord
@@ -38,14 +34,12 @@ from schemas.agent import (
     AgentSummary,
     AgentUpdateRequest,
 )
-from services.audit_helpers import audit
 from services.config_generator import validate_mcp_command
 from services.ide_feature_inference import compute_supported_ides, infer_required_features
 from services.registry_telemetry import emit_registry_event
 
 from ._router import router
 from .helpers import (
-    _agent_load_options,
     _agent_to_response,
     _load_agent,
     _resolve_component_names,
@@ -111,16 +105,12 @@ async def create_agent(
     agent = Agent(
         name=req.name,
         owner=req.owner or current_user.username or current_user.email,
-        visibility=req.visibility,
         category=req.category,
         created_by=current_user.id,
         owner_org_id=current_user.org_id,
     )
     db.add(agent)
     await db.flush()
-
-    for acc in req.team_accesses:
-        db.add(AgentTeamAccess(agent_id=agent.id, group_name=acc.group_name, permission=acc.permission))
 
     version = AgentVersion(
         agent_id=agent.id,
@@ -220,10 +210,6 @@ async def create_agent(
         metadata={"agent_name": req.name, "version": req.version, "component_count": str(len(req.components))},
     )
 
-    await audit(
-        current_user, "agent.create", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
-
     return _agent_to_response(
         agent, name_map, created_by_email=current_user.email, created_by_username=current_user.username
     )
@@ -241,28 +227,7 @@ async def list_agents(
     optic.debug("agent list")
     from models.feedback import Feedback
 
-    is_admin = False
-    # Skip visibility only for authenticated users in local mode (dev convenience).
-    # Anonymous callers always get the public-only filter regardless of mode.
-    skip_visibility = settings.DEPLOYMENT_MODE == "local" and current_user is not None
-    if current_user:
-        user_role_level = ROLE_HIERARCHY.get(current_user.role, 999)
-        if user_role_level <= ROLE_HIERARCHY[UserRole.admin]:
-            is_admin = True
-
     base_filter = AgentVersion.status == AgentStatus.approved
-    if not is_admin and not skip_visibility:
-        visibility_filter = Agent.visibility == AgentVisibility.public
-        if current_user:
-            user_groups = get_user_groups(current_user)
-            visibility_filter = visibility_filter | (Agent.created_by == current_user.id)
-            if current_user.org_id is not None:
-                visibility_filter = visibility_filter | (Agent.owner_org_id == current_user.org_id)
-            if user_groups:
-                visibility_filter = visibility_filter | Agent.team_accesses.any(
-                    AgentTeamAccess.group_name.in_(user_groups)
-                )
-        base_filter = base_filter & visibility_filter
     search_filter = None
     if search:
         safe = escape_like(search)
@@ -285,12 +250,7 @@ async def list_agents(
     total = (await db.execute(count_stmt)).scalar_one()
     response.headers["X-Total-Count"] = str(total)
 
-    stmt = (
-        select(Agent)
-        .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-        .where(base_filter)
-        .options(*_agent_load_options)
-    )
+    stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(base_filter)
     if search_filter is not None:
         stmt = stmt.where(search_filter)
     if org_filter is not None:
@@ -319,8 +279,6 @@ async def list_agents(
             email_map[r[0]] = r[1]
             username_map[r[0]] = r[2]
 
-    await audit(current_user, "agent.list", resource_type="agent")
-
     return [
         AgentSummary(
             id=a.id,
@@ -340,7 +298,6 @@ async def list_agents(
             created_by_username=username_map.get(a.created_by),
             created_at=a.created_at,
             updated_at=a.updated_at,
-            visibility=a.visibility,
         )
         for a in agents
     ]
@@ -354,12 +311,7 @@ async def my_agents(
     optic.debug("my_agents called")
     from models.feedback import Feedback
 
-    stmt = (
-        select(Agent)
-        .where(Agent.created_by == current_user.id)
-        .options(*_agent_load_options)
-        .order_by(Agent.created_at.desc())
-    )
+    stmt = select(Agent).where(Agent.created_by == current_user.id).order_by(Agent.created_at.desc())
     agents = (await db.execute(stmt)).scalars().all()
 
     agent_ids = [a.id for a in agents]
@@ -371,8 +323,6 @@ async def my_agents(
             .group_by(Feedback.listing_id)
         )
         rating_map = {r[0]: round(float(r[1]), 2) for r in rows.all()}
-
-    await audit(current_user, "agent.my_list", resource_type="agent")
 
     return [
         AgentSummary(
@@ -393,7 +343,6 @@ async def my_agents(
             created_by_username=current_user.username,
             created_at=a.created_at,
             updated_at=a.updated_at,
-            visibility=a.visibility,
         )
         for a in agents
     ]
@@ -411,7 +360,6 @@ async def archived_agents(
         select(Agent)
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
         .where(AgentVersion.status == AgentStatus.archived)
-        .options(*_agent_load_options)
         .order_by(Agent.created_at.desc())
     )
     if current_user.org_id is not None:
@@ -457,7 +405,6 @@ async def archived_agents(
             created_by_username=username_map.get(a.created_by),
             created_at=a.created_at,
             updated_at=a.updated_at,
-            visibility=a.visibility,
         )
         for a in agents
     ]
@@ -485,7 +432,6 @@ async def get_agent(
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
     name_map = await _resolve_component_names(agent.components, db)
     user_row = (await db.execute(select(User.email, User.username).where(User.id == agent.created_by))).first()
-    await audit(current_user, "agent.view", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name)
     return _agent_to_response(
         agent,
         name_map,
@@ -516,13 +462,6 @@ async def version_suggestions(
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
     from services.versioning import suggest_versions
 
-    await audit(
-        current_user,
-        "agent.version_suggestions",
-        resource_type="agent",
-        resource_id=str(agent.id),
-        resource_name=agent.name,
-    )
     return {"current": agent.version, "suggestions": suggest_versions(agent.version)}
 
 
@@ -561,20 +500,10 @@ async def update_agent(
         "model_config_json",
         "models_by_ide",
         "supported_ides",
-        "visibility",
     ):
         val = getattr(req, field)
         if val is not None:
             setattr(agent, field, val)
-
-    if req.team_accesses is not None:
-        old_accesses = (
-            (await db.execute(select(AgentTeamAccess).where(AgentTeamAccess.agent_id == agent.id))).scalars().all()
-        )
-        for old_acc in old_accesses:
-            await db.delete(old_acc)
-        for acc in req.team_accesses:
-            db.add(AgentTeamAccess(agent_id=agent.id, group_name=acc.group_name, permission=acc.permission))
 
     if req.external_mcps is not None:
         for _mcp in req.external_mcps:
@@ -695,10 +624,6 @@ async def update_agent(
         resource_name=agent.name,
     )
 
-    await audit(
-        current_user, "agent.update", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
-    )
-
     return _agent_to_response(
         agent, name_map, created_by_email=current_user.email, created_by_username=current_user.username
     )
@@ -764,8 +689,6 @@ async def delete_agent(
         resource_name=agent_name,
     )
 
-    await audit(current_user, "agent.delete", resource_type="agent", resource_id=agent_id_str, resource_name=agent_name)
-
     return {"deleted": agent_id_str}
 
 
@@ -800,10 +723,6 @@ async def archive_agent(
         user_role=current_user.role.value,
         agent_id=str(agent.id),
         resource_name=agent.name,
-    )
-
-    await audit(
-        current_user, "agent.archive", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
     )
 
     return {"id": str(agent.id), "name": agent.name, "status": "archived"}
@@ -842,10 +761,6 @@ async def unarchive_agent(
         user_role=current_user.role.value,
         agent_id=str(agent.id),
         resource_name=agent.name,
-    )
-
-    await audit(
-        current_user, "agent.unarchive", resource_type="agent", resource_id=str(agent.id), resource_name=agent.name
     )
 
     return {"id": str(agent.id), "name": agent.name, "status": "approved"}

@@ -1,25 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: LicenseRef-Observal-Enterprise
 
-"""Main report generation orchestrator for Agent Insights (V3).
+"""Insight report generation pipeline.
 
-This module coordinates the full insight generation pipeline:
-1. Fetch session metadata (from session_events via agent_id, fallback to otel_logs)
-2. Enrich session metadata (add completeness, is_substantive)
-3. Filter & Rank Sessions (remove non-substantive, rank by duration x tool_call_count)
-4. Compute deterministic metrics (parallel ClickHouse queries via compute_all_metrics)
-4b. Cross-user patterns (deterministic, includes multi-session and subagent analysis)
-5. Build transcripts (top 50 sessions, from session_events.raw_line)
-6. Extract facets (with staleness-aware caching, up to 50 concurrent)
-7. Aggregate & enrich (aggregate facets, detect regressions)
-8. Build data block (for LLM narrative generation)
-9. Generate narrative sections (8 parallel + 1 synthesis)
+Ground-up V5 rewrite modeled after pi /insights.
 
-The host application (observal-server) is responsible for:
-- Loading the report/agent from PostgreSQL
-- Calling generate_report_content() with the necessary parameters
-- Persisting the results back to the database
+Pipeline:
+1. Extract deterministic session metadata from raw JSONL in ClickHouse
+2. Build transcripts for top sessions (for facet extraction)
+3. Extract facets via Haiku (goal, outcome, satisfaction, friction, instructions)
+4. Aggregate metas + facets into a focused data block
+5. Run 7 parallel section prompts + 1 synthesis via Opus/Sonnet
+6. Return structured report
 """
 
 from __future__ import annotations
@@ -29,27 +21,18 @@ import json
 
 import structlog
 
-from ._deps import get_db_session, get_settings
-from .anonymize import anonymize_sessions
-from .cross_user import compute_cross_user_patterns
-from .enrichment import enrich_all_metas
+from ._deps import get_db_session
 from .facets import aggregate_facets, extract_and_cache_facets
-from .metrics import compute_all_metrics
-from .regression import detect_regressions
 from .sections import generate_sections
-from .session_cache import get_session_metas
+from .session_meta_extractor import aggregate_metas, extract_all_session_metas
 from .transcript import build_session_transcript
 
 logger = structlog.get_logger(__name__)
 
-REPORT_VERSION = "3.0"
+REPORT_VERSION = "5.0"
 
-# Maximum number of sessions to build transcripts for (most substantive)
-MAX_TRANSCRIPT_SESSIONS = 50
-# Maximum sessions to include in the LLM data block
-MAX_SESSIONS_IN_PROMPT = 75
-# Minimum tool calls for a session to be considered substantive
-MIN_SUBSTANTIVE_TOOL_CALLS = 3
+# How many sessions get full transcript + facet extraction
+MAX_FACET_SESSIONS = 50
 
 
 async def generate_report_content(
@@ -62,35 +45,11 @@ async def generate_report_content(
     registry_catalog: dict | None = None,
     db=None,
 ) -> dict:
-    """Generate a complete insight report for an agent over a time period.
+    """Generate a complete insight report for an agent.
 
-    This is the main entry point for the insight generation pipeline.
-
-    Args:
-        agent_name: Display name of the agent (used for otel_logs fallback).
-        agent_id: The agent UUID (as string). Primary lookup key for session_events.
-        period_start: ISO timestamp for the reporting period start.
-        period_end: ISO timestamp for the reporting period end.
-        previous_metrics: Metrics dict from the previous report period (for regression detection).
-        agent_config: Agent configuration dict (system prompt, MCPs, skills, model) for
-            component-aware suggestions. Loaded from the latest approved AgentVersion.
-        registry_catalog: Available MCPs/skills from the registry for component suggestions.
-        db: Optional AsyncSession for caching. If None, a new session is created from _deps.
-
-    Returns:
-        Dict with keys:
-            - metrics: quantitative metrics dict
-            - narrative: structured narrative sections dict
-            - sessions_analyzed: number of sessions processed
-            - models_used: list of model names used in generation
-            - report_version: format version string
-            - regressions: list of detected regressions
-            - facets_summary: aggregated facets dict
-            - cross_user_patterns: cross-user pattern dict (V3)
+    This is the main entry point. The host app (observal-server) handles
+    DB persistence of the result.
     """
-    settings = get_settings()
-
-    # Acquire a DB session if not provided
     owns_session = False
     if db is None:
         session_factory = get_db_session()
@@ -107,7 +66,6 @@ async def generate_report_content(
             agent_config=agent_config,
             registry_catalog=registry_catalog,
             db=db,
-            settings=settings,
         )
     finally:
         if owns_session:
@@ -121,106 +79,69 @@ async def _run_pipeline(
     period_end: str,
     previous_metrics: dict | None,
     agent_config: dict | None,
-    registry_catalog: dict | None = None,
+    registry_catalog: dict | None,
     db=None,
-    settings=None,
 ) -> dict:
-    """Internal pipeline execution."""
+    """Core pipeline execution."""
 
     logger.info(
-        "insight_generation_started",
-        agent_name=agent_name,
+        "insight_pipeline_started",
+        agent=agent_name,
         agent_id=agent_id,
-        period_start=period_start,
-        period_end=period_end,
-        report_version=REPORT_VERSION,
+        period=f"{period_start} to {period_end}",
     )
 
-    # ── Step 1: Fetch session metadata ──
-    # Uses session_events via agent_id as primary source, falls back to otel_logs
-    session_metas = await get_session_metas(
-        agent_id=agent_id,
-        agent_name=agent_name,
+    # ── Step 1: Deterministic metadata extraction from raw JSONL ──────────
+    # This reads actual session content from ClickHouse and computes:
+    # lines added/removed, git commits, languages, tool errors, response
+    # times, subagent usage, cost, etc.
+    session_metas = await extract_all_session_metas(
+        agent_id=agent_id or "",
         period_start=period_start,
         period_end=period_end,
-        db=db,
-        use_cache=True,
+        agent_name=agent_name,
     )
 
     if not session_metas:
         logger.warning("insight_no_sessions", agent_id=agent_id)
-        return {
-            "metrics": {},
-            "narrative": {
-                "at_a_glance": {
-                    "health": "unknown",
-                    "whats_working": "No session data available.",
-                    "whats_hindering": "N/A",
-                    "quick_win": "N/A",
-                },
-            },
-            "sessions_analyzed": 0,
-            "models_used": [],
-            "report_version": REPORT_VERSION,
-            "regressions": [],
-            "facets_summary": {},
-            "cross_user_patterns": {},
-        }
+        return _empty_report()
 
-    sessions = list(session_metas.values())
-    logger.info("insight_sessions_loaded", count=len(sessions))
+    logger.info("insight_metas_extracted", count=len(session_metas))
 
-    # ── Step 2: Enrich session metadata (add completeness, is_substantive) ──
-    enriched_metas = enrich_all_metas(session_metas)
-    enriched_sessions = list(enriched_metas.values())
+    # Aggregate deterministic stats
+    agg = aggregate_metas(session_metas)
 
-    # ── Step 3: Filter & Rank Sessions ──
-    # Remove non-substantive sessions and rank by duration x tool_call_count
-    substantive_sessions = [(sid, meta) for sid, meta in enriched_metas.items() if meta.get("is_substantive", False)]
-    # Sort by substantiveness score: duration_seconds * tool_call_count (descending)
-    substantive_sessions.sort(
-        key=lambda x: int(x[1].get("duration_seconds", 0)) * int(x[1].get("tool_call_count", 0)),
+    # ── Step 2: Build transcripts for top sessions ────────────────────────
+    # Sort by substantiveness (duration * tool_calls), take top N
+    ranked = sorted(
+        session_metas,
+        key=lambda m: m.get("duration_seconds", 0) * sum(m.get("tool_counts", {}).values()),
         reverse=True,
     )
-
-    # ── Step 4: Compute deterministic metrics (parallel ClickHouse queries) ──
-    metrics = await compute_all_metrics(agent_name, period_start, period_end, agent_id=agent_id)
-
-    # ── Step 4b: Cross-user patterns (deterministic, multi-session + subagent) ──
-    cross_user_patterns = await compute_cross_user_patterns(enriched_metas)
-
-    logger.info(
-        "insight_metrics_computed",
-        metric_keys=list(metrics.keys()) if metrics else [],
-    )
-
-    # ── Step 5: Build transcripts (top 50 sessions, from session_events.raw_line) ──
-    top_sessions = substantive_sessions[:MAX_TRANSCRIPT_SESSIONS]
+    # Filter trivial sessions (< 2 user messages or < 60 seconds)
+    substantive = [m for m in ranked if m.get("user_message_count", 0) >= 2 and m.get("duration_seconds", 0) >= 60]
+    top_sessions = substantive[:MAX_FACET_SESSIONS]
 
     transcripts: dict[str, str] = {}
     if top_sessions:
-        transcript_tasks = [
-            build_session_transcript(
-                session_id=sid,
-                start=meta.get("start_time", period_start),
-                end=meta.get("end_time", period_end),
-            )
-            for sid, meta in top_sessions
-        ]
-        transcript_results = await asyncio.gather(*transcript_tasks, return_exceptions=True)
-        for (sid, _), result in zip(top_sessions, transcript_results, strict=False):
-            if isinstance(result, str) and result:
-                transcripts[sid] = result
+        transcript_tasks = [build_session_transcript(m["session_id"]) for m in top_sessions]
+        results = await asyncio.gather(*transcript_tasks, return_exceptions=True)
+        for meta, result in zip(top_sessions, results, strict=False):
+            if isinstance(result, str) and result.strip():
+                transcripts[meta["session_id"]] = result
 
     logger.info("insight_transcripts_built", count=len(transcripts))
 
-    # ── Step 6: Extract facets (staleness-aware caching, concurrency-limited) ──
-    max_concurrent = getattr(settings, "INSIGHT_FACET_CONCURRENCY", 50)
+    # ── Step 3: Extract facets (concurrency-limited Haiku calls) ──────────
+    import services.dynamic_settings as ds
+
+    max_concurrent = int(await ds.get("insights.facet_concurrency") or 5)
+
     all_facets: list[dict] = []
     if transcripts:
-        all_facets = await _extract_facets_with_concurrency(
+        all_facets = await _extract_facets_batch(
             transcripts=transcripts,
-            enriched_metas=enriched_metas,
+            session_metas={m["session_id"]: m for m in session_metas},
             agent_id=agent_id or "",
             db=db,
             max_concurrent=max_concurrent,
@@ -228,310 +149,239 @@ async def _run_pipeline(
 
     logger.info("insight_facets_extracted", count=len(all_facets))
 
-    # ── Step 7: Aggregate & enrich (aggregate facets, detect regressions) ──
+    # ── Step 4: Build the data block (pi-style focused format) ────────────
     facets_summary = aggregate_facets(all_facets)
-
-    regressions = []
-    if previous_metrics:
-        regressions = detect_regressions(metrics, previous_metrics)
-        logger.info("insight_regressions_detected", count=len(regressions))
-
-    # ── Step 8: Build data block for LLM narrative generation ──
     data_block = _build_data_block(
         agent_name=agent_name,
-        metrics=metrics,
-        session_metas=enriched_metas,
-        facet_summary=facets_summary,
-        regressions=regressions,
+        agg=agg,
+        facets_summary=facets_summary,
+        all_facets=all_facets,
         period_start=period_start,
         period_end=period_end,
-        cross_user_patterns=cross_user_patterns,
         agent_config=agent_config,
     )
 
-    # ── Step 9: Generate narrative sections (8 parallel + 1 synthesis) ──
-    # Filter catalog to exclude components the agent already has
-    suggestions_catalog = _filter_catalog(registry_catalog, agent_config)
-
+    # ── Step 5: Generate narrative sections (7 parallel + 1 synthesis) ────
     narrative = await generate_sections(
         data_block=data_block,
         previous_report=previous_metrics,
-        registry_catalog=suggestions_catalog,
+        registry_catalog=registry_catalog,
     )
-
-    # Collect models used across sessions
-    models_used = list({s.get("model", "") for s in enriched_sessions if s.get("model")})
 
     logger.info(
-        "insight_generation_complete",
-        agent_name=agent_name,
-        sessions_analyzed=len(sessions),
-        facets_extracted=len(all_facets),
-        regressions=len(regressions),
-        report_version=REPORT_VERSION,
+        "insight_pipeline_complete",
+        sessions=len(session_metas),
+        facets=len(all_facets),
     )
+
+    # ── Build final report structure ──────────────────────────────────────
+    # metrics.rich is what the frontend reads for stat cards
+    metrics = {
+        "rich": {
+            "total_sessions": agg.get("total_sessions", 0),
+            "total_messages": agg.get("total_messages", 0),
+            "active_hours": round(agg.get("total_duration_hours", 0), 1),
+            "days_active": agg.get("days_active", 0),
+            "lines_added": agg.get("total_lines_added", 0),
+            "lines_removed": agg.get("total_lines_removed", 0),
+            "files_modified": agg.get("total_files_modified", 0),
+            "git_commits": agg.get("git_commits", 0),
+            "git_pushes": agg.get("git_pushes", 0),
+            "tool_errors": agg.get("total_tool_errors", 0),
+            "interruptions": agg.get("total_interruptions", 0),
+            "subagent_sessions": agg.get("sessions_using_subagent", 0),
+            "mcp_sessions": agg.get("sessions_using_mcp", 0),
+            "total_cost_usd": round(agg.get("total_cost", 0), 2),
+            "total_input_tokens": agg.get("total_input_tokens", 0),
+            "total_output_tokens": agg.get("total_output_tokens", 0),
+            "total_cache_read_tokens": agg.get("total_cache_read_tokens", 0),
+            "total_cache_write_tokens": agg.get("total_cache_write_tokens", 0),
+            "top_tools": agg.get("top_tools", [])[:15],
+            "top_languages": agg.get("top_languages", [])[:10],
+            "tool_error_categories": agg.get("tool_error_categories", {}),
+            "projects": agg.get("projects", {}),
+        },
+        "overview": {
+            "total_sessions": agg.get("total_sessions", 0),
+            "unique_users": 1,  # single-user context for now
+        },
+    }
 
     return {
         "metrics": metrics,
         "narrative": narrative,
-        "sessions_analyzed": len(sessions),
-        "models_used": models_used,
+        "sessions_analyzed": len(session_metas),
+        "models_used": [],
         "report_version": REPORT_VERSION,
-        "regressions": regressions,
+        "regressions": [],
         "facets_summary": facets_summary,
-        "cross_user_patterns": cross_user_patterns,
+        "cross_user_patterns": {},
     }
 
 
-async def _extract_facets_with_concurrency(
+async def _extract_facets_batch(
     transcripts: dict[str, str],
-    enriched_metas: dict[str, dict],
+    session_metas: dict[str, dict],
     agent_id: str,
     db,
-    max_concurrent: int = 50,
+    max_concurrent: int = 5,
 ) -> list[dict]:
     """Extract facets with concurrency limit."""
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def _extract_one(sid: str, transcript: str) -> dict:
+    async def _one(sid: str, transcript: str) -> dict:
         async with semaphore:
             return await extract_and_cache_facets(
                 session_id=sid,
                 transcript=transcript,
-                meta=enriched_metas.get(sid, {}),
+                meta=session_metas.get(sid, {}),
                 agent_id=agent_id,
                 db=db,
             )
 
-    tasks = [_extract_one(sid, t) for sid, t in transcripts.items()]
+    tasks = [_one(sid, t) for sid, t in transcripts.items()]
     results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for r in results:
+        if isinstance(r, Exception):
+            logger.warning("facet_task_exception", error=str(r), type=type(r).__name__)
 
     return [r for r in results if isinstance(r, dict) and r]
 
 
-def _filter_catalog(
-    registry_catalog: dict | None,
-    agent_config: dict | None,
-) -> dict | None:
-    """Remove components the agent already has from the catalog.
-
-    Keeps the suggestions prompt focused on genuinely new additions
-    and reduces token cost.
-    """
-    if not registry_catalog:
-        return None
-
-    existing_names: set[str] = set()
-    if agent_config:
-        for name in agent_config.get("configured_mcps", []):
-            existing_names.add(name.lower())
-        for name in agent_config.get("configured_skills", []):
-            existing_names.add(name.lower())
-
-    filtered: dict = {"mcps": [], "skills": []}
-    for mcp in registry_catalog.get("mcps", []):
-        if mcp.get("name", "").lower() not in existing_names:
-            filtered["mcps"].append(mcp)
-    for skill in registry_catalog.get("skills", []):
-        if skill.get("name", "").lower() not in existing_names:
-            filtered["skills"].append(skill)
-
-    if not filtered["mcps"] and not filtered["skills"]:
-        return None
-
-    return filtered
-
-
 def _build_data_block(
     agent_name: str,
-    metrics: dict,
-    session_metas: dict[str, dict],
-    facet_summary: dict,
-    regressions: list[dict],
+    agg: dict,
+    facets_summary: dict,
+    all_facets: list[dict],
     period_start: str,
     period_end: str,
-    cross_user_patterns: dict | None = None,
     agent_config: dict | None = None,
 ) -> str:
-    """Build the DATA_BLOCK string for all section prompts."""
-    meta_list = list(session_metas.values())[:MAX_SESSIONS_IN_PROMPT]
-    anonymized = anonymize_sessions(meta_list)
+    """Build the DATA_BLOCK for section prompts.
 
-    sections = [
-        f"## Agent: {agent_name}",
-        f"## Period: {period_start} to {period_end}",
-        f"## Sessions Analyzed: {len(session_metas)}",
-        "",
-    ]
+    Modeled after pi's buildSharedDataBlock: a focused JSON summary plus
+    SESSION SUMMARIES, FRICTION DETAILS, and USER INSTRUCTIONS as text.
+    This is what the LLM actually reads. Keep it tight and information-dense.
+    """
+
+    # Top 8 helper
+    def top8(rec: dict) -> list[list]:
+        return sorted(rec.items(), key=lambda x: -x[1])[:8]
+
+    # Core summary (like pi's buildSharedDataBlock JSON)
+    summary = {
+        "agent": agent_name,
+        "period": f"{period_start} to {period_end}",
+        "sessions": agg.get("total_sessions", 0),
+        "sessions_with_facets": facets_summary.get("sessions_with_facets", 0),
+        "date_range": agg.get("date_range", {}),
+        "messages": agg.get("total_messages", 0),
+        "hours": round(agg.get("total_duration_hours", 0)),
+        "days_active": agg.get("days_active", 0),
+        "commits": agg.get("git_commits", 0),
+        "pushes": agg.get("git_pushes", 0),
+        "cost_usd": round(agg.get("total_cost", 0), 2),
+        "lines_added": agg.get("total_lines_added", 0),
+        "lines_removed": agg.get("total_lines_removed", 0),
+        "files_modified": agg.get("total_files_modified", 0),
+        "tool_errors": agg.get("total_tool_errors", 0),
+        "interruptions": agg.get("total_interruptions", 0),
+        "subagent_sessions": agg.get("sessions_using_subagent", 0),
+        "mcp_sessions": agg.get("sessions_using_mcp", 0),
+        "top_tools": agg.get("top_tools", [])[:10],
+        "top_languages": agg.get("top_languages", [])[:10],
+        "tool_error_categories": agg.get("tool_error_categories", {}),
+        "projects": agg.get("projects", {}),
+        # From facets aggregation
+        "top_goals": facets_summary.get("goal_categories", [])[:10],
+        "outcomes": facets_summary.get("outcomes", {}),
+        "satisfaction": facets_summary.get("satisfaction", {}),
+        "helpfulness": facets_summary.get("helpfulness", {}),
+        "friction": facets_summary.get("friction_types", [])[:10],
+        "success": facets_summary.get("success_factors", [])[:10],
+        "session_types": facets_summary.get("session_types", {}),
+        "complexity": facets_summary.get("complexity_distribution", {}),
+    }
+
+    # Multi-session detection
+    if agg.get("multi_clauding"):
+        summary["multi_clauding"] = agg["multi_clauding"]
+
+    sections = [json.dumps(summary, indent=2)]
 
     # Agent configuration (for component-aware suggestions)
     if agent_config:
-        sections.extend(
-            [
-                "## Agent Configuration",
-                json.dumps(agent_config, indent=2),
-                "",
-            ]
-        )
+        sections.append(f"\n## Agent Configuration\n{json.dumps(agent_config, indent=2)}")
 
-    sections.extend(
-        [
-            "## Metrics Overview",
-            json.dumps(metrics.get("overview", {}), indent=2),
-            "",
-            "## Token Usage",
-            json.dumps(metrics.get("tokens", {}), indent=2),
-            "",
-        ]
-    )
+    # SESSION SUMMARIES (the key differentiator from old evals approach)
+    if all_facets:
+        summaries = []
+        for f in all_facets[-50:]:
+            if not f:
+                continue
+            brief = f.get("brief_summary", "")
+            outcome = f.get("outcome", "unclear")
+            helpfulness = f.get("agent_helpfulness", "unknown")
+            if brief:
+                summaries.append(f"- {brief} ({outcome}, {helpfulness})")
 
-    # Credits (Kiro) if available
-    credits = metrics.get("credits", {})
-    if credits and int(credits.get("total_credits", 0)) > 0:
-        sections.extend(
-            [
-                "## Credit Usage (Kiro)",
-                json.dumps(credits, indent=2),
-                "",
-            ]
-        )
+        if summaries:
+            sections.append("\nSESSION SUMMARIES:\n" + "\n".join(summaries))
 
-    sections.extend(
-        [
-            "## Cost Analysis",
-            json.dumps(metrics.get("cost", {}), indent=2),
-            "",
-            "## Error Breakdown",
-            json.dumps(metrics.get("errors", {}), indent=2),
-            "",
-            "## Tool Error Categories",
-            json.dumps(metrics.get("tool_errors", {}), indent=2),
-            "",
-            "## Interruptions",
-            json.dumps(metrics.get("interruptions", {}), indent=2),
-            "",
-            "## Duration Stats",
-            json.dumps(metrics.get("duration", {}), indent=2),
-            "",
-            "## Top Tools",
-            json.dumps(metrics.get("tools", [])[:15], indent=2),
-            "",
-        ]
-    )
+        # FRICTION DETAILS (specific examples the LLM can cite)
+        friction_details = []
+        for f in all_facets:
+            if not f:
+                continue
+            for fp in f.get("friction_points", []):
+                desc = fp.get("description", "")
+                ftype = fp.get("type", "")
+                if desc:
+                    friction_details.append(f"- [{ftype}] {desc}")
 
-    # V3 additions: git stats
-    git = metrics.get("git", {})
-    if git and (int(git.get("commits", 0)) > 0 or int(git.get("pushes", 0)) > 0):
-        sections.extend(
-            [
-                "## Git Stats",
-                json.dumps(git, indent=2),
-                "",
-            ]
-        )
+        if friction_details:
+            sections.append("\nFRICTION DETAILS:\n" + "\n".join(friction_details[:30]))
 
-    # V3 additions: languages
-    languages = metrics.get("languages", {})
-    if languages:
-        sections.extend(
-            [
-                "## Languages",
-                json.dumps(languages, indent=2),
-                "",
-            ]
-        )
+        # USER INSTRUCTIONS TO ASSISTANT (repeated patterns)
+        user_instructions = []
+        for f in all_facets:
+            if not f:
+                continue
+            for instr in f.get("repeated_instructions", []):
+                if instr:
+                    user_instructions.append(f"- {instr}")
 
-    # V3 additions: response times
-    response_times = metrics.get("response_times", {})
-    if response_times:
-        sections.extend(
-            [
-                "## Response Times",
-                json.dumps(response_times, indent=2),
-                "",
-            ]
-        )
+        if user_instructions:
+            sections.append("\nUSER INSTRUCTIONS TO ASSISTANT:\n" + "\n".join(user_instructions[:20]))
 
-    # V3 additions: time of day distribution
-    time_of_day = metrics.get("time_of_day", {})
-    if time_of_day:
-        sections.extend(
-            [
-                "## Time of Day Distribution",
-                json.dumps(time_of_day, indent=2),
-                "",
-            ]
-        )
-
-    # V3 additions: multi-session detection
-    multi_session = metrics.get("multi_session", {})
-    if multi_session and multi_session.get("detected"):
-        sections.extend(
-            [
-                "## Multi-Session Detection",
-                json.dumps(multi_session, indent=2),
-                "",
-            ]
-        )
-
-    # V3 additions: subagent stats
-    subagents = metrics.get("subagents", {})
-    if subagents and int(subagents.get("total_subagent_sessions", 0)) > 0:
-        sections.extend(
-            [
-                "## Subagent Stats",
-                json.dumps(subagents, indent=2),
-                "",
-            ]
-        )
-
-    # MCP shim metrics
-    mcp = metrics.get("mcp", {})
-    if mcp and int(mcp.get("total_mcp_calls", 0)) > 0:
-        sections.extend(
-            [
-                "## MCP Shim Metrics",
-                json.dumps(mcp, indent=2),
-                "",
-            ]
-        )
-
-    # Per-session sample
-    sections.extend(
-        [
-            "## Per-Session Data (sample)",
-            json.dumps(anonymized[:20], indent=2, default=str),
-        ]
-    )
-
-    # Facet summary
-    if facet_summary:
-        sections.extend(
-            [
-                "",
-                "## Qualitative Facet Summary",
-                json.dumps(facet_summary, indent=2),
-            ]
-        )
-
-    # Cross-user patterns
-    if cross_user_patterns:
-        sections.extend(
-            [
-                "",
-                "## Cross-User Patterns",
-                json.dumps(cross_user_patterns, indent=2),
-            ]
-        )
-
-    # Regressions
-    if regressions:
-        sections.extend(
-            [
-                "",
-                "## Regression Flags (vs previous period)",
-                json.dumps(regressions, indent=2),
-            ]
+    # Repeated instructions summary (aggregated)
+    repeated = facets_summary.get("repeated_instructions", [])
+    if repeated:
+        sections.append(
+            "\nREPEATED INSTRUCTIONS (by frequency):\n"
+            + "\n".join(f'- "{r["instruction"]}" (frequency: {r["frequency"]})' for r in repeated[:10])
         )
 
     return "\n".join(sections)
+
+
+def _empty_report() -> dict:
+    """Return an empty report structure when no sessions exist."""
+    return {
+        "metrics": {},
+        "narrative": {
+            "at_a_glance": {
+                "health": "unknown",
+                "whats_working": "No session data available for this period.",
+                "whats_hindering": "N/A",
+                "quick_win": "N/A",
+            },
+        },
+        "sessions_analyzed": 0,
+        "models_used": [],
+        "report_version": REPORT_VERSION,
+        "regressions": [],
+        "facets_summary": {},
+        "cross_user_patterns": {},
+    }

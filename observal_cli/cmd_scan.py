@@ -118,6 +118,7 @@ _IDE_HOME_DIRS: dict[str, str] = {
     "copilot-cli": "~/.copilot",
     "opencode": "~/.config/opencode",
     "cursor": "~/.cursor",
+    "pi": "~/.pi/agent",
 }
 
 

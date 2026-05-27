@@ -1,14 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Tests for anonymous agent listing visibility.
+"""Tests for agent listing endpoint access.
 
-Verifies that unauthenticated callers cannot see private agents regardless
-of deployment mode, and that the visibility filter behaves correctly for
-anonymous, authenticated, and admin users.
+Verifies that both anonymous and authenticated callers can list agents
+(no visibility gating).
 """
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -49,38 +48,12 @@ def _mock_db():
     return db
 
 
-# ── Unit: skip_visibility logic ───────────────────────────────────────────────
-
-
-class TestSkipVisibilityLogic:
-    def test_local_mode_anon_does_not_skip(self):
-        """Anonymous callers must not skip visibility even in local mode."""
-        current_user = None
-        skip = "local" == "local" and current_user is not None
-        assert skip is False
-
-    def test_local_mode_authed_skips(self):
-        """Authenticated users in local mode skip visibility (dev convenience)."""
-        current_user = _user()
-        skip = "local" == "local" and current_user is not None
-        assert skip is True
-
-    def test_enterprise_authed_does_not_skip(self):
-        current_user = _user()
-        skip = "enterprise" == "local" and current_user is not None
-        assert skip is False
-
-    def test_enterprise_anon_does_not_skip(self):
-        skip = "enterprise" == "local" and None is not None
-        assert skip is False
-
-
 # ── Integration: GET /api/v1/agents ──────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_anonymous_cannot_see_private_agents_local_mode():
-    """In local mode, anonymous callers only see public agents (skip_visibility=False for anon)."""
+async def test_anonymous_can_list_agents():
+    """Anonymous callers can list agents (all agents are public)."""
     from api.deps import get_db, optional_current_user
     from main import app
 
@@ -93,34 +66,8 @@ async def test_anonymous_cannot_see_private_agents_local_mode():
     app.dependency_overrides[optional_current_user] = lambda: None
 
     try:
-        with patch("api.routes.agent.crud.settings") as ms:
-            ms.DEPLOYMENT_MODE = "local"
-            async with _make_client() as client:
-                r = await client.get("/api/v1/agents")
-        assert r.status_code == 200
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
-async def test_anonymous_cannot_see_private_agents_enterprise_mode():
-    """In enterprise mode, anonymous callers only see public agents."""
-    from api.deps import get_db, optional_current_user
-    from main import app
-
-    mock = _mock_db()
-
-    async def _fake_db():
-        yield mock
-
-    app.dependency_overrides[get_db] = _fake_db
-    app.dependency_overrides[optional_current_user] = lambda: None
-
-    try:
-        with patch("api.routes.agent.crud.settings") as ms:
-            ms.DEPLOYMENT_MODE = "enterprise"
-            async with _make_client() as client:
-                r = await client.get("/api/v1/agents")
+        async with _make_client() as client:
+            r = await client.get("/api/v1/agents")
         assert r.status_code == 200
     finally:
         app.dependency_overrides.clear()

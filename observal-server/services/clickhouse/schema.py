@@ -213,6 +213,18 @@ INIT_SQL = [
     TTL toDateTime(timestamp) + INTERVAL 730 DAY
     PARTITION BY toYYYYMM(timestamp)
     ORDER BY (action, resource_type, timestamp)""",
+    # HIPAA audit log schema expansion
+    """ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS org_id String DEFAULT ''""",
+    """ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS sensitivity LowCardinality(String) DEFAULT 'standard'""",
+    """ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS request_id String DEFAULT ''""",
+    """ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS outcome LowCardinality(String) DEFAULT ''""",
+    """ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS duration_ms Float32 DEFAULT 0""",
+    """ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS chain_hash String DEFAULT ''""",
+    """ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS source LowCardinality(String) DEFAULT 'server'""",
+    """ALTER TABLE audit_log ADD INDEX IF NOT EXISTS idx_outcome outcome TYPE bloom_filter(0.01) GRANULARITY 1""",
+    """ALTER TABLE audit_log ADD INDEX IF NOT EXISTS idx_sensitivity sensitivity TYPE bloom_filter(0.01) GRANULARITY 1""",
+    """ALTER TABLE audit_log ADD INDEX IF NOT EXISTS idx_org_id org_id TYPE bloom_filter(0.01) GRANULARITY 1""",
+    """ALTER TABLE audit_log ADD INDEX IF NOT EXISTS idx_source source TYPE bloom_filter(0.01) GRANULARITY 1""",
     # Webhook delivery tracking
     """CREATE TABLE IF NOT EXISTS webhook_deliveries (
         delivery_id     UUID,

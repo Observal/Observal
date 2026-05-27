@@ -380,8 +380,6 @@ export interface ReviewItem {
 	required_ide_features?: string[];
 	component_count?: number;
 	components?: { component_type: string; component_id: string }[];
-	visibility?: "public" | "private";
-	team_accesses?: { group_name: string; permission: "view" | "edit" }[];
 }
 
 // ── Scores ──────────────────────────────────────────────────────────
@@ -460,6 +458,13 @@ export interface AuditLogEntry {
 	ip_address: string;
 	user_agent: string;
 	detail: string;
+	org_id: string;
+	sensitivity: string;
+	request_id: string;
+	outcome: string;
+	duration_ms: number;
+	chain_hash: string;
+	source: string;
 }
 
 export interface SecurityEvent {
@@ -481,7 +486,7 @@ export interface SecurityEvent {
 
 export interface DiagnosticsResponse {
 	status: "ok" | "degraded" | "unhealthy";
-	deployment_mode: string;
+	licensed: boolean;
 	checks: Record<string, Record<string, unknown>>;
 }
 
@@ -627,17 +632,21 @@ export interface InsightMetrics {
 }
 
 export interface InsightNarrative {
-	// V2 structured format — each section is a structured object
-	// V1 fallback — each section is string[] | string
+	// V3 structured format: each section is a structured object
+	// V1 fallback: each section is string[] or string
 	// The frontend handles both formats gracefully
 	at_a_glance: unknown;
+	what_they_work_on?: unknown;
 	usage_patterns: unknown;
+	interaction_style?: unknown;
 	user_experience?: unknown;
 	what_works?: unknown;
 	friction_analysis: unknown;
 	suggestions: unknown;
+	usage_cost_analysis?: unknown;
 	token_optimization?: unknown;
 	regression_detection?: unknown;
+	on_the_horizon?: unknown;
 	fun_ending?: unknown;
 	regressions?: InsightRegression[];
 }
@@ -660,6 +669,7 @@ export interface InsightReport {
 	period_end: string;
 	metrics: InsightMetrics | null;
 	narrative: InsightNarrative | null;
+	facets_summary: Record<string, unknown> | null;
 	sessions_analyzed: number;
 	llm_model_used: string | null;
 	error_message: string | null;

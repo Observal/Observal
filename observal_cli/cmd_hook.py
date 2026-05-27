@@ -16,7 +16,7 @@ from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.constants import VALID_HOOK_EVENTS, VALID_HOOK_EXECUTION_MODES, VALID_HOOK_HANDLER_TYPES
-from observal_cli.prompts import select_one
+from observal_cli.prompts import select_one, text_input
 from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
 
 hook_app = typer.Typer(help="Hook registry commands")
@@ -108,27 +108,27 @@ def hook_submit(
             script_filename = script_path.name
 
         # Prompt for essential fields
-        name = typer.prompt("Hook name")
-        version = typer.prompt("Version", default="1.0.0")
-        description = typer.prompt("Description")
-        owner = typer.prompt("Owner", default=config.load().get("user_name", ""))
+        name = text_input("Hook name")
+        version = text_input("Version", default="1.0.0")
+        description = text_input("Description")
+        owner = text_input("Owner", default=config.load().get("user_name", ""))
         event = select_one("Event", VALID_HOOK_EVENTS)
         handler_type = select_one("Handler type", VALID_HOOK_HANDLER_TYPES)
 
         # Build handler_config
         if script_filename and handler_type == "command":
             # Auto-populate command from script filename
-            timeout = int(typer.prompt("Timeout (seconds)", default="10"))
+            timeout = int(text_input("Timeout (seconds)", default="10"))
             handler_config = {"command": script_filename, "timeout": timeout}
             rprint(f"[dim]Command auto-set to '{script_filename}' from --script[/dim]")
         elif handler_type == "command":
-            command = typer.prompt("Command")
-            timeout = int(typer.prompt("Timeout (seconds)", default="10"))
+            command = text_input("Command")
+            timeout = int(text_input("Timeout (seconds)", default="10"))
             handler_config = {"command": command, "timeout": timeout}
         else:
             # HTTP handler
-            url = typer.prompt("Hook URL")
-            timeout = int(typer.prompt("Timeout (seconds)", default="10"))
+            url = text_input("Hook URL")
+            timeout = int(text_input("Timeout (seconds)", default="10"))
             handler_config = {"url": url, "timeout": timeout}
 
         execution_mode = select_one("Execution mode", VALID_HOOK_EXECUTION_MODES)

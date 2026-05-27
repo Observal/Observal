@@ -446,4 +446,3 @@ observal admin audit-log-export --action auth.login --actor bob@example.com
 ## Related
 
 * [Self-Hosting → Authentication and SSO](../self-hosting/authentication.md)
-* [Concepts → Evaluation engine](../concepts/evaluation.md)

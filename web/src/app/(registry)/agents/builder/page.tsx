@@ -46,7 +46,6 @@ import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
 import type { ValidationResult } from "@/lib/types";
-import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
 const DRAFT_STORAGE_KEY = "observal_agent_draft";
 
@@ -56,12 +55,12 @@ import { ValidationPanel } from "@/components/builder/validation-panel";
 import { PreviewPanel } from "@/components/builder/preview-panel";
 import { ModelPicker } from "@/components/builder/model-picker";
 
-const COMPONENT_TYPES: { value: RegistryType; label: string }[] = [
-  { value: "mcps", label: "MCPs" },
-  { value: "skills", label: "Skills" },
-  { value: "hooks", label: "Hooks" },
-  { value: "prompts", label: "Prompts" },
-  { value: "sandboxes", label: "Sandboxes" },
+const COMPONENT_TYPES: { value: RegistryType; label: string; singular: string }[] = [
+  { value: "mcps", label: "MCPs", singular: "MCP" },
+  { value: "skills", label: "Skills", singular: "Skill" },
+  { value: "hooks", label: "Hooks", singular: "Hook" },
+  { value: "prompts", label: "Prompts", singular: "Prompt" },
+  { value: "sandboxes", label: "Sandboxes", singular: "Sandbox" },
 ];
 
 
@@ -196,12 +195,16 @@ function VersionBumpDialog({
 
 function ComponentPicker({
   type,
+  label,
   selected,
   onToggle,
+  onCreateNew,
 }: {
   type: RegistryType;
+  label: string;
   selected: Set<string>;
   onToggle: (item: RegistryItem) => void;
+  onCreateNew: () => void;
 }) {
   const { data: items, isLoading } = useRegistryList(type);
   const [search, setSearch] = useState("");
@@ -219,14 +222,26 @@ function ComponentPicker({
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={`Search ${type}...`}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-8 pl-9 text-sm"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder={`Search ${label}...`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-9 text-sm"
+          />
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 text-xs"
+          onClick={onCreateNew}
+        >
+          <Plus className="mr-1 h-3 w-3" />
+          Create new
+        </Button>
       </div>
       {isLoading ? (
         <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
@@ -323,7 +338,6 @@ function AgentBuilderInner() {
   const draftParam = searchParams.get("draft");
   const isEditMode = !!editId;
 
-  const { isLicensed } = useDeploymentConfig();
   const { data: whoami } = useWhoami();
   const { data: existingAgent } = useRegistryItem("agents", editId ?? draftParam ?? undefined);
 
@@ -335,8 +349,6 @@ function AgentBuilderInner() {
   const [category, setCategory] = useState("");
   const [modelName, setModelName] = useState("");
   const [modelsByIde, setModelsByIde] = useState<Record<string, string>>({});
-  const [visibility, setVisibility] = useState<"public" | "private">("private");
-  const [teamAccesses, setTeamAccesses] = useState<{ group_name: string; permission: "view" | "edit" }[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
 
@@ -400,10 +412,6 @@ function AgentBuilderInner() {
     }
     const agentCategory = (existingAgent as Record<string, unknown>).category;
     if (typeof agentCategory === "string") setCategory(agentCategory);
-    const agentVisibility = (existingAgent as Record<string, unknown>).visibility;
-    if (agentVisibility === "public" || agentVisibility === "private") setVisibility(agentVisibility as "public" | "private");
-    const agentTeamAccesses = (existingAgent as Record<string, unknown>).team_accesses;
-    if (Array.isArray(agentTeamAccesses)) setTeamAccesses(agentTeamAccesses as { group_name: string; permission: "view" | "edit" }[]);
 
     if (draftParam) setDraftId(draftParam);
 
@@ -528,7 +536,7 @@ function AgentBuilderInner() {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
     autoSaveTimerRef.current = setTimeout(() => {
-      const hasContent = name || description || modelName || version !== "1.0.0" || visibility !== "private" || teamAccesses.length > 0 ||
+      const hasContent = name || description || modelName || version !== "1.0.0" ||
         Object.values(selectedComponents).some((items) => items.length > 0) ||
         systemPrompt.trim().length > 0;
 
@@ -541,8 +549,6 @@ function AgentBuilderInner() {
           version,
           model_name: modelName,
           models_by_ide: modelsByIde,
-          visibility,
-          team_accesses: teamAccesses,
           components: selectedComponents,
           prompt: systemPrompt,
           draft_id: draftId,
@@ -557,7 +563,7 @@ function AgentBuilderInner() {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [name, description, version, modelName, visibility, teamAccesses, selectedComponents, systemPrompt, draftId, isEditMode]);
+  }, [name, description, version, modelName, selectedComponents, systemPrompt, draftId, isEditMode]);
 
   function restoreLocalDraft() {
     try {
@@ -571,8 +577,6 @@ function AgentBuilderInner() {
       if (draft.models_by_ide && typeof draft.models_by_ide === "object") {
         setModelsByIde(draft.models_by_ide);
       }
-      if (draft.visibility) setVisibility(draft.visibility);
-      if (draft.team_accesses) setTeamAccesses(draft.team_accesses);
       if (draft.components) setSelectedComponents(draft.components);
       if (typeof draft.prompt === "string") setSystemPrompt(draft.prompt);
       if (draft.draft_id) setDraftId(draft.draft_id);
@@ -689,8 +693,6 @@ function AgentBuilderInner() {
       description: description.trim(),
       category: category || undefined,
       owner: whoami?.name || whoami?.email || "unknown",
-      visibility,
-      team_accesses: teamAccesses,
       prompt: systemPrompt.trim(),
       model_name: modelName,
       models_by_ide: modelsByIde,
@@ -855,6 +857,7 @@ function AgentBuilderInner() {
                   className="text-sm font-medium"
                 >
                   Description
+                  <span className="ml-1 text-destructive">*</span>
                 </Label>
                 <Textarea
                   id="agent-description"
@@ -974,8 +977,10 @@ function AgentBuilderInner() {
                   <TabsContent key={ct.value} value={ct.value}>
                     <ComponentPicker
                       type={ct.value}
+                      label={ct.label}
                       selected={selectedIds}
                       onToggle={handleToggle(ct.value)}
+                      onCreateNew={() => setCreateDialogType(ct.value)}
                     />
                     {/* In-memory components not yet submitted */}
                     {pendingComponents.filter((p) => p.type === ct.value).map((p) => (
@@ -989,16 +994,6 @@ function AgentBuilderInner() {
                         >✕</button>
                       </div>
                     ))}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => setCreateDialogType(ct.value)}
-                    >
-                      <Plus className="mr-1 h-3 w-3" />
-                      Create new {ct.value.replace(/s$/, "")}
-                    </Button>
 
                     {/* Sortable selected list */}
                     {(selectedComponents[ct.value] ?? []).length > 0 && (
@@ -1024,101 +1019,6 @@ function AgentBuilderInner() {
               />
             </section>
 
-
-            {/* Visibility & Access */}
-            {isLicensed && (
-              <section className="space-y-4 animate-in stagger-2">
-                <div>
-                  <h3 className="text-sm font-medium font-[family-name:var(--font-display)]">
-                  Visibility & Access
-                </h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Determine who can discover and install this agent.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <select
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                  value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as "public" | "private")}
-                >
-                  <option value="private">Private (Team Access Only)</option>
-                  <option value="public">Public (Visible to All)</option>
-                </select>
-
-                {visibility === "private" && (
-                  <div className="mt-4 space-y-3 rounded-md border p-4 bg-muted/20">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm">Team Permissions</Label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setTeamAccesses([
-                            ...teamAccesses,
-                            { group_name: "", permission: "view" },
-                          ])
-                        }
-                        className="h-8"
-                      >
-                        <Plus className="mr-1 h-3.5 w-3.5" />
-                        Add Group
-                      </Button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {teamAccesses.map((access, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <Input
-                            placeholder="Group name (e.g. engineering)"
-                            value={access.group_name}
-                            onChange={(e) => {
-                              const newAccess = [...teamAccesses];
-                              newAccess[i].group_name = e.target.value;
-                              setTeamAccesses(newAccess);
-                            }}
-                            className="h-8 flex-1 text-sm"
-                          />
-                          <select
-                            className="flex h-8 w-28 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                            value={access.permission}
-                            onChange={(e) => {
-                              const newAccess = [...teamAccesses];
-                              newAccess[i].permission = e.target.value as "view" | "edit";
-                              setTeamAccesses(newAccess);
-                            }}
-                          >
-                            <option value="view">View</option>
-                            <option value="edit">Edit</option>
-                          </select>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const newAccess = [...teamAccesses];
-                              newAccess.splice(i, 1);
-                              setTeamAccesses(newAccess);
-                            }}
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ))}
-                      {teamAccesses.length === 0 && (
-                        <p className="text-xs text-muted-foreground pt-1">
-                          No groups configured. Only you can view or edit this agent.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
 
             <Separator />
 

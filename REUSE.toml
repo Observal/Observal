@@ -89,52 +89,7 @@ SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrin
 SPDX-License-Identifier = "AGPL-3.0-only"
 
 [[annotations]]
-path = "docs/img/agents.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "docs/img/dashboard.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "docs/img/errors.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
 path = "docs/img/insights.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "docs/img/registry-home.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "docs/img/review-detail.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "docs/img/review-queue.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "docs/img/trace-detail.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "docs/img/trace-events.png"
-SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "docs/img/traces-sorted-tokens.png"
 SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-only"
 
@@ -435,3 +390,58 @@ SPDX-License-Identifier = "AGPL-3.0-only"
 path = "ee/LICENSE"
 SPDX-FileCopyrightText = "2026-present BlazeUp AI LLP"
 SPDX-License-Identifier = "LicenseRef-Observal-Enterprise"
+
+[[annotations]]
+path = "docs/img/audit_logging.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/builder.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/complete_capture_thinking_response.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/component_registry.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/leaderboard.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/registry.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/review.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/review-diff.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/ses1.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/span.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "docs/img/traces.png"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-only"

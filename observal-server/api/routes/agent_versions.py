@@ -37,7 +37,6 @@ from schemas.agent import (  # noqa: TC001
     AgentVersionReviewRequest,
 )
 from services.agent_resolver import validate_component_ids
-from services.audit_helpers import audit
 from services.ide import generate_agent_config
 from services.ide_feature_inference import compute_supported_ides, infer_required_features
 from services.versioning import parse_semver, validate_semver
@@ -199,9 +198,8 @@ async def _create_agent_version(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    is_owner = agent.created_by == current_user.id
-    is_co_maintainer = str(current_user.id) in [str(uid) for uid in (agent.co_maintainers or [])]
-    if not is_owner and not is_co_maintainer:
+    perm = get_effective_agent_permission(agent, current_user)
+    if perm != "owner":
         raise HTTPException(status_code=403, detail="Not authorized to release versions")
 
     # Duplicate check
@@ -334,15 +332,6 @@ async def _create_agent_version(
     # Do NOT update latest_version_id - that happens on approval
     await db.commit()
 
-    await audit(
-        current_user,
-        "agent.version.publish",
-        resource_type="agent",
-        resource_id=str(agent.id),
-        resource_name=agent.name,
-        detail=req.version,
-    )
-
     warnings: list[str] = []
     if pending_count > 0:
         warnings.append(f"This agent already has {pending_count} pending version(s)")
@@ -416,15 +405,6 @@ async def _review_agent_version(
         ver.reviewed_at = datetime.now(UTC)
 
     await db.commit()
-
-    await audit(
-        current_user,
-        f"agent.version.{req.action}",
-        resource_type="agent",
-        resource_id=str(agent.id),
-        resource_name=agent.name,
-        detail=version,
-    )
 
     return {
         "version": version,

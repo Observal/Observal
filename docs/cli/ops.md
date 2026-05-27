@@ -155,4 +155,3 @@ observal ops telemetry test
 
 * [Use Cases → Observe MCP traffic](../use-cases/observe-mcp-traffic.md)
 * [Use Cases → Debug agent failures](../use-cases/debug-agent-failures.md)
-* [Data model](../concepts/data-model.md)

@@ -18,6 +18,7 @@ from api.deps import (
     apply_visibility_filter,
     check_listing_visibility,
     get_db,
+    get_effective_component_permission,
     optional_current_user,
     require_role,
     resolve_listing,
@@ -36,7 +37,6 @@ from schemas.prompt import (
     PromptSubmitRequest,
     PromptUpdateRequest,
 )
-from services.audit_helpers import audit
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 
 router = APIRouter(prefix="/api/v1/prompts", tags=["prompts"])
@@ -84,9 +84,6 @@ async def submit_prompt(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user, "prompt.submit", resource_type="prompt", resource_id=str(listing.id), resource_name=listing.name
-    )
     return PromptListingResponse.model_validate(listing)
 
 
@@ -111,7 +108,6 @@ async def list_prompts(
     stmt = apply_visibility_filter(stmt, PromptListing, current_user)
     result = await db.execute(stmt.order_by(PromptListing.created_at.desc()))
     listings = [PromptListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(None, "prompt.list", resource_type="prompt")
     return listings
 
 
@@ -128,7 +124,6 @@ async def my_prompts(
     )
     result = await db.execute(stmt)
     listings = [PromptListingSummary.model_validate(r) for r in result.scalars().all()]
-    await audit(current_user, "prompt.my_list", resource_type="prompt")
     return listings
 
 
@@ -141,20 +136,18 @@ async def get_prompt(
     optic.debug("prompt get: listing_id={}", listing_id)
     listing = await resolve_listing(PromptListing, listing_id, db, require_status=ListingStatus.approved)
     if listing:
-        await audit(
-            current_user, "prompt.view", resource_type="prompt", resource_id=str(listing.id), resource_name=listing.name
-        )
-        return PromptListingResponse.model_validate(listing)
+        resp = PromptListingResponse.model_validate(listing)
+        resp.user_permission = get_effective_component_permission(listing, current_user)
+        return resp
 
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
     if check_listing_visibility(listing, current_user):
-        await audit(
-            current_user, "prompt.view", resource_type="prompt", resource_id=str(listing.id), resource_name=listing.name
-        )
-        return PromptListingResponse.model_validate(listing)
+        resp = PromptListingResponse.model_validate(listing)
+        resp.user_permission = get_effective_component_permission(listing, current_user)
+        return resp
 
     raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -169,15 +162,11 @@ async def install_prompt(
     listing = await resolve_listing(PromptListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(PromptListing, listing_id, db)
-        if not listing or listing.submitted_by != current_user.id:
+        if not listing or get_effective_component_permission(listing, current_user) != "owner":
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
 
     db.add(PromptDownload(listing_id=listing.id, user_id=current_user.id, ide="api"))
     await db.commit()
-
-    await audit(
-        current_user, "prompt.install", resource_type="prompt", resource_id=str(listing.id), resource_name=listing.name
-    )
     return {
         "listing_id": str(listing.id),
         "config_snippet": {
@@ -202,7 +191,7 @@ async def render_prompt(
     listing = await resolve_listing(PromptListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(PromptListing, listing_id, db)
-        if not listing or listing.submitted_by != current_user.id:
+        if not listing or get_effective_component_permission(listing, current_user) != "owner":
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
 
     rendered = listing.template
@@ -235,10 +224,6 @@ async def render_prompt(
         )
     except Exception:
         pass
-
-    await audit(
-        current_user, "prompt.render", resource_type="prompt", resource_id=str(listing.id), resource_name=listing.name
-    )
     return PromptRenderResponse(listing_id=listing.id, rendered=rendered)
 
 
@@ -278,13 +263,6 @@ async def save_prompt_draft(
     listing.latest_version_id = version.id
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user,
-        "prompt.draft.create",
-        resource_type="prompt",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return PromptListingResponse.model_validate(listing)
 
 
@@ -299,7 +277,7 @@ async def update_prompt_draft(
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     if listing.status not in (ListingStatus.draft, ListingStatus.rejected, ListingStatus.pending):
         raise HTTPException(status_code=400, detail="Only draft, rejected, or pending listings can be edited")
@@ -338,19 +316,10 @@ async def update_prompt_draft(
 
     await db.commit()
     await db.refresh(listing)
-    if listing.status == ListingStatus.pending:
-        action = "prompt.pending.update"
-    elif listing.status == ListingStatus.rejected:
-        action = "prompt.rejected.update"
+    if listing.status == ListingStatus.pending or listing.status == ListingStatus.rejected:
+        pass
     else:
-        action = "prompt.draft.update"
-    await audit(
-        current_user,
-        action,
-        resource_type="prompt",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
+        pass
     return PromptListingResponse.model_validate(listing)
 
 
@@ -364,7 +333,7 @@ async def start_edit_prompt(
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     ver = listing.latest_version
     if not ver:
@@ -388,7 +357,7 @@ async def cancel_edit_prompt(
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     ver = listing.latest_version
     if not ver:
@@ -408,7 +377,7 @@ async def submit_prompt_draft(
     listing = await resolve_listing(PromptListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     if listing.status not in (ListingStatus.draft, ListingStatus.rejected):
         raise HTTPException(status_code=400, detail="Listing is not a draft")
@@ -421,13 +390,6 @@ async def submit_prompt_draft(
     listing.status = ListingStatus.pending
     await db.commit()
     await db.refresh(listing)
-    await audit(
-        current_user,
-        "prompt.draft.submit",
-        resource_type="prompt",
-        resource_id=str(listing.id),
-        resource_name=listing.name,
-    )
     return PromptListingResponse.model_validate(listing)
 
 
@@ -442,7 +404,7 @@ async def delete_prompt(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
-    if listing.submitted_by != current_user.id and not is_admin:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not authorized")
     if listing.status == ListingStatus.approved and not is_admin:
         raise HTTPException(status_code=400, detail="Cannot delete an approved listing. Contact an admin.")
@@ -451,7 +413,6 @@ async def delete_prompt(
         await db.delete(r)
 
     # Break the circular FK (listing → latest_version → listing) before delete
-    listing_name = listing.name
     listing.latest_version_id = None
     listing.latest_version = None
     await db.flush()
@@ -461,9 +422,6 @@ async def delete_prompt(
     await db.flush()
     await db.delete(listing)
     await db.commit()
-    await audit(
-        current_user, "prompt.delete", resource_type="prompt", resource_id=str(listing_id), resource_name=listing_name
-    )
     return {"deleted": str(listing_id)}
 
 

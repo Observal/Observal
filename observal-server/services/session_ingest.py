@@ -14,6 +14,8 @@ default fallback.  Passing an unknown ``ide`` value raises ``KeyError``.
 
 import hashlib
 import json
+import uuid as _uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import structlog
@@ -23,15 +25,13 @@ from services.clickhouse import insert_session_events, query_existing_for_dedup,
 from services.secrets_redactor import redact_secrets
 from services.session_parsers.ingest_classify import extract_timestamp, get_classifier, get_extra_rows
 
+# ---------------------------------------------------------------------------
+# Per-IDE token usage extraction (dispatch pattern)
+# ---------------------------------------------------------------------------
 
-def _extract_usage_tokens(parsed: dict) -> dict:
-    """Extract input/output/cache token counts and model from a parsed JSONL line.
 
-    Claude Code embeds per-turn token counts in ``message.usage``.
-    Cursor injects a synthetic usage line from the hook payload on stop events.
-    All other IDEs (Kiro, etc.) have no per-line token data and default to 0.
-    """
-    optic.debug("_extract_usage_tokens: parsed={}", parsed)
+def _usage_claude_code(parsed: dict) -> dict:
+    """Claude Code / Cursor / Kiro: usage.input_tokens, usage.output_tokens, etc."""
     msg = parsed.get("message", {})
     usage = msg.get("usage") or {}
     return {
@@ -43,7 +43,125 @@ def _extract_usage_tokens(parsed: dict) -> dict:
     }
 
 
+def _usage_pi(parsed: dict) -> dict:
+    """Pi: usage.input, usage.output, usage.cacheRead, usage.cacheWrite."""
+    msg = parsed.get("message", {})
+    usage = msg.get("usage") or {}
+    return {
+        "input_tokens": int(usage.get("input") or 0),
+        "output_tokens": int(usage.get("output") or 0),
+        "cache_read_tokens": int(usage.get("cacheRead") or 0),
+        "cache_write_tokens": int(usage.get("cacheWrite") or 0),
+        "model": str(msg.get("model") or ""),
+    }
+
+
+_UsageFn = Callable[[dict], dict]
+
+_USAGE_EXTRACTORS: dict[str, _UsageFn] = {
+    "claude-code": _usage_claude_code,
+    "kiro": _usage_claude_code,
+    "cursor": _usage_claude_code,
+    "pi": _usage_pi,
+}
+
+
+# ---------------------------------------------------------------------------
+# Per-IDE UUID extraction (dispatch pattern)
+# ---------------------------------------------------------------------------
+
+
+def _uuid_default(parsed: dict) -> tuple[str | None, str | None]:
+    """Claude Code / Kiro / Cursor: uuid, parentUuid."""
+    return parsed.get("uuid"), parsed.get("parentUuid")
+
+
+def _uuid_pi(parsed: dict) -> tuple[str | None, str | None]:
+    """Pi: id, parentId (at entry level)."""
+    return parsed.get("id"), parsed.get("parentId")
+
+
+_UuidFn = Callable[[dict], "tuple[str | None, str | None]"]
+
+_UUID_EXTRACTORS: dict[str, _UuidFn] = {
+    "claude-code": _uuid_default,
+    "kiro": _uuid_default,
+    "cursor": _uuid_default,
+    "pi": _uuid_pi,
+}
+
+
+def _extract_usage_tokens(parsed: dict, ide: str = "claude-code") -> dict:
+    """Extract input/output/cache token counts and model from a parsed JSONL line.
+
+    Dispatches to per-IDE extractor. Falls back to Claude Code format.
+    """
+    extractor = _USAGE_EXTRACTORS.get(ide, _usage_claude_code)
+    return extractor(parsed)
+
+
+def _extract_uuid(parsed: dict, ide: str = "claude-code") -> tuple[str | None, str | None]:
+    """Extract (uuid, parent_uuid) from a parsed JSONL line.
+
+    Dispatches to per-IDE extractor. Falls back to Claude Code format.
+    """
+    extractor = _UUID_EXTRACTORS.get(ide, _uuid_default)
+    return extractor(parsed)
+
+
 logger = structlog.get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Agent ID resolution (name -> UUID)
+# ---------------------------------------------------------------------------
+
+
+def _is_uuid(value: str) -> bool:
+    """Return True if *value* is a valid UUID string."""
+    try:
+        _uuid.UUID(value)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
+async def _resolve_agent_id(agent_id: str | None) -> str | None:
+    """Resolve an agent name to its UUID if it isn't one already.
+
+    The session_events and session_stats_agg tables store agent_id as a
+    plain string.  The insights pipeline looks up sessions by agent UUID.
+    If a caller passes a human-readable name (e.g. from a bulk import or
+    misconfigured marker), resolve it here so downstream queries work.
+
+    Returns the original value unchanged if it is already a UUID, None,
+    or if the name cannot be resolved.
+    """
+    if not agent_id:
+        return agent_id
+    if _is_uuid(agent_id):
+        return agent_id
+
+    # Import lazily to avoid circular deps at module level
+    from sqlalchemy import select
+
+    from database import async_session
+    from models.agent import Agent
+
+    try:
+        async with async_session() as db:
+            stmt = select(Agent.id).where(Agent.name == agent_id).limit(1)
+            result = await db.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                resolved = str(row)
+                optic.debug("resolved agent name to UUID: {}={}", agent_id, resolved)
+                return resolved
+    except Exception as e:
+        optic.warning("agent_id resolution failed: {}", e)
+
+    # Return as-is if resolution fails (backwards compat)
+    return agent_id
 
 
 @dataclass
@@ -97,6 +215,11 @@ async def ingest_session_lines(
         ``errors`` counts.
     """
     optic.debug("ingest_session_lines: session_id={}, project_id={}", session_id, project_id)
+
+    # Normalize agent_id: resolve human-readable names to UUIDs so that
+    # downstream queries (insights, exec dashboard) can match by UUID.
+    agent_id = await _resolve_agent_id(agent_id)
+
     ingested = 0
     skipped = 0
     errors = 0
@@ -147,6 +270,7 @@ async def ingest_session_lines(
         redacted_line = redact_secrets(raw_line)
         preview = preview_fn(parsed, event_type)
         tool_name, tool_id = tool_info_fn(parsed)
+        uuid, parent_uuid = _extract_uuid(parsed, ide)
 
         ts = extract_timestamp(ide, parsed)
         if ts is not None:
@@ -173,8 +297,8 @@ async def ingest_session_lines(
                 "line_hash": line_hash,
                 "event_type": event_type,
                 "timestamp": timestamp,
-                "uuid": parsed.get("uuid"),
-                "parent_uuid": parsed.get("parentUuid"),
+                "uuid": uuid,
+                "parent_uuid": parent_uuid,
                 "tool_name": tool_name,
                 "tool_id": tool_id,
                 "content_preview": preview,
@@ -182,8 +306,8 @@ async def ingest_session_lines(
                 "raw_line": redacted_line,
                 "credits": 0.0,
                 "parent_session_id": parent_session_id,
-                # Token counts from the JSONL line (Claude Code: message.usage).
-                **_extract_usage_tokens(parsed),
+                # Token counts from the JSONL line (IDE-specific field names).
+                **_extract_usage_tokens(parsed, ide),
             }
         )
         ingested += 1

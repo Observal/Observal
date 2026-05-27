@@ -272,3 +272,230 @@ class TestFetchAllReleases:
         assert len(results) == 2
         assert results[0]["version"] == "0.8.0"
         assert results[1]["version"] == "0.7.0"
+
+
+# ── Version floor tests ─────────────────────────────────────────
+
+
+class TestVersionFloor:
+    def test_floor_constant_exists(self):
+        assert version_check.VERSION_FLOOR == "1.0.0"
+
+    def test_check_version_floor_above(self):
+        assert version_check.check_version_floor("1.0.0") is True
+        assert version_check.check_version_floor("1.0.1") is True
+        assert version_check.check_version_floor("2.0.0") is True
+
+    def test_check_version_floor_below(self):
+        assert version_check.check_version_floor("0.9.0") is False
+        assert version_check.check_version_floor("0.8.0") is False
+        assert version_check.check_version_floor("0.0.1") is False
+
+    def test_check_version_floor_invalid(self):
+        assert version_check.check_version_floor("not-a-version") is False
+
+
+# ── check_version_compatibility tests ────────────────────────────
+
+
+class TestCheckVersionCompatibility:
+    def test_dev_install_skipped(self, monkeypatch):
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "0.0.0")
+        version_check.check_version_compatibility("http://localhost:8000")
+
+    def test_server_unreachable_skipped(self, monkeypatch):
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(version_check, "_read_cache", lambda: None)
+
+        def mock_get(*args, **kwargs):
+            raise httpx.ConnectError("unreachable")
+
+        monkeypatch.setattr(httpx, "get", mock_get)
+        version_check.check_version_compatibility("http://localhost:8000")
+
+    def test_dev_server_skipped(self, monkeypatch):
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(version_check, "_read_cache", lambda: None)
+
+        def mock_get(*args, **kwargs):
+            return httpx.Response(200, json={"server_version": "dev"})
+
+        monkeypatch.setattr(httpx, "get", mock_get)
+        version_check.check_version_compatibility("http://localhost:8000")
+
+    def test_versions_match_no_exit(self, monkeypatch):
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(version_check, "_read_cache", lambda: None)
+
+        def mock_get(*args, **kwargs):
+            return httpx.Response(200, json={"server_version": "1.0.3"})
+
+        monkeypatch.setattr(httpx, "get", mock_get)
+        version_check.check_version_compatibility("http://localhost:8000")
+
+    def test_cli_ahead_exits(self, monkeypatch):
+        from click.exceptions import Exit
+
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.2.0")
+        monkeypatch.setattr(version_check, "_read_cache", lambda: None)
+
+        def mock_get(*args, **kwargs):
+            return httpx.Response(200, json={"server_version": "1.0.0"})
+
+        monkeypatch.setattr(httpx, "get", mock_get)
+        with pytest.raises(Exit):
+            version_check.check_version_compatibility("http://localhost:8000")
+
+    def test_cli_behind_exits(self, monkeypatch):
+        from click.exceptions import Exit
+
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(version_check, "_read_cache", lambda: None)
+
+        def mock_get(*args, **kwargs):
+            return httpx.Response(200, json={"server_version": "1.2.0"})
+
+        monkeypatch.setattr(httpx, "get", mock_get)
+        with pytest.raises(Exit):
+            version_check.check_version_compatibility("http://localhost:8000")
+
+    def test_uses_cache_to_avoid_network_call(self, monkeypatch):
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(version_check, "_read_cache", lambda: {"server_version": "1.0.5", "source": "server"})
+        network_called = {"hit": False}
+
+        def mock_get(*args, **kwargs):
+            network_called["hit"] = True
+            return httpx.Response(200, json={"server_version": "1.0.5"})
+
+        monkeypatch.setattr(httpx, "get", mock_get)
+        version_check.check_version_compatibility("http://localhost:8000")
+        assert network_called["hit"] is False
+
+
+# ── Auto-update tests ───────────────────────────────────────────
+
+
+class TestAutoUpdate:
+    def test_disabled_via_config(self, monkeypatch):
+        monkeypatch.setattr(version_check, "load_config", lambda: {"auto_update": False})
+        assert version_check.auto_update_if_needed() is False
+
+    def test_disabled_via_env(self, monkeypatch):
+        monkeypatch.setattr(version_check, "load_config", lambda: {})
+        monkeypatch.setenv("OBSERVAL_NO_UPDATE_CHECK", "1")
+        assert version_check.auto_update_if_needed() is False
+
+    def test_disabled_in_ci(self, monkeypatch):
+        monkeypatch.setattr(version_check, "load_config", lambda: {})
+        monkeypatch.setenv("CI", "true")
+        assert version_check.auto_update_if_needed() is False
+
+    def test_no_update_when_current(self, monkeypatch):
+        monkeypatch.setattr(version_check, "load_config", lambda: {})
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(
+            version_check, "_resolve_update_source", lambda: {"latest_version": "1.0.0", "source": "github"}
+        )
+        assert version_check.auto_update_if_needed() is False
+
+    def test_major_jump_not_auto_applied(self, monkeypatch):
+        import sys
+
+        monkeypatch.setattr(version_check, "load_config", lambda: {})
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(
+            version_check, "_resolve_update_source", lambda: {"latest_version": "2.0.0", "source": "github"}
+        )
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: False)
+        assert version_check.auto_update_if_needed() is False
+
+    def test_below_floor_not_applied(self, monkeypatch):
+        monkeypatch.setattr(version_check, "load_config", lambda: {})
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(
+            version_check, "_resolve_update_source", lambda: {"latest_version": "0.9.0", "source": "server"}
+        )
+        assert version_check.auto_update_if_needed() is False
+
+    def test_minor_update_triggers_silent_install(self, monkeypatch):
+        monkeypatch.setattr(version_check, "load_config", lambda: {})
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(
+            version_check, "_resolve_update_source", lambda: {"latest_version": "1.1.0", "source": "github"}
+        )
+        # Ensure CI env var doesn't block the test
+        monkeypatch.delenv("CI", raising=False)
+        monkeypatch.delenv("OBSERVAL_NO_UPDATE_CHECK", raising=False)
+
+        import observal_cli.install_detector as id_mod
+        import observal_cli.upgrade_executor as ue_mod
+        from observal_cli.install_detector import InstallInfo, InstallMethod
+
+        fake_info = InstallInfo(method=InstallMethod.UV_TOOL, path="/fake", writable=True, managed_by=None)
+        monkeypatch.setattr(id_mod, "detect", lambda: fake_info)
+        monkeypatch.setattr(ue_mod, "execute_silent", lambda info, ver, direction: True)
+        assert version_check.auto_update_if_needed() is True
+
+
+# ── execute_silent tests ────────────────────────────────────────
+
+
+class TestExecuteSilent:
+    def test_uv_tool_success(self, monkeypatch):
+        import subprocess
+
+        from observal_cli.install_detector import InstallInfo, InstallMethod
+        from observal_cli.upgrade_executor import execute_silent
+
+        info = InstallInfo(method=InstallMethod.UV_TOOL, path="/fake", writable=True, managed_by=None)
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: type("R", (), {"returncode": 0})())
+        assert execute_silent(info, "1.1.0", "upgrade") is True
+
+    def test_pip_success(self, monkeypatch):
+        import subprocess
+
+        from observal_cli.install_detector import InstallInfo, InstallMethod
+        from observal_cli.upgrade_executor import execute_silent
+
+        info = InstallInfo(method=InstallMethod.PIP, path="/fake", writable=True, managed_by=None)
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: type("R", (), {"returncode": 0})())
+        assert execute_silent(info, "1.1.0", "upgrade") is True
+
+    def test_binary_skipped(self):
+        from observal_cli.install_detector import InstallInfo, InstallMethod
+        from observal_cli.upgrade_executor import execute_silent
+
+        info = InstallInfo(method=InstallMethod.BINARY, path="/fake", writable=True, managed_by=None)
+        assert execute_silent(info, "1.1.0", "upgrade") is False
+
+    def test_timeout_returns_false(self, monkeypatch):
+        import subprocess
+
+        from observal_cli.install_detector import InstallInfo, InstallMethod
+        from observal_cli.upgrade_executor import execute_silent
+
+        info = InstallInfo(method=InstallMethod.UV_TOOL, path="/fake", writable=True, managed_by=None)
+
+        def mock_run(*args, **kwargs):
+            raise subprocess.TimeoutExpired("uv", 120)
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        assert execute_silent(info, "1.1.0", "upgrade") is False
+
+
+# ── Downgrade floor guard test ──────────────────────────────────
+
+
+class TestDowngradeFloorGuard:
+    def test_downgrade_below_floor_rejected(self, monkeypatch):
+        monkeypatch.setenv("OBSERVAL_NO_UPDATE_CHECK", "1")
+        monkeypatch.setattr("observal_cli.version_check.get_current_version", lambda: "1.2.0")
+        from typer.testing import CliRunner
+
+        from observal_cli.main import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["self", "downgrade", "--version", "0.9.0"])
+        assert result.exit_code == 1
+        assert "Cannot downgrade below" in result.output or "1.0.0" in result.output

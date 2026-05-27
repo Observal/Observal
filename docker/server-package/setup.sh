@@ -171,12 +171,12 @@ POSTGRES_PW_DEFAULT=$(generate_secret | head -c 24)
 CLICKHOUSE_PW_DEFAULT=$(generate_secret | head -c 24)
 
 if [ "$EDITION" = "enterprise" ]; then
-    DEPLOYMENT_MODE_DEFAULT="enterprise"
+    LICENSE_PROMPT="Enterprise license key"
 else
-    DEPLOYMENT_MODE_DEFAULT="local"
+    LICENSE_PROMPT="Enterprise license key (leave blank for OSS)"
 fi
 
-prompt_with_default DEPLOYMENT_MODE "Deployment mode (local/enterprise)" "$DEPLOYMENT_MODE_DEFAULT"
+prompt_with_default OBSERVAL_LICENSE_KEY "$LICENSE_PROMPT" ""
 prompt_with_default FRONTEND_URL "Frontend URL (your public domain)" "http://localhost:3000"
 prompt_secret SECRET_KEY "Secret key" "$SECRET_KEY_DEFAULT"
 prompt_secret POSTGRES_PASSWORD "PostgreSQL password" "$POSTGRES_PW_DEFAULT"
@@ -194,7 +194,6 @@ sed -i.bak \
     -e "s|__SECRET_KEY__|$SECRET_KEY|g" \
     -e "s|__POSTGRES_PASSWORD__|$POSTGRES_PASSWORD|g" \
     -e "s|__CLICKHOUSE_PASSWORD__|$CLICKHOUSE_PASSWORD|g" \
-    -e "s|__DEPLOYMENT_MODE__|$DEPLOYMENT_MODE|g" \
     -e "s|__FRONTEND_URL__|$FRONTEND_URL|g" \
     "$ENV_FILE"
 rm -f "$ENV_FILE.bak"

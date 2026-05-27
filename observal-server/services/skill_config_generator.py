@@ -121,6 +121,17 @@ def generate_skill_config(
     if skill_md_content:
         config["skill"]["skill_md_content"] = skill_md_content
 
+    # Delivery mode and registry-direct script
+    delivery_mode = getattr(skill_listing, "delivery_mode", "git_fetch")
+    config["skill"]["delivery_mode"] = delivery_mode
+    if delivery_mode == "registry_direct":
+        script_content = getattr(skill_listing, "script_content", None)
+        script_filename = getattr(skill_listing, "script_filename", None)
+        if script_content:
+            config["skill"]["script_content"] = script_content
+        if script_filename:
+            config["skill"]["script_filename"] = script_filename
+
     # Generate IDE-specific skill file
     skill_file = _generate_skill_file(skill_listing, ide, scope)
     if skill_file:

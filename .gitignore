@@ -68,3 +68,4 @@ node_modules
 .pi/
 .mcp.json
 *.bak
+scripts/seed_demo.py

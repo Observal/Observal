@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 # Cached server version for the process lifetime
 _server_version_cache: str | None = None
+# Whether version enforcement has already run this session
+_version_enforced: bool = False
+
+# Subcommands exempt from version enforcement (user needs these to fix mismatches)
+_EXEMPT_SUBCOMMANDS = frozenset({"self", "server"})
 
 
 def _get_cli_version() -> str:
@@ -38,10 +43,37 @@ def _get_cli_version() -> str:
 def _client() -> tuple[str, dict]:
     optic.debug("_client called")
     cfg = config.get_or_exit()
-    return cfg["server_url"].rstrip("/"), {
+    base_url = cfg["server_url"].rstrip("/")
+    headers = {
         "Authorization": f"Bearer {cfg['access_token']}",
         "X-Observal-CLI-Version": _get_cli_version(),
     }
+    # Run version enforcement once per session (unless exempt subcommand)
+    _enforce_version_once(base_url)
+    return base_url, headers
+
+
+def _enforce_version_once(server_url: str) -> None:
+    """Run version enforcement exactly once per CLI session.
+
+    Checks if CLI major.minor matches server. Hard exits on mismatch.
+    Exempt: `observal self` and `observal server` subcommands.
+    """
+    global _version_enforced
+    if _version_enforced:
+        return
+    _version_enforced = True
+
+    # Check if current subcommand is exempt (handle flags before subcommand)
+    import sys
+
+    positional_args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if positional_args and positional_args[0] in _EXEMPT_SUBCOMMANDS:
+        return
+
+    from observal_cli.version_check import check_version_compatibility
+
+    check_version_compatibility(server_url)
 
 
 def _handle_error(e: httpx.HTTPStatusError, path: str = ""):

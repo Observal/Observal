@@ -34,7 +34,6 @@ from ee.observal_server.services.saml import (
 )
 from models.saml_config import SamlConfig
 from models.user import User, UserRole
-from services.audit_helpers import audit
 from services.jwt_service import create_access_token, create_refresh_token
 from services.redis import get_redis
 from services.security_events import (
@@ -372,13 +371,6 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
             user_agent=user_agent,
             detail="SAML SSO login",
         )
-    )
-    await audit(
-        user,
-        "auth.saml_callback",
-        resource_type="session",
-        resource_id=str(user.id),
-        detail="SAML SSO login",
     )
 
     relay_state = _safe_redirect_path(request_data["post_data"].get("RelayState"))

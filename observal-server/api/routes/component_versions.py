@@ -19,11 +19,10 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
-from api.deps import get_db, require_role, resolve_listing
+from api.deps import get_db, get_effective_component_permission, require_role, resolve_listing
 from models.mcp import ListingStatus
 from models.user import User, UserRole
 from schemas.component_version import VersionPublishRequest, VersionReviewRequest  # noqa: TC001
-from services.audit_helpers import audit
 from services.component_version_extras import ALLOWED_FIELDS, validate_and_extract
 
 # Semver pattern: X.Y.Z or X.Y.Z-prerelease
@@ -145,7 +144,7 @@ async def _publish_version(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
-    if listing.submitted_by != current_user.id:
+    if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Only the listing owner can publish versions")
 
     # Duplicate check
@@ -173,15 +172,6 @@ async def _publish_version(
         setattr(ver, field_name, value)
     db.add(ver)
     await db.commit()
-
-    await audit(
-        current_user,
-        f"{component_type}.version.publish",
-        resource_type=component_type,
-        resource_id=str(listing.id),
-        resource_name=getattr(listing, "name", ""),
-        detail=req.version,
-    )
 
     return _version_to_dict(ver, component_type)
 
@@ -247,15 +237,6 @@ async def _review_version(
     ver.reviewed_at = datetime.now(UTC)
 
     await db.commit()
-
-    await audit(
-        current_user,
-        f"{component_type}.version.{req.action}",
-        resource_type=component_type,
-        resource_id=str(listing.id),
-        resource_name=getattr(listing, "name", ""),
-        detail=version,
-    )
 
     return {
         "version": version,

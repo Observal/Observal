@@ -18,6 +18,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
+from observal_cli.prompts import password_input
 from observal_cli.render import (
     console,
     kv_panel,
@@ -39,9 +40,9 @@ def _require_enterprise():
         r = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
         if r.status_code == 200:
             pub = r.json()
-            if pub.get("deployment_mode") != "enterprise":
-                rprint("[yellow]This feature requires enterprise mode.[/yellow]")
-                rprint("[dim]Set DEPLOYMENT_MODE=enterprise on the server to enable.[/dim]")
+            if not pub.get("licensed"):
+                rprint("[yellow]This feature requires an enterprise license.[/yellow]")
+                rprint("[dim]Set OBSERVAL_LICENSE_KEY on the server to enable.[/dim]")
                 raise typer.Exit(1)
     except (httpx.ConnectError, httpx.TimeoutException):
         pass
@@ -501,6 +502,20 @@ def _rate(
 
 def _rate_impl(listing_id, stars, listing_type, comment):
     resolved = config.resolve_alias(listing_id)
+    # Resolve name to UUID if not already a UUID
+    try:
+        import uuid as _uuid
+
+        _uuid.UUID(resolved)
+    except ValueError:
+        # Not a UUID, resolve via server show endpoint (handles name lookup)
+        endpoint = "/api/v1/agents" if listing_type == "agent" else f"/api/v1/{listing_type}s"
+        try:
+            item = client.get(f"{endpoint}/{resolved}")
+            resolved = item["id"]
+        except Exception:
+            rprint(f"[red]Could not find {listing_type} named '{resolved}'[/red]")
+            raise typer.Exit(1)
     with spinner("Submitting rating..."):
         client.post(
             "/api/v1/feedback",
@@ -511,7 +526,7 @@ def _rate_impl(listing_id, stars, listing_type, comment):
                 "comment": comment,
             },
         )
-    rprint(f"[green]✓ Rated {star_rating(stars)}[/green]")
+    rprint(f"[green]u2713 Rated {star_rating(stars)}[/green]")
 
 
 @ops_app.command(name="feedback")
@@ -718,8 +733,8 @@ def admin_reset_password(
     if generate:
         body: dict = {"generate": True}
     else:
-        new_password = typer.prompt("New password", hide_input=True)
-        confirm = typer.prompt("Confirm password", hide_input=True)
+        new_password = password_input("New password")
+        confirm = password_input("Confirm password")
         if new_password != confirm:
             rprint("[red]Passwords do not match.[/red]")
             raise typer.Exit(1)
@@ -793,7 +808,7 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
     overall = data.get("status", "unknown")
     color = {"ok": "green", "degraded": "yellow", "unhealthy": "red"}.get(overall, "white")
     rprint(f"\n  Overall: [{color}]{overall}[/{color}]")
-    rprint(f"  Mode:    {data.get('deployment_mode', 'unknown')}")
+    rprint(f"  Licensed: {'yes' if data.get('licensed') else 'no'}")
 
     checks = data.get("checks", {})
 
@@ -1338,11 +1353,13 @@ def _traces_impl(trace_type, mcp_id, agent_id, limit, output):
     import httpx
 
     cfg = config.get_or_exit()
+    token = cfg.get("api_key") or cfg.get("access_token", "")
     with spinner("Querying traces..."):
         try:
             r = httpx.post(
                 f"{cfg['server_url'].rstrip('/')}/api/v1/graphql",
                 json={"query": query, "variables": variables},
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=30,
             )
             r.raise_for_status()
@@ -1423,11 +1440,13 @@ def _spans_impl(trace_id, output):
     import httpx
 
     cfg = config.get_or_exit()
+    token = cfg.get("api_key") or cfg.get("access_token", "")
     with spinner("Querying spans..."):
         try:
             r = httpx.post(
                 f"{cfg['server_url'].rstrip('/')}/api/v1/graphql",
                 json={"query": query, "variables": {"traceId": trace_id}},
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=30,
             )
             r.raise_for_status()
@@ -1647,6 +1666,15 @@ def downgrade(
         target = Version(version)
     except InvalidVersion:
         rprint(f"[red]Invalid version: {version}[/red]")
+        raise typer.Exit(1)
+
+    # Enforce version floor - cannot go below 1.0.0
+    if target < Version(version_check.VERSION_FLOOR):
+        rprint(
+            f"[bold red]\u2716 Cannot downgrade below v{version_check.VERSION_FLOOR}.[/bold red]\n"
+            f"  Versioning is not supported on earlier releases.\n"
+            f"  Minimum allowed version: [cyan]v{version_check.VERSION_FLOOR}[/cyan]"
+        )
         raise typer.Exit(1)
 
     try:

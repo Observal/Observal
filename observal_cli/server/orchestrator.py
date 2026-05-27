@@ -117,7 +117,6 @@ class Orchestrator:
                 "SECRET_KEY": self._secrets["SECRET_KEY"],
                 "JWT_KEY_DIR": str(KEYS_DIR),
                 "LOG_LEVEL": "INFO",
-                "DEPLOYMENT_MODE": "local",
                 "OBSERVAL_EMBEDDED": "1",
             }
         )

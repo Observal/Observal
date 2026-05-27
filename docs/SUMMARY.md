@@ -36,6 +36,7 @@
 * [observal doctor](cli/doctor.md)
 * [observal profile](cli/profile.md)
 * [observal self](cli/self.md)
+* [observal prompt](cli/prompt.md)
 * [observal server](cli/server.md)
 * [observal uninstall](cli/uninstall.md)
 
@@ -53,22 +54,6 @@
 * [Upgrades](self-hosting/upgrades.md)
 * [Backup and restore](self-hosting/backup-and-restore.md)
 * [Troubleshooting](self-hosting/troubleshooting.md)
-
-## Integrations
-
-* [Overview](integrations/README.md)
-* [Claude Code](integrations/claude-code.md)
-* [Kiro CLI](integrations/kiro.md)
-* [Cursor](integrations/cursor.md)
-* [Gemini CLI](integrations/gemini-cli.md)
-* [VS Code](integrations/vscode.md)
-* [Codex CLI](integrations/codex-cli.md)
-
-## Concepts
-
-* [Overview](concepts/README.md)
-* [Data model](concepts/data-model.md)
-* [Shim vs proxy](concepts/shim-vs-proxy.md)
 
 ## Reference
 

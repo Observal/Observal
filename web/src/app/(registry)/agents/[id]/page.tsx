@@ -22,12 +22,8 @@ import {
   Loader2,
   Activity,
   Trash2,
-  Lock,
-  Globe,
-  Edit,
-  Plus,
 } from "lucide-react";
-import { useState, useCallback, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,13 +33,11 @@ import {
   useFeedback,
   useFeedbackSummary,
   useWhoami,
-  useUpdateAgent,
   useAgentVersions,
   useAgentVersionDetail,
 } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
-import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import type { FeedbackItem } from "@/lib/types";
 import { PullCommand } from "@/components/registry/pull-command";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
@@ -53,7 +47,6 @@ import { FEATURE_LABELS, type IdeFeature } from "@/lib/ide-features";
 import { ReviewForm } from "@/components/registry/review-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -62,6 +55,7 @@ import { DetailSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { AgentEditForm, type AgentEditFormProps } from "@/components/registry/agent-edit-form";
+import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
 import { compactNumber, copyToClipboard } from "@/lib/utils";
 import { DIMENSION_META } from "@/components/dashboard/score-overview";
 
@@ -70,8 +64,6 @@ interface AgentDetail {
   status?: string;
   version?: string;
   owner?: string;
-  visibility?: string;
-  team_accesses?: { group_name: string; permission: "view" | "edit" }[];
   user_permission?: string;
   description?: string;
   prompt?: string;
@@ -196,174 +188,6 @@ function AnalyticsTab({ agentId }: { agentId: string }) {
     </div>
   );
 }
-function AccessSettingsWidget({ agentId, visibility, teamAccesses, canEdit }: { agentId: string; visibility?: string; teamAccesses?: { group_name: string; permission: "view" | "edit" }[]; canEdit: boolean }) {
-  const { isLicensed } = useDeploymentConfig();
-  const [isEditing, setIsEditing] = useState(false);
-  const [editVisibility, setEditVisibility] = useState<"public" | "private">(visibility === "public" ? "public" : "private");
-  const [editTeamAccesses, setEditTeamAccesses] = useState<{ group_name: string; permission: "view" | "edit" }[]>(teamAccesses ?? []);
-  const updateAgent = useUpdateAgent();
-
-  if (!isLicensed) return null;
-
-  async function handleSave() {
-    try {
-      await updateAgent.mutateAsync({
-        id: agentId,
-        body: {
-          visibility: editVisibility,
-          team_accesses: editTeamAccesses,
-        },
-      });
-      setIsEditing(false);
-    } catch (e) {
-      // toast is handled in the mutation
-    }
-  }
-
-  if (!isEditing) {
-    return (
-      <div className="border border-border rounded-md p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-            Access Settings
-          </h3>
-          {canEdit && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground hover:text-foreground"
-              aria-label="Edit access settings"
-              onClick={() => {
-                setEditVisibility(visibility === "public" ? "public" : "private");
-                setEditTeamAccesses(teamAccesses ?? []);
-                setIsEditing(true);
-              }}
-            >
-              <Edit className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-sm">
-            {visibility === "public" ? <Globe className="h-4 w-4 text-muted-foreground" /> : <Lock className="h-4 w-4 text-muted-foreground" />}
-            <span className="font-medium">{visibility === "public" ? "Public" : "Private"}</span>
-          </div>
-
-          {teamAccesses && teamAccesses.length > 0 && (
-            <div className="space-y-1.5 pt-2 border-t border-border/50">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Groups</span>
-              {teamAccesses.map((acc, i) => (
-                <div key={i} className="flex items-center justify-between text-xs">
-                  <span className="font-mono">{acc.group_name}</span>
-                  <Badge variant="outline" className="text-[10px]">{acc.permission}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="border border-border rounded-md p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-          Edit Access Settings
-        </h3>
-      </div>
-
-      <div className="space-y-3">
-        <select
-          className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          value={editVisibility}
-          onChange={(e) => setEditVisibility(e.target.value as "public" | "private")}
-        >
-          <option value="private">Private (Team Access Only)</option>
-          <option value="public">Public (Visible to All)</option>
-        </select>
-
-        {editVisibility === "private" && (
-          <div className="space-y-2 pt-2 border-t border-border/50">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Team Permissions</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setEditTeamAccesses([
-                    ...editTeamAccesses,
-                    { group_name: "", permission: "view" },
-                  ])
-                }
-                className="h-6 text-xs px-2"
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                Add
-              </Button>
-            </div>
-
-            <div className="space-y-2">
-              {editTeamAccesses.map((access, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <Input
-                    placeholder="Group"
-                    value={access.group_name}
-                    onChange={(e) => {
-                      const newAccess = [...editTeamAccesses];
-                      newAccess[i].group_name = e.target.value;
-                      setEditTeamAccesses(newAccess);
-                    }}
-                    className="h-7 flex-1 text-xs px-2"
-                  />
-                  <select
-                    className="flex h-7 w-16 rounded-md border border-input bg-transparent px-1.5 py-0 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    value={access.permission}
-                    onChange={(e) => {
-                      const newAccess = [...editTeamAccesses];
-                      newAccess[i].permission = e.target.value as "view" | "edit";
-                      setEditTeamAccesses(newAccess);
-                    }}
-                  >
-                    <option value="view">View</option>
-                    <option value="edit">Edit</option>
-                  </select>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      const newAccess = [...editTeamAccesses];
-                      newAccess.splice(i, 1);
-                      setEditTeamAccesses(newAccess);
-                    }}
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    aria-label={`Remove ${access.group_name ? `${access.group_name} ` : ""}access`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="flex gap-2 justify-end pt-2">
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
-          setIsEditing(false);
-          setEditVisibility(visibility === "public" ? "public" : "private");
-          setEditTeamAccesses(teamAccesses ?? []);
-        }}>Cancel</Button>
-        <Button size="sm" className="h-7 text-xs" disabled={updateAgent.isPending} onClick={handleSave}>
-          {updateAgent.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : "Save"}
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 export default function AgentDetailPage({
   params,
@@ -390,6 +214,18 @@ export default function AgentDetailPage({
   const { data: versionsData } = useAgentVersions(id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const { data: versionDetail } = useAgentVersionDetail(id, selectedVersion);
+
+  // Co-authors
+  const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
+  useEffect(() => {
+    const token = sessionStorage.getItem("observal_access_token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch(`/api/v1/agents/${id}/co-authors`, { headers })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setCoAuthors(data))
+      .catch(() => {});
+  }, [id]);
 
   const storeSub = useCallback((cb: () => void) => {
     window.addEventListener("storage", cb);
@@ -849,12 +685,31 @@ export default function AgentDetailPage({
                 </div>
               )}
 
-              <AccessSettingsWidget
-                agentId={id}
-                visibility={a.visibility}
-                teamAccesses={a.team_accesses}
-                canEdit={isAdmin || a.user_permission === "owner" || a.user_permission === "edit"}
-              />
+              {/* Co-Authors: visible to owner/co-authors */}
+              {(a?.user_permission === "owner") && (
+                <div className="border border-border rounded-md p-4 space-y-3">
+                  <CoAuthorInput
+                    entityType="agents"
+                    entityId={id}
+                    coAuthors={coAuthors}
+                    onChange={setCoAuthors}
+                    canManage={true}
+                  />
+                </div>
+              )}
+              {/* Show co-authors read-only to everyone if any exist */}
+              {a?.user_permission !== "owner" && coAuthors.length > 0 && (
+                <div className="border border-border rounded-md p-4 space-y-2">
+                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                    Co-Authors
+                  </h3>
+                  <div className="space-y-1">
+                    {coAuthors.map((c) => (
+                      <p key={c.id} className="text-sm text-muted-foreground">{c.username || c.email}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
             </aside>
           </div>
         )}

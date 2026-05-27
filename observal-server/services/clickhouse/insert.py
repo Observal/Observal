@@ -234,18 +234,18 @@ async def insert_otel_logs(rows: list[dict]):
 
 async def insert_audit_log(events: list[dict]):
     """Batch insert audit log events into ClickHouse."""
-    optic.debug("insert_audit_log: events={}", events)
+    optic.debug("insert_audit_log: count={}", len(events))
     if not events:
         return
     lines = []
     for e in events:
         row = {
             "event_id": e["event_id"],
-            "timestamp": _client._normalize_ts(e["timestamp"]),
+            "timestamp": e.get("timestamp") or _client._normalize_ts(e.get("timestamp")),
             "actor_id": e.get("actor_id", ""),
             "actor_email": e.get("actor_email", ""),
             "actor_role": e.get("actor_role", ""),
-            "action": e["action"],
+            "action": e.get("action", ""),
             "resource_type": e.get("resource_type", ""),
             "resource_id": e.get("resource_id", ""),
             "resource_name": e.get("resource_name", ""),
@@ -255,6 +255,13 @@ async def insert_audit_log(events: list[dict]):
             "ip_address": e.get("ip_address", ""),
             "user_agent": e.get("user_agent", ""),
             "detail": e.get("detail", ""),
+            "org_id": e.get("org_id", ""),
+            "sensitivity": e.get("sensitivity", "standard"),
+            "request_id": e.get("request_id", ""),
+            "outcome": e.get("outcome", ""),
+            "duration_ms": e.get("duration_ms", 0.0),
+            "chain_hash": e.get("chain_hash", ""),
+            "source": e.get("source", "server"),
         }
         lines.append(json.dumps(row, default=str))
     body = "\n".join(lines)
