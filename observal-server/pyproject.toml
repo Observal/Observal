@@ -11,7 +11,8 @@ description = "Observal API server"
 requires-python = ">=3.11"
 license = "AGPL-3.0-only"
 dependencies = [
-    "fastapi",
+    "fastapi>=0.136.0,!=0.136.3",
+    "starlette>=1.0.1",
     "uvicorn[standard]",
     "sqlalchemy[asyncio]",
     "asyncpg",
@@ -44,6 +45,15 @@ dependencies = [
     "prometheus-fastapi-instrumentator>=7.0.0",
     "urllib3>=2.7.0",
     "idna>=3.15",
+]
+
+[tool.uv]
+# CVE-2026-48710: starlette <1.0.1 has Host header poisoning.
+# prometheus-fastapi-instrumentator 7.1.0 caps starlette<1.0.0 but is
+# runtime-compatible with 1.x (only a type annotation differs).
+# Remove this override when upstream releases starlette 1.x support.
+override-dependencies = [
+    "starlette>=1.0.1",
 ]
 
 [dependency-groups]

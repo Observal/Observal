@@ -39,6 +39,7 @@ GEMINI.md
 Thumbs.db
 
 # Python
+.venv/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
@@ -59,6 +60,7 @@ docker/clickhouse/users.d/default-user.xml
 e2e-screenshots/
 migration/
 *.pem
+test-scan.json
 
 # Private packages (symlinked for local Docker builds)
 observal-insights/
