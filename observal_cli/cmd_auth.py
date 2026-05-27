@@ -176,12 +176,10 @@ def login(
 
     # 3. Check if we should use device flow (SSO)
     sso_mode = False
-    sso_available = False
     try:
         config_r = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
         if config_r.status_code == 200:
             pub_config = config_r.json()
-            sso_available = pub_config.get("sso_enabled") or pub_config.get("saml_enabled")
             sso_only = pub_config.get("sso_only", False)
             # Use device flow if --sso flag passed, or if sso_only mode (no password option)
             if sso or sso_only:
@@ -192,11 +190,9 @@ def login(
     # If SSO available but not required, offer a choice (unless flags already decide)
     if not sso_mode and not (email or password):
         rprint("  [1] Email/username + password")
-        if sso_available:
-            rprint("  [2] SSO (opens browser)")
-        rprint("  [3] Sign in via browser")
+        rprint("  [2] Sign in via browser")
         choice = text_input("Login method")
-        if (choice == "2" and sso_available) or choice == "3":
+        if choice == "2":
             sso_mode = True
 
     if sso_mode:

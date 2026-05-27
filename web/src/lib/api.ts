@@ -180,6 +180,14 @@ async function _tryRefreshToken(): Promise<boolean> {
 	}
 }
 
+/**
+ * Public wrapper for silent token refresh (e.g. new tab with no sessionStorage).
+ * Returns true if the access token was restored successfully.
+ */
+export async function refreshAccessToken(): Promise<boolean> {
+	return _tryRefreshToken();
+}
+
 async function request<T = unknown>(
 	method: string,
 	path: string,
