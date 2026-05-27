@@ -410,6 +410,35 @@ INIT_SQL = [
     )""",
     # NOTE: MATERIALIZE PROJECTION is handled conditionally in init_clickhouse()
     # to avoid creating a new mutation on every server restart.
+    # ── Fix Kiro credits double-counting ───────────────────────────────────────
+    # The credits row is idempotent (same line_offset=0xFFFFFFFF, ReplacingMergeTree
+    # deduplicates), but the MV fires on each INSERT, so sum() accumulated
+    # duplicate credits. Switch to max() since each push writes cumulative total.
+    """DROP VIEW IF EXISTS session_stats_mv""",
+    """ALTER TABLE session_stats_agg MODIFY COLUMN total_credits SimpleAggregateFunction(max, Float64)""",
+    """CREATE MATERIALIZED VIEW IF NOT EXISTS session_stats_mv
+    TO session_stats_agg AS
+    SELECT
+        project_id,
+        session_id,
+        coalesce(anyIf(agent_id, agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id,
+        coalesce(anyIf(user_id, user_id != ''), '')                             AS user_id,
+        coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL AND parent_session_id != ''), '') AS parent_session_id,
+        coalesce(anyIf(ide, ide != ''), '')                                     AS ide,
+        min(timestamp)                        AS first_event_time,
+        max(timestamp)                        AS last_event_time,
+        count()                               AS event_count,
+        countIf(event_type = 'user_prompt')   AS prompt_count,
+        countIf(event_type = 'tool_call')     AS tool_call_count,
+        countIf(event_type = 'tool_result')   AS tool_result_count,
+        sum(input_tokens)                     AS input_tokens,
+        sum(output_tokens)                    AS output_tokens,
+        sum(cache_read_tokens)                AS cache_read_tokens,
+        sum(cache_write_tokens)               AS cache_write_tokens,
+        max(credits)                          AS total_credits,
+        anyLastIf(model, model != '')         AS model
+    FROM session_events
+    GROUP BY project_id, session_id""",
 ]
 
 # ── Resource tuning ───────────────────────────────────────────────────────────

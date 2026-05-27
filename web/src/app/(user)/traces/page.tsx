@@ -282,14 +282,6 @@ const columns: ColumnDef<Session>[] = [
 			return ta - tb;
 		},
 	},
-	{
-		id: "score",
-		header: "Score",
-		cell: () => (
-			<span className="text-[13px] text-muted-foreground">{"\u2014"}</span>
-		),
-		enableSorting: false,
-	},
 ];
 
 // ── Sort Icon ────────────────────────────────────────────────────────
