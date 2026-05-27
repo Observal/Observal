@@ -428,8 +428,8 @@ async def extract_all_session_metas(
     metas = []
     for session_id, lines in transcripts.items():
         meta = extract_session_meta(session_id, lines)
-        # Filter: only substantive sessions (2+ user messages, 1+ min duration)
-        if meta["user_message_count"] >= 2 and meta["duration_seconds"] >= 60:
+        # Filter: only substantive sessions (2+ user messages, 10+ seconds duration)
+        if meta["user_message_count"] >= 2 and meta["duration_seconds"] >= 10:
             metas.append(meta)
 
     logger.info(
