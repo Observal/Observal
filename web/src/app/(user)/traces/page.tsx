@@ -326,7 +326,9 @@ export default function TracesPage() {
 	const { data: summary } = useSessionsSummary();
 	useSessionSubscription();
 
-	const [sorting, setSorting] = useState<SortingState>([]);
+	const [sorting, setSorting] = useState<SortingState>([
+		{ id: "first_event_time", desc: true },
+	]);
 	const [globalFilter, setGlobalFilter] = useState("");
 
 	const allSessions = useMemo(() => (sessions ?? []) as Session[], [sessions]);

@@ -102,7 +102,7 @@ def login(
     optic.debug("cli: auth login")
     welcome_banner()
 
-    server_url = server or text_input("Server URL", default="http://localhost:80")
+    server_url = server or text_input("Server URL", default="") or "http://localhost:80"
     server_url = server_url.rstrip("/")
 
     # 1. Check connectivity + initialization state

@@ -38,6 +38,23 @@ def main(home: Path | None = None) -> None:
         pass
 
 
+def _read_credits_with_retry(session_id: str, home: Path | None = None, retries: int = 3) -> float | None:
+    """Read credits with brief retries for race conditions on stop events.
+
+    Kiro may not have written the credits JSON by the time the stop hook fires.
+    A short sleep between retries gives Kiro time to flush the file.
+    """
+    import time
+
+    for attempt in range(retries):
+        credits = read_kiro_credits(session_id, home=home)
+        if credits is not None:
+            return credits
+        if attempt < retries - 1:
+            time.sleep(0.3)
+    return None
+
+
 def _run(home: Path | None = None) -> None:
     raw = sys.stdin.read()
     try:
@@ -81,7 +98,7 @@ def _run(home: Path | None = None) -> None:
         is_stop = hook_event.lower() == "stop"
         if is_stop:
             write_cursor(session_id, offset, line_count, finalized=True, home=home)
-            credits = read_kiro_credits(session_id, home=home)
+            credits = _read_credits_with_retry(session_id, home=home)
             if credits is not None:
                 payload_credits = build_payload(
                     session_id=session_id,
@@ -112,7 +129,8 @@ def _run(home: Path | None = None) -> None:
         cwd=cwd,
     )
     payload["ide"] = "kiro"
-    credits = read_kiro_credits(session_id, home=home)
+    is_stop = hook_event.lower() == "stop"
+    credits = _read_credits_with_retry(session_id, home=home) if is_stop else read_kiro_credits(session_id, home=home)
     if credits is not None:
         payload["total_credits"] = credits
 
@@ -129,7 +147,6 @@ def _run(home: Path | None = None) -> None:
         )
         return
 
-    is_stop = hook_event.lower() == "stop"
     write_cursor(session_id, new_offset, line_count + len(lines), finalized=is_stop, home=home)
 
     if not is_stop:
