@@ -121,7 +121,48 @@ def extract_session_meta(session_id: str, raw_lines: list[str]) -> dict:
         entry_type = entry.get("type", "")
         ts_str = entry.get("timestamp", "")
 
-        # Track time range
+        # Kiro format: {"version": "v1", "kind": "Prompt"|"AssistantMessage", "data": {...}}
+        entry_kind = entry.get("kind", "")
+        if entry_kind and not entry_type:
+            kiro_data = entry.get("data", {})
+            if isinstance(kiro_data, dict):
+                kiro_meta = kiro_data.get("meta") if isinstance(kiro_data.get("meta"), dict) else {}
+                epoch_s = kiro_meta.get("timestamp") if kiro_meta else None
+                if epoch_s:
+                    from datetime import UTC as _UTC
+
+                    kiro_ts = datetime.fromtimestamp(epoch_s, tz=_UTC).isoformat()
+                    if start_time is None or kiro_ts < start_time:
+                        start_time = kiro_ts
+                    if end_time is None or kiro_ts > end_time:
+                        end_time = kiro_ts
+
+                if entry_kind == "Prompt":
+                    user_message_count += 1
+                    total_messages += 1
+                    content = kiro_data.get("content", [])
+                    text_parts = [
+                        item.get("data", "")
+                        for item in content
+                        if isinstance(item, dict) and item.get("kind") == "text"
+                    ]
+                    if not first_prompt and text_parts:
+                        first_prompt = "\n".join(text_parts)[:200]
+                elif entry_kind == "AssistantMessage":
+                    assistant_message_count += 1
+                    total_messages += 1
+                    content = kiro_data.get("content", [])
+                    for item in content:
+                        if isinstance(item, dict) and item.get("kind") == "toolUse":
+                            tool_data = item.get("data", {})
+                            if isinstance(tool_data, dict):
+                                tool_name = tool_data.get("name", "unknown")
+                                tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+                elif entry_kind == "ToolResults":
+                    total_messages += 1
+            continue
+
+        # Track time range (Claude Code / Pi format)
         if ts_str:
             if start_time is None or ts_str < start_time:
                 start_time = ts_str
@@ -428,8 +469,8 @@ async def extract_all_session_metas(
     metas = []
     for session_id, lines in transcripts.items():
         meta = extract_session_meta(session_id, lines)
-        # Filter: only substantive sessions (2+ user messages, 10+ seconds duration)
-        if meta["user_message_count"] >= 2 and meta["duration_seconds"] >= 10:
+        # Filter: only substantive sessions (2+ user messages AND either 10+ seconds or 3+ total messages)
+        if meta["user_message_count"] >= 2 and (meta["duration_seconds"] >= 10 or meta["total_messages"] >= 3):
             metas.append(meta)
 
     logger.info(
