@@ -34,13 +34,19 @@ def _python_cmd() -> str:
     return f"PYTHONPATH={_PKG_ROOT} {sys.executable}"
 
 
-def build_kiro_hooks(*_args, **_kwargs) -> dict:
+def build_kiro_hooks(*args, **kwargs) -> dict:
     """Build the complete hooks dict for a Kiro agent config.
 
     Only 2 events: userPromptSubmit and stop.
-    Legacy callers may pass (hooks_url, agent_name) — ignored.
+    Accepts optional (hooks_url, agent_name) for per-agent attribution.
     """
+    agent_name = args[1] if len(args) > 1 else kwargs.get("agent_name", "")
     cmd = f"{_python_cmd()} -m observal_cli.hooks.kiro_session_push"
+    if agent_name:
+        if sys.platform == "win32":
+            cmd = f'set "OBSERVAL_AGENT_NAME={agent_name}" && {cmd}'
+        else:
+            cmd = f"OBSERVAL_AGENT_NAME={agent_name} {cmd}"
     return {
         "userPromptSubmit": [{"command": cmd}],
         "stop": [{"command": cmd}],
