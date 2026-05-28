@@ -104,6 +104,7 @@ def extract_session_meta(session_id: str, raw_lines: list[str]) -> dict:
     assistant_message_count = 0
     first_prompt = ""
     total_messages = 0
+    model_usage: dict[str, dict] = {}  # {model: {input_tokens, output_tokens, cost, messages}}
 
     last_assistant_ts: float | None = None
     start_time: str | None = None
@@ -231,14 +232,32 @@ def extract_session_meta(session_id: str, raw_lines: list[str]) -> dict:
 
             # Token usage
             usage = msg.get("usage", {})
+            msg_model = msg.get("model", "") or ""
             if usage:
-                input_tokens += int(usage.get("input", 0) or 0)
-                output_tokens += int(usage.get("output", 0) or 0)
+                msg_in = int(usage.get("input", 0) or 0)
+                msg_out = int(usage.get("output", 0) or 0)
+                input_tokens += msg_in
+                output_tokens += msg_out
                 cache_read_tokens += int(usage.get("cacheRead", 0) or 0)
                 cache_write_tokens += int(usage.get("cacheWrite", 0) or 0)
+                msg_cost = 0.0
                 cost = usage.get("cost", {})
                 if isinstance(cost, dict) and cost.get("total"):
-                    total_cost += float(cost["total"])
+                    msg_cost = float(cost["total"])
+                    total_cost += msg_cost
+                # Per-model usage tracking
+                if msg_model:
+                    if msg_model not in model_usage:
+                        model_usage[msg_model] = {"input_tokens": 0, "output_tokens": 0, "cost": 0.0, "messages": 0}
+                    model_usage[msg_model]["input_tokens"] += msg_in
+                    model_usage[msg_model]["output_tokens"] += msg_out
+                    model_usage[msg_model]["cost"] += msg_cost
+                    model_usage[msg_model]["messages"] += 1
+            elif msg_model:
+                # No usage block but model is present (count message)
+                if msg_model not in model_usage:
+                    model_usage[msg_model] = {"input_tokens": 0, "output_tokens": 0, "cost": 0.0, "messages": 0}
+                model_usage[msg_model]["messages"] += 1
 
             # Tool calls in content
             content = msg.get("content", [])
@@ -397,6 +416,7 @@ def extract_session_meta(session_id: str, raw_lines: list[str]) -> dict:
         "user_response_times": user_response_times,
         "message_hours": message_hours,
         "user_message_timestamps": user_message_timestamps,
+        "model_usage": model_usage,
     }
 
 
@@ -595,6 +615,7 @@ def aggregate_metas(metas: list[dict]) -> dict:
         "ides": set(),
         "sessions_with_tokens": 0,
         "sessions_with_credits": 0,
+        "model_usage": {},  # {model: {input_tokens, output_tokens, cost, messages, sessions}}
     }
 
     for meta in metas:
@@ -633,6 +654,22 @@ def aggregate_metas(metas: list[dict]) -> dict:
         for lang, count in meta["languages"].items():
             agg["languages"][lang] = agg["languages"].get(lang, 0) + count
 
+        # Merge model usage
+        for model, usage in meta.get("model_usage", {}).items():
+            if model not in agg["model_usage"]:
+                agg["model_usage"][model] = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost": 0.0,
+                    "messages": 0,
+                    "sessions": 0,
+                }
+            agg["model_usage"][model]["input_tokens"] += usage.get("input_tokens", 0)
+            agg["model_usage"][model]["output_tokens"] += usage.get("output_tokens", 0)
+            agg["model_usage"][model]["cost"] += usage.get("cost", 0.0)
+            agg["model_usage"][model]["messages"] += usage.get("messages", 0)
+            agg["model_usage"][model]["sessions"] += 1
+
         # Merge tool error categories
         for cat, count in meta["tool_error_categories"].items():
             agg["tool_error_categories"][cat] = agg["tool_error_categories"].get(cat, 0) + count
@@ -659,5 +696,37 @@ def aggregate_metas(metas: list[dict]) -> dict:
     # Sort tool counts by frequency
     agg["top_tools"] = sorted(agg["tool_counts"].items(), key=lambda x: -x[1])[:15]
     agg["top_languages"] = sorted(agg["languages"].items(), key=lambda x: -x[1])[:10]
+
+    # ── Model tier classification ─────────────────────────────────────────
+    # Classify models by observed cost-per-token. Models with significant
+    # usage but near-zero cost are "subscription" (credit-based plans).
+    model_tiers: dict[str, str] = {}
+    model_cpt: dict[str, float] = {}  # cost per 1k tokens
+
+    for model, usage in agg["model_usage"].items():
+        total_tok = usage["input_tokens"] + usage["output_tokens"]
+        if total_tok > 0:
+            model_cpt[model] = (usage["cost"] / total_tok) * 1000
+
+    cpt_values = sorted(v for v in model_cpt.values() if v > 0)
+    cpt_median = cpt_values[len(cpt_values) // 2] if cpt_values else 0.01
+
+    for model, usage in agg["model_usage"].items():
+        total_tok = usage["input_tokens"] + usage["output_tokens"]
+        cpt = model_cpt.get(model, 0)
+        # Subscription: significant usage with near-zero cost
+        if (total_tok > 10000 and usage["cost"] < 0.01) or (usage["messages"] > 20 and (not cpt or cpt < 0.001)):
+            model_tiers[model] = "subscription"
+        elif cpt > cpt_median * 3:
+            model_tiers[model] = "high"
+        elif cpt < cpt_median * 0.4:
+            model_tiers[model] = "low"
+        else:
+            model_tiers[model] = "mid"
+        # Annotate the usage dict with tier
+        usage["tier"] = model_tiers[model]
+        usage["cost_per_1k_tokens"] = round(cpt, 4) if cpt else 0
+
+    agg["model_tiers"] = model_tiers
 
     return agg

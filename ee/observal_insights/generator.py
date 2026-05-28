@@ -147,6 +147,111 @@ async def _run_pipeline(
 
     logger.info("insight_facets_extracted", count=len(all_facets))
 
+    # ── Step 3b: Model efficiency analysis ─────────────────────────────────
+    # Cross-reference per-session model usage with facets to detect waste.
+    # Build session_id -> facets mapping from the extraction batch.
+    facets_by_session: dict[str, dict] = {}
+    if transcripts and all_facets:
+        session_ids_with_transcripts = list(transcripts.keys())
+        for sid, facet in zip(session_ids_with_transcripts, all_facets, strict=False):
+            if facet:
+                facets_by_session[sid] = facet
+
+    model_efficiency: list[dict] = []
+    estimated_waste = 0.0
+    model_tiers = agg.get("model_tiers", {})
+
+    for meta in session_metas:
+        session_model_usage = meta.get("model_usage", {})
+        if not session_model_usage:
+            continue
+
+        facet = facets_by_session.get(meta["session_id"], {})
+        if not facet:
+            continue
+
+        # Determine primary model (highest cost or most messages)
+        primary = max(
+            session_model_usage.items(),
+            key=lambda x: (x[1].get("cost", 0), x[1].get("messages", 0)),
+        )
+        model_name, model_stats = primary
+        tier = model_tiers.get(model_name, "mid")
+
+        session_type = facet.get("session_type", "single_task")
+        complexity = facet.get("complexity", "medium")
+        outcome = facet.get("outcome", "unclear")
+
+        is_simple = (
+            session_type in ("quick_question", "single_task")
+            or complexity in ("trivial", "low")
+            or (meta.get("user_message_count", 0) <= 3 and meta.get("duration_seconds", 0) < 300)
+        )
+        is_complex = (
+            session_type in ("multi_task", "iterative_refinement")
+            or complexity in ("high", "very_high")
+            or meta.get("user_message_count", 0) > 8
+            or meta.get("files_modified", 0) > 5
+        )
+        poor_outcome = outcome in ("not_achieved", "partially_achieved")
+        good_outcome = outcome in ("fully_achieved", "mostly_achieved")
+
+        flag = "ok"
+        reason = ""
+
+        if tier == "subscription":
+            # Quota pressure: heavy subscription model on trivial tasks
+            model_lower = model_name.lower()
+            is_heavy = bool(
+                any(p in model_lower for p in ("opus", "pro", "medium", "large", "o1", "o3"))
+                and not any(p in model_lower for p in ("small", "mini", "flash", "haiku", "lite"))
+            )
+            if is_simple and good_outcome and is_heavy and model_stats.get("messages", 0) > 3:
+                flag = "quota_pressure"
+                reason = (
+                    f"Used {model_name} (subscription) for a {complexity} {session_type}. "
+                    f"This model consumes more quota than lighter alternatives within the same plan."
+                )
+        elif tier == "high" and is_simple and good_outcome:
+            flag = "overspend"
+            reason = (
+                f"Used {model_name} for a {complexity} {session_type} that succeeded. "
+                f"A lower-tier model would likely suffice."
+            )
+            estimated_waste += model_stats.get("cost", 0) * 0.8
+        elif tier == "low" and is_complex and poor_outcome:
+            flag = "underspend"
+            reason = (
+                f"Used {model_name} for a {complexity} {session_type} that ended with {outcome}. "
+                f"A more capable model may have succeeded."
+            )
+            estimated_waste += model_stats.get("cost", 0)
+        elif tier == "high" and poor_outcome and model_stats.get("cost", 0) > 0.10:
+            flag = "overspend"
+            reason = (
+                f"Spent ${model_stats.get('cost', 0):.2f} on {model_name} but outcome was {outcome}. "
+                f"Tokens were consumed without reaching the goal."
+            )
+            estimated_waste += model_stats.get("cost", 0) * 0.5
+
+        if flag != "ok":
+            model_efficiency.append(
+                {
+                    "model": model_name,
+                    "session_id": meta["session_id"],
+                    "date": meta.get("start_time", "")[:10],
+                    "cost": model_stats.get("cost", 0),
+                    "outcome": outcome,
+                    "session_type": session_type,
+                    "complexity": complexity,
+                    "flag": flag,
+                    "reason": reason,
+                }
+            )
+
+    model_efficiency.sort(key=lambda x: -x.get("cost", 0))
+    model_efficiency = model_efficiency[:20]
+
     # ── Step 4: Build the data block (pi-style focused format) ────────────
     facets_summary = aggregate_facets(all_facets)
     data_block = _build_data_block(
@@ -157,6 +262,8 @@ async def _run_pipeline(
         period_start=period_start,
         period_end=period_end,
         agent_config=agent_config,
+        model_efficiency=model_efficiency,
+        estimated_waste=estimated_waste,
     )
 
     # ── Step 5: Generate narrative sections (7 parallel + 1 synthesis) ────
@@ -202,6 +309,17 @@ async def _run_pipeline(
             "ides": agg.get("ides", []),
             "sessions_with_tokens": agg.get("sessions_with_tokens", 0),
             "sessions_with_credits": agg.get("sessions_with_credits", 0),
+            "model_usage": {
+                m: {
+                    "cost": u["cost"],
+                    "messages": u["messages"],
+                    "sessions": u["sessions"],
+                    "tier": u.get("tier", "mid"),
+                }
+                for m, u in sorted(agg.get("model_usage", {}).items(), key=lambda x: -x[1]["cost"])
+            },
+            "model_efficiency": model_efficiency[:10],
+            "estimated_waste_usd": round(estimated_waste, 2),
         },
         "overview": {
             "total_sessions": agg.get("total_sessions", 0),
@@ -259,6 +377,8 @@ def _build_data_block(
     period_start: str,
     period_end: str,
     agent_config: dict | None = None,
+    model_efficiency: list[dict] | None = None,
+    estimated_waste: float = 0.0,
 ) -> str:
     """Build the DATA_BLOCK for section prompts.
 
@@ -305,6 +425,19 @@ def _build_data_block(
         "session_types": facets_summary.get("session_types", {}),
         "complexity": facets_summary.get("complexity_distribution", {}),
     }
+
+    # Model usage with pre-classified tiers
+    model_usage = agg.get("model_usage", {})
+    if model_usage:
+        model_lines = []
+        for m, u in sorted(model_usage.items(), key=lambda x: -x[1].get("cost", 0)):
+            total_tok = u.get("input_tokens", 0) + u.get("output_tokens", 0)
+            cpt = f"${u.get('cost_per_1k_tokens', 0):.4f}" if u.get("cost_per_1k_tokens") else "$0"
+            model_lines.append(
+                f"  {m}: {u.get('sessions', 0)} sessions, {u.get('messages', 0)} msgs, "
+                f"${u.get('cost', 0):.2f} total, tier={u.get('tier', 'mid')}, $/1k-tok={cpt}"
+            )
+        summary["model_breakdown"] = model_lines
 
     # Multi-session detection
     if agg.get("multi_clauding"):
@@ -364,6 +497,19 @@ def _build_data_block(
             "\nREPEATED INSTRUCTIONS (by frequency):\n"
             + "\n".join(f'- "{r["instruction"]}" (frequency: {r["frequency"]})' for r in repeated[:10])
         )
+
+    # Model efficiency analysis (pre-computed, helps LLM write cost section)
+    if model_efficiency:
+        eff_lines = []
+        for e in model_efficiency[:10]:
+            eff_lines.append(
+                f"- [{e['flag']}] {e['model']} on {e['date']}: "
+                f"${e.get('cost', 0):.2f}, {e['complexity']} {e['session_type']}, "
+                f"outcome={e['outcome']}. {e['reason']}"
+            )
+        sections.append("\nMODEL EFFICIENCY FLAGS:\n" + "\n".join(eff_lines))
+        if estimated_waste > 0:
+            sections.append(f"\nEstimated waste from model mismatch: ${estimated_waste:.2f}")
 
     return "\n".join(sections)
 
