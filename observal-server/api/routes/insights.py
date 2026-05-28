@@ -38,6 +38,65 @@ def _require_insights():
         )
 
 
+@router.get("/status")
+async def insights_status(current_user: User = Depends(require_role(UserRole.admin))):
+    """Return whether insights is available and properly configured."""
+    import services.dynamic_settings as ds
+
+    if not INSIGHTS_AVAILABLE:
+        return {"available": False, "reason": "Insights requires an enterprise license."}
+
+    model = ds.get_sync("insights.model_sections")
+    if not model:
+        return {"available": False, "reason": "No model configured. Set insights.model_sections in admin settings."}
+
+    # Check if AWS credentials are set (for Bedrock models)
+    if "anthropic" in model:
+        aws_key = ds.get_sync("insights.aws_access_key_id")
+        if not aws_key:
+            return {"available": False, "reason": "AWS credentials not configured for Bedrock model."}
+
+    return {"available": True, "reason": None}
+
+
+@router.get("/agents/{agent_id}/session-count")
+async def agent_session_count(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Return the number of sessions available for insight generation."""
+    from services.clickhouse import _query
+
+    agent = await resolve_prefix_id(Agent, agent_id, db)
+    now = datetime.now(UTC)
+    period_start = now - timedelta(days=14)
+
+    count_sql = (
+        "SELECT count() AS cnt FROM session_stats_agg "
+        "WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String}) "
+        "AND first_event_time >= {t_start:String} "
+        "AND first_event_time <= {t_end:String} "
+        "FORMAT JSON"
+    )
+    try:
+        r = await _query(
+            count_sql,
+            {
+                "param_agent_id": str(agent.id),
+                "param_agent_name": agent.name,
+                "param_t_start": period_start.strftime("%Y-%m-%d %H:%M:%S"),
+                "param_t_end": now.strftime("%Y-%m-%d %H:%M:%S"),
+            },
+        )
+        count_data = r.json().get("data", []) if r.status_code == 200 else []
+        count = int(count_data[0]["cnt"]) if count_data else 0
+    except Exception:
+        count = 0
+
+    return {"session_count": count}
+
+
 @router.post("/agents/{agent_id}/generate", response_model=InsightReportListItem)
 async def generate_insight(
     agent_id: str,
@@ -56,6 +115,37 @@ async def generate_insight(
     period_days = req.period_days if req else 14
     now = datetime.now(UTC)
     period_start = now - timedelta(days=period_days)
+
+    # Check if there are any sessions for this agent in the period
+    from services.clickhouse import _query
+
+    count_sql = (
+        "SELECT count() AS cnt FROM session_stats_agg "
+        "WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String}) "
+        "AND first_event_time >= {t_start:String} "
+        "AND first_event_time <= {t_end:String} "
+        "FORMAT JSON"
+    )
+    try:
+        r = await _query(
+            count_sql,
+            {
+                "param_agent_id": str(agent.id),
+                "param_agent_name": agent.name,
+                "param_t_start": period_start.strftime("%Y-%m-%d %H:%M:%S"),
+                "param_t_end": now.strftime("%Y-%m-%d %H:%M:%S"),
+            },
+        )
+        count_data = r.json().get("data", []) if r.status_code == 200 else []
+        session_count = int(count_data[0]["cnt"]) if count_data else 0
+    except Exception:
+        session_count = 0
+
+    if session_count == 0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No sessions found for this agent in the last {period_days} days. Cannot generate a report.",
+        )
 
     # Find previous completed report for regression linking
     prev_stmt = (

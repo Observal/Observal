@@ -760,6 +760,8 @@ export const bulk = {
 
 // ── Insights ───────────────────────────────────────────────────────
 export const insights = {
+	status: () => get<{ available: boolean; reason: string | null }>("/insights/status"),
+	sessionCount: (agentId: string) => get<{ session_count: number }>(`/insights/agents/${agentId}/session-count`),
 	generate: (agentId: string, periodDays?: number) =>
 		post<InsightReportListItem>(
 			`/insights/agents/${agentId}/generate`,

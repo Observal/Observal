@@ -49,6 +49,23 @@ export function useSubmitFeedback() {
 
 // ── Insights ───────────────────────────────────────────────────────
 
+export function useInsightsStatus() {
+  return useQuery({
+    queryKey: ["insights", "status"],
+    queryFn: () => insights.status(),
+    staleTime: 60_000,
+  });
+}
+
+export function useInsightSessionCount(agentId: string | undefined) {
+  return useQuery({
+    queryKey: ["insights", "session-count", agentId],
+    queryFn: () => insights.sessionCount(agentId!),
+    enabled: !!agentId,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useInsightReports(agentId: string | undefined) {
   return useQuery({
     queryKey: ["insights", "reports", agentId],

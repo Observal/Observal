@@ -5,11 +5,13 @@
 "use client";
 
 import Link from "next/link";
-import { Play, Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Play, Loader2, CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
 import {
 	useRegistryList,
 	useInsightReports,
 	useGenerateInsight,
+	useInsightsStatus,
+	useInsightSessionCount,
 } from "@/hooks/use-api";
 import type { RegistryItem, InsightReportListItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -47,12 +49,14 @@ function StatusBadge({ status }: { status: InsightReportListItem["status"] }) {
 	}
 }
 
-function AgentInsightCard({ agent }: { agent: RegistryItem }) {
+function AgentInsightCard({ agent, disabled }: { agent: RegistryItem; disabled?: boolean }) {
 	const { data: reports } = useInsightReports(agent.id);
+	const { data: sessionCountData } = useInsightSessionCount(agent.id);
 	const generateInsight = useGenerateInsight();
 
 	const latest = (reports ?? [])[0] as InsightReportListItem | undefined;
 	const reportCount = (reports ?? []).length;
+	const availableSessions = sessionCountData?.session_count ?? 0;
 
 	return (
 		<div className="rounded-md border border-border bg-card p-4 flex flex-col gap-3 hover:bg-muted/30 transition-colors">
@@ -71,16 +75,14 @@ function AgentInsightCard({ agent }: { agent: RegistryItem }) {
 			</div>
 
 			<div className="flex items-center gap-3 text-xs text-muted-foreground">
-				{latest ? (
+				<span className="font-[family-name:var(--font-mono)] tabular-nums">
+					{availableSessions} sessions available
+				</span>
+				{latest && (
 					<>
-						<span className="font-[family-name:var(--font-mono)] tabular-nums">
-							{latest.sessions_analyzed} sessions
-						</span>
 						<span>{new Date(latest.created_at).toLocaleDateString()}</span>
 						{reportCount > 1 && <span>{reportCount} reports</span>}
 					</>
-				) : (
-					<span>No reports generated yet</span>
 				)}
 			</div>
 
@@ -107,6 +109,8 @@ function AgentInsightCard({ agent }: { agent: RegistryItem }) {
 					size="sm"
 					className="h-7 text-xs gap-1 shrink-0"
 					disabled={
+						disabled ||
+						availableSessions === 0 ||
 						generateInsight.isPending ||
 						latest?.status === "pending" ||
 						latest?.status === "running"
@@ -123,12 +127,20 @@ function AgentInsightCard({ agent }: { agent: RegistryItem }) {
 
 export default function InsightsPage() {
 	const { data: agents, isLoading, isError } = useRegistryList("agents");
+	const { data: insightsStatus } = useInsightsStatus();
+	const notConfigured = insightsStatus && !insightsStatus.available;
 
 	return (
 		<>
 			<PageHeader title="Agent Insights" />
 
-			<div className="p-4 sm:p-6">
+			<div className="p-4 sm:p-6 space-y-4">
+				{notConfigured && (
+					<div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
+						<AlertTriangle className="h-4 w-4 shrink-0" />
+						<span>{insightsStatus.reason}</span>
+					</div>
+				)}
 				{isLoading && (
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
 						{Array.from({ length: 6 }).map((_, i) => (
@@ -149,7 +161,7 @@ export default function InsightsPage() {
 				{!isLoading && !isError && agents && agents.length > 0 && (
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
 						{agents.map((agent) => (
-							<AgentInsightCard key={agent.id} agent={agent} />
+							<AgentInsightCard key={agent.id} agent={agent} disabled={!!notConfigured} />
 						))}
 					</div>
 				)}

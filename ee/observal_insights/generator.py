@@ -118,14 +118,7 @@ async def _run_pipeline(
         key=lambda m: m.get("duration_seconds", 0) * sum(m.get("tool_counts", {}).values()),
         reverse=True,
     )
-    # Filter trivial sessions (< 2 user messages, or too short with few messages)
-    substantive = [
-        m
-        for m in ranked
-        if m.get("user_message_count", 0) >= 2
-        and (m.get("duration_seconds", 0) >= 10 or m.get("total_messages", 0) >= 3)
-    ]
-    top_sessions = substantive[:MAX_FACET_SESSIONS]
+    top_sessions = ranked[:MAX_FACET_SESSIONS]
 
     transcripts: dict[str, str] = {}
     if top_sessions:
