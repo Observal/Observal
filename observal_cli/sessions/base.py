@@ -206,9 +206,7 @@ def build_payload(
     Defaults ide to ``claude-code``; callers override with ``payload["ide"] = ...``
     for other IDEs.
     """
-    from observal_cli.sessions.agent_marker import read_agent_marker
-
-    agent_id, agent_version = read_agent_marker(cwd, session_jsonl) if cwd else (None, None)
+    agent_id, agent_version = _resolve_agent(cwd, lines, session_jsonl)
     payload: dict = {
         "session_id": session_id,
         "ide": "claude-code",
@@ -224,6 +222,48 @@ def build_payload(
         payload["total_line_count"] = line_count_before + len(lines)
         payload["total_offset"] = new_offset
     return payload
+
+
+def _resolve_agent(cwd: str, lines: list[str], session_jsonl: Path | None) -> tuple[str | None, str | None]:
+    """Resolve agent identity from multiple sources (priority order).
+
+    1. OBSERVAL_AGENT_NAME env var (Kiro per-agent hook commands)
+    2. agent-setting line in JSONL (Claude Code embeds active agent)
+    """
+    import os
+
+    # 1. Env var (Kiro per-agent hooks embed this)
+    env_agent = os.environ.get("OBSERVAL_AGENT_NAME", "")
+    if env_agent:
+        return env_agent, None
+
+    # 2. Parse agent-setting from JSONL lines (Claude Code)
+    agent_from_jsonl = _parse_agent_from_lines(lines)
+    if agent_from_jsonl:
+        return agent_from_jsonl, None
+
+    return None, None
+
+
+def _parse_agent_from_lines(lines: list[str]) -> str | None:
+    """Extract agent name from Claude Code agent-setting JSONL line.
+
+    Claude Code writes a line like:
+      {"type": "agent-setting", "agentSetting": "my-agent", ...}
+    at the start of a session when an agent is active.
+    """
+    for raw in lines:
+        if "agent-setting" not in raw:
+            continue
+        try:
+            entry = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") == "agent-setting":
+            name = entry.get("agentSetting") or entry.get("agentName") or entry.get("name")
+            if name:
+                return name
+    return None
 
 
 # ---------------------------------------------------------------------------
