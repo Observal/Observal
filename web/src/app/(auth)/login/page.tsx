@@ -12,7 +12,7 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { auth, setTokens, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
+import { auth, setTokens, clearSession, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,9 @@ function LoginContent() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Don't redirect to "/" if a SAML token exchange is pending
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("saml_token") || params.get("code") || params.get("saml_code")) return;
     const hasToken = !!sessionStorage.getItem("observal_access_token");
     if (hasToken && getUserRole()) {
       router.replace("/");
@@ -42,31 +45,30 @@ function LoginContent() {
   }, [router]);
 
   useEffect(() => {
-    // Check for SAML token in URL hash (fragment)
-    const hash = window.location.hash;
-    const samlMatch = hash.match(/^#saml=(.+)$/);
-    if (samlMatch) {
+    const samlTokenId = searchParams.get("saml_token");
+    if (samlTokenId) {
       setLoading(true);
       window.history.replaceState({}, "", "/login");
-      const tokenId = samlMatch[1];
 
-      fetch(`/api/v1/sso/saml/exchange?token_id=${tokenId}`)
-        .then((res) => { if (!res.ok) throw new Error("Exchange failed"); return res.json(); })
-        .then((data) => {
+      (async () => {
+        try {
+          const res = await fetch(`/api/v1/sso/saml/exchange?token_id=${samlTokenId}`);
+          if (!res.ok) throw new Error("Exchange failed");
+          const data = await res.json();
+          clearSession();
           setTokens(data.access_token, data.refresh_token);
           setUserRole(data.user.role);
           setUserName(data.user.name);
           setUserEmail(data.user.email);
           if (data.user.username) setUserUsername(data.user.username);
-          if (data.user.avatar_url) setUserAvatar(data.user.avatar_url);
           window.dispatchEvent(new Event("storage"));
-          window.location.href = "/";
-        })
-        .catch((err) => {
+          window.location.replace("/");
+        } catch {
           setError("SAML sign-in failed. Please try again.");
           toast.error("SAML sign-in failed.");
           setLoading(false);
-        });
+        }
+      })();
       return;
     }
 

@@ -412,8 +412,6 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
     relay_state = _safe_redirect_path(request_data["post_data"].get("RelayState"))
 
-    # Store tokens in a short-lived Redis key and redirect to a frontend route
-    # that will read them. Use a unique token_id to avoid query param issues.
     import uuid as _uuid
 
     token_id = str(_uuid.uuid4())
@@ -433,10 +431,11 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
         }),
     )
 
-    # Redirect to frontend with token_id in URL fragment (hash) which is never sent to server
-    frontend_redirect = f"{_get_frontend_url()}/login#saml={token_id}"
-    logger.warning("SAML redirect URL: %s", frontend_redirect)
-    return RedirectResponse(url=frontend_redirect, status_code=302)
+    frontend_url = _get_frontend_url()
+    return RedirectResponse(
+        url=f"{frontend_url}/login?saml_token={token_id}",
+        status_code=302,
+    )
 
 
 @router.get("/exchange")

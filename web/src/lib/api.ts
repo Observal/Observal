@@ -240,9 +240,15 @@ async function request<T = unknown>(
 					if (retryRes.status === 204) return undefined as T;
 					return retryRes.json() as Promise<T>;
 				}
+				// Retry failed but refresh succeeded — don't kill the session,
+				// just throw so the individual call fails gracefully
+				const retryText = await retryRes.text().catch(() => "Request failed");
+				const retryErr = new Error(retryText);
+				(retryErr as Error & { status: number }).status = retryRes.status;
+				throw retryErr;
 			}
 
-			// Refresh failed or retry failed, clear session
+			// Refresh itself failed — session is truly expired
 			clearSession();
 			if (typeof window !== "undefined") {
 				window.location.href = "/login?reason=session_expired";
