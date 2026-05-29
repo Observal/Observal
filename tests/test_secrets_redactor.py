@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "observal-server"))
 
-from services.secrets_redactor import REDACTED, redact_dict, redact_secrets
+from services.secrets_redactor import REDACTED, get_and_reset_redaction_count, redact_dict, redact_secrets
 
 # ============================================================================
 # Known API key prefixes — MUST be redacted
@@ -408,3 +408,27 @@ class TestIdempotency:
         once = redact_secrets(text)
         twice = redact_secrets(once)
         assert once == twice
+
+
+class TestRedactionCount:
+    def test_counts_all_redaction_types(self):
+        get_and_reset_redaction_count()
+        text = "\n".join(
+            [
+                "OPENAI_KEY=sk-proj-abc123def456ghi789jkl012mno345",
+                "password=mySuperSecretPassword123!",
+                "postgresql://admin:s3cretP@ss@localhost:5432/mydb",
+                "X-API-Key: abcdef1234567890abcdef1234567890",
+            ]
+        )
+
+        redact_secrets(text)
+
+        assert get_and_reset_redaction_count() == 4
+
+    def test_non_secret_text_does_not_increment_count(self):
+        get_and_reset_redaction_count()
+
+        redact_secrets("normal text without sensitive values")
+
+        assert get_and_reset_redaction_count() == 0

@@ -206,17 +206,20 @@ def redact_secrets(text: str) -> str:
     if text == REDACTED:
         return text
 
+    global _redaction_count
+
     # 1. PEM private keys (replace entire block)
-    text = _RE_PRIVATE_KEY.sub(REDACTED, text)
+    text, n = _RE_PRIVATE_KEY.subn(REDACTED, text)
+    _redaction_count += n
 
     # 2. Known API key prefixes (single-pass alternation with short-circuit)
-    global _redaction_count
     if any(prefix in text for prefix in _QUICK_PREFIXES):
         text, n = _COMBINED_KEY_PATTERN.subn(REDACTED, text)
         _redaction_count += n
 
     # 3. JWT tokens
-    text = _RE_JWT.sub(REDACTED, text)
+    text, n = _RE_JWT.subn(REDACTED, text)
+    _redaction_count += n
 
     # 4. Key=value assignments with secret-sounding key names
     #    Replace only the VALUE, keep the key name
@@ -224,15 +227,21 @@ def redact_secrets(text: str) -> str:
         optic.trace("redacted a secret match")
         # Groups: 1=double-quoted, 2=single-quoted, 3=unquoted
         val = m.group(1) or m.group(2) or m.group(3)
-        return m.group(0).replace(val, REDACTED) if val else m.group(0)
+        if not val or val == REDACTED:
+            return m.group(0)
+        global _redaction_count
+        _redaction_count += 1
+        return m.group(0).replace(val, REDACTED)
 
     text = _RE_KEY_VALUE.sub(_replace_kv, text)
 
-    # 5. Connection strings - redact password only
-    text = _RE_CONN_STRING.sub(r"\1" + REDACTED + r"\3", text)
+    # 5. Connection strings, redact password only
+    text, n = _RE_CONN_STRING.subn(r"\1" + REDACTED + r"\3", text)
+    _redaction_count += n
 
-    # 6. Auth headers - redact token only
-    text = _RE_AUTH_HEADER.sub(r"\1" + REDACTED, text)
+    # 6. Auth headers, redact token only
+    text, n = _RE_AUTH_HEADER.subn(r"\1" + REDACTED, text)
+    _redaction_count += n
 
     return text
 
