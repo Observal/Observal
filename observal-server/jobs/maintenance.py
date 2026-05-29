@@ -3,15 +3,12 @@
 
 """Maintenance background jobs: ClickHouse optimization, component source sync, retention."""
 
-import structlog
 from loguru import logger as optic
-
-logger = structlog.get_logger(__name__)
 
 
 async def sync_component_sources(ctx: dict):
     """Background job: sync component sources that are due for re-sync."""
-    optic.debug("job: sync_component_sources")
+    optic.debug("sync_component_sources")
     from datetime import UTC, datetime
 
     from sqlalchemy import or_, select
@@ -34,7 +31,7 @@ async def sync_component_sources(ctx: dict):
         sources = result.scalars().all()
 
         for source in sources:
-            logger.info("Syncing component source %s (%s)", source.id, source.url)
+            optic.info("Syncing component source {} ({})", source.id, source.url)
             source.sync_status = "syncing"
             await db.commit()
 
@@ -44,8 +41,8 @@ async def sync_component_sources(ctx: dict):
             source.sync_status = "success" if sync_result.success else "failed"
             source.sync_error = sync_result.error if not sync_result.success else None
             await db.commit()
-            logger.info(
-                "Sync %s: %s (%d components)",
+            optic.info(
+                "Sync {}: {} ({} components)",
                 source.url,
                 source.sync_status,
                 len(sync_result.components),
@@ -60,7 +57,7 @@ async def maintain_clickhouse(ctx: dict):
     month-long agent session accumulates thousands of tiny parts that
     bloat memory during merges and FINAL queries.
     """
-    optic.debug("job: maintain_clickhouse")
+    optic.debug("maintain_clickhouse")
     from services.clickhouse.client import _query
 
     tables = ["traces", "spans", "scores", "session_events", "session_stats_agg"]
@@ -68,7 +65,7 @@ async def maintain_clickhouse(ctx: dict):
         try:
             await _query(f"OPTIMIZE TABLE {table}")
         except Exception as e:
-            logger.warning("ClickHouse OPTIMIZE %s failed: %s", table, e)
+            optic.warning("ClickHouse OPTIMIZE {} failed: {}", table, e)
 
     # Check part health: warn before things get critical
     try:
@@ -81,10 +78,10 @@ async def maintain_clickhouse(ctx: dict):
             for row in resp.json().get("data", []):
                 parts = int(row.get("parts", 0))
                 if parts > 300:
-                    logger.warning(
-                        "ClickHouse table %s has %s active parts, merges may be falling behind",
+                    optic.warning(
+                        "ClickHouse table {} has {} active parts, merges may be falling behind",
                         row["table"],
                         parts,
                     )
     except Exception as e:
-        logger.debug("Part health check failed: %s", e)
+        optic.debug("Part health check failed: {}", e)

@@ -129,7 +129,7 @@ async def my_feedback_received(
 
 @router.get("/summary/{listing_id}", response_model=FeedbackSummary)
 async def feedback_summary(listing_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    optic.debug("feedback_summary: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     result = await db.execute(
         select(
             func.avg(Feedback.rating).label("avg_rating"),
@@ -146,7 +146,7 @@ async def feedback_summary(listing_id: uuid.UUID, db: AsyncSession = Depends(get
 
 @router.get("/{listing_type}/{listing_id}", response_model=list[FeedbackResponse])
 async def get_feedback(listing_type: str, listing_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    optic.debug("get_feedback: listing_type={}, listing_id={}", listing_type, listing_id)
+    optic.trace("listing_type={}, listing_id={}", listing_type, listing_id)
     valid_types = {"mcp", "agent", "skill", "hook", "prompt", "sandbox"}
     if listing_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Unknown listing type: {listing_type}")

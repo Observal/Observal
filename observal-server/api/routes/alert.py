@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
 
 
 def _validate_webhook_url(url: str) -> None:
-    optic.debug("_validate_webhook_url: url={}", url)
+    optic.trace("validating webhook URL: {}", url)
     if not url:
         return  # empty URL is OK (no webhook)
     parsed = urlparse(url)
@@ -144,7 +144,7 @@ async def get_alert_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("get_alert_history: alert_id={}, limit={}", alert_id, limit)
+    optic.debug("fetching alert history for {} (limit={})", alert_id, limit)
     rule = await db.get(AlertRule, alert_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
@@ -176,7 +176,7 @@ async def rotate_webhook_secret(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Rotate the webhook signing secret for an alert rule. Admin only."""
-    optic.debug("rotate_webhook_secret: alert_id={}", alert_id)
+    optic.debug("rotating webhook secret for alert {}", alert_id)
     rule = await db.get(AlertRule, alert_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
@@ -199,7 +199,7 @@ async def reveal_webhook_secret(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Reveal the full webhook secret. Admin only, audit-logged."""
-    optic.debug("reveal_webhook_secret: alert_id={}", alert_id)
+    optic.debug("revealing webhook secret for alert {}", alert_id)
     import logging
 
     logger = logging.getLogger(__name__)
@@ -209,7 +209,7 @@ async def reveal_webhook_secret(
         raise HTTPException(404, "Alert rule not found")
 
     logger.info(
-        "Webhook secret revealed: alert_rule_id=%s by user_id=%s",
+        "Webhook secret revealed: alert_rule_id={} by user_id={}",
         alert_id,
         current_user.id,
     )
@@ -223,7 +223,7 @@ async def test_webhook(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Send a test webhook to the configured URL. Owner or admin."""
-    optic.debug("test_webhook: alert_id={}", alert_id)
+    optic.debug("sending test webhook for alert {}", alert_id)
     rule = await db.get(AlertRule, alert_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")

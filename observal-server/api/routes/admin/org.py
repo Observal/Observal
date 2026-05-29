@@ -3,8 +3,6 @@
 
 """Admin organization settings routes: security events, trace privacy, registered agents, cache, resources."""
 
-import logging
-
 from fastapi import Depends, HTTPException
 from loguru import logger as optic
 from sqlalchemy import select
@@ -16,8 +14,6 @@ from models.user import User, UserRole
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
-
-logger = logging.getLogger(__name__)
 
 
 @router.get("/security-events")
@@ -59,7 +55,7 @@ async def get_security_events(
         data = r.json()
         return {"events": data.get("data", []), "total": data.get("rows", 0)}
     except Exception as e:
-        logger.warning("Audit log query failed: %s", e)
+        optic.warning("Audit log query failed: {}", e)
         return {"events": [], "total": 0}
 
 
@@ -93,7 +89,7 @@ async def set_trace_privacy(
     When enabled, all roles below super-admin can only see their own
     traces.  Super-admins always retain full visibility.
     """
-    optic.debug("org.set_trace_privacy: req={}", req)
+    optic.trace("req={}", req)
     enabled = bool(req.get("trace_privacy", False))
 
     if not current_user.org_id:
@@ -153,7 +149,7 @@ async def set_registered_agents_only(
     When enabled, only registered (active) agents are traced.
     Unregistered agent telemetry is stored as metadata-only (no content).
     """
-    optic.debug("org.set_registered_agents_only: req={}", req)
+    optic.trace("req={}", req)
     enabled = bool(req.get("registered_agents_only", False))
 
     if not current_user.org_id:
@@ -190,7 +186,7 @@ async def set_registered_agents_only(
 @router.post("/cache/clear")
 async def clear_cache(current_user: User = Depends(require_role(UserRole.admin))):
     """Clear all cached dashboard and OTEL responses."""
-    optic.debug("org.clear_cache: user_id={}", current_user.id)
+    optic.trace("user_id={}", current_user.id)
     from services.cache import invalidate_all
 
     deleted = await invalidate_all()

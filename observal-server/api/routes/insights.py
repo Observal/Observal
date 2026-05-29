@@ -7,7 +7,6 @@
 
 from datetime import UTC, datetime, timedelta
 
-import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from loguru import logger as optic
@@ -29,14 +28,11 @@ from schemas.insights import (
 from services.insights import INSIGHTS_AVAILABLE, render_report_html
 from services.redis import _get_arq_pool
 
-logger = structlog.get_logger(__name__)
-
 router = APIRouter(prefix="/api/v1/insights", tags=["insights"])
 
 
 def _require_insights():
     """Raise 402 if the insights package is not installed."""
-    optic.debug("_require_insights called")
     if not INSIGHTS_AVAILABLE:
         raise HTTPException(
             status_code=402,
@@ -154,7 +150,7 @@ async def generate_insight(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Trigger generation of an insight report for an agent."""
-    optic.debug("insights.generate_insight: agent_id={}, req={}", agent_id, req)
+    optic.trace("agent_id={}, req={}", agent_id, req)
     _require_insights()
     agent = await resolve_prefix_id(Agent, agent_id, db)
 
@@ -236,7 +232,7 @@ async def list_reports(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """List insight reports for an agent, newest first."""
-    optic.debug("insights.list_reports: agent_id={}", agent_id)
+    optic.trace("agent_id={}", agent_id)
     _require_insights()
     agent = await resolve_prefix_id(Agent, agent_id, db)
 
@@ -261,7 +257,7 @@ async def get_report(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Get a single insight report by ID."""
-    optic.debug("insights.get_report: report_id={}", report_id)
+    optic.trace("report_id={}", report_id)
     _require_insights()
     stmt = select(InsightReport).where(InsightReport.id == report_id)
     result = await db.execute(stmt)
@@ -287,7 +283,7 @@ async def export_report_html(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Export an insight report as a self-contained HTML document."""
-    optic.debug("insights.export_report_html: report_id={}", report_id)
+    optic.trace("report_id={}", report_id)
     _require_insights()
     stmt = select(InsightReport).where(InsightReport.id == report_id)
     result = await db.execute(stmt)
@@ -335,7 +331,7 @@ async def clear_agent_reports(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Delete all insight reports and cached data for an agent."""
-    optic.debug("insights.clear_agent_reports: agent_id={}", agent_id)
+    optic.trace("agent_id={}", agent_id)
     _require_insights()
     agent = await resolve_prefix_id(Agent, agent_id, db)
 
@@ -366,7 +362,7 @@ async def delete_report(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Delete a single insight report."""
-    optic.debug("insights.delete_report: report_id={}", report_id)
+    optic.trace("report_id={}", report_id)
     _require_insights()
     stmt = select(InsightReport).where(InsightReport.id == report_id)
     result = await db.execute(stmt)
@@ -400,7 +396,7 @@ async def apply_report_suggestions(
     Pass index arrays to select specific suggestions. Omit or pass null
     to skip a category entirely. Pass an empty body to apply all.
     """
-    optic.debug("insights.apply_suggestions: report_id={}", report_id)
+    optic.trace("report_id={}", report_id)
     _require_insights()
 
     # Check feature toggle

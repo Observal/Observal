@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Preview endpoint — generates full IDE config without persisting an agent."""
+"""Preview endpoint - generates full IDE config without persisting an agent."""
 
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ async def preview_config(
         components=components,
     )
 
-    # Resolve component listings by ID (same pattern as install endpoint —
+    # Resolve component listings by ID (same pattern as install endpoint -
     # the builder UI already scoped what the user can select)
     mcp_ids = [c.component_id for c in components if c.component_type == "mcp"]
     skill_ids = [c.component_id for c in components if c.component_type == "skill"]

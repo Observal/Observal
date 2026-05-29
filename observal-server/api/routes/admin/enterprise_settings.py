@@ -151,7 +151,7 @@ async def upsert_setting(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    optic.debug("upsert_setting: key={}", key)
+    optic.trace("key={}", key)
     if key in ("branding.logo", "branding.wordmark"):
         _validate_branding_logo(req.value)
     elif key == "branding.app_name":
@@ -189,7 +189,7 @@ async def delete_setting(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    optic.debug("delete_setting: key={}", key)
+    optic.trace("key={}", key)
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
     cfg = result.scalar_one_or_none()
     if not cfg:
@@ -207,7 +207,7 @@ async def apply_resources(
     db: AsyncSession = Depends(get_db),
 ):
     """Re-apply resource tuning settings to ClickHouse without restart."""
-    optic.debug("apply_resources: user_id={}", current_user.id)
+    optic.trace("user_id={}", current_user.id)
     from services.clickhouse import RESOURCE_SETTINGS_MAP, apply_resource_settings
 
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key.like("resource.%")))

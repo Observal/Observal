@@ -13,6 +13,7 @@ from collections.abc import AsyncGenerator
 
 import jwt
 from fastapi import Depends, Header, HTTPException
+from loguru import logger as optic
 from redis.exceptions import RedisError
 from sqlalchemy import String, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,23 +46,25 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
     """
     try:
         payload = decode_access_token(token)
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        optic.trace("JWT decode failed: {}", e)
         return None
 
     jti = payload.get("jti")
     user_id_str = payload.get("sub")
     try:
         redis = get_redis()
-        # SEC-002: fail closed on revocation checks — Redis errors must not
+        # SEC-002: fail closed on revocation checks - Redis errors must not
         # re-enable revoked tokens or user-level revocations
         if jti and await redis.get(f"revoked_jti:{jti}"):
             return None
         if user_id_str and await redis.get(f"revoked_user:{user_id_str}"):
             return None  # SEC-001: account-wide revocation (e.g. logout all)
-    except RedisError:
+    except RedisError as e:
         # Redis is down: block all token-based auth to prevent revoked tokens
         # from regaining access. Requests will receive HTTP 503.
-        raise RedisError("Auth service temporarily unavailable — please retry")
+        optic.error("Redis unavailable during auth - blocking request to prevent revoked token use: {}", e)
+        raise RedisError("Auth service temporarily unavailable - please retry")
 
     user_id = payload.get("sub")
 
@@ -104,20 +107,23 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     if not authorization or not authorization.startswith("Bearer "):
+        optic.trace("request has no Bearer token")
         raise HTTPException(status_code=401, detail="Missing credentials")
     token = authorization.removeprefix("Bearer ").strip()
     user = await _authenticate_via_jwt(token, db)
     if not user:
+        optic.debug("authentication failed - token invalid or expired")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Block deactivated users (SCIM sets auth_provider to "deactivated")
     if user.auth_provider == "deactivated":
+        optic.warning("deactivated user {} attempted access", user.id)
         raise HTTPException(status_code=403, detail="Account deactivated")
 
     # Expose user to audit middleware
     request.state.audit_user = user
 
-    # Enforce must_change_password — fail closed: if Redis is down we cannot
+    # Enforce must_change_password - fail closed: if Redis is down we cannot
     # guarantee the gate is enforced, so block non-exempt requests.
     if request.url.path not in _PASSWORD_CHANGE_EXEMPT_PATHS:
         try:
@@ -136,7 +142,7 @@ async def optional_current_user(
 ) -> User | None:
     """Return the authenticated user when a valid token is present, else None.
 
-    Raises HTTP 401 if a Bearer token is present but invalid/expired —
+    Raises HTTP 401 if a Bearer token is present but invalid/expired -
     this distinguishes 'no credentials' from 'bad credentials'.
     """
     if not authorization or not authorization.startswith("Bearer "):
@@ -262,7 +268,7 @@ async def get_or_create_default_org(db: AsyncSession) -> Organization:
 def require_org_scope():
     """FastAPI dependency that applies org-scoped filtering.
 
-    Returns None when the user has no org (local mode — no filtering).
+    Returns None when the user has no org (local mode - no filtering).
     Returns the org_id UUID when the user belongs to an org.
     """
 
@@ -406,7 +412,7 @@ def apply_visibility_filter(stmt, model, current_user):
         same_org = (model.is_private == True) & (model.owner_org_id == current_user.org_id)  # noqa: E712
         own = (model.is_private == True) & (model.submitted_by == current_user.id)  # noqa: E712
         return stmt.where(or_(public, same_org, own))
-    # User has no org — can only see their own private items
+    # User has no org - can only see their own private items
     own = (model.is_private == True) & (model.submitted_by == current_user.id)  # noqa: E712
     return stmt.where(or_(public, own))
 

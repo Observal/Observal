@@ -10,7 +10,6 @@ import uuid
 from datetime import UTC, timedelta
 from datetime import datetime as dt
 
-import structlog
 from fastapi import APIRouter, Depends, Query
 from fastapi_cache.decorator import cache
 from loguru import logger as optic
@@ -53,7 +52,6 @@ from schemas.dashboard import (
 )
 from services.clickhouse import _query
 
-logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
 _RANGE_MAP = {"24h": 1, "7d": 7, "30d": 30, "90d": 90}
@@ -70,7 +68,7 @@ async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
         if r.status_code == 200:
             return r.json().get("data", [])
     except Exception as e:
-        logger.warning("clickhouse_query_failed", error=str(e))
+        optic.warning("clickhouse_query_failed", error=str(e))
     return []
 
 
@@ -99,7 +97,7 @@ async def overview_stats(
     range_: str | None = Query(None, alias="range"),
     db: AsyncSession = Depends(get_db),
 ):
-    optic.debug("overview_stats: range={}", range_)
+    optic.trace("range={}", range_)
     total_mcps = (
         await db.scalar(
             select(func.count(McpListing.id))

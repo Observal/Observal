@@ -45,7 +45,7 @@ async def install_agent(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("agent install")
+    optic.debug("installing agent")
     agent = await _load_agent(
         db,
         agent_id,
@@ -202,7 +202,7 @@ async def agent_download_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(optional_current_user),
 ):
-    optic.debug("agent_download_stats: agent_id={}", agent_id)
+    optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(
         db,
         agent_id,
@@ -230,7 +230,7 @@ async def get_agent_traces(
     current_user: User | None = Depends(optional_current_user),
 ):
     """Return all traces where this agent participated."""
-    optic.debug("get_agent_traces: agent_id={}, limit={}", agent_id, limit)
+    optic.trace("agent_id={}, limit={}", agent_id, limit)
     agent = await _load_agent(
         db,
         agent_id,
@@ -265,7 +265,7 @@ async def resolve_agent_components(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Resolve all components for an agent - validates they exist and are approved."""
-    optic.debug("resolve_agent_components: agent_id={}", agent_id)
+    optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -288,7 +288,7 @@ async def get_agent_manifest(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Generate a portable agent manifest with all resolved components."""
-    optic.debug("get_agent_manifest: agent_id={}", agent_id)
+    optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -322,7 +322,7 @@ async def validate_agent_composition(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Validate a set of components for compatibility before publishing an agent."""
-    optic.debug("validate_agent_composition: req={}", req)
+    optic.trace("req={}", req)
     if not req.components:
         return ValidationResult(valid=True, issues=[])
 

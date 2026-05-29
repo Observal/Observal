@@ -45,7 +45,7 @@ async def update_retention_config(
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ) -> RetentionConfigResponse:
     """Update the organization's data retention configuration. Super admin only."""
-    optic.debug("update_retention_config: body={}", body)
+    optic.trace("body={}", body)
     global_days = await ds.get_int("retention.global_days")
     if body.data_retention_days is not None and global_days > 0 and body.data_retention_days > global_days:
         raise HTTPException(
@@ -92,7 +92,7 @@ async def preview_retention(
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ):
     """Preview approximate row counts that would be deleted for a given retention period."""
-    optic.debug("preview_retention: days={}", days)
+    optic.trace("days={}", days)
     if days < 7:
         raise HTTPException(status_code=422, detail="days must be >= 7")
 

@@ -7,12 +7,11 @@
 """Telemetry ingestion endpoint for shim/proxy structured spans.
 
 The legacy /hooks and OTLP /v1/{traces,logs,metrics} endpoints have been
-removed — session telemetry now flows through /api/v1/ingest/session
+removed - session telemetry now flows through /api/v1/ingest/session
 (session JSONL push) and this endpoint (MCP shim spans).
 """
 
 import asyncio
-import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header
@@ -35,7 +34,6 @@ from services.clickhouse import (
 from services.redis import publish
 from services.secrets_redactor import redact_secrets
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/telemetry", tags=["telemetry"])
 
 # Background tasks that must survive until completion (prevent GC)
@@ -113,7 +111,7 @@ async def ingest(
             await insert_traces(rows)
             ingested += len(rows)
         except Exception:
-            logger.exception("Failed to insert traces")
+            optic.error("Failed to insert traces")
             errors += len(batch.traces)
 
     # --- Spans ---
@@ -178,7 +176,7 @@ async def ingest(
             await insert_spans(rows)
             ingested += len(rows)
         except Exception:
-            logger.exception("Failed to insert spans")
+            optic.error("Failed to insert spans")
             errors += len(batch.spans)
 
     # --- Mirror shim spans into otel_logs for unified session view ---
@@ -263,7 +261,7 @@ async def ingest(
                         _background_tasks.add(task)
                         task.add_done_callback(_background_tasks.discard)
         except Exception:
-            logger.exception("Failed to mirror shim spans to otel_logs")
+            optic.error("Failed to mirror shim spans to otel_logs")
 
     # --- Scores ---
     if batch.scores:
@@ -292,7 +290,7 @@ async def ingest(
             await insert_scores(rows)
             ingested += len(rows)
         except Exception:
-            logger.exception("Failed to insert scores")
+            optic.error("Failed to insert scores")
             errors += len(batch.scores)
 
     optic.info("telemetry ingest completed: ingested={}, errors={}", ingested, errors)
@@ -301,7 +299,7 @@ async def ingest(
 
 @router.get("/status", response_model=TelemetryStatusResponse)
 async def telemetry_status(current_user: User = Depends(require_role(UserRole.admin))):
-    optic.debug("telemetry_status: user_id={}", current_user.id)
+    optic.trace("user_id={}", current_user.id)
     counts = await query_recent_events(60)
     return TelemetryStatusResponse(
         tool_call_events=counts["tool_call_events"],

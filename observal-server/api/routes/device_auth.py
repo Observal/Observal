@@ -12,7 +12,6 @@ The flow:
 """
 
 import json
-import logging
 import secrets
 import time
 
@@ -34,8 +33,6 @@ from schemas.auth import (
     DeviceTokenRequest,
 )
 from services.redis import get_redis
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/auth/device", tags=["device-auth"])
 
@@ -78,7 +75,7 @@ def _resolve_frontend_url(request: Request) -> str:
 @limiter.limit("5/minute")
 async def device_authorize(request: Request, req: DeviceAuthRequest = None):
     """Create a device authorization request. Returns device_code + user_code."""
-    optic.debug("device_authorize: initiating device auth flow")
+    optic.debug("initiating device auth flow")
     device_code = secrets.token_urlsafe(48)
     user_code = _generate_user_code()
     normalized_code = _normalize_user_code(user_code)
@@ -98,7 +95,7 @@ async def device_authorize(request: Request, req: DeviceAuthRequest = None):
         pipe.setex(f"device_code_by_user:{normalized_code}", _DEVICE_AUTH_TTL, device_code)
         await pipe.execute()
     except RedisError as e:
-        logger.error("Redis unavailable during device authorize: %s", e)
+        optic.error("Redis unavailable during device authorize: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     frontend_url = _resolve_frontend_url(request)
@@ -118,7 +115,7 @@ async def device_authorize(request: Request, req: DeviceAuthRequest = None):
 @limiter.limit("30/minute")
 async def device_token(request: Request, req: DeviceTokenRequest, db: AsyncSession = Depends(get_db)):
     """CLI polls this to check if the user approved the device code."""
-    optic.debug("device_token: polling for device_code approval")
+    optic.debug("polling for device_code approval")
     if req.grant_type != _DEVICE_GRANT_TYPE:
         return JSONResponse(status_code=400, content={"error": "invalid_grant_type"})
 
@@ -126,7 +123,7 @@ async def device_token(request: Request, req: DeviceTokenRequest, db: AsyncSessi
         redis = get_redis()
         raw = await redis.get(f"device_auth:{req.device_code}")
     except RedisError as e:
-        logger.error("Redis unavailable during device token poll: %s", e)
+        optic.error("Redis unavailable during device token poll: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     if not raw:
@@ -197,14 +194,14 @@ async def device_confirm(
     current_user: User = Depends(get_current_user),
 ):
     """Browser calls this after the user logs in and enters the code."""
-    optic.debug("device_confirm: user={} confirming code", current_user.email)
+    optic.trace("user={} confirming code", current_user.email)
     normalized_code = _normalize_user_code(req.user_code)
 
     try:
         redis = get_redis()
         device_code = await redis.get(f"device_code_by_user:{normalized_code}")
     except RedisError as e:
-        logger.error("Redis unavailable during device confirm: %s", e)
+        optic.error("Redis unavailable during device confirm: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     if not device_code:
@@ -213,7 +210,7 @@ async def device_confirm(
     try:
         raw = await redis.get(f"device_auth:{device_code}")
     except RedisError as e:
-        logger.error("Redis unavailable during device confirm lookup: %s", e)
+        optic.error("Redis unavailable during device confirm lookup: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     if not raw:
@@ -239,7 +236,7 @@ async def device_confirm(
         else:
             await redis.setex(f"device_auth:{device_code}", _DEVICE_AUTH_TTL, json.dumps(data))
     except RedisError as e:
-        logger.error("Redis unavailable during device confirm update: %s", e)
+        optic.error("Redis unavailable during device confirm update: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     optic.info("device_confirm: device authorized for user={}", current_user.email)
