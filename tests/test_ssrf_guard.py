@@ -96,6 +96,7 @@ class TestMcpValidatorUsesGuard:
         err = _validate_git_url("https://10.0.0.1/evil/repo")
         assert err is not None
         assert "private" in err.lower() or "internal" in err.lower()
+        assert "ALLOW_INTERNAL_GIT_URLS" in err
 
     def test_ipv6_ula_rejected(self):
         from services.mcp_validator import _validate_git_url

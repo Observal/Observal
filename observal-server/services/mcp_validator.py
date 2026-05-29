@@ -59,7 +59,7 @@ def _validate_git_url(url: str) -> str | None:
         return "URL has no hostname"
     # Block internal/private IPs unless self-hosted mode is enabled
     if not ALLOW_INTERNAL_URLS and _ssrf_is_private(url):
-        return "Internal/private URLs not allowed (set ALLOW_INTERNAL_URLS=true for self-hosted deployments)"
+        return "Internal/private URLs not allowed (set ALLOW_INTERNAL_GIT_URLS=true for self-hosted deployments)"
     return None
 
 
