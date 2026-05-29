@@ -17,7 +17,7 @@ function subscribe(cb: () => void) {
 
 function getAuthSnapshot() {
   if (typeof window === "undefined") return "";
-  const key = sessionStorage.getItem("observal_access_token");
+  const key = sessionStorage.getItem("observal_access_token") || localStorage.getItem("observal_access_token");
   const role = getUserRole();
   if (key) return role || "pending";
   // No access token in sessionStorage, but refresh token may exist (new tab scenario).

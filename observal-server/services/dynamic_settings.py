@@ -175,7 +175,7 @@ DEFAULTS: dict[str, str] = {
     "insights.facet_concurrency": "25",
     # Deployment (runtime-tunable, mode itself is boot-time env var)
     "deployment.sso_only": "false",
-    "deployment.frontend_url": "http://localhost:3000",
+    "deployment.frontend_url": "http://localhost",
     "deployment.public_url": "",
     "deployment.cors_origins": "http://localhost:3000",
     # Security

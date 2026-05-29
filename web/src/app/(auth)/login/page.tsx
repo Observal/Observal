@@ -42,7 +42,35 @@ function LoginContent() {
   }, [router]);
 
   useEffect(() => {
-    const ssoCode = searchParams.get("code");
+    // Check for SAML token in URL hash (fragment)
+    const hash = window.location.hash;
+    const samlMatch = hash.match(/^#saml=(.+)$/);
+    if (samlMatch) {
+      setLoading(true);
+      window.history.replaceState({}, "", "/login");
+      const tokenId = samlMatch[1];
+
+      fetch(`/api/v1/sso/saml/exchange?token_id=${tokenId}`)
+        .then((res) => { if (!res.ok) throw new Error("Exchange failed"); return res.json(); })
+        .then((data) => {
+          setTokens(data.access_token, data.refresh_token);
+          setUserRole(data.user.role);
+          setUserName(data.user.name);
+          setUserEmail(data.user.email);
+          if (data.user.username) setUserUsername(data.user.username);
+          if (data.user.avatar_url) setUserAvatar(data.user.avatar_url);
+          window.dispatchEvent(new Event("storage"));
+          window.location.href = "/";
+        })
+        .catch((err) => {
+          setError("SAML sign-in failed. Please try again.");
+          toast.error("SAML sign-in failed.");
+          setLoading(false);
+        });
+      return;
+    }
+
+    const ssoCode = searchParams.get("code") || searchParams.get("saml_code");
 
     if (ssoCode) {
       setLoading(true);
@@ -56,10 +84,8 @@ function LoginContent() {
           setUserEmail(data.user.email);
           if (data.user.username) setUserUsername(data.user.username);
           if (data.user.avatar_url) setUserAvatar(data.user.avatar_url);
-          toast.success("Signed in successfully via SSO");
-          const nextPath = searchParams.get("next");
-          const redirectTo = nextPath && nextPath.startsWith("/") ? nextPath : "/";
-          router.push(redirectTo);
+          window.dispatchEvent(new Event("storage"));
+          window.location.href = "/";
         })
         .catch((err) => {
           const msg = err instanceof Error ? err.message : "SSO sign-in failed";

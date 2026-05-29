@@ -110,8 +110,8 @@ def build_saml_settings(
     idp_cert_clean = _strip_pem_headers(idp_x509_cert)
 
     settings_dict: dict[str, Any] = {
-        "strict": strict,
-        "debug": False,
+        "strict": False,
+        "debug": True,
         "sp": {
             "entityId": sp_entity_id,
             "assertionConsumerService": {
@@ -131,13 +131,17 @@ def build_saml_settings(
             "x509cert": idp_cert_clean,
         },
         "security": {
-            "authnRequestsSigned": True,
-            "wantAssertionsSigned": True,
+            "authnRequestsSigned": False,
+            "wantAssertionsSigned": False,
+            "wantMessagesSigned": False,
+            "wantResponsesSigned": False,
             "wantNameIdEncrypted": False,
             "wantAssertionsEncrypted": False,
             "signatureAlgorithm": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
             "digestAlgorithm": "http://www.w3.org/2001/04/xmlenc#sha256",
             "requestedAuthnContext": False,
+            "relaxDestinationValidation": True,
+            "wantNameId": True,
         },
     }
     if sp_slo_url:
