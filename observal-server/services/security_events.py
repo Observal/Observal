@@ -128,7 +128,7 @@ async def emit_security_event(event: SecurityEvent) -> None:
 
     logger.log(
         log_level,
-        "security_event: {}",
+        "security_event: %s",
         json.dumps(log_data, default=str),
     )
 

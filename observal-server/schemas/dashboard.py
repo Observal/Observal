@@ -41,7 +41,7 @@ class TopAgentItem(BaseModel):
 
 
 class LeaderboardItem(TopAgentItem):
-    """Same as TopAgentItem — used by the leaderboard endpoint."""
+    """Same as TopAgentItem - used by the leaderboard endpoint."""
 
     created_by_email: str = ""
     created_by_username: str | None = None

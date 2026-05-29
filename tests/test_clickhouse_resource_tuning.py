@@ -427,12 +427,12 @@ class TestMaintainClickhouse:
 
         with (
             patch("services.clickhouse.client._query", side_effect=_parts_query),
-            patch("jobs.maintenance.logger") as mock_logger,
+            patch("jobs.maintenance.optic") as mock_optic,
         ):
             from worker import maintain_clickhouse
 
             await maintain_clickhouse({})
 
         # Check that a warning was logged about high part count
-        warning_calls = [c for c in mock_logger.warning.call_args_list if "500" in str(c) and "parts" in str(c).lower()]
+        warning_calls = [c for c in mock_optic.warning.call_args_list if "500" in str(c) and "parts" in str(c).lower()]
         assert len(warning_calls) > 0

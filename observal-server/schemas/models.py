@@ -3,7 +3,7 @@
 
 """Pydantic schemas for the live model catalog (sourced from models.dev).
 
-The catalog is read-only — it is a normalized cache of an upstream registry
+The catalog is read-only - it is a normalized cache of an upstream registry
 (`https://models.dev/api.json`). Our database stores only the user's choice
 (``agent_versions.model_name`` + ``agent_versions.models_by_ide``), never the
 catalog itself.
@@ -43,7 +43,7 @@ class CatalogModel(BaseModel):
     )
     supported_ides: list[str] = Field(
         default_factory=list,
-        description="IDEs that can install this model — derived from provider via the static mapping.",
+        description="IDEs that can install this model - derived from provider via the static mapping.",
     )
     deprecated: bool = False
     display: ModelDisplay | None = None

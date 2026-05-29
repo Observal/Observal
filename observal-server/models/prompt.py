@@ -53,7 +53,7 @@ class PromptListing(Base):
     )
 
     # ------------------------------------------------------------------
-    # Deprecated compatibility properties — delegate to latest_version.
+    # Deprecated compatibility properties - delegate to latest_version.
     # ------------------------------------------------------------------
     @property
     def version(self) -> str:

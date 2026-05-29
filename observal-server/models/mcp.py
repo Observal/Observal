@@ -70,7 +70,7 @@ class McpListing(Base):
     )
 
     # ------------------------------------------------------------------
-    # Deprecated compatibility properties — delegate to latest_version.
+    # Deprecated compatibility properties - delegate to latest_version.
     # These allow existing route/service code to keep working until the
     # version-aware API endpoints replace them.
     # ------------------------------------------------------------------
