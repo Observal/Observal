@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+SPDX-License-Identifier: AGPL-3.0-only
+-->
+
 # Okta SSO Setup for Observal (Managed Customer Instance)
 
 Step-by-step runbook for BlazeUp operators setting up **Okta OIDC** for a **new Observal instance** deployed for another company (managed solution). Follow every step in order; each step assumes the previous one is complete.

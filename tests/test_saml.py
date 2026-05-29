@@ -62,7 +62,7 @@ class TestSamlKeyGeneration:
         assert result["sp"]["entityId"] == "https://app.example.com/api/v1/sso/saml/metadata"
         assert "x509cert" in result["sp"]
         assert "privateKey" in result["sp"]
-        assert result["security"]["authnRequestsSigned"] is True
+        assert result["security"]["authnRequestsSigned"] is False
 
 
 class TestSamlHelpers:
@@ -233,6 +233,7 @@ class TestSamlEndpoints:
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
         mock_redis.setex = AsyncMock()
+        mock_redis.delete = AsyncMock()
 
         mock_auth = MagicMock()
         mock_auth.process_response.return_value = None
@@ -246,6 +247,7 @@ class TestSamlEndpoints:
         mock_user.id = "user-uuid-1"
         mock_user.email = "user@example.com"
         mock_user.name = "Test User"
+        mock_user.username = "testuser"
         mock_user.role = MagicMock()
         mock_user.role.value = "user"
         mock_user.auth_provider = "saml"
@@ -608,13 +610,14 @@ class TestSamlRelayState:
 
     @pytest.mark.asyncio
     async def test_acs_extracts_relay_state_into_redirect(self, saml_app):
-        """ACS should include RelayState from POST data in the frontend redirect."""
+        """ACS should redirect to frontend login with saml_token param."""
         from api.deps import get_db
 
         mock_config, private_key = self._make_mock_config()
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
         mock_redis.setex = AsyncMock()
+        mock_redis.delete = AsyncMock()
 
         mock_auth = MagicMock()
         mock_auth.process_response.return_value = None
@@ -628,6 +631,7 @@ class TestSamlRelayState:
         mock_user.id = "user-uuid-1"
         mock_user.email = "user@example.com"
         mock_user.name = "Test User"
+        mock_user.username = "testuser"
         mock_user.role = MagicMock()
         mock_user.role.value = "user"
         mock_user.auth_provider = "saml"
@@ -691,20 +695,20 @@ class TestSamlRelayState:
                     )
                 assert r.status_code == 302
                 location = r.headers.get("location", "")
-                assert "code=" in location
-                assert "next=/sessions/abc" in location
+                assert "/login?saml_token=" in location
         finally:
             saml_app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_acs_sanitizes_non_relative_relay_state(self, saml_app):
-        """ACS should sanitize absolute URLs in RelayState to /."""
+        """ACS should redirect to frontend login with saml_token, not to evil URL."""
         from api.deps import get_db
 
         mock_config, private_key = self._make_mock_config()
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
         mock_redis.setex = AsyncMock()
+        mock_redis.delete = AsyncMock()
 
         mock_auth = MagicMock()
         mock_auth.process_response.return_value = None
@@ -718,6 +722,7 @@ class TestSamlRelayState:
         mock_user.id = "user-uuid-1"
         mock_user.email = "user@example.com"
         mock_user.name = "Test User"
+        mock_user.username = "testuser"
         mock_user.role = MagicMock()
         mock_user.role.value = "user"
         mock_user.auth_provider = "saml"
@@ -782,6 +787,6 @@ class TestSamlRelayState:
                 assert r.status_code == 302
                 location = r.headers.get("location", "")
                 assert "evil.com" not in location
-                assert "next=/" in location
+                assert "/login?saml_token=" in location
         finally:
             saml_app.dependency_overrides.clear()

@@ -203,7 +203,9 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
         errors = []
 
     # Debug: log the IDP cert being used and full error details
-    logger.warning("SAML DEBUG: idp_cert first 60 chars: %s", config.idp_x509_cert[:60] if config.idp_x509_cert else "NONE")
+    logger.warning(
+        "SAML DEBUG: idp_cert first 60 chars: %s", config.idp_x509_cert[:60] if config.idp_x509_cert else "NONE"
+    )
     logger.warning("SAML DEBUG: sp_entity_id: %s", config.sp_entity_id)
     logger.warning("SAML DEBUG: sp_acs_url: %s", config.sp_acs_url)
     logger.warning("SAML DEBUG: errors: %s", errors)
@@ -295,10 +297,6 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
             try:
                 decoded = base64.b64decode(raw_saml)
                 root = ET.fromstring(decoded)
-                ns = {
-                    "saml": "urn:oasis:names:tc:SAML:2.0:assertion",
-                    "samlp": "urn:oasis:names:tc:SAML:2.0:protocol",
-                }
                 name_id_el = root.find(".//{urn:oasis:names:tc:SAML:2.0:assertion}NameID")
                 if name_id_el is not None and name_id_el.text:
                     email = name_id_el.text.strip().lower()
@@ -411,8 +409,6 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
         )
     )
 
-    relay_state = _safe_redirect_path(request_data["post_data"].get("RelayState"))
-
     import uuid as _uuid
 
     token_id = str(_uuid.uuid4())
@@ -420,16 +416,18 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     await redis.setex(
         f"saml_login:{token_id}",
         120,
-        json.dumps({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_in": expires_in,
-            "user_id": str(user.id),
-            "role": user.role.value,
-            "name": user.name,
-            "email": user.email,
-            "username": user.username or "",
-        }),
+        json.dumps(
+            {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_in": expires_in,
+                "user_id": str(user.id),
+                "role": user.role.value,
+                "name": user.name,
+                "email": user.email,
+                "username": user.username or "",
+            }
+        ),
     )
 
     frontend_url = _get_frontend_url()
