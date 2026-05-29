@@ -104,6 +104,7 @@ async def _call_bedrock(prompt: str, model_id: str, max_tokens: int = 16384) -> 
 
     def _sync_call():
         import boto3
+        from botocore.config import Config as _BotoConfig
 
         client_kwargs: dict = {"region_name": aws_region or "us-east-1"}
         if aws_access_key and aws_secret_key:
@@ -112,7 +113,11 @@ async def _call_bedrock(prompt: str, model_id: str, max_tokens: int = 16384) -> 
             if aws_session_token:
                 client_kwargs["aws_session_token"] = aws_session_token
 
-        client = boto3.client("bedrock-runtime", **client_kwargs)
+        client = boto3.client(
+            "bedrock-runtime",
+            config=_BotoConfig(read_timeout=300, retries={"max_attempts": 2}),
+            **client_kwargs,
+        )
         response = client.converse(
             modelId=model_id,
             messages=[{"role": "user", "content": [{"text": prompt}]}],
