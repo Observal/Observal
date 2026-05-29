@@ -48,7 +48,7 @@ async def submit_skill(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("skill submit: name={}", req.name)
+    optic.debug("submitting skill: {}", req.name)
     existing = await db.execute(
         select(SkillListing).where(SkillListing.name == req.name, SkillListing.submitted_by == current_user.id)
     )
@@ -167,7 +167,7 @@ async def list_skills(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(optional_current_user),
 ):
-    optic.debug("skill list: task_type={}, search={}", task_type, search)
+    optic.debug("listing skills (task_type={}, search={})", task_type, search)
     stmt = (
         select(SkillListing)
         .join(SkillVersion, SkillListing.latest_version_id == SkillVersion.id)
@@ -208,7 +208,7 @@ async def get_skill(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(optional_current_user),
 ):
-    optic.debug("skill get: listing_id={}", listing_id)
+    optic.debug("fetching skill {}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db, require_status=ListingStatus.approved)
     if listing:
         resp = SkillListingResponse.model_validate(listing)
@@ -235,7 +235,7 @@ async def install_skill(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("skill install: listing_id={}", listing_id)
+    optic.debug("installing skill {}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(SkillListing, listing_id, db)
@@ -259,7 +259,7 @@ async def save_skill_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("save_skill_draft: req={}", req)
+    optic.trace("req={}", req)
     listing = SkillListing(
         name=req.name,
         owner=req.owner or current_user.username or current_user.email,
@@ -304,7 +304,7 @@ async def update_skill_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("update_skill_draft: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -365,7 +365,7 @@ async def start_edit_skill(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("start_edit_skill: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -389,7 +389,7 @@ async def cancel_edit_skill(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("cancel_edit_skill: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -409,7 +409,7 @@ async def submit_skill_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("submit_skill_draft: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -433,7 +433,7 @@ async def delete_skill(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("skill delete: listing_id={}", listing_id)
+    optic.debug("deleting skill {}", listing_id)
     listing = await resolve_listing(SkillListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")

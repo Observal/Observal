@@ -43,5 +43,5 @@ limiter = Limiter(
         "socket_connect_timeout": settings.REDIS_SOCKET_TIMEOUT,
         "socket_timeout": settings.REDIS_SOCKET_TIMEOUT,
     },
-    swallow_errors=False,  # SEC-002: fail closed — Redis errors must not bypass rate limits
+    swallow_errors=False,  # SEC-002: fail closed - Redis errors must not bypass rate limits
 )

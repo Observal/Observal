@@ -5,7 +5,6 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -45,7 +44,6 @@ from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_e
 from services.mcp_validator import analyze_repo, run_validation
 
 router = APIRouter(prefix="/api/v1/mcps", tags=["mcp"])
-logger = logging.getLogger(__name__)
 
 
 @router.post("/analyze", response_model=McpAnalyzeResponse)
@@ -53,14 +51,14 @@ async def analyze_mcp(
     req: McpAnalyzeRequest,
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("analyze_mcp: user_id={}", current_user.id)
+    optic.trace("user_id={}", current_user.id)
     result = await analyze_repo(req.git_url)
     return McpAnalyzeResponse(**result)
 
 
 async def _store_client_analysis(listing: McpListing, analysis: ClientAnalysis, db: AsyncSession) -> None:
     """Store validation results from client-side (CLI) analysis."""
-    optic.debug("_store_client_analysis: listing={}, analysis={}", listing, analysis)
+    optic.trace("listing={}, analysis={}", listing, analysis)
     await db.execute(delete(McpValidationResult).where(McpValidationResult.listing_id == listing.id))
 
     has_entry = bool(analysis.entry_point or analysis.framework)
@@ -105,7 +103,7 @@ async def _store_client_analysis(listing: McpListing, analysis: ClientAnalysis, 
 
 async def _run_validation_background(listing_id: str) -> None:
     """Run validation in the background with its own DB session."""
-    optic.debug("_run_validation_background: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     async with async_session() as db:
         result = await db.execute(select(McpListing).where(McpListing.id == listing_id))
         listing = result.scalar_one_or_none()
@@ -114,7 +112,7 @@ async def _run_validation_background(listing_id: str) -> None:
         try:
             await run_validation(listing, db)
         except Exception:
-            logger.exception("Background validation failed for listing %s", listing_id)
+            optic.error("Background validation failed for listing {}", listing_id)
 
 
 @router.post("/submit", response_model=McpListingResponse)
@@ -291,7 +289,7 @@ async def save_mcp_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("save_mcp_draft: req={}", req)
+    optic.trace("req={}", req)
     listing = McpListing(
         name=req.name,
         category=req.category,
@@ -339,7 +337,7 @@ async def update_mcp_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("update_mcp_draft: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -406,7 +404,7 @@ async def start_edit_mcp(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("start_edit_mcp: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -430,7 +428,7 @@ async def cancel_edit_mcp(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("cancel_edit_mcp: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -450,7 +448,7 @@ async def submit_mcp_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("submit_mcp_draft: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(McpListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")

@@ -60,7 +60,7 @@ async def _session_has_data(session_id: str) -> bool:
     count rows.  An approximate count (potentially including not-yet-merged dupes)
     is correct for the reconcile gate - we only need to know the session exists.
     """
-    optic.debug("_session_has_data: session_id={}", session_id)
+    optic.trace("session_id={}", session_id)
     sql = "SELECT count() AS cnt FROM session_events WHERE session_id = {sid:String} FORMAT JSON"
     try:
         r = await _query(sql, {"param_sid": session_id})
@@ -73,7 +73,7 @@ async def _session_has_data(session_id: str) -> bool:
 
 async def _already_reconciled(dedup_key: str, key_field: str) -> bool:
     """Return True if a reconcile_enrichment row already exists for dedup_key."""
-    optic.debug("_already_reconciled: dedup_key={}, key_field={}", dedup_key, key_field)
+    optic.trace("dedup_key={}, key_field={}", dedup_key, key_field)
     sql = (
         "SELECT count() AS cnt FROM otel_logs "
         f"WHERE LogAttributes['event.name'] = 'reconcile_enrichment' "
@@ -90,7 +90,7 @@ async def _already_reconciled(dedup_key: str, key_field: str) -> bool:
 
 async def _session_owned_by_user(session_id: str, user_id: str) -> bool:
     """Return True if session_events has at least one row owned by this user."""
-    optic.debug("_session_owned_by_user: session_id={}, user_id={}", session_id, user_id)
+    optic.trace("session_id={}, user_id={}", session_id, user_id)
     sql = (
         "SELECT count() AS cnt FROM session_events "
         "WHERE session_id = {sid:String} AND user_id = {uid:String} FORMAT JSON"

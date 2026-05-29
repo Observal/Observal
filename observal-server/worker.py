@@ -9,7 +9,6 @@
 
 """arq background worker: startup/shutdown hooks, job registration, and cron scheduling."""
 
-import structlog
 from arq.cron import cron
 from loguru import logger as optic
 
@@ -23,21 +22,20 @@ from services.retention import run_retention_purge
 
 setup_logging()
 setup_optic(mode="local")  # Worker always uses local mode for dev visibility
-logger = structlog.get_logger(__name__)
 
 
 async def startup(ctx: dict):
     from services.insights import configure_insights
 
     configure_insights()
-    logger.info("arq worker started")
+    optic.info("arq worker started")
     optic.info(
         "worker started with {} functions, {} cron jobs", len(WorkerSettings.functions), len(WorkerSettings.cron_jobs)
     )
 
 
 async def shutdown(ctx: dict):
-    logger.info("arq worker shutting down")
+    optic.info("arq worker shutting down")
     optic.info("worker shutting down")
 
 

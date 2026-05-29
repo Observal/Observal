@@ -650,7 +650,7 @@ def _is_admin(ctx: dict) -> bool:
 
 
 async def get_context_dep(request: Request = None) -> dict:
-    """Strawberry FastAPI context getter — receives the incoming ``Request``.
+    """Strawberry FastAPI context getter - receives the incoming ``Request``.
 
     Rejects unauthenticated requests with HTTP 401 so that telemetry data
     (traces, spans, metrics) is never exposed to anonymous callers.

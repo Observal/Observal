@@ -200,7 +200,7 @@ async def save_hook_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("save_hook_draft: req={}", req)
+    optic.trace("req={}", req)
     listing = HookListing(
         name=req.name,
         owner=req.owner or current_user.username or current_user.email,
@@ -248,7 +248,7 @@ async def update_hook_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("update_hook_draft: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(HookListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -312,7 +312,7 @@ async def start_edit_hook(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("start_edit_hook: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(HookListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -336,7 +336,7 @@ async def cancel_edit_hook(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("cancel_edit_hook: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(HookListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -356,7 +356,7 @@ async def submit_hook_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("submit_hook_draft: listing_id={}", listing_id)
+    optic.trace("listing_id={}", listing_id)
     listing = await resolve_listing(HookListing, listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")

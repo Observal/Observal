@@ -20,7 +20,6 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-import structlog
 from fastapi import APIRouter, Depends, Request
 from loguru import logger as optic
 from pydantic import BaseModel
@@ -39,7 +38,6 @@ if TYPE_CHECKING:
 
     from models.user import User
 
-logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/support", tags=["support"])
 
@@ -77,7 +75,7 @@ async def _run_collector(name: str, coro) -> tuple[str, CollectorData]:
 
     Returns a (name, CollectorData) tuple regardless of success or failure.
     """
-    optic.debug("_run_collector: name={}, coro={}", name, coro)
+    optic.trace("name={}, coro={}", name, coro)
     start = time.monotonic()
     try:
         data = await asyncio.wait_for(coro, timeout=COLLECTOR_TIMEOUT_SECONDS)
@@ -296,7 +294,7 @@ def _extract_stack_template(error_text: str) -> str:
     Returns a sanitised template with only structural information -
     no argument values, no exception messages.
     """
-    optic.debug("_extract_stack_template: error_text={}", error_text)
+    optic.trace("error_text={}", error_text)
     lines = error_text.splitlines()
     template_parts: list[str] = []
 
@@ -389,7 +387,7 @@ def _parse_duration(duration_str: str) -> timedelta:
     Supported formats: '1h', '30m', '2d', '1h30m', '90s'.
     Falls back to 1 hour on invalid input.
     """
-    optic.debug("_parse_duration: duration_str={}", duration_str)
+    optic.trace("duration_str={}", duration_str)
     total_seconds = 0
     pattern = re.compile(r"(\d+)\s*([dhms])", re.IGNORECASE)
     matches = pattern.findall(duration_str)
@@ -419,7 +417,7 @@ async def _collect_logs(logs_since: str = "1h") -> dict:
     as defence-in-depth.
     Returns an empty list gracefully if the buffer is empty.
     """
-    optic.debug("_collect_logs: logs_since={}", logs_since)
+    optic.trace("logs_since={}", logs_since)
     try:
         from services.log_buffer import get_log_buffer
 
@@ -496,7 +494,7 @@ async def collect_diagnostics(
     if at least one collector succeeds.
     """
     # Determine which collectors to run
-    optic.debug("collect_diagnostics: user_id={}", user.id)
+    optic.trace("user_id={}", user.id)
     requested = list(COLLECTORS.keys()) if "all" in body.collectors else [c for c in body.collectors if c in COLLECTORS]
 
     # Run all requested collectors concurrently

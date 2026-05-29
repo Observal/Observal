@@ -9,7 +9,6 @@
 
 import base64
 import json
-import logging
 import re
 import secrets
 from datetime import UTC, datetime
@@ -54,8 +53,6 @@ from services.security_events import (
     emit_security_event,
 )
 from services.username_generator import generate_unique_username
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -119,7 +116,7 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
     Returns (access_token, refresh_token, expires_in).
     Fails open: tokens are still returned if Redis is temporarily unreachable.
     """
-    optic.debug("_issue_tokens: user_id={}, groups={}", user.id, groups)
+    optic.trace("user_id={}, groups={}", user.id, groups)
     access_token, expires_in = create_access_token(user.id, user.role, groups=groups)
     refresh_token, jti = create_refresh_token(user.id, user.role, groups=groups)
 
@@ -130,7 +127,7 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
         # Clear any logout revocation so hooks resume after re-login
         await redis.delete(f"revoked_user:{user.id}")
     except RedisError as e:
-        logger.warning("Redis unavailable when storing refresh JTI: %s", e)
+        optic.warning("Redis unavailable when storing refresh JTI: {}", e)
         raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     return access_token, refresh_token, expires_in
@@ -138,7 +135,7 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
 
 @router.post("/init", response_model=InitResponse, dependencies=[Depends(require_password_auth)])
 async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
-    optic.debug("init_admin: email={}", req.email)
+    optic.trace("email={}", req.email)
     count = await db.scalar(select(func.count()).select_from(User))
     if count and count > 0:
         raise HTTPException(status_code=400, detail="System already initialized")
@@ -362,7 +359,7 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
             await db.execute(sa_delete(UserGroup).where(UserGroup.user_id == user.id))
             db.add_all([UserGroup(user_id=user.id, group_name=g) for g in groups])
         except Exception as e:
-            logger.warning("Failed to persist SSO groups: %s", e)
+            optic.warning("Failed to persist SSO groups: {}", e)
 
     # Issue JWT tokens for the OAuth login
     access_token, refresh_token, expires_in = await _issue_tokens(user, groups=groups)
@@ -387,7 +384,7 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
             ),
         )
     except RedisError as e:
-        logger.warning("Redis unavailable during OAuth callback: %s", e)
+        optic.warning("Redis unavailable during OAuth callback: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     await emit_security_event(
@@ -424,7 +421,7 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
         redis_key = f"oauth_code:{req.code}"
         data = await redis.getdel(redis_key)
     except RedisError as e:
-        logger.warning("Redis unavailable during code exchange: %s", e)
+        optic.warning("Redis unavailable during code exchange: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     if not data:
@@ -497,7 +494,7 @@ async def logout(
         hooks_ttl = 30 * 86400
         await redis.setex(f"revoked_user:{current_user.id}", hooks_ttl, "1")
     except RedisError as e:
-        logger.warning("Redis unavailable during logout: %s", e)
+        optic.warning("Redis unavailable during logout: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     # Optionally revoke the refresh token
@@ -536,7 +533,7 @@ async def logout(
 @limiter.limit(ds.get_sync("security.rate_limit_auth", "10/minute"))
 async def issue_token(request: Request, req: TokenRequest, db: AsyncSession = Depends(get_db)):
     """Exchange email/username + password for JWT access + refresh tokens."""
-    optic.debug("issue_token: email={}", req.email)
+    optic.trace("email={}", req.email)
     source_ip, user_agent = _extract_request_info(request)
     identifier = req.email
     if "@" in identifier:
@@ -599,7 +596,7 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
         redis = get_redis()
         stored = await redis.get(f"refresh_jti:{jti}")
     except RedisError as e:
-        logger.warning("Redis unavailable during token refresh: %s", e)
+        optic.warning("Redis unavailable during token refresh: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     if stored is None:
@@ -626,7 +623,7 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
         refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 7) * 86400
         await redis.setex(f"refresh_jti:{new_jti}", refresh_ttl, str(user.id))
     except RedisError as e:
-        logger.warning("Redis unavailable when storing new refresh JTI: %s", e)
+        optic.warning("Redis unavailable when storing new refresh JTI: {}", e)
         raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
     return TokenResponse(
         access_token=access_token,
@@ -653,7 +650,7 @@ async def revoke_token(request: Request, req: RevokeRequest):
         redis = get_redis()
         await redis.delete(f"refresh_jti:{jti}")
     except RedisError as e:
-        logger.warning("Redis unavailable during token revocation: %s", e)
+        optic.warning("Redis unavailable during token revocation: {}", e)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
     return {"detail": "Token revoked"}
@@ -668,7 +665,7 @@ async def change_password(
     current_user: User = Depends(get_current_user),
 ):
     """Change the current user's password. Clears forced-change flag if set."""
-    optic.debug("change_password: user initiated password change")
+    optic.debug("user initiated password change")
     if not current_user.verify_password(req.current_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
@@ -691,7 +688,7 @@ async def set_username(
     current_user: User = Depends(get_current_user),
 ):
     """Set or update the current user's username."""
-    optic.debug("set_username: req={}", req)
+    optic.trace("req={}", req)
     existing = await db.execute(select(User).where(User.username == req.username))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Username already taken")
@@ -713,7 +710,7 @@ async def create_hooks_token(current_user: User = Depends(get_current_user)):
     Hooks need a static token in the environment that can't do refresh
     mid-session, so this endpoint issues a 30-day access token by default.
     """
-    optic.debug("create_hooks_token: user_id={}", current_user.id)
+    optic.trace("user_id={}", current_user.id)
     token, expires_in = create_access_token(
         current_user.id,
         current_user.role,
@@ -749,7 +746,7 @@ _AVATAR_MAGIC_BYTES: dict[str, list[bytes]] = {
 
 
 def _validate_avatar_data_url(value: str) -> None:
-    optic.debug("_validate_avatar_data_url: value={}", value)
+    optic.trace("value={}", value)
     if len(value) > _MAX_AVATAR_DATA_URL_LEN:
         raise HTTPException(status_code=422, detail="Image data too large")
 

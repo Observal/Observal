@@ -17,7 +17,6 @@ raw JSONL rows into frontend-friendly event dicts.
 """
 
 import asyncio
-import logging
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -31,29 +30,28 @@ from database import async_session
 from models.user import User, UserRole
 from services.clickhouse import _query
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 
 
 async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
-    optic.debug("_ch_json: sql={}, params={}", sql, params)
+    optic.trace("sql={}, params={}", sql, params)
     try:
         r = await _query(f"{sql} FORMAT JSON", params)
         if r.status_code == 200:
             return r.json().get("data", [])
     except Exception as e:
-        logger.warning("clickhouse_query_failed: %s", e)
+        optic.warning("clickhouse_query_failed: {}", e)
     return []
 
 
 def _is_admin_user(user: User) -> bool:
-    optic.debug("_is_admin_user: user_id={}", user.id)
+    optic.trace("user_id={}", user.id)
     return user.role in (UserRole.admin, UserRole.super_admin)
 
 
 def _has_admin_trace_access(user: User) -> bool:
     """Check if user has admin-level trace access."""
-    optic.debug("_has_admin_trace_access: user_id={}", user.id)
+    optic.trace("user_id={}", user.id)
     if not _is_admin_user(user):
         return False
     if user.role == UserRole.super_admin:
@@ -81,7 +79,7 @@ async def list_sessions(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("list_sessions: status={}, platform={}", status, platform)
+    optic.trace("status={}, platform={}", status, platform)
     is_admin = _has_admin_trace_access(current_user)
     uid_str = str(current_user.id)
     capped_days = min(days, 365) if days is not None and days > 0 else days
@@ -125,7 +123,7 @@ async def list_sessions(
                     for u_id, u_name in result.all():
                         uid_to_name[str(u_id)] = u_name
         except Exception:
-            logger.warning("User name resolution failed", exc_info=True)
+            optic.warning("User name resolution failed", exc_info=True)
 
     _platform_names = {
         "kiro": "Kiro",
@@ -161,7 +159,7 @@ async def list_sessions(
                     for a_id, a_name in result.all():
                         agent_id_to_name[str(a_id)] = a_name
         except Exception:
-            logger.warning("Agent name resolution failed", exc_info=True)
+            optic.warning("Agent name resolution failed", exc_info=True)
 
     for row in rows:
         uid = row.get("user_id", "")
@@ -194,7 +192,7 @@ async def _list_sessions_query(
     FINAL merges parts at read time; at ~1 row per session this is fast and
     avoids illegal nested-aggregation errors with SimpleAggregateFunction columns.
     """
-    optic.debug("_list_sessions_query: platform={}, days={}, is_admin={}", platform, days, is_admin)
+    optic.trace("platform={}, days={}, is_admin={}", platform, days, is_admin)
     where_parts = ["session_id != ''", "parent_session_id = ''", "prompt_count > 0"]
     params: dict[str, str] = {}
 
@@ -238,7 +236,7 @@ async def _list_sessions_query(
 async def sessions_summary(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("sessions_summary: user_id={}", current_user.id)
+    optic.trace("user_id={}", current_user.id)
     is_admin = _has_admin_trace_access(current_user)
     user_filter = ""
     params: dict[str, str] = {}
@@ -272,7 +270,7 @@ async def sessions_stats(current_user: User = Depends(require_role(UserRole.admi
     # Use pre-aggregated session_stats_agg - avoids a full session_events FINAL scan.
     # prompt_count / tool_call_count in the MV correspond to 'user_prompt' / 'tool_call'
     # event types (legacy otel names 'user' / 'tool_use' are not present in V3 events).
-    optic.debug("sessions_stats: user_id={}", current_user.id)
+    optic.trace("user_id={}", current_user.id)
     rows = await _ch_json(
         "SELECT "
         "count() AS total_sessions, "
@@ -302,7 +300,7 @@ async def sessions_stats(current_user: User = Depends(require_role(UserRole.admi
 
 @router.get("/{session_id}")
 async def get_session(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
-    optic.debug("get_session: session_id={}", session_id)
+    optic.trace("session_id={}", session_id)
     is_admin = _has_admin_trace_access(current_user)
     params: dict[str, str] = {"param_sid": session_id}
 
@@ -392,7 +390,7 @@ async def bind_session_agent(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Explicitly bind a session to an agent name."""
-    optic.debug("bind_session_agent: session_id={}, agent_name={}", session_id, agent_name)
+    optic.trace("session_id={}, agent_name={}", session_id, agent_name)
     is_admin = _is_admin_user(current_user)
     if not is_admin:
         params = {"param_sid": session_id, "param_uid": str(current_user.id)}

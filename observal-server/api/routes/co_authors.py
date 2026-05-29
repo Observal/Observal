@@ -149,7 +149,7 @@ async def add_co_author(
     # Can't add yourself
     owner_id = entity.created_by if entity_type == "agents" else entity.submitted_by
     if target_user.id == owner_id:
-        raise HTTPException(status_code=422, detail="Owner is already implicit — no need to add as co-author")
+        raise HTTPException(status_code=422, detail="Owner is already implicit - no need to add as co-author")
 
     # Check if already a co-author
     co_authors = [str(uid) for uid in (entity.co_authors or [])]

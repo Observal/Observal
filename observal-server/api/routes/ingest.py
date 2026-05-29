@@ -5,7 +5,7 @@
 """Session JSONL ingest endpoint."""
 
 from fastapi import APIRouter, Depends
-from loguru import logger
+from loguru import logger as optic
 from pydantic import BaseModel
 
 from api.deps import get_project_id, require_role
@@ -50,13 +50,13 @@ async def ingest_session(
     Called by the session_push hook on each UserPromptSubmit and Stop event.
     Lines are stored as-is and classified server-side.
     """
-    logger.debug("ingest_session: user_id={}", current_user.id)
+    optic.trace("user_id={}", current_user.id)
     from services.session_ingest import check_session_integrity, ingest_session_lines
 
     user_id = str(current_user.id)
     project_id = get_project_id(current_user)
 
-    logger.debug(
+    optic.debug(
         "ingest request: session={}, ide={}, lines={}, offset={}, final={}",
         req.session_id,
         req.ide,
@@ -89,14 +89,14 @@ async def ingest_session(
         )
         integrity_ok = integrity.ok
         if not integrity_ok:
-            logger.warning(
+            optic.warning(
                 "session integrity check failed: session={}, expected={}, actual offset={}",
                 req.session_id,
                 req.total_line_count,
                 req.total_offset,
             )
 
-    logger.info(
+    optic.info(
         "session ingested: session={}, ingested={}, skipped={}, errors={}",
         req.session_id,
         result.ingested,

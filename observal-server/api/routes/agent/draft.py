@@ -34,7 +34,7 @@ async def save_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Create an agent as a draft (relaxed validation, not submitted for review)."""
-    optic.debug("draft.save_draft: req={}", req)
+    optic.trace("req={}", req)
     agent = Agent(
         name=req.name,
         owner=req.owner or current_user.username or current_user.email,
@@ -127,7 +127,7 @@ async def update_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Update a draft agent."""
-    optic.debug("draft.update_draft: agent_id={}, req={}", agent_id, req)
+    optic.trace("agent_id={}, req={}", agent_id, req)
     agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -247,7 +247,7 @@ async def start_edit_agent(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("draft.start_edit_agent: agent_id={}", agent_id)
+    optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -274,7 +274,7 @@ async def cancel_edit_agent(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("draft.cancel_edit_agent: agent_id={}", agent_id)
+    optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -296,7 +296,7 @@ async def submit_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Submit a draft agent for review (transitions draft -> pending)."""
-    optic.debug("draft.submit_draft: agent_id={}", agent_id)
+    optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -334,7 +334,7 @@ async def submit_draft(
     if agent.latest_version:
         flags = scan_for_gaming(agent.latest_version.prompt)
         agent.latest_version.gaming_flags = summarize_flags(flags)
-        # Defensive refresh — covers older drafts created before snapshot
+        # Defensive refresh - covers older drafts created before snapshot
         # backfill landed and guarantees the reviewer sees current state.
         from services.agent_snapshot import build_yaml_snapshot
 

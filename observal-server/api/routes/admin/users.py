@@ -3,7 +3,6 @@
 
 """Admin user management routes."""
 
-import logging
 import uuid
 
 from fastapi import Depends, HTTPException
@@ -30,8 +29,6 @@ from services.username_generator import generate_unique_username
 from ._router import router
 from .helpers import _generate_unique_password
 
-logger = logging.getLogger(__name__)
-
 # ── User Management ──────────────────────────────────────
 
 
@@ -56,7 +53,7 @@ async def create_user(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Admin creates a new user and gets back their generated password."""
-    optic.debug("create_user: email={}, role={}", req.email, req.role)
+    optic.trace("email={}, role={}", req.email, req.role)
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -165,7 +162,7 @@ async def update_user_department(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    optic.debug("update_user_department: user_id={}", user_id)
+    optic.trace("user_id={}", user_id)
     stmt = select(User).where(User.id == user_id)
     if current_user.org_id is not None:
         stmt = stmt.where(User.org_id == current_user.org_id)
@@ -200,7 +197,7 @@ async def bulk_update_departments(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Bulk-assign departments to users by email."""
-    optic.debug("bulk_update_departments: req={}", req)
+    optic.trace("req={}", req)
     updated = 0
     not_found = []
 
@@ -232,7 +229,7 @@ async def reset_user_password(
     Either provide new_password directly, or set generate=true to create
     a secure random password that doesn't collide with existing hashes.
     """
-    optic.debug("reset_user_password: user_id={}", user_id)
+    optic.trace("user_id={}", user_id)
     stmt = select(User).where(User.id == user_id)
     if current_user.org_id is not None:
         stmt = stmt.where(User.org_id == current_user.org_id)
@@ -272,7 +269,7 @@ async def reset_user_password(
             detail=f"Password reset for {user.email}",
         )
     )
-    logger.warning("Admin %s reset password for user %s", current_user.email, user.email)
+    optic.warning("Admin {} reset password for user {}", current_user.email, user.email)
 
     resp: dict[str, str] = {"message": f"Password reset for {user.email}"}
     if req.generate:
@@ -308,7 +305,7 @@ async def delete_user(
         if admin_count is not None and admin_count <= 1:
             raise HTTPException(status_code=400, detail="Cannot delete the last admin")
 
-    logger.warning("Admin %s deleted user %s (%s)", current_user.email, user.email, user.id)
+    optic.warning("Admin {} deleted user {} ({})", current_user.email, user.email, user.id)
     deleted_user_email = user.email
     deleted_user_id = str(user.id)
     await emit_security_event(

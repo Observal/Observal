@@ -32,7 +32,7 @@ async def add_source(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     # Detect provider from URL
-    optic.debug("add_source: req={}", req)
+    optic.trace("req={}", req)
     provider = "github"
     url_lower = req.url.lower()
     if "gitlab" in url_lower:
@@ -87,7 +87,7 @@ async def get_source(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("get_source: source_id={}", source_id)
+    optic.trace("source_id={}", source_id)
     source = await db.get(ComponentSource, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -103,7 +103,7 @@ async def trigger_sync(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    optic.debug("trigger_sync: source_id={}", source_id)
+    optic.trace("source_id={}", source_id)
     source = await db.get(ComponentSource, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
