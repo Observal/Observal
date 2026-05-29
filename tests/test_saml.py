@@ -62,7 +62,11 @@ class TestSamlKeyGeneration:
         assert result["sp"]["entityId"] == "https://app.example.com/api/v1/sso/saml/metadata"
         assert "x509cert" in result["sp"]
         assert "privateKey" in result["sp"]
+        assert result["strict"] is True
         assert result["security"]["authnRequestsSigned"] is False
+        assert result["security"]["wantAssertionsSigned"] is True
+        assert result["security"]["wantResponsesSigned"] is True
+        assert result["security"]["relaxDestinationValidation"] is False
 
 
 class TestSamlHelpers:
