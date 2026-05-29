@@ -159,6 +159,7 @@ async def _issue_tokens(user: User) -> tuple[str, str, int]:
     refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 7) * 86400
     redis = get_redis()
     await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
+    await redis.delete(f"revoked_user:{user.id}")
     return access_token, refresh_token, expires_in
 
 
