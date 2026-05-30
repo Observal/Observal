@@ -13,11 +13,18 @@ from pydantic import BaseModel, field_validator
 class EnterpriseConfigResponse(BaseModel):
     key: str
     value: str
+    is_sensitive: bool = False
+    is_set: bool = False
     model_config = {"from_attributes": True}
 
 
 class EnterpriseConfigUpdate(BaseModel):
     value: str
+
+
+class SettingRevokedResponse(BaseModel):
+    revoked: str
+    message: str
 
 
 class UserAdminResponse(BaseModel):

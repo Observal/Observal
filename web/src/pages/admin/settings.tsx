@@ -54,18 +54,18 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// Sensitive keys that should be masked in display
+// Sensitive keys that should never be displayed in plaintext.
+// The server enforces this too (returns **REDACTED** for these keys),
+// but we keep the set here for UI affordances (revoke button, write-only input).
 const SENSITIVE_KEYS = new Set([
+	"insights.aws_access_key_id",
+	"insights.aws_secret_access_key",
+	"insights.aws_session_token",
 	"saml.idp_x509_cert",
 	"saml.sp_key_encryption_password",
 ]);
 
-function maskValue(key: string, value: string): string {
-	if (!SENSITIVE_KEYS.has(key)) return value;
-	if (!value || value.length <= 4)
-		return "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
-	return "\u2022\u2022\u2022\u2022\u2022\u2022" + value.slice(-4);
-}
+const REDACTED_VALUE = "**REDACTED**";
 
 /** Generate a helpful placeholder for the value input based on the key */
 function getPlaceholder(key: string): string {
@@ -653,6 +653,7 @@ export default function SettingsPage() {
 	} = useDeploymentConfig();
 	const [editingKey, setEditingKey] = useState<string | null>(null);
 	const [editingValue, setEditingValue] = useState("");
+	const [revokeConfirmKey, setRevokeConfirmKey] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [applyingResources, setApplyingResources] = useState(false);
 	const [tracePrivacy, setTracePrivacy] = useState(false);
@@ -1592,14 +1593,24 @@ export default function SettingsPage() {
 											);
 										}
 										if (existing && existing.value) {
+											const isSensitive = (existing as AdminSetting).is_sensitive || SENSITIVE_KEYS.has(d.key);
+											const isSet = (existing as AdminSetting).is_set ?? !!existing.value;
 											return (
 												<div key={d.key} className="rounded-md border-2 border-border bg-card p-3 relative">
 													<div className="absolute right-2 top-2"><Tooltip><TooltipTrigger asChild><HelpCircle className="h-5 w-5 text-muted-foreground/40 hover:text-foreground transition-colors cursor-help" /></TooltipTrigger><TooltipContent side="left" className="max-w-[340px] text-sm leading-relaxed p-3">{d.tooltip}</TooltipContent></Tooltip></div>
 													<span className="text-sm font-semibold text-foreground">{d.label}</span>
 													<div className="flex items-center gap-2 mt-1.5">
-														<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{SENSITIVE_KEYS.has(d.key) ? maskValue(d.key, existing.value) : existing.value}</span>
-														<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(SENSITIVE_KEYS.has(d.key) ? "" : existing.value); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
-														<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+														{isSensitive ? (
+															<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{isSet ? REDACTED_VALUE : "Not set"}</span>
+														) : (
+															<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{existing.value}</span>
+														)}
+														<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(isSensitive ? "" : (existing?.value ?? "")); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+														{isSensitive && isSet ? (
+															<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setRevokeConfirmKey(d.key)}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+														) : (
+															<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+														)}
 													</div>
 												</div>
 											);
@@ -1657,14 +1668,24 @@ export default function SettingsPage() {
 															);
 														}
 														if (existing && existing.value) {
+															const isSensitive = (existing as AdminSetting).is_sensitive || SENSITIVE_KEYS.has(d.key);
+															const isSet = (existing as AdminSetting).is_set ?? !!existing.value;
 															return (
 																<div key={d.key} className="rounded-md border-2 border-border bg-card p-3 relative">
 																	<div className="absolute right-2 top-2"><Tooltip><TooltipTrigger asChild><HelpCircle className="h-5 w-5 text-muted-foreground/40 hover:text-foreground transition-colors cursor-help" /></TooltipTrigger><TooltipContent side="left" className="max-w-[340px] text-sm leading-relaxed p-3">{d.tooltip}</TooltipContent></Tooltip></div>
 																	<span className="text-sm font-semibold text-foreground">{d.label}</span>
 																	<div className="flex items-center gap-2 mt-1.5">
-																		<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{SENSITIVE_KEYS.has(d.key) ? maskValue(d.key, existing.value) : existing.value}</span>
-																		<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(SENSITIVE_KEYS.has(d.key) ? "" : existing.value); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
-																		<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																		{isSensitive ? (
+																			<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{isSet ? REDACTED_VALUE : "Not set"}</span>
+																		) : (
+																			<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{existing.value}</span>
+																		)}
+																		<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(isSensitive ? "" : existing.value); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+																		{isSensitive && isSet ? (
+																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setRevokeConfirmKey(d.key)}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																		) : (
+																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																		)}
 																	</div>
 																</div>
 															);
@@ -1688,6 +1709,20 @@ export default function SettingsPage() {
 					</div>
 				)}
 			</div>
+			<Dialog open={revokeConfirmKey !== null} onOpenChange={(open) => { if (!open) setRevokeConfirmKey(null); }}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Revoke secret</DialogTitle>
+						<DialogDescription>
+							This will permanently delete the stored value for <strong>{revokeConfirmKey}</strong>. Any features depending on this credential will stop working immediately. This cannot be undone.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setRevokeConfirmKey(null)}>Cancel</Button>
+						<Button variant="destructive" onClick={async () => { try { await admin.revokeSetting(revokeConfirmKey!); refetch(); toast.success(`Revoked ${revokeConfirmKey}`); } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Failed to revoke setting"); } finally { setRevokeConfirmKey(null); } }}>Revoke</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</>
 	);
 }

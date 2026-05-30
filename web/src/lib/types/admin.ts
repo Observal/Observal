@@ -22,6 +22,8 @@ export interface AdminUser {
 export interface AdminSetting {
 	key: string;
 	value: string;
+	is_sensitive?: boolean;
+	is_set?: boolean;
 }
 
 export interface AuditLogEntry {

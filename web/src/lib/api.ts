@@ -572,6 +572,11 @@ export const admin = {
 	updateSetting: (key: string, body: unknown) =>
 		put<unknown>(`/admin/settings/${key}`, body),
 	deleteSetting: (key: string) => del(`/admin/settings/${key}`),
+	revokeSetting: (key: string) =>
+		post<{ revoked: string; message: string }>(
+			`/admin/settings/${key}/revoke`,
+			{},
+		),
 	users: () => get<AdminUser[]>("/admin/users"),
 	createUser: (body: {
 		email: string;

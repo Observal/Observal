@@ -14,7 +14,8 @@ from api.deps import get_db, require_role
 from config import HAS_LICENSE, settings
 from models.enterprise_config import EnterpriseConfig
 from models.user import User, UserRole
-from schemas.admin import EnterpriseConfigResponse, EnterpriseConfigUpdate
+from schemas.admin import EnterpriseConfigResponse, EnterpriseConfigUpdate, SettingRevokedResponse
+from services.secrets_redactor import REDACTED
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
@@ -126,7 +127,20 @@ async def list_settings(
 ):
     optic.debug("admin settings list")
     result = await db.execute(select(EnterpriseConfig).order_by(EnterpriseConfig.key))
-    configs = [EnterpriseConfigResponse.model_validate(c) for c in result.scalars().all()]
+    configs = []
+    for c in result.scalars().all():
+        sensitive = c.key in ds.SENSITIVE_KEYS
+        has_value = bool(c.value)
+        # Never return plaintext or ciphertext for sensitive keys.
+        display_value = (REDACTED if has_value else "") if sensitive else c.value
+        configs.append(
+            EnterpriseConfigResponse(
+                key=c.key,
+                value=display_value,
+                is_sensitive=sensitive,
+                is_set=has_value,
+            )
+        )
     return configs
 
 
@@ -141,7 +155,15 @@ async def get_setting(
     cfg = result.scalar_one_or_none()
     if not cfg:
         raise HTTPException(status_code=404, detail="Setting not found")
-    return EnterpriseConfigResponse.model_validate(cfg)
+    sensitive = key in ds.SENSITIVE_KEYS
+    has_value = bool(cfg.value)
+    display_value = (REDACTED if has_value else "") if sensitive else cfg.value
+    return EnterpriseConfigResponse(
+        key=cfg.key,
+        value=display_value,
+        is_sensitive=sensitive,
+        is_set=has_value,
+    )
 
 
 @router.put("/settings/{key}", response_model=EnterpriseConfigResponse)
@@ -157,12 +179,15 @@ async def upsert_setting(
     elif key == "branding.app_name":
         _validate_branding_app_name(req.value)
 
+    sensitive = key in ds.SENSITIVE_KEYS
+    store_value = ds.encrypt_value(req.value) if sensitive else req.value
+
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
     cfg = result.scalar_one_or_none()
     if cfg:
-        cfg.value = req.value
+        cfg.value = store_value
     else:
-        cfg = EnterpriseConfig(key=key, value=req.value)
+        cfg = EnterpriseConfig(key=key, value=store_value)
         db.add(cfg)
     await db.commit()
     await db.refresh(cfg)
@@ -180,7 +205,14 @@ async def upsert_setting(
             target_type="setting",
         )
     )
-    return EnterpriseConfigResponse.model_validate(cfg)
+    # Sensitive values are only visible in this single response (the moment of entry).
+    # All subsequent GET requests will return the redacted constant.
+    return EnterpriseConfigResponse(
+        key=cfg.key,
+        value=REDACTED if sensitive else cfg.value,
+        is_sensitive=sensitive,
+        is_set=True,
+    )
 
 
 @router.delete("/settings/{key}")
@@ -199,6 +231,44 @@ async def delete_setting(
     await ds.invalidate(key)
     await ds.refresh_sync_cache()
     return {"deleted": key}
+
+
+@router.post("/settings/{key}/revoke", response_model=SettingRevokedResponse)
+async def revoke_setting(
+    key: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Revoke a sensitive setting (API key, secret). Permanently deletes the value.
+
+    Unlike DELETE which removes any setting, this endpoint is restricted to
+    sensitive keys only and emits a dedicated security audit event.
+    """
+    optic.trace("key={}", key)
+    if key not in ds.SENSITIVE_KEYS:
+        raise HTTPException(status_code=400, detail="Only sensitive keys can be revoked")
+    result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
+    cfg = result.scalar_one_or_none()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Setting not found or already revoked")
+    await db.delete(cfg)
+    await db.commit()
+    await ds.invalidate(key)
+    await ds.refresh_sync_cache()
+    await emit_security_event(
+        SecurityEvent(
+            event_type=EventType.SETTING_CHANGED,
+            severity=Severity.CRITICAL,
+            outcome="success",
+            actor_id=str(current_user.id),
+            actor_email=current_user.email,
+            actor_role=current_user.role.value,
+            target_id=key,
+            target_type="sensitive_setting",
+            detail=f"Sensitive setting revoked: {key}",
+        )
+    )
+    return {"revoked": key, "message": "Secret has been permanently deleted"}
 
 
 @router.post("/resources/apply")
