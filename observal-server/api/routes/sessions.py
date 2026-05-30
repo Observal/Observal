@@ -299,8 +299,12 @@ async def sessions_stats(current_user: User = Depends(require_role(UserRole.admi
 
 
 @router.get("/{session_id}")
-async def get_session(session_id: str, current_user: User = Depends(require_role(UserRole.user))):
-    optic.trace("session_id={}", session_id)
+async def get_session(
+    session_id: str,
+    after_offset: int | None = Query(None, ge=0, description="Return only events after this line_offset (incremental fetch)"),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    optic.trace("session_id={}, after_offset={}", session_id, after_offset)
     is_admin = _has_admin_trace_access(current_user)
     params: dict[str, str] = {"param_sid": session_id}
 
@@ -314,38 +318,56 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
         if not ownership:
             return {"session_id": session_id, "ide": "", "events": []}
 
+    # Build offset filter for incremental fetches
+    _offset_filter = ""
+    if after_offset is not None:
+        _offset_filter = f"AND line_offset > {{offset:UInt32}} "
+        params["param_offset"] = str(after_offset)
+
     # Fan out both FINAL scans in parallel - wall time ≈ max(t1, t2) not t1+t2.
     # do_not_merge_across_partitions_select_final=1 lets CH process each monthly
     # partition independently instead of a single cross-partition merge pass.
-    # (ClickHouse docs benchmark: 2.3s → 0.99s on 59M rows with yearly partitioning)
     _main_sql = (
         "SELECT "
-        "timestamp, event_type, content_preview, tool_name, tool_id, "
+        "line_offset, timestamp, event_type, content_preview, tool_name, tool_id, "
         "uuid, parent_uuid, content_length, ide, raw_line, raw_line_truncated, "
         "credits, ingested_at "
         "FROM session_events FINAL "
         "WHERE session_id = {sid:String} "
+        + _offset_filter +
         "ORDER BY line_offset ASC "
         "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
     )
+    _sub_params = {"param_sid": session_id}
+    _sub_offset_filter = ""
+    if after_offset is not None:
+        _sub_offset_filter = f"AND line_offset > {{offset:UInt32}} "
+        _sub_params["param_offset"] = str(after_offset)
     _sub_sql = (
         "SELECT session_id, timestamp, event_type, content_preview, "
         "tool_name, tool_id, uuid, parent_uuid, content_length, ide, "
         "raw_line, raw_line_truncated, credits, ingested_at, line_offset "
         "FROM session_events FINAL "
         "WHERE parent_session_id = {sid:String} "
+        + _sub_offset_filter +
         "ORDER BY session_id, line_offset ASC "
         "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
     )
     rows, sub_rows_all = await asyncio.gather(
         _ch_json(_main_sql, params),
-        _ch_json(_sub_sql, {"param_sid": session_id}),
+        _ch_json(_sub_sql, _sub_params),
     )
 
     if not rows:
+        if after_offset is not None:
+            # Incremental fetch with no new data
+            return {"session_id": session_id, "events": [], "max_offset": after_offset}
         return {"session_id": session_id, "service_name": "", "events": [], "traces": []}
 
     ide = rows[0].get("ide", "claude-code")
+
+    # Track max line_offset for incremental fetch cursor
+    max_offset = max(int(r.get("line_offset", 0)) for r in rows) if rows else (after_offset or 0)
 
     # Parse raw events through the session parser for rich rendering
     from services.session_parsers import parse_raw_events
@@ -380,6 +402,7 @@ async def get_session(session_id: str, current_user: User = Depends(require_role
         "events": events,
         "traces": [],
         "subagent_sessions": subagent_sessions,
+        "max_offset": max_offset,
     }
 
 
