@@ -29,6 +29,7 @@ from models.user import User, UserRole
 from schemas.mcp import ReviewActionRequest
 from services.editing_lock import is_actively_editing
 from services.redis import publish as redis_publish
+from services.cache import invalidate_namespace
 
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
@@ -575,6 +576,7 @@ async def approve(
 
     await db.commit()
     await db.refresh(listing)
+    await invalidate_namespace("dashboard")
     redis_publish("reviews:updated", {"listing_id": str(listing.id), "action": "approved"})
     return {"type": listing_type, "id": str(listing.id), "name": listing.name, "status": listing.status.value}
 
@@ -625,6 +627,7 @@ async def reject(
         pass  # Non-critical: don't block rejection if cascade fails
 
     await db.refresh(listing)
+    await invalidate_namespace("dashboard")
     redis_publish("reviews:updated", {"listing_id": str(listing.id), "action": "rejected"})
     return {"type": listing_type, "id": str(listing.id), "name": listing.name, "status": listing.status.value}
 
@@ -711,6 +714,7 @@ async def approve_agent(
         agent.category = req.category
 
     await db.commit()
+    await invalidate_namespace("dashboard")
     redis_publish("reviews:updated", {"listing_id": str(agent.id), "action": "approved"})
     return {"id": str(agent.id), "name": agent.name, "status": "approved", "version": newest_pending.version}
 
@@ -755,6 +759,7 @@ async def reject_agent(
 
     await db.commit()
     rejected_version = pending_versions[0].version if pending_versions else ""
+    await invalidate_namespace("dashboard")
     redis_publish("reviews:updated", {"listing_id": str(agent.id), "action": "rejected"})
     return {"id": str(agent.id), "name": agent.name, "status": "rejected", "version": rejected_version}
 
