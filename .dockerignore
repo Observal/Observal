@@ -50,7 +50,9 @@ otel-collector-config.yaml
 # Docker sub-configs (not needed inside images)
 docker/docker-compose*.yml
 docker/clickhouse/
-docker/nginx*.conf
+docker/nginx.conf
+docker/nginx.dev.conf
+docker/nginx.production.conf
 docker/server-package/
 
 # Environment and logs

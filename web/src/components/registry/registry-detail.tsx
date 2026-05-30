@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +11,7 @@ import { StatusBadge } from "./status-badge";
 import { InstallDialog } from "./install-dialog";
 import { registry, type RegistryType } from "@/lib/api";
 import { Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 
@@ -58,7 +57,7 @@ export function RegistryDetail({ type, data, isLoading }: RegistryDetailProps) {
     try {
       await registry.delete(type, id);
       qc.invalidateQueries({ queryKey: ["registry", type] });
-      router.push(`/${type}`);
+      router.navigate({ to: `/${type}` as "/" });
     } catch {
       setDeleting(false);
       setConfirmOpen(false);

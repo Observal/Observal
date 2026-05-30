@@ -2,10 +2,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 services:
-  observal-web:
-    environment:
-      - NEXT_PUBLIC_API_URL=https://${DOMAIN:-internal.observal.io}
-
   observal-lb:
     ports:
       - "80:80"

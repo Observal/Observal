@@ -1,10 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@tanstack/react-router";
 import {
   CommandDialog,
   CommandEmpty,
@@ -33,7 +32,7 @@ export function CommandMenu() {
 
   const onSelect = (href: string) => {
     setOpen(false);
-    router.push(href);
+    router.navigate({ to: href });
   };
 
   return (

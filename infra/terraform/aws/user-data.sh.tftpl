@@ -18,7 +18,7 @@ systemctl enable --now docker
 # Compose v2 plugin (pinned version — do not use releases/latest)
 DOCKER_COMPOSE_VERSION="v2.35.1"
 mkdir -p /usr/libexec/docker/cli-plugins
-curl -fsSL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
+curl -fsSL "https://github.com/docker/compose/releases/download/$${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
   -o /usr/libexec/docker/cli-plugins/docker-compose
 chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 

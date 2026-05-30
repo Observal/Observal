@@ -3,10 +3,9 @@
 // SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@tanstack/react-router";
 import { useTraces } from "@/hooks/use-api";
 import { Input } from "@/components/ui/input";
 import {
@@ -181,7 +180,7 @@ export function TraceList() {
                   <TableRow
                     key={traceId}
                     className="cursor-pointer"
-                    onClick={() => router.push(`/traces/${traceId}`)}
+                    onClick={() => router.navigate({ to: "/traces/$traceId", params: { traceId } })}
                   >
                     <TableCell className="px-3 py-2 font-mono text-xs">
                       {traceId?.slice(0, 12)}…

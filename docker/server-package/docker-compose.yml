@@ -167,8 +167,6 @@ services:
     image: ghcr.io/blazeup-ai/observal-web:${OBSERVAL_VERSION:-latest}
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://observal-lb:80}
     depends_on:
       observal-lb:
         condition: service_started

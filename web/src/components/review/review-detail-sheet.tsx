@@ -1,10 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 import { useState, useCallback, useMemo } from "react";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import {
 	CheckCircle2,
 	X,
@@ -600,7 +599,7 @@ function SheetBody({
 			<div className="space-y-3 border-t border-border pt-4">
 				<div className="flex items-center justify-between">
 					<Link
-						href={reviewItemHref(merged)}
+						to={reviewItemHref(merged)}
 						className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
 					>
 						<ExternalLink className="h-3 w-3" /> View public page

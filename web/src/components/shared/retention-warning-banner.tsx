@@ -1,10 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 import { useState, useSyncExternalStore } from "react";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { AlertTriangle, X } from "lucide-react";
 import { useRetentionWarnings } from "@/hooks/use-api";
 import { hasMinRole } from "@/hooks/use-role-guard";
@@ -38,7 +37,7 @@ export function RetentionWarningBanner() {
       <span className="flex-1">
         Data retention is active ({data.retention_days} days).{" "}
         {data.warnings.length} agent{data.warnings.length > 1 ? "s have" : " has"} unanalyzed traces.{" "}
-        <Link href="/insights" className="underline font-medium hover:text-amber-900 dark:hover:text-amber-300">
+        <Link to="/insights" className="underline font-medium hover:text-amber-900 dark:hover:text-amber-300">
           Generate Insights
         </Link>
       </span>

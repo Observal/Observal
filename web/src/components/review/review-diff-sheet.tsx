@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { ArrowRight, Plus, Minus, RefreshCw } from "lucide-react";
@@ -25,7 +24,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import yaml from "js-yaml";
 import { YamlDiffView } from "./yaml-diff-view";
@@ -368,7 +367,7 @@ function LinkedComponentDetail({
 					</button>
 				) : (
 					<Link
-						href={href}
+						to={href}
 						className="font-medium hover:underline text-primary"
 					>
 						{name}

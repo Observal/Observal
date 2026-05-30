@@ -128,7 +128,7 @@ jobs:
             --ignore "*.pyc" --ignore "__pycache__" \
             --ignore ".git" --ignore "node_modules" \
             --ignore ".venv" --ignore "dist" \
-            --ignore "*.egg-info" --ignore ".next" \
+            --ignore "*.egg-info" --ignore "dist" \
             --ignore "ee" \
             .
 
