@@ -127,6 +127,12 @@ class TestKeyValueAssignments:
         result = redact_secrets(text)
         assert "my-long-secret-token-value-here" not in result
 
+    def test_bare_token_assignment(self):
+        text = "token=abcdef1234567890abcdef1234567890"
+        result = redact_secrets(text)
+        assert "abcdef1234567890" not in result
+        assert REDACTED in result
+
     def test_db_password(self):
         text = "DB_PASSWORD=hunter2_but_longer_this_time"
         result = redact_secrets(text)

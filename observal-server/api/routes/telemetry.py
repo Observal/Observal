@@ -33,7 +33,7 @@ from services.clickhouse import (
     query_recent_events,
 )
 from services.redis import publish
-from services.secrets_redactor import redact_secrets
+from services.secrets_redactor import redact_secrets, redact_value
 
 router = APIRouter(prefix="/api/v1/telemetry", tags=["telemetry"])
 
@@ -99,8 +99,8 @@ async def ingest(
                         "end_time": t.end_time,
                         "trace_type": t.trace_type,
                         "name": t.name,
-                        "metadata": t.metadata,
-                        "tags": t.tags,
+                        "metadata": redact_value(t.metadata),
+                        "tags": redact_value(t.tags),
                         "input": redact_secrets(t.input) if t.input else t.input,
                         "output": redact_secrets(t.output) if t.output else t.output,
                         "tool_id": t.tool_id,
@@ -143,7 +143,7 @@ async def ingest(
                         "status": s.status,
                         "ide": s.ide,
                         "environment": environment,
-                        "metadata": s.metadata,
+                        "metadata": redact_value(s.metadata),
                         "token_count_input": s.token_count_input,
                         "token_count_output": s.token_count_output,
                         "token_count_total": s.token_count_total,
@@ -284,9 +284,9 @@ async def ingest(
                         "source": sc.source,
                         "data_type": sc.data_type,
                         "value": sc.value,
-                        "string_value": sc.string_value,
-                        "comment": sc.comment,
-                        "metadata": sc.metadata,
+                        "string_value": redact_secrets(sc.string_value) if sc.string_value else sc.string_value,
+                        "comment": redact_secrets(sc.comment) if sc.comment else sc.comment,
+                        "metadata": redact_value(sc.metadata),
                         "timestamp": now,
                     }
                 )

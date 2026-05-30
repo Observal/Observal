@@ -89,7 +89,7 @@ _RE_PRIVATE_KEY = re.compile(
 _SECRET_KEY_NAMES = (
     r"(?:api[_\-]?key|api[_\-]?secret|secret[_\-]?key|auth[_\-]?token|"
     r"access[_\-]?token|private[_\-]?key|(?:db[_\-]?)?password|passwd|"
-    r"(?:auth|api|access|refresh|bearer|session|jwt)[_\-]?token|"
+    r"(?:auth|api|access|refresh|bearer|session|jwt)[_\-]?token|token|"
     r"client[_\-]?secret|signing[_\-]?key|encryption[_\-]?key|"
     r"db[_\-]?password|redis[_\-]?password|database[_\-]?password|"
     r"webhook[_\-]?secret|secret|credentials?)"
@@ -249,6 +249,15 @@ def _redact_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_redact_value(item) for item in value)
     return value
+
+
+def redact_value(value: Any) -> Any:
+    """Recursively redact string values from dict/list/scalar payloads.
+
+    Public wrapper for ingestion code that needs to sanitize a whole structured
+    value before storage. Does not mutate the original object.
+    """
+    return _redact_value(value)
 
 
 def _redact_matching_fields(value: Any, fields: set[str]) -> Any:
