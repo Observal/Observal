@@ -13,6 +13,7 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from models.user import UserRole
 
@@ -110,3 +111,81 @@ async def test_resolve_actor_org_id_reads_database_once_and_caches_result():
     assert first == str(org_id)
     assert second == str(org_id)
     db.execute.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Login-failure attribution: a wrong-password attempt against a *real* user must
+# carry that user's id so emit_security_event can resolve their org -- otherwise
+# the org-scoped admin query hides the failure from the user's tenant admins.
+# ---------------------------------------------------------------------------
+
+
+def _failed_login_event(handler_name, *, user, identifier):
+    """Drive the auth handler's wrong-password path and return the emitted event.
+
+    Calls the undecorated handler (``__wrapped__``) to bypass the rate limiter.
+    """
+    from api.routes import auth
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = user
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=result)
+
+    req = MagicMock()
+    req.email = identifier
+    req.password = "wrong-password"
+
+    captured = []
+    emit = AsyncMock(side_effect=lambda ev: captured.append(ev))
+    raw = getattr(auth, handler_name).__wrapped__
+
+    async def _run():
+        with (
+            patch("api.routes.auth.emit_security_event", emit),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await raw(request=MagicMock(), req=req, db=db)
+        assert exc.value.status_code == 401
+
+    return _run, captured
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("handler_name", ["login", "issue_token"])
+async def test_login_failure_for_existing_user_is_org_attributable(handler_name):
+    from services.security_events import EventType
+
+    user = MagicMock()
+    user.id = uuid.uuid4()
+    user.email = "real@tenant.example"
+    user.role = UserRole.user
+    user.verify_password = MagicMock(return_value=False)
+
+    run, captured = _failed_login_event(handler_name, user=user, identifier=user.email)
+    await run()
+
+    assert len(captured) == 1
+    event = captured[0]
+    assert event.event_type == EventType.LOGIN_FAILURE
+    # Attributed to the real user so emit resolves their org (visible to tenant admins).
+    assert event.actor_id == str(user.id)
+    assert event.actor_email == user.email
+    assert event.actor_role == user.role.value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("handler_name", ["login", "issue_token"])
+async def test_login_failure_for_unknown_user_stays_orgless(handler_name):
+    from services.security_events import EventType
+
+    identifier = "ghost@nowhere.example"
+    run, captured = _failed_login_event(handler_name, user=None, identifier=identifier)
+    await run()
+
+    assert len(captured) == 1
+    event = captured[0]
+    assert event.event_type == EventType.LOGIN_FAILURE
+    # No such user -> no org attribution; the attempt stays global.
+    assert event.actor_id == ""
+    assert event.actor_email == identifier
