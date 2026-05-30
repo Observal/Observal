@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { BarList } from "@/components/dashboard/bar-list";
 import { NoData } from "@/components/dashboard/no-data";
@@ -33,7 +32,8 @@ export function TopItemsCard({ title, data, isLoading, linkPrefix, className }: 
           data={(data ?? []).map((item) => ({
             name: (
               <Link
-                href={`${linkPrefix}${item.id}`}
+                // linkPrefix is a dynamic prop, type-safe routing not applicable
+                to={`${linkPrefix}${item.id}` as "/"}
                 className="hover:underline"
               >
                 {item.name}

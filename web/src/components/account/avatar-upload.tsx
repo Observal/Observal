@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
-"use client";
 
 import { useCallback, useRef, useState } from "react";
 import { Camera, Loader2, Trash2 } from "lucide-react";
@@ -302,7 +301,6 @@ export function AvatarEditable({ name, avatarUrl }: AvatarEditableProps) {
 									className="relative inline-block select-none overflow-hidden rounded-lg border border-border"
 									style={{ maxWidth: "100%" }}
 								>
-									{/* eslint-disable-next-line @next/next/no-img-element */}
 									<img
 										ref={imgRef}
 										src={imageUrl ?? undefined}

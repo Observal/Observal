@@ -3,9 +3,8 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { ArrowDownToLine, Puzzle, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { IdeBadges } from "@/components/registry/ide-badges";
@@ -44,7 +43,7 @@ export function AgentCard({
 }: AgentCardProps) {
   return (
     <Link
-      href={`/agents/${id}`}
+      to="/agents/$agentId" params={{ agentId: id }}
       className={[
         "group block border border-border bg-card p-4 rounded-md",
         "transition-all duration-200 ease-out",

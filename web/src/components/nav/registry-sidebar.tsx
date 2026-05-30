@@ -6,11 +6,8 @@
 // SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
-import { usePathname } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
+import { Link, useLocation } from "@tanstack/react-router";
 import {
 	Sidebar,
 	SidebarContent,
@@ -145,7 +142,7 @@ const getAuthSnap = () =>
 const getServerSnap = () => "||||";
 
 export function RegistrySidebar() {
-	const pathname = usePathname();
+	const { pathname } = useLocation();
 	const snap = useSyncExternalStore(storeSub, getAuthSnap, getServerSnap);
 	const [token, role, userName, userEmail, userUsername] = snap.split("|");
 	const isAuthenticated = !!token;
@@ -202,19 +199,18 @@ export function RegistrySidebar() {
 				<SidebarMenu>
 					<SidebarMenuItem>
 						<SidebarMenuButton size="lg" asChild>
-							<Link href="/">
+							<Link to="/">
 								<div className="flex size-8 shrink-0 items-center justify-center">
 									{brandingLogo ? (
-										<Image
+										<img
 											src={brandingLogo}
 											alt=""
 											width={26}
 											height={26}
 											className="object-contain"
-											unoptimized
 										/>
 									) : (
-										<Image
+										<img
 											src="/observal-logo.svg"
 											alt=""
 											width={26}
@@ -225,13 +221,12 @@ export function RegistrySidebar() {
 								</div>
 								<div className="flex flex-col gap-0.5 leading-none">
 									{brandingWordmark ? (
-										<Image
+										<img
 											src={brandingWordmark}
 											alt={brandingAppName || "Observal"}
 											width={140}
 											height={20}
 											className="h-5 max-w-35 object-contain object-left"
-											unoptimized
 										/>
 									) : (
 										<span className="text-base font-semibold tracking-tight font-display truncate max-w-35">
@@ -254,7 +249,7 @@ export function RegistrySidebar() {
 							{visibleRegistryNav.map((item) => (
 								<SidebarMenuItem key={item.href}>
 									<SidebarMenuButton asChild isActive={isActive(item.href)}>
-										<Link href={item.href}>
+										<Link to={item.href}>
 											<item.icon className="h-4 w-4" />
 											<span>{item.title}</span>
 										</Link>
@@ -275,7 +270,7 @@ export function RegistrySidebar() {
 								{visibleReviewNav.map((item) => (
 									<SidebarMenuItem key={item.href}>
 										<SidebarMenuButton asChild isActive={isActive(item.href)}>
-											<Link href={item.href}>
+											<Link to={item.href}>
 												<item.icon className="h-4 w-4" />
 												<span>{item.title}</span>
 											</Link>
@@ -297,7 +292,7 @@ export function RegistrySidebar() {
 								{visibleUserNav.map((item) => (
 									<SidebarMenuItem key={item.href}>
 										<SidebarMenuButton asChild isActive={isActive(item.href)}>
-											<Link href={item.href}>
+											<Link to={item.href}>
 												<item.icon className="h-4 w-4" />
 												<span>{item.title}</span>
 											</Link>
@@ -319,7 +314,7 @@ export function RegistrySidebar() {
 								{visibleAdminNav.map((item) => (
 									<SidebarMenuItem key={item.href}>
 										<SidebarMenuButton asChild isActive={isActive(item.href)}>
-											<Link href={item.href}>
+											<Link to={item.href}>
 												<item.icon className="h-4 w-4" />
 												<span>{item.title}</span>
 											</Link>

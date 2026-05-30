@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 export function FeedbackList({ data, isLoading }: { data: Record<string, unknown>[] | undefined; isLoading: boolean }) {
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading feedback…</p>;

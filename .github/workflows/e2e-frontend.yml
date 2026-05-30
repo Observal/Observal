@@ -54,6 +54,21 @@ jobs:
           cd docker && docker compose logs --tail 50 observal-api observal-init observal-db || true
           exit 1
 
+      - name: Wait for Web health
+        run: |
+          echo "Waiting for web container..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost/ > /dev/null 2>&1; then
+              echo "✓ Web is healthy"
+              exit 0
+            fi
+            echo "[$i/30] Waiting for web to be ready..."
+            sleep 2
+          done
+          echo "::error::Web failed health check"
+          cd docker && docker compose logs --tail 50 observal-web observal-lb || true
+          exit 1
+
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v6

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 import { useEffect, useState } from "react";
 
@@ -53,7 +52,7 @@ export function VersionMismatchBanner() {
 	}, []);
 
 	useEffect(() => {
-		const buildVersion = process.env.NEXT_PUBLIC_APP_VERSION;
+		const buildVersion = import.meta.env.VITE_APP_VERSION;
 		if (!buildVersion) return;
 
 		fetch("/api/v1/config/version")

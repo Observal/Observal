@@ -205,21 +205,26 @@ services:
     image: ghcr.io/blazeup-ai/observal-web:latest
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://observal-lb:80}
     depends_on:
       observal-lb:
         condition: service_started
     restart: unless-stopped
     read_only: true
     tmpfs:
+      - /var/cache/nginx
+      - /var/run
       - /tmp
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 32M
     networks:
       - observal-net
 

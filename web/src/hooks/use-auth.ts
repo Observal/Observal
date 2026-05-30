@@ -5,9 +5,8 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 import { useEffect, useSyncExternalStore } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, useLocation } from "@tanstack/react-router";
 import { auth, setUserRole, getUserRole, clearSession, refreshAccessToken } from "@/lib/api";
 
 function subscribe(cb: () => void) {
@@ -32,7 +31,7 @@ function getServerSnapshot() {
 
 export function useAuthGuard() {
   const router = useRouter();
-  const pathname = usePathname();
+  const { pathname } = useLocation();
   const snapshot = useSyncExternalStore(subscribe, getAuthSnapshot, getServerSnapshot);
   const isSSR = snapshot === "ssr";
   const hasToken = !isSSR && snapshot !== "" && snapshot !== "refreshing";
@@ -52,14 +51,14 @@ export function useAuthGuard() {
         } else {
           clearSession();
           window.dispatchEvent(new Event("storage"));
-          router.replace("/login");
+          router.navigate({ to: "/login", replace: true });
         }
       });
       return;
     }
 
     if (!hasToken && pathname !== "/login") {
-      router.replace("/login");
+      router.navigate({ to: "/login", replace: true });
       return;
     }
     if (!hasToken) return;
@@ -71,7 +70,7 @@ export function useAuthGuard() {
       }).catch(() => {
         clearSession();
         window.dispatchEvent(new Event("storage"));
-        router.replace("/login");
+        router.navigate({ to: "/login", replace: true });
       });
     }
   }, [isSSR, hasToken, isRefreshing, snapshot, pathname, router]);

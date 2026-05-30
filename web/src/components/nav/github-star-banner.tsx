@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-"use client";
 
 import { useCallback, useSyncExternalStore } from "react";
 import { Star, X } from "lucide-react";
