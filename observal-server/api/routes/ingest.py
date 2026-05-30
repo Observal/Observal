@@ -4,11 +4,12 @@
 
 """Session JSONL ingest endpoint."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from loguru import logger as optic
 from pydantic import BaseModel
 
 from api.deps import get_project_id, require_role
+from api.ratelimit import limiter
 from models.user import User, UserRole
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
@@ -41,7 +42,9 @@ class SessionIngestResponse(BaseModel):
 
 
 @router.post("/session", response_model=SessionIngestResponse)
+@limiter.limit("300/minute")
 async def ingest_session(
+    request: Request,
     req: SessionIngestRequest,
     current_user: User = Depends(require_role(UserRole.user)),
 ):
