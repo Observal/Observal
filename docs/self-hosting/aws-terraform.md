@@ -14,17 +14,17 @@ A single `terraform apply` creates:
 - **VPC** with public + private subnets across two availability zones, NAT gateway, VPC flow logs
 - **Application Load Balancer** with HTTPS (ACM certificate, DNS-validated) when you supply a domain; HTTP-only otherwise. Path-based rules: `/api/*` → api service, `/grafana/*` → Grafana, default → web
 - **ECS Fargate cluster** running:
-    - `api` (FastAPI) — 2 tasks by default, autoscales 2–10 on CPU
-    - `web` (Next.js) — 2 tasks by default, autoscales 2–6 on CPU
-    - `worker` (arq background jobs) — 1 task by default, autoscales 1–5 on CPU
-    - `init` (one-shot migrations + seeds) — runs as a Fargate `RunTask` whenever `image_tag` changes
-- **RDS Postgres 16** — Multi-AZ on `prod`, encrypted, automated daily backups, Performance Insights, Enhanced Monitoring, log exports
-- **ElastiCache Redis 7** — 2-node replication group with automatic failover on `prod`, slow-log to CloudWatch
-- **Data tier EC2** (Amazon Linux 2023) — single host running ClickHouse + Grafana + Prometheus on EBS gp3, ENI with static private IP, internal Route 53 zone for DNS, daily ClickHouse → S3 snapshot via systemd timer
-- **S3 backups bucket** — versioned, AES256, lifecycle to STANDARD_IA → GLACIER_IR → expire, TLS-only
-- **CloudWatch log groups** — per ECS service, data host, RDS, Redis slow log, VPC flow logs
-- **SSM Parameter Store** — generated DB / ClickHouse / SECRET_KEY / Grafana passwords, plus pre-built connection URLs injected into ECS tasks
-- **SSM Session Manager** — shell access to the data host, no SSH
+    - `api` (FastAPI): 2 tasks by default, autoscales 2–10 on CPU
+    - `web` (Next.js): 2 tasks by default, autoscales 2–6 on CPU
+    - `worker` (arq background jobs): 1 task by default, autoscales 1–5 on CPU
+    - `init` (one-shot migrations + seeds): runs as a Fargate `RunTask` whenever `image_tag` changes
+- **RDS Postgres 16**: Multi-AZ on `prod`, encrypted, automated daily backups, Performance Insights, Enhanced Monitoring, log exports
+- **ElastiCache Redis 7**: 2-node replication group with automatic failover on `prod`, slow-log to CloudWatch
+- **Data tier EC2** (Amazon Linux 2023): single host running ClickHouse + Grafana + Prometheus on EBS gp3, ENI with static private IP, internal Route 53 zone for DNS, daily ClickHouse → S3 snapshot via systemd timer
+- **S3 backups bucket**: versioned, AES256, lifecycle to STANDARD_IA → GLACIER_IR → expire, TLS-only
+- **CloudWatch log groups**: per ECS service, data host, RDS, Redis slow log, VPC flow logs
+- **SSM Parameter Store**: generated DB / ClickHouse / SECRET_KEY / Grafana passwords, plus pre-built connection URLs injected into ECS tasks
+- **SSM Session Manager**: shell access to the data host, no SSH
 
 ClickHouse runs on EC2 because AWS does not offer a managed ClickHouse service. The data volume keeps it durable across instance replacements. For real ClickHouse HA, set `clickhouse_mode = "cloud"` and point at ClickHouse Cloud.
 
@@ -34,11 +34,11 @@ ClickHouse runs on EC2 because AWS does not offer a managed ClickHouse service. 
 | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | AWS account with billing enabled                                                                                                        | obvious                                                                   |
 | Terraform ≥ 1.6                                                                                                                         | `brew install terraform` or use [tenv](https://tofuutils.github.io/tenv/) |
-| AWS CLI v2                                                                                                                              | `brew install awscli` — also used by the one-shot init task runner        |
+| AWS CLI v2                                                                                                                              | `brew install awscli` - also used by the one-shot init task runner        |
 | [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) | shell access into the data host                                           |
 | IAM principal with sufficient rights                                                                                                    | see [Required IAM permissions](#required-iam-permissions)                 |
 | (Optional) Route 53 hosted zone                                                                                                         | required for HTTPS on a custom domain                                     |
-| (Recommended) S3 bucket + DynamoDB table                                                                                                | remote Terraform state — see [Remote state](#remote-state)                |
+| (Recommended) S3 bucket + DynamoDB table                                                                                                | remote Terraform state - see [Remote state](#remote-state)                |
 
 ## Quickstart
 
@@ -61,7 +61,7 @@ terraform plan -out tf.plan
 terraform apply tf.plan
 ```
 
-First-time apply takes 12–15 minutes — RDS provisioning dominates. When it finishes:
+First-time apply takes 12–15 minutes. RDS provisioning dominates. When it finishes:
 
 ```bash
 terraform output app_url
@@ -73,7 +73,7 @@ A ready-to-apply call of the module lives at [`infra/terraform/aws/examples/mini
 
 ## Configuration
 
-All inputs live in `terraform.tfvars`. The defaults are production-shaped — you can apply with very little changed.
+All inputs live in `terraform.tfvars`. The defaults are production-shaped; you can apply with very little changed.
 
 ### Minimal configuration (HTTP, no custom domain)
 
@@ -113,7 +113,7 @@ web_desired_count    = 2
 worker_desired_count = 1
 
 # Data tier (ClickHouse + Grafana + Prometheus)
-data_instance_type   = "t3.large"   # 8 GB — minimum viable for ClickHouse
+data_instance_type   = "t3.large"   # 8 GB - minimum viable for ClickHouse
 data_volume_size_gb  = 100
 
 db_instance_class    = "db.t4g.small"
@@ -307,7 +307,7 @@ Rough monthly baseline in `us-east-1` at on-demand rates (May 2026):
 | S3 backups (1 GB cold)              | $0.10        |
 | **Baseline**                        | **~$255**    |
 
-Set `environment = "staging"` to drop RDS to single-AZ, run a single Redis node, and skip RDS deletion protection — typically halves the bill. Drop `worker_desired_count` and `web_desired_count` for further savings.
+Set `environment = "staging"` to drop RDS to single-AZ, run a single Redis node, and skip RDS deletion protection, typically halves the bill. Drop `worker_desired_count` and `web_desired_count` for further savings.
 
 ## Production hardening checklist
 
@@ -320,7 +320,7 @@ The defaults are safe but conservative. Before pointing real traffic at this:
 - [ ] Attach AWS WAF to the ALB
 - [ ] Set `transit_encryption_enabled = true` on the ElastiCache replication group and switch `REDIS_URL` to `rediss://...`
 - [ ] Move ClickHouse to ClickHouse Cloud (`clickhouse_mode = "cloud"`) for actual HA
-- [ ] Configure Observal SSO — see [Authentication and SSO](authentication.md)
+- [ ] Configure Observal SSO. See [Authentication and SSO](authentication.md)
 - [ ] Test the [backup and restore](backup-and-restore.md) procedure end-to-end
 - [ ] Replace the GitHub tarball download in `user-data.sh.tftpl` with an artifact URL you control
 
@@ -337,12 +337,12 @@ aws ecs describe-services \
 aws logs tail /aws/ecs/observal-prod/api --follow
 ```
 
-The `null_resource.run_init` step also runs migrations before the api service comes up — if the init task fails, the api service won't start.
+The `null_resource.run_init` step also runs migrations before the api service comes up. If the init task fails, the api service won't start.
 
 **Init task fails.**
 Check the `/aws/ecs/observal-prod/init` log group. The most common failures are:
 
-- RDS not yet reachable (transient on first apply — re-running fixes it)
+- RDS not yet reachable (transient on first apply; re-running fixes it)
 - Migration error (look at the entrypoint output)
 
 To re-run by hand: `$(terraform output -raw init_run_task_command)`.
@@ -359,4 +359,4 @@ The DNS validation records were not created in your hosted zone. Verify `route53
 **RDS storage is full.**
 `max_allocated_storage` autoscales up to 500 GB by default. Raise `db_max_allocated_storage_gb` if you have heavier audit-log volume.
 
-For application-level issues (login fails, traces missing, eval errors) see [Troubleshooting](troubleshooting.md).
+For application-level issues (login fails, traces missing) see [Troubleshooting](troubleshooting.md).

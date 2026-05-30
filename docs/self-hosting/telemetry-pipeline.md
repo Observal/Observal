@@ -38,27 +38,27 @@ How trace data gets from an agent session to ClickHouse.
           └───────────────┘
 ```
 
-Two channels, one destination. **MCP tool calls** go through `observal-shim` (stdio) or `observal-proxy` (HTTP). **Lifecycle events** (session start, user prompt, session end, etc.) go through IDE hooks — native HTTP hooks for Claude Code, shell-command hooks for Kiro.
+Two channels, one destination. **MCP tool calls** go through `observal-shim` (stdio) or `observal-proxy` (HTTP). **Lifecycle events** (session start, user prompt, session end, etc.) go through IDE hooks (native HTTP hooks for Claude Code, shell-command hooks for Kiro).
 
-## Channel 1 — MCP traffic
+## Channel 1 - MCP traffic
 
 The shim and proxy are transparent interceptors that forward MCP traffic unchanged while recording spans asynchronously.
 
 Operational knobs:
 
-* **Server address** — `OBSERVAL_SERVER_URL` on the CLI user's machine. The shim picks this up from `~/.observal/config.json` or the env var.
-* **API key** — the shim uses the user's stored credentials. No extra setup.
-* **Offline behavior** — if the server is unreachable, telemetry is buffered at `~/.observal/telemetry_buffer.db` and flushed later. Flush manually with `observal ops sync`. Check the buffer size with `observal auth status`.
+* **Server address**: `OBSERVAL_SERVER_URL` on the CLI user's machine. The shim picks this up from `~/.observal/config.json` or the env var.
+* **API key**: the shim uses the user's stored credentials. No extra setup.
+* **Offline behavior**: if the server is unreachable, telemetry is buffered at `~/.observal/telemetry_buffer.db` and flushed later. Flush manually with `observal ops sync`. Check the buffer size with `observal auth status`.
 
-## Channel 2 — IDE hooks
+## Channel 2 - IDE hooks
 
 Events sent per lifecycle event:
 
-* `SessionStart` / `Stop` — session boundaries
-* `UserPromptSubmit` — the user's prompt
-* `PreToolUse` / `PostToolUse` — tool calls (Claude Code has these even without the shim, for tools that don't go through MCP)
-* `SubagentStop` — Claude Code sub-agent lifecycle
-* `Notification` — IDE notifications
+* `SessionStart` / `Stop`: session boundaries
+* `UserPromptSubmit`: the user's prompt
+* `PreToolUse` / `PostToolUse`: tool calls (Claude Code has these even without the shim, for tools that don't go through MCP)
+* `SubagentStop`: Claude Code sub-agent lifecycle
+* `Notification`: IDE notifications
 
 Full schema and handler types: [Hooks specification](../reference/hooks-spec.md).
 
@@ -67,21 +67,12 @@ Full schema and handler types: [Hooks specification](../reference/hooks-spec.md)
 * Claude Code: `~/.claude/settings.json`
 * Kiro: agent JSON at `.kiro/agents/<name>.json` or `~/.kiro/agents/<name>.json`
 
-## OTLP ingestion
-
-The Observal API accepts OTLP data directly on the same port as all other API traffic (`:8000`). There is no separate OTEL collector — the API handles `/v1/traces`, `/v1/logs`, and `/v1/metrics` natively over HTTP/JSON (OTLP/HTTP).
-
-* **Claude Code** — via `OTEL_EXPORTER_OTLP_ENDPOINT` pointed at `http://localhost:8000`. Claude Code exports native OTLP traces and logs including token counts and cost.
-* **Any OTEL-instrumented tool** — anything that speaks OTLP/HTTP can send to the API endpoint.
-
-Kiro does not yet export OTLP natively ([kirodotdev/Kiro#6319](https://github.com/kirodotdev/Kiro/issues/6319)), so Kiro telemetry flows through hooks instead.
-
 ## High-volume tuning
 
 At high telemetry volume, two hot spots:
 
 1. **ClickHouse writes.** Observal batches inserts already. If you see ingest backpressure, bump `CLICKHOUSE_*` memory limits, consider external ClickHouse.
-2. **Redis queue.** `arq` uses Redis for the eval job queue. Redis at 256 MB is fine for most deployments; bump for heavier eval workloads.
+2. **Redis queue.** `arq` uses Redis for the background job queue. Redis at 256 MB is fine for most deployments.
 
 ## Alert on degraded ingest
 

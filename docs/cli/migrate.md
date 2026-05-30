@@ -5,7 +5,7 @@
 
 Portable migration tools for moving an Observal instance between environments. The workflow has two phases:
 
-* **Phase 1 (shallow copy)**: exports PostgreSQL registry data (users, agents, components, feedback, eval runs, etc.) to a `.tar.gz` archive of JSONL files.
+* **Phase 1 (shallow copy)**: exports PostgreSQL registry data (users, agents, components, feedback, etc.) to a `.tar.gz` archive of JSONL files.
 * **Phase 2 (deep copy)**: exports ClickHouse telemetry data (traces, spans, scores, audit logs, security events) to monthly Parquet files.
 
 Phase 2 depends on Phase 1. You must complete the shallow copy export and import before running the deep copy.
@@ -53,7 +53,6 @@ All registry tables in dependency order:
 * Agents, agent goal templates, agent components
 * Validation results, downloads, submissions
 * Feedback, alert rules, alert history
-* Eval runs, scorecards, scorecard dimensions
 
 The export uses a `REPEATABLE READ` transaction for a consistent snapshot. No data is modified on the source.
 
@@ -216,7 +215,7 @@ observal migrate export-telemetry \
 | --- | --- | --- | --- |
 | `traces` | ReplacingMergeTree | `start_time` | Top-level trace records |
 | `spans` | ReplacingMergeTree | `start_time` | Individual span records |
-| `scores` | ReplacingMergeTree | `timestamp` | Eval and feedback scores |
+| `scores` | ReplacingMergeTree | `timestamp` | Feedback and rating scores |
 | `audit_log` | MergeTree | `timestamp` | Audit trail entries |
 | `otel_logs` | MergeTree | `Timestamp` | OpenTelemetry log records |
 | `security_events` | MergeTree | `timestamp` | Security event records |

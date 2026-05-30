@@ -15,11 +15,10 @@ Observal runs two DBs with very different jobs.
 ### What's in it
 
 * `users`, `roles`, RBAC bindings
-* `mcps`, `agents`, `skills`, `hooks`, `prompts`, `sandboxes` — registry metadata
-* `reviews` — submission review state
+* `mcps`, `agents`, `skills`, `hooks`, `prompts`, `sandboxes`: registry metadata
+* `reviews`: submission review state
 * `feedback`, `ratings`
 * `alerts`, `alert_history`
-* `scorecards`, `eval_runs`, `scoring_dimensions`, `penalties`, `dimension_weights`
 * `api_keys`
 * Enterprise: `audit_log`, `scim_users`, `scim_groups` (when enabled)
 
@@ -58,9 +57,9 @@ Four user-facing tables, all `ReplacingMergeTree` with soft deletes via `is_dele
 
 | Table | Contents |
 | --- | --- |
-| `traces` | Trace headers — trace_id, parent_trace_id, trace_type, agent_id, session_id, mcp_id, start/end time, input, output, metadata, tags |
-| `spans` | Individual span records — span_id, trace_id, parent_span_id, type, name, method, input, output, error, latency_ms, status, token counts, cost, retry count |
-| `scores` | Eval results — score_id, trace_id, span_id, dimension name, numeric / string value, comment, metadata |
+| `traces` | Trace headers - trace_id, parent_trace_id, trace_type, agent_id, session_id, mcp_id, start/end time, input, output, metadata, tags |
+| `spans` | Individual span records - span_id, trace_id, parent_span_id, type, name, method, input, output, error, latency_ms, status, token counts, cost, retry count |
+| `scores` | Feedback and rating scores - score_id, trace_id, span_id, dimension name, numeric / string value, comment, metadata |
 | `audit_log` | Enterprise audit events (enterprise-only) |
 
 Plus two legacy tables retained for backward compat: `mcp_tool_calls`, `agent_interactions`.
@@ -79,15 +78,15 @@ The API does this for you in its query surface. If you're querying ClickHouse di
 
 Controlled by `DATA_RETENTION_DAYS`:
 
-* Default `90` — rows older than 90 days are TTL'd out.
-* `0` — retention disabled (disk grows without bound).
+* Default `90`: rows older than 90 days are TTL'd out.
+* `0`: retention disabled (disk grows without bound).
 * The server enforces a minimum of `7` on any non-zero value.
 
 TTL runs asynchronously. Disk space is reclaimed on the next merge; don't expect instant free-up.
 
 ### Auto-creation at startup
 
-The server runs `CREATE TABLE IF NOT EXISTS` for every telemetry table on startup. If ClickHouse is unavailable when the API boots, the API still starts — but telemetry ingestion and dashboard queries silently fail until ClickHouse is back.
+The server runs `CREATE TABLE IF NOT EXISTS` for every telemetry table on startup. If ClickHouse is unavailable when the API boots, the API still starts, but telemetry ingestion and dashboard queries silently fail until ClickHouse is back.
 
 ### Capacity planning
 

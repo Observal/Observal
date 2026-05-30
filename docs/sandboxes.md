@@ -3,7 +3,7 @@
 
 # Sandboxes
 
-Sandboxes are isolated Docker containers registered in Observal. When an agent has a sandbox component, it gets a callable MCP tool to execute commands inside the container — no prompt engineering needed.
+Sandboxes are isolated Docker containers registered in Observal. When an agent has a sandbox component, it gets a callable MCP tool to execute commands inside the container, no prompt engineering needed.
 
 ## Concepts
 
@@ -32,7 +32,7 @@ observal agent pull my-agent --ide claude-code
             └── MCP server → observal-sandbox-run → Docker container → output
 ```
 
-The agent doesn't need instructions on how to use it — it's a tool like Read, Write, or Bash.
+The agent doesn't need instructions on how to use it; it's a tool like Read, Write, or Bash.
 
 ## CLI Commands
 
@@ -65,11 +65,11 @@ observal registry sandbox show <name-or-id>
 observal registry sandbox show <name-or-id> --output json
 ```
 
-### Install (deprecated — use agent components instead)
+### Install (deprecated - use agent components instead)
 
 ```bash
 observal registry sandbox install <name> --ide claude-code
-# ⚠ Prints deprecation warning — sandboxes work best as agent components
+# ⚠ Prints deprecation warning - sandboxes work best as agent components
 ```
 
 ### Delete a sandbox
@@ -160,7 +160,7 @@ cat > agent.json << 'EOF'
 EOF
 observal agent create --from-file agent.json
 
-# 3. Pull the agent — sandbox becomes a callable tool
+# 3. Pull the agent - sandbox becomes a callable tool
 observal agent pull test-runner --ide claude-code
 # Registers: observal-sandbox MCP server
 # Tool available: run_sandbox_python_pytest
@@ -215,14 +215,14 @@ Description: Run a command in the 'python-pytest' sandbox
 Input: {"command": "pytest tests/ -v"}
 ```
 
-The agent calls it like any other tool — the MCP server handles Docker execution via `observal-sandbox-run`.
+The agent calls it like any other tool. The MCP server handles Docker execution via `observal-sandbox-run`.
 
 ## Security
 
-- **Network isolation** — `network_policy: "none"` means no internet access inside the container
-- **Resource limits** — timeout, memory, CPU are enforced by Docker
-- **No host mounts** — the container runs in isolation (only working directory is mounted)
-- **Subprocess safety** — commands passed via list args (no shell injection)
+- **Network isolation**: `network_policy: "none"` means no internet access inside the container
+- **Resource limits**: timeout, memory, CPU are enforced by Docker
+- **No host mounts**: the container runs in isolation (only working directory is mounted)
+- **Subprocess safety**: commands passed via list args (no shell injection)
 
 ## Validation
 

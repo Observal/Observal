@@ -61,7 +61,7 @@ DEMO_USER_EMAIL=user@demo.example
 DEMO_USER_PASSWORD=user-changeme
 ```
 
-**Unset every `DEMO_*` env var before a real deployment.** Existing demo users survive after unsetting — delete them manually (`observal admin delete-user <email>`).
+**Unset every `DEMO_*` env var before a real deployment.** Existing demo users survive after unsetting. Delete them manually (`observal admin delete-user <email>`).
 
 > **Admin settings warning:** If demo accounts are still active or `SECRET_KEY` is insecure, the admin Settings page will display a warning banner at the top so operators can spot and fix the issue without digging through logs.
 
@@ -87,29 +87,6 @@ OAUTH_SERVER_METADATA_URL=https://accounts.example.com/.well-known/openid-config
 
 Full setup in [Authentication and SSO](authentication.md).
 
-## Evaluation engine
-
-Either Bedrock:
-
-```
-EVAL_MODEL_NAME=us.anthropic.claude-3-5-haiku-20241022-v1:0
-EVAL_MODEL_PROVIDER=bedrock
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=us-east-1
-```
-
-Or OpenAI-compatible:
-
-```
-EVAL_MODEL_URL=https://api.openai.com/v1
-EVAL_MODEL_API_KEY=sk-...
-EVAL_MODEL_NAME=gpt-4o
-EVAL_MODEL_PROVIDER=openai
-```
-
-Deep dive: [Evaluation engine](evaluation-engine.md).
-
 ## Rate limiting
 
 ```
@@ -125,7 +102,7 @@ Tighten for higher-traffic deployments.
 DATA_RETENTION_DAYS=90
 ```
 
-Traces, spans, and scores older than this are TTL'd by ClickHouse. Set to `0` to disable retention (keep everything forever — disk grows without bound). The minimum non-zero value enforced on startup is 7.
+Traces, spans, and scores older than this are TTL'd by ClickHouse. Set to `0` to disable retention (keep everything forever, and disk grows without bound). The minimum non-zero value enforced on startup is 7.
 
 ## JWT keys
 
@@ -134,7 +111,7 @@ JWT_SIGNING_ALGORITHM=ES256        # ES256 (default) or RS256
 JWT_KEY_DIR=/data/keys             # persisted in the apidata volume
 ```
 
-The server generates asymmetric keys on first boot and stores them in `$JWT_KEY_DIR`. **Back up this directory** — losing the keys invalidates every session.
+The server generates asymmetric keys on first boot and stores them in `$JWT_KEY_DIR`. **Back up this directory**: losing the keys invalidates every session.
 
 More: [Authentication and SSO](authentication.md).
 
@@ -151,7 +128,7 @@ GIT_CLONE_TIMEOUT=120              # seconds
 
 ## Observal CLI (client-side) env vars
 
-Not set in `.env` on the server — these live on the CLI user's machine.
+Not set in `.env` on the server. These live on the CLI user's machine.
 
 | Variable                                     | Purpose                          |
 | -------------------------------------------- | -------------------------------- |

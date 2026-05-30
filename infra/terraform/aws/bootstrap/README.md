@@ -10,9 +10,9 @@ One-time setup that creates the S3 bucket and DynamoDB lock table the main Obser
 | Resource | Why |
 |---|---|
 | `aws_s3_bucket` (versioned, AES256, public-access-blocked, TLS-only) | Holds `terraform.tfstate`; versioning lets you recover from a corrupted state |
-| `aws_dynamodb_table` (PAY_PER_REQUEST, PITR enabled) | State locking — prevents two `apply`s from corrupting state |
+| `aws_dynamodb_table` (PAY_PER_REQUEST, PITR enabled) | State locking - prevents two `apply`s from corrupting state |
 
-Both have `prevent_destroy = true` — losing them strands your live infra from Terraform.
+Both have `prevent_destroy = true`. Losing them strands your live infra from Terraform.
 
 ## Usage
 
@@ -52,7 +52,7 @@ terraform init -migrate-state
 
 ## State of this module's own state
 
-Local. That's intentional — bootstrapping the state backend can't itself live in the state backend. Commit the resulting `terraform.tfstate` for the bootstrap module to a private location, or treat the resources as one-shot infrastructure you'll never re-apply.
+Local. That's intentional. Bootstrapping the state backend can't itself live in the state backend. Commit the resulting `terraform.tfstate` for the bootstrap module to a private location, or treat the resources as one-shot infrastructure you'll never re-apply.
 
 ## Variables
 

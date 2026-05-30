@@ -28,7 +28,7 @@ This installs four entry points:
 ```bash
 observal auth login                  # connect to your Observal server
 observal scan                        # discover what's installed across your IDEs (read-only)
-observal doctor patch --all --all-ides  # instrument everything (hooks + shims + OTel)
+observal doctor patch --all --all-ides  # instrument everything (hooks + shims)
 observal agent pull my-agent --ide cursor  # fetch agent config for Cursor
 observal doctor                      # check IDE compatibility
 ```
@@ -88,7 +88,7 @@ observal ops metrics <id>          # metrics for an MCP or agent
 ```
 observal agent pull <agent> --ide <ide>             # write agent config to IDE files
 observal scan [--ide <ide>]                          # discover what's installed (read-only)
-observal doctor patch --all --all-ides               # instrument everything (hooks + shims + OTel)
+observal doctor patch --all --all-ides               # instrument everything (hooks + shims)
 observal doctor patch --hook --ide <ide>             # install hooks for a specific IDE
 observal doctor patch --shim --ide <ide>             # wrap MCP servers for a specific IDE
 observal use <profile>                               # swap IDE config from a profile

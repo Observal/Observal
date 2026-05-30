@@ -26,10 +26,10 @@ $(terraform output -raw data_host_ssm_session_command)
 
 ## What gets provisioned
 
-Everything the parent module provisions — see [`../../README.md`](../../README.md). In its default form (no `domain_name`), this example brings up:
+Everything the parent module provisions. See [`../../README.md`](../../README.md). In its default form (no `domain_name`), this example brings up:
 
 - VPC with 2-AZ public/private subnets, NAT gateway
-- ALB on HTTP only (no HTTPS — supply `domain_name` + `route53_zone_id` for ACM)
+- ALB on HTTP only (no HTTPS - supply `domain_name` + `route53_zone_id` for ACM)
 - ECS Fargate: 2× api, 2× web, 1× worker
 - RDS Postgres 16 (Multi-AZ on `prod`)
 - ElastiCache Redis 7 (2-node failover on `prod`)

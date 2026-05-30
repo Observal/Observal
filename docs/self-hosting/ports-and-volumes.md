@@ -10,14 +10,14 @@ Every exposed port and persistent volume, at a glance.
 
 | Service | Host port | Env var (to remap) | Protocol |
 | --- | --- | --- | --- |
-| API (+ OTLP ingestion) | 8000 | `API_HOST_PORT` | HTTP / WebSocket |
+| API | 8000 | `API_HOST_PORT` | HTTP / WebSocket |
 | Web UI | 3000 | `WEB_HOST_PORT` | HTTP |
 | Postgres | 5432 | `POSTGRES_HOST_PORT` | TCP |
 | ClickHouse | 8123 | `CLICKHOUSE_HOST_PORT` | HTTP |
 | Redis | 6379 | `REDIS_HOST_PORT` | TCP |
 | Grafana | 3001 | `GRAFANA_HOST_PORT` | HTTP |
 
-The worker has no exposed port — it talks to Redis and ClickHouse internally only.
+The worker has no exposed port; it talks to Redis and ClickHouse internally only.
 
 ### Remap on startup
 
@@ -39,15 +39,15 @@ netstat -ano | findstr :5432
 
 ## Persistent volumes
 
-All volumes are named and managed by Docker — they survive `docker compose down` but are deleted by `docker compose down -v`.
+All volumes are named and managed by Docker. They survive `docker compose down` but are deleted by `docker compose down -v`.
 
 | Volume | Mount point | Contents | Loss impact |
 | --- | --- | --- | --- |
-| `pgdata` | `/var/lib/postgresql/data` | Postgres data (users, registry, RBAC) | Catastrophic — all accounts, agents, MCPs lost |
-| `chdata` | `/var/lib/clickhouse` | ClickHouse data (traces, spans, scores) | High — all telemetry lost; accounts and registry survive |
-| `redisdata` | `/data` | Redis persistence | Low — job queue lost; pending jobs need to be re-kicked |
-| `grafanadata` | `/var/lib/grafana` | Grafana dashboards and config | Medium — custom dashboards lost; defaults are re-provisioned |
-| `apidata` | `/data` (API container) | **JWT signing keys** | Catastrophic — every session invalidated, users must re-login; backup/restore required |
+| `pgdata` | `/var/lib/postgresql/data` | Postgres data (users, registry, RBAC) | Catastrophic - all accounts, agents, MCPs lost |
+| `chdata` | `/var/lib/clickhouse` | ClickHouse data (traces, spans, scores) | High - all telemetry lost; accounts and registry survive |
+| `redisdata` | `/data` | Redis persistence | Low - job queue lost; pending jobs need to be re-kicked |
+| `grafanadata` | `/var/lib/grafana` | Grafana dashboards and config | Medium - custom dashboards lost; defaults are re-provisioned |
+| `apidata` | `/data` (API container) | **JWT signing keys** | Catastrophic - every session invalidated, users must re-login; backup/restore required |
 
 **Back up `apidata` and `pgdata` before any upgrade.** See [Backup and restore](backup-and-restore.md).
 

@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh
 No Python required. For alternative install methods, see [Installation](installation.md).
 
 > [!NOTE]
-> You need Docker Engine ≥ 24.0 with Compose v2 (`docker compose`, not `docker-compose`). Homebrew's Docker formula is outdated — install [Docker Desktop](https://docs.docker.com/get-docker/) or use your distro's upstream packages. Verify with `docker version` and `docker compose version`.
+> You need Docker Engine ≥ 24.0 with Compose v2 (`docker compose`, not `docker-compose`). Homebrew's Docker formula is outdated. Install [Docker Desktop](https://docs.docker.com/get-docker/) or use your distro's upstream packages. Verify with `docker version` and `docker compose version`.
 
 ## 2. Start the server
 
@@ -42,9 +42,9 @@ That's it. The `.env.example` ships with working defaults. Ten services come up:
 
 | Service               | URL                     | Purpose                        |
 | --------------------- | ----------------------- | ------------------------------ |
-| `observal-lb` (nginx) | `http://localhost:8000` | Reverse proxy → API            |
-| `observal-web`        | `http://localhost:3000` | Web UI (Next.js)               |
-| `observal-api`        | internal                | FastAPI + OTLP ingestion       |
+| `observal-lb` (nginx) | `http://localhost`      | Reverse proxy (API + Web)      |
+| `observal-web`        | `http://localhost:3000` | Web UI (Next.js, direct)       |
+| `observal-api`        | internal                | FastAPI backend               |
 | `observal-worker`     | internal                | Background jobs (arq)          |
 | `observal-init`       | internal                | Runs DB migrations, then exits |
 | `observal-db`         | `localhost:5432`        | PostgreSQL 16                  |
@@ -53,10 +53,10 @@ That's it. The `.env.example` ships with working defaults. Ten services come up:
 | `observal-prometheus` | `http://localhost:9090` | Prometheus                     |
 | `observal-grafana`    | `http://localhost:3001` | Grafana                        |
 
-The API waits for Postgres, ClickHouse, and Redis to pass health checks before starting — expect 15–30 seconds. Confirm it is up:
+The API waits for Postgres, ClickHouse, and Redis to pass health checks before starting. Expect 15–30 seconds. Confirm it is up:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost/health
 # → {"status": "ok"}
 ```
 
@@ -70,9 +70,9 @@ observal auth login
 
 Prompts:
 
-1. **Server URL** — press Enter for `http://localhost:8000`
-2. **Login method** — pick `[E]mail`
-3. **Email / password** — use one of the seeded demo accounts:
+1. **Server URL**: press Enter for `http://localhost`
+2. **Login method**: pick `[E]mail`
+3. **Email / password**: use one of the seeded demo accounts:
 
 | Role        | Email                   | Password            |
 | ----------- | ----------------------- | ------------------- |
@@ -141,7 +141,6 @@ What `doctor patch --all` did:
 - Found your existing MCP config files (`~/.claude/settings.json`, `.kiro/settings/mcp.json`, `.cursor/mcp.json`, etc.)
 - Rewrote the config so every MCP server runs through `observal-shim` (transparent -- no behavior change)
 - Installed telemetry hooks for session lifecycle events
-- Configured OTel export where supported
 - Saved a timestamped `.bak` next to every file it touched
 
 Nothing broke. Your agents still work exactly as before. The only difference: every tool call now generates a span.
@@ -150,7 +149,7 @@ Restart your IDE to pick up the new config. The next MCP call will produce a tra
 
 ## 5. See your first trace
 
-Open `http://localhost:3000/traces` in your browser. Trigger anything in your IDE that uses an MCP tool (ask Claude to list files, read a GitHub issue, whatever). Refresh — you'll see the trace appear.
+Open `http://localhost/traces` in your browser. Trigger anything in your IDE that uses an MCP tool (ask Claude to list files, read a GitHub issue, whatever). Refresh, and you'll see the trace appear.
 
 Or use the CLI:
 
@@ -187,10 +186,10 @@ This drops agent files, skills, hooks, and MCP configs into the right places for
 Your IDE  <-->  observal-shim  <-->  MCP server
                       │
                       ▼  (fire-and-forget)
-               Observal API  ──►  ClickHouse  ──►  Web UI, eval engine
+               Observal API  ──►  ClickHouse  ──►  Web UI
 ```
 
-Every MCP request/response is now a span. Spans group into traces. Traces form sessions. The eval engine can score any session.
+Every MCP request/response is now a span. Spans group into traces. Traces form sessions.
 
 ## Where to next
 

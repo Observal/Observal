@@ -43,7 +43,7 @@ Claude Code diagnostics
   ✓ ~/.claude/settings.json exists
   ✓ 3 MCP server(s) wrapped with observal-shim
   ✓ Observal telemetry hooks installed
-  ✓ Server reachable at http://localhost:8000
+  ✓ Server reachable at http://localhost
   ✓ API key valid
 
 All checks passed.
@@ -57,7 +57,7 @@ Kiro diagnostics
   ✗ 2 of 4 MCP server(s) NOT wrapped
     unwrapped: mcp-obsidian, filesystem
   ✗ Observal telemetry hooks MISSING from .kiro/agents/code-reviewer.json
-  ✓ Server reachable at http://localhost:8000
+  ✓ Server reachable at http://localhost
 
 2 issue(s) found. Run with --fix to auto-repair.
 ```
@@ -90,7 +90,7 @@ Not every issue is auto-fixable. Unfixable ones (server unreachable, CLI not ins
 
 # observal doctor patch
 
-Apply instrumentation to your IDEs: install telemetry hooks, wrap MCP servers with `observal-shim`, and configure OTel export. This is the command that actually modifies files. A timestamped backup is created before any file is changed.
+Apply instrumentation to your IDEs: install telemetry hooks and wrap MCP servers with `observal-shim`. This is the command that actually modifies files. A timestamped backup is created before any file is changed.
 
 ## Synopsis
 
@@ -104,7 +104,7 @@ observal doctor patch [--hook] [--shim] [--all] [--all-ides] [--ide <ide>] [--dr
 | --- | --- |
 | `--hook` | Install telemetry hooks into IDE configs |
 | `--shim` | Wrap MCP servers with `observal-shim` for telemetry |
-| `--all` | All of the above: hooks + shims + OTel config |
+| `--all` | All of the above: hooks + shims |
 | `--all-ides` | Target every detected IDE |
 | `--ide <ide>` | Target a specific IDE (repeatable: `--ide kiro --ide claude-code`) |
 | `--dry-run` / `-n` | Print what would be changed without writing any files |
@@ -115,7 +115,7 @@ You must specify at least one of `--hook`, `--shim`, or `--all` to tell `patch` 
 
 1. **`--hook`**: Installs Observal telemetry hooks into IDE config files (native HTTP hooks for Claude Code, shell-command hooks for Kiro, Copilot CLI, etc.).
 2. **`--shim`**: Rewrites MCP server entries so each server runs through `observal-shim` (stdio) or `observal-proxy` (HTTP/SSE). The original command + args become wrapper arguments.
-3. **`--all`**: Does everything `--hook` and `--shim` do, plus configures `OTEL_EXPORTER_OTLP_ENDPOINT` for IDEs that support native OTLP export.
+3. **`--all`**: Does everything `--hook` and `--shim` do.
 
 Each modified file gets a timestamped `.bak` saved next to it (e.g. `.kiro/settings/mcp.json.20260421_143055.bak`).
 

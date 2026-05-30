@@ -10,12 +10,12 @@ A user says the agent "didn't work." Without traces, you guess. With traces, you
 1. Find the session.
 2. Find the failing trace inside it.
 3. Walk the spans.
-4. Inspect the failure span — tool name, input, output, error.
+4. Inspect the failure span: tool name, input, output, error.
 5. Reproduce locally, if needed.
 
 ## 1. Find the session
 
-Web UI: `http://localhost:3000/traces` → filter by IDE, user, and time range. Click a session to open every trace in it.
+Web UI: `http://localhost/traces` → filter by IDE, user, and time range. Click a session to open every trace in it.
 
 CLI:
 
@@ -41,7 +41,7 @@ Look for non-zero error counts in the summary.
 observal ops spans <trace-id>
 ```
 
-Output is hierarchical — parent span first, then children indented. Each line includes name, duration, status, and error. The failure jumps out.
+Output is hierarchical: parent span first, then children indented. Each line includes name, duration, status, and error. The failure jumps out.
 
 Example failure walk:
 
@@ -50,12 +50,12 @@ trace 9a31...  agent: code-reviewer
 ├── span: UserPromptSubmit           ok       1ms
 ├── span: PreToolUse (github_mcp:pr) ok       0ms
 ├── span: github_mcp:get_pr          ERROR    2412ms
-│     error: 404 Not Found — PR #5022 does not exist
+│     error: 404 Not Found - PR #5022 does not exist
 ├── span: PostToolUse                ok       0ms
 └── span: Stop                       ok       0ms
 ```
 
-In 10 seconds you know: the user asked about a PR that doesn't exist, the MCP call returned 404, the agent stopped. The agent wasn't broken — the input was.
+In 10 seconds you know: the user asked about a PR that doesn't exist, the MCP call returned 404, the agent stopped. The agent wasn't broken; the input was.
 
 ## 4. Inspect the span in detail
 
@@ -85,9 +85,9 @@ Alerts feed into your on-call channel via webhook.
 
 * **Enable debug logging on the CLI**: `observal --debug ...`
 * **Tail server logs**: `docker logs -f observal-api`
-* **Check the telemetry buffer**: `observal ops telemetry status`. If the buffer is large, traces may be delayed — the server was unreachable.
+* **Check the telemetry buffer**: `observal ops telemetry status`. If the buffer is large, traces may be delayed; the server was unreachable.
 * **Confirm the shim is actually wired up**: `observal doctor --ide claude-code`. Missed instrumentation = missing traces.
 
 ## Next
 
-→ [Evaluate and compare agents](evaluate-agents.md) — once you've fixed a bug, prove the next version is actually better.
+→ [Share agent configs across IDEs](share-agent-configs.md): package what works and ship it to your team.

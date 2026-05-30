@@ -35,13 +35,13 @@ JWT_KEY_DIR=/data/keys
 
 ### Critical: back up `$JWT_KEY_DIR`
 
-Losing these keys invalidates **every** access and refresh token. All users must log in again. Tokens rotate, but only the private key can issue new ones — there is no recovery path without the keys.
+Losing these keys invalidates **every** access and refresh token. All users must log in again. Tokens rotate, but only the private key can issue new ones, and there is no recovery path without the keys.
 
 Back up the `apidata` volume every time you back up Postgres. See [Backup and restore](backup-and-restore.md).
 
 ### Key rotation
 
-To rotate keys, stop the API, delete the files under `$JWT_KEY_DIR`, and restart. New keys are generated. All existing sessions are invalidated — plan for the outage.
+To rotate keys, stop the API, delete the files under `$JWT_KEY_DIR`, and restart. New keys are generated. All existing sessions are invalidated. Plan for the outage.
 
 ## OAuth / OIDC SSO
 
@@ -103,7 +103,7 @@ Or in the web UI at `/settings/users`.
 Users can generate API keys for scripts and CI. The key inherits the user's role.
 
 ```bash
-# Get a key — flow depends on your setup (web UI usually)
+# Get a key - flow depends on your setup (web UI usually)
 # Then in CI:
 export OBSERVAL_API_KEY=<key>
 export OBSERVAL_SERVER_URL=https://observal.your-company.internal
@@ -132,18 +132,18 @@ Users who forget their password request a reset code via `observal auth reset-pa
 WARNING - PASSWORD RESET CODE for alice@example.com: A7X9B2 (expires in 15 minutes)
 ```
 
-An operator reads the log and passes the code to the user out-of-band (Slack, phone). This is deliberate — no email infrastructure needed for the default flow. If you want emailed reset codes, implement an email transport in the server.
+An operator reads the log and passes the code to the user out-of-band (Slack, phone). This is deliberate: no email infrastructure needed for the default flow. If you want emailed reset codes, implement an email transport in the server.
 
 ## Enterprise extras
 
 Enterprise edition adds:
 
-* **SCIM 2.0 provisioning** — provision / deprovision users from your IdP
-* **Audit logging** — every privileged action lands in ClickHouse's `audit_log`
+* **SCIM 2.0 provisioning**: provision / deprovision users from your IdP
+* **Audit logging**: every privileged action lands in ClickHouse's `audit_log`
 * **SSO-only mode** (`DEPLOYMENT_MODE=enterprise`)
 
 See `/ee/docs/cli.md` in the repo for enterprise-specific CLI commands.
 
 ## Next
 
-→ [Evaluation engine](evaluation-engine.md)
+→ [Telemetry pipeline](telemetry-pipeline.md)

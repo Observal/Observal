@@ -188,6 +188,6 @@ Use `--yes` to skip the confirmation prompt.
 
 ## Related
 
-* [`observal agent`](agent.md) — bundle prompts into installable agents
-* [`observal registry`](registry.md) — manage registry resources
+* [`observal agent`](agent.md): bundle prompts into installable agents
+* [`observal registry`](registry.md): manage registry resources
 * [Use Cases → Share agent configs](../use-cases/share-agent-configs.md)

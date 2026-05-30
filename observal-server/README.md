@@ -4,7 +4,7 @@
 
 # Observal Server
 
-FastAPI backend that powers the Observal platform. Provides REST and GraphQL APIs for managing agents, components, evaluations, telemetry, and user access.
+FastAPI backend that powers the Observal platform. Provides REST and GraphQL APIs for managing agents, components, telemetry, and user access.
 
 ## Stack
 
@@ -22,7 +22,7 @@ observal-server/
 ├── main.py              # App entrypoint, middleware stack, lifespan
 ├── config.py            # Settings from env vars / .env
 ├── database.py          # Async SQLAlchemy engine and session factory
-├── worker.py            # arq background worker (evals, syncs, alerts)
+├── worker.py            # arq background worker (syncs, alerts)
 ├── api/
 │   ├── deps.py          # Dependency injection (auth, DB sessions, role checks)
 │   ├── graphql.py       # Strawberry schema and DataLoaders
@@ -32,7 +32,6 @@ observal-server/
 ├── models/              # SQLAlchemy ORM models (22 tables)
 ├── schemas/             # Pydantic request/response schemas
 ├── services/            # Business logic (32 modules)
-│   └── eval/            # Evaluation subsystem (see observal-server/services/eval/)
 └── alembic/             # Database migrations
 ```
 
@@ -45,9 +44,7 @@ observal-server/
 | Auth | `/api/v1/auth/*` | Login, OAuth/OIDC, token refresh, bootstrap |
 | Agents | `/api/v1/agents/*` | CRUD, validation, config generation, install |
 | Components | `/api/v1/mcps/*`, `skills/*`, `hooks/*`, `prompts/*`, `sandboxes/*` | Registry for each component type |
-| Evals | `/api/v1/eval/*` | Trigger evaluations, fetch scorecards |
 | Telemetry | `/api/v1/telemetry/*` | Telemetry data ingestion |
-| OTLP | `/v1/traces`, `/v1/logs`, `/v1/metrics` | OpenTelemetry receiver (unauthenticated) |
 | Admin | `/api/v1/admin/*` | User management, settings, system config |
 | Review | `/api/v1/review/*` | Approve/reject submissions |
 | Dashboard | `/api/v1/graphql` | GraphQL for dashboard and trace queries |
@@ -70,9 +67,8 @@ Four-tier role hierarchy: `super_admin > admin > reviewer > user`. Enforced via 
 
 ## Background Workers
 
-The arq worker (`worker.py`) runs three recurring jobs:
+The arq worker (`worker.py`) runs two recurring jobs:
 
-- **run_eval**: Score agent traces against an eval model
 - **sync_component_sources**: Pull latest state from Git mirrors (every 6 hours)
 - **evaluate_alerts**: Check alert rule conditions (every minute)
 

@@ -13,10 +13,10 @@ Every file Observal reads or writes on the client (`~/.observal/`) and in each I
 | --- | --- | --- |
 | `config.json` | CLI config (server URL, access token, user info, timeout) | `0600` |
 | `aliases.json` | User-defined shortcuts (`@my-mcp` → UUID) | `0600` |
-| `last_results.json` | Last `list` / `show` output — enables row-number references | `0600` |
+| `last_results.json` | Last `list` / `show` output - enables row-number references | `0600` |
 | `telemetry_buffer.db` | SQLite buffer for events when server is unreachable | `0600` |
 | `profile.json` | Active `observal use` profile metadata | `0600` |
-| `backups/` | Pre-switch IDE config backups (from `observal use`) | — |
+| `backups/` | Pre-switch IDE config backups (from `observal use`) | - |
 | `keys/` | Server-side JWT keys (operators only; path controlled by `JWT_KEY_DIR`) | `0600` |
 
 ### `config.json` schema
@@ -114,9 +114,9 @@ Restore by moving the `.bak` back in place.
 
 ## File permissions
 
-Client-side files under `~/.observal/` are created with mode `0600` (owner read/write only). This holds your access token — don't loosen the permissions.
+Client-side files under `~/.observal/` are created with mode `0600` (owner read/write only). This holds your access token, so don't loosen the permissions.
 
 ## Related
 
-* [Environment variables](environment-variables.md) — env-var override for every config field
-* [`observal config`](../cli/config.md) — CLI surface for editing
+* [Environment variables](environment-variables.md) - env-var override for every config field
+* [`observal config`](../cli/config.md), CLI surface for editing

@@ -42,7 +42,7 @@ observal auth login [--server URL] [--key KEY] [--email EMAIL] [--password PASSW
 
 ```bash
 observal auth login
-# Server URL [http://localhost:8000]: <Enter>
+# Server URL [http://localhost]: <Enter>
 # Method: [E]mail / [K]ey: E
 # Email: admin@demo.example
 # Password: **************

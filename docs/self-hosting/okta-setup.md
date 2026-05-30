@@ -38,13 +38,13 @@ Collect this information **before** opening Okta:
 **Naming convention (recommended per customer):**
 
 - Okta application: `Observal - Acme Corp`
-- Groups: lowercase team names (`engineering`, `platform`) — these become department filters in Observal
+- Groups: lowercase team names (`engineering`, `platform`) - these become department filters in Observal
 
 ---
 
-## Part A — Okta configuration
+## Part A - Okta configuration
 
-### Step 1 — Sign in to the Okta Admin Console
+### Step 1 - Sign in to the Okta Admin Console
 
 1. Open the customer’s Okta admin URL, for example:
    - `https://acme.okta.com/admin` or
@@ -54,7 +54,7 @@ Collect this information **before** opening Okta:
 
 ---
 
-### Step 2 — Create the OIDC application
+### Step 2 - Create the OIDC application
 
 1. In the left sidebar, go to **Applications** → **Applications**.
 2. Click **Create App Integration**.
@@ -77,8 +77,8 @@ Replace `<OBSERVAL_DOMAIN>` with the customer’s Observal hostname only (no pat
 
 **Controlled access note:**
 
-- **Allow everyone in your organization to access** — fastest for pilots; any Okta user can attempt login (assignment still recommended).
-- **Limit access to selected groups** — preferred for production; only assigned groups can use the app.
+- **Allow everyone in your organization to access** - fastest for pilots; any Okta user can attempt login (assignment still recommended).
+- **Limit access to selected groups** - preferred for production; only assigned groups can use the app.
 
 5. Click **Save**.
 
@@ -104,7 +104,7 @@ Example: `https://acme.okta.com/oauth2/default/.well-known/openid-configuration`
 
 ---
 
-### Step 3 — Configure application sign-on settings (optional but recommended)
+### Step 3 - Configure application sign-on settings (optional but recommended)
 
 1. Stay on the Observal application.
 2. Open the **Sign On** tab.
@@ -117,7 +117,7 @@ You do not need to change SAML settings; Observal uses OIDC for this flow.
 
 ---
 
-### Step 4 — Create groups (teams / departments)
+### Step 4 - Create groups (teams / departments)
 
 Groups control both **who can access Observal** (when assigned to the app) and **department data in the exec dashboard**.
 
@@ -138,7 +138,7 @@ Repeat for every department you need (`product`, `design`, `data-science`, `plat
 
 ---
 
-### Step 5 — Create people (users)
+### Step 5 - Create people (users)
 
 1. Go to **Directory** → **People**.
 2. Click **Add Person**.
@@ -158,7 +158,7 @@ Repeat for every department you need (`product`, `design`, `data-science`, `plat
 
 ---
 
-### Step 6 — Add people to groups
+### Step 6 - Add people to groups
 
 For **each** group created in Step 4:
 
@@ -174,7 +174,7 @@ Verify: each user appears under the correct group(s). Users can belong to multip
 
 ---
 
-### Step 7 — Assign groups to the Observal application
+### Step 7 - Assign groups to the Observal application
 
 This step controls **who is allowed to sign in** to Observal via SSO.
 
@@ -185,17 +185,17 @@ This step controls **who is allowed to sign in** to Observal via SSO.
 5. Select every group that should have Observal access (e.g. `engineering`, `product`, `platform`).
 6. Click **Assign**, then **Done** for each group.
 
-**Optional — assign individual users:** Use **Assign** → **Assign to People** only for one-off access (e.g. executives not in a team group). Prefer group assignment for managed customers.
+**Optional - assign individual users:** Use **Assign** → **Assign to People** only for one-off access (e.g. executives not in a team group). Prefer group assignment for managed customers.
 
 **Verify:** Under **Assignments**, you should see all intended groups (and any individual users) listed.
 
 ---
 
-### Step 8 — Authentication policies (MFA and sign-on rules)
+### Step 8 - Authentication policies (MFA and sign-on rules)
 
 Observal does not configure MFA itself; Okta enforces it here.
 
-#### Option A — Application-specific rule (recommended)
+#### Option A - Application-specific rule (recommended)
 
 1. Go to **Security** → **Authentication Policies** (or **Security** → **Global Session Policy** on Classic).
 2. Open the policy that applies to your workforce (or create **Add a policy**).
@@ -210,7 +210,7 @@ Observal does not configure MFA itself; Okta enforces it here.
 
 5. **Save** the rule and ensure the policy is **Active**.
 
-#### Option B — Sign-on policy on the app (Identity Engine)
+#### Option B - Sign-on policy on the app (Identity Engine)
 
 1. Open the Observal application → **Sign On** tab.
 2. Under **Sign On Policy**, edit or add a rule for MFA requirements.
@@ -219,11 +219,11 @@ Observal does not configure MFA itself; Okta enforces it here.
 
 ---
 
-### Step 9 — Authorization server: `groups` scope and claim
+### Step 9 - Authorization server: `groups` scope and claim
 
 Observal requests scope `groups` and reads `userinfo.groups` from the token. Without this, login works but **departments stay empty**.
 
-#### 9a — Add the `groups` scope (if missing)
+#### 9a - Add the `groups` scope (if missing)
 
 1. Go to **Security** → **API**.
 2. Click the **default** authorization server (issuer path `/oauth2/default`).
@@ -235,7 +235,7 @@ Observal requests scope `groups` and reads `userinfo.groups` from the token. Wit
    - Check **Include in public metadata**
    - Click **Create**
 
-#### 9b — Add the `groups` claim to the ID token
+#### 9b - Add the `groups` claim to the ID token
 
 1. Still on the **default** authorization server, open the **Claims** tab.
 2. Click **Add Claim**.
@@ -246,12 +246,12 @@ Observal requests scope `groups` and reads `userinfo.groups` from the token. Wit
 | **Name** | `groups` |
 | **Include in token type** | **ID Token** → **Always** |
 | **Value type** | **Groups** |
-| **Filter** | Matches regex: `.*` (all groups) — or restrict to your Observal group names |
+| **Filter** | Matches regex: `.*` (all groups) - or restrict to your Observal group names |
 | **Include in** | **Any scope** |
 
 4. Click **Create**.
 
-#### 9c — Allow the client to use `groups` (access policy)
+#### 9c - Allow the client to use `groups` (access policy)
 
 1. On the same **default** authorization server, open the **Access Policies** tab.
 2. Open the active policy (often named **Default Policy**).
@@ -264,27 +264,27 @@ Observal requests scope `groups` and reads `userinfo.groups` from the token. Wit
 
 ---
 
-### Step 10 — Trust and client authentication (verify defaults)
+### Step 10 - Trust and client authentication (verify defaults)
 
 1. On the Observal application, open the **General** tab.
 2. Scroll to **Client Credentials** / **Client authentication**:
    - **Client authentication:** **Client secret** (default for web app)
    - Secret should match what you copied to `OAUTH_CLIENT_SECRET`
 3. Under **Login**, confirm:
-   - **Login initiated by:** **App Only** (or equivalent) — users start from Observal, not Okta dashboard tile only
+   - **Login initiated by:** **App Only** (or equivalent) - users start from Observal, not Okta dashboard tile only
    - **Application visibility:** your choice (hide from Okta dashboard if you only want Observal-initiated login)
 
 No change needed unless your security team requires PKCE-only public clients (Observal server uses confidential client + secret).
 
 ---
 
-## Part B — Observal server configuration
+## Part B - Observal server configuration
 
 Complete Okta Part A **before** editing the customer `.env`, so redirect URIs and secrets are ready.
 
-### Step 11 — Set OAuth and license in `.env`
+### Step 11 - Set OAuth and license in `.env`
 
-Edit the customer instance `.env` (from `docker/server-package/.env` or your deployment template). **OAuth credentials live only in the env file** — they are not configured in the web UI.
+Edit the customer instance `.env` (from `docker/server-package/.env` or your deployment template). **OAuth credentials live only in the env file** - they are not configured in the web UI.
 
 ```env
 # OIDC / Okta (from Step 2)
@@ -306,9 +306,9 @@ make down && make up
 
 ---
 
-### Step 12 — Set Frontend URL in Settings (must match Okta)
+### Step 12 - Set Frontend URL in Settings (must match Okta)
 
-The API builds the OAuth redirect from **`deployment.frontend_url`**, which you set in the **web UI** — not in `.env`.
+The API builds the OAuth redirect from **`deployment.frontend_url`**, which you set in the **web UI** - not in `.env`.
 
 1. Sign in to Observal as an admin (bootstrap or existing admin account).
 2. Open **Settings** (admin area).
@@ -324,7 +324,7 @@ If this value is wrong, you will see `redirect_uri mismatch` or `mismatching_sta
 
 ---
 
-### Step 13 — Confirm SSO is enabled on the server
+### Step 13 - Confirm SSO is enabled on the server
 
 ```bash
 curl -s https://<OBSERVAL_DOMAIN>/api/v1/config/public | jq '.sso_enabled'
@@ -340,9 +340,9 @@ If `false`:
 
 ---
 
-## Part C — Verification (follow in order)
+## Part C - Verification (follow in order)
 
-### Step 14 — Test SSO login (first user)
+### Step 14 - Test SSO login (first user)
 
 1. Open a **private/incognito** browser window.
 2. Go to `https://<OBSERVAL_DOMAIN>/login`.
@@ -365,7 +365,7 @@ If `false`:
 
 ---
 
-### Step 15 — Verify groups synced
+### Step 15 - Verify groups synced
 
 1. Log in as a user who belongs to Okta groups (e.g. `engineering`).
 2. In Observal, open the **exec dashboard** (if licensed) or check admin user tooling.
@@ -375,7 +375,7 @@ Groups refresh on **each SSO login**. If you change group membership in Okta, ha
 
 ---
 
-### Step 16 — Promote the customer admin (required)
+### Step 16 - Promote the customer admin (required)
 
 **SSO users are created with role `user` by default.** They are not admins automatically.
 
@@ -387,7 +387,7 @@ Do this for at least one person per customer instance before enabling SSO-only m
 
 ---
 
-### Step 17 — Optional: lock to SSO only
+### Step 17 - Optional: lock to SSO only
 
 Only after Steps 14–16 succeed:
 
@@ -397,7 +397,7 @@ Only after Steps 14–16 succeed:
 
 ---
 
-## Part D — Optional follow-ups
+## Part D - Optional follow-ups
 
 ### SCIM provisioning (enterprise)
 
@@ -422,7 +422,7 @@ Keep production URIs separate; do not mix localhost URIs into the customer’s p
 
 ---
 
-## Quick reference — URLs and variables
+## Quick reference - URLs and variables
 
 | Purpose | Where to set | Value |
 |---------|----------------|-------|
@@ -465,20 +465,20 @@ Print or copy this for each new managed instance:
 |-------|-------|-----|
 | `redirect_uri mismatch` | Okta URI ≠ `deployment.frontend_url` + `/api/v1/auth/oauth/callback` | Align Okta app URIs and Admin **Frontend URL** |
 | `mismatching_state` / CSRF | Frontend URL changed mid-login, or API restarted during flow | Set Frontend URL, retry in fresh incognito window |
-| Okta “access denied” for app | User not assigned | Step 7 — assign group or person |
+| Okta “access denied” for app | User not assigned | Step 7 - assign group or person |
 | `OAuth authorization failed` | Bad secret, wrong metadata URL, or network block to Okta | Re-copy secret; verify metadata JSON in browser from API host |
 | `Email claim is missing` | ID token missing email | Ensure `email` scope allowed; user has primary email in Okta |
 | `Resource not found: AuthenticatorEnrollment` | Broken MFA enrollment | Okta: **Directory** → user → **More Actions** → **Reset Multifactor** |
-| User logs in but no admin pages | Default SSO role is `user` | Step 16 — promote role in Observal |
+| User logs in but no admin pages | Default SSO role is `user` | Step 16 - promote role in Observal |
 | Groups empty in dashboard | No `groups` in ID token | Repeat Step 9; user must log in again |
-| `sso_enabled` is false | Missing `OAUTH_*` env vars | Step 11 — set all three and restart API |
+| `sso_enabled` is false | Missing `OAUTH_*` env vars | Step 11 - set all three and restart API |
 
 ---
 
 ## Related documentation
 
-- [Authentication and SSO](authentication.md) — JWT, RBAC, SSO behavior
-- [Configuration](configuration.md) — `.env` reference
-- `ee/docs/oidc-setup.md` — OIDC reference (multi-IdP)
-- `ee/docs/scim-setup.md` — user provisioning from Okta
-- `ee/docs/cli-sso.md` — CLI login when SSO-only is enabled
+- [Authentication and SSO](authentication.md) - JWT, RBAC, SSO behavior
+- [Configuration](configuration.md) - `.env` reference
+- `ee/docs/oidc-setup.md` - OIDC reference (multi-IdP)
+- `ee/docs/scim-setup.md` - user provisioning from Okta
+- `ee/docs/cli-sso.md` - CLI login when SSO-only is enabled

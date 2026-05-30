@@ -21,9 +21,9 @@ See [`observal server upgrade`](../cli/server.md#observal-server-upgrade) for fu
 
 ## Before a manual upgrade
 
-1. **Back up `pgdata`** and **`apidata`**. See [Backup and restore](backup-and-restore.md). Backing up `chdata` is nice-to-have — losing telemetry is painful but not catastrophic.
+1. **Back up `pgdata`** and **`apidata`**. See [Backup and restore](backup-and-restore.md). Backing up `chdata` is nice-to-have; losing telemetry is painful but not catastrophic.
 2. **Read the [CHANGELOG](https://github.com/BlazeUp-AI/Observal/blob/main/CHANGELOG.md)** for the releases you're jumping across. Note any breaking changes.
-3. **Pin the version you're upgrading to** — don't `git pull main` blindly. Check out a release tag or a known-good commit.
+3. **Pin the version you're upgrading to**: don't `git pull main` blindly. Check out a release tag or a known-good commit.
 
 ## Standard upgrade
 
@@ -40,7 +40,7 @@ docker compose -f docker/docker-compose.yml up --build -d
 
 # Verify
 docker compose -f docker/docker-compose.yml ps
-curl http://localhost:8000/health
+curl http://localhost/health
 ```
 
 The API applies pending Alembic migrations automatically on startup. Watch the API logs for migration output:
@@ -70,12 +70,12 @@ Web UI, Postgres, ClickHouse, Redis stay up throughout. Users see a brief API ou
 For blue/green upgrades on large deployments:
 
 1. Run a second stack (`docker-compose.yml` with different project name and host ports) behind a reverse proxy.
-2. Apply migrations via `observal migrate` — Alembic migrations are forward-compatible by design (API N-1 and N should both work against the same schema when migrations are additive).
+2. Apply migrations via `observal migrate`. Alembic migrations are forward-compatible by design (API N-1 and N should both work against the same schema when migrations are additive).
 3. Bring up the green stack pointing at the same `pgdata` / `chdata` / `apidata` volumes.
 4. Flip the reverse proxy to green.
 5. Decommission blue.
 
-If a migration is **not** additive (rare, but happens — column drops, type changes), it gets called out in the CHANGELOG and requires a brief outage. Plan the window.
+If a migration is **not** additive (rare, but happens: column drops, type changes), it gets called out in the CHANGELOG and requires a brief outage. Plan the window.
 
 ## Rolling back
 
@@ -87,8 +87,8 @@ If the new version breaks:
 
 **The catch:** if the failing version already applied a migration, downgrading to the previous API version may leave you running against a schema it doesn't know about. Options:
 
-* **If the migration is additive** (most are) — the previous version works fine against the newer schema.
-* **If the migration is destructive** — restore from the pre-upgrade `pgdata` backup. This is why the backup is step 1.
+* **If the migration is additive** (most are): the previous version works fine against the newer schema.
+* **If the migration is destructive**: restore from the pre-upgrade `pgdata` backup. This is why the backup is step 1.
 
 ## CLI upgrades
 
@@ -98,7 +98,7 @@ CLI upgrades are independent of server upgrades. Users:
 observal self upgrade
 ```
 
-The CLI speaks a stable contract with the server — a newer CLI works against an older server and vice versa, within a release or two.
+The CLI speaks a stable contract with the server. A newer CLI works against an older server and vice versa, within a release or two.
 
 ## Zero-downtime for the web UI
 

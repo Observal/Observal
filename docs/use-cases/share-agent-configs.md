@@ -18,11 +18,11 @@ Every agent is a YAML file that bundles:
 * Prompts (with variables)
 * Sandboxes for code execution
 
-When someone runs `observal agent pull <agent>`, Observal templates that YAML into the right files for their IDE — `~/.claude/agents/*.json`, `.kiro/agents/*.json`, `.cursor/mcp.json`, and so on.
+When someone runs `observal agent pull <agent>`, Observal templates that YAML into the right files for their IDE: `~/.claude/agents/*.json`, `.kiro/agents/*.json`, `.cursor/mcp.json`, and so on.
 
 ## Publish an agent
 
-### Option A — the interactive wizard
+### Option A - the interactive wizard
 
 ```bash
 observal agent create
@@ -30,7 +30,7 @@ observal agent create
 
 Step-by-step prompts: name, description, which MCP servers, which skills, which hooks. Results in a registry entry you can share by ID.
 
-### Option B — the YAML workflow (recommended for teams)
+### Option B - the YAML workflow (recommended for teams)
 
 ```bash
 observal agent init                  # scaffold observal-agent.yaml
@@ -54,7 +54,7 @@ observal agent list --search review
 observal agent show <agent-id>
 ```
 
-Install — one command, pick the IDE:
+Install with one command, pick the IDE:
 
 ```bash
 observal agent pull <agent-id> --ide claude-code
@@ -97,7 +97,7 @@ The IDE feature matrix (defined in `observal_cli/ide_registry.py`) controls what
 
 ## Snapshot an entire IDE config as a profile
 
-`observal use` and `observal profile` move at a level above single agents — they switch your whole IDE config to a git-hosted or local profile:
+`observal use` and `observal profile` move at a level above single agents; they switch your whole IDE config to a git-hosted or local profile:
 
 ```bash
 observal use https://github.com/your-org/your-profile.git
@@ -108,4 +108,4 @@ Useful when onboarding a new machine or swapping between "work setup" and "perso
 
 ## Next
 
-→ [Run a team-wide agent registry](team-registry.md) — once publishing is routine, you need governance.
+→ [Run a team-wide agent registry](team-registry.md): once publishing is routine, you need governance.

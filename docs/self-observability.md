@@ -37,14 +37,14 @@ All logs are JSON-formatted by default. Every log line includes:
 - `level` (info, warning, error)
 - `logger` (module name)
 - `event` (what happened)
-- `request_id` (during HTTP requests — auto-generated or from `X-Request-ID` header)
+- `request_id` (during HTTP requests, auto-generated or from `X-Request-ID` header)
 
 ### Configuration
 
 | Env Variable | Default | Options |
 |-------------|---------|---------|
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-| `LOG_FORMAT` | `json` | `json` (production), `console` (local dev — colored, human-readable) |
+| `LOG_FORMAT` | `json` | `json` (production), `console` (local dev, colored and human-readable) |
 
 ### Request ID Propagation
 
@@ -79,7 +79,7 @@ It shows: API status, uptime, request rate by status code, latency percentiles (
 ## Docker Compose
 
 The `docker-compose.yml` includes:
-- **observal-prometheus** — scrapes `/metrics` every 15s
-- **observal-grafana** — visualizes metrics (port 3001, login: admin/admin)
+- **observal-prometheus**: scrapes `/metrics` every 15s
+- **observal-grafana**: visualizes metrics (port 3001, login: admin/admin)
 
 The API healthcheck uses `/readyz` to verify all dependencies before marking the container healthy.

@@ -17,9 +17,9 @@ A hook has four core properties:
 | **Handler Config** | The command/URL + timeout |
 
 Hooks can be:
-- **Inline commands** — `ruff check`, `eslint --fix`
-- **Script-based** — a shell/python script stored in the registry and written to disk on install
-- **Package-based** — references an installed package (`python -m my_org.hooks.guard`)
+- **Inline commands**: `ruff check`, `eslint --fix`
+- **Script-based**: a shell/python script stored in the registry and written to disk on install
+- **Package-based**: references an installed package (`python -m my_org.hooks.guard`)
 
 ## CLI Commands
 
@@ -136,7 +136,7 @@ Create the script:
 
 ```bash
 #!/bin/bash
-# protect-files.sh — blocks edits to .env and secret files
+# protect-files.sh - blocks edits to .env and secret files
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 if [[ "$FILE_PATH" == *.env* ]] || [[ "$FILE_PATH" == *secret* ]]; then
@@ -153,7 +153,7 @@ observal registry hook submit --script ./protect-files.sh
 # Prompts: name, event (PreToolUse), timeout (5), execution_mode (blocking)
 ```
 
-Install — writes both the config AND the script file:
+Install (writes both the config AND the script file:
 
 ```bash
 observal registry hook install protect-files --ide claude-code
@@ -165,7 +165,7 @@ observal registry hook install protect-files --ide claude-code
 
 ```bash
 #!/bin/bash
-# log-tools.sh — logs every tool call
+# log-tools.sh - logs every tool call
 INPUT=$(cat)
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
 TARGET=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.command // "n/a"')
@@ -199,7 +199,7 @@ cat > agent.json << 'EOF'
 EOF
 observal agent create --from-file agent.json
 
-# Pull the agent — hook is auto-installed
+# Pull the agent - hook is auto-installed
 observal agent pull safe-coder --ide claude-code
 # Writes: ~/.claude/agents/safe-coder.md (with hook in frontmatter)
 # Writes: .claude/hooks/protect-files.sh (script file)
@@ -214,7 +214,7 @@ The registry maps canonical event names to each IDE's format:
 | `PreToolUse` | `PreToolUse` | `preToolUse` | `preToolUse` | `BeforeTool` | `pre_tool_use` |
 | `PostToolUse` | `PostToolUse` | `postToolUse` | `postToolUse` | `AfterTool` | `post_tool_use` |
 | `Stop` | `Stop` | `sessionEnd` | `stop` | `SessionEnd` | `session_stop` |
-| `SessionStart` | `SessionStart` | `sessionStart` | `agentSpawn` | `SessionStart` | — |
+| `SessionStart` | `SessionStart` | `sessionStart` | `agentSpawn` | `SessionStart` | - |
 | `UserPromptSubmit` | `UserPromptSubmit` | `beforeSubmitPrompt` | `userPromptSubmit` | `BeforeAgent` | `user_prompt_submit` |
 
 Install generates the correct format automatically:
@@ -264,7 +264,7 @@ Hook scripts receive JSON on stdin describing the event:
 | Code | Meaning |
 |------|---------|
 | `0` | Allow (proceed normally) |
-| `2` | Block (veto the tool call — blocking mode only) |
+| `2` | Block (veto the tool call - blocking mode only) |
 | Other | Error (logged, tool call proceeds) |
 
 Stdout from the script is passed back to the agent as context.

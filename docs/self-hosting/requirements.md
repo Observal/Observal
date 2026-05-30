@@ -39,7 +39,7 @@ The heaviest user of disk is **ClickHouse** (traces, spans, scores). Growth depe
 
 Rule of thumb: **~1 KB per span**. A team running 10K spans/day at 90-day retention will accumulate ~900 MB of ClickHouse data. Plan 2–3× headroom.
 
-Postgres stays under 500 MB for most deployments — it holds only registry metadata and user accounts.
+Postgres stays under 500 MB for most deployments; it holds only registry metadata and user accounts.
 
 ## Software
 
@@ -59,22 +59,19 @@ For the **CLI** (developer machines, not the server):
 
 ## Network
 
-* **Outbound HTTPS** — only needed to pull Docker images on first `docker compose up --build`. Not needed at runtime (the stack is fully self-contained).
-* **Inbound** — users hit the API (`:8000`) and web (`:3000`). OTLP telemetry is also received on the API port (`:8000`).
-* **Between services** — the private `observal-net` bridge handles all of it.
-
-If your eval model is Bedrock or a cloud-hosted OpenAI-compatible endpoint, the API and worker need outbound access to that endpoint. A fully-offline eval path is available with a local Ollama or vLLM deployment.
+* **Outbound HTTPS**: only needed to pull Docker images on first `docker compose up --build`. Not needed at runtime (the stack is fully self-contained).
+* **Inbound**: users hit the API (`:8000`) and web (`:3000`). Telemetry from the shim is received on the API port.
+* **Between services**: the private `observal-net` bridge handles all of it.
 
 ## TLS / HTTPS
 
-Docker Compose does not terminate TLS. For production, put a reverse proxy in front (nginx, Caddy, Traefik) and terminate TLS there. Point it at `localhost:8000` (API) and `localhost:3000` (web).
+The built-in nginx LB does not terminate TLS. For production, put a TLS proxy in front (Caddy, Traefik, AWS ALB) and terminate TLS there. Point it at `localhost:80` (the nginx LB).
 
 Example (Caddy):
 
 ```caddyfile
 observal.your-company.internal {
-  reverse_proxy /api/* localhost:8000
-  reverse_proxy /* localhost:3000
+  reverse_proxy localhost:80
 }
 ```
 

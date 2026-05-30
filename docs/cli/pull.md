@@ -109,6 +109,6 @@ After pull, restart the IDE so it picks up the new config. Telemetry starts flow
 
 * [`observal agent`](agent.md): author and publish agents
 * [`observal scan`](scan.md): discover the MCP servers you already have (read-only)
-* [`observal doctor patch`](doctor.md): instrument your IDEs (hooks, shims, OTel)
+* [`observal doctor patch`](doctor.md): instrument your IDEs (hooks, shims)
 * [`observal doctor`](doctor.md): verify the pull wired up correctly
 * [Use Cases → Share agent configs across IDEs](../use-cases/share-agent-configs.md)

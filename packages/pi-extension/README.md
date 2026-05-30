@@ -15,7 +15,7 @@ pi install npm:observal-pi
 
 ## Prerequisites
 
-1. An Observal account - run `observal auth login` to authenticate
+1. An Observal account (run `observal auth login` to authenticate)
 2. Pi installed (`>=0.74.0`)
 
 ## What it does
@@ -35,11 +35,11 @@ pi install npm:observal-pi
 
 ## Design
 
-- **Zero dependencies** - only `node:*` built-ins
-- **Fail-open** - never throws, never crashes pi. If the server is unreachable, pi continues normally
-- **5s timeout** - all HTTP calls abort after 5 seconds
-- **Chunked uploads** - batches of 500 lines max per request
-- **Dedup-safe** - server deduplicates by `(session_id, line_offset, line_hash)`
+- **Zero dependencies**: only `node:*` built-ins
+- **Fail-open**: never throws, never crashes pi. If the server is unreachable, pi continues normally
+- **5s timeout**: all HTTP calls abort after 5 seconds
+- **Chunked uploads**: batches of 500 lines max per request
+- **Dedup-safe**: server deduplicates by `(session_id, line_offset, line_hash)`
 
 ## Configuration
 
@@ -56,4 +56,4 @@ Sync state is tracked in `~/.observal/sync_state.json` (per-session byte offsets
 
 ## License
 
-AGPL-3.0-only - see [LICENSE](./LICENSE)
+AGPL-3.0-only. See [LICENSE](./LICENSE)

@@ -1,20 +1,20 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
-# Observal on AWS — Terraform
+# Observal on AWS - Terraform
 
 Production-shaped self-hosted Observal in your own AWS account. One `terraform apply` provisions:
 
-- **VPC** — public + private subnets across 2 AZs, NAT gateway, VPC flow logs
-- **Application Load Balancer** — HTTPS via DNS-validated ACM (when domain supplied), path-based routing
-- **ECS Fargate cluster** — `api`, `web`, `worker` as separate services with target-tracking CPU autoscaling. `init` runs as a one-shot `RunTask` on every image bump
-- **RDS Postgres 16** — Multi-AZ on `prod`, encrypted, automated backups, Performance Insights, Enhanced Monitoring, log exports
-- **ElastiCache Redis 7** — 2-node replication group with automatic failover on `prod`, slow-log to CloudWatch
-- **Data tier EC2** — single host running ClickHouse + Grafana + Prometheus on EBS gp3, ENI with static private IP, internal Route 53 zone for DNS, daily ClickHouse → S3 snapshot via systemd timer
-- **S3 backups bucket** — versioned, AES256, lifecycle to STANDARD_IA → GLACIER_IR → expire, TLS-only access
-- **CloudWatch log groups** — per-service for ECS tasks, data host, RDS, Redis, VPC flow logs
-- **SSM Parameter Store** — generated DB / ClickHouse / SECRET_KEY / Grafana passwords, plus pre-built connection URLs injected into ECS tasks
-- **SSM Session Manager** — shell access to the data host, no SSH
+- **VPC**: public + private subnets across 2 AZs, NAT gateway, VPC flow logs
+- **Application Load Balancer**: HTTPS via DNS-validated ACM (when domain supplied), path-based routing
+- **ECS Fargate cluster** - `api`, `web`, `worker` as separate services with target-tracking CPU autoscaling. `init` runs as a one-shot `RunTask` on every image bump
+- **RDS Postgres 16** - Multi-AZ on `prod`, encrypted, automated backups, Performance Insights, Enhanced Monitoring, log exports
+- **ElastiCache Redis 7** - 2-node replication group with automatic failover on `prod`, slow-log to CloudWatch
+- **Data tier EC2**: single host running ClickHouse + Grafana + Prometheus on EBS gp3, ENI with static private IP, internal Route 53 zone for DNS, daily ClickHouse → S3 snapshot via systemd timer
+- **S3 backups bucket**: versioned, AES256, lifecycle to STANDARD_IA → GLACIER_IR → expire, TLS-only access
+- **CloudWatch log groups**: per-service for ECS tasks, data host, RDS, Redis, VPC flow logs
+- **SSM Parameter Store**: generated DB / ClickHouse / SECRET_KEY / Grafana passwords, plus pre-built connection URLs injected into ECS tasks
+- **SSM Session Manager**: shell access to the data host, no SSH
 
 ## Architecture
 
@@ -43,7 +43,7 @@ Production-shaped self-hosted Observal in your own AWS account. One `terraform a
          └──────────────────────────────┘
 ```
 
-The stateless app tier (api/web/worker) lives on Fargate across both AZs with autoscaling and rolling deploys. The stateful data tier (ClickHouse + Grafana + Prometheus) lives on a single EC2 with EBS so ClickHouse keeps its disk across instance replacements. Real ClickHouse HA is out of scope — set `clickhouse_mode = "cloud"` and point at ClickHouse Cloud when you need it.
+The stateless app tier (api/web/worker) lives on Fargate across both AZs with autoscaling and rolling deploys. The stateful data tier (ClickHouse + Grafana + Prometheus) lives on a single EC2 with EBS so ClickHouse keeps its disk across instance replacements. Real ClickHouse HA is out of scope; set `clickhouse_mode = "cloud"` and point at ClickHouse Cloud when you need it.
 
 ## Prerequisites
 
@@ -65,7 +65,7 @@ Five steps from a fresh AWS account to a running install. Skip step 2 only if yo
 
 ### 1. Authenticate
 
-Any of these is fine — Terraform reads the standard AWS SDK credential chain:
+Any of these is fine. Terraform reads the standard AWS SDK credential chain:
 
 ```bash
 # Long-lived IAM user
@@ -81,9 +81,9 @@ eval "$(aws configure export-credentials --profile observal-prod --format env)"
 
 Verify with `aws sts get-caller-identity`.
 
-### 2. Bootstrap remote state — run once per AWS account
+### 2. Bootstrap remote state - run once per AWS account
 
-This creates the S3 bucket + DynamoDB lock table that hold Terraform state. Without it, state lives only on your laptop — losing the file orphans live AWS resources.
+This creates the S3 bucket + DynamoDB lock table that hold Terraform state. Without it, state lives only on your laptop. Losing the file orphans live AWS resources.
 
 ```bash
 cd infra/terraform/aws/bootstrap
@@ -136,7 +136,7 @@ If you skipped step 2, run `terraform init -migrate-state` after configuring the
 
 #### Watching the apply in the AWS Console
 
-While Terraform runs, you can watch resources come up live. Replace `<REGION>` in the URLs below with the region from your `terraform.tfvars`. The names below assume `name_prefix = "observal"` and `environment = "prod"` — if you changed those, substitute accordingly (the pattern is `<name_prefix>-<environment>-<resource>`).
+While Terraform runs, you can watch resources come up live. Replace `<REGION>` in the URLs below with the region from your `terraform.tfvars`. The names below assume `name_prefix = "observal"` and `environment = "prod"` - if you changed those, substitute accordingly. The pattern is `<name_prefix>-<environment>-<resource>`).
 
 | Resource | Console link (replace `<REGION>`) | What to look for |
 |---|---|---|
@@ -197,11 +197,11 @@ A working module-call example lives at [`examples/minimal`](examples/minimal/).
 
 ## What credentials and inputs are required?
 
-The module generates all application secrets (Postgres password, ClickHouse password, `SECRET_KEY`, Grafana admin) and stores them in SSM Parameter Store as `SecureString`s. ECS task definitions reference them via the `secrets` block, so they're injected as environment variables at task start — never written to disk.
+The module generates all application secrets (Postgres password, ClickHouse password, `SECRET_KEY`, Grafana admin) and stores them in SSM Parameter Store as `SecureString`s. ECS task definitions reference them via the `secrets` block, so they're injected as environment variables at task start, never written to disk.
 
 You only need to supply:
 
-1. **AWS credentials** — `AWS_PROFILE`, `aws configure sso`, or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`.
+1. **AWS credentials**: `AWS_PROFILE`, `aws configure sso`, or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`.
 2. **`region`** (default `us-east-1`).
 3. **(Optional) `domain_name` + `route53_zone_id`** for HTTPS on a real domain.
 4. **(Optional) `alb_ingress_cidrs`** to lock the ALB to specific IP ranges.
@@ -254,7 +254,7 @@ For upgrades, rollbacks, teardown, and DR see [Day-2 operations](#day-2-operatio
 | ALB | 1 | $20 |
 | NAT Gateway | 1 | $33 + egress |
 | EBS gp3 100 GB | 1 | $8 |
-| S3 backups (1 GB cold) | — | $0.10 |
+| S3 backups (1 GB cold) | - | $0.10 |
 | **Total baseline** | | **~$255/month** |
 
 Drop to single-AZ RDS, single Redis node, and `worker_desired_count = 0` for staging by setting `environment != "prod"`.
@@ -271,18 +271,18 @@ Set `image_tag` to the previous version and re-apply. RDS / ClickHouse data are 
 ```bash
 terraform destroy
 ```
-The bootstrap module's bucket + table have `prevent_destroy = true` — destroying the main module won't touch them. To remove them too, edit `bootstrap/main.tf` to drop the lifecycle blocks, then `terraform destroy` in `bootstrap/`. Don't do this until you're sure no Observal install in the account still needs the state.
+The bootstrap module's bucket + table have `prevent_destroy = true`. Destroying the main module won't touch them. To remove them too, edit `bootstrap/main.tf` to drop the lifecycle blocks, then `terraform destroy` in `bootstrap/`. Don't do this until you're sure no Observal install in the account still needs the state.
 
 ### Disaster recovery
 - **Postgres**: automated daily snapshots (7-day retention on prod). Restore via `aws rds restore-db-instance-from-db-snapshot`.
 - **ClickHouse**: daily snapshot to the S3 backups bucket via systemd timer (see `user-data.sh.tftpl`). Restore with `clickhouse-client RESTORE`.
-- **Terraform state**: S3 versioning is on — recover prior state with `aws s3api list-object-versions` + `cp --version-id`.
+- **Terraform state**: S3 versioning is on - recover prior state with `aws s3api list-object-versions` + `cp --version-id`.
 
 ## Production hardening checklist
 
 Before using in front of customers:
 
-- [x] Switch the Terraform backend to S3 + DynamoDB — done by the `bootstrap/` module
+- [x] Switch the Terraform backend to S3 + DynamoDB - done by the `bootstrap/` module
 - [ ] Restrict `alb_ingress_cidrs` to known CIDRs
 - [ ] Enable AWS Config + GuardDuty in the account
 - [ ] Wire CloudWatch alarms on RDS CPU / freeable memory, ECS service CPU, ALB 5xx
@@ -318,16 +318,16 @@ examples/minimal/          # ready-to-apply module-call example
 
 ## Troubleshooting
 
-**`No valid credential sources found` on `terraform plan`** — your shell auth (e.g. AWS CLI v2 `aws login` profile) isn't visible to the AWS SDK that Terraform uses. Export the resolved creds:
+**`No valid credential sources found` on `terraform plan`** - your shell auth (e.g. AWS CLI v2 `aws login` profile) isn't visible to the AWS SDK that Terraform uses. Export the resolved creds:
 
 ```bash
 eval "$(aws configure export-credentials --profile <name> --format env)"
 ```
 
-**`The bucket you tried to create already exists`** when running the bootstrap module — S3 bucket names are globally unique. Change `name_prefix` in `bootstrap/terraform.tfvars` and re-apply, or import the existing bucket.
+**`The bucket you tried to create already exists`** when running the bootstrap module. S3 bucket names are globally unique. Change `name_prefix` in `bootstrap/terraform.tfvars` and re-apply, or import the existing bucket.
 
-**`Error: getting Application Load Balancer Listener Rule ... too many path patterns`** — fixed; max is 5 per `path_pattern` condition.
+**`Error: getting Application Load Balancer Listener Rule ... too many path patterns`**: fixed; max is 5 per `path_pattern` condition.
 
-**`apply` hangs on RDS** — first-time `db.t4g.small` Multi-AZ provisioning can take 15+ minutes. Check the AWS console; it's almost always the RDS resource still in `creating`.
+**`apply` hangs on RDS**: first-time `db.t4g.small` Multi-AZ provisioning can take 15+ minutes. Check the AWS console; it's almost always the RDS resource still in `creating`.
 
-**App returns 502 right after apply** — ECS tasks need ~2 min to pass ALB health checks. `aws logs tail /aws/ecs/observal-prod/api --follow` shows what the api is doing.
+**App returns 502 right after apply**: ECS tasks need ~2 min to pass ALB health checks. `aws logs tail /aws/ecs/observal-prod/api --follow` shows what the api is doing.

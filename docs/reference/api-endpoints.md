@@ -63,7 +63,7 @@ All `{id}` parameters accept a UUID or a name.
 | `POST` | `/telemetry/ingest` | Batch ingest traces, spans, scores |
 | `POST` | `/telemetry/events` | Legacy event ingestion |
 | `GET` | `/telemetry/status` | Data flow status |
-| `GET` | `/otel/crypto/public-key` | Server public key for payload encryption |
+| `GET` | `/crypto/public-key` | Server public key for payload encryption |
 
 ## Telemetry hooks
 
@@ -118,12 +118,12 @@ Subscriptions use `graphql-ws` protocol.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/health` | Readiness — checks DB + ClickHouse |
-| `GET` | `/healthz` | Liveness — is the API process alive |
+| `GET` | `/health` | Readiness - checks DB + ClickHouse |
+| `GET` | `/healthz` | Liveness - is the API process alive |
 
 ## Rate limiting
 
-Auth endpoints are subject to `RATE_LIMIT_AUTH` and `RATE_LIMIT_AUTH_STRICT`. Non-auth endpoints are not rate-limited by default — put a reverse proxy or API gateway in front if you need it.
+Auth endpoints are subject to `RATE_LIMIT_AUTH` and `RATE_LIMIT_AUTH_STRICT`. Non-auth endpoints are not rate-limited by default; put a reverse proxy or API gateway in front if you need it.
 
 ## Request size limits
 

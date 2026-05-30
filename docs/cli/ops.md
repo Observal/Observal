@@ -148,7 +148,7 @@ Send a test telemetry event. Useful for verifying instrumentation end-to-end.
 
 ```bash
 observal ops telemetry test
-# Test event sent. View at http://localhost:3000/traces
+# Test event sent. View at http://localhost/traces
 ```
 
 ## Related

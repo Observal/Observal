@@ -207,8 +207,8 @@ docker compose -f docker/docker-compose.yml ps
 
 | Service         | URL                     |
 | --------------- | ----------------------- |
-| API             | `http://localhost:8000` |
-| Web UI          | `http://localhost:3000` |
+| LB (all traffic)| `http://localhost`      |
+| Web UI (direct) | `http://localhost:3000` |
 | Grafana         | `http://localhost:3001` |
 | Prometheus      | `http://localhost:9090` |
 | ClickHouse HTTP | `http://localhost:8123` |
@@ -275,7 +275,7 @@ scripts/            Dev tooling scripts
 
 **Databases:**
 
-- **PostgreSQL**, relational data (users, agents, registry, feedback, eval runs)
+- **PostgreSQL**, relational data (users, agents, registry, feedback)
 - **ClickHouse**, time-series telemetry (traces, spans, scores)
 
 They are not interchangeable. Never write telemetry to Postgres or relational data to ClickHouse.
@@ -466,10 +466,12 @@ docker compose -f docker/docker-compose.yml logs -f observal-api
 
 To add a breakpoint, use `breakpoint()` in Python code, the debugger will pause in the container's stdout. Or attach a remote debugger by adding `debugpy` to your dev dependencies and exposing a debug port.
 
-The OpenAPI docs are available at:
+The OpenAPI docs are available at (API port, not through the LB which blocks these paths):
 
-- `http://localhost:8000/docs` (Swagger UI)
-- `http://localhost:8000/redoc` (ReDoc)
+- `http://localhost:8000/docs` (Swagger UI, requires direct API port access)
+- `http://localhost:8000/redoc` (ReDoc, requires direct API port access)
+
+> Note: The nginx LB blocks `/docs`, `/redoc`, and `/openapi.json` in production. For local dev, expose the API port directly or use `docker compose exec`.
 
 ---
 
@@ -486,7 +488,7 @@ pnpm dev
 Create `web/.env.local` with:
 
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost
 ```
 
 The frontend proxies all `/api/v1/*` calls to the backend URL set by `NEXT_PUBLIC_API_URL`.

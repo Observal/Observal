@@ -71,7 +71,7 @@ uv tool install --editable .
 observal auth login
 ```
 
-The API starts at `http://localhost:8000` and the web UI at `http://localhost:3000`. The `.env.example` seeds demo accounts on first startup, log in with `super@demo.example` / `super-changeme` for admin access. See [SETUP.md](SETUP.md) for all credentials.
+The stack starts at `http://localhost` (nginx LB on port 80). The `.env.example` seeds demo accounts on first startup, log in with `super@demo.example` / `super-changeme` for admin access. See [SETUP.md](SETUP.md) for all credentials.
 
 **Frontend only:**
 
@@ -79,10 +79,10 @@ The API starts at `http://localhost:8000` and the web UI at `http://localhost:30
 cd web && pnpm install && pnpm dev
 ```
 
-Set `NEXT_PUBLIC_API_URL=http://localhost:8000` in `web/.env.local` if the backend is on a different host.
+Set `NEXT_PUBLIC_API_URL=http://localhost` in `web/.env.local` if the backend is on a different host.
 
 > [!NOTE]
-> See the [Development Guide](docs/DEVELOPMENT_GUIDE.md) for the full environment setup, eval engine configuration, and troubleshooting steps.
+> See the [Development Guide](docs/DEVELOPMENT_GUIDE.md) for the full environment setup and troubleshooting steps.
 
 ---
 

@@ -10,10 +10,10 @@ What to back up, how often, and how to restore. Observal has three persistent st
 | Priority | Volume | Contents | Loss impact |
 | --- | --- | --- | --- |
 | **Critical** | `apidata` | JWT signing keys | Every session invalidated. No recovery without the keys. |
-| **Critical** | `pgdata` | Users, RBAC, registry metadata, agents, scorecards | All accounts and registry lost. |
+| **Critical** | `pgdata` | Users, RBAC, registry metadata, agents | All accounts and registry lost. |
 | **Important** | `chdata` | Traces, spans, scores | All telemetry lost. Accounts and registry survive. |
 | **Low** | `grafanadata` | Custom Grafana dashboards | Custom dashboards lost; provisioned defaults come back automatically. |
-| **Low** | `redisdata` | Job queue state | In-flight jobs lost — they re-queue on the next eval trigger. |
+| **Low** | `redisdata` | Job queue state | In-flight jobs lost; they re-queue on next worker restart. |
 
 **Always back up `apidata` and `pgdata` together.** Backing up one without the other leaves you in a broken state after restore.
 
@@ -72,7 +72,7 @@ docker compose -f docker/docker-compose.yml start observal-api
 
 ## ClickHouse backup
 
-### Option A — volume snapshot (simplest)
+### Option A - volume snapshot (simplest)
 
 ```bash
 docker compose -f docker/docker-compose.yml stop observal-clickhouse
@@ -83,7 +83,7 @@ docker compose -f docker/docker-compose.yml start observal-clickhouse
 
 Downtime: however long the tar takes (a minute to tens of minutes depending on size).
 
-### Option B — ClickHouse native `BACKUP` (no downtime)
+### Option B - ClickHouse native `BACKUP` (no downtime)
 
 ```bash
 docker compose -f docker/docker-compose.yml exec observal-clickhouse \
@@ -130,7 +130,7 @@ observal ops traces --limit 5     # traces up to the backup timestamp should be 
 A minimal cron setup (on the Docker host):
 
 ```cron
-# Daily at 03:00 — Postgres + JWT keys
+# Daily at 03:00 - Postgres + JWT keys
 0 3 * * * cd /opt/Observal && \
   docker compose -f docker/docker-compose.yml exec -T observal-db \
   pg_dump -U postgres observal | gzip > /backups/pg-$(date +\%Y\%m\%d).sql.gz
@@ -139,7 +139,7 @@ A minimal cron setup (on the Docker host):
   docker compose -f docker/docker-compose.yml exec -T observal-api \
   tar czf - -C /data keys > /backups/keys-$(date +\%Y\%m\%d).tar.gz
 
-# Weekly Sunday at 04:00 — ClickHouse
+# Weekly Sunday at 04:00 - ClickHouse
 0 4 * * 0 cd /opt/Observal && \
   docker compose -f docker/docker-compose.yml stop observal-clickhouse && \
   docker run --rm -v observal_chdata:/data -v /backups:/backup alpine \

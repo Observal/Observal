@@ -23,7 +23,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal models`](models.md) | Browse and manage model configurations |
 | [`observal agent`](agent.md) | Author and publish agents |
 | [`observal ops`](ops.md) | Observability and operations (traces, spans, metrics, feedback) |
-| [`observal admin`](admin.md) | Admin operations (settings, users, review, eval, canaries) |
+| [`observal admin`](admin.md) | Admin operations (settings, users, review, security) |
 | [`observal support`](support.md) | Generate and inspect diagnostic support bundles |
 | [`observal doctor`](doctor.md) | Diagnose IDE compatibility; `doctor patch` applies instrumentation |
 | [`observal migrate`](migrate.md) | Export/import PostgreSQL registry (shallow copy) and ClickHouse telemetry (deep copy) |
