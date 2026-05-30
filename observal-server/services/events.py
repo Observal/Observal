@@ -96,6 +96,7 @@ class AuditableAction(Event):
     actor_id: str
     actor_email: str
     actor_role: str = ""
+    org_id: str = ""
     action: str = ""
     resource_type: str = ""
     resource_id: str = ""

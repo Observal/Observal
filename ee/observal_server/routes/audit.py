@@ -91,6 +91,9 @@ async def list_audit_logs(
     if source:
         conditions.append("source = {src:String}")
         params["param_src"] = source
+    if current_user.org_id is not None:
+        conditions.append("org_id = {org_id:String}")
+        params["param_org_id"] = str(current_user.org_id)
     if start_date:
         conditions.append("timestamp >= {start:String}")
         params["param_start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
@@ -161,6 +164,9 @@ async def export_audit_logs(
     if source:
         conditions.append("source = {src:String}")
         params["param_src"] = source
+    if current_user.org_id is not None:
+        conditions.append("org_id = {org_id:String}")
+        params["param_org_id"] = str(current_user.org_id)
     if start_date:
         conditions.append("timestamp >= {start:String}")
         params["param_start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
