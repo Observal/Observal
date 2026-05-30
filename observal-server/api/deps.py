@@ -8,6 +8,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+import asyncio
 import uuid as _uuid
 from collections.abc import AsyncGenerator
 
@@ -56,29 +57,21 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
         redis = get_redis()
         # SEC-002: fail closed on revocation checks - Redis errors must not
         # re-enable revoked tokens or user-level revocations.
-        # Pipeline all checks into a single round-trip to reduce latency
-        # at scale (3 sequential GETs → 1 pipeline with 3 commands).
-        pipe = redis.pipeline()
+        # Gather both checks concurrently to reduce latency at scale
+        # (2 sequential GETs → 1 concurrent round-trip).
+        checks = []
         if jti:
-            pipe.get(f"revoked_jti:{jti}")
+            checks.append(redis.get(f"revoked_jti:{jti}"))
         if user_id_str:
-            pipe.get(f"revoked_user:{user_id_str}")
-        if user_id_str:
-            pipe.get(f"must_change_password:{user_id_str}")
-        results = await pipe.execute()
+            checks.append(redis.get(f"revoked_user:{user_id_str}"))
+        results = await asyncio.gather(*checks) if checks else []
         idx = 0
         if jti:
             if results[idx]:
                 return None
             idx += 1
-        if user_id_str:
-            if results[idx]:
-                return None  # SEC-001: account-wide revocation (e.g. logout all)
-            idx += 1
-        # Store must_change_password result for get_current_user to consume
-        _must_change = False
-        if user_id_str:
-            _must_change = bool(results[idx])
+        if user_id_str and results[idx]:
+            return None  # SEC-001: account-wide revocation (e.g. logout all)
     except RedisError as e:
         # Redis is down: block all token-based auth to prevent revoked tokens
         # from regaining access. Requests will receive HTTP 503.
@@ -106,7 +99,6 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
     user, trace_privacy = row
     user._trace_privacy = bool(trace_privacy)
     user._groups = payload.get("groups", [])
-    user._must_change_password = _must_change
     return user
 
 
@@ -143,11 +135,15 @@ async def get_current_user(
     # Expose user to audit middleware
     request.state.audit_user = user
 
-    # Enforce must_change_password using the value already fetched during
-    # auth pipeline (no additional Redis round-trip).
+    # Enforce must_change_password - fail closed: if Redis is down we cannot
+    # guarantee the gate is enforced, so block non-exempt requests.
     if request.url.path not in _PASSWORD_CHANGE_EXEMPT_PATHS:
-        if getattr(user, "_must_change_password", False):
-            raise HTTPException(status_code=403, detail="Password change required")
+        try:
+            redis = get_redis()
+            if await redis.get(f"must_change_password:{user.id}"):
+                raise HTTPException(status_code=403, detail="Password change required")
+        except RedisError:
+            raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     return user
 

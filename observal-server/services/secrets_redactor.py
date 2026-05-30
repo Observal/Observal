@@ -158,7 +158,7 @@ _COMBINED_KEY_PATTERN = re.compile("|".join(f"(?:{p.pattern})" for p in _KNOWN_K
 # Quick substring prefixes for short-circuit: if none are present in the text,
 # no known API key can exist, so skip the expensive combined regex entirely.
 _QUICK_PREFIXES = (
-    "sk-", "ghp_", "gho_", "ghs_", "ghu_", "glpat-", "xox", "AKIA",
+    "sk-", "sk_", "pk_", "rk_", "ghp_", "gho_", "ghs_", "ghu_", "glpat-", "xox", "AKIA",
     "npm_", "pypi-", "SG.", "hf_", "vercel_", "sbp_", "AGE-SECRET", "AIza", "key-",
 )
 

@@ -321,7 +321,7 @@ async def get_session(
     # Build offset filter for incremental fetches
     _offset_filter = ""
     if after_offset is not None:
-        _offset_filter = f"AND line_offset > {{offset:UInt32}} "
+        _offset_filter = "AND line_offset > {offset:UInt32} "
         params["param_offset"] = str(after_offset)
 
     # Fan out both FINAL scans in parallel - wall time ≈ max(t1, t2) not t1+t2.
@@ -341,7 +341,7 @@ async def get_session(
     _sub_params = {"param_sid": session_id}
     _sub_offset_filter = ""
     if after_offset is not None:
-        _sub_offset_filter = f"AND line_offset > {{offset:UInt32}} "
+        _sub_offset_filter = "AND line_offset > {offset:UInt32} "
         _sub_params["param_offset"] = str(after_offset)
     _sub_sql = (
         "SELECT session_id, timestamp, event_type, content_preview, "

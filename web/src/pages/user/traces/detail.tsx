@@ -1453,7 +1453,7 @@ function AgentNode({
 				inputTokens += parseInt(a.input_tokens || "0", 10);
 				outputTokens += parseInt(a.output_tokens || "0", 10);
 			}
-			if (en === "hook_posttooluse" || en === "tool_result") toolCount++;
+			if (en === "hook_posttooluse") toolCount++;
 		}
 		return { inputTokens, outputTokens, toolCount };
 	}, [agent.events]);
@@ -1882,7 +1882,7 @@ function SessionStats({
 			if (attrs.credits) credits += parseFloat(attrs.credits) || 0;
 			if (attrs.model) models.add(attrs.model);
 
-			if (eName === "tool_result" || eName === "hook_posttooluse") {
+			if (eName === "hook_posttooluse") {
 				toolCalls++;
 				const tn = attrs.tool_name || "unknown";
 				tools[tn] = (tools[tn] || 0) + 1;

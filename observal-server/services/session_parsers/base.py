@@ -7,6 +7,14 @@ from __future__ import annotations
 
 import re
 
+# ANSI escape sequence pattern (CSI sequences + OSC + simple escapes)
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[^\[]")
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI terminal escape codes from text for clean web display."""
+    return _ANSI_RE.sub("", text) if "\x1b" in text else text
+
 
 def strip_cursor_xml_tags(text: str) -> str:
     """Remove Cursor's XML wrapper tags from user prompts for clean display."""

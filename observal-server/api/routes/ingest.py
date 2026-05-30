@@ -112,8 +112,8 @@ async def ingest_session(
             "session_id": req.session_id,
             "event_name": "session_push",
         }
-        asyncio.create_task(publish(f"sessions:{req.session_id}:updated", _payload))
-        asyncio.create_task(publish("sessions:updated", _payload))
+        asyncio.create_task(publish(f"sessions:{req.session_id}:updated", _payload))  # noqa: RUF006
+        asyncio.create_task(publish("sessions:updated", _payload))  # noqa: RUF006
 
     optic.info(
         "session ingested: session={}, ingested={}, skipped={}, errors={}",
