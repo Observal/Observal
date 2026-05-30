@@ -17,6 +17,18 @@ from api.routes.telemetry import router
 from models.user import User
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limiter():
+    from api.ratelimit import limiter
+
+    old_enabled = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
+        limiter.enabled = old_enabled
+
+
 def _make_user(**kwargs):
     u = MagicMock(spec=User)
     u.id = kwargs.get("id", uuid.uuid4())
