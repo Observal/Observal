@@ -64,5 +64,5 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = parse_redis_settings()
-    max_jobs = 5
+    max_jobs = 15
     job_timeout = 600  # 10 min (V2 insights with facet extraction needs more time)
