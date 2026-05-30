@@ -107,7 +107,14 @@ services:
       - ../.env
     environment:
       POSTGRES_DB: observal
-    command: postgres -c max_connections=300
+    command: >
+      postgres
+      -c max_connections=300
+      -c shared_buffers=128MB
+      -c work_mem=8MB
+      -c effective_cache_size=384MB
+      -c maintenance_work_mem=64MB
+      -c random_page_cost=1.1
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
