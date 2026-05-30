@@ -25,7 +25,6 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from strawberry.fastapi import GraphQLRouter
@@ -262,55 +261,85 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
 )
 
-# --- Request body size limit ---
+# --- Request body size limit (pure ASGI) ---
 MAX_REQUEST_SIZE_BYTES: int = int(os.environ.get("MAX_REQUEST_SIZE_MB", "10")) * 1024 * 1024
 
 
-class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
-    """Reject requests whose Content-Length exceeds the configured limit."""
+class RequestSizeLimitMiddleware:
+    """Reject requests whose Content-Length exceeds the configured limit.
 
-    async def dispatch(self, request: Request, call_next):
-        content_length = request.headers.get("content-length")
+    Pure ASGI implementation — avoids BaseHTTPMiddleware overhead (no forced
+    response buffering, no extra task per request).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
         if content_length and int(content_length) > MAX_REQUEST_SIZE_BYTES:
-            return JSONResponse(
-                status_code=413,
-                content={"detail": "Request body too large"},
-            )
-        return await call_next(request)
+            response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
 
 
 app.add_middleware(RequestSizeLimitMiddleware)
 
 
-# --- Security headers ---
+# --- Security headers (pure ASGI) ---
 _is_localhost = any(o.startswith("http://localhost") or o.startswith("http://127.0.0.1") for o in CORS_ALLOWED_ORIGINS)
 
+_SECURITY_HEADERS: list[tuple[bytes, bytes]] = [
+    (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"DENY"),
+    (b"x-xss-protection", b"1; mode=block"),
+    (b"referrer-policy", b"strict-origin-when-cross-origin"),
+    (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+    (b"content-security-policy", (
+        b"default-src 'self'; "
+        b"script-src 'self'; "
+        b"style-src 'self' 'unsafe-inline'; "
+        b"img-src 'self' data: https:; "
+        b"font-src 'self'; "
+        b"connect-src 'self' https:; "
+        b"frame-ancestors 'none'; "
+        b"base-uri 'self'; "
+        b"form-action 'self'"
+    )),
+    (b"x-permitted-cross-domain-policies", b"none"),
+]
+if not _is_localhost:
+    _SECURITY_HEADERS.append((b"strict-transport-security", b"max-age=31536000; includeSubDomains"))
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Attach common security headers to every response."""
 
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
-            "font-src 'self'; "
-            "connect-src 'self' https:; "
-            "frame-ancestors 'none'; "
-            "base-uri 'self'; "
-            "form-action 'self'"
-        )
-        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-        if not _is_localhost:
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        return response
+class SecurityHeadersMiddleware:
+    """Attach common security headers to every HTTP response.
+
+    Pure ASGI implementation — injects headers during the response start
+    message without buffering the response body.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend(_SECURITY_HEADERS)
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -336,15 +365,33 @@ if AUDIT_LICENSED:
 app.add_middleware(TrustedProxyMiddleware)
 
 
-class CacheControlMiddleware(BaseHTTPMiddleware):
-    """Set Cache-Control headers on responses served from cache."""
+class CacheControlMiddleware:
+    """Set Cache-Control headers on responses served from cache.
 
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        cache_header = response.headers.get("X-FastAPI-Cache")
-        if cache_header == "HIT" or (request.method == "GET" and cache_header == "MISS"):
-            response.headers["Cache-Control"] = f"public, max-age={ds.get_sync_int('data.cache_ttl_default', 30)}"
-        return response
+    Pure ASGI implementation — inspects response headers during start
+    without buffering.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_cache_control(message):
+            if message["type"] == "http.response.start":
+                headers = dict(message.get("headers", []))
+                cache_header = headers.get(b"x-fastapi-cache", b"").decode()
+                if cache_header == "HIT" or (scope["method"] == "GET" and cache_header == "MISS"):
+                    extra = [(b"cache-control", f"public, max-age={ds.get_sync_int('data.cache_ttl_default', 30)}".encode())]
+                    msg_headers = list(message.get("headers", []))
+                    msg_headers.extend(extra)
+                    message = {**message, "headers": msg_headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_cache_control)
 
 
 app.add_middleware(CacheControlMiddleware)
