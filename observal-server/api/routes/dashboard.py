@@ -97,39 +97,41 @@ async def overview_stats(
     range_: str | None = Query(None, alias="range"),
     db: AsyncSession = Depends(get_db),
 ):
+    import asyncio
+
     optic.trace("range={}", range_)
-    total_mcps = (
-        await db.scalar(
-            select(func.count(McpListing.id))
-            .join(McpVersion, McpListing.latest_version_id == McpVersion.id)
-            .where(McpVersion.status == ListingStatus.approved)
-        )
-        or 0
-    )
-    total_agents = (
-        await db.scalar(
-            select(func.count(Agent.id))
-            .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-            .where(AgentVersion.status == AgentStatus.approved)
-        )
-        or 0
-    )
-    total_users = await db.scalar(select(func.count(User.id))) or 0
 
     days = _range_days(range_)
-    tool_rows = await _ch_json(
+
+    # Fan out all independent queries in parallel (3 Postgres + 2 ClickHouse)
+    total_mcps_coro = db.scalar(
+        select(func.count(McpListing.id))
+        .join(McpVersion, McpListing.latest_version_id == McpVersion.id)
+        .where(McpVersion.status == ListingStatus.approved)
+    )
+    total_agents_coro = db.scalar(
+        select(func.count(Agent.id))
+        .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
+        .where(AgentVersion.status == AgentStatus.approved)
+    )
+    total_users_coro = db.scalar(select(func.count(User.id)))
+    tool_rows_coro = _ch_json(
         "SELECT count() as cnt FROM spans WHERE start_time > now() - INTERVAL {days:UInt32} DAY AND is_deleted = 0",
         {"param_days": str(days)},
     )
-    agent_rows = await _ch_json(
+    agent_rows_coro = _ch_json(
         "SELECT count() as cnt FROM traces WHERE start_time > now() - INTERVAL {days:UInt32} DAY AND is_deleted = 0",
         {"param_days": str(days)},
     )
 
+    total_mcps, total_agents, total_users, tool_rows, agent_rows = await asyncio.gather(
+        total_mcps_coro, total_agents_coro, total_users_coro, tool_rows_coro, agent_rows_coro,
+    )
+
     return OverviewStats(
-        total_mcps=total_mcps,
-        total_agents=total_agents,
-        total_users=total_users,
+        total_mcps=total_mcps or 0,
+        total_agents=total_agents or 0,
+        total_users=total_users or 0,
         total_tool_calls=int(tool_rows[0].get("cnt", 0)) if tool_rows else 0,
         total_agent_interactions=int(agent_rows[0].get("cnt", 0)) if agent_rows else 0,
     )
@@ -501,10 +503,13 @@ async def token_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
+    import asyncio
+
     days = _range_days(range_)
     days_param = {"param_days": str(days)}
-    # Totals
-    totals = await _ch_json_scoped(
+
+    # Fan out all 5 independent ClickHouse queries in parallel
+    totals_coro = _ch_json_scoped(
         "SELECT "
         "sumIf(token_count_input, token_count_input IS NOT NULL) AS total_input, "
         "sumIf(token_count_output, token_count_output IS NOT NULL) AS total_output, "
@@ -514,13 +519,7 @@ async def token_stats(
         current_user,
         days_param,
     )
-    t = totals[0] if totals else {}
-    total_input = int(t.get("total_input", 0))
-    total_output = int(t.get("total_output", 0))
-    total_tokens = int(t.get("total_tokens", 0))
-
-    # Avg per trace
-    avg_rows = await _ch_json_scoped(
+    avg_coro = _ch_json_scoped(
         "SELECT round(avg(s), 2) AS avg_per_trace FROM ("
         "SELECT trace_id, sum(token_count_total) AS s "
         "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND token_count_total IS NOT NULL "
@@ -530,10 +529,7 @@ async def token_stats(
         current_user,
         days_param,
     )
-    avg_per_trace = float((avg_rows[0] if avg_rows else {}).get("avg_per_trace", 0))
-
-    # By agent
-    by_agent_rows = await _ch_json_scoped(
+    by_agent_coro = _ch_json_scoped(
         "SELECT t.agent_id AS agent_id, "
         "sumIf(s.token_count_input, s.token_count_input IS NOT NULL) AS input, "
         "sumIf(s.token_count_output, s.token_count_output IS NOT NULL) AS output, "
@@ -547,6 +543,42 @@ async def token_stats(
         current_user,
         days_param,
     )
+    by_mcp_coro = _ch_json_scoped(
+        "SELECT t.mcp_id AS mcp_id, "
+        "sumIf(s.token_count_input, s.token_count_input IS NOT NULL) AS input, "
+        "sumIf(s.token_count_output, s.token_count_output IS NOT NULL) AS output, "
+        "sumIf(s.token_count_total, s.token_count_total IS NOT NULL) AS total, "
+        "count(DISTINCT t.trace_id) AS traces "
+        "FROM spans AS s FINAL "
+        "INNER JOIN traces AS t FINAL ON s.trace_id = t.trace_id AND t.project_id = 'default' AND t.is_deleted = 0 "
+        "WHERE s.project_id = 'default' AND s.is_deleted = 0 AND t.mcp_id != '' "
+        "AND s.start_time >= now() - INTERVAL {days:UInt32} DAY "
+        "GROUP BY t.mcp_id ORDER BY total DESC LIMIT 20",
+        current_user,
+        days_param,
+    )
+    over_time_coro = _ch_json_scoped(
+        "SELECT toDate(start_time) AS date, "
+        "sumIf(token_count_input, token_count_input IS NOT NULL) AS input, "
+        "sumIf(token_count_output, token_count_output IS NOT NULL) AS output "
+        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 "
+        "AND start_time >= now() - INTERVAL {days:UInt32} DAY "
+        "GROUP BY date ORDER BY date",
+        current_user,
+        days_param,
+    )
+
+    totals, avg_rows, by_agent_rows, by_mcp_rows, over_time_rows = await asyncio.gather(
+        totals_coro, avg_coro, by_agent_coro, by_mcp_coro, over_time_coro,
+    )
+
+    t = totals[0] if totals else {}
+    total_input = int(t.get("total_input", 0))
+    total_output = int(t.get("total_output", 0))
+    total_tokens = int(t.get("total_tokens", 0))
+    avg_per_trace = float((avg_rows[0] if avg_rows else {}).get("avg_per_trace", 0))
+
+    # Resolve agent names from Postgres
     agent_ids = [r["agent_id"] for r in by_agent_rows if r.get("agent_id")]
     agent_names: dict[str, str] = {}
     if agent_ids:
@@ -566,21 +598,7 @@ async def token_stats(
         for r in by_agent_rows
     ]
 
-    # By MCP
-    by_mcp_rows = await _ch_json_scoped(
-        "SELECT t.mcp_id AS mcp_id, "
-        "sumIf(s.token_count_input, s.token_count_input IS NOT NULL) AS input, "
-        "sumIf(s.token_count_output, s.token_count_output IS NOT NULL) AS output, "
-        "sumIf(s.token_count_total, s.token_count_total IS NOT NULL) AS total, "
-        "count(DISTINCT t.trace_id) AS traces "
-        "FROM spans AS s FINAL "
-        "INNER JOIN traces AS t FINAL ON s.trace_id = t.trace_id AND t.project_id = 'default' AND t.is_deleted = 0 "
-        "WHERE s.project_id = 'default' AND s.is_deleted = 0 AND t.mcp_id != '' "
-        "AND s.start_time >= now() - INTERVAL {days:UInt32} DAY "
-        "GROUP BY t.mcp_id ORDER BY total DESC LIMIT 20",
-        current_user,
-        days_param,
-    )
+    # Resolve MCP names from Postgres
     mcp_ids = [r["mcp_id"] for r in by_mcp_rows if r.get("mcp_id")]
     mcp_names: dict[str, str] = {}
     if mcp_ids:
@@ -611,17 +629,7 @@ async def token_stats(
         for r in by_mcp_rows
     ]
 
-    # Over time
-    over_time_rows = await _ch_json_scoped(
-        "SELECT toDate(start_time) AS date, "
-        "sumIf(token_count_input, token_count_input IS NOT NULL) AS input, "
-        "sumIf(token_count_output, token_count_output IS NOT NULL) AS output "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 "
-        "AND start_time >= now() - INTERVAL {days:UInt32} DAY "
-        "GROUP BY date ORDER BY date",
-        current_user,
-        days_param,
-    )
+    # Over time (already fetched in parallel above)
     over_time = [
         TokenTimePoint(date=str(r["date"]), input=int(r["input"]), output=int(r["output"])) for r in over_time_rows
     ]
