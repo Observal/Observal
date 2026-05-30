@@ -96,14 +96,18 @@ async def ingest_session(
                 req.total_offset,
             )
 
-    # Notify WebSocket subscribers so the frontend gets instant turn updates
+    # Notify WebSocket subscribers so the frontend gets instant turn updates.
+    # Publish to both a session-specific channel (for detail viewers, O(1) fan-out)
+    # and the global channel (for list viewers with debounced refresh).
     if result.ingested > 0:
         from services.redis import publish
 
-        await publish("sessions:updated", {
+        _payload = {
             "session_id": req.session_id,
             "event_name": "session_push",
-        })
+        }
+        await publish(f"sessions:{req.session_id}:updated", _payload)
+        await publish("sessions:updated", _payload)
 
     optic.info(
         "session ingested: session={}, ingested={}, skipped={}, errors={}",

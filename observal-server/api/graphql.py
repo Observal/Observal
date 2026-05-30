@@ -536,15 +536,16 @@ class Subscription:
 
     @strawberry.subscription
     async def session_updated(self, session_id: str | None = None) -> AsyncGenerator[SessionEvent, None]:
-        channel = "sessions:updated"
+        # When filtering by session_id, subscribe to the targeted channel
+        # to avoid O(connections) filtering on every publish.
+        channel = f"sessions:{session_id}:updated" if session_id else "sessions:updated"
         async for data in subscribe(channel):
             sid = data.get("session_id", "")
-            if session_id and sid != session_id:
-                continue
-            yield SessionEvent(
-                session_id=sid,
-                event_name=data.get("event_name", ""),
-            )
+            if not session_id or sid == session_id:
+                yield SessionEvent(
+                    session_id=sid,
+                    event_name=data.get("event_name", ""),
+                )
 
     @strawberry.subscription
     async def review_updated(self, listing_id: str | None = None) -> AsyncGenerator[ReviewEvent, None]:
