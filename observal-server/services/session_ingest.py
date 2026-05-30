@@ -245,10 +245,32 @@ async def ingest_session_lines(
         return IngestResult(ingested=0, skipped=0, errors=0)
 
     # Pre-check: fetch (existing_offsets, existing_hashes) for this batch range.
+    # Skip the expensive ClickHouse FINAL query on first push (start_offset=0)
+    # when we haven't seen this session before. Use a Redis flag to detect retries.
     max_batch_offset = start_offset + len(lines) - 1
-    existing_offsets, existing_hashes = await query_existing_for_dedup(
-        session_id, project_id, start_offset, max_batch_offset
-    )
+    if start_offset == 0:
+        from services.redis import get_redis
+
+        _flag_key = f"session_ingested:{session_id}"
+        try:
+            _redis = get_redis()
+            _already_seen = await _redis.exists(_flag_key)
+        except Exception:
+            _already_seen = True  # Fail safe: do the dedup check
+        if not _already_seen:
+            existing_offsets, existing_hashes = frozenset(), frozenset()
+            try:
+                await _redis.setex(_flag_key, 3600, "1")
+            except Exception:
+                pass
+        else:
+            existing_offsets, existing_hashes = await query_existing_for_dedup(
+                session_id, project_id, start_offset, max_batch_offset
+            )
+    else:
+        existing_offsets, existing_hashes = await query_existing_for_dedup(
+            session_id, project_id, start_offset, max_batch_offset
+        )
 
     rows: list[dict] = []
     classify_fn, preview_fn, tool_info_fn = get_classifier(ide)
