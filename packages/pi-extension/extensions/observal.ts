@@ -201,8 +201,10 @@ export default function (pi: ExtensionAPI) {
       let consumedBytes = 0;
       for (let i = 0; i < rawLines.length; i++) {
         const line = rawLines[i]!;
-        if (i === rawLines.length - 1 && !text.endsWith("\n")) {
-          break; // incomplete line
+        if (i === rawLines.length - 1) {
+          // Last element after split: either empty (file ended with \n)
+          // or an incomplete line (file didn't end with \n). Either way, stop.
+          break;
         }
         if (line.trim()) {
           lines.push(line);
