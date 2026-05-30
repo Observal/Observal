@@ -99,15 +99,18 @@ async def ingest_session(
     # Notify WebSocket subscribers so the frontend gets instant turn updates.
     # Publish to both a session-specific channel (for detail viewers, O(1) fan-out)
     # and the global channel (for list viewers with debounced refresh).
+    # Fire-and-forget so a Redis blip never blocks the HTTP response to the CLI.
     if result.ingested > 0:
+        import asyncio
+
         from services.redis import publish
 
         _payload = {
             "session_id": req.session_id,
             "event_name": "session_push",
         }
-        await publish(f"sessions:{req.session_id}:updated", _payload)
-        await publish("sessions:updated", _payload)
+        asyncio.create_task(publish(f"sessions:{req.session_id}:updated", _payload))
+        asyncio.create_task(publish("sessions:updated", _payload))
 
     optic.info(
         "session ingested: session={}, ingested={}, skipped={}, errors={}",
