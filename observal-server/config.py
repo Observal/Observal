@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     CLICKHOUSE_URL: str = "clickhouse://localhost:8123/observal"
     REDIS_URL: str = "redis://localhost:6379"
     REDIS_SOCKET_TIMEOUT: float = 2.0
-    REDIS_MAX_CONNECTIONS: int = 50
+    REDIS_MAX_CONNECTIONS: int = 200
 
     # Crypto
     SECRET_KEY: str = "change-me-to-a-random-string"
@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     OAUTH_SERVER_METADATA_URL: str | None = None
 
     # Connection pool sizing (boot-time, pool created once at startup)
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
-    CLICKHOUSE_MAX_CONNECTIONS: int = 20
-    CLICKHOUSE_MAX_KEEPALIVE: int = 10
+    DB_POOL_SIZE: int = 30
+    DB_MAX_OVERFLOW: int = 50
+    CLICKHOUSE_MAX_CONNECTIONS: int = 100
+    CLICKHOUSE_MAX_KEEPALIVE: int = 100
     CLICKHOUSE_TIMEOUT: float = 10.0
 
     # Logging (boot-time, configured before event loop starts)

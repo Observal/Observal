@@ -105,6 +105,7 @@ services:
       - ../.env
     environment:
       POSTGRES_DB: observal
+    command: postgres -c max_connections=300
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
