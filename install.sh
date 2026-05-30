@@ -218,11 +218,9 @@ info "Installing Observal CLI $VERSION ($OS/$ARCH) [$EDITION edition]"
 EXT=""
 [ "$OS" = "windows" ] && EXT=".exe"
 
-if [ "$EDITION" = "enterprise" ]; then
-    ARTIFACT="observal-enterprise-${OS}-${ARCH}${EXT}"
-else
-    ARTIFACT="observal-${OS}-${ARCH}${EXT}"
-fi
+# Same binary for both editions; enterprise activates via the license key
+# written to ~/.observal/config.json below.
+ARTIFACT="observal-${OS}-${ARCH}${EXT}"
 
 if [ -n "$BASE_URL" ]; then
     URL="${BASE_URL}/${ARTIFACT}"
@@ -237,11 +235,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 info "Downloading $ARTIFACT..."
 if ! curl -fsSL -o "$TMPDIR/$ARTIFACT" "$URL"; then
-    if [ "$EDITION" = "enterprise" ]; then
-        die "Enterprise artifact '$ARTIFACT' was not found for $VERSION. Check https://github.com/$GITHUB_REPO/releases or re-run without --license-key to install community edition."
-    else
-        die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
-    fi
+    die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
 fi
 
 info "Verifying checksum..."

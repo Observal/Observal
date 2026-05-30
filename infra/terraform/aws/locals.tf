@@ -27,7 +27,8 @@ locals {
   effective_edition = var.edition == "auto" ? (var.observal_license_key != "" ? "enterprise" : "community") : var.edition
   is_enterprise     = local.effective_edition == "enterprise"
 
-  # Enterprise uses separate image repos
+  # Enterprise uses a separate API image (includes compiled insights);
+  # the web image is identical for both editions (gating is server-side).
   image_repo_api_effective = local.is_enterprise ? "ghcr.io/blazeup-ai/observal-api-enterprise" : var.image_repo_api
-  image_repo_web_effective = local.is_enterprise ? "ghcr.io/blazeup-ai/observal-web-enterprise" : var.image_repo_web
+  image_repo_web_effective = var.image_repo_web
 }

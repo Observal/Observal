@@ -208,11 +208,9 @@ info "Installing Observal Server $VERSION [$EDITION edition]"
 
 # ── Download ─────────────────────────────────────────────────
 
-if [ "$EDITION" = "enterprise" ]; then
-    ARTIFACT="observal-server-enterprise-${VERSION}.tar.gz"
-else
-    ARTIFACT="observal-server-${VERSION}.tar.gz"
-fi
+# Same server package for both editions; enterprise features activate via the
+# license key passed to setup.sh at the end of this script.
+ARTIFACT="observal-server-${VERSION}.tar.gz"
 
 if [ -n "$BASE_URL" ]; then
     URL="${BASE_URL}/${ARTIFACT}"
@@ -225,11 +223,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 info "Downloading server package ($EDITION)..."
 if ! curl -fsSL -o "$TMPDIR/$ARTIFACT" "$URL"; then
-    if [ "$EDITION" = "enterprise" ]; then
-        die "Enterprise package '$ARTIFACT' was not found for $VERSION. Check https://github.com/$GITHUB_REPO/releases or re-run without --license-key to install community edition."
-    else
-        die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
-    fi
+    die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
 fi
 
 # ── Unpack ───────────────────────────────────────────────────
