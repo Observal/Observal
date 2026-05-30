@@ -65,14 +65,8 @@ UNTRUSTED_CLIENT_SCORE_METADATA = {
 }
 RESERVED_SCORE_SOURCES = frozenset(
     {
-        "adversarial_scorer",
-        "eval_engine",
         "internal",
-        "judge",
-        "kernel",
-        "ragas_eval",
         "server",
-        "slm_scorer",
         "system",
         "trusted",
     }

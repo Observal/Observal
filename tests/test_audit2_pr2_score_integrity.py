@@ -13,6 +13,18 @@ from api.routes.telemetry import router
 from models.user import User, UserRole
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limiter():
+    from api.ratelimit import limiter
+
+    old_enabled = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
+        limiter.enabled = old_enabled
+
+
 def _make_user(org_id: uuid.UUID | None = None):
     user = MagicMock(spec=User)
     user.id = uuid.uuid4()
@@ -41,7 +53,7 @@ async def test_client_score_sources_are_namespaced_and_marked_untrusted():
                         {
                             "score_id": "score-1",
                             "name": "accuracy",
-                            "source": "Eval",
+                            "source": "manual",
                             "value": 0.97,
                             "metadata": {"team": "quality"},
                         }
@@ -51,10 +63,10 @@ async def test_client_score_sources_are_namespaced_and_marked_untrusted():
 
     assert response.status_code == 200
     rows = insert_scores.call_args.args[0]
-    assert rows[0]["source"] == "client:eval"
+    assert rows[0]["source"] == "client:manual"
     assert rows[0]["metadata"] == {
         "team": "quality",
-        "score_original_source": "Eval",
+        "score_original_source": "manual",
         "score_trust": "untrusted_client",
         "score_writer": "telemetry_api",
     }
@@ -84,7 +96,7 @@ async def test_reserved_internal_score_source_is_rejected():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             response = await ac.post(
                 "/api/v1/telemetry/ingest",
-                json={"scores": [{"score_id": "score-1", "name": "accuracy", "source": "eval_engine", "value": 0.5}]},
+                json={"scores": [{"score_id": "score-1", "name": "accuracy", "source": "server", "value": 0.5}]},
             )
 
     assert response.status_code == 422
@@ -252,7 +264,7 @@ async def test_missing_referenced_trace_is_rejected():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reserved", ["RAGAS_EVAL", "Eval_Engine", "SLM_Scorer", "JUDGE"])
+@pytest.mark.parametrize("reserved", ["SERVER", "Internal", "System", "TRUSTED"])
 async def test_reserved_score_source_check_is_case_insensitive(reserved):
     """Reserved-name check must lowercase to prevent trivial bypass via casing."""
     app = _app_with_user(_make_user())
@@ -287,8 +299,8 @@ async def test_client_cannot_override_score_trust_metadata():
                             "value": 1,
                             "metadata": {
                                 "score_trust": "trusted_server",
-                                "score_writer": "eval_engine",
-                                "score_original_source": "ragas_eval",
+                                "score_writer": "server",
+                                "score_original_source": "trusted",
                                 "user_tag": "keepme",
                             },
                         }
@@ -351,7 +363,7 @@ async def test_in_batch_span_with_mismatched_trace_id_is_rejected():
                 },
             )
 
-    # Score-2 keeps the same trace_id, so this batch is fine — switch one to force a mismatch.
+    # Score-2 keeps the same trace_id, so this batch is fine, switch one to force a mismatch.
     assert response.status_code == 200  # sanity-check the helper batch
     insert_scores.assert_called_once()
     query_trace_by_id.assert_not_called()
