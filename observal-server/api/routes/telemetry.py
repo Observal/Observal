@@ -14,10 +14,11 @@ removed - session telemetry now flows through /api/v1/ingest/session
 import asyncio
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from loguru import logger as optic
 
 from api.deps import get_project_id, require_role
+from api.ratelimit import limiter
 from models.user import User, UserRole
 from schemas.telemetry import (
     IngestBatch,
@@ -57,8 +58,10 @@ _SHIM_EVENT_NAMES: dict[str, str] = {
 
 
 @router.post("/ingest", response_model=IngestResponse)
+@limiter.limit("60/minute")
 async def ingest(
     batch: IngestBatch,
+    request: Request,
     current_user: User = Depends(require_role(UserRole.user)),
     x_observal_environment: str = Header("default"),
 ):
