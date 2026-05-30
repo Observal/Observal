@@ -55,10 +55,10 @@ export function useSessionDetail(id: string | undefined) {
     queryKey: ['sessions', 'detail', id],
     queryFn: () => dashboard.session(id!),
     enabled: !!id,
-    refetchInterval: 1_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 1_000,
   });
 }
 export function useSessionTraces() {
