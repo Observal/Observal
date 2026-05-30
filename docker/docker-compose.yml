@@ -155,6 +155,7 @@ services:
     image: redis:8-alpine
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    command: redis-server --maxmemory 200mb --maxmemory-policy volatile-lru
     volumes:
       - redisdata:/data
     healthcheck:
