@@ -6,32 +6,43 @@
 
 from fastapi import APIRouter, Depends, Request
 from loguru import logger as optic
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from api.deps import get_project_id, require_role
 from api.ratelimit import limiter
 from models.user import User, UserRole
+from schemas.telemetry import MAX_SHORT_STRING_LENGTH, MAX_TEXT_LENGTH
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
+MAX_SESSION_LINES = 1000
+
 
 class SessionIngestRequest(BaseModel):
-    session_id: str
-    ide: str = "claude-code"
-    agent_id: str | None = None
-    agent_version: str | None = None
-    layer_hash: str | None = None
-    lines: list[str]  # Raw JSONL lines
-    start_offset: int = 0
-    hook_event: str = "UserPromptSubmit"
+    session_id: str = Field(..., max_length=MAX_SHORT_STRING_LENGTH)
+    ide: str = Field("claude-code", max_length=MAX_SHORT_STRING_LENGTH)
+    agent_id: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
+    agent_version: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
+    layer_hash: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
+    lines: list[str] = Field(..., max_length=MAX_SESSION_LINES)  # Raw JSONL lines
+    start_offset: int = Field(0, ge=0)
+    hook_event: str = Field("UserPromptSubmit", max_length=MAX_SHORT_STRING_LENGTH)
     # Sent on Stop for integrity check
     final: bool = False
-    total_line_count: int | None = None
-    total_offset: int | None = None
+    total_line_count: int | None = Field(None, ge=0)
+    total_offset: int | None = Field(None, ge=0)
     # Kiro-specific: total credits consumed this session
-    total_credits: float | None = None
+    total_credits: float | None = Field(None, ge=0)
     # Claude Code subagent attribution: set when this session is a subagent
-    parent_session_id: str | None = None
+    parent_session_id: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
+
+    @field_validator("lines")
+    @classmethod
+    def lines_are_bounded(cls, value: list[str]) -> list[str]:
+        for line in value:
+            if len(line) > MAX_TEXT_LENGTH:
+                raise ValueError(f"session lines must be at most {MAX_TEXT_LENGTH} characters")
+        return value
 
 
 class SessionIngestResponse(BaseModel):
@@ -42,10 +53,10 @@ class SessionIngestResponse(BaseModel):
 
 
 @router.post("/session", response_model=SessionIngestResponse)
-@limiter.limit("300/minute")
+@limiter.limit("60/minute")
 async def ingest_session(
-    request: Request,
     req: SessionIngestRequest,
+    request: Request,
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Ingest raw JSONL transcript lines from an IDE session.
