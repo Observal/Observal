@@ -30,6 +30,7 @@ from services.secrets_redactor import redact_secrets
 logger = structlog.get_logger(__name__)
 
 _DEFAULT_PROJECT = "default"
+MAX_TRACE_PAGE_SIZE = 100
 
 
 # --- Helpers ---
@@ -52,6 +53,17 @@ def _parse_json(val: str | None) -> JSON | None:
         return json.loads(val)
     except (json.JSONDecodeError, TypeError):
         return val
+
+
+def _bounded_trace_limit(limit: int) -> int:
+    return min(max(int(limit), 1), MAX_TRACE_PAGE_SIZE)
+
+
+def _bounded_trace_offset(offset: int) -> int:
+    offset = int(offset)
+    if offset < 0:
+        raise ValueError("offset must be greater than or equal to 0")
+    return offset
 
 
 # --- DataLoaders ---
@@ -344,17 +356,19 @@ class Query:
         ctx = info.context
         project_id = ctx.get("project_id", _DEFAULT_PROJECT)
         uid = None if _is_admin(ctx) else ctx.get("user_id")
+        bounded_limit = _bounded_trace_limit(limit)
+        bounded_offset = _bounded_trace_offset(offset)
         rows = await query_traces(
             project_id,
             trace_type=trace_type,
             mcp_id=mcp_id,
             agent_id=agent_id,
             user_id=uid,
-            limit=limit + 1,
-            offset=offset,
+            limit=bounded_limit + 1,
+            offset=bounded_offset,
         )
-        has_more = len(rows) > limit
-        items = [_row_to_trace(r) for r in rows[:limit]]
+        has_more = len(rows) > bounded_limit
+        items = [_row_to_trace(r) for r in rows[:bounded_limit]]
         return TraceConnection(items=items, total_count=len(items), has_more=has_more)
 
     @strawberry.field
