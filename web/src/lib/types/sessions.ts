@@ -42,6 +42,7 @@ export interface SessionData {
 	traces: unknown[];
 	service_name: string;
 	subagent_sessions?: SubagentSession[];
+	max_offset?: number;
 }
 
 export interface RawSessionEvent {

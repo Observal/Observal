@@ -543,10 +543,8 @@ export const dashboard = {
 		return get<Session[]>(`/sessions${suffix}`);
 	},
 	sessionsSummary: () => get<SessionsSummary>("/sessions/summary"),
-	session: (id: string, afterOffset?: number) => {
-		const suffix = afterOffset != null ? `?after_offset=${afterOffset}` : "";
-		return get<SessionData>(`/sessions/${encodeURIComponent(id)}${suffix}`);
-	},
+	session: (id: string) =>
+		get<SessionData>(`/sessions/${encodeURIComponent(id)}`),
 	traces: () => get<SessionTrace[]>("/sessions/traces"),
 	trace: (id: string) =>
 		get<unknown>(`/sessions/traces/${encodeURIComponent(id)}`),

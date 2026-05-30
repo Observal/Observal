@@ -52,35 +52,9 @@ export function useSessionsSummary() {
   });
 }
 export function useSessionDetail(id: string | undefined) {
-  const qc = useQueryClient();
-  const offsetRef = useRef<number | undefined>(undefined);
-
-  // Reset offset when session changes
-  useEffect(() => {
-    offsetRef.current = undefined;
-  }, [id]);
-
   return useQuery({
     queryKey: ['sessions', 'detail', id],
-    queryFn: async () => {
-      const data = await dashboard.session(id!, offsetRef.current);
-      // Update offset cursor for next incremental fetch
-      if (data && typeof (data as Record<string, unknown>).max_offset === 'number') {
-        offsetRef.current = (data as Record<string, unknown>).max_offset as number;
-      }
-      // For incremental fetches, merge new events into existing cache
-      if (offsetRef.current !== undefined && (data as Record<string, unknown>).events) {
-        const existing = qc.getQueryData<SessionData>(['sessions', 'detail', id]);
-        if (existing && existing.events && (data as SessionData).events.length > 0) {
-          return {
-            ...existing,
-            events: [...existing.events, ...(data as SessionData).events],
-            max_offset: (data as Record<string, unknown>).max_offset,
-          } as SessionData;
-        }
-      }
-      return data;
-    },
+    queryFn: () => dashboard.session(id!),
     enabled: !!id,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
