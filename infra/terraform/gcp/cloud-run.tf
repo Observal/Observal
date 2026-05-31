@@ -4,6 +4,8 @@
 resource "google_service_account" "cloud_run" {
   account_id   = "${var.name_prefix}-run"
   display_name = "Observal Cloud Run service account"
+
+  depends_on = [google_project_service.iam]
 }
 
 resource "google_project_iam_member" "cloud_run_log_writer" {
@@ -24,6 +26,8 @@ resource "google_cloud_run_v2_service" "api" {
   name     = "${local.name}-api"
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
+
+  depends_on = [google_project_service.run]
 
   template {
     service_account = google_service_account.cloud_run.email

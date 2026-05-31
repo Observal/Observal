@@ -30,7 +30,7 @@ resource "google_project_iam_member" "data_host_storage_admin" {
 
 resource "google_compute_disk" "data" {
   count = local.clickhouse_self_hosted ? 1 : 0
-  name  = "${local.name}-data"
+  name  = "${local.name}-data-disk"
   type  = "pd-ssd"
   size  = var.data_disk_size_gb
   zone  = "${var.region}-a"

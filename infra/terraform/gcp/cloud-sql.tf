@@ -14,6 +14,7 @@ resource "google_sql_database_instance" "postgres" {
 
   settings {
     tier              = var.db_tier
+    edition           = "ENTERPRISE"
     disk_size         = var.db_disk_size_gb
     disk_autoresize   = true
     availability_type = var.db_ha_enabled ? "REGIONAL" : "ZONAL"
@@ -46,7 +47,10 @@ resource "google_sql_database_instance" "postgres" {
     }
   }
 
-  depends_on = [google_compute_network.main]
+  depends_on = [
+    google_project_service.sqladmin,
+    google_service_networking_connection.private,
+  ]
 }
 
 resource "google_sql_database" "app" {

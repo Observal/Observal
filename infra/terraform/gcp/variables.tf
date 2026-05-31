@@ -184,9 +184,13 @@ variable "data_disk_size_gb" {
 # ── Cloud SQL ─────────────────────────────────────────────────────────────
 
 variable "db_tier" {
-  description = "Cloud SQL machine tier."
+  description = "Cloud SQL machine tier (ENTERPRISE edition). Use db-f1-micro, db-g1-small, or db-custom-N-M."
   type        = string
   default     = "db-g1-small"
+  validation {
+    condition     = !startswith(var.db_tier, "db-perf-optimized")
+    error_message = "db_tier uses ENTERPRISE edition. Tiers starting with 'db-perf-optimized' require ENTERPRISE_PLUS. Use db-g1-small, db-custom-N-M, etc."
+  }
 }
 
 variable "db_disk_size_gb" {

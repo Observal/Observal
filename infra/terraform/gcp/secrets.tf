@@ -28,12 +28,14 @@ resource "google_secret_manager_secret" "app" {
   replication {
     auto {}
   }
+
+  depends_on = [google_project_service.secretmanager]
 }
 
 resource "google_secret_manager_secret_version" "app" {
   for_each    = local.secrets
   secret      = google_secret_manager_secret.app[each.key].id
-  secret_data = each.value
+  secret_data = coalesce(each.value, " ")
 }
 
 resource "google_secret_manager_secret_iam_member" "cloud_run_access" {

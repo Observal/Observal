@@ -12,11 +12,13 @@ locals {
   effective_edition = var.edition == "auto" ? (var.observal_license_key != "" ? "enterprise" : "community") : var.edition
   is_enterprise     = local.effective_edition == "enterprise"
 
-  image_repo_api_effective = local.is_enterprise ? "ghcr.io/blazeup-ai/observal-api-enterprise" : var.image_repo_api
-  image_repo_web_effective = local.is_enterprise ? "ghcr.io/blazeup-ai/observal-web-enterprise" : var.image_repo_web
+  ar_prefix = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.ghcr_proxy.repository_id}"
 
-  image_api = "${local.image_repo_api_effective}:${var.image_tag}"
-  image_web = "${local.image_repo_web_effective}:${var.image_tag}"
+  image_repo_api_effective = local.is_enterprise ? "blazeup-ai/observal-api-enterprise" : trimprefix(var.image_repo_api, "ghcr.io/")
+  image_repo_web_effective = local.is_enterprise ? "blazeup-ai/observal-web-enterprise" : trimprefix(var.image_repo_web, "ghcr.io/")
+
+  image_api = "${local.ar_prefix}/${local.image_repo_api_effective}:${var.image_tag}"
+  image_web = "${local.ar_prefix}/${local.image_repo_web_effective}:${var.image_tag}"
 
   database_url   = "postgresql+asyncpg://${google_sql_user.app.name}:${random_password.db.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.app.name}"
   redis_url      = "redis://${google_redis_instance.main.host}:${google_redis_instance.main.port}"

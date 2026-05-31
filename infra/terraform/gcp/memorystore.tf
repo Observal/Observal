@@ -12,4 +12,6 @@ resource "google_redis_instance" "main" {
   redis_configs = {
     maxmemory-policy = "allkeys-lru"
   }
+
+  depends_on = [google_project_service.redis]
 }

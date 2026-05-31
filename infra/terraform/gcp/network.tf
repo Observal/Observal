@@ -4,6 +4,8 @@
 resource "google_compute_network" "main" {
   name                    = local.name
   auto_create_subnetworks = false
+
+  depends_on = [google_project_service.compute]
 }
 
 resource "google_compute_subnetwork" "main" {
@@ -37,6 +39,8 @@ resource "google_vpc_access_connector" "main" {
 
   min_instances = 2
   max_instances = 10
+
+  depends_on = [google_project_service.vpcaccess]
 }
 
 resource "google_compute_firewall" "allow_internal" {
