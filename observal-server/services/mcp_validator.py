@@ -536,9 +536,7 @@ async def _clone_and_inspect(listing: McpListing, db: AsyncSession, tmp_dir: str
                 stage="clone_and_inspect",
                 passed=True,
                 details="\n".join(
-                    part
-                    for part in (f"Found MCP entry point: {entry_point.relative_to(tmp_dir)}", url_warning)
-                    if part
+                    part for part in (f"Found MCP entry point: {entry_point.relative_to(tmp_dir)}", url_warning) if part
                 ),
             )
         )

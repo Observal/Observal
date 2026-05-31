@@ -348,19 +348,30 @@ export default function (pi: ExtensionAPI) {
           .filter((l) => l.trim());
 
         if (lines.length > 0) {
-          const payload = JSON.stringify({
-            session_id: sessionId,
-            ide: "pi",
-            agent_id: s.config?.agent_id ?? null,
-            agent_version: s.config?.agent_version ?? null,
-            lines,
-            start_offset: entry.line_count,
-            hook_event: "CrashRecovery",
-            final: true,
-            total_line_count: entry.line_count + lines.length,
-            total_offset: fileStat.size,
-          });
-          await postWithTimeout(s.config!, "/api/v1/ingest/session", payload);
+          let pushOk = true;
+          for (let offset = 0; offset < lines.length; offset += MAX_LINES_PER_CHUNK) {
+            const chunk = lines.slice(offset, offset + MAX_LINES_PER_CHUNK);
+            const isLastChunk = offset + MAX_LINES_PER_CHUNK >= lines.length;
+            const payload = JSON.stringify({
+              session_id: sessionId,
+              ide: "pi",
+              agent_id: s.config?.agent_id ?? null,
+              agent_version: s.config?.agent_version ?? null,
+              lines: chunk,
+              start_offset: entry.line_count + offset,
+              hook_event: "CrashRecovery",
+              final: isLastChunk,
+              ...(isLastChunk
+                ? {
+                    total_line_count: entry.line_count + lines.length,
+                    total_offset: fileStat.size,
+                  }
+                : {}),
+            });
+            const ok = await postWithTimeout(s.config!, "/api/v1/ingest/session", payload);
+            if (!ok) { pushOk = false; break; }
+          }
+          if (!pushOk) continue; // skip finalization, retry next startup
         }
 
         writeCursor(sessionId, fileStat.size, entry.line_count + lines.length, true);

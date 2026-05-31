@@ -21,6 +21,7 @@ from observal_cli.sessions.base import (
     build_payload,
     load_config,
     log_error,
+    post_lines_chunked,
     post_to_server,
     read_cursor,
     read_new_lines,
@@ -133,7 +134,16 @@ def _run(home: Path | None = None) -> None:
     optic.debug("read {} new lines ({} bytes) from Kiro session {}", len(lines), bytes_read, session_id[:12])
 
     new_offset = offset + bytes_read
-    payload = build_payload(
+    is_stop = hook_event.lower() == "stop"
+    credits = _read_credits_with_retry(session_id, home=home) if is_stop else read_kiro_credits(session_id, home=home)
+    extra: dict = {}
+    if credits is not None:
+        extra["total_credits"] = credits
+        optic.trace("attaching credits={} to Kiro payload", credits)
+
+    success = post_lines_chunked(
+        server_url=config["server_url"],
+        access_token=config["access_token"],
         session_id=session_id,
         lines=lines,
         start_offset=line_count,
@@ -141,18 +151,9 @@ def _run(home: Path | None = None) -> None:
         line_count_before=line_count,
         new_offset=new_offset,
         cwd=cwd,
-    )
-    payload["ide"] = "kiro"
-    is_stop = hook_event.lower() == "stop"
-    credits = _read_credits_with_retry(session_id, home=home) if is_stop else read_kiro_credits(session_id, home=home)
-    if credits is not None:
-        payload["total_credits"] = credits
-        optic.trace("attaching credits={} to Kiro payload", credits)
-
-    success = post_to_server(
-        server_url=config["server_url"],
-        access_token=config["access_token"],
-        payload=payload,
+        ide="kiro",
+        config=config,
+        extra_fields=extra or None,
     )
 
     if not success:

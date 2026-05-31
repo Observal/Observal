@@ -66,20 +66,29 @@ def main() -> None:
         return
 
     try:
-        from observal_cli.sessions.base import log_error, post_to_server
+        from observal_cli.sessions.base import log_error, post_lines_chunked
     except Exception as e:
         _log(f"WORKER_EXIT: import error: {e}")
         return
 
     try:
-        success = post_to_server(
+        lines = payload.get("lines", [])
+        success = post_lines_chunked(
             server_url=server_url,
             access_token=access_token,
-            payload=payload,
+            session_id=payload.get("session_id", session_id),
+            lines=lines,
+            start_offset=payload.get("start_offset", 0),
+            hook_event=payload.get("hook_event", "UserPromptSubmit"),
+            line_count_before=payload.get("start_offset", 0),
+            new_offset=new_offset,
+            cwd=payload.get("cwd", ""),
+            parent_session_id=payload.get("parent_session_id"),
+            ide=payload.get("ide", "cursor"),
             config=config,
         )
     except Exception as e:
-        _log(f"WORKER_EXIT: post_to_server raised: {e}")
+        _log(f"WORKER_EXIT: post_lines_chunked raised: {e}")
         log_error(f"cursor_session_push: POST exception for session {session_id}: {e}")
         return
 
