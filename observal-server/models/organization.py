@@ -20,6 +20,10 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     trace_privacy: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Ingest data-minimization mode: one of full | redacted | metadata_only | disabled_raw.
+    # Secret redaction is always applied regardless of mode; this controls how much
+    # raw payload content is retained. Default "full" preserves prior behavior.
+    privacy_mode: Mapped[str] = mapped_column(String(32), default="full", server_default="full")
     registered_agents_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(

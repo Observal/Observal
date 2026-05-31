@@ -89,15 +89,16 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
         return None
 
     result = await db.execute(
-        select(User, Organization.trace_privacy)
+        select(User, Organization.trace_privacy, Organization.privacy_mode)
         .outerjoin(Organization, User.org_id == Organization.id)
         .where(User.id == uid)
     )
     row = result.one_or_none()
     if not row:
         return None
-    user, trace_privacy = row
+    user, trace_privacy, privacy_mode = row
     user._trace_privacy = bool(trace_privacy)
+    user._privacy_mode = privacy_mode or "full"
     user._groups = payload.get("groups", [])
     return user
 

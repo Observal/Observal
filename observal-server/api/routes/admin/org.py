@@ -119,6 +119,71 @@ async def set_trace_privacy(
     return {"trace_privacy": org.trace_privacy}
 
 
+# ── Ingest Privacy Mode ────────────────────────────────────
+
+
+@router.get("/org/privacy-mode")
+async def get_privacy_mode(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Get the ingest privacy mode for the current user's organization."""
+    optic.debug("org.get_privacy_mode called")
+    from services.privacy import DEFAULT_PRIVACY_MODE, PRIVACY_MODES
+
+    if not current_user.org_id:
+        return {"privacy_mode": DEFAULT_PRIVACY_MODE, "available_modes": list(PRIVACY_MODES)}
+    result = await db.execute(select(Organization).where(Organization.id == current_user.org_id))
+    org = result.scalar_one_or_none()
+    mode = org.privacy_mode if org else DEFAULT_PRIVACY_MODE
+    return {"privacy_mode": mode, "available_modes": list(PRIVACY_MODES)}
+
+
+@router.put("/org/privacy-mode")
+async def set_privacy_mode(
+    req: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Set the ingest privacy mode for the current user's organization.
+
+    Controls how much raw payload content is retained at ingest (secret
+    redaction is always applied regardless of mode).
+    """
+    optic.trace("req={}", req)
+    from services.privacy import PRIVACY_MODES
+
+    mode = req.get("privacy_mode")
+    if mode not in PRIVACY_MODES:
+        raise HTTPException(status_code=422, detail=f"privacy_mode must be one of {list(PRIVACY_MODES)}")
+
+    if not current_user.org_id:
+        raise HTTPException(status_code=400, detail="User has no organization")
+
+    result = await db.execute(select(Organization).where(Organization.id == current_user.org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    org.privacy_mode = mode
+    await db.commit()
+    await db.refresh(org)
+    await emit_security_event(
+        SecurityEvent(
+            event_type=EventType.SETTING_CHANGED,
+            severity=Severity.WARNING,
+            outcome="success",
+            actor_id=str(current_user.id),
+            actor_email=current_user.email,
+            actor_role=current_user.role.value,
+            target_id=str(org.id),
+            target_type="organization",
+            detail=f"Ingest privacy mode set to {mode}",
+        )
+    )
+    return {"privacy_mode": org.privacy_mode}
+
+
 # ── Registered Agents Only ─────────────────────────────────
 
 
