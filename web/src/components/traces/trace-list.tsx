@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { QueryError } from "@/components/dashboard/query-error";
 import { useIdes } from "@/hooks/use-ides";
 import { ListTree } from "lucide-react";
@@ -141,12 +141,7 @@ export function TraceList() {
       {isError ? (
         <QueryError message={error?.message} onRetry={refetch} />
       ) : isLoading ? (
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-full" />
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-full" />
-          ))}
-        </div>
+        <TableSkeleton rows={8} cols={6} />
       ) : !filtered?.length ? (
         <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-16">
           <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
