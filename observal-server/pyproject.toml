@@ -6,7 +6,7 @@
 
 [project]
 name = "observal-server"
-version = "1.4.0"
+version = "1.4.1"
 description = "Observal API server"
 requires-python = ">=3.11"
 license = "AGPL-3.0-only"

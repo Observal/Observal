@@ -10,6 +10,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-05-31
+
+### Added
+
+- add GCP Terraform module for self-hosting (**infra**) ([3f4312b](https://github.com/BlazeUp-AI/Observal/commit/3f4312b1c9456d0074a3f5819fe673fb44cc62ea))
+
+### Fixed
+
+- close API key redaction gaps across ingest, GraphQL, and settings (**security**) ([100c272](https://github.com/BlazeUp-AI/Observal/commit/100c27281bd7aa83d7e0418c1d51dd3148a2db9d))
+- auto-enable APIs, fix Cloud SQL edition, AR proxy for ghcr.io (**infra/gcp**) ([31652c0](https://github.com/BlazeUp-AI/Observal/commit/31652c0a9fb2520f8b0a1257b4f2b938aa773388))
+- align Terraform env vars with v1.0 and fix template bugs (**infra**) ([685cca3](https://github.com/BlazeUp-AI/Observal/commit/685cca3e4cd294c7b25178283620af00de44c4bb))
 ## [1.4.0] - 2026-05-31
 
 ### Added
