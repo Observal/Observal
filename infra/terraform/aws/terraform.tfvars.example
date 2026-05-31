@@ -32,7 +32,6 @@ image_tag = "latest"
 # ── ClickHouse Cloud (uncomment if clickhouse_mode = "cloud") ─────────
 # clickhouse_mode           = "cloud"
 # clickhouse_cloud_url      = "https://abc123.us-east-1.aws.clickhouse.cloud:8443"
-# clickhouse_cloud_user     = "default"
 # clickhouse_cloud_password = "..."
 
 # ── Managed services ──────────────────────────────────────────────────
@@ -44,8 +43,6 @@ image_tag = "latest"
 # alb_ingress_cidrs = ["203.0.113.0/24"]
 
 # ── App config ────────────────────────────────────────────────────────
-deployment_mode     = "enterprise"
-data_retention_days = 90
 log_retention_days  = 30
 
 # ── License ──────────────────────────────────────────────────────────────────

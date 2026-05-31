@@ -37,10 +37,6 @@ locals {
 
   # Non-secret env vars passed to api/worker/init.
   app_environment = [
-    { name = "DEPLOYMENT_MODE", value = var.deployment_mode },
-    { name = "DATA_RETENTION_DAYS", value = tostring(var.data_retention_days) },
-    { name = "CLICKHOUSE_USER", value = local.clickhouse_self_hosted ? "default" : var.clickhouse_cloud_user },
-    { name = "DOMAIN", value = var.domain_name },
     { name = "NEXT_PUBLIC_API_URL", value = local.app_url },
     { name = "JWT_KEY_DIR", value = "/tmp/keys" },
   ]
@@ -50,7 +46,6 @@ locals {
     { name = "DATABASE_URL", valueFrom = aws_ssm_parameter.urls["DATABASE_URL"].arn },
     { name = "REDIS_URL", valueFrom = aws_ssm_parameter.urls["REDIS_URL"].arn },
     { name = "CLICKHOUSE_URL", valueFrom = aws_ssm_parameter.urls["CLICKHOUSE_URL"].arn },
-    { name = "CLICKHOUSE_PASSWORD", valueFrom = aws_ssm_parameter.app["CLICKHOUSE_PASSWORD"].arn },
     { name = "SECRET_KEY", valueFrom = aws_ssm_parameter.app["SECRET_KEY"].arn },
     ], local.is_enterprise ? [
     { name = "OBSERVAL_LICENSE_KEY", valueFrom = aws_ssm_parameter.license_key[0].arn },
@@ -115,6 +110,7 @@ resource "aws_ecs_task_definition" "api" {
     command = [
       "/app/.venv/bin/python", "-m", "uvicorn", "main:app",
       "--host", "0.0.0.0", "--port", "8000",
+      "--workers", "2",
       "--proxy-headers", "--forwarded-allow-ips", "*",
     ]
     portMappings = [{ containerPort = 8000, protocol = "tcp" }]

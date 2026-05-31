@@ -70,13 +70,12 @@ resource "google_compute_instance" "data_host" {
   }
 
   metadata_startup_script = templatefile("${path.module}/user-data.sh.tftpl", {
-    region              = var.region
     clickhouse_password = random_password.clickhouse.result
     clickhouse_db       = "observal"
     data_retention_days = var.data_retention_days
     backups_bucket      = google_storage_bucket.backups.name
     grafana_admin_user  = "admin"
-    grafana_root_url    = local.app_url
+    grafana_root_url    = local.enable_custom_domain ? "https://${var.domain_name}" : ""
   })
 
   allow_stopping_for_update = true
