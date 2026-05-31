@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "observal-server"))
 
-from services.secrets_redactor import REDACTED, redact_dict, redact_secrets
+from services.secrets_redactor import REDACTED, redact_dict, redact_secrets, redact_value
 
 # ============================================================================
 # Known API key prefixes — MUST be redacted
@@ -414,3 +414,54 @@ class TestIdempotency:
         once = redact_secrets(text)
         twice = redact_secrets(once)
         assert once == twice
+
+
+# ============================================================================
+# Key-name redaction (structured values where the secret is the value)
+# ============================================================================
+
+
+class TestRedactValueKeyNames:
+    """redact_value redacts a dict value whose KEY name signals a secret, even when
+    the value itself matches no secret pattern (e.g. a plaintext password)."""
+
+    def test_password_value_redacted_by_key_name(self):
+        result = redact_value({"password": "plaintextvalue"})
+        assert result["password"] == REDACTED
+
+    def test_api_key_value_redacted_by_key_name(self):
+        result = redact_value({"api_key": "no-pattern-here"})
+        assert result["api_key"] == REDACTED
+
+    def test_camelcase_keys_redacted(self):
+        result = redact_value({"accessToken": "opaque-value", "apiKey": "another-value"})
+        assert result["accessToken"] == REDACTED
+        assert result["apiKey"] == REDACTED
+
+    def test_prefixed_secret_keys_redacted(self):
+        result = redact_value({"openai_api_key": "abcde", "user_password": "hunter2", "client_secret": "shh"})
+        assert result["openai_api_key"] == REDACTED
+        assert result["user_password"] == REDACTED
+        assert result["client_secret"] == REDACTED
+
+    def test_nested_secret_key_redacted(self):
+        result = redact_value({"config": {"db_password": "shh"}, "name": "keep-me"})
+        assert result["config"]["db_password"] == REDACTED
+        assert result["name"] == "keep-me"
+
+    def test_metric_like_keys_not_redacted(self):
+        # token_count / max_tokens / secret_count look secret-ish but are not secrets;
+        # the matcher excludes bare token/secret to avoid these false positives.
+        result = redact_value({"token_count": "123", "max_tokens": "4096", "secret_count": "7"})
+        assert result["token_count"] == "123"
+        assert result["max_tokens"] == "4096"
+        assert result["secret_count"] == "7"
+
+    def test_none_value_under_secret_key_stays_none(self):
+        result = redact_value({"password": None})
+        assert result["password"] is None
+
+    def test_original_object_not_mutated(self):
+        original = {"password": "plaintextvalue"}
+        redact_value(original)
+        assert original["password"] == "plaintextvalue"

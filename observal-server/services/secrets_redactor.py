@@ -237,13 +237,52 @@ def redact_secrets(text: str) -> str:
     return text
 
 
+# Dict keys whose VALUE should be redacted wholesale based on the key name alone.
+# Pattern redaction only catches secrets that look like secrets (key=value text,
+# known prefixes, JWTs, ...); a structured payload such as {"api_key": "plainval"}
+# carries the secret as a bare value the patterns never match. This matcher closes
+# that gap. It is deliberately narrower than _SECRET_KEY_NAMES -- it excludes the
+# bare "token"/"secret"/"credentials" alternatives so metric keys like
+# "token_count" or "max_tokens" are not redacted.
+_RE_SECRET_KEY_NAME = re.compile(
+    r"(?i)^(?:[a-z0-9]+[_\-.])*"
+    r"(?:api[_\-]?key|api[_\-]?secret|secret[_\-]?key|"
+    r"(?:auth|access|refresh|bearer|session|jwt)[_\-]?token|"
+    r"private[_\-]?key|signing[_\-]?key|encryption[_\-]?key|"
+    r"client[_\-]?secret|webhook[_\-]?secret|"
+    r"(?:db[_\-]?|redis[_\-]?|database[_\-]?)?passw(?:or)?d|"
+    r"credentials?)$"
+)
+
+
+def _looks_like_secret_key(key: Any) -> bool:
+    """True if a dict key name signals that its value is a secret.
+
+    Handles snake_case, kebab-case, dotted, and camelCase keys (``apiKey`` is
+    normalized to ``api_key``). Used to redact structured values where the secret
+    is the value rather than embedded as ``key=value`` text.
+    """
+    if not isinstance(key, str):
+        return False
+    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
+    return bool(_RE_SECRET_KEY_NAME.match(normalized))
+
+
 def _redact_value(value: Any) -> Any:
-    """Recursively redact all string values in a structured value."""
+    """Recursively redact all string values in a structured value.
+
+    Two redaction signals are applied: (1) any dict value whose KEY name signals a
+    secret is replaced wholesale, and (2) every string value is run through the
+    pattern-based redactor.
+    """
     optic.trace("redacting value field")
     if isinstance(value, str):
         return redact_secrets(value)
     if isinstance(value, dict):
-        return {k: _redact_value(v) for k, v in value.items()}
+        return {
+            k: (REDACTED if (_looks_like_secret_key(k) and v is not None) else _redact_value(v))
+            for k, v in value.items()
+        }
     if isinstance(value, list):
         return [_redact_value(item) for item in value]
     if isinstance(value, tuple):
