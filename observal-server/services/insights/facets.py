@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: AGPL-3.0-only
 
 """Per-session facet extraction via LLM (Haiku).
 
@@ -113,9 +113,9 @@ async def store_facets(
 
     from sqlalchemy import select
 
-    FacetsModel = get_facets_model()
+    facets_model = get_facets_model()
 
-    stmt = select(FacetsModel).where(FacetsModel.session_id == session_id)
+    stmt = select(facets_model).where(facets_model.session_id == session_id)
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
 
@@ -123,7 +123,7 @@ async def store_facets(
         existing.facets = facets
         existing.extracted_at = datetime.now(UTC)
     else:
-        record = FacetsModel(
+        record = facets_model(
             session_id=session_id,
             agent_id=_uuid.UUID(agent_id) if agent_id else None,
             facets=facets,
@@ -137,8 +137,8 @@ async def load_cached_facets(session_id: str, db) -> dict | None:
     """Load previously extracted facets from DB."""
     from sqlalchemy import select
 
-    FacetsModel = get_facets_model()
-    stmt = select(FacetsModel).where(FacetsModel.session_id == session_id)
+    facets_model = get_facets_model()
+    stmt = select(facets_model).where(facets_model.session_id == session_id)
     result = await db.execute(stmt)
     row = result.scalar_one_or_none()
     if row is None:

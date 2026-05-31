@@ -116,8 +116,7 @@ async def get_public_config(db=Depends(get_db)):
     except Exception:
         pass
 
-    # Feature availability derived from license, no env var
-    from services.insights import INSIGHTS_AVAILABLE
+    # Feature availability
     from services.insights import licensed_features as _get_licensed
 
     licensed_features: list[str] = _get_licensed()
@@ -130,7 +129,6 @@ async def get_public_config(db=Depends(get_db)):
         "sso_enabled": bool(settings.OAUTH_CLIENT_ID),
         "sso_only": sso_only,
         "saml_enabled": saml_enabled,
-        "insights_available": INSIGHTS_AVAILABLE,
         "exec_dashboard_available": exec_dashboard_available,
         "licensed_features": licensed_features,
         "branding_logo": branding_logo,

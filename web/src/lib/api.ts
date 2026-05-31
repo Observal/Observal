@@ -733,7 +733,6 @@ export type PublicConfig = {
 	sso_enabled: boolean;
 	sso_only: boolean;
 	saml_enabled: boolean;
-	insights_available: boolean;
 	exec_dashboard_available: boolean;
 	licensed_features: string[];
 	branding_logo: string | null;

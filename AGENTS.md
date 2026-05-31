@@ -49,13 +49,12 @@ observal-server/       FastAPI server
     session_parsers/   Per-IDE JSONL parsers (claude_code, kiro, cursor, pi)
     audit/             HIPAA audit system (loguru-based)
     config/            Config generation helpers (mcp_builder, skill_builder)
-    insights/          Open-source insight stub (full impl in ee/)
+    insights/          Insight engine (report generation, facets, sections, HTML export)
     shared/            Cross-service utilities
   jobs/                Background job definitions (catalog, maintenance)
 
 ee/                    Enterprise (source-available, separate license)
   license.py           JWT license validation
-  observal_insights/   Full insight pipeline (~20 modules)
   observal_server/     EE routes + services (audit, SAML, SCIM, exec dashboard)
 
 web/                   Next.js 16 / React 19 frontend
@@ -189,7 +188,7 @@ Source-available, separate license. Loaded via signed JWT (`OBSERVAL_LICENSE_KEY
 
 **Critical constraint:** Core never imports from `ee/`. The `ee/` code imports core. Open-source is fully functional without a license key.
 
-Contents: `observal_insights/` (full insight pipeline), SAML SSO, SCIM provisioning, exec dashboard, HIPAA audit, license generation script.
+Contents: SAML SSO, SCIM provisioning, exec dashboard, HIPAA audit, license generation script.
 
 ## Commands
 

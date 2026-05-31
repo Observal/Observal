@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: AGPL-3.0-only
 
 """Insight report generation pipeline.
 
@@ -431,7 +431,6 @@ def _build_data_block(
     if model_usage:
         model_lines = []
         for m, u in sorted(model_usage.items(), key=lambda x: -x[1].get("cost", 0)):
-            total_tok = u.get("input_tokens", 0) + u.get("output_tokens", 0)
             cpt = f"${u.get('cost_per_1k_tokens', 0):.4f}" if u.get("cost_per_1k_tokens") else "$0"
             model_lines.append(
                 f"  {m}: {u.get('sessions', 0)} sessions, {u.get('messages', 0)} msgs, "

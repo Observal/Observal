@@ -4,12 +4,13 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Insights plugin loader.
+"""Insights engine.
 
-Delegates to the enterprise insights engine (ee/observal_insights/) when
-a valid OBSERVAL_LICENSE_KEY with the "insights" feature is present.
+Generates agent insight reports: deterministic metadata extraction from raw
+session JSONL, LLM-powered facet extraction, parallel narrative sections,
+and self-contained HTML export.
 
-Feature availability is derived entirely from the license - no env var needed.
+Previously gated behind an enterprise license; now freely available.
 """
 
 import json
@@ -19,49 +20,16 @@ from loguru import logger as optic
 
 from config import settings
 
-_generate = None
-_render = None
-_run_single_report = None
-_discover_and_queue = None
+from .batch import discover_and_queue_reports as discover_and_queue_reports
+from .batch import run_single_report as run_single_report
+from .generator import generate_report_content
+from .html_export import render_report_html as render_report_html
 
-# Derive INSIGHTS_AVAILABLE purely from license
-INSIGHTS_AVAILABLE: bool = False
-
-try:
-    from ee.license import is_feature_licensed
-
-    if is_feature_licensed("insights"):
-        from ee.observal_insights import generate_report_content as _generate  # type: ignore[assignment]
-        from ee.observal_insights import render_report_html as _render  # type: ignore[assignment]
-        from ee.observal_insights.batch import (
-            discover_and_queue_reports as _discover_and_queue,  # type: ignore[assignment]  # noqa: F401
-        )
-        from ee.observal_insights.batch import (
-            run_single_report as _run_single_report,  # type: ignore[assignment]  # noqa: F401
-        )
-
-        INSIGHTS_AVAILABLE = True
-except (ImportError, RuntimeError):
-    # ee/ not present or license invalid - degrade gracefully
-    pass
+INSIGHTS_AVAILABLE: bool = True
 
 
-def _not_available():
-    raise RuntimeError(
-        "Insights requires a valid Observal Enterprise license. Set OBSERVAL_LICENSE_KEY or contact team@observal.dev."
-    )
-
-
-async def generate_report_content(*args, **kwargs):
-    if not INSIGHTS_AVAILABLE or _generate is None:
-        _not_available()
-    return await _generate(*args, **kwargs)
-
-
-def render_report_html(*args, **kwargs):
-    if not INSIGHTS_AVAILABLE or _render is None:
-        _not_available()
-    return _render(*args, **kwargs)
+async def generate_report_content_wrapper(*args, **kwargs):
+    return await generate_report_content(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -202,22 +170,30 @@ async def call_model(prompt: str, model_override: str | None = None, max_tokens:
 # ---------------------------------------------------------------------------
 
 
+def licensed_features() -> list[str]:
+    """Return licensed enterprise feature list (for /config endpoint)."""
+    try:
+        from ee.license import licensed_features as _lf
+
+        return _lf()
+    except (ImportError, RuntimeError):
+        return []
+
+
 def configure_insights():
     """Wire up dependencies from the host app into the insights package.
 
-    Called once at server startup. No-op if not licensed/available.
+    Called once at server startup.
     """
-    if not INSIGHTS_AVAILABLE:
-        return
-
     from database import async_session
-    from ee.observal_insights import configure
     from models.insight_meta_cache import InsightMetaCache
     from models.insight_session_facets import InsightSessionFacets
     from models.insight_session_meta import InsightSessionMeta
     from services.clickhouse import _query
 
-    configure(
+    from . import _deps
+
+    _deps.configure(
         settings=settings,
         query_fn=_query,
         call_model_fn=call_model,
@@ -226,15 +202,3 @@ def configure_insights():
         facets_model=InsightSessionFacets,
         meta_cache_model=InsightMetaCache,
     )
-
-
-def licensed_features() -> list[str]:
-    """Return licensed feature list via the gate - never import ee/ directly."""
-    if not INSIGHTS_AVAILABLE:
-        return []
-    try:
-        from ee.license import licensed_features as _lf
-
-        return _lf()
-    except (ImportError, RuntimeError):
-        return []

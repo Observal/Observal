@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: AGPL-3.0-only
 
 """Dependency container — wired up by the host application at startup.
 
