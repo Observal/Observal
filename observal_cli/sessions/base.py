@@ -226,6 +226,76 @@ def post_to_server(server_url: str, access_token: str, payload: dict, config: di
 
 
 # ---------------------------------------------------------------------------
+# Chunked posting
+# ---------------------------------------------------------------------------
+
+MAX_CHUNK_SIZE = 500
+
+
+def post_lines_chunked(
+    server_url: str,
+    access_token: str,
+    session_id: str,
+    lines: list[str],
+    start_offset: int,
+    hook_event: str,
+    line_count_before: int,
+    new_offset: int = 0,
+    cwd: str = "",
+    parent_session_id: str | None = None,
+    session_jsonl: Path | None = None,
+    ide: str = "claude-code",
+    config: dict | None = None,
+    extra_fields: dict | None = None,
+) -> bool:
+    """Post lines to ingest in chunks of MAX_CHUNK_SIZE.
+
+    Returns True if ALL chunks succeed, False on first failure.
+    Callers should only advance the cursor on True.
+    """
+    if not lines:
+        return True
+
+    total_chunks = (len(lines) + MAX_CHUNK_SIZE - 1) // MAX_CHUNK_SIZE
+
+    for i in range(0, len(lines), MAX_CHUNK_SIZE):
+        chunk = lines[i : i + MAX_CHUNK_SIZE]
+        chunk_index = i // MAX_CHUNK_SIZE
+        is_last = chunk_index == total_chunks - 1
+
+        payload = build_payload(
+            session_id=session_id,
+            lines=chunk,
+            start_offset=line_count_before + i,
+            hook_event=hook_event,
+            line_count_before=line_count_before + i,
+            new_offset=new_offset if is_last else 0,
+            cwd=cwd,
+            parent_session_id=parent_session_id,
+            session_jsonl=session_jsonl,
+        )
+        payload["ide"] = ide
+        # Only mark final on the last chunk if the hook_event warrants it
+        if not is_last:
+            payload.pop("final", None)
+            payload.pop("total_line_count", None)
+            payload.pop("total_offset", None)
+        if extra_fields:
+            payload.update(extra_fields)
+
+        success = post_to_server(
+            server_url=server_url,
+            access_token=access_token,
+            payload=payload,
+            config=config,
+        )
+        if not success:
+            return False
+
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Payload construction
 # ---------------------------------------------------------------------------
 
