@@ -5,7 +5,7 @@
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
   description = "Public ingress to the load balancer."
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   # tfsec:ignore:aws-ec2-no-public-ingress-sgr ALB is internet-facing by design; restrict via var.alb_ingress_cidrs.
   ingress {
@@ -41,7 +41,7 @@ resource "aws_security_group" "alb" {
 resource "aws_security_group" "ecs_tasks" {
   name        = "${local.name}-ecs-tasks"
   description = "Fargate task ENIs for api/web/worker. Inbound only from ALB."
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "API HTTP from ALB"
@@ -76,7 +76,7 @@ resource "aws_security_group" "data_host" {
   count       = local.clickhouse_self_hosted ? 1 : 0
   name        = "${local.name}-data-host"
   description = "ClickHouse + Grafana + Prometheus EC2. Inbound from ALB (Grafana) and ECS tasks (ClickHouse)."
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "Grafana UI from ALB"
@@ -118,7 +118,7 @@ resource "aws_security_group" "data_host" {
 resource "aws_security_group" "db" {
   name        = "${local.name}-db"
   description = "Postgres reachable only from ECS tasks."
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "Postgres from ECS tasks"
@@ -133,7 +133,7 @@ resource "aws_security_group" "db" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = [aws_vpc.main.cidr_block]
+    cidr_blocks = [local.vpc_cidr]
   }
 
   tags = { Name = "${local.name}-db-sg" }
@@ -143,7 +143,7 @@ resource "aws_security_group" "db" {
 resource "aws_security_group" "redis" {
   name        = "${local.name}-redis"
   description = "Redis reachable from ECS tasks (api + worker)."
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "Redis from ECS tasks"
@@ -158,7 +158,7 @@ resource "aws_security_group" "redis" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = [aws_vpc.main.cidr_block]
+    cidr_blocks = [local.vpc_cidr]
   }
 
   tags = { Name = "${local.name}-redis-sg" }

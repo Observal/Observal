@@ -72,16 +72,126 @@ EOF
 INSTALL_DIR=/opt/observal
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
-curl -fsSL "https://github.com/BlazeUp-AI/Observal/releases/download/${image_tag}/observal-server-${image_tag}.tar.gz" \
-  -o /tmp/observal.tgz
-tar -xzf /tmp/observal.tgz --strip-components=1
-rm /tmp/observal.tgz
+
+TARBALL_URL="https://github.com/BlazeUp-AI/Observal/releases/download/v${image_tag}/observal-server-v${image_tag}.tar.gz"
+TARBALL_OK=false
+if [ "${image_tag}" != "latest" ]; then
+  for attempt in 1 2 3 4 5; do
+    if curl -fsSL "$TARBALL_URL" -o /tmp/observal.tgz; then
+      tar -xzf /tmp/observal.tgz --strip-components=1
+      rm /tmp/observal.tgz
+      TARBALL_OK=true
+      break
+    fi
+    echo "Tarball download attempt $attempt failed, retrying in 10s..."
+    sleep 10
+  done
+fi
+if [ "$TARBALL_OK" = "false" ]; then
+  echo "Using embedded configs (tarball skipped or unavailable)."
+fi
+
+# ── Ensure critical ClickHouse configs exist (embedded fallback) ───────
+# These are written unconditionally so bootstrapping succeeds even if the
+# tarball download fails (e.g. private repo, missing release, network issue).
+mkdir -p "$INSTALL_DIR/docker/clickhouse/config.d"
+mkdir -p "$INSTALL_DIR/docker/clickhouse/users.d"
+
+cat > "$INSTALL_DIR/docker/clickhouse/config.d/memory.xml" <<'CHCFG'
+<clickhouse>
+    <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+    <listen_try>1</listen_try>
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+    <merge_tree>
+        <parts_to_delay_insert>200</parts_to_delay_insert>
+        <parts_to_throw_insert>500</parts_to_throw_insert>
+        <max_bytes_to_merge_at_max_space_in_pool>5368709120</max_bytes_to_merge_at_max_space_in_pool>
+    </merge_tree>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 3 DAY</ttl>
+    </query_log>
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 1 DAY</ttl>
+    </trace_log>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 1 DAY</ttl>
+    </text_log>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 1 DAY</ttl>
+    </metric_log>
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 1 DAY</ttl>
+    </asynchronous_metric_log>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 1 DAY</ttl>
+    </part_log>
+</clickhouse>
+CHCFG
+
+cat > "$INSTALL_DIR/docker/clickhouse/users.d/default-user.xml" <<CHUSER
+<clickhouse>
+  <users>
+    <default remove="remove"></default>
+    <default>
+      <profile>default</profile>
+      <networks><ip>::/0</ip></networks>
+      <password><![CDATA[$${CLICKHOUSE_PASSWORD}]]></password>
+      <quota>default</quota>
+      <access_management>0</access_management>
+    </default>
+  </users>
+</clickhouse>
+CHUSER
+
+cat > "$INSTALL_DIR/docker/clickhouse/users.d/memory.xml" <<'CHPROF'
+<clickhouse>
+    <profiles>
+        <default>
+            <max_memory_usage>400000000</max_memory_usage>
+            <max_bytes_before_external_group_by>200000000</max_bytes_before_external_group_by>
+            <max_bytes_before_external_sort>200000000</max_bytes_before_external_sort>
+            <max_bytes_in_join>100000000</max_bytes_in_join>
+            <join_algorithm>auto</join_algorithm>
+            <async_insert>1</async_insert>
+            <wait_for_async_insert>0</wait_for_async_insert>
+            <async_insert_max_data_size>1048576</async_insert_max_data_size>
+            <async_insert_busy_timeout_ms>200</async_insert_busy_timeout_ms>
+            <deduplicate_merge_projection_mode>drop</deduplicate_merge_projection_mode>
+        </default>
+    </profiles>
+</clickhouse>
+CHPROF
 
 # ── Render the data-tier compose file (CH + Grafana + Prometheus only) ──
 cat > "$INSTALL_DIR/docker-compose.data.yml" <<'COMPOSE'
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:26.3
+    image: clickhouse/clickhouse-server:26.5
     container_name: observal-clickhouse
     restart: unless-stopped
     ports:
@@ -154,14 +264,41 @@ cd "$INSTALL_DIR"
 docker compose --env-file "$INSTALL_DIR/.env" -f docker-compose.data.yml pull
 docker compose --env-file "$INSTALL_DIR/.env" -f docker-compose.data.yml up -d
 
+# Wait for ClickHouse to become healthy before declaring bootstrap done
+echo "Waiting for ClickHouse HTTP interface..."
+for i in $(seq 1 30); do
+  if wget -q --spider http://localhost:8123/ping 2>/dev/null; then
+    echo "ClickHouse healthy after $i attempts"
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "ERROR: ClickHouse did not become healthy within 5 minutes"
+    docker compose -f docker-compose.data.yml logs clickhouse | tail -50
+    exit 1
+  fi
+  sleep 10
+done
+
 # ── Daily ClickHouse snapshot to S3 ──────────────────────────────
-cat > /usr/local/bin/observal-ch-backup.sh <<EOF
+cat > /usr/local/bin/observal-ch-backup.sh <<'BACKUP'
 #!/bin/bash
 set -euo pipefail
-TS=\$(date -u +%Y%m%dT%H%M%SZ)
-docker exec observal-clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "BACKUP DATABASE observal TO S3('s3://${backups_bucket}/clickhouse/\$TS/', '$(aws configure get aws_access_key_id || echo '')', '$(aws configure get aws_secret_access_key || echo '')')" || \\
-docker exec observal-clickhouse clickhouse-backup create_remote "obs-\$TS" || true
-EOF
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+CH_PASS=$(grep CLICKHOUSE_PASSWORD /opt/observal/.env | cut -d= -f2-)
+
+# Attempt native BACKUP command first (ClickHouse 26+)
+docker exec observal-clickhouse clickhouse-client \
+  --password "$CH_PASS" \
+  --query "BACKUP DATABASE observal TO Disk('backups', '$TS')" 2>/dev/null && {
+  # Upload the backup via AWS CLI using the instance IAM role
+  BACKUP_PATH=$(docker exec observal-clickhouse find /var/lib/clickhouse/backups -maxdepth 1 -name "$TS" -type d)
+  if [ -n "$BACKUP_PATH" ]; then
+    docker cp "observal-clickhouse:$BACKUP_PATH" "/tmp/ch-backup-$TS"
+    aws s3 sync "/tmp/ch-backup-$TS" "s3://${backups_bucket}/clickhouse/$TS/" --quiet
+    rm -rf "/tmp/ch-backup-$TS"
+  fi
+} || echo "ClickHouse backup failed (non-fatal), check instance IAM role and disk config"
+BACKUP
 chmod +x /usr/local/bin/observal-ch-backup.sh
 
 cat > /etc/systemd/system/observal-ch-backup.service <<'EOF'

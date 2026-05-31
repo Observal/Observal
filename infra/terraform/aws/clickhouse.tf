@@ -46,7 +46,7 @@ resource "aws_ebs_volume" "data" {
 # survives instance replacement.
 resource "aws_network_interface" "data_host" {
   count           = local.clickhouse_self_hosted ? 1 : 0
-  subnet_id       = aws_subnet.private[0].id
+  subnet_id       = local.private_subnet_ids[0]
   security_groups = [aws_security_group.data_host[0].id]
 
   tags = { Name = "${local.name}-data-host-eni" }
@@ -78,7 +78,7 @@ resource "aws_instance" "data_host" {
   }
 
   user_data                   = local.data_host_user_data
-  user_data_replace_on_change = false
+  user_data_replace_on_change = true
 
   metadata_options {
     http_tokens   = "required"

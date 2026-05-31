@@ -27,7 +27,7 @@ output "ecs_service_names" {
 
 output "init_run_task_command" {
   description = "Manual command to re-run the migrations/seed task."
-  value       = "aws ecs run-task --region ${var.region} --cluster ${aws_ecs_cluster.main.name} --launch-type FARGATE --task-definition ${aws_ecs_task_definition.init.family} --network-configuration 'awsvpcConfiguration={subnets=[${join(",", aws_subnet.private[*].id)}],securityGroups=[${aws_security_group.ecs_tasks.id}],assignPublicIp=DISABLED}'"
+  value       = "aws ecs run-task --region ${var.region} --cluster ${aws_ecs_cluster.main.name} --launch-type FARGATE --task-definition ${aws_ecs_task_definition.init.family} --network-configuration 'awsvpcConfiguration={subnets=[${join(",", local.private_subnet_ids)}],securityGroups=[${aws_security_group.ecs_tasks.id}],assignPublicIp=DISABLED}'"
 }
 
 output "rds_endpoint" {

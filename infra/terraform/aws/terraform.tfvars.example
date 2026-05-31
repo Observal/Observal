@@ -49,3 +49,15 @@ log_retention_days  = 30
 # Provide your enterprise license key to enable enterprise features.
 # Without a key, community edition is deployed (same image, features gated at runtime).
 # observal_license_key = "eyJ...<your-key>..."
+
+# ── Demo account (optional, first-deploy convenience) ────────────────────────
+# Creates demo accounts on first startup for immediate access.
+# All tiers auto-delete when real users are created at that role.
+# demo_super_admin_email    = "admin@yourcompany.com"
+# demo_super_admin_password = "change-me-immediately"
+# demo_admin_email          = "demo-admin@yourcompany.com"
+# demo_admin_password       = "change-me-immediately"
+# demo_reviewer_email       = "demo-reviewer@yourcompany.com"
+# demo_reviewer_password    = "change-me-immediately"
+# demo_user_email           = "demo-user@yourcompany.com"
+# demo_user_password        = "change-me-immediately"

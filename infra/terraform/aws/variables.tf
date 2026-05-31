@@ -308,3 +308,80 @@ variable "observal_license_key" {
   sensitive   = true
 }
 
+# ── Demo account seeding (optional, first-deploy only) ────────────────────────
+
+variable "demo_super_admin_email" {
+  description = "Email for the demo super-admin account. Leave empty to skip all demo seeding."
+  type        = string
+  default     = ""
+}
+
+variable "demo_super_admin_password" {
+  description = "Password for the demo super-admin account."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "demo_admin_email" {
+  description = "Email for the demo admin account."
+  type        = string
+  default     = ""
+}
+
+variable "demo_admin_password" {
+  description = "Password for the demo admin account."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "demo_reviewer_email" {
+  description = "Email for the demo reviewer account."
+  type        = string
+  default     = ""
+}
+
+variable "demo_reviewer_password" {
+  description = "Password for the demo reviewer account."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "demo_user_email" {
+  description = "Email for the demo user account."
+  type        = string
+  default     = ""
+}
+
+variable "demo_user_password" {
+  description = "Password for the demo user account."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# ── Bring-your-own VPC (optional) ─────────────────────────────────────────────
+# Set these to deploy into an existing VPC instead of creating a new one.
+# When vpc_id is set, Terraform skips creating VPC, subnets, IGW, NAT, and
+# route tables. You must provide at least 2 public and 2 private subnet IDs.
+
+variable "vpc_id" {
+  description = "Existing VPC ID. Leave empty to create a new VPC."
+  type        = string
+  default     = ""
+}
+
+variable "private_subnet_ids" {
+  description = "List of existing private subnet IDs (at least 2, in different AZs). Required when vpc_id is set."
+  type        = list(string)
+  default     = []
+}
+
+variable "public_subnet_ids" {
+  description = "List of existing public subnet IDs (at least 2, in different AZs). Required when vpc_id is set."
+  type        = list(string)
+  default     = []
+}
+

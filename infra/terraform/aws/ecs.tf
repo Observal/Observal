@@ -36,10 +36,19 @@ locals {
   web_image = "${var.image_repo_web}:${var.image_tag}"
 
   # Non-secret env vars passed to api/worker/init.
-  app_environment = [
+  app_environment = concat([
     { name = "NEXT_PUBLIC_API_URL", value = local.app_url },
     { name = "JWT_KEY_DIR", value = "/tmp/keys" },
-  ]
+    ], var.demo_super_admin_email != "" ? [
+    { name = "DEMO_SUPER_ADMIN_EMAIL", value = var.demo_super_admin_email },
+    { name = "DEMO_SUPER_ADMIN_PASSWORD", value = var.demo_super_admin_password },
+    { name = "DEMO_ADMIN_EMAIL", value = var.demo_admin_email },
+    { name = "DEMO_ADMIN_PASSWORD", value = var.demo_admin_password },
+    { name = "DEMO_REVIEWER_EMAIL", value = var.demo_reviewer_email },
+    { name = "DEMO_REVIEWER_PASSWORD", value = var.demo_reviewer_password },
+    { name = "DEMO_USER_EMAIL", value = var.demo_user_email },
+    { name = "DEMO_USER_PASSWORD", value = var.demo_user_password },
+  ] : [])
 
   # Secrets injected by ECS at task start. Reference SSM Parameter Store ARNs.
   app_secrets = concat([
@@ -243,7 +252,7 @@ resource "aws_ecs_service" "api" {
   health_check_grace_period_seconds  = 60
 
   network_configuration {
-    subnets          = aws_subnet.private[*].id
+    subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = false
   }
@@ -278,7 +287,7 @@ resource "aws_ecs_service" "web" {
   health_check_grace_period_seconds  = 30
 
   network_configuration {
-    subnets          = aws_subnet.private[*].id
+    subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = false
   }
@@ -309,7 +318,7 @@ resource "aws_ecs_service" "worker" {
   deployment_maximum_percent         = 200
 
   network_configuration {
-    subnets          = aws_subnet.private[*].id
+    subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = false
   }
@@ -342,12 +351,20 @@ resource "null_resource" "run_init" {
     interpreter = ["/bin/bash", "-c"]
     command     = <<-EOT
       set -euo pipefail
+
+      # Give the data-host EC2 instance time to bootstrap ClickHouse.
+      # user-data takes 2-4 minutes (package install + docker pull + start).
+      # The init task's entrypoint.sh also retries 15 times with backoff,
+      # so this is a best-effort head start, not a hard gate.
+      echo "Waiting 120s for data-tier bootstrap to complete..."
+      sleep 120
+
       task_arn=$(aws ecs run-task \
         --region ${var.region} \
         --cluster ${aws_ecs_cluster.main.name} \
         --launch-type FARGATE \
         --task-definition ${aws_ecs_task_definition.init.arn} \
-        --network-configuration "awsvpcConfiguration={subnets=[${join(",", aws_subnet.private[*].id)}],securityGroups=[${aws_security_group.ecs_tasks.id}],assignPublicIp=DISABLED}" \
+        --network-configuration "awsvpcConfiguration={subnets=[${join(",", local.private_subnet_ids)}],securityGroups=[${aws_security_group.ecs_tasks.id}],assignPublicIp=DISABLED}" \
         --query 'tasks[0].taskArn' --output text)
       echo "Init task started: $task_arn"
       aws ecs wait tasks-stopped --region ${var.region} --cluster ${aws_ecs_cluster.main.name} --tasks "$task_arn"
@@ -366,6 +383,7 @@ resource "null_resource" "run_init" {
     aws_ecs_cluster.main,
     aws_iam_role_policy_attachment.ecs_execution_managed,
     aws_iam_role_policy_attachment.ecs_execution_secrets,
+    aws_instance.data_host,
   ]
 }
 
