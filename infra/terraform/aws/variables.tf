@@ -206,12 +206,6 @@ variable "clickhouse_cloud_url" {
   sensitive   = true
 }
 
-variable "clickhouse_cloud_user" {
-  description = "ClickHouse Cloud username. Required when clickhouse_mode = 'cloud'."
-  type        = string
-  default     = "default"
-}
-
 variable "clickhouse_cloud_password" {
   description = "ClickHouse Cloud password. Required when clickhouse_mode = 'cloud'."
   type        = string
@@ -266,22 +260,6 @@ variable "alb_ingress_cidrs" {
 }
 
 # ── Application config ─────────────────────────────────────────────────────
-
-variable "deployment_mode" {
-  description = "Observal deployment mode: 'local' (self-registration) or 'enterprise' (SSO-only)."
-  type        = string
-  default     = "enterprise"
-  validation {
-    condition     = contains(["local", "enterprise"], var.deployment_mode)
-    error_message = "deployment_mode must be 'local' or 'enterprise'."
-  }
-}
-
-variable "data_retention_days" {
-  description = "ClickHouse data retention in days. 0 disables TTL."
-  type        = number
-  default     = 90
-}
 
 variable "log_retention_days" {
   description = "CloudWatch log retention for application + infrastructure log groups."

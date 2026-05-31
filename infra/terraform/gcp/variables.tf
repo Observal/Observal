@@ -169,19 +169,6 @@ variable "clickhouse_cloud_url" {
   sensitive   = true
 }
 
-variable "clickhouse_cloud_user" {
-  description = "ClickHouse Cloud username."
-  type        = string
-  default     = "default"
-}
-
-variable "clickhouse_cloud_password" {
-  description = "ClickHouse Cloud password."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
 variable "data_machine_type" {
   description = "Machine type for the ClickHouse + Grafana + Prometheus GCE instance."
   type        = string

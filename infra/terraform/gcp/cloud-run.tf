@@ -40,7 +40,7 @@ resource "google_cloud_run_v2_service" "api" {
 
     containers {
       image = local.image_api
-      args  = ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+      args  = ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
 
       ports {
         container_port = 8000
@@ -56,6 +56,11 @@ resource "google_cloud_run_v2_service" "api" {
       env {
         name  = "SKIP_DDL_ON_STARTUP"
         value = "true"
+      }
+
+      env {
+        name  = "JWT_KEY_DIR"
+        value = "/tmp/keys"
       }
 
       env {
@@ -217,6 +222,11 @@ resource "google_cloud_run_v2_service" "worker" {
       }
 
       env {
+        name  = "JWT_KEY_DIR"
+        value = "/tmp/keys"
+      }
+
+      env {
         name = "DATABASE_URL"
         value_source {
           secret_key_ref {
@@ -296,6 +306,11 @@ resource "google_cloud_run_v2_job" "init" {
             cpu    = "1"
             memory = "1Gi"
           }
+        }
+
+        env {
+          name  = "JWT_KEY_DIR"
+          value = "/tmp/keys"
         }
 
         env {
