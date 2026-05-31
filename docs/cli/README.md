@@ -2,6 +2,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Nithin Bhargav <gaddamnithinbhargav@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # CLI Reference
@@ -32,6 +33,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal prompt`](prompt.md) | Manage reusable prompts in the registry |
 | [`observal server`](server.md) | Manage the embedded server (start, stop, upgrade, rollback) |
 | [`observal uninstall`](uninstall.md) | Completely remove Observal from the system |
+| [`observal reconcile`](reconcile.md) | Crash recovery scanner for missed `Stop` hooks |
 
 ## Global options
 
