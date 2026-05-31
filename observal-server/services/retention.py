@@ -24,6 +24,7 @@ INTER_ORG_DELAY = 2.0
 TIME_PURGE_TABLES = {
     "spans": "start_time",
     "session_events": "timestamp",
+    "traces": "start_time",  # children (spans, session_events) deleted first, so order is safe
 }
 
 SCORE_TABLE = {"scores": "timestamp"}
@@ -247,10 +248,6 @@ async def run_retention_purge(ctx: dict | None = None):
         # Count-based purge
         if org.max_trace_count:
             org_stats["count_purge"] = await _purge_count_based(project_id, org.max_trace_count)
-
-        # Delete traces last (time-based) - children already deleted above
-        if org.data_retention_days:
-            await _delete_batch("traces", "start_time", project_id, data_cutoff_str)
 
         optic.info("retention purge complete for org {}: {}", org.slug, org_stats)
         await asyncio.sleep(INTER_ORG_DELAY)
