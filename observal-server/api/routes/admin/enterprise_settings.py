@@ -6,7 +6,7 @@
 
 from fastapi import Depends, HTTPException
 from loguru import logger as optic
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
@@ -193,6 +193,23 @@ async def upsert_setting(
     await db.refresh(cfg)
     await ds.invalidate(key)
     await ds.refresh_sync_cache()
+
+    # Auto-clean deprecated AWS/legacy settings when new API key is configured
+    if key == "insights.api_key" and req.value:
+        deprecated_keys = [
+            "insights.aws_region",
+            "insights.aws_access_key_id",
+            "insights.aws_secret_access_key",
+            "insights.aws_session_token",
+            "insights.model_url",
+            "insights.model_api_key",
+        ]
+        await db.execute(delete(EnterpriseConfig).where(EnterpriseConfig.key.in_(deprecated_keys)))
+        await db.commit()
+        for dk in deprecated_keys:
+            await ds.invalidate(dk)
+        await ds.refresh_sync_cache()
+
     await emit_security_event(
         SecurityEvent(
             event_type=EventType.SETTING_CHANGED,

@@ -53,12 +53,18 @@ Leave unset to disable SSO.
 
 ### AWS (Bedrock)
 
-| Variable                | Default     | Description            |
-| ----------------------- | ----------- | ---------------------- |
-| `AWS_ACCESS_KEY_ID`     | -           | AWS credentials        |
-| `AWS_SECRET_ACCESS_KEY` | -           | AWS credentials        |
-| `AWS_SESSION_TOKEN`     | -           | Temporary credentials  |
-| `AWS_REGION`            | `us-east-1` | AWS region for Bedrock |
+### AWS (Bedrock)
+
+> **Note:** Bedrock now supports [API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) — generate one from the AWS console and use it like any other provider. See [Insights LLM Setup](../insights-setup.md).
+
+These environment variables are **not required** if you use Bedrock API keys (recommended). They exist only for legacy setups using instance roles or ECS task roles where LiteLLM auto-discovers credentials from the environment.
+
+| Variable                | Default     | Description                                  |
+| ----------------------- | ----------- | -------------------------------------------- |
+| `AWS_ACCESS_KEY_ID`     | -           | Only for legacy IAM auth (not recommended)   |
+| `AWS_SECRET_ACCESS_KEY` | -           | Only for legacy IAM auth (not recommended)   |
+| `AWS_SESSION_TOKEN`     | -           | Temporary credentials (STS AssumeRole)       |
+| `AWS_REGION_NAME`       | `us-east-1` | AWS region (used by LiteLLM's boto3 client)  |
 
 ### Git operations (submission analysis)
 

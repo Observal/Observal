@@ -257,31 +257,37 @@ async function request<T = unknown>(
 
 		const text = await response.text().catch(() => response.statusText);
 		let detail = text;
-		try {
-			const parsed = JSON.parse(text);
-			if (parsed.detail) {
-				if (typeof parsed.detail === "string") {
-					detail = parsed.detail;
-				} else if (Array.isArray(parsed.detail)) {
-					detail = parsed.detail
-						.map(
-							(e: { msg?: string }) =>
-								e.msg?.replace(/^Value error, /i, "") || "Validation error",
-						)
-						.join(". ");
-				} else {
-					detail = JSON.stringify(parsed.detail);
+
+		// Guard against raw HTML responses (e.g. nginx 502 Bad Gateway)
+		if (text.trim().startsWith("<")) {
+			detail =
+				response.status >= 500
+					? "Unable to reach the server. Please try again later."
+					: `Request failed (${response.status})`;
+		} else {
+			try {
+				const parsed = JSON.parse(text);
+				if (parsed.detail) {
+					if (typeof parsed.detail === "string") {
+						detail = parsed.detail;
+					} else if (Array.isArray(parsed.detail)) {
+						detail = parsed.detail
+							.map(
+								(e: { msg?: string }) =>
+									e.msg?.replace(/^Value error, /i, "") || "Validation error",
+							)
+							.join(". ");
+					} else {
+						detail = JSON.stringify(parsed.detail);
+					}
+				} else if (parsed.error) {
+					detail =
+						typeof parsed.error === "string"
+							? parsed.error
+							: JSON.stringify(parsed.error);
 				}
-			} else if (parsed.error) {
-				detail =
-					typeof parsed.error === "string"
-						? parsed.error
-						: JSON.stringify(parsed.error);
-			}
-		} catch {
-			// not JSON, use raw text unless it's HTML or a 5xx error
-			if (response.status >= 500 || text.trim().startsWith("<")) {
-				detail = "Unable to reach the server. Please try again later.";
+			} catch {
+				// not JSON, use raw text
 			}
 		}
 		const err = new Error(detail);

@@ -14,8 +14,10 @@ Previously gated behind an enterprise license; now freely available.
 """
 
 import json
+import logging  # stdlib logging (only for LiteLLM suppression)
+import re
 
-import httpx
+import litellm
 from loguru import logger as optic
 
 from config import settings
@@ -25,6 +27,14 @@ from .batch import run_single_report as run_single_report
 from .generator import generate_report_content
 from .html_export import render_report_html as render_report_html
 
+# ---------------------------------------------------------------------------
+# Suppress LiteLLM's verbose logging (it logs every request at INFO level)
+# ---------------------------------------------------------------------------
+litellm.suppress_debug_info = True
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("LiteLLM Router").setLevel(logging.WARNING)
+logging.getLogger("LiteLLM Proxy").setLevel(logging.WARNING)
+
 INSIGHTS_AVAILABLE: bool = True
 
 
@@ -33,116 +43,122 @@ async def generate_report_content_wrapper(*args, **kwargs):
 
 
 # ---------------------------------------------------------------------------
-# Generic LLM caller (Bedrock / OpenAI-compatible / Moonshot)
+# Generic LLM caller via LiteLLM
 # ---------------------------------------------------------------------------
 
+# Regex to detect bare Bedrock-style Anthropic model IDs (e.g. us.anthropic.claude-opus-4-6-v1)
+_BEDROCK_ANTHROPIC_RE = re.compile(r"^[a-z]{2}\.anthropic\.")
 
-def _build_openai_body(model: str, prompt: str, provider: str = "", extra: dict | None = None) -> dict:
-    body: dict = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1}
-    if provider == "moonshot":
-        body["thinking"] = {"type": "disabled"}
-        body["temperature"] = 0.6
-    if extra:
-        body.update(extra)
-    return body
+# Deprecation warning flags (fire once per process to avoid log spam during batch facet extraction)
+_warned_model_format: set[str] = set()
 
 
-def _openai_url_and_headers(provider: str = "", url_override: str = "", key_override: str = "") -> tuple[str, dict]:
-    default_url = "https://api.moonshot.ai/v1" if provider == "moonshot" else "http://localhost:11434/v1"
-    url = url_override or default_url
-    key = key_override or ""
-    headers = {"Content-Type": "application/json"}
-    if key:
-        headers["Authorization"] = f"Bearer {key}"
-    return url, headers
+def _normalize_model_id(model: str) -> str:
+    """Normalize legacy model IDs to LiteLLM format (provider/model-name).
+
+    Rules:
+    1. Already contains '/' -> pass through (e.g. anthropic/..., bedrock/..., openai/...)
+    2. Matches Bedrock pattern (e.g. us.anthropic.claude-*) -> prepend 'bedrock/'
+    3. Starts with 'kimi' or 'moonshot' -> prepend 'openai/'
+    4. Otherwise -> pass through as-is
+
+    A deprecation warning is logged when normalization is applied.
+    """
+    if "/" in model:
+        return model
+
+    if _BEDROCK_ANTHROPIC_RE.match(model):
+        if model not in _warned_model_format:
+            _warned_model_format.add(model)
+            optic.warning(
+                "Deprecated model ID format '{}' -- use 'bedrock/{}' instead. "
+                "Auto-prefixing 'bedrock/' for backwards compatibility.",
+                model,
+                model,
+            )
+        return f"bedrock/{model}"
+
+    lower = model.lower()
+    if lower.startswith("kimi") or lower.startswith("moonshot"):
+        if model not in _warned_model_format:
+            _warned_model_format.add(model)
+            optic.warning(
+                "Deprecated model ID format '{}' -- use 'openai/{}' instead. "
+                "Auto-prefixing 'openai/' for backwards compatibility.",
+                model,
+                model,
+            )
+        return f"openai/{model}"
+
+    return model
 
 
-async def _call_bedrock(prompt: str, model_id: str, max_tokens: int = 16384) -> dict:
-    """Call AWS Bedrock Converse API."""
-    import asyncio
+def _strip_json_fences(text: str) -> str:
+    """Strip markdown JSON fences from LLM response if present."""
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+    return text.strip()
 
+
+async def _call_litellm(prompt: str, model: str, max_tokens: int = 16384) -> dict:
+    """Call the configured LLM via LiteLLM.
+
+    Reads api_key and api_base from dynamic_settings.
+    LiteLLM handles provider-specific auth (including boto3 credential chain
+    for Bedrock when no explicit api_key is passed).
+    """
     import services.dynamic_settings as ds
 
-    aws_region = await ds.get("insights.aws_region")
-    aws_access_key = await ds.get("insights.aws_access_key_id")
-    aws_secret_key = await ds.get("insights.aws_secret_access_key")
-    aws_session_token = await ds.get("insights.aws_session_token")
+    api_key = await ds.get("insights.api_key")
+    api_base = await ds.get("insights.api_base")
 
-    def _sync_call():
-        import boto3
-        from botocore.config import Config as _BotoConfig
+    kwargs: dict = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "max_tokens": max_tokens,
+        "num_retries": 2,
+        "timeout": 120,
+        "drop_params": True,
+        "response_format": {"type": "json_object"},
+    }
 
-        client_kwargs: dict = {"region_name": aws_region or "us-east-1"}
-        if aws_access_key and aws_secret_key:
-            client_kwargs["aws_access_key_id"] = aws_access_key
-            client_kwargs["aws_secret_access_key"] = aws_secret_key
-            if aws_session_token:
-                client_kwargs["aws_session_token"] = aws_session_token
-
-        client = boto3.client(
-            "bedrock-runtime",
-            config=_BotoConfig(read_timeout=300, retries={"max_attempts": 2}),
-            **client_kwargs,
-        )
-        response = client.converse(
-            modelId=model_id,
-            messages=[{"role": "user", "content": [{"text": prompt}]}],
-            inferenceConfig={"temperature": 0.1, "maxTokens": max_tokens},
-        )
-        text = response["output"]["message"]["content"][0]["text"]
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0]
-        return json.loads(text.strip())
+    if api_key:
+        kwargs["api_key"] = api_key
+    if api_base:
+        kwargs["api_base"] = api_base
 
     try:
-        return await asyncio.get_event_loop().run_in_executor(None, _sync_call)
+        response = await litellm.acompletion(**kwargs)
+        content = response.choices[0].message.content
+        if not content:
+            optic.warning("litellm: empty response, model={}", model)
+            return {}
+
+        content = _strip_json_fences(content)
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        optic.error("litellm: json parse failed, model={}, error={}", model, str(e))
+        return {}
     except Exception as e:
-        error_str = str(e)
-        if "UnrecognizedClientException" in error_str or "security token" in error_str:
-            raise RuntimeError(f"AWS credentials invalid: {error_str}") from e
-        if "AccessDeniedException" in error_str:
-            raise RuntimeError(f"AWS access denied for model '{model_id}': {error_str}") from e
-        if "ModelNotReadyException" in error_str or "not found" in error_str.lower():
-            raise RuntimeError(f"Model '{model_id}' not available in region '{aws_region}': {error_str}") from e
-        if "ExpiredTokenException" in error_str:
-            raise RuntimeError(f"AWS credentials expired: {error_str}") from e
-        # JSON parse errors (truncated output) are non-fatal, return empty
-        if "JSONDecodeError" in type(e).__name__ or "Unterminated string" in error_str:
-            optic.warning("bedrock_truncated_response", error=error_str, model=model_id)
-            return {}
-        optic.error("bedrock_call_failed", error=error_str, model=model_id)
-        raise RuntimeError(f"Bedrock call failed: {error_str}") from e
-
-
-async def _call_openai_compatible(prompt: str, model: str, provider: str = "") -> dict:
-    """Call an OpenAI-compatible API."""
-    import services.dynamic_settings as ds
-
-    model_url = await ds.get("insights.model_url")
-    model_key = await ds.get("insights.model_api_key")
-    url, headers = _openai_url_and_headers(provider, url_override=model_url, key_override=model_key)
-    body = _build_openai_body(model, prompt, provider, extra={"response_format": {"type": "json_object"}})
-
-    async with httpx.AsyncClient(timeout=120) as client:
-        try:
-            r = await client.post(f"{url}/chat/completions", headers=headers, json=body)
-            r.raise_for_status()
-            content = r.json()["choices"][0]["message"]["content"]
-            return json.loads(content)
-        except Exception as e:
-            optic.error("llm_call_failed", error=str(e))
-            return {}
+        optic.error("litellm: call failed, model={}, error={}", model, str(e))
+        return {}
 
 
 async def call_model(prompt: str, model_override: str | None = None, max_tokens: int = 16384) -> dict:
     """Call the configured LLM for insights generation.
 
-    Provider is auto-detected from the model ID:
-    - Contains 'anthropic' -> Bedrock
-    - Contains 'kimi' -> Moonshot (OpenAI-compatible)
-    - Otherwise -> generic OpenAI-compatible
+    Model IDs use LiteLLM format: provider/model-name.
+    Examples:
+        - bedrock/us.anthropic.claude-opus-4-6-v1
+        - anthropic/claude-sonnet-4-20250514
+        - openai/gpt-4o
+        - ollama/llama3
+
+    Legacy bare model IDs (e.g. us.anthropic.claude-opus-4-6-v1) are
+    auto-normalized with a deprecation warning.
 
     Args:
         prompt: The prompt to send to the model.
@@ -157,12 +173,10 @@ async def call_model(prompt: str, model_override: str | None = None, max_tokens:
     if not model:
         return {}
 
-    # Auto-detect provider from model ID
-    if "anthropic" in model:
-        return await _call_bedrock(prompt, model, max_tokens=max_tokens)
-    if "kimi" in model.lower():
-        return await _call_openai_compatible(prompt, model, provider="moonshot")
-    return await _call_openai_compatible(prompt, model)
+    # Normalize legacy model IDs to LiteLLM format
+    model = _normalize_model_id(model)
+
+    return await _call_litellm(prompt, model, max_tokens=max_tokens)
 
 
 # ---------------------------------------------------------------------------
