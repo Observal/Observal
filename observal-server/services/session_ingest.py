@@ -55,6 +55,17 @@ def _usage_pi(parsed: dict) -> dict:
     }
 
 
+def _usage_antigravity(parsed: dict) -> dict:
+    """Antigravity: no token counts in transcript format."""
+    return {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "model": "",
+    }
+
+
 def _usage_codex(parsed: dict) -> dict:
     """Codex: event_msg/token_count has payload.info.total_token_usage."""
     payload = parsed.get("payload", {})
@@ -119,6 +130,7 @@ _USAGE_EXTRACTORS: dict[str, _UsageFn] = {
     "copilot-cli": _usage_copilot_cli,
     "copilot": _usage_copilot_cli,
     "opencode": _usage_claude_code,
+    "antigravity": _usage_antigravity,
 }
 
 
@@ -137,6 +149,14 @@ def _uuid_pi(parsed: dict) -> tuple[str | None, str | None]:
     return parsed.get("id"), parsed.get("parentId")
 
 
+def _uuid_antigravity(parsed: dict) -> tuple[str | None, str | None]:
+    """Antigravity: use step_index as a pseudo-UUID (no native UUIDs)."""
+    step = parsed.get("step_index")
+    if step is not None:
+        return str(step), None
+    return None, None
+
+
 _UuidFn = Callable[[dict], "tuple[str | None, str | None]"]
 
 _UUID_EXTRACTORS: dict[str, _UuidFn] = {
@@ -145,6 +165,7 @@ _UUID_EXTRACTORS: dict[str, _UuidFn] = {
     "cursor": _uuid_default,
     "opencode": _uuid_default,
     "pi": _uuid_pi,
+    "antigravity": _uuid_antigravity,
 }
 
 

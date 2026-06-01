@@ -221,6 +221,11 @@ doctor_app.add_typer(support_app, name="support")
 register_uninstall(self_app)
 # migrate → server migrate (operator infra tooling)
 
+# Reconcile (push local sessions to server)
+from observal_cli.cmd_reconcile_cli import reconcile_app
+
+app.add_typer(reconcile_app, name="reconcile")
+
 # Server management (embedded + Docker)
 try:
     from observal_cli.cmd_server import server_app

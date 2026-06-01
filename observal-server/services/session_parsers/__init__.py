@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from .antigravity import parse_rows as _parse_antigravity
 from .claude_code import parse_rows as _parse_claude_code
 from .codex import parse_rows as _parse_codex
 from .copilot_cli import parse_rows as _parse_copilot_cli
@@ -42,6 +43,7 @@ _PARSERS: dict[str, _ParseFn] = {
     "kiro": _parse_kiro,
     "opencode": _parse_opencode,
     "pi": _parse_pi,
+    "antigravity": _parse_antigravity,
 }
 
 

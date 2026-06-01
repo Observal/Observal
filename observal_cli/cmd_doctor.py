@@ -110,7 +110,11 @@ def doctor(
     rprint("[cyan]Checking OpenCode...[/cyan]")
     _check_opencode(issues, warnings)
 
-    # 10. Check if observal skill is installed
+    # 10. Check Antigravity
+    rprint("[cyan]Checking Antigravity...[/cyan]")
+    _check_antigravity(issues, warnings)
+
+    # 11. Check if observal skill is installed
     skill_missing = _check_observal_skill_missing()
     if skill_missing:
         warnings.append(
@@ -494,6 +498,53 @@ def _check_opencode(issues: list, warnings: list):
     if not plugin_path.exists():
         warnings.append(
             "OpenCode observal plugin not installed. Run `observal doctor patch --all --ide opencode` to inject it."
+        )
+
+
+def _check_antigravity(issues: list, warnings: list):
+    """Check if Observal hooks are installed for Antigravity CLI."""
+    optic.debug("_check_antigravity")
+    from observal_cli.shared.utils import resolve_antigravity_config_dir
+
+    config_dir = resolve_antigravity_config_dir()
+    if not config_dir:
+        rprint("  [dim]Antigravity not detected[/dim]")
+        return
+
+    hooks_path = config_dir / "hooks.json"
+    if not hooks_path.exists():
+        warnings.append(
+            "Antigravity session push hooks not installed. "
+            "Run `observal doctor patch --all --ide antigravity` to inject them."
+        )
+        return
+
+    data = _load_json(hooks_path)
+    if data is None:
+        issues.append(f"{hooks_path}: not valid JSON.")
+        return
+
+    group = data.get("observal-telemetry", {})
+    if not isinstance(group, dict):
+        warnings.append(
+            "Antigravity session push hooks not installed. "
+            "Run `observal doctor patch --all --ide antigravity` to inject them."
+        )
+        return
+
+    has_hook = False
+    for evt in ("PreInvocation", "Stop"):
+        handlers = group.get(evt, [])
+        if isinstance(handlers, list):
+            for h in handlers:
+                if "antigravity_session_push" in h.get("command", ""):
+                    has_hook = True
+                    break
+
+    if not has_hook:
+        warnings.append(
+            "Antigravity session push hooks not installed. "
+            "Run `observal doctor patch --all --ide antigravity` to inject them."
         )
 
 
@@ -992,6 +1043,7 @@ def doctor_patch(
                 any_changes = any_changes or changed
             elif target == "codex":
                 changed = _patch_codex(dry_run)
+                any_changes = any_changes or changed
             elif target == "copilot":
                 changed = _patch_copilot(dry_run)
                 any_changes = any_changes or changed
@@ -1000,6 +1052,9 @@ def doctor_patch(
                 any_changes = any_changes or changed
             elif target == "opencode":
                 changed = _patch_opencode(dry_run)
+                any_changes = any_changes or changed
+            elif target == "antigravity":
+                changed = _patch_antigravity(dry_run)
                 any_changes = any_changes or changed
 
         # ── Shims (all IDEs with home MCP config) ──
@@ -1171,6 +1226,44 @@ def _patch_cursor(dry_run: bool) -> bool:
 
     if not dry_run:
         hooks_path.write_text(json.dumps(result, indent=2) + "\n")
+
+    verb = "Would install" if dry_run else "Installed"
+    rprint(f"  {verb} hooks in {hooks_path}")
+    return True
+
+
+def _patch_antigravity(dry_run: bool) -> bool:
+    """Install session push hooks into ~/.gemini/config/hooks.json."""
+    from observal_cli.ide_specs.antigravity_hooks_spec import (
+        _OBSERVAL_HOOK_NAME,
+        build_antigravity_hooks,
+    )
+    from observal_cli.shared.utils import resolve_antigravity_config_dir
+
+    rprint("[cyan]Antigravity - session push hooks[/cyan]")
+
+    config_dir = resolve_antigravity_config_dir()
+    if config_dir is None:
+        rprint("  [dim]No ~/.gemini/config/ directory - skipping[/dim]")
+        return False
+
+    hooks_path = config_dir / "hooks.json"
+    desired = build_antigravity_hooks()
+
+    existing: dict = {}
+    if hooks_path.exists():
+        try:
+            existing = json.loads(hooks_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+
+    if _OBSERVAL_HOOK_NAME in existing:
+        rprint("  [dim]Already up to date[/dim]")
+        return False
+
+    existing.update(desired)
+    if not dry_run:
+        hooks_path.write_text(json.dumps(existing, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {hooks_path}")

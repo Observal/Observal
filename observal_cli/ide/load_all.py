@@ -3,6 +3,7 @@
 
 """Ensures all IDE adapter modules are imported, triggering registration."""
 
+from observal_cli.ide import antigravity as _antigravity  # noqa: F401
 from observal_cli.ide import claude_code as _claude_code  # noqa: F401
 from observal_cli.ide import codex as _codex  # noqa: F401
 from observal_cli.ide import copilot as _copilot  # noqa: F401

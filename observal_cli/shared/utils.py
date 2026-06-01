@@ -65,6 +65,78 @@ _MCP_KEY_BY_IDE: dict[str, str] = {
 }
 
 
+def resolve_wsl_windows_home() -> Path | None:
+    """Return the Windows user home as a WSL path, or None if not on WSL.
+
+    Tries cmd.exe first (most reliable), then falls back to scanning /mnt/c/Users/
+    for the directory that matches the current Linux username.
+    """
+    import subprocess
+
+    # Method 1: cmd.exe + wslpath (works when cmd.exe is available)
+    try:
+        win_user = subprocess.check_output(
+            ["cmd.exe", "/c", "echo %USERPROFILE%"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        wsl_path = subprocess.check_output(["wslpath", win_user], text=True, stderr=subprocess.DEVNULL).strip()
+        p = Path(wsl_path)
+        if p.is_dir():
+            return p
+    except Exception:
+        pass
+
+    # Method 2: scan /mnt/c/Users/ for a directory matching the Linux username
+    try:
+        import os
+
+        linux_user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+        mnt_users = Path("/mnt/c/Users")
+        if mnt_users.is_dir():
+            # Prefer exact username match, then case-insensitive match
+            for candidate in mnt_users.iterdir():
+                if candidate.is_dir() and candidate.name.lower() == linux_user.lower():
+                    return candidate
+            # Last resort: any non-system directory
+            for candidate in mnt_users.iterdir():
+                if candidate.is_dir() and candidate.name not in ("Public", "Default", "All Users", "Default User"):
+                    return candidate
+    except Exception:
+        pass
+
+    return None
+
+
+def resolve_antigravity_dir(home: Path | None = None) -> Path | None:
+    """Return the antigravity-cli config dir, with WSL Windows path fallback."""
+    h = home or Path.home()
+    ag_dir = h / ".gemini" / "antigravity-cli"
+    if ag_dir.exists():
+        return ag_dir
+    win_home = resolve_wsl_windows_home()
+    if win_home:
+        candidate = win_home / ".gemini" / "antigravity-cli"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def resolve_antigravity_config_dir(home: Path | None = None) -> Path | None:
+    """Return ~/.gemini/config/ with WSL Windows path fallback.
+
+    This is where agy stores hooks.json and mcp_config.json (global scope).
+    """
+    h = home or Path.home()
+    config_dir = h / ".gemini" / "config"
+    if config_dir.exists():
+        return config_dir
+    win_home = resolve_wsl_windows_home()
+    if win_home:
+        candidate = win_home / ".gemini" / "config"
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def extract_mcp_servers(config: dict, ide: str = "") -> dict:
     """Extract the MCP server map from an IDE config dict.
 
@@ -141,6 +213,7 @@ _OBSERVAL_HOOK_MARKERS = (
     "observal_cli.hooks.session_push",
     "observal_cli.hooks.kiro_session_push",
     "observal_cli.hooks.cursor_session_push",
+    "observal_cli.hooks.antigravity_session_push",
     # Legacy hook modules
     "observal_cli.hooks.kiro_hook",
     "observal_cli.hooks.kiro_stop_hook",

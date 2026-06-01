@@ -24,6 +24,7 @@ support for a new IDE:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 
 from .base import strip_cursor_xml_tags
@@ -474,13 +475,7 @@ def _tool_info_pi(parsed: dict) -> tuple[str | None, str | None]:
 
 
 def _classify_codex(parsed: dict) -> str | None:
-    """Classify one Codex CLI JSONL line.
-
-    Codex uses:
-    - {"type": "event_msg", "payload": {"type": "user_message|agent_message|..."}}
-    - {"type": "response_item", "payload": {"role": "user|assistant|developer", "content": [...]}}
-    - {"type": "session_meta"} / {"type": "turn_context"}
-    """
+    """Classify one Codex CLI JSONL line."""
     line_type = parsed.get("type", "")
 
     if line_type == "event_msg":
@@ -490,7 +485,7 @@ def _classify_codex(parsed: dict) -> str | None:
         if payload_type == "agent_message":
             return "assistant_text"
         if payload_type == "token_count":
-            return "meta"  # stored for token aggregation
+            return "meta"
         if payload_type in ("task_started", "task_complete"):
             return "system"
         return "system"
@@ -501,14 +496,13 @@ def _classify_codex(parsed: dict) -> str | None:
         content = payload.get("content", [])
         payload_type = payload.get("type", "")
 
-        # Direct function_call / function_call_output at payload level
         if payload_type == "function_call":
             return "tool_call"
         if payload_type == "function_call_output":
             return "tool_result"
 
         if role == "user":
-            return "system"  # Injected context (AGENTS.md, permissions), not real user input
+            return "system"
         if role == "assistant":
             if isinstance(content, list):
                 for block in content:
@@ -521,7 +515,6 @@ def _classify_codex(parsed: dict) -> str | None:
             return "assistant_text"
         if role == "developer":
             return "system"
-        # response_item with empty role (function_call_output at top level)
         if isinstance(content, list):
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "function_call_output":
@@ -540,12 +533,7 @@ def _classify_codex(parsed: dict) -> str | None:
 
 
 def _classify_copilot_cli(parsed: dict) -> str | None:
-    """Classify one Copilot CLI JSONL line.
-
-    Copilot CLI uses an envelope format: {"agentId": "...", "ts": "...", "event": {"type": "...", ...}}
-    The parsed dict here is the raw line.
-    """
-    # Handle envelope format
+    """Classify one Copilot CLI JSONL line."""
     event = parsed.get("event")
     event_type = event.get("type", "") if isinstance(event, dict) else parsed.get("type", "")
 
@@ -557,7 +545,7 @@ def _classify_copilot_cli(parsed: dict) -> str | None:
     if event_type == "assistant.message":
         return "assistant_text"
     if event_type == "assistant.message_delta":
-        return None  # skip streaming deltas
+        return None
     if event_type == "tool.call":
         return "tool_call"
     if event_type in ("tool.result", "tool.execution_complete"):
@@ -611,7 +599,6 @@ def _preview_codex(parsed: dict, event_type: str) -> str:
 def _preview_copilot_cli(parsed: dict, event_type: str) -> str:
     """Extract preview from Copilot CLI JSONL."""
     try:
-        # Handle envelope format
         event = parsed.get("event")
         if isinstance(event, dict):
             data = {k: v for k, v in event.items() if k != "type"}
@@ -658,15 +645,61 @@ def _preview_copilot_cli(parsed: dict, event_type: str) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# Antigravity CLI
+# ---------------------------------------------------------------------------
+
+_ANTIGRAVITY_SKIP_TYPES = {"CONVERSATION_HISTORY", "SYSTEM_PROMPT"}
+_ANTIGRAVITY_USER_REQUEST_RE = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.DOTALL)
+
+
+def _classify_antigravity(parsed: dict) -> str | None:
+    source = parsed.get("source", "")
+    line_type = parsed.get("type", "")
+
+    if line_type in _ANTIGRAVITY_SKIP_TYPES:
+        return None
+    if source == "USER_EXPLICIT" and line_type == "USER_INPUT":
+        return "user_prompt"
+    if source == "MODEL" and line_type == "PLANNER_RESPONSE":
+        return "tool_call" if parsed.get("tool_calls", []) else "assistant_text"
+    if source == "MODEL" and line_type not in ("PLANNER_RESPONSE", "USER_INPUT"):
+        return "tool_result"
+    if source == "SYSTEM":
+        return "system"
+    return None
+
+
+def _preview_antigravity(parsed: dict, event_type: str) -> str:
+    try:
+        content = parsed.get("content", "")
+        if not content:
+            return ""
+        if event_type == "user_prompt":
+            m = _ANTIGRAVITY_USER_REQUEST_RE.search(content)
+            return (m.group(1).strip() if m else content)[:_PREVIEW_MAX]
+        if event_type == "assistant_text":
+            return content[:_PREVIEW_MAX]
+        if event_type == "tool_call":
+            tool_calls = parsed.get("tool_calls", [])
+            if tool_calls:
+                names = [tc.get("name", "") for tc in tool_calls]
+                return f"{content[:200]} [tools: {', '.join(names)}]"[:_PREVIEW_MAX]
+            return content[:_PREVIEW_MAX]
+        if event_type == "tool_result":
+            line_type = parsed.get("type", "")
+            return f"[{line_type}] {content[:200]}"[:_PREVIEW_MAX]
+    except Exception:
+        pass
+    return ""
+
+
 def _tool_info_codex(parsed: dict) -> tuple[str | None, str | None]:
-    """Extract (tool_name, tool_id) from a Codex JSONL line."""
     if parsed.get("type") != "response_item":
         return None, None
     payload = parsed.get("payload", {})
-    # Direct function_call at payload level
     if payload.get("type") == "function_call":
         return payload.get("name"), payload.get("call_id")
-    # Nested in content array
     content = payload.get("content", [])
     if isinstance(content, list):
         for block in content:
@@ -676,20 +709,28 @@ def _tool_info_codex(parsed: dict) -> tuple[str | None, str | None]:
 
 
 def _tool_info_copilot_cli(parsed: dict) -> tuple[str | None, str | None]:
-    """Extract tool name and ID from a Copilot CLI tool.call event."""
-    # Handle envelope format
     event = parsed.get("event")
     if isinstance(event, dict):
-        etype = event.get("type", "")
-        if etype == "tool.call":
+        if event.get("type", "") == "tool.call":
             data = {k: v for k, v in event.items() if k != "type"}
             return data.get("name", data.get("toolName")), parsed.get("agentId")
     else:
-        etype = parsed.get("type", "")
-        if etype == "tool.call":
+        if parsed.get("type", "") == "tool.call":
             data = parsed.get("data", {})
             if isinstance(data, dict):
                 return data.get("name", data.get("toolName")), parsed.get("id")
+    return None, None
+
+
+def _tool_info_antigravity(parsed: dict) -> tuple[str | None, str | None]:
+    tool_calls = parsed.get("tool_calls", [])
+    if tool_calls:
+        first = tool_calls[0]
+        return first.get("name"), None
+    source = parsed.get("source", "")
+    line_type = parsed.get("type", "")
+    if source == "MODEL" and line_type not in ("PLANNER_RESPONSE", "USER_INPUT"):
+        return line_type.lower(), None
     return None, None
 
 
@@ -711,6 +752,7 @@ _CLASSIFIERS: dict[str, _Classifier] = {
     "cursor": (_classify_cursor, _preview_cursor, _tool_info_cursor),
     "opencode": (_classify_claude_code, _preview_claude_code, _tool_info_claude_code),
     "pi": (_classify_pi, _preview_pi, _tool_info_pi),
+    "antigravity": (_classify_antigravity, _preview_antigravity, _tool_info_antigravity),
 }
 
 
@@ -814,15 +856,23 @@ def _ts_pi(parsed: dict) -> str | None:
 
 
 def _ts_copilot_cli(parsed: dict) -> str | None:
-    """Return ClickHouse timestamp string from a Copilot CLI JSONL line, or None.
-
-    Copilot CLI embeds an ISO-8601 timestamp in the envelope ``ts`` field.
-    """
+    """Return ClickHouse timestamp string from a Copilot CLI JSONL line, or None."""
     raw = parsed.get("ts")
     if not raw:
         event = parsed.get("event")
         if isinstance(event, dict):
             raw = event.get("ts")
+    if not raw:
+        return None
+    ts = str(raw).replace("T", " ").rstrip("Z")
+    if "." not in ts:
+        ts += ".000"
+    return ts
+
+
+def _ts_antigravity(parsed: dict) -> str | None:
+    """Return ClickHouse timestamp string from an Antigravity transcript line."""
+    raw = parsed.get("created_at")
     if not raw:
         return None
     ts = str(raw).replace("T", " ").rstrip("Z")
@@ -839,6 +889,7 @@ _TS_EXTRACTORS: dict[str, object] = {
     "opencode": _ts_claude_code,
     "pi": _ts_pi,
     "copilot-cli": _ts_copilot_cli,
+    "antigravity": _ts_antigravity,
 }
 
 
@@ -883,6 +934,7 @@ _EXTRA_ROWS_HANDLERS: dict[str, _ExtraRowsFn] = {
     "opencode": _no_extra_rows,
     "pi": _no_extra_rows,
     "copilot-cli": _no_extra_rows,
+    "antigravity": _no_extra_rows,
 }
 
 

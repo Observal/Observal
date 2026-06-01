@@ -91,7 +91,7 @@ def get_all_adapters() -> dict[str, IdeAdapter]:
 
 
 # Expected number of adapters (updated when new IDEs are added)
-_EXPECTED_ADAPTER_COUNT = 9
+_EXPECTED_ADAPTER_COUNT = 10
 
 
 def ensure_loaded() -> None:

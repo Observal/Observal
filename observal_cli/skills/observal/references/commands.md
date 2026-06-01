@@ -104,6 +104,21 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal ops top`: Show top MCP servers or agents by usage.
   - `observal ops traces`: List recent traces.
 
+**`observal prompt`**: Prompt registry commands
+
+  - `observal prompt delete`: Delete a prompt from the registry.
+  - `observal prompt edit`: Edit a draft, rejected, or pending prompt submission.
+  - `observal prompt install`: Generate IDE install configuration for a prompt.
+  - `observal prompt list`: List approved prompts in the registry.
+  - `observal prompt my`: List your own prompts across all statuses.
+  - `observal prompt render`: Render a prompt template with variable substitution.
+  - `observal prompt show`: Show detailed information about a prompt.
+  - `observal prompt submit`: Submit a new prompt template for review.
+
+**`observal reconcile`**: Push local session transcripts to the server
+
+- (no subcommands)
+
 **`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes)
 
 - `observal registry hook`: Hook registry commands
