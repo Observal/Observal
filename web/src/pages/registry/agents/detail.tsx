@@ -16,9 +16,7 @@ import {
   Copy,
   Users,
   Download,
-  BarChart3,
   Loader2,
-  Activity,
   Trash2,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
@@ -162,29 +160,6 @@ function DeleteButton({ agentId, agentName }: { agentId: string; agentName: stri
   );
 }
 
-function AnalyticsTab({ agentId }: { agentId: string }) {
-  return (
-    <div className="space-y-6">
-      <EmptyState
-        icon={BarChart3}
-        title="No analytics yet"
-        description="No analytics data yet. Traces and spans will be collected as the agent is used."
-      />
-
-      {/* Link to traces */}
-      <div className="rounded-md border border-border p-4 space-y-2">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-muted-foreground" />
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Traces & Spans</h4>
-        </div>
-        <p className="text-xs text-muted-foreground">View detailed trace and span data for this agent in the admin dashboard.</p>
-        <Link to="/traces" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-          View traces →
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 export default function AgentDetailPage() {
   const { agentId: id } = useParams({ from: "/_authed/agents/$agentId" });
@@ -365,7 +340,7 @@ export default function AgentDetailPage() {
                   </TabsTrigger>
                   <TabsTrigger value="install">Install</TabsTrigger>
                   {canEdit && <TabsTrigger value="edit">Edit</TabsTrigger>}
-                  {isAdmin && <TabsTrigger value="analytics">Analytics</TabsTrigger>}
+
                 </TabsList>
 
                 <TabsContent value="overview" className="space-y-6 mt-6">
@@ -571,11 +546,7 @@ export default function AgentDetailPage() {
                     />
                   </TabsContent>
                 )}
-                {isAdmin && (
-                  <TabsContent value="analytics" className="mt-6">
-                    <AnalyticsTab agentId={id} />
-                  </TabsContent>
-                )}
+
               </Tabs>
             </div>
 
