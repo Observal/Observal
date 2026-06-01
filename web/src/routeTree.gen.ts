@@ -33,7 +33,6 @@ import { Route as AuthedAdminDiagnosticsRouteImport } from './routes/_authed/_ad
 import { Route as AuthedAdminDashboardRouteImport } from './routes/_authed/_admin/dashboard'
 import { Route as AuthedAdminAuditLogRouteImport } from './routes/_authed/_admin/audit-log'
 import { Route as AuthedUserTracesIndexRouteImport } from './routes/_authed/_user/traces/index'
-import { Route as AuthedAdminInsightsIndexRouteImport } from './routes/_authed/_admin/insights/index'
 import { Route as AuthedUserTracesTraceIdRouteImport } from './routes/_authed/_user/traces/$traceId'
 
 const AuthedRoute = AuthedRouteImport.update({
@@ -155,12 +154,6 @@ const AuthedUserTracesIndexRoute = AuthedUserTracesIndexRouteImport.update({
   path: '/traces/',
   getParentRoute: () => AuthedUserRoute,
 } as any)
-const AuthedAdminInsightsIndexRoute =
-  AuthedAdminInsightsIndexRouteImport.update({
-    id: '/insights/',
-    path: '/insights/',
-    getParentRoute: () => AuthedAdminRoute,
-  } as any)
 const AuthedUserTracesTraceIdRoute = AuthedUserTracesTraceIdRouteImport.update({
   id: '/traces/$traceId',
   path: '/traces/$traceId',
@@ -189,7 +182,6 @@ export interface FileRoutesByFullPath {
   '/agents/': typeof AuthedAgentsIndexRoute
   '/components/': typeof AuthedComponentsIndexRoute
   '/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
-  '/insights/': typeof AuthedAdminInsightsIndexRoute
   '/traces/': typeof AuthedUserTracesIndexRoute
 }
 export interface FileRoutesByTo {
@@ -214,7 +206,6 @@ export interface FileRoutesByTo {
   '/agents': typeof AuthedAgentsIndexRoute
   '/components': typeof AuthedComponentsIndexRoute
   '/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
-  '/insights': typeof AuthedAdminInsightsIndexRoute
   '/traces': typeof AuthedUserTracesIndexRoute
 }
 export interface FileRoutesById {
@@ -243,7 +234,6 @@ export interface FileRoutesById {
   '/_authed/agents/': typeof AuthedAgentsIndexRoute
   '/_authed/components/': typeof AuthedComponentsIndexRoute
   '/_authed/_user/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
-  '/_authed/_admin/insights/': typeof AuthedAdminInsightsIndexRoute
   '/_authed/_user/traces/': typeof AuthedUserTracesIndexRoute
 }
 export interface FileRouteTypes {
@@ -270,7 +260,6 @@ export interface FileRouteTypes {
     | '/agents/'
     | '/components/'
     | '/traces/$traceId'
-    | '/insights/'
     | '/traces/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -295,7 +284,6 @@ export interface FileRouteTypes {
     | '/agents'
     | '/components'
     | '/traces/$traceId'
-    | '/insights'
     | '/traces'
   id:
     | '__root__'
@@ -323,7 +311,6 @@ export interface FileRouteTypes {
     | '/_authed/agents/'
     | '/_authed/components/'
     | '/_authed/_user/traces/$traceId'
-    | '/_authed/_admin/insights/'
     | '/_authed/_user/traces/'
   fileRoutesById: FileRoutesById
 }
@@ -503,13 +490,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedUserTracesIndexRouteImport
       parentRoute: typeof AuthedUserRoute
     }
-    '/_authed/_admin/insights/': {
-      id: '/_authed/_admin/insights/'
-      path: '/insights'
-      fullPath: '/insights/'
-      preLoaderRoute: typeof AuthedAdminInsightsIndexRouteImport
-      parentRoute: typeof AuthedAdminRoute
-    }
     '/_authed/_user/traces/$traceId': {
       id: '/_authed/_user/traces/$traceId'
       path: '/traces/$traceId'
@@ -530,7 +510,6 @@ interface AuthedAdminRouteChildren {
   AuthedAdminSettingsRoute: typeof AuthedAdminSettingsRoute
   AuthedAdminSsoRoute: typeof AuthedAdminSsoRoute
   AuthedAdminUsersRoute: typeof AuthedAdminUsersRoute
-  AuthedAdminInsightsIndexRoute: typeof AuthedAdminInsightsIndexRoute
 }
 
 const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
@@ -543,7 +522,6 @@ const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
   AuthedAdminSettingsRoute: AuthedAdminSettingsRoute,
   AuthedAdminSsoRoute: AuthedAdminSsoRoute,
   AuthedAdminUsersRoute: AuthedAdminUsersRoute,
-  AuthedAdminInsightsIndexRoute: AuthedAdminInsightsIndexRoute,
 }
 
 const AuthedAdminRouteWithChildren = AuthedAdminRoute._addFileChildren(
