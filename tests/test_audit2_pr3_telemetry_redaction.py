@@ -33,7 +33,11 @@ def _make_user():
 
 def _app_with_user(user):
     from api.deps import get_current_user
+    from api.ratelimit import limiter
 
+    # /ingest is rate-limited (Redis-backed) upstream; disable it for these
+    # unit tests, which run without Redis.
+    limiter.enabled = False
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_current_user] = lambda: user
