@@ -101,7 +101,7 @@ class TestConstants:
 
     def test_opencode_feature_matrix(self):
         assert "opencode" in IDE_FEATURE_MATRIX
-        assert IDE_FEATURE_MATRIX["opencode"] == {"hooks", "mcp_servers"}
+        assert IDE_FEATURE_MATRIX["opencode"] == {"hooks", "mcp_servers", "skills"}
 
     def test_copilot_cli_in_valid_ides(self):
         assert "copilot-cli" in VALID_IDES
@@ -369,8 +369,8 @@ class TestGenerateOpenCodeConfig:
         agent = _make_agent(external_mcps=ext)
         cfg = generate_agent_config(agent, "opencode")
         entry = cfg["mcp_config"]["content"]["mcp"]["my-server"]
-        assert entry["env"]["FOO"] == "bar"
-        assert entry["env"]["OBSERVAL_AGENT_ID"] == str(agent.id)
+        assert entry["environment"]["FOO"] == "bar"
+        assert entry["environment"]["OBSERVAL_AGENT_ID"] == str(agent.id)
 
     def test_scope_is_user(self):
         agent = _make_agent()
@@ -400,10 +400,9 @@ class TestGenerateOpenCodeConfig:
         agent = _make_agent()
         cfg = generate_agent_config(agent, "opencode")
         plugin = cfg["hooks_config"]["content"]
-        assert 'import { execSync } from "child_process";' in plugin
+        assert 'import { execFileSync } from "child_process";' in plugin
         assert "from loguru import logger" not in plugin
         assert "export const ObservalPlugin" in plugin
-        assert '"session.created"' in plugin
         assert '"session.idle"' in plugin
 
 
@@ -484,8 +483,8 @@ class TestIdeCompatibilityWarnings:
         agent = _make_agent()
         agent.required_ide_features = ["skills", "hooks"]
         warnings = _check_ide_compatibility(agent, "opencode")
-        # opencode now supports hooks (via plugins), only "skills" is unsupported
-        assert len(warnings) == 1
+        # opencode now supports both hooks and skills
+        assert len(warnings) == 0
 
     def test_no_warnings_for_supported_features(self):
         agent = _make_agent()
