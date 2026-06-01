@@ -478,10 +478,27 @@ def register_pull(app: typer.Typer):
         mcp_cfg = snippet.get("mcp_config")
         if mcp_cfg and isinstance(mcp_cfg, dict) and "path" in mcp_cfg:
             p = _resolve_path(mcp_cfg["path"], target_dir, allow_home=is_user_scope)
+            mcp_content = mcp_cfg["content"]
+            # Rewrite bare 'python3' to the current interpreter in MCP command arrays
+            # so sandbox MCP and other CLI-based MCPs work regardless of PATH.
+            # The command is split as ["python3", "-m", "observal_cli.*"] in the array.
+            if isinstance(mcp_content, dict):
+                mcp_servers = mcp_content.get("mcp", mcp_content.get("mcpServers", {}))
+                for _name, entry in (mcp_servers or {}).items():
+                    if isinstance(entry, dict):
+                        cmd = entry.get("command", [])
+                        if (
+                            isinstance(cmd, list)
+                            and len(cmd) >= 3
+                            and cmd[0] in ("python3", "python")
+                            and cmd[1] == "-m"
+                            and cmd[2].startswith("observal_cli.")
+                        ):
+                            entry["command"] = [sys.executable, *cmd[1:]]
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file(p, mcp_cfg["content"], merge_mcp=True)
+                status = _write_file(p, mcp_content, merge_mcp=True)
                 written.append((str(p), status))
 
         # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
