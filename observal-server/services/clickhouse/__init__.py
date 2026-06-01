@@ -37,8 +37,10 @@ from services.clickhouse.query import (
     query_shim_spans_for_window,
     query_span_by_id,
     query_spans,
+    query_spans_slim,
     query_trace_by_id,
     query_traces,
+    query_traces_slim,
 )
 from services.clickhouse.schema import (
     DEFAULT_QUERY_SETTINGS,
@@ -81,6 +83,8 @@ __all__ = [
     "query_shim_spans_for_window",
     "query_span_by_id",
     "query_spans",
+    "query_spans_slim",
     "query_trace_by_id",
     "query_traces",
+    "query_traces_slim",
 ]

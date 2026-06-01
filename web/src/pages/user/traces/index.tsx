@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+// SPDX-FileCopyrightText: 2026 Harshith Padakanti <harshaharshith31@gmail.com>
 // SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 // SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
@@ -6,7 +7,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link, useRouter, useSearch, useLocation } from "@tanstack/react-router";
 import { useState, useMemo, useCallback, useRef } from "react";
 import {
 	Activity,
@@ -315,6 +316,8 @@ function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
 
 export default function TracesPage() {
 	const router = useRouter();
+	const { search: searchParam } = useSearch({ from: "/_authed/_user/traces/" });
+	const { pathname } = useLocation();
 	const [page, setPage] = useState(0);
 	const PAGE_SIZE = 50;
 
@@ -335,17 +338,34 @@ export default function TracesPage() {
 	const [sorting, setSorting] = useState<SortingState>([
 		{ id: "first_event_time", desc: true },
 	]);
-	const [searchValue, setSearchValue] = useState("");
-	const [globalFilter, setGlobalFilter] = useState("");
+	const [searchValue, setSearchValue] = useState(searchParam ?? "");
+	const [globalFilter, setGlobalFilter] = useState(searchParam ?? "");
 	const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+	const updateURL = useCallback(
+		(value: string) => {
+			const params = new URLSearchParams(window.location.search);
+			if (value) {
+				params.set("search", value);
+			} else {
+				params.delete("search");
+			}
+			const qs = params.toString();
+			window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+		},
+		[pathname],
+	);
 
 	const handleSearch = useCallback(
 		(value: string) => {
 			setSearchValue(value);
 			clearTimeout(debounceRef.current);
-			debounceRef.current = setTimeout(() => setGlobalFilter(value), 300);
+			debounceRef.current = setTimeout(() => {
+				setGlobalFilter(value);
+				updateURL(value);
+			}, 300);
 		},
-		[setGlobalFilter],
+		[updateURL],
 	);
 
 	const allSessions = useMemo(() => (sessions ?? []) as Session[], [sessions]);

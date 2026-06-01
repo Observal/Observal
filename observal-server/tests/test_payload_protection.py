@@ -12,7 +12,7 @@ import json
 import uuid
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -118,7 +118,7 @@ class TestContentTypeValidation:
             content=json.dumps({"msg": "hello"}),
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == status.HTTP_200_OK
         assert resp.json() == {"msg": "hello"}
 
     @pytest.mark.asyncio
@@ -128,7 +128,7 @@ class TestContentTypeValidation:
             content="hello",
             headers={"Content-Type": "text/plain"},
         )
-        assert resp.status_code == 415
+        assert resp.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
         assert "Unsupported media type" in resp.json()["detail"]
 
     @pytest.mark.asyncio
@@ -138,7 +138,7 @@ class TestContentTypeValidation:
             content=json.dumps({"msg": "hello"}),
             headers={"Content-Type": ""},
         )
-        assert resp.status_code == 415
+        assert resp.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
 
     @pytest.mark.asyncio
     async def test_put_text_xml_rejected(self, client):
@@ -147,7 +147,7 @@ class TestContentTypeValidation:
             content="<x/>",
             headers={"Content-Type": "text/xml"},
         )
-        assert resp.status_code == 415
+        assert resp.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
 
     @pytest.mark.asyncio
     async def test_patch_json_accepted(self, client):
@@ -156,17 +156,17 @@ class TestContentTypeValidation:
             content=json.dumps({"field": "value"}),
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == status.HTTP_200_OK
 
     @pytest.mark.asyncio
     async def test_get_skips_validation(self, client):
         resp = await client.get("/api/v1/items")
-        assert resp.status_code == 200
+        assert resp.status_code == status.HTTP_200_OK
 
     @pytest.mark.asyncio
     async def test_delete_skips_validation(self, client):
         resp = await client.delete("/api/v1/items/1")
-        assert resp.status_code == 200
+        assert resp.status_code == status.HTTP_200_OK
 
     @pytest.mark.asyncio
     async def test_health_skips_validation(self, client):
@@ -177,7 +177,7 @@ class TestContentTypeValidation:
         )
         # Health is skipped, so even though POST+text/plain, it should not return 415.
         # (it may 405 if the route doesn't support POST, but not 415)
-        assert resp.status_code != 415
+        assert resp.status_code != status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
 
     @pytest.mark.asyncio
     async def test_otlp_traces_exempt(self, client):
@@ -187,7 +187,7 @@ class TestContentTypeValidation:
             content=json.dumps({"resourceSpans": []}),
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == status.HTTP_200_OK
 
     @pytest.mark.asyncio
     async def test_json_with_charset_accepted(self, client):
@@ -196,7 +196,7 @@ class TestContentTypeValidation:
             content=json.dumps({"msg": "utf8"}),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == status.HTTP_200_OK
 
 
 # ===================================================================
@@ -221,7 +221,7 @@ class TestJsonDepthProtection:
             content=json.dumps(body),
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == status.HTTP_200_OK
 
     @pytest.mark.asyncio
     async def test_max_depth_accepted(self, client):
@@ -231,7 +231,7 @@ class TestJsonDepthProtection:
             content=json.dumps(body),
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == status.HTTP_200_OK
 
     @pytest.mark.asyncio
     async def test_excessive_depth_rejected(self, client):
@@ -241,7 +241,7 @@ class TestJsonDepthProtection:
             content=json.dumps(body),
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "nesting depth" in resp.json()["detail"]
 
     @pytest.mark.asyncio
@@ -254,7 +254,7 @@ class TestJsonDepthProtection:
             content=json.dumps(obj),
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     @pytest.mark.asyncio
     async def test_malformed_json_rejected(self, client):
@@ -263,7 +263,7 @@ class TestJsonDepthProtection:
             content="{not valid json",
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "Malformed JSON" in resp.json()["detail"]
 
 

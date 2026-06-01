@@ -10,6 +10,7 @@ Refreshes every 60 seconds and supports immediate invalidation via Redis pub/sub
 import asyncio
 import time
 import uuid
+from collections import OrderedDict
 
 from loguru import logger as optic
 from sqlalchemy import select
@@ -28,7 +29,7 @@ _USER_ORG_MAX_SIZE = 10_000  # max entries before forced eviction
 # In-memory caches - replaced atomically (never mutated in-place)
 _registered_agents: dict[uuid.UUID, set[str]] = {}  # org_id -> {agent_names}
 _org_toggle: dict[uuid.UUID, bool] = {}  # org_id -> registered_agents_only
-_user_org_map: dict[str, tuple[uuid.UUID | None, float]] = {}  # user_id -> (org_id, timestamp)
+_user_org_map: OrderedDict[str, tuple[uuid.UUID | None, float]] = OrderedDict()  # user_id -> (org_id, timestamp)
 
 _refresh_task: asyncio.Task | None = None
 _subscriber_task: asyncio.Task | None = None
@@ -172,14 +173,13 @@ async def resolve_user_org(user_id: str) -> uuid.UUID | None:
 
 
 def _user_org_put(user_id: str, org_id: uuid.UUID | None, now: float) -> None:
-    """Insert into _user_org_map, evicting oldest entries if at capacity."""
+    """Insert into _user_org_map with O(1) LRU eviction via OrderedDict."""
     global _user_org_map
+    if user_id in _user_org_map:
+        _user_org_map.move_to_end(user_id)
     _user_org_map[user_id] = (org_id, now)
-    if len(_user_org_map) > _USER_ORG_MAX_SIZE:
-        # Evict oldest 20% by timestamp
-        entries = sorted(_user_org_map.items(), key=lambda kv: kv[1][1])
-        cutoff = len(entries) // 5
-        _user_org_map = dict(entries[cutoff:])
+    while len(_user_org_map) > _USER_ORG_MAX_SIZE:
+        _user_org_map.popitem(last=False)
 
 
 async def invalidate() -> None:

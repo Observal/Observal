@@ -54,26 +54,26 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// Sensitive keys that should be masked in display
+// Sensitive keys that should never be displayed in plaintext.
+// The server enforces this too (returns **REDACTED** for these keys),
+// but we keep the set here for UI affordances (revoke button, write-only input).
 const SENSITIVE_KEYS = new Set([
+	"insights.api_key",
 	"saml.idp_x509_cert",
 	"saml.sp_key_encryption_password",
 ]);
 
-function maskValue(key: string, value: string): string {
-	if (!SENSITIVE_KEYS.has(key)) return value;
-	if (!value || value.length <= 4)
-		return "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
-	return "\u2022\u2022\u2022\u2022\u2022\u2022" + value.slice(-4);
-}
+const REDACTED_VALUE = "**REDACTED**";
 
 /** Generate a helpful placeholder for the value input based on the key */
 function getPlaceholder(key: string): string {
 	const placeholders: Record<string, string> = {
 		// Insights
-		"insights.model_sections": "us.anthropic.claude-opus-4-6-v1",
-		"insights.model_synthesis": "us.anthropic.claude-sonnet-4-6-v1",
-		"insights.model_facets": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+		"insights.api_key": "sk-ant-... or sk-... or Bedrock API key",
+		"insights.api_base": "https://bedrock-runtime.us-east-1.amazonaws.com (optional)",
+		"insights.model_sections": "anthropic/claude-sonnet-4-20250514",
+		"insights.model_synthesis": "anthropic/claude-sonnet-4-20250514",
+		"insights.model_facets": "anthropic/claude-haiku-4-5-20251001",
 		"insights.batch_enabled": "true",
 		"insights.batch_period_days": "14",
 		"insights.min_sessions": "5",
@@ -171,50 +171,42 @@ const SETTING_SECTIONS: SettingSection[] = [
 		title: "Agent Insights",
 		icon: <Activity className="h-3.5 w-3.5" />,
 		description:
-			"Configure AWS Bedrock credentials and models for the insights engine. Requires 'insights' license feature.",
-		requiresFeature: "insights",
+			"Configure LLM provider for the insights engine. Supports any LiteLLM-compatible provider (Anthropic, OpenAI, Bedrock, Gemini, Azure, Ollama, etc).",
 		settings: [
 			{
-				key: "insights.aws_region",
-				label: "AWS Region",
-				subtitle: "Region for Bedrock API calls",
+				key: "insights.api_key",
+				label: "API Key",
+				subtitle: "LLM provider API key or Bedrock bearer token",
 				tooltip:
-					"AWS region where Bedrock models are available. Common: us-east-1, us-west-2, eu-west-1.",
+					"API key for your LLM provider. Works with Anthropic (sk-ant-...), OpenAI (sk-...), Google AI Studio, Azure, or AWS Bedrock API keys. For Bedrock, generate a key from the AWS Bedrock console. Stored encrypted.",
 			},
 			{
-				key: "insights.aws_access_key_id",
-				label: "AWS Access Key ID",
-				subtitle: "IAM access key for Bedrock",
+				key: "insights.api_base",
+				label: "API Base URL",
+				subtitle: "Custom endpoint (optional for most providers)",
 				tooltip:
-					"AWS IAM access key with bedrock:InvokeModel permission. Leave blank to use instance role / ECS task role.",
-			},
-			{
-				key: "insights.aws_secret_access_key",
-				label: "AWS Secret Access Key",
-				subtitle: "IAM secret key for Bedrock",
-				tooltip:
-					"The secret key paired with the access key ID. Stored encrypted. Leave blank for instance role authentication.",
+					"Override the default API endpoint. Required for: Azure (https://<instance>.openai.azure.com), Bedrock (https://bedrock-runtime.<region>.amazonaws.com), Ollama (http://localhost:11434). Leave blank for Anthropic, OpenAI, or Gemini.",
 			},
 			{
 				key: "insights.model_sections",
 				label: "Sections Model",
-				subtitle: "Model for detailed narrative report sections (e.g. Opus)",
+				subtitle: "High-quality model for detailed narrative sections",
 				tooltip:
-					"Bedrock model ID for writing detailed insight sections. Example: us.anthropic.claude-opus-4-6-v1. This is the primary model used for analysis.",
+					"LiteLLM model ID for writing detailed insight sections. Use your best model here. Format: provider/model-name. Examples: anthropic/claude-sonnet-4-20250514, openai/gpt-4o, bedrock/us.anthropic.claude-opus-4-6-v1, gemini/gemini-2.5-pro.",
 			},
 			{
 				key: "insights.model_synthesis",
 				label: "Synthesis Model",
-				subtitle: "Model for aggregation and At a Glance (e.g. Sonnet)",
+				subtitle: "Model for aggregation (falls back to Sections Model)",
 				tooltip:
-					"Bedrock model ID for cross-user synthesis and strategic recommendations. Example: us.anthropic.claude-sonnet-4-6. Falls back to sections model.",
+					"LiteLLM model ID for cross-user synthesis and strategic recommendations. Falls back to Sections Model if not set. Can be the same or a slightly cheaper model.",
 			},
 			{
 				key: "insights.model_facets",
 				label: "Facets Model",
-				subtitle: "Model for per-session facet extraction (e.g. Haiku)",
+				subtitle: "Cheap/fast model for per-session extraction (runs many times)",
 				tooltip:
-					"Bedrock model ID for extracting structured facets from sessions. Use a cheap model here since it runs many times. Example: us.anthropic.claude-haiku-4-5-20251001-v1:0",
+					"LiteLLM model ID for extracting structured facets from each session. Use a cheap, fast model here since it runs once per session. Examples: anthropic/claude-haiku-4-5-20251001, openai/gpt-4o-mini, gemini/gemini-2.5-flash.",
 			},
 			{
 				key: "insights.batch_enabled",
@@ -249,7 +241,7 @@ const SETTING_SECTIONS: SettingSection[] = [
 				label: "Facet Concurrency",
 				subtitle: "Parallel LLM calls for facet extraction",
 				tooltip:
-					"How many facet extraction calls to run in parallel. Keep below your provider's rate limit. Default 25.",
+					"How many facet extraction calls to run in parallel. Higher = faster reports but more provider rate limit pressure. Default 25.",
 			},
 		],
 	},
@@ -653,6 +645,7 @@ export default function SettingsPage() {
 	} = useDeploymentConfig();
 	const [editingKey, setEditingKey] = useState<string | null>(null);
 	const [editingValue, setEditingValue] = useState("");
+	const [revokeConfirmKey, setRevokeConfirmKey] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [applyingResources, setApplyingResources] = useState(false);
 	const [tracePrivacy, setTracePrivacy] = useState(false);
@@ -1566,6 +1559,10 @@ export default function SettingsPage() {
 							{SETTING_SECTIONS.filter((s) => !s.danger && (!s.requiresFeature || licensedFeatures.includes(s.requiresFeature) || licensedFeatures.includes("all"))).map((section) => {
 								const visibleSettings = section.settings.filter((d) => !d.requiresFeature || licensedFeatures.includes(d.requiresFeature) || licensedFeatures.includes("all"));
 								if (visibleSettings.length === 0) return null;
+								// Check for deprecated AWS settings that are still configured
+								const deprecatedAwsKeys = ["insights.aws_region", "insights.aws_access_key_id", "insights.aws_secret_access_key", "insights.aws_session_token", "insights.model_url", "insights.model_api_key"];
+								const hasNewApiKey = entries.some((e) => e.key === "insights.api_key" && e.value && e.value !== "");
+								const hasDeprecatedSettings = section.title === "Agent Insights" && !hasNewApiKey && entries.some((e) => deprecatedAwsKeys.includes(e.key) && e.value && e.value !== "");
 								return (
 								<section key={section.title} className="mb-6">
 									<h3 className="text-sm font-semibold uppercase tracking-wider text-foreground/80 mb-1 flex items-center gap-1.5">
@@ -1574,6 +1571,15 @@ export default function SettingsPage() {
 									</h3>
 									{section.description && (
 										<p className="text-xs text-foreground/60 mb-3">{section.description}</p>
+									)}
+									{hasDeprecatedSettings && (
+										<div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+											<strong>Deprecated settings detected.</strong> AWS-specific credential fields are no longer used. Please configure the API Key field above with your provider key (or a{" "}
+											<a href="https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html" target="_blank" rel="noopener noreferrer" className="underline text-amber-300 hover:text-amber-100">Bedrock API key</a>
+											) and use{" "}
+											<a href="https://docs.litellm.ai/docs/providers" target="_blank" rel="noopener noreferrer" className="underline text-amber-300 hover:text-amber-100">LiteLLM provider format</a>
+											{" "}for model IDs. You can safely delete the old AWS settings.
+										</div>
 									)}
 									<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
 									{visibleSettings.map((d) => {
@@ -1592,14 +1598,24 @@ export default function SettingsPage() {
 											);
 										}
 										if (existing && existing.value) {
+											const isSensitive = (existing as AdminSetting).is_sensitive || SENSITIVE_KEYS.has(d.key);
+											const isSet = (existing as AdminSetting).is_set ?? !!existing.value;
 											return (
 												<div key={d.key} className="rounded-md border-2 border-border bg-card p-3 relative">
 													<div className="absolute right-2 top-2"><Tooltip><TooltipTrigger asChild><HelpCircle className="h-5 w-5 text-muted-foreground/40 hover:text-foreground transition-colors cursor-help" /></TooltipTrigger><TooltipContent side="left" className="max-w-[340px] text-sm leading-relaxed p-3">{d.tooltip}</TooltipContent></Tooltip></div>
 													<span className="text-sm font-semibold text-foreground">{d.label}</span>
 													<div className="flex items-center gap-2 mt-1.5">
-														<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{SENSITIVE_KEYS.has(d.key) ? maskValue(d.key, existing.value) : existing.value}</span>
-														<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(SENSITIVE_KEYS.has(d.key) ? "" : existing.value); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
-														<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+														{isSensitive ? (
+															<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{isSet ? REDACTED_VALUE : "Not set"}</span>
+														) : (
+															<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{existing.value}</span>
+														)}
+														<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(isSensitive ? "" : (existing?.value ?? "")); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+														{isSensitive && isSet ? (
+															<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setRevokeConfirmKey(d.key)}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+														) : (
+															<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+														)}
 													</div>
 												</div>
 											);
@@ -1657,14 +1673,24 @@ export default function SettingsPage() {
 															);
 														}
 														if (existing && existing.value) {
+															const isSensitive = (existing as AdminSetting).is_sensitive || SENSITIVE_KEYS.has(d.key);
+															const isSet = (existing as AdminSetting).is_set ?? !!existing.value;
 															return (
 																<div key={d.key} className="rounded-md border-2 border-border bg-card p-3 relative">
 																	<div className="absolute right-2 top-2"><Tooltip><TooltipTrigger asChild><HelpCircle className="h-5 w-5 text-muted-foreground/40 hover:text-foreground transition-colors cursor-help" /></TooltipTrigger><TooltipContent side="left" className="max-w-[340px] text-sm leading-relaxed p-3">{d.tooltip}</TooltipContent></Tooltip></div>
 																	<span className="text-sm font-semibold text-foreground">{d.label}</span>
 																	<div className="flex items-center gap-2 mt-1.5">
-																		<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{SENSITIVE_KEYS.has(d.key) ? maskValue(d.key, existing.value) : existing.value}</span>
-																		<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(SENSITIVE_KEYS.has(d.key) ? "" : existing.value); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
-																		<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																		{isSensitive ? (
+																			<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{isSet ? REDACTED_VALUE : "Not set"}</span>
+																		) : (
+																			<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{existing.value}</span>
+																		)}
+																		<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(isSensitive ? "" : existing.value); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+																		{isSensitive && isSet ? (
+																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setRevokeConfirmKey(d.key)}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																		) : (
+																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																		)}
 																	</div>
 																</div>
 															);
@@ -1688,6 +1714,20 @@ export default function SettingsPage() {
 					</div>
 				)}
 			</div>
+			<Dialog open={revokeConfirmKey !== null} onOpenChange={(open) => { if (!open) setRevokeConfirmKey(null); }}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Revoke secret</DialogTitle>
+						<DialogDescription>
+							This will permanently delete the stored value for <strong>{revokeConfirmKey}</strong>. Any features depending on this credential will stop working immediately. This cannot be undone.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setRevokeConfirmKey(null)}>Cancel</Button>
+						<Button variant="destructive" onClick={async () => { try { await admin.revokeSetting(revokeConfirmKey!); refetch(); toast.success(`Revoked ${revokeConfirmKey}`); } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Failed to revoke setting"); } finally { setRevokeConfirmKey(null); } }}>Revoke</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</>
 	);
 }

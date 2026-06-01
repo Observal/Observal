@@ -6,6 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+import asyncio
 import enum
 import uuid
 from datetime import UTC, datetime
@@ -27,6 +28,7 @@ from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing, SkillVersion
 from models.user import User, UserRole
 from schemas.mcp import ReviewActionRequest
+from services.cache import invalidate_namespace
 from services.editing_lock import is_actively_editing
 from services.redis import publish as redis_publish
 
@@ -642,7 +644,8 @@ async def approve(
 
     await db.commit()
     await db.refresh(listing)
-    redis_publish("reviews:updated", {"listing_id": str(listing.id), "action": "approved"})
+    await invalidate_namespace("dashboard")
+    asyncio.create_task(redis_publish("reviews:updated", {"listing_id": str(listing.id), "action": "approved"}))  # noqa: RUF006
     return {"type": listing_type, "id": str(listing.id), "name": listing.name, "status": listing.status.value}
 
 
@@ -692,7 +695,8 @@ async def reject(
         pass  # Non-critical: don't block rejection if cascade fails
 
     await db.refresh(listing)
-    redis_publish("reviews:updated", {"listing_id": str(listing.id), "action": "rejected"})
+    await invalidate_namespace("dashboard")
+    asyncio.create_task(redis_publish("reviews:updated", {"listing_id": str(listing.id), "action": "rejected"}))  # noqa: RUF006
     return {"type": listing_type, "id": str(listing.id), "name": listing.name, "status": listing.status.value}
 
 
@@ -781,7 +785,8 @@ async def approve_agent(
         agent.category = req.category
 
     await db.commit()
-    redis_publish("reviews:updated", {"listing_id": str(agent.id), "action": "approved"})
+    await invalidate_namespace("dashboard")
+    asyncio.create_task(redis_publish("reviews:updated", {"listing_id": str(agent.id), "action": "approved"}))  # noqa: RUF006
     return {"id": str(agent.id), "name": agent.name, "status": "approved", "version": newest_pending.version}
 
 
@@ -828,7 +833,8 @@ async def reject_agent(
 
     await db.commit()
     rejected_version = pending_versions[0].version if pending_versions else ""
-    redis_publish("reviews:updated", {"listing_id": str(agent.id), "action": "rejected"})
+    await invalidate_namespace("dashboard")
+    asyncio.create_task(redis_publish("reviews:updated", {"listing_id": str(agent.id), "action": "rejected"}))  # noqa: RUF006
     return {"id": str(agent.id), "name": agent.name, "status": "rejected", "version": rejected_version}
 
 

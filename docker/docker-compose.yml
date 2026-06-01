@@ -51,6 +51,8 @@ services:
         "0.0.0.0",
         "--port",
         "8000",
+        "--workers",
+        "${API_WORKERS:-2}",
       ]
     env_file:
       - ../.env
@@ -105,6 +107,14 @@ services:
       - ../.env
     environment:
       POSTGRES_DB: observal
+    command: >
+      postgres
+      -c max_connections=300
+      -c shared_buffers=128MB
+      -c work_mem=8MB
+      -c effective_cache_size=384MB
+      -c maintenance_work_mem=64MB
+      -c random_page_cost=1.1
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
@@ -152,6 +162,7 @@ services:
     image: redis:8-alpine
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    command: redis-server --maxmemory 200mb --maxmemory-policy volatile-lru
     volumes:
       - redisdata:/data
     healthcheck:

@@ -151,6 +151,35 @@ _RE_LONG_BASE64 = re.compile(
     r"(?=[\"',;\s}\])]|$)"
 )
 
+# Combined alternation of all known key patterns for single-pass matching.
+# A single DFA scan is dramatically faster than 15 sequential subn() calls.
+_COMBINED_KEY_PATTERN = re.compile("|".join(f"(?:{p.pattern})" for p in _KNOWN_KEY_PATTERNS))
+
+# Quick substring prefixes for short-circuit: if none are present in the text,
+# no known API key can exist, so skip the expensive combined regex entirely.
+_QUICK_PREFIXES = (
+    "sk-",
+    "sk_",
+    "pk_",
+    "rk_",
+    "ghp_",
+    "gho_",
+    "ghs_",
+    "ghu_",
+    "glpat-",
+    "xox",
+    "AKIA",
+    "npm_",
+    "pypi-",
+    "SG.",
+    "hf_",
+    "vercel_",
+    "sbp_",
+    "AGE-SECRET",
+    "AIza",
+    "key-",
+)
+
 REDACTED = "**REDACTED**"
 
 _redaction_count: int = 0
@@ -180,10 +209,10 @@ def redact_secrets(text: str) -> str:
     # 1. PEM private keys (replace entire block)
     text = _RE_PRIVATE_KEY.sub(REDACTED, text)
 
-    # 2. Known API key prefixes (highest confidence - always redact)
+    # 2. Known API key prefixes (single-pass alternation with short-circuit)
     global _redaction_count
-    for pat in _KNOWN_KEY_PATTERNS:
-        text, n = pat.subn(REDACTED, text)
+    if any(prefix in text for prefix in _QUICK_PREFIXES):
+        text, n = _COMBINED_KEY_PATTERN.subn(REDACTED, text)
         _redaction_count += n
 
     # 3. JWT tokens

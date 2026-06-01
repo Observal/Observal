@@ -113,7 +113,7 @@ class TestInspectManifestDisplay:
         """inspect should print the manifest contents as formatted JSON."""
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz")
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         # The manifest fields should appear in the output
@@ -126,7 +126,7 @@ class TestInspectManifestDisplay:
         """All required manifest fields should be visible in the output."""
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz")
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         for field in [
@@ -153,7 +153,7 @@ class TestInspectTreeView:
         """The tree view should list all files in the archive."""
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz")
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         assert "versions/app.json" in result.output
@@ -164,7 +164,7 @@ class TestInspectTreeView:
         """The tree view should have a 'Bundle contents' label."""
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz")
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         assert "Bundle contents" in result.output
@@ -185,7 +185,7 @@ class TestInspectShowFlag:
         }
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz", files=files)
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path), "--show", "versions/app.json"])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path), "--show", "versions/app.json"])
 
         assert result.exit_code == 0
         assert "0.9.0" in result.output
@@ -195,7 +195,9 @@ class TestInspectShowFlag:
         """--show should work for bundle_manifest.json itself."""
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz")
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path), "--show", "bundle_manifest.json"])
+        result = runner.invoke(
+            app, ["doctor", "support", "inspect", str(bundle_path), "--show", "bundle_manifest.json"]
+        )
 
         assert result.exit_code == 0
         # The manifest content should appear (it's printed twice: once as formatted JSON, once via --show)
@@ -205,7 +207,9 @@ class TestInspectShowFlag:
         """--show with a non-existent path should exit 1 and list available files."""
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz")
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path), "--show", "nonexistent/file.json"])
+        result = runner.invoke(
+            app, ["doctor", "support", "inspect", str(bundle_path), "--show", "nonexistent/file.json"]
+        )
 
         assert result.exit_code == 1
         assert "not found" in result.output.lower() or "File not found" in result.output
@@ -222,7 +226,7 @@ class TestInspectShowFlag:
         }
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz", files=files)
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path), "--show", "does-not-exist.txt"])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path), "--show", "does-not-exist.txt"])
 
         assert result.exit_code == 1
         # All real files should be listed as available
@@ -240,7 +244,7 @@ class TestInspectMissingBundle:
         """Inspecting a non-existent file should exit 1 with an error message."""
         fake_path = tmp_path / "does-not-exist.tar.gz"
 
-        result = runner.invoke(app, ["support", "inspect", str(fake_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(fake_path)])
 
         assert result.exit_code == 1
         assert "not found" in result.output.lower() or "Bundle not found" in result.output
@@ -257,7 +261,7 @@ class TestInspectInvalidArchive:
         bad_file = tmp_path / "not-a-tarball.tar.gz"
         bad_file.write_bytes(b"this is not a tar.gz file at all")
 
-        result = runner.invoke(app, ["support", "inspect", str(bad_file)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bad_file)])
 
         assert result.exit_code == 1
         assert "cannot open" in result.output.lower() or "Cannot open" in result.output
@@ -267,7 +271,7 @@ class TestInspectInvalidArchive:
         empty_file = tmp_path / "empty.tar.gz"
         empty_file.write_bytes(b"")
 
-        result = runner.invoke(app, ["support", "inspect", str(empty_file)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(empty_file)])
 
         assert result.exit_code == 1
 
@@ -286,7 +290,7 @@ class TestInspectMissingManifest:
             include_manifest=False,
         )
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 1
         assert "missing" in result.output.lower() or "malformed" in result.output.lower()
@@ -298,7 +302,7 @@ class TestInspectMissingManifest:
             _add_bytes_to_tar(tar, "bundle_manifest.json", b"not valid json {{{")
             _add_bytes_to_tar(tar, "versions/app.json", b'{"v": 1}')
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 1
         assert "missing" in result.output.lower() or "malformed" in result.output.lower()
@@ -315,7 +319,7 @@ class TestInspectSchemaVersionWarnings:
         manifest = _make_manifest(schema_version="1")
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz", manifest=manifest)
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         assert "warning" not in result.output.lower()
@@ -328,7 +332,7 @@ class TestInspectSchemaVersionWarnings:
         manifest = _make_manifest(schema_version="0")
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz", manifest=manifest)
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         assert "newer CLI" not in result.output
@@ -338,7 +342,7 @@ class TestInspectSchemaVersionWarnings:
         manifest = _make_manifest(schema_version="99")
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz", manifest=manifest)
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         assert "newer CLI" in result.output or "newer" in result.output.lower()
@@ -351,7 +355,7 @@ class TestInspectSchemaVersionWarnings:
         manifest = _make_manifest(schema_version="5")
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz", manifest=manifest)
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         # Tree should still render
@@ -363,7 +367,7 @@ class TestInspectSchemaVersionWarnings:
         manifest = _make_manifest(schema_version="beta")
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz", manifest=manifest)
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         assert "unrecognized" in result.output.lower() or "Unrecognized" in result.output
@@ -375,7 +379,7 @@ class TestInspectSchemaVersionWarnings:
         manifest = _make_manifest(schema_version="v2.0")
         bundle_path = _create_bundle(tmp_path / "bundle.tar.gz", manifest=manifest)
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         assert "v2.0" in result.output
@@ -397,7 +401,7 @@ class TestInspectNoExtraction:
         # List files before
         before = set(work_dir.iterdir())
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path)])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
         assert result.exit_code == 0
         # No new files should have been created
@@ -412,7 +416,7 @@ class TestInspectNoExtraction:
 
         before = set(work_dir.iterdir())
 
-        result = runner.invoke(app, ["support", "inspect", str(bundle_path), "--show", "versions/app.json"])
+        result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path), "--show", "versions/app.json"])
 
         assert result.exit_code == 0
         after = set(work_dir.iterdir())

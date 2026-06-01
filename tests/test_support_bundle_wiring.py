@@ -44,7 +44,7 @@ class TestSupportAppRegistration:
 
     def test_support_group_exists(self):
         """The 'support' subgroup should appear in the root app."""
-        result = runner.invoke(app, ["support", "--help"])
+        result = runner.invoke(app, ["doctor", "support", "--help"])
         assert result.exit_code == 0
         output = _ANSI_RE.sub("", result.output)
         assert "bundle" in output
@@ -52,7 +52,7 @@ class TestSupportAppRegistration:
 
     def test_support_bundle_help(self):
         """The 'bundle' subcommand should be accessible."""
-        result = runner.invoke(app, ["support", "bundle", "--help"])
+        result = runner.invoke(app, ["doctor", "support", "bundle", "--help"])
         assert result.exit_code == 0
         output = _ANSI_RE.sub("", result.output)
         assert "--output" in output
@@ -61,7 +61,7 @@ class TestSupportAppRegistration:
 
     def test_support_help_mentions_no_customer_data(self):
         """The support group help should mention no customer data."""
-        result = runner.invoke(app, ["support", "--help"])
+        result = runner.invoke(app, ["doctor", "support", "--help"])
         assert result.exit_code == 0
         output = _ANSI_RE.sub("", result.output).lower()
         assert "no customer data" in output
@@ -151,7 +151,7 @@ class TestBundleDirectoryStructure:
             patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
             patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
         ):
-            result = runner.invoke(app, ["support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
 
         assert result.exit_code == 0, f"Unexpected exit code: {result.output}"
         assert output_path.exists()
@@ -189,7 +189,7 @@ class TestBundleDirectoryStructure:
             patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
             patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
         ):
-            result = runner.invoke(app, ["support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
 
         assert result.exit_code == 0
 
@@ -220,7 +220,7 @@ class TestBundleDirectoryStructure:
         ):
             result = runner.invoke(
                 app,
-                ["support", "bundle", "--output", str(output_path), "--no-include-system"],
+                ["doctor", "support", "bundle", "--output", str(output_path), "--no-include-system"],
             )
 
         assert result.exit_code == 0
@@ -249,7 +249,7 @@ class TestPartialFailure:
             patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
             patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
         ):
-            result = runner.invoke(app, ["support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
 
         assert result.exit_code == 0, f"Should exit 0 on partial failure: {result.output}"
         assert output_path.exists()
@@ -278,7 +278,7 @@ class TestPartialFailure:
             patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
             patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
         ):
-            result = runner.invoke(app, ["support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
 
         assert result.exit_code == 0, f"Should exit 0 on partial failure: {result.output}"
         assert output_path.exists()
@@ -294,7 +294,7 @@ class TestPartialFailure:
             patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
             patch("observal_cli.cmd_support.httpx.post", side_effect=httpx.ConnectError("Connection refused")),
         ):
-            result = runner.invoke(app, ["support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
 
         assert result.exit_code == 0, f"Should exit 0 with local-only data: {result.output}"
         assert output_path.exists()
@@ -318,7 +318,7 @@ class TestPartialFailure:
             patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
             patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
         ):
-            result = runner.invoke(app, ["support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
 
         assert result.exit_code == 0
 
@@ -364,7 +364,7 @@ class TestTotalFailure:
                 return_value=failed_system,
             ),
         ):
-            result = runner.invoke(app, ["support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
 
         assert result.exit_code == 1, f"Should exit 1 when no data collected: {result.output}"
         assert not output_path.exists(), "No archive should be written on total failure"
@@ -386,7 +386,7 @@ class TestTotalFailure:
         ):
             result = runner.invoke(
                 app,
-                ["support", "bundle", "--output", str(output_path), "--no-include-system"],
+                ["doctor", "support", "bundle", "--output", str(output_path), "--no-include-system"],
             )
 
         assert result.exit_code == 1, f"Should exit 1 when no data collected: {result.output}"

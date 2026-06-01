@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+project_id  = "my-gcp-project"
+region      = "us-central1"
+environment = "prod"
+name_prefix = "observal"
+
+# Custom domain (optional — leave empty to use Cloud Run default URLs)
+# domain_name           = "observal.example.com"
+# dns_managed_zone_name = "example-com"
+
+# Container images
+image_tag = "latest"
+
+# Cloud SQL
+db_tier        = "db-g1-small"
+db_disk_size_gb = 50
+db_ha_enabled  = false
+
+# Memorystore Redis
+redis_memory_size_gb = 1
+redis_tier           = "BASIC"
+
+# Data host (ClickHouse + Grafana + Prometheus)
+clickhouse_mode   = "self_hosted"
+data_machine_type = "e2-standard-2"
+data_disk_size_gb = 100
+
+# Application
+data_retention_days = 90
+
+# License (leave empty for community edition)
+# observal_license_key = ""

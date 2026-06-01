@@ -10,6 +10,102 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.3] - 2026-05-31
+
+### Added
+
+- persist audit log search filters in URL params (**web**) ([bbf7e47](https://github.com/BlazeUp-AI/Observal/commit/bbf7e473a6a0f4352778fa5ce4d34c922fa9bdbc))
+- persist trace filters in URL search params ([324d47f](https://github.com/BlazeUp-AI/Observal/commit/324d47fcd68bffabcea433b5f3d2c7bc0f502077))
+
+### Documentation
+
+- add cli/skill.md reference (#1207) ([3e8d0bf](https://github.com/BlazeUp-AI/Observal/commit/3e8d0bf01f03e22147818e213e092adcafa1151c))
+
+### Fixed
+
+- support BYO-VPC Fargate deployment with private zones (**infra**) ([5dabfc0](https://github.com/BlazeUp-AI/Observal/commit/5dabfc01027ca9362d92161e65af39047095f7bf))
+- use dynamic agent-specific rules file paths (**opencode**) ([c1097b7](https://github.com/BlazeUp-AI/Observal/commit/c1097b7cbfe717a23d033eed15ebcfea051ee7e1))
+- unify loading skeletons via shared canonical layouts (**web**) ([5b56253](https://github.com/BlazeUp-AI/Observal/commit/5b56253199ea27e7516dff99d2ad0453b48f628c))
+- replace magic status codes with constants in test_payload_protection.py (**lint**) ([0ee8bd1](https://github.com/BlazeUp-AI/Observal/commit/0ee8bd1f56daab81efb233795d7c1e8299cf83b2))
+
+### Testing
+
+- add E2E tests for auth and scan commands (**cli**) ([feb6f29](https://github.com/BlazeUp-AI/Observal/commit/feb6f29e12e86480ffb699486f385a94fea5e684))
+## [1.4.2] - 2026-05-31
+
+### Added
+
+- add dependency review action for PR license gate (**ci**) ([b6327d9](https://github.com/BlazeUp-AI/Observal/commit/b6327d951fc6a8f9ce37d311bde8c2e74c8c19a1))
+- add OpenVEX and THIRD_PARTY_NOTICES generation (**ci**) ([6687430](https://github.com/BlazeUp-AI/Observal/commit/6687430908ea2105e8a24ee9eb725d1d6000e90e))
+- move insights out of ee/ and remove license gate ([4330b37](https://github.com/BlazeUp-AI/Observal/commit/4330b373a0b0063c2348959999a69ba37b11cc19))
+
+### Documentation
+
+- add commercial licensing whitepaper for enterprise buyers ([55f4535](https://github.com/BlazeUp-AI/Observal/commit/55f45356b85214166265c0de512ec5c998b4ae29))
+
+### Fixed
+
+- resolve all prod deployment failures in Terraform module (**infra**) ([3579aa0](https://github.com/BlazeUp-AI/Observal/commit/3579aa02bdf5b82b9d4a5cf51cf59bb501157a04))
+## [1.4.1] - 2026-05-31
+
+### Added
+
+- add GCP Terraform module for self-hosting (**infra**) ([3f4312b](https://github.com/BlazeUp-AI/Observal/commit/3f4312b1c9456d0074a3f5819fe673fb44cc62ea))
+
+### Fixed
+
+- close API key redaction gaps across ingest, GraphQL, and settings (**security**) ([100c272](https://github.com/BlazeUp-AI/Observal/commit/100c27281bd7aa83d7e0418c1d51dd3148a2db9d))
+- auto-enable APIs, fix Cloud SQL edition, AR proxy for ghcr.io (**infra/gcp**) ([31652c0](https://github.com/BlazeUp-AI/Observal/commit/31652c0a9fb2520f8b0a1257b4f2b938aa773388))
+- align Terraform env vars with v1.0 and fix template bugs (**infra**) ([685cca3](https://github.com/BlazeUp-AI/Observal/commit/685cca3e4cd294c7b25178283620af00de44c4bb))
+## [1.4.0] - 2026-05-31
+
+### Added
+
+- make sensitive settings write-once and retractable (**security**) ([b6b4fc1](https://github.com/BlazeUp-AI/Observal/commit/b6b4fc1f4f90d30c3c6bceef9d62d6faa5d214c7))
+
+### Fixed
+
+- correct tool count and strip ANSI from thinking blocks (**ui+parser**) ([cb97420](https://github.com/BlazeUp-AI/Observal/commit/cb974206eb1aead4429f2345b59a80296bcd9e3b))
+- fix off-by-one in byte offset tracking (**pi-extension**) ([39e2135](https://github.com/BlazeUp-AI/Observal/commit/39e2135ea59eeb4c43a87fdb66fac2d5f3ef1f22))
+- prevent partial line reads during concurrent agent writes (**cli**) ([c9f9b32](https://github.com/BlazeUp-AI/Observal/commit/c9f9b32cfc9c5f94ebbbf4f851f23ad868c84e86))
+- fix TS type errors in incremental session fetch (**frontend**) ([794f98b](https://github.com/BlazeUp-AI/Observal/commit/794f98b1eb55bbdaaaa0c0935b11a550b2b53ec6))
+- add tmpfs mounts and remove enterprise image logic (**infra**) ([02886aa](https://github.com/BlazeUp-AI/Observal/commit/02886aa8312169683a45e5306e4443c3dbc592e1))
+
+### Other
+
+- remove obsolete release-enterprise workflow ([cdf0078](https://github.com/BlazeUp-AI/Observal/commit/cdf007890efe0c23dd0d83ff8aaf563770cb8ef7))
+
+### Performance
+
+- add partition key to session_stats_agg (**clickhouse**) ([013aae1](https://github.com/BlazeUp-AI/Observal/commit/013aae196ec58bc5e6c3394572c7650bf973e72a))
+- tune for 512M container with 500+ concurrent users (**postgres**) ([bc161e0](https://github.com/BlazeUp-AI/Observal/commit/bc161e03a8a2667f40a223bd38e363dd58aac09c))
+- convert 3 BaseHTTPMiddleware to pure ASGI (**middleware**) ([0b7096a](https://github.com/BlazeUp-AI/Observal/commit/0b7096aa86d303735ef1ba4a925bb1a806f8d29d))
+- add slim query variants without blob columns (**clickhouse**) ([1415fb1](https://github.com/BlazeUp-AI/Observal/commit/1415fb11696456510ed3b290900ec2d9ff5c4443))
+- skip dedup query on first push with Redis flag guard (**ingest**) ([575842d](https://github.com/BlazeUp-AI/Observal/commit/575842dd3facf0aa5f186543ee4b16604655cdd0))
+- incremental session detail fetch with after_offset (**frontend**) ([b64a8a2](https://github.com/BlazeUp-AI/Observal/commit/b64a8a2f2e2c96110d9c3b2159334546309d3342))
+- add after_offset param for incremental detail fetch (**sessions**) ([6e2676b](https://github.com/BlazeUp-AI/Observal/commit/6e2676bc6dbba781b1f101d2027eb9f6ff83d885))
+- raise merge tree part thresholds for high ingest (**clickhouse**) ([cce4b91](https://github.com/BlazeUp-AI/Observal/commit/cce4b91f14cee7cdd16bc17c33ecd0eb84f2dffd))
+- cache agent_id name→UUID resolution in Redis (5min TTL) (**ingest**) ([90e19fd](https://github.com/BlazeUp-AI/Observal/commit/90e19fdbfd5063f798d7875d0cca3a57860ee8a4))
+- combine 15 regex patterns into single alternation (**redactor**) ([847ecde](https://github.com/BlazeUp-AI/Observal/commit/847ecde2d807c48e1120039502f179d2960b8882))
+- enable async_insert with sync override for audit (**clickhouse**) ([b890023](https://github.com/BlazeUp-AI/Observal/commit/b89002305ed1e4b55b10b31e2878af7412d6f244))
+- set maxmemory 200mb with volatile-lru eviction (**redis**) ([22a4f2b](https://github.com/BlazeUp-AI/Observal/commit/22a4f2b5994d3ca96a35b212d0d7f8467784425b))
+- add rate limit of 300/minute per client IP (**ingest**) ([cd66b15](https://github.com/BlazeUp-AI/Observal/commit/cd66b152b3f2b7e2ad7e2a3a1cf00981482dc078))
+- skip ContentType depth check on ingest/telemetry (**middleware**) ([22acc2b](https://github.com/BlazeUp-AI/Observal/commit/22acc2bff68c083c6175c8a49ba093109707066a))
+- remove GZipMiddleware, nginx handles compression (**middleware**) ([0d68724](https://github.com/BlazeUp-AI/Observal/commit/0d68724b846781aea78eba30d82a17040f2f94c8))
+- remove _invalidate_cache from hot-path inserts (**cache**) ([8314cca](https://github.com/BlazeUp-AI/Observal/commit/8314cca002410e7a5300f30ff5ef65d2d9ad3c40))
+- reduce session detail polling to 5s fallback (**frontend**) ([cd0a61c](https://github.com/BlazeUp-AI/Observal/commit/cd0a61c64717e37b0cf815898a784988ecab4704))
+- increase max_jobs from 5 to 15 (**worker**) ([9504a75](https://github.com/BlazeUp-AI/Observal/commit/9504a75e05b25a743d77116df87019577bf505a6))
+- add uvicorn workers for multi-core throughput (**docker**) ([8c7181d](https://github.com/BlazeUp-AI/Observal/commit/8c7181dbe1955f4c3dc1c0a3fd1d733435aa8c30))
+- increase connection pool sizes for 500+ concurrent users (**scale**) ([c28d325](https://github.com/BlazeUp-AI/Observal/commit/c28d3255193a1b5f9f5fe566108a33df772cad0a))
+- set keepalive connections equal to max connections (**clickhouse**) ([8ffb7ee](https://github.com/BlazeUp-AI/Observal/commit/8ffb7eee53d75e0246cdfe5b82f123bc571326cf))
+- add upstream keepalive and WebSocket timeout (**nginx**) ([6465c6e](https://github.com/BlazeUp-AI/Observal/commit/6465c6ef88832639bb0b358c9ed6bd4dfe5967ff))
+- fire-and-forget Redis publish on session ingest (**ingest**) ([cf502c4](https://github.com/BlazeUp-AI/Observal/commit/cf502c4e5e984589b1ab33e049a6ab4cdead69fa))
+- use session-specific channels for targeted fan-out (**pubsub**) ([bc615fe](https://github.com/BlazeUp-AI/Observal/commit/bc615fe5ded1eafc111edb8febdffe9b38eb9d54))
+- use OrderedDict for O(1) LRU eviction in registry cache (**cache**) ([c1fa3fd](https://github.com/BlazeUp-AI/Observal/commit/c1fa3fd3d31a737022be50080aaec9a3ca17bbd7))
+- add partition-independent FINAL optimization (**dashboard**) ([c8f09ad](https://github.com/BlazeUp-AI/Observal/commit/c8f09ad6b71ec9c4daee1fc6929a573ce6899412))
+- parallelize ClickHouse queries with asyncio.gather (**dashboard**) ([dcb03fd](https://github.com/BlazeUp-AI/Observal/commit/dcb03fdfa4c42913c921c3ee4b8fe65edde83158))
+- pipeline 3 Redis checks into 1 round-trip (**auth**) ([9a777fd](https://github.com/BlazeUp-AI/Observal/commit/9a777fd6e051f3b8213924208059c7e7e783812d))
+- publish sessions:updated on successful session ingest (**ingest**) ([f6e8450](https://github.com/BlazeUp-AI/Observal/commit/f6e84505138dc382840fd02b4acc5747dc6d0765))
 ## [1.3.1] - 2026-05-30
 
 ### Added

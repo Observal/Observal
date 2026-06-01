@@ -21,6 +21,7 @@ class OpenCodeAdapter:
 
     def format_config(self, ctx: ConfigContext) -> dict:
         optic.trace("ctx={}", ctx)
+        safe_name = ctx.safe_name
         options = ctx.options
         mcp_configs = ctx.mcp_configs
         rules_content = ctx.rules_content
@@ -35,7 +36,7 @@ class OpenCodeAdapter:
             if "env" in v:
                 opencode_configs[k]["env"] = v["env"]
 
-        rules_path = opencode_spec["rules_file"].get(opencode_scope, "AGENTS.md")
+        rules_path = opencode_spec["rules_file"][opencode_scope].format(name=safe_name)
         mcp_path = opencode_spec["mcp_config_path"].get(
             opencode_scope, next(iter(opencode_spec["mcp_config_path"].values()))
         )

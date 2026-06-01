@@ -79,22 +79,22 @@ class TestCLIRegistration:
     """Verify Phase 2 telemetry subcommands appear in migrate --help."""
 
     def test_export_telemetry_in_help(self):
-        result = runner.invoke(cli_app, ["migrate", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "--help"])
         assert result.exit_code == 0
         assert "export-telemetry" in _plain(result.output)
 
     def test_import_telemetry_in_help(self):
-        result = runner.invoke(cli_app, ["migrate", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "--help"])
         assert result.exit_code == 0
         assert "import-telemetry" in _plain(result.output)
 
     def test_validate_telemetry_in_help(self):
-        result = runner.invoke(cli_app, ["migrate", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "--help"])
         assert result.exit_code == 0
         assert "validate-telemetry" in _plain(result.output)
 
     def test_export_telemetry_help_shows_options(self):
-        result = runner.invoke(cli_app, ["migrate", "export-telemetry", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "export-telemetry", "--help"])
         assert result.exit_code == 0
         out = _plain(result.output)
         assert "--clickhouse-url" in out
@@ -102,14 +102,14 @@ class TestCLIRegistration:
         assert "--output-dir" in out
 
     def test_import_telemetry_help_shows_options(self):
-        result = runner.invoke(cli_app, ["migrate", "import-telemetry", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "import-telemetry", "--help"])
         assert result.exit_code == 0
         out = _plain(result.output)
         assert "--clickhouse-url" in out
         assert "--input-dir" in out
 
     def test_validate_telemetry_help_shows_options(self):
-        result = runner.invoke(cli_app, ["migrate", "validate-telemetry", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "validate-telemetry", "--help"])
         assert result.exit_code == 0
         out = _plain(result.output)
         assert "--input-dir" in out
@@ -513,7 +513,7 @@ class TestErrorPaths:
 
     def test_export_telemetry_missing_options(self):
         """export-telemetry without required options should fail."""
-        result = runner.invoke(cli_app, ["migrate", "export-telemetry"])
+        result = runner.invoke(cli_app, ["server", "migrate", "export-telemetry"])
         assert result.exit_code != 0
 
     @patch("observal_cli.cmd_migrate._require_admin")

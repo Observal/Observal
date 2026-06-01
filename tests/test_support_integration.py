@@ -200,7 +200,7 @@ class TestSupportBundleIntegration:
                 return_value=_mock_httpx_response(server_resp),
             ),
         ):
-            result = runner.invoke(app, ["support", "bundle", "--output", str(output)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output)])
 
         assert result.exit_code == 0, f"Bundle command failed: {result.output}"
         assert output.exists(), "Archive file was not created"
@@ -553,7 +553,7 @@ class TestBundleWithoutSystem:
         ):
             result = runner.invoke(
                 app,
-                ["support", "bundle", "--output", str(output), "--no-include-system"],
+                ["doctor", "support", "bundle", "--output", str(output), "--no-include-system"],
             )
 
         assert result.exit_code == 0

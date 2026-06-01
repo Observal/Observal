@@ -24,7 +24,7 @@ Signed JWT containing:
 ```json
 {
   "org_id": "uuid",
-  "features": ["insights", "saml", "scim", "audit", "exec_dashboard"],
+  "features": ["saml", "scim", "audit", "exec_dashboard"],
   "exp": 1750000000
 }
 ```
@@ -32,12 +32,6 @@ Signed JWT containing:
 Usage in code: `from ee.license import is_feature_licensed`. Returns bool. Generate keys with `ee/scripts/generate_license.py`.
 
 ## Feature inventory
-
-### Insights (`ee/observal_insights/`)
-
-Full agent usage analysis pipeline. The open-source `services/insights/` returns empty stubs; this provides the real implementation.
-
-Key modules: `batch.py` (job orchestration), `generator.py` (LLM narrative), `sections.py` (report builders), `metrics.py` (aggregation), `facets.py` (session analysis), `enrichment.py` (trace enrichment), `reconcile.py` (session reconciliation), `shim_enrichment.py` (shim data), `trace_dedup.py` / `dedup.py` (deduplication), `cross_user.py` (pattern analysis), `session_cache.py` (caching), `transcript.py` (session transcripts), `html_export.py` (export), `pricing.py` (token costs), `regression.py` (performance regression), `anonymize.py` (data anonymization).
 
 ### Audit (HIPAA-compliant)
 
@@ -86,7 +80,6 @@ ee/
 │   ├── middleware/enterprise_guard.py
 │   ├── routes/ (audit, admin_sso, exec_dashboard, scim, sso_saml)
 │   └── services/ (audit, config_validator, saml, scim_service)
-├── observal_insights/ (~20 modules, see above)
 └── plugins/__init__.py            # Future integrations placeholder
 ```
 

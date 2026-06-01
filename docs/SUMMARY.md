@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Nithin-Bhargav-07 <gaddamnithinbhargav@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Summary
@@ -36,6 +37,7 @@
 * [observal self](cli/self.md)
 * [observal prompt](cli/prompt.md)
 * [observal server](cli/server.md)
+* [observal skill](cli/skill.md)
 * [observal uninstall](cli/uninstall.md)
 
 ## Self-Hosting

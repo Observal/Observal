@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: AGPL-3.0-only
 
 """Batch insight report generation — discovers agents needing reports and queues jobs.
 
@@ -162,7 +162,7 @@ async def run_single_report(report_id: str) -> None:
     This replaces the old generator.generate_report() — orchestration stays
     here in the main repo, computation is delegated to the observal-insights package.
     """
-    from ee.observal_insights import generate_report_content
+    from .generator import generate_report_content
 
     # Reap any stale reports before starting (handles crash recovery)
     await _reap_stale_reports()

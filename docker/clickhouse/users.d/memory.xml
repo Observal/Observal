@@ -16,8 +16,11 @@
             <max_bytes_in_join>100000000</max_bytes_in_join>
             <join_algorithm>auto</join_algorithm>
 
-            <!-- Async-insert: flush every 200ms or 1MB, whichever comes first.
-                 Keeps the in-memory buffer small. -->
+            <!-- Async-insert: batch concurrent INSERT requests server-side.
+                 Reduces parts-per-second when multiple CLI clients push simultaneously.
+                 flush every 200ms or 1MB, whichever comes first. -->
+            <async_insert>1</async_insert>
+            <wait_for_async_insert>0</wait_for_async_insert>
             <async_insert_max_data_size>1048576</async_insert_max_data_size>
             <async_insert_busy_timeout_ms>200</async_insert_busy_timeout_ms>
         </default>

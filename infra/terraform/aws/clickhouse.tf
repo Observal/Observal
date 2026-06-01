@@ -46,7 +46,7 @@ resource "aws_ebs_volume" "data" {
 # survives instance replacement.
 resource "aws_network_interface" "data_host" {
   count           = local.clickhouse_self_hosted ? 1 : 0
-  subnet_id       = aws_subnet.private[0].id
+  subnet_id       = local.private_subnet_ids[0]
   security_groups = [aws_security_group.data_host[0].id]
 
   tags = { Name = "${local.name}-data-host-eni" }
@@ -57,7 +57,6 @@ locals {
     region                 = var.region
     ssm_prefix             = local.ssm_prefix
     image_tag              = var.image_tag
-    data_retention_days    = var.data_retention_days
     log_group              = aws_cloudwatch_log_group.data_host.name
     backups_bucket         = aws_s3_bucket.backups.bucket
     grafana_admin_user     = "admin"
@@ -79,7 +78,7 @@ resource "aws_instance" "data_host" {
   }
 
   user_data                   = local.data_host_user_data
-  user_data_replace_on_change = false
+  user_data_replace_on_change = true
 
   metadata_options {
     http_tokens   = "required"

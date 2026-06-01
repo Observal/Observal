@@ -347,6 +347,7 @@ INIT_SQL = [
         INDEX idx_ssa_user_id  user_id  TYPE bloom_filter(0.01) GRANULARITY 1,
         INDEX idx_ssa_agent_id agent_id TYPE bloom_filter(0.01) GRANULARITY 1
     ) ENGINE = AggregatingMergeTree()
+    PARTITION BY toYYYYMM(first_event_time)
     ORDER BY (project_id, session_id)""",
     """CREATE MATERIALIZED VIEW IF NOT EXISTS session_stats_mv
     TO session_stats_agg AS
@@ -563,6 +564,119 @@ async def _materialize_if_needed():
             optic.warning("could not check index {} status: {}", idx_name, e)
 
 
+async def _migrate_session_stats_partition():
+    """One-time migration: add PARTITION BY to session_stats_agg if missing.
+
+    Checks system.tables for partition_key. If empty (old schema), drops and
+    recreates the table with monthly partitioning, recreates the MV, and
+    backfills from session_events. Idempotent: no-op if already partitioned.
+    """
+    import json
+
+    resp = await _client._query(
+        "SELECT partition_key FROM system.tables "
+        "WHERE database = currentDatabase() AND name = 'session_stats_agg' "
+        "FORMAT JSONEachRow"
+    )
+    if not resp or resp.status_code >= 400 or not resp.text.strip():
+        return  # Table doesn't exist (fresh install will create via INIT_SQL)
+
+    rows = [json.loads(line) for line in resp.text.strip().splitlines() if line.strip()]
+    if not rows:
+        return
+
+    if rows[0].get("partition_key", ""):
+        optic.debug("session_stats_agg already partitioned, skipping migration")
+        return
+
+    optic.info("migrating session_stats_agg: adding PARTITION BY toYYYYMM(first_event_time)")
+
+    steps = [
+        "DROP VIEW IF EXISTS session_stats_mv",
+        "DROP TABLE IF EXISTS session_stats_agg",
+        """CREATE TABLE session_stats_agg (
+            project_id          String,
+            session_id          String,
+            agent_id            LowCardinality(String) DEFAULT '',
+            user_id             String                 DEFAULT '',
+            parent_session_id   String                 DEFAULT '',
+            ide                 LowCardinality(String) DEFAULT '',
+            first_event_time    SimpleAggregateFunction(min,     DateTime64(3, 'UTC')),
+            last_event_time     SimpleAggregateFunction(max,     DateTime64(3, 'UTC')),
+            event_count         SimpleAggregateFunction(sum,     Int64),
+            prompt_count        SimpleAggregateFunction(sum,     Int64),
+            tool_call_count     SimpleAggregateFunction(sum,     Int64),
+            tool_result_count   SimpleAggregateFunction(sum,     Int64),
+            input_tokens        SimpleAggregateFunction(sum,     Int64),
+            output_tokens       SimpleAggregateFunction(sum,     Int64),
+            cache_read_tokens   SimpleAggregateFunction(sum,     Int64),
+            cache_write_tokens  SimpleAggregateFunction(sum,     Int64),
+            total_credits       SimpleAggregateFunction(max,     Float64),
+            model               SimpleAggregateFunction(anyLast, String),
+            INDEX idx_ssa_user_id  user_id  TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_ssa_agent_id agent_id TYPE bloom_filter(0.01) GRANULARITY 1
+        ) ENGINE = AggregatingMergeTree()
+        PARTITION BY toYYYYMM(first_event_time)
+        ORDER BY (project_id, session_id)""",
+        """CREATE MATERIALIZED VIEW session_stats_mv
+        TO session_stats_agg AS
+        SELECT
+            project_id, session_id,
+            coalesce(anyIf(agent_id, agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id,
+            coalesce(anyIf(user_id, user_id != ''), '') AS user_id,
+            coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL AND parent_session_id != ''), '') AS parent_session_id,
+            coalesce(anyIf(ide, ide != ''), '') AS ide,
+            minIf(timestamp, timestamp > '1971-01-01' AND timestamp < '2099-01-01') AS first_event_time,
+            maxIf(timestamp, timestamp > '1971-01-01' AND timestamp < '2099-01-01') AS last_event_time,
+            count() AS event_count,
+            countIf(event_type = 'user_prompt') AS prompt_count,
+            countIf(event_type = 'tool_call') AS tool_call_count,
+            countIf(event_type = 'tool_result') AS tool_result_count,
+            sum(input_tokens) AS input_tokens,
+            sum(output_tokens) AS output_tokens,
+            sum(cache_read_tokens) AS cache_read_tokens,
+            sum(cache_write_tokens) AS cache_write_tokens,
+            max(credits) AS total_credits,
+            anyLastIf(model, model != '') AS model
+        FROM session_events
+        GROUP BY project_id, session_id""",
+        """INSERT INTO session_stats_agg
+        SELECT
+            project_id, session_id,
+            coalesce(anyIf(agent_id, agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id,
+            coalesce(anyIf(user_id, user_id != ''), '') AS user_id,
+            coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL AND parent_session_id != ''), '') AS parent_session_id,
+            coalesce(anyIf(ide, ide != ''), '') AS ide,
+            minIf(timestamp, timestamp > '1971-01-01' AND timestamp < '2099-01-01') AS first_event_time,
+            maxIf(timestamp, timestamp > '1971-01-01' AND timestamp < '2099-01-01') AS last_event_time,
+            count() AS event_count,
+            countIf(event_type = 'user_prompt') AS prompt_count,
+            countIf(event_type = 'tool_call') AS tool_call_count,
+            countIf(event_type = 'tool_result') AS tool_result_count,
+            sum(input_tokens) AS input_tokens,
+            sum(output_tokens) AS output_tokens,
+            sum(cache_read_tokens) AS cache_read_tokens,
+            sum(cache_write_tokens) AS cache_write_tokens,
+            max(credits) AS total_credits,
+            anyLastIf(model, model != '') AS model
+        FROM session_events
+        GROUP BY project_id, session_id""",
+    ]
+
+    try:
+        for stmt in steps:
+            await _client._query(stmt)
+    except Exception as e:
+        optic.error(
+            "session_stats_agg partition migration FAILED mid-way: {} "
+            "— table may be in inconsistent state, manual intervention required",
+            e,
+        )
+        raise
+
+    optic.info("session_stats_agg partition migration complete")
+
+
 async def init_clickhouse():
     """Create ClickHouse tables if they don't exist and configure retention.
 
@@ -580,6 +694,7 @@ async def init_clickhouse():
         except Exception as e:
             optic.warning("DDL statement failed (may be harmless if already applied): {}", str(e)[:120])
 
+    await _migrate_session_stats_partition()
     await _materialize_if_needed()
     await apply_resource_settings()
 

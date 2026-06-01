@@ -10,10 +10,7 @@ Every command available in the installed CLI. This block is generated from the T
 
 **Root commands**
 
-- `observal profile`: Show active profile and backup info.
 - `observal scan`: Show a read-only inventory of your local IDE setup.
-- `observal uninstall`: Completely uninstall Observal: stop containers, remove volumes, delete repo and config.
-- `observal use`: Swap your IDE configs to a profile. Backs up current config first.
 
 **`observal admin`**: Admin commands
 
@@ -64,7 +61,6 @@ Every command available in the installed CLI. This block is generated from the T
 **`observal auth`**: Authentication and account commands
 
   - `observal auth login`: Connect to Observal.
-  - `observal auth init`: [Removed] Use 'observal auth login' + 'observal agent pull' instead.
   - `observal auth logout`: Clear saved credentials.
   - `observal auth whoami`: Show current authenticated user.
   - `observal auth status`: Check server connectivity and health.
@@ -77,12 +73,6 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal co-authors list`: List co-authors for an agent or component.
   - `observal co-authors remove`: Remove a co-author from an agent or component.
 
-**`observal component`**: Component version commands
-
-- `observal component version`: Manage component versions
-  - `observal component version list`: List version history for a registry component.
-  - `observal component version publish`: Publish a new version for a registry component.
-
 **`observal config`**: CLI configuration
 
   - `observal config alias`: Set or remove an alias for an MCP/agent ID.
@@ -93,21 +83,15 @@ Every command available in the installed CLI. This block is generated from the T
 
 **`observal doctor`**: Diagnose and patch IDE settings for Observal telemetry
 
+- `observal doctor support`: Generate and inspect diagnostic support bundles. Bundles contain no customer data or row contents.
+  - `observal doctor support bundle`: Generate a diagnostic support bundle. No customer data or row contents included.
+  - `observal doctor support inspect`: Inspect a support bundle.
   - `observal doctor cleanup`: Remove ALL Observal hooks, env vars, and legacy telemetry config.
   - `observal doctor patch`: Instrument IDEs with Observal telemetry hooks and shims.
 
-**`observal mcp`**: MCP server registry commands
-
-  - `observal mcp submit`: Submit an MCP server to the registry.
-  - `observal mcp show`: Show full details of an MCP server.
-  - `observal mcp install`: Generate an install config snippet for an MCP server.
-  - `observal mcp delete`: Delete an MCP server from the registry.
-  - `observal mcp edit`: Edit an MCP server submission.
-  - `observal mcp list`: List approved MCP servers in the registry.
-  - `observal mcp my`: List your own MCP servers across all statuses.
-
 **`observal ops`**: Observability and operational commands (traces, telemetry, dashboard, feedback)
 
+- `observal ops logs`: Live log viewer (open in a separate tab)
 - `observal ops telemetry`: Telemetry commands
   - `observal ops telemetry status`: Check telemetry data flow status.
   - `observal ops telemetry test`: Send a test telemetry event.
@@ -118,17 +102,6 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal ops spans`: List spans for a trace.
   - `observal ops top`: Show top MCP servers or agents by usage.
   - `observal ops traces`: List recent traces.
-
-**`observal prompt`**: Prompt registry commands
-
-  - `observal prompt delete`: Delete a prompt from the registry.
-  - `observal prompt edit`: Edit a draft, rejected, or pending prompt submission.
-  - `observal prompt install`: Generate IDE install configuration for a prompt.
-  - `observal prompt list`: List approved prompts in the registry.
-  - `observal prompt my`: List your own prompts across all statuses.
-  - `observal prompt render`: Render a prompt template with variable substitution.
-  - `observal prompt show`: Show detailed information about a prompt.
-  - `observal prompt submit`: Submit a new prompt template for review.
 
 **`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes)
 
@@ -173,15 +146,9 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry skill my`: List your own skills across all statuses.
   - `observal registry skill show`: Show detailed information about a skill.
   - `observal registry skill submit`: Submit a new skill for review.
-
-**`observal sandbox`**: Sandbox registry commands
-
-  - `observal sandbox delete`: Delete a sandbox from the registry.
-  - `observal sandbox edit`: Edit a draft, rejected, or pending sandbox submission.
-  - `observal sandbox install`: Generate IDE install configuration for a sandbox.
-  - `observal sandbox list`: List approved sandboxes in the registry.
-  - `observal sandbox show`: Show detailed information about a sandbox.
-  - `observal sandbox submit`: Submit a new sandbox environment for review.
+- `observal registry version`: Manage component versions
+  - `observal registry version list`: List version history for a registry component.
+  - `observal registry version publish`: Publish a new version for a registry component.
 
 **`observal self`**: CLI self-management commands (upgrade, downgrade, rollback, status)
 
@@ -189,14 +156,5 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal self downgrade`: Downgrade the observal CLI to a previous version.
   - `observal self rollback`: Restore the CLI to the version before the last upgrade/downgrade.
   - `observal self status`: Show current CLI version, install method, and update availability.
-
-**`observal skill`**: Skill registry commands
-
-  - `observal skill delete`: Delete a skill from the registry.
-  - `observal skill edit`: Edit a draft, rejected, or pending skill submission.
-  - `observal skill install`: Install a skill by fetching the full skill directory from git.
-  - `observal skill list`: List approved skills in the registry.
-  - `observal skill my`: List your own skills across all statuses.
-  - `observal skill show`: Show detailed information about a skill.
-  - `observal skill submit`: Submit a new skill for review.
+  - `observal self uninstall`: Completely uninstall Observal: stop containers, remove volumes, delete repo and config.
 <!-- END AUTO-GENERATED COMMAND REFERENCE -->

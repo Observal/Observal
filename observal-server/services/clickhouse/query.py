@@ -350,3 +350,108 @@ async def query_existing_for_dedup(
             e,
         )
         return frozenset(), frozenset()
+
+
+# ---------------------------------------------------------------------------
+# Slim query variants: column-specific for list views (no blob fields).
+# Original SELECT * functions above remain untouched for detail/GraphQL use.
+# ---------------------------------------------------------------------------
+
+_TRACE_LIST_COLUMNS = (
+    "trace_id, parent_trace_id, project_id, mcp_id, agent_id, user_id, "
+    "session_id, ide, environment, start_time, end_time, trace_type, name, "
+    "tags, event_ts, agent_version"
+)
+
+_SPAN_LIST_COLUMNS = (
+    "span_id, trace_id, parent_span_id, project_id, mcp_id, agent_id, "
+    "user_id, type, name, method, start_time, end_time, latency_ms, status, "
+    "level, token_count_input, token_count_output, token_count_total, cost, "
+    "ide, environment, agent_version"
+)
+
+
+async def query_traces_slim(
+    project_id: str,
+    *,
+    trace_type: str | None = None,
+    mcp_id: str | None = None,
+    agent_id: str | None = None,
+    user_id: str | None = None,
+    agent_version: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """Query traces for list views (excludes input/output/metadata blobs)."""
+    _t0 = time.perf_counter()
+    conditions = ["project_id = {pid:String}", "is_deleted = 0"]
+    params: dict[str, str] = {"param_pid": project_id}
+    if trace_type:
+        conditions.append("trace_type = {tt:String}")
+        params["param_tt"] = trace_type
+    if mcp_id:
+        conditions.append("mcp_id = {mid:String}")
+        params["param_mid"] = mcp_id
+    if agent_id:
+        conditions.append("agent_id = {aid:String}")
+        params["param_aid"] = agent_id
+    if user_id:
+        conditions.append("user_id = {uid:String}")
+        params["param_uid"] = user_id
+    if agent_version:
+        conditions.append("agent_version = {av:String}")
+        params["param_av"] = agent_version
+    where = " AND ".join(conditions)
+    sql = (
+        f"SELECT {_TRACE_LIST_COLUMNS} FROM traces FINAL WHERE {where} "
+        f"ORDER BY start_time DESC LIMIT {int(limit)} OFFSET {int(offset)} FORMAT JSON"
+    )
+    try:
+        r = await _client._query(sql, params)
+        r.raise_for_status()
+        data = r.json().get("data", [])
+        _elapsed = (time.perf_counter() - _t0) * 1000
+        optic.debug("fetched {} traces (slim) for project {} ({:.0f}ms)", len(data), project_id, _elapsed)
+        return data
+    except Exception as e:
+        optic.error("traces slim query failed for project {}: {}", project_id, e)
+        return []
+
+
+async def query_spans_slim(
+    project_id: str,
+    trace_id: str,
+    *,
+    span_type: str | None = None,
+    status: str | None = None,
+    limit: int = 200,
+) -> list[dict]:
+    """Query spans for list views (excludes input/output/error/metadata blobs)."""
+    _t0 = time.perf_counter()
+    conditions = [
+        "project_id = {pid:String}",
+        "trace_id = {tid:String}",
+        "is_deleted = 0",
+    ]
+    params: dict[str, str] = {"param_pid": project_id, "param_tid": trace_id}
+    if span_type:
+        conditions.append("type = {st:String}")
+        params["param_st"] = span_type
+    if status:
+        conditions.append("status = {status:String}")
+        params["param_status"] = status
+    where = " AND ".join(conditions)
+    sql = (
+        f"SELECT {_SPAN_LIST_COLUMNS} FROM spans FINAL WHERE {where} "
+        f"ORDER BY start_time ASC LIMIT {int(limit)} FORMAT JSON"
+    )
+    try:
+        r = await _client._query(sql, params)
+        r.raise_for_status()
+        data = r.json().get("data", [])
+        _elapsed = (time.perf_counter() - _t0) * 1000
+        optic.debug("fetched {} spans (slim) for trace {} ({:.0f}ms)", len(data), trace_id, _elapsed)
+        return data
+    except Exception as e:
+        optic.error("spans slim query failed for trace {}: {}", trace_id, e)
+        return []

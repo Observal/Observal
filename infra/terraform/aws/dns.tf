@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 resource "aws_route53_record" "app" {
-  count   = local.enable_tls ? 1 : 0
+  count   = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
   zone_id = var.route53_zone_id
   name    = var.domain_name
   type    = "A"

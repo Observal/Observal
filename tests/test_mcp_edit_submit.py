@@ -63,7 +63,7 @@ class TestEditMcpInteractive:
             patch("observal_cli.cmd_mcp.client", mock_client),
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp"], input=f"{config_json}\n\ny\n")
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp"], input=f"{config_json}\n\ny\n")
 
         assert result.exit_code == 0, _plain(result.output)
         assert "Updated" in _plain(result.output) or "updated" in _plain(result.output).lower()
@@ -78,7 +78,7 @@ class TestEditMcpInteractive:
             _patch_resolve_alias(),
             patch("observal_cli.cmd_mcp.client", mock_client),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp"], input="\n")
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp"], input="\n")
 
         assert result.exit_code == 1
         assert "No input" in _plain(result.output)
@@ -93,7 +93,7 @@ class TestEditMcpInteractive:
             _patch_resolve_alias(),
             patch("observal_cli.cmd_mcp.client", mock_client),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp"], input="not json at all{{\n\n")
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp"], input="not json at all{{\n\n")
 
         assert result.exit_code == 1
         assert "Invalid JSON" in _plain(result.output)
@@ -110,7 +110,7 @@ class TestEditMcpInteractive:
             patch("observal_cli.cmd_mcp.client", mock_client),
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp"], input=f"{config_json}\n\nn\n")
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp"], input=f"{config_json}\n\nn\n")
 
         # Aborted = non-zero exit
         assert result.exit_code != 0
@@ -129,7 +129,7 @@ class TestEditMcpInteractive:
             patch("observal_cli.cmd_mcp.client", mock_client),
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp", "--name", "new-name"])
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp", "--name", "new-name"])
 
         assert result.exit_code == 0, _plain(result.output)
         mock_client.put.assert_called_once()
@@ -157,7 +157,7 @@ class TestEditMcpInteractive:
             mock_open.return_value.__exit__ = MagicMock(return_value=False)
             # Patch json.load to use file_content
             with patch("json.load", return_value={"name": "updated-mcp", "description": "New desc"}):
-                result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp", "--from-file", "updates.json"])
+                result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp", "--from-file", "updates.json"])
 
         assert result.exit_code == 0, _plain(result.output)
 
@@ -185,7 +185,9 @@ class TestEditMcpVersionPublish:
             patch("observal_cli.cmd_mcp.select_one", return_value="patch"),
         ):
             # Input: config JSON, blank line, confirm, changelog
-            result = runner.invoke(cli_app, ["mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nFixed bug\n")
+            result = runner.invoke(
+                cli_app, ["registry", "mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nFixed bug\n"
+            )
 
         assert result.exit_code == 0, _plain(result.output)
         assert "1.2.4" in _plain(result.output)
@@ -209,7 +211,9 @@ class TestEditMcpVersionPublish:
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
             patch("observal_cli.cmd_mcp.select_one", return_value="minor"),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nNew feature\n")
+            result = runner.invoke(
+                cli_app, ["registry", "mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nNew feature\n"
+            )
 
         assert result.exit_code == 0, _plain(result.output)
         assert "1.3.0" in _plain(result.output)
@@ -230,7 +234,9 @@ class TestEditMcpVersionPublish:
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
             patch("observal_cli.cmd_mcp.select_one", return_value="major"),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nBreaking change\n")
+            result = runner.invoke(
+                cli_app, ["registry", "mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nBreaking change\n"
+            )
 
         assert result.exit_code == 0, _plain(result.output)
         assert "2.0.0" in _plain(result.output)
@@ -252,7 +258,7 @@ class TestEditMcpVersionPublish:
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
             patch("observal_cli.cmd_mcp.select_one", return_value="patch"),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\n\n")
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\n\n")
 
         assert result.exit_code == 1
 
@@ -279,7 +285,7 @@ class TestSubmitCommand:
         ):
             result = runner.invoke(
                 cli_app,
-                ["mcp", "submit", "--config", "--yes", "--name", "my-mcp"],
+                ["registry", "mcp", "submit", "--config", "--yes", "--name", "my-mcp"],
                 input=f"{config_json}\n\n",
             )
 
@@ -289,7 +295,7 @@ class TestSubmitCommand:
     def test_submit_draft_and_submit_together_fails(self):
         """Cannot use --draft and --submit together."""
         with _patch_config(), _patch_config_load():
-            result = runner.invoke(cli_app, ["mcp", "submit", "--draft", "--submit", "abc-123"])
+            result = runner.invoke(cli_app, ["registry", "mcp", "submit", "--draft", "--submit", "abc-123"])
 
         assert result.exit_code == 1
         assert "Cannot use" in _plain(result.output)
@@ -306,7 +312,7 @@ class TestSubmitCommand:
             patch("observal_cli.cmd_mcp.client", mock_client),
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
         ):
-            result = runner.invoke(cli_app, ["mcp", "submit", "--submit", "abc-123"])
+            result = runner.invoke(cli_app, ["registry", "mcp", "submit", "--submit", "abc-123"])
 
         assert result.exit_code == 0, _plain(result.output)
         assert "Draft submitted" in _plain(result.output) or "submitted" in _plain(result.output).lower()
@@ -334,7 +340,7 @@ class TestSubmitCommand:
         ):
             result = runner.invoke(
                 cli_app,
-                ["mcp", "submit", "--yes", "--name", "My Server"],
+                ["registry", "mcp", "submit", "--yes", "--name", "My Server"],
                 input=f"{config_json}\n\n",
             )
 
@@ -363,7 +369,7 @@ class TestSubmitCommand:
             # empty spaces for description (triggers required), then real description, owner
             result = runner.invoke(
                 cli_app,
-                ["mcp", "submit", "--name", "my-mcp"],
+                ["registry", "mcp", "submit", "--name", "my-mcp"],
                 input=f"{config_json}\n\ny\n   \nA real description\n\n",
             )
 
@@ -384,7 +390,9 @@ class TestEditMcpEdgeCases:
             _patch_config_load(),
             _patch_resolve_alias(),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp", "--from-file", "/nonexistent/file.json"])
+            result = runner.invoke(
+                cli_app, ["registry", "mcp", "edit", "test-mcp", "--from-file", "/nonexistent/file.json"]
+            )
 
         assert result.exit_code == 1
         assert "not found" in _plain(result.output).lower() or "File not found" in _plain(result.output)
@@ -399,7 +407,7 @@ class TestEditMcpEdgeCases:
             _patch_config_load(),
             _patch_resolve_alias(),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp", "--from-file", str(bad_file)])
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp", "--from-file", str(bad_file)])
 
         assert result.exit_code == 1
         assert "Invalid JSON" in _plain(result.output)
@@ -419,7 +427,7 @@ class TestEditMcpEdgeCases:
             patch("observal_cli.cmd_mcp.client", mock_client),
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp", "--name", "new-name"])
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp", "--name", "new-name"])
 
         assert result.exit_code == 1
         # Verify cancel-edit was attempted
@@ -447,7 +455,9 @@ class TestEditMcpEdgeCases:
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
             patch("observal_cli.cmd_mcp.select_one", return_value="patch"),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nChangelog\n")
+            result = runner.invoke(
+                cli_app, ["registry", "mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nChangelog\n"
+            )
 
         assert result.exit_code == 0, _plain(result.output)
         assert "0.2.0" in _plain(result.output)
@@ -467,7 +477,7 @@ class TestEditMcpEdgeCases:
             patch("observal_cli.cmd_mcp.client", mock_client),
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "test-mcp", "--description", "New desc"])
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp", "--description", "New desc"])
 
         assert result.exit_code == 0, _plain(result.output)
         assert "Updated" in _plain(result.output) or "updated" in _plain(result.output).lower()
@@ -496,7 +506,7 @@ class TestEditMcpEdgeCases:
             patch("observal_cli.cmd_mcp.client", mock_client),
             patch("observal_cli.cmd_mcp.spinner", MagicMock()),
         ):
-            result = runner.invoke(cli_app, ["mcp", "edit", "old-name"], input=f"{config_json}\n\ny\n")
+            result = runner.invoke(cli_app, ["registry", "mcp", "edit", "old-name"], input=f"{config_json}\n\ny\n")
 
         assert result.exit_code == 0, _plain(result.output)
         # Verify the PUT was called with name and description

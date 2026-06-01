@@ -23,17 +23,17 @@ owner: observal
 ## Procedure: Browse Registry
 
 ```bash
-observal mcp list --category developer-tools --output json
-observal skill list --task-type code-review --output json
+observal registry mcp list --category developer-tools --output json
+observal registry skill list --task-type code-review --output json
 observal registry hook list --event UserPromptSubmit --output json
-observal prompt list --category coding --output json
-observal sandbox list --runtime docker --output json
+observal registry prompt list --category coding --output json
+observal registry sandbox list --runtime docker --output json
 
-observal mcp my --output json
-observal skill my --output json
-observal prompt my --output json
+observal registry mcp my --output json
+observal registry skill my --output json
+observal registry prompt my --output json
 
-observal mcp show NAME --output json
+observal registry mcp show NAME --output json
 observal registry hook show NAME --output json
 ```
 
@@ -50,7 +50,7 @@ After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--intera
 ### MCP (from git, recommended)
 
 ```bash
-observal mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
+observal registry mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
 ```
 
 Without `--git`, opens interactive JSON paste (accepts IDE config block, named config, bare config, or HTTP transport JSON). Press Enter on empty line to submit.
@@ -61,14 +61,14 @@ There are two delivery modes for skills:
 
 **Git-based** (server validates SKILL.md from repo, recommended for open-source):
 ```bash
-observal skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --git-ref main
+observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --git-ref main
 ```
 
 **Registry direct** (inline SKILL.md + optional script, no git repo needed):
 ```bash
-observal skill submit --skill-md ./SKILL.md --delivery-mode registry_direct
-observal skill submit --skill-md ./SKILL.md --script ./run.sh --delivery-mode registry_direct
-observal skill submit --skill-md ./SKILL.md --script ./scripts/lint.sh --script ./scripts/test.sh --delivery-mode registry_direct
+observal registry skill submit --skill-md ./SKILL.md --delivery-mode registry_direct
+observal registry skill submit --skill-md ./SKILL.md --script ./run.sh --delivery-mode registry_direct
+observal registry skill submit --skill-md ./SKILL.md --script ./scripts/lint.sh --script ./scripts/test.sh --delivery-mode registry_direct
 ```
 
 On install, registry_direct skills write `<skill-name>/SKILL.md` and `<skill-name>/scripts/<filename>` into the IDE skills directory.
@@ -98,13 +98,13 @@ Optional: `--script 'code'`, `--source-url URL --source-ref main`, `--requires d
 ### Prompt
 
 ```bash
-observal prompt submit --from-file prompt.json
+observal registry prompt submit --from-file prompt.json
 ```
 
 ### Sandbox
 
 ```bash
-observal sandbox submit --from-file sandbox.json
+observal registry sandbox submit --from-file sandbox.json
 ```
 
 All types support `--draft` (save without review) and `--submit NAME` (submit existing draft).
@@ -114,13 +114,13 @@ All types support `--draft` (save without review) and `--submit NAME` (submit ex
 ## Procedure: Install Component
 
 ```bash
-observal mcp install NAME --ide kiro
-observal mcp install NAME --ide claude-code --raw
-observal skill install NAME --ide kiro --scope user
-observal skill install NAME --ide claude-code --scope project
+observal registry mcp install NAME --ide kiro
+observal registry mcp install NAME --ide claude-code --raw
+observal registry skill install NAME --ide kiro --scope user
+observal registry skill install NAME --ide claude-code --scope project
 observal registry hook install NAME --ide kiro
 observal registry hook install NAME --ide claude-code --platform darwin --dir .
-observal prompt install NAME --ide kiro
+observal registry prompt install NAME --ide kiro
 ```
 
 `sandbox install` is deprecated. Use `observal agent add sandbox UUID` + `observal agent pull` instead.
@@ -132,12 +132,12 @@ observal prompt install NAME --ide kiro
 **Warning:** Editing an approved listing triggers a version bump flow. For draft/pending/rejected items, edits in place with an optimistic lock.
 
 ```bash
-observal mcp edit NAME --from-file updates.json
-observal mcp edit NAME --name new-name --description 'New desc'
-observal skill edit NAME --from-file updates.json
+observal registry mcp edit NAME --from-file updates.json
+observal registry mcp edit NAME --name new-name --description 'New desc'
+observal registry skill edit NAME --from-file updates.json
 observal registry hook edit NAME --version 1.2.0 --event Stop
-observal prompt edit NAME --template 'New template body'
-observal sandbox edit NAME --image python:3.12-slim
+observal registry prompt edit NAME --template 'New template body'
+observal registry sandbox edit NAME --image python:3.12-slim
 ```
 
 ---
@@ -145,13 +145,13 @@ observal sandbox edit NAME --image python:3.12-slim
 ## Procedure: Publish Component Version
 
 ```bash
-observal component version publish mcp NAME --version 1.2.0 --description 'What changed'
-observal component version publish skill NAME --version 0.3.0 --description 'New tasks'
-observal component version publish hook NAME --version 1.0.1 --description 'Bug fix'
-observal component version publish prompt NAME --version 2.0.0 --description 'Rewrite'
-observal component version publish sandbox NAME --version 1.1.0 --description 'New image'
+observal registry version publish mcp NAME --version 1.2.0 --description 'What changed'
+observal registry version publish skill NAME --version 0.3.0 --description 'New tasks'
+observal registry version publish hook NAME --version 1.0.1 --description 'Bug fix'
+observal registry version publish prompt NAME --version 2.0.0 --description 'Rewrite'
+observal registry version publish sandbox NAME --version 1.1.0 --description 'New image'
 
-observal component version list mcp NAME --output json
+observal registry version list mcp NAME --output json
 ```
 
 ---
@@ -159,11 +159,11 @@ observal component version list mcp NAME --output json
 ## Procedure: Delete Component
 
 ```bash
-observal mcp delete NAME --yes
-observal skill delete NAME --yes
+observal registry mcp delete NAME --yes
+observal registry skill delete NAME --yes
 observal registry hook delete NAME --yes
-observal prompt delete NAME --yes
-observal sandbox delete NAME --yes
+observal registry prompt delete NAME --yes
+observal registry sandbox delete NAME --yes
 ```
 
 ---

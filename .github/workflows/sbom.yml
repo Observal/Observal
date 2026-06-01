@@ -84,6 +84,14 @@ jobs:
               --label "security,automated"
           fi
 
+      # ── Generate VEX document ────────────────────────────────
+      - name: Generate VEX document
+        run: uv run --no-project scripts/generate_vex.py observal.openvex.json
+
+      # ── Generate third-party notices ─────────────────────────
+      - name: Generate third-party notices
+        run: uv run --no-project scripts/generate_third_party_notices.py THIRD_PARTY_NOTICES.md
+
       # ── Upload SBOM artifacts ────────────────────────────────
       - uses: actions/upload-artifact@v7
         with:
@@ -91,6 +99,8 @@ jobs:
           path: |
             sbom-python.cdx.json
             sbom-node.cdx.json
+            observal.openvex.json
+            THIRD_PARTY_NOTICES.md
 
       # ── Attach to release ────────────────────────────────────
       - name: Attach SBOMs to release
@@ -101,6 +111,8 @@ jobs:
           gh release upload "${{ github.event.release.tag_name }}" \
             sbom-python.cdx.json \
             sbom-node.cdx.json \
+            observal.openvex.json \
+            THIRD_PARTY_NOTICES.md \
             --clobber
 
   license-check:

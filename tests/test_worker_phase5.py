@@ -77,7 +77,7 @@ class TestWorkerSettings:
     def test_max_jobs(self):
         from worker import WorkerSettings
 
-        assert WorkerSettings.max_jobs == 5
+        assert WorkerSettings.max_jobs == 15
 
 
 # --- Docker compose ---

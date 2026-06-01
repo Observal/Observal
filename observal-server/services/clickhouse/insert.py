@@ -56,7 +56,6 @@ async def insert_traces(traces: list[dict]):
     try:
         r = await _client._query(sql, data="\n".join(lines))
         r.raise_for_status()
-        await _client._invalidate_cache()
     except Exception as e:
         optic.error("failed to insert {} traces into ClickHouse: {} - telemetry data is lost", len(traces), e)
         raise
@@ -144,7 +143,6 @@ async def insert_spans(spans: list[dict]):
     try:
         r = await _client._query(sql, data="\n".join(lines))
         r.raise_for_status()
-        await _client._invalidate_cache()
     except Exception as e:
         optic.error("failed to insert {} spans into ClickHouse: {} - span data is lost", len(spans), e)
         raise
@@ -223,7 +221,6 @@ async def insert_otel_logs(rows: list[dict]):
     try:
         r = await _client._query(sql, data="\n".join(lines))
         r.raise_for_status()
-        await _client._invalidate_cache()
     except Exception as e:
         optic.error("failed to insert {} OTEL logs into ClickHouse: {}", len(rows), e)
         raise
@@ -262,11 +259,10 @@ async def insert_audit_log(events: list[dict]):
         }
         lines.append(json.dumps(row, default=str))
     body = "\n".join(lines)
-    sql = "INSERT INTO audit_log FORMAT JSONEachRow"
+    sql = "INSERT INTO audit_log FORMAT JSONEachRow SETTINGS async_insert=0"
     try:
         r = await _client._query(sql, data=body)
         r.raise_for_status()
-        await _client._invalidate_cache()
     except Exception as exc:
         optic.error("failed to insert {} audit events into ClickHouse - audit trail has a gap: {}", len(events), exc)
 
@@ -322,7 +318,6 @@ async def insert_session_events(rows: list[dict]):
     try:
         r = await _client._query(sql, data="\n".join(lines))
         r.raise_for_status()
-        await _client._invalidate_cache()
     except Exception as e:
         optic.error("failed to insert {} session events - session will appear incomplete: {}", len(rows), e)
         raise

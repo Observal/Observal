@@ -4,10 +4,10 @@
 # tfsec:ignore:aws-elb-alb-not-public Public-facing load balancer is the entrypoint for end users; restrict reachability via var.alb_ingress_cidrs and (optionally) a WAF.
 resource "aws_lb" "app" {
   name               = "${local.name}-alb"
-  internal           = false
+  internal           = local.create_vpc ? false : true
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = aws_subnet.public[*].id
+  subnets            = local.create_vpc ? local.public_subnet_ids : local.private_subnet_ids
 
   drop_invalid_header_fields = true
   tags                       = { Name = "${local.name}-alb" }
@@ -19,7 +19,7 @@ resource "aws_lb_target_group" "web" {
   name        = "${local.name}-web-tg"
   port        = 3000
   protocol    = "HTTP"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
   target_type = "ip"
 
   deregistration_delay = 30
@@ -40,7 +40,7 @@ resource "aws_lb_target_group" "api" {
   name        = "${local.name}-api-tg"
   port        = 8000
   protocol    = "HTTP"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
   target_type = "ip"
 
   deregistration_delay = 30
@@ -62,7 +62,7 @@ resource "aws_lb_target_group" "grafana" {
   name        = "${local.name}-grafana-tg"
   port        = 3001
   protocol    = "HTTP"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
   target_type = "ip"
 
   deregistration_delay = 30

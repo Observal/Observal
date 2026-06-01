@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from .base import basic_event, pick_timestamp
+from .base import basic_event, pick_timestamp, strip_ansi
 
 _META_TYPES = {"agent-setting", "permission-mode", "debug", "meta"}
 
@@ -190,7 +190,7 @@ def _handle_assistant(
         block_type = block.get("type", "")
 
         if block_type == "thinking":
-            thinking_text = block.get("thinking", "")
+            thinking_text = strip_ansi(block.get("thinking", ""))
             events.append(
                 {
                     "timestamp": ts,

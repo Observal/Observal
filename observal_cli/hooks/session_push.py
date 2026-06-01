@@ -19,10 +19,9 @@ from pathlib import Path
 from loguru import logger as optic
 
 from observal_cli.sessions.base import (
-    build_payload,
     load_config,
     log_error,
-    post_to_server,
+    post_lines_chunked,
     read_cursor,
     read_new_lines,
     write_cursor,
@@ -86,7 +85,9 @@ def _run(home: Path | None = None) -> None:
     optic.debug("read {} new lines ({} bytes) from session {}", len(lines), bytes_read, session_id[:12])
 
     new_offset = offset + bytes_read
-    payload = build_payload(
+    success = post_lines_chunked(
+        server_url=config["server_url"],
+        access_token=config["access_token"],
         session_id=session_id,
         lines=lines,
         start_offset=line_count,
@@ -96,12 +97,6 @@ def _run(home: Path | None = None) -> None:
         cwd=cwd,
         parent_session_id=parent_session_id,
         session_jsonl=jsonl_path,
-    )
-
-    success = post_to_server(
-        server_url=config["server_url"],
-        access_token=config["access_token"],
-        payload=payload,
         config=config,
     )
 

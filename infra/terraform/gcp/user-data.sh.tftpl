@@ -1,0 +1,99 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+set -euo pipefail
+
+# Format and mount the data disk
+DATA_DEVICE="/dev/disk/by-id/google-data-disk"
+DATA_DIR="/data"
+if ! blkid "$${DATA_DEVICE}"; then
+  mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0 "$${DATA_DEVICE}"
+fi
+mkdir -p "$${DATA_DIR}"
+mount -o discard,defaults "$${DATA_DEVICE}" "$${DATA_DIR}"
+echo "UUID=$(blkid -s UUID -o value $${DATA_DEVICE}) $${DATA_DIR} ext4 discard,defaults,nofail 0 2" >> /etc/fstab
+
+mkdir -p "$${DATA_DIR}/clickhouse" "$${DATA_DIR}/grafana" "$${DATA_DIR}/prometheus"
+
+# Install Docker (COS has Docker pre-installed, but ensure compose plugin)
+DOCKER_COMPOSE_VERSION="v2.36.0"
+mkdir -p /usr/libexec/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/download/$${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
+  -o /usr/libexec/docker/cli-plugins/docker-compose
+chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+
+# Write docker-compose for the data stack
+cat > "$${DATA_DIR}/docker-compose.yml" <<'COMPOSE'
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.5
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: ${clickhouse_db}
+      CLICKHOUSE_PASSWORD: ${clickhouse_password}
+      MAX_SERVER_MEMORY_USAGE_RATIO: "0.7"
+    volumes:
+      - /data/clickhouse:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --password ${clickhouse_password} --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana-oss:11.6.5
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${grafana_admin_user}
+      GF_SECURITY_ADMIN_PASSWORD: ${clickhouse_password}
+      GF_SERVER_ROOT_URL: "${grafana_root_url}/grafana"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+    volumes:
+      - /data/grafana:/var/lib/grafana
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.11.3
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - /data/prometheus:/prometheus
+      - /data/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+COMPOSE
+
+# Write prometheus config
+cat > "$${DATA_DIR}/prometheus.yml" <<'PROM'
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: clickhouse
+    static_configs:
+      - targets: ["clickhouse:8123"]
+PROM
+
+# Start the data stack
+cd "$${DATA_DIR}"
+docker compose up -d
+
+# Set up daily ClickHouse backup to GCS
+cat > /etc/cron.daily/clickhouse-backup <<'CRON'
+#!/bin/bash
+BACKUP_FILE="/tmp/clickhouse-backup-$(date +%Y%m%d).tar.gz"
+docker exec $(docker ps -q -f name=clickhouse) clickhouse-client \
+  --password "${clickhouse_password}" \
+  --query "BACKUP DATABASE ${clickhouse_db} TO Disk('backups', 'daily-$(date +%Y%m%d)')"
+gsutil -m rsync -r /data/clickhouse/backups/ gs://${backups_bucket}/clickhouse/
+find /data/clickhouse/backups/ -mtime +${data_retention_days} -delete
+CRON
+chmod +x /etc/cron.daily/clickhouse-backup

@@ -210,25 +210,6 @@ def login(
 
 
 @auth_app.command()
-def init():
-    """[Removed] Use 'observal auth login' + 'observal agent pull' instead.
-
-    This command has been removed. The login command now handles server
-    initialization automatically, and agent pull fetches configs.
-
-    Examples:
-        observal auth login
-        observal agent pull my-agent
-    """
-    rprint("[yellow]'observal auth init' has been removed.[/yellow]")
-    rprint()
-    rprint("Use these commands instead:")
-    rprint("  [bold]observal auth login[/bold]   - connect to your server")
-    rprint("  [bold]observal agent pull[/bold]   - pull agent config to your IDE")
-    raise typer.Exit(1)
-
-
-@auth_app.command()
 def logout():
     """Clear saved credentials.
 
@@ -764,7 +745,8 @@ def register_config(app: typer.Typer):
 
 
 def _post_login_setup():
-    """Post-login setup: run observal doctor which checks and offers to fix."""
+    """Post-login setup: install skills unconditionally, then run doctor."""
+    _install_observal_skill()
     rprint()
     try:
         from unittest.mock import MagicMock

@@ -13,22 +13,29 @@ locals {
   name = "${var.name_prefix}-${var.environment}"
   azs  = slice(data.aws_availability_zones.available.names, 0, var.az_count)
 
-  enable_tls = var.domain_name != "" && var.route53_zone_id != ""
-  app_url    = local.enable_tls ? "https://${var.domain_name}" : "http://${aws_lb.app.dns_name}"
+  # BYO-VPC: when vpc_id is provided, use existing resources; otherwise create new ones.
+  create_vpc = var.vpc_id == ""
+  vpc_id     = local.create_vpc ? aws_vpc.main[0].id : var.vpc_id
+  vpc_cidr   = local.create_vpc ? aws_vpc.main[0].cidr_block : data.aws_vpc.existing[0].cidr_block
+
+  private_subnet_ids = local.create_vpc ? aws_subnet.private[*].id : var.private_subnet_ids
+  public_subnet_ids  = local.create_vpc ? aws_subnet.public[*].id : var.public_subnet_ids
+
+  enable_tls = var.enable_tls && var.domain_name != "" && var.route53_zone_id != ""
+  app_url    = var.domain_name != "" ? "${local.enable_tls ? "https" : "http"}://${var.domain_name}" : "http://${aws_lb.app.dns_name}"
 
   clickhouse_self_hosted = var.clickhouse_mode == "self_hosted"
 
-  # Internal DNS name for ClickHouse — ECS tasks resolve it via the private Route53 zone.
+  # Internal DNS name for ClickHouse
   clickhouse_host_internal = local.clickhouse_self_hosted ? "clickhouse.${var.internal_dns_zone}" : ""
 
   ssm_prefix = "/${local.name}"
 
-  # License: if edition is "auto", infer from license key presence
-  effective_edition = var.edition == "auto" ? (var.observal_license_key != "" ? "enterprise" : "community") : var.edition
-  is_enterprise     = local.effective_edition == "enterprise"
+  is_enterprise = var.observal_license_key != ""
+}
 
-  # Enterprise uses a separate API image (includes compiled insights);
-  # the web image is identical for both editions (gating is server-side).
-  image_repo_api_effective = local.is_enterprise ? "ghcr.io/blazeup-ai/observal-api-enterprise" : var.image_repo_api
-  image_repo_web_effective = var.image_repo_web
+# Lookup existing VPC when using BYO-VPC
+data "aws_vpc" "existing" {
+  count = local.create_vpc ? 0 : 1
+  id    = var.vpc_id
 }

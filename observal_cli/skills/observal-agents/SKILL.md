@@ -91,7 +91,7 @@ Goes through review queue. Use for "new version", "bump", or "release".
    ```bash
    observal agent init --dir ./my-agent
    ```
-2. Add components (second arg is UUID, find with `observal mcp show NAME --output json`):
+2. Add components (second arg is UUID, find with `observal registry mcp show NAME --output json`):
    ```bash
    observal agent add mcp COMPONENT_UUID --dir ./my-agent
    observal agent add skill COMPONENT_UUID --dir ./my-agent

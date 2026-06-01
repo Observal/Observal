@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+import hashlib
+
 from slowapi import Limiter
 from starlette.requests import Request
 
@@ -36,8 +38,33 @@ def _get_real_ip(request: Request) -> str:
     return client_ip
 
 
+def _get_rate_limit_key(request: Request) -> str:
+    """Prefer authenticated identity, then token hash, then trusted-proxy-aware IP."""
+    state = getattr(request, "state", None)
+    user = getattr(state, "current_user", None) or getattr(state, "user", None)
+    if user is not None:
+        user_id = getattr(user, "id", None)
+        org_id = getattr(user, "org_id", None)
+        if user_id and org_id:
+            return f"org:{org_id}:user:{user_id}"
+        if user_id:
+            return f"user:{user_id}"
+
+    org_id = getattr(state, "org_id", None)
+    if org_id:
+        return f"org:{org_id}"
+
+    auth = request.headers.get("authorization", "")
+    scheme, _, token = auth.partition(" ")
+    if scheme.lower() == "bearer" and token.strip():
+        digest = hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
+        return f"token:{digest}"
+
+    return f"ip:{_get_real_ip(request)}"
+
+
 limiter = Limiter(
-    key_func=_get_real_ip,
+    key_func=_get_rate_limit_key,
     storage_uri=settings.REDIS_URL or "memory://",
     storage_options={
         "socket_connect_timeout": settings.REDIS_SOCKET_TIMEOUT,

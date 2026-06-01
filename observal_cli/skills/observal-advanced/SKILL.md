@@ -3,25 +3,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 name: observal-advanced
 command: observal
-description: Advanced Observal operations including IDE profile swapping, session reconciliation, CLI upgrades and downgrades, complete uninstallation, and local fallback mode for offline use. Use when the user wants to swap IDE profiles, reconcile sessions, upgrade or downgrade the CLI, uninstall Observal, or write agent configs locally when the server is unreachable.
+description: Advanced Observal operations including session reconciliation, CLI upgrades and downgrades, complete uninstallation, and local fallback mode for offline use. Use when the user wants to reconcile sessions, upgrade or downgrade the CLI, uninstall Observal, or write agent configs locally when the server is unreachable.
 version: 2.0.0
 owner: observal
 ---
 
 # Observal Advanced Operations
-
-## Procedure: Profile Swap
-
-```bash
-observal use https://github.com/user/ide-profile
-observal use https://github.com/user/ide-profile --ref work
-observal use default
-observal profile
-```
-
-Backups stored in `~/.observal/backups/<timestamp>/`. `use default` restores from backup.
-
----
 
 ## Procedure: Reconcile Sessions
 
@@ -55,7 +42,7 @@ observal self rollback
 Completely removes Observal. **Destructive and irreversible.**
 
 ```bash
-observal uninstall
+observal self uninstall
 ```
 
 Requires typing `confirm` (not `--yes`). Selective flags:

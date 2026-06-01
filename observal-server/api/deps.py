@@ -8,6 +8,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+import asyncio
 import uuid as _uuid
 from collections.abc import AsyncGenerator
 
@@ -55,10 +56,21 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
     try:
         redis = get_redis()
         # SEC-002: fail closed on revocation checks - Redis errors must not
-        # re-enable revoked tokens or user-level revocations
-        if jti and await redis.get(f"revoked_jti:{jti}"):
-            return None
-        if user_id_str and await redis.get(f"revoked_user:{user_id_str}"):
+        # re-enable revoked tokens or user-level revocations.
+        # Gather both checks concurrently to reduce latency at scale
+        # (2 sequential GETs → 1 concurrent round-trip).
+        checks = []
+        if jti:
+            checks.append(redis.get(f"revoked_jti:{jti}"))
+        if user_id_str:
+            checks.append(redis.get(f"revoked_user:{user_id_str}"))
+        results = await asyncio.gather(*checks) if checks else []
+        idx = 0
+        if jti:
+            if results[idx]:
+                return None
+            idx += 1
+        if user_id_str and results[idx]:
             return None  # SEC-001: account-wide revocation (e.g. logout all)
     except RedisError as e:
         # Redis is down: block all token-based auth to prevent revoked tokens
@@ -133,6 +145,8 @@ async def get_current_user(
         except RedisError:
             raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
+    request.state.current_user = user
+    request.state.org_id = user.org_id
     return user
 
 

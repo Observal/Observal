@@ -284,10 +284,10 @@ IDE_REGISTRY: dict[str, dict] = {
         "features": {"hooks", "mcp_servers"},
         "scopes": ["project", "user"],
         "default_scope": "user",
-        "scope_labels": ("project (AGENTS.md)", "user (~/.config/opencode/opencode.json)"),
+        "scope_labels": ("project (.opencode/agents/<name>.md)", "user (~/.config/opencode/agents/<name>.md)"),
         "rules_file": {
-            "project": "AGENTS.md",
-            "user": "~/.config/opencode/AGENTS.md",
+            "project": ".opencode/agents/{name}.md",
+            "user": "~/.config/opencode/agents/{name}.md",
         },
         "rules_format": "markdown",
         "mcp_config_path": {

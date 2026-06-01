@@ -65,6 +65,12 @@ variable "route53_zone_id" {
   default     = ""
 }
 
+variable "enable_tls" {
+  description = "Enable TLS via ACM. Requires a publicly-resolvable Route53 zone for DNS validation. Set false for private zones."
+  type        = bool
+  default     = true
+}
+
 # ── ECS Fargate (api / web / worker / init) ────────────────────────────────
 
 variable "image_repo_api" {
@@ -206,12 +212,6 @@ variable "clickhouse_cloud_url" {
   sensitive   = true
 }
 
-variable "clickhouse_cloud_user" {
-  description = "ClickHouse Cloud username. Required when clickhouse_mode = 'cloud'."
-  type        = string
-  default     = "default"
-}
-
 variable "clickhouse_cloud_password" {
   description = "ClickHouse Cloud password. Required when clickhouse_mode = 'cloud'."
   type        = string
@@ -267,22 +267,6 @@ variable "alb_ingress_cidrs" {
 
 # ── Application config ─────────────────────────────────────────────────────
 
-variable "deployment_mode" {
-  description = "Observal deployment mode: 'local' (self-registration) or 'enterprise' (SSO-only)."
-  type        = string
-  default     = "enterprise"
-  validation {
-    condition     = contains(["local", "enterprise"], var.deployment_mode)
-    error_message = "deployment_mode must be 'local' or 'enterprise'."
-  }
-}
-
-variable "data_retention_days" {
-  description = "ClickHouse data retention in days. 0 disables TTL."
-  type        = number
-  default     = 90
-}
-
 variable "log_retention_days" {
   description = "CloudWatch log retention for application + infrastructure log groups."
   type        = number
@@ -324,18 +308,86 @@ variable "enable_public_ops_paths" {
 # ── License / Edition ──────────────────────────────────────────────────────
 
 variable "observal_license_key" {
-  description = "Observal Enterprise license key. If set and valid, enterprise images and features are used. Leave empty for community edition."
+  description = "Observal Enterprise license key. If set, enterprise features are enabled at runtime. Leave empty for community edition."
   type        = string
   default     = ""
   sensitive   = true
 }
 
-variable "edition" {
-  description = "Edition to deploy: 'community' or 'enterprise'. Auto-set to 'enterprise' if observal_license_key is provided."
+# ── Demo account seeding (optional, first-deploy only) ────────────────────────
+
+variable "demo_super_admin_email" {
+  description = "Email for the demo super-admin account. Leave empty to skip all demo seeding."
   type        = string
-  default     = "auto"
-  validation {
-    condition     = contains(["auto", "community", "enterprise"], var.edition)
-    error_message = "edition must be 'auto', 'community', or 'enterprise'."
-  }
+  default     = ""
 }
+
+variable "demo_super_admin_password" {
+  description = "Password for the demo super-admin account."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "demo_admin_email" {
+  description = "Email for the demo admin account."
+  type        = string
+  default     = ""
+}
+
+variable "demo_admin_password" {
+  description = "Password for the demo admin account."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "demo_reviewer_email" {
+  description = "Email for the demo reviewer account."
+  type        = string
+  default     = ""
+}
+
+variable "demo_reviewer_password" {
+  description = "Password for the demo reviewer account."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "demo_user_email" {
+  description = "Email for the demo user account."
+  type        = string
+  default     = ""
+}
+
+variable "demo_user_password" {
+  description = "Password for the demo user account."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# ── Bring-your-own VPC (optional) ─────────────────────────────────────────────
+# Set these to deploy into an existing VPC instead of creating a new one.
+# When vpc_id is set, Terraform skips creating VPC, subnets, IGW, NAT, and
+# route tables. You must provide at least 2 public and 2 private subnet IDs.
+
+variable "vpc_id" {
+  description = "Existing VPC ID. Leave empty to create a new VPC."
+  type        = string
+  default     = ""
+}
+
+variable "private_subnet_ids" {
+  description = "List of existing private subnet IDs (at least 2, in different AZs). Required when vpc_id is set."
+  type        = list(string)
+  default     = []
+}
+
+variable "public_subnet_ids" {
+  description = "List of existing public subnet IDs (at least 2, in different AZs). Required when vpc_id is set."
+  type        = list(string)
+  default     = []
+}
+

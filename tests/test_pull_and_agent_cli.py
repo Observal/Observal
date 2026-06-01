@@ -161,6 +161,29 @@ def _copilot_snippet() -> dict:
     }
 
 
+def _opencode_snippet() -> dict:
+    return {
+        "config_snippet": {
+            "rules_file": {
+                "path": ".opencode/agents/my-agent.md",
+                "content": "# My Agent Rules\n",
+            },
+            "mcp_config": {
+                "path": ".opencode/opencode.json",
+                "content": {
+                    "mcp": {
+                        "my-server": {
+                            "type": "local",
+                            "command": ["observal-shim", "--mcp-id", "xyz", "--", "npx", "-y", "my-server"],
+                        }
+                    }
+                },
+            },
+            "hooks_config": {"path": ".opencode/plugins/observal-plugin.mjs", "content": "export default {};"},
+        }
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 # 1. Cursor / VSCode format
 # ═══════════════════════════════════════════════════════════════
@@ -393,6 +416,47 @@ class TestPullCopilot:
         rules = tmp_path / ".github" / "copilot-instructions.md"
         assert rules.exists()
         assert "Copilot Instructions" in rules.read_text()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6b. OpenCode format
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestPullOpenCode:
+    def test_writes_rules_mcp_and_hooks(self, tmp_path: Path):
+        with _patch_config(), _patch_get_agent(), _patch_post(_opencode_snippet()):
+            result = runner.invoke(
+                cli_app,
+                [
+                    "agent",
+                    "pull",
+                    "abc123",
+                    "--ide",
+                    "opencode",
+                    "--dir",
+                    str(tmp_path),
+                    "--no-prompt",
+                    "--scope",
+                    "project",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+
+        rules = tmp_path / ".opencode" / "agents" / "my-agent.md"
+        assert rules.exists()
+        assert "My Agent Rules" in rules.read_text()
+
+        mcp = tmp_path / ".opencode" / "opencode.json"
+        assert mcp.exists()
+        data = json.loads(mcp.read_text())
+        assert "my-server" in data["mcp"]
+        assert data["mcp"]["my-server"]["type"] == "local"
+
+        hook = tmp_path / ".opencode" / "plugins" / "observal-plugin.mjs"
+        assert hook.exists()
+        assert "export default" in hook.read_text()
 
 
 # ═══════════════════════════════════════════════════════════════

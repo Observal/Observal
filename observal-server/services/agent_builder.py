@@ -15,7 +15,7 @@ Generates IDE-specific agent files from a ResolvedAgent:
 - Kiro: ~/.kiro/agents/<name>.json (JSON)
 - Codex: AGENTS.md (markdown)
 - GitHub Copilot: .github/copilot-instructions.md (markdown)
-- OpenCode: AGENTS.md (markdown) + opencode.json (MCP config)
+- OpenCode: .opencode/agents/<name>.md (markdown) + opencode.json (MCP config)
 
 """
 
@@ -597,7 +597,8 @@ def _generate_copilot(manifest: AgentManifest) -> IdeAgentConfig:
 
 
 def _generate_opencode(manifest: AgentManifest) -> IdeAgentConfig:
-    """Generate OpenCode agent config (AGENTS.md + opencode.json with flat command arrays)."""
+    """Generate OpenCode agent config (.opencode/agents/<name>.md + opencode.json with flat command arrays)."""
+    safe_name = _sanitize_name(manifest.name)
     mcp_entries = _build_mcp_entries(manifest)
     rules_content = _build_rules_markdown(manifest)
 
@@ -611,7 +612,7 @@ def _generate_opencode(manifest: AgentManifest) -> IdeAgentConfig:
 
     files = [
         AgentFile(
-            path="AGENTS.md",
+            path=f".opencode/agents/{safe_name}.md",
             content=rules_content,
             format="markdown",
         ),

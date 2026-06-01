@@ -25,10 +25,12 @@ from services.clickhouse import (
 )
 from services.jwt_service import decode_access_token
 from services.redis import subscribe
+from services.secrets_redactor import redact_secrets
 
 logger = structlog.get_logger(__name__)
 
 _DEFAULT_PROJECT = "default"
+MAX_TRACE_PAGE_SIZE = 100
 
 
 # --- Helpers ---
@@ -51,6 +53,17 @@ def _parse_json(val: str | None) -> JSON | None:
         return json.loads(val)
     except (json.JSONDecodeError, TypeError):
         return val
+
+
+def _bounded_trace_limit(limit: int) -> int:
+    return min(max(int(limit), 1), MAX_TRACE_PAGE_SIZE)
+
+
+def _bounded_trace_offset(offset: int) -> int:
+    offset = int(offset)
+    if offset < 0:
+        raise ValueError("offset must be greater than or equal to 0")
+    return offset
 
 
 # --- DataLoaders ---
@@ -276,8 +289,8 @@ def _row_to_trace(r: dict) -> Trace:
         name=r.get("name"),
         start_time=r.get("start_time", ""),
         end_time=r.get("end_time"),
-        input=_parse_json(r.get("input")),
-        output=_parse_json(r.get("output")),
+        input=_parse_json(redact_secrets(r.get("input") or "")),
+        output=_parse_json(redact_secrets(r.get("output") or "")),
         tags=r.get("tags", []),
         metadata=r.get("metadata"),
     )
@@ -292,9 +305,9 @@ def _row_to_span(r: dict) -> Span:
         type=r.get("type", ""),
         name=r.get("name", ""),
         method=r.get("method"),
-        input=_parse_json(r.get("input")),
-        output=_parse_json(r.get("output")),
-        error=_parse_json(r.get("error")),
+        input=_parse_json(redact_secrets(r.get("input") or "")),
+        output=_parse_json(redact_secrets(r.get("output") or "")),
+        error=_parse_json(redact_secrets(r.get("error") or "")),
         start_time=r.get("start_time", ""),
         end_time=r.get("end_time"),
         latency_ms=int(r["latency_ms"]) if r.get("latency_ms") else None,
@@ -343,17 +356,19 @@ class Query:
         ctx = info.context
         project_id = ctx.get("project_id", _DEFAULT_PROJECT)
         uid = None if _is_admin(ctx) else ctx.get("user_id")
+        bounded_limit = _bounded_trace_limit(limit)
+        bounded_offset = _bounded_trace_offset(offset)
         rows = await query_traces(
             project_id,
             trace_type=trace_type,
             mcp_id=mcp_id,
             agent_id=agent_id,
             user_id=uid,
-            limit=limit + 1,
-            offset=offset,
+            limit=bounded_limit + 1,
+            offset=bounded_offset,
         )
-        has_more = len(rows) > limit
-        items = [_row_to_trace(r) for r in rows[:limit]]
+        has_more = len(rows) > bounded_limit
+        items = [_row_to_trace(r) for r in rows[:bounded_limit]]
         return TraceConnection(items=items, total_count=len(items), has_more=has_more)
 
     @strawberry.field
@@ -536,15 +551,16 @@ class Subscription:
 
     @strawberry.subscription
     async def session_updated(self, session_id: str | None = None) -> AsyncGenerator[SessionEvent, None]:
-        channel = "sessions:updated"
+        # When filtering by session_id, subscribe to the targeted channel
+        # to avoid O(connections) filtering on every publish.
+        channel = f"sessions:{session_id}:updated" if session_id else "sessions:updated"
         async for data in subscribe(channel):
             sid = data.get("session_id", "")
-            if session_id and sid != session_id:
-                continue
-            yield SessionEvent(
-                session_id=sid,
-                event_name=data.get("event_name", ""),
-            )
+            if not session_id or sid == session_id:
+                yield SessionEvent(
+                    session_id=sid,
+                    event_name=data.get("event_name", ""),
+                )
 
     @strawberry.subscription
     async def review_updated(self, listing_id: str | None = None) -> AsyncGenerator[ReviewEvent, None]:

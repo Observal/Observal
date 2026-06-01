@@ -147,7 +147,7 @@ def test_windows_uses_deferred_cleanup(
     repo = _make_repo(tmp_path)
     result = runner.invoke(
         cli_app,
-        ["uninstall", "--repo-dir", str(repo), "--keep-config"],
+        ["self", "uninstall", "--repo-dir", str(repo), "--keep-config"],
         input=f"{CONFIRMATION_PHRASE}\n",
     )
     assert result.exit_code == 0
@@ -178,7 +178,7 @@ def test_windows_resolves_uv_path(
     repo = _make_repo(tmp_path)
     result = runner.invoke(
         cli_app,
-        ["uninstall", "--repo-dir", str(repo), "--keep-config"],
+        ["self", "uninstall", "--repo-dir", str(repo), "--keep-config"],
         input=f"{CONFIRMATION_PHRASE}\n",
     )
     assert result.exit_code == 0
@@ -213,7 +213,7 @@ def test_windows_uv_not_found_skips_cli(
     ):
         result = runner.invoke(
             cli_app,
-            ["uninstall", "--repo-dir", str(repo), "--keep-config"],
+            ["self", "uninstall", "--repo-dir", str(repo), "--keep-config"],
             input=f"{CONFIRMATION_PHRASE}\n",
         )
     assert result.exit_code == 0
@@ -235,7 +235,7 @@ def test_unix_still_uses_sync_cleanup(
     repo = _make_repo(tmp_path)
     result = runner.invoke(
         cli_app,
-        ["uninstall", "--repo-dir", str(repo), "--keep-config", "--keep-cli"],
+        ["self", "uninstall", "--repo-dir", str(repo), "--keep-config", "--keep-cli"],
         input=f"{CONFIRMATION_PHRASE}\n",
     )
     assert result.exit_code == 0

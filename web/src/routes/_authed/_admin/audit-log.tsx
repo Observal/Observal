@@ -5,6 +5,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { lazy } from "react";
 const AuditLogPage = lazy(() => import("@/pages/admin/audit-log"));
 
+export type AuditLogSearch = {
+  search?: string;
+};
+
 export const Route = createFileRoute("/_authed/_admin/audit-log")({
   component: AuditLogPage,
+  validateSearch: (search: Record<string, unknown>): AuditLogSearch => ({
+    search: (search.search as string) || undefined,
+  }),
 });

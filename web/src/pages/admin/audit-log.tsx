@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
+import { useSearch, useLocation } from "@tanstack/react-router";
 import {
   ScrollText,
   Download,
@@ -176,8 +177,35 @@ function DetailRow({ entry }: { entry: AuditLogEntry }) {
 
 export default function AuditLogPage() {
   const { licensedFeatures } = useDeploymentConfig();
-  const [searchQuery, setSearchQuery] = useState("");
+  const { search: searchParam } = useSearch({ from: "/_authed/_admin/audit-log" });
+  const { pathname } = useLocation();
+  const [searchQuery, setSearchQuery] = useState(searchParam ?? "");
   const [page, setPage] = useState(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const updateURL = useCallback(
+    (value: string) => {
+      const params = new URLSearchParams(window.location.search);
+      if (value) {
+        params.set("search", value);
+      } else {
+        params.delete("search");
+      }
+      const qs = params.toString();
+      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname],
+  );
+
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearchQuery(value);
+      setPage(0);
+      clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => updateURL(value), 300);
+    },
+    [updateURL],
+  );
 
   const filters = useMemo(() => {
     const parsed = parseSearchQuery(searchQuery);
@@ -244,7 +272,7 @@ export default function AuditLogPage() {
             <Input
               placeholder="Search: actor:email action:login outcome:denied sensitivity:phi_adjacent source:cli"
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9 h-9 text-xs font-mono"
             />
           </div>
@@ -254,7 +282,7 @@ export default function AuditLogPage() {
               <button
                 key={hint}
                 className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 font-mono transition-colors"
-                onClick={() => setSearchQuery((q) => q + (q && !q.endsWith(" ") ? " " : "") + hint)}
+                onClick={() => handleSearchChange(searchQuery + (searchQuery && !searchQuery.endsWith(" ") ? " " : "") + hint)}
               >
                 {hint}
               </button>

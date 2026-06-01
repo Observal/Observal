@@ -154,12 +154,10 @@ _CACHE_TTL = 30  # seconds, short TTL for consistency, Redis is fast
 # DB, these are returned. Once configured via the settings page, DB values win.
 
 DEFAULTS: dict[str, str] = {
-    # Insights: AWS Bedrock auth
-    "insights.aws_region": "us-east-1",
-    "insights.aws_access_key_id": "",
-    "insights.aws_secret_access_key": "",
-    "insights.aws_session_token": "",
-    # Insights: per-stage models (Bedrock model IDs)
+    # Insights: LLM provider credentials (via LiteLLM)
+    "insights.api_key": "",
+    "insights.api_base": "",
+    # Insights: per-stage models (LiteLLM format: provider/model-name)
     "insights.model_sections": "",
     "insights.model_synthesis": "",
     "insights.model_facets": "",
@@ -226,9 +224,7 @@ DEFAULTS: dict[str, str] = {
 
 # Sensitive keys: values are masked in API responses unless explicitly revealed
 SENSITIVE_KEYS: set[str] = {
-    "insights.aws_access_key_id",
-    "insights.aws_secret_access_key",
-    "insights.aws_session_token",
+    "insights.api_key",
     "saml.idp_x509_cert",
     "saml.sp_key_encryption_password",
 }
@@ -238,7 +234,7 @@ SECTIONS: list[dict[str, Any]] = [
     {
         "id": "insights",
         "title": "Agent Insights",
-        "description": "Configure AWS Bedrock credentials and models for the insights engine. Requires 'insights' license feature.",
+        "description": "Configure LLM provider for the insights engine. Supports any LiteLLM-compatible provider (Anthropic, OpenAI, Bedrock, Gemini, Azure, Ollama, etc).",
         "icon": "sparkles",
         "keys": [k for k in DEFAULTS if k.startswith("insights.")],
     },

@@ -10,6 +10,15 @@
     <!-- Cap ClickHouse to 80% of container RAM; leaves headroom for OS page cache -->
     <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
 
+    <!-- Raise merge-tree part thresholds for high-ingest workloads.
+         With 500+ concurrent CLI clients and async_insert, parts accumulate
+         faster than default thresholds allow. -->
+    <merge_tree>
+        <parts_to_delay_insert>200</parts_to_delay_insert>
+        <parts_to_throw_insert>500</parts_to_throw_insert>
+        <max_bytes_to_merge_at_max_space_in_pool>5368709120</max_bytes_to_merge_at_max_space_in_pool>
+    </merge_tree>
+
     <!-- Limit system log retention to prevent OOM on small containers -->
     <query_log>
         <database>system</database>

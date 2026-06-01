@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+project_id  = "my-gcp-project"
+region      = "us-central1"
+environment = "prod"
+image_tag   = "latest"
+
+# Optional: custom domain
+# domain_name           = "observal.example.com"
+# dns_managed_zone_name = "example-com"
+
+# Optional: enterprise license
+# observal_license_key = "eyJ..."

@@ -52,12 +52,12 @@ def _plain(text: str) -> str:
 
 class TestCLIRegistration:
     def test_migrate_command_group_exists(self):
-        result = runner.invoke(cli_app, ["migrate", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "--help"])
         assert result.exit_code == 0
         assert "migrate" in _plain(result.output).lower()
 
     def test_migrate_help_lists_subcommands(self):
-        result = runner.invoke(cli_app, ["migrate", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "--help"])
         assert result.exit_code == 0
         out = _plain(result.output)
         assert "export" in out
@@ -65,19 +65,19 @@ class TestCLIRegistration:
         assert "validate" in out
 
     def test_export_subcommand_help(self):
-        result = runner.invoke(cli_app, ["migrate", "export", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "export", "--help"])
         assert result.exit_code == 0
         assert "--db-url" in _plain(result.output)
 
     def test_import_subcommand_help(self):
-        result = runner.invoke(cli_app, ["migrate", "import", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "import", "--help"])
         assert result.exit_code == 0
         out = _plain(result.output)
         assert "--db-url" in out
         assert "--archive" in out
 
     def test_validate_subcommand_help(self):
-        result = runner.invoke(cli_app, ["migrate", "validate", "--help"])
+        result = runner.invoke(cli_app, ["server", "migrate", "validate", "--help"])
         assert result.exit_code == 0
         assert "--archive" in _plain(result.output)
 
@@ -490,7 +490,7 @@ class TestErrorPaths:
     def test_import_nonexistent_archive(self, mock_admin):
         result = runner.invoke(
             cli_app,
-            ["migrate", "import", "--db-url", "postgres://x", "--archive", "/nonexistent/archive.tar.gz"],
+            ["server", "migrate", "import", "--db-url", "postgres://x", "--archive", "/nonexistent/archive.tar.gz"],
         )
         assert result.exit_code != 0
 
@@ -498,13 +498,13 @@ class TestErrorPaths:
     def test_validate_nonexistent_archive(self, mock_admin):
         result = runner.invoke(
             cli_app,
-            ["migrate", "validate", "--archive", "/nonexistent/archive.tar.gz"],
+            ["server", "migrate", "validate", "--archive", "/nonexistent/archive.tar.gz"],
         )
         assert result.exit_code != 0
 
     def test_export_missing_db_url(self):
         """Export without --db-url should fail (required option)."""
-        result = runner.invoke(cli_app, ["migrate", "export"])
+        result = runner.invoke(cli_app, ["server", "migrate", "export"])
         assert result.exit_code != 0
 
 
@@ -520,7 +520,7 @@ class TestSecurity:
         mock_asyncio.run.side_effect = SystemExit(1)
         result = runner.invoke(
             cli_app,
-            ["migrate", "export", "--db-url", secret_url],
+            ["server", "migrate", "export", "--db-url", secret_url],
         )
         assert secret_url not in result.output
 
@@ -530,7 +530,7 @@ class TestSecurity:
         secret_url = "postgres://secret_user:secret_pass@secret-host:5432/secret_db"
         result = runner.invoke(
             cli_app,
-            ["migrate", "import", "--db-url", secret_url, "--archive", "/nonexistent.tar.gz"],
+            ["server", "migrate", "import", "--db-url", secret_url, "--archive", "/nonexistent.tar.gz"],
         )
         assert secret_url not in result.output
 
@@ -540,7 +540,7 @@ class TestSecurity:
         secret_url = "postgres://secret_user:secret_pass@secret-host:5432/secret_db"
         result = runner.invoke(
             cli_app,
-            ["migrate", "validate", "--archive", "/nonexistent.tar.gz", "--db-url", secret_url],
+            ["server", "migrate", "validate", "--archive", "/nonexistent.tar.gz", "--db-url", secret_url],
         )
         assert secret_url not in result.output
 

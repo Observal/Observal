@@ -569,3 +569,11 @@ class TestBuilderModelEmission:
         assert isinstance(oc_file.content, dict)
         assert oc_file.content["model"].endswith("/claude-sonnet-4-5")
         assert oc_file.content["model"].split("/")[0] in {"anthropic", "openai", "google"}
+
+    def test_opencode_rules_file_path(self):
+        from services.agent_builder import _generate_opencode
+
+        manifest = _empty_manifest()
+        cfg = _generate_opencode(manifest)
+        rules_file = next(f for f in cfg.files if f.path.endswith(".md"))
+        assert rules_file.path == ".opencode/agents/test-agent.md"

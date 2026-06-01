@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: AGPL-3.0-only
 
 """Deterministic per-session metadata extraction from raw JSONL transcripts.
 

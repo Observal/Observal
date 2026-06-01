@@ -22,7 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.mcp import McpListing, McpValidationResult
 from services.ssrf_guard import is_private_url as _ssrf_is_private
 
-ALLOWED_SCHEMES = {"https", "http"}
+ALLOW_HTTP_GIT = os.environ.get("MCP_ALLOW_HTTP_GIT", "").lower() in ("1", "true", "yes")
+ALLOWED_SCHEMES = {"https"} | ({"http"} if ALLOW_HTTP_GIT else set())
 BLOCKED_SCHEMES = {"file", "ftp", "ssh", "git"}
 
 # Self-hosted deployments set ALLOW_INTERNAL_GIT_URLS=true to allow corporate
@@ -61,6 +62,13 @@ def _validate_git_url(url: str) -> str | None:
     if not ALLOW_INTERNAL_URLS and _ssrf_is_private(url):
         return "Internal/private URLs not allowed (set ALLOW_INTERNAL_URLS=true for self-hosted deployments)"
     return None
+
+
+def _git_url_warning(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme == "http" and ALLOW_HTTP_GIT:
+        return "Warning: insecure http:// Git URL accepted because MCP_ALLOW_HTTP_GIT=true."
+    return ""
 
 
 def _build_clone_url(git_url: str) -> str:
@@ -473,6 +481,7 @@ async def _clone_and_inspect(listing: McpListing, db: AsyncSession, tmp_dir: str
         db.add(McpValidationResult(listing_id=listing.id, stage="clone_and_inspect", passed=False, details=url_err))
         await db.commit()
         return None
+    url_warning = _git_url_warning(listing.git_url)
     clone_url = _build_clone_url(listing.git_url)
     try:
         await _async_clone(clone_url, tmp_dir)
@@ -526,7 +535,9 @@ async def _clone_and_inspect(listing: McpListing, db: AsyncSession, tmp_dir: str
                 listing_id=listing.id,
                 stage="clone_and_inspect",
                 passed=True,
-                details=f"Found MCP entry point: {entry_point.relative_to(tmp_dir)}",
+                details="\n".join(
+                    part for part in (f"Found MCP entry point: {entry_point.relative_to(tmp_dir)}", url_warning) if part
+                ),
             )
         )
         await db.commit()
@@ -550,7 +561,9 @@ async def _clone_and_inspect(listing: McpListing, db: AsyncSession, tmp_dir: str
                 listing_id=listing.id,
                 stage="clone_and_inspect",
                 passed=True,
-                details=f"Found non-Python MCP framework: {non_python_framework}",
+                details="\n".join(
+                    part for part in (f"Found non-Python MCP framework: {non_python_framework}", url_warning) if part
+                ),
             )
         )
         await db.commit()
@@ -571,11 +584,16 @@ async def _clone_and_inspect(listing: McpListing, db: AsyncSession, tmp_dir: str
             listing_id=listing.id,
             stage="clone_and_inspect",
             passed=True,
-            details=(
-                "No recognized MCP framework detected. "
-                "Marked as validated with framework: unknown. "
-                "Supported detection: FastMCP, MCP SDK (Python/TypeScript/Go), "
-                "and common MCP patterns."
+            details="\n".join(
+                part
+                for part in (
+                    "No recognized MCP framework detected. "
+                    "Marked as validated with framework: unknown. "
+                    "Supported detection: FastMCP, MCP SDK (Python/TypeScript/Go), "
+                    "and common MCP patterns.",
+                    url_warning,
+                )
+                if part
             ),
         )
     )

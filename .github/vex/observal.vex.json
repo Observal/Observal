@@ -1,0 +1,43 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/BlazeUp-AI/Observal/blob/main/.github/vex/observal.vex.json",
+  "author": "Observal Security <contact@observal.io>",
+  "timestamp": "2026-05-31T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "@id": "https://github.com/pypa/advisory-database/blob/main/vulns/PYSEC-2025-183.yaml",
+        "name": "PYSEC-2025-183"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/observal-server",
+          "subcomponents": [
+            {"@id": "pkg:pypi/starlette"}
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Observal does not use the affected Starlette multipart form parsing path that triggers this vulnerability. All file uploads are handled via dedicated streaming endpoints with size limits enforced at the nginx layer."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://github.com/pypa/advisory-database/blob/main/vulns/PYSEC-2026-161.yaml",
+        "name": "PYSEC-2026-161"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/observal-server",
+          "subcomponents": [
+            {"@id": "pkg:pypi/starlette"}
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The affected code path requires specific Host header manipulation that is blocked by Observal's nginx reverse proxy configuration (see docker/nginx.conf header validation rules)."
+    }
+  ]
+}

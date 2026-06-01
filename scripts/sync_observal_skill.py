@@ -35,9 +35,8 @@ BEGIN_SENTINEL = "<!-- BEGIN AUTO-GENERATED COMMAND REFERENCE -->"
 END_SENTINEL = "<!-- END AUTO-GENERATED COMMAND REFERENCE -->"
 
 # Hidden top-level groups: present in the CLI but not useful in the skill.
-# `server` requires extra deps and is dev-only; `migrate` is operator tooling;
-# `logs` is interactive only; `support` is for bug reporting.
-_HIDDEN_GROUPS = {"server", "migrate", "logs", "support"}
+# `server` requires extra deps and is dev-only.
+_HIDDEN_GROUPS = {"server"}
 
 
 def _first_line(text: str | None) -> str:

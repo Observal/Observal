@@ -34,7 +34,7 @@ def _get_client() -> httpx.AsyncClient:
             timeout=settings.CLICKHOUSE_TIMEOUT,
             limits=httpx.Limits(
                 max_connections=settings.CLICKHOUSE_MAX_CONNECTIONS,
-                max_keepalive_connections=settings.CLICKHOUSE_MAX_KEEPALIVE,
+                max_keepalive_connections=settings.CLICKHOUSE_MAX_CONNECTIONS,
             ),
         )
     return _client

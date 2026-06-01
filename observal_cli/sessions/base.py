@@ -78,7 +78,9 @@ def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
     """Read bytes from *offset* to EOF in *jsonl_path*.
 
     Returns (lines, bytes_read).  Empty lines are filtered.  Lines are raw
-    strings - not parsed.
+    strings - not parsed.  If the file ends without a newline (incomplete
+    write in progress), the partial last line is excluded and bytes_read
+    is adjusted so the next call re-reads it once complete.
     """
     with open(jsonl_path, "rb") as f:
         f.seek(offset)
@@ -86,8 +88,20 @@ def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
     if not raw:
         return [], 0
     text = raw.decode("utf-8", errors="replace")
+    # If the file doesn't end with newline, the last "line" is likely a
+    # partial write still being flushed by the agent.  Exclude it and
+    # adjust bytes_read so we re-read from that point next time.
+    if not text.endswith("\n"):
+        last_nl = text.rfind("\n")
+        if last_nl == -1:
+            # No complete line at all - wait for more data
+            return [], 0
+        text = text[: last_nl + 1]
+        bytes_read = len(text.encode("utf-8"))
+    else:
+        bytes_read = len(raw)
     lines = [ln for ln in text.split("\n") if ln.strip()]
-    return lines, len(raw)
+    return lines, bytes_read
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +223,76 @@ def post_to_server(server_url: str, access_token: str, payload: dict, config: di
             e,
         )
         return False
+
+
+# ---------------------------------------------------------------------------
+# Chunked posting
+# ---------------------------------------------------------------------------
+
+MAX_CHUNK_SIZE = 500
+
+
+def post_lines_chunked(
+    server_url: str,
+    access_token: str,
+    session_id: str,
+    lines: list[str],
+    start_offset: int,
+    hook_event: str,
+    line_count_before: int,
+    new_offset: int = 0,
+    cwd: str = "",
+    parent_session_id: str | None = None,
+    session_jsonl: Path | None = None,
+    ide: str = "claude-code",
+    config: dict | None = None,
+    extra_fields: dict | None = None,
+) -> bool:
+    """Post lines to ingest in chunks of MAX_CHUNK_SIZE.
+
+    Returns True if ALL chunks succeed, False on first failure.
+    Callers should only advance the cursor on True.
+    """
+    if not lines:
+        return True
+
+    total_chunks = (len(lines) + MAX_CHUNK_SIZE - 1) // MAX_CHUNK_SIZE
+
+    for i in range(0, len(lines), MAX_CHUNK_SIZE):
+        chunk = lines[i : i + MAX_CHUNK_SIZE]
+        chunk_index = i // MAX_CHUNK_SIZE
+        is_last = chunk_index == total_chunks - 1
+
+        payload = build_payload(
+            session_id=session_id,
+            lines=chunk,
+            start_offset=line_count_before + i,
+            hook_event=hook_event,
+            line_count_before=line_count_before + i,
+            new_offset=new_offset if is_last else 0,
+            cwd=cwd,
+            parent_session_id=parent_session_id,
+            session_jsonl=session_jsonl,
+        )
+        payload["ide"] = ide
+        # Only mark final on the last chunk if the hook_event warrants it
+        if not is_last:
+            payload.pop("final", None)
+            payload.pop("total_line_count", None)
+            payload.pop("total_offset", None)
+        if extra_fields:
+            payload.update(extra_fields)
+
+        success = post_to_server(
+            server_url=server_url,
+            access_token=access_token,
+            payload=payload,
+            config=config,
+        )
+        if not success:
+            return False
+
+    return True
 
 
 # ---------------------------------------------------------------------------
