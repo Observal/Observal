@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
-import { Link, useParams } from "@tanstack/react-router";
+import { useParams, useRouter } from "@tanstack/react-router";
 import React from "react";
 import {
 	ArrowLeft,
@@ -1682,6 +1682,7 @@ function ReportContent({ report }: { report: InsightReport }) {
 
 export default function InsightReportPage() {
 	const { reportId } = useParams({ from: "/_authed/insights/$reportId" });
+	const router = useRouter();
 	const { data: report, isLoading, isError } = useInsightReport(reportId);
 
 	return (
@@ -1700,11 +1701,9 @@ export default function InsightReportPage() {
 								<Download className="h-4 w-4" /> Export HTML
 							</Button>
 						)}
-						<Link to="/insights">
-							<Button variant="ghost" size="sm" className="gap-1.5">
-								<ArrowLeft className="h-4 w-4" /> Back
-							</Button>
-						</Link>
+						<Button variant="ghost" size="sm" className="gap-1.5" onClick={() => router.history.back()}>
+							<ArrowLeft className="h-4 w-4" /> Back
+						</Button>
 					</div>
 				}
 			/>

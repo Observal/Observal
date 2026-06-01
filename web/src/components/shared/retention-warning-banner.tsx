@@ -3,7 +3,6 @@
 
 
 import { useState, useSyncExternalStore } from "react";
-import { Link } from "@tanstack/react-router";
 import { AlertTriangle, X } from "lucide-react";
 import { useRetentionWarnings } from "@/hooks/use-api";
 import { hasMinRole } from "@/hooks/use-role-guard";
@@ -37,9 +36,7 @@ export function RetentionWarningBanner() {
       <span className="flex-1">
         Data retention is active ({data.retention_days} days).{" "}
         {data.warnings.length} agent{data.warnings.length > 1 ? "s have" : " has"} unanalyzed traces.{" "}
-        <Link to="/insights" className="underline font-medium hover:text-amber-900 dark:hover:text-amber-300">
-          Generate Insights
-        </Link>
+        Generate insights from the agent detail page before they expire.
       </span>
       <button onClick={handleDismiss} className="p-0.5 hover:bg-amber-500/20 rounded">
         <X className="h-3.5 w-3.5" />
