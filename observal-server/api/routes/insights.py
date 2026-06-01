@@ -52,8 +52,11 @@ async def insights_status(current_user: User = Depends(require_role(UserRole.adm
     if not model:
         return {"available": False, "reason": "No model configured. Set insights.model_sections in admin settings."}
 
+    # If a direct API key is configured, skip AWS credential checks
+    api_key = await ds.get("insights.api_key")
+
     # Check if AWS credentials are set and valid (for Bedrock models)
-    if "anthropic" in model:
+    if "anthropic" in model and not api_key:
         aws_key = await ds.get("insights.aws_access_key_id")
         aws_secret = await ds.get("insights.aws_secret_access_key")
         if not aws_key:
