@@ -400,10 +400,12 @@ class TestGenerateOpenCodeConfig:
         agent = _make_agent()
         cfg = generate_agent_config(agent, "opencode")
         plugin = cfg["hooks_config"]["content"]
-        assert 'import { execFileSync } from "child_process";' in plugin
+        assert 'import { request as httpRequest } from "http";' in plugin
         assert "from loguru import logger" not in plugin
         assert "export const ObservalPlugin" in plugin
+        assert '"session.created"' in plugin
         assert '"session.idle"' in plugin
+        assert '"message.updated"' in plugin
 
 
 class TestGenerateGeminiConfig:

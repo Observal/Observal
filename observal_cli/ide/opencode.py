@@ -10,6 +10,7 @@ agents, and hooks from both project-level and global config directories.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,22 @@ from observal_cli.ide import (
     register_adapter,
 )
 from observal_cli.ide.base import BaseAdapter
+
+_JSONC_COMMENT_RE = re.compile(
+    r'("(?:[^"\\]|\\.)*")|//[^\n]*|/\*.*?\*/',
+    re.DOTALL,
+)
+
+
+def _strip_jsonc_comments(text: str) -> str:
+    """Strip // and /* */ comments from JSONC, preserving strings."""
+
+    def _replacer(m: re.Match) -> str:
+        if m.group(1) is not None:
+            return m.group(1)
+        return ""
+
+    return _JSONC_COMMENT_RE.sub(_replacer, text)
 
 
 class OpenCodeAdapter(BaseAdapter):
@@ -84,31 +101,26 @@ class OpenCodeAdapter(BaseAdapter):
     def detect_hooks(self, config_dir: Path) -> str:
         """Detect if the Observal plugin is installed in OpenCode.
 
-        Checks both project-level and global plugin directories.
+        Checks the global plugin directory (config_dir/plugins) which is
+        the canonical install location for `observal pull` with user scope.
         """
-        # Check project-level plugins
-        project_plugin = Path.cwd() / ".opencode" / "plugins"
-        global_plugin = config_dir / "plugins"
-
-        found = 0
-        for plugins_dir in (project_plugin, global_plugin):
-            if not plugins_dir.exists():
-                continue
-            for plugin_file in plugins_dir.iterdir():
-                if not plugin_file.is_file():
-                    continue
-                if plugin_file.suffix not in (".ts", ".js", ".mjs"):
-                    continue
-                try:
-                    content = plugin_file.read_text(errors="ignore")
-                    if "ObservalPlugin" in content or "observal" in content.lower():
-                        found += 1
-                except OSError:
-                    continue
-
-        if found == 0:
+        plugins_dir = config_dir / "plugins"
+        if not plugins_dir.exists():
             return "missing"
-        return "installed"
+
+        for plugin_file in plugins_dir.iterdir():
+            if not plugin_file.is_file():
+                continue
+            if plugin_file.suffix not in (".ts", ".js", ".mjs"):
+                continue
+            try:
+                content = plugin_file.read_text(errors="ignore")
+                if "ObservalPlugin" in content or "observal" in content.lower():
+                    return "installed"
+            except OSError:
+                continue
+
+        return "missing"
 
     def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
         return super().shim_status(mcps)
@@ -170,14 +182,7 @@ class OpenCodeAdapter(BaseAdapter):
         """Parse an opencode.json config and extract MCP servers."""
         try:
             raw = config_file.read_text()
-            # Strip JSONC comments (single-line // comments)
-            lines = []
-            for line in raw.splitlines():
-                stripped = line.lstrip()
-                if stripped.startswith("//"):
-                    continue
-                lines.append(line)
-            data = json.loads("\n".join(lines))
+            data = json.loads(_strip_jsonc_comments(raw))
             servers = data.get("mcp", {})
             mcps = []
             for srv_name, srv_config in servers.items():
@@ -281,21 +286,25 @@ class OpenCodeAdapter(BaseAdapter):
         return hooks
 
     def _extract_frontmatter_field(self, content: str, field: str) -> str | None:
-        """Extract a field from YAML frontmatter in a markdown file."""
+        """Extract a top-level field from YAML frontmatter in a markdown file."""
         if not content.startswith("---"):
             return None
         parts = content.split("---", 2)
         if len(parts) < 3:
             return None
         frontmatter = parts[1]
+        prefix = f"{field}:"
         for line in frontmatter.splitlines():
-            line = line.strip()
-            if line.startswith(f"{field}:"):
-                value = line[len(f"{field}:") :].strip()
-                # Remove surrounding quotes if present
-                if value and value[0] in ('"', "'") and value[-1] == value[0]:
-                    value = value[1:-1]
-                return value
+            # Only match top-level keys (no leading whitespace)
+            if line.startswith((" ", "\t")):
+                continue
+            stripped = line.strip()
+            if not stripped.startswith(prefix):
+                continue
+            value = stripped[len(prefix) :].strip()
+            if value and value[0] in ('"', "'") and value[-1] == value[0]:
+                value = value[1:-1]
+            return value
         return None
 
 
