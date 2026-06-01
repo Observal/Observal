@@ -575,8 +575,31 @@ def _do_device_flow_login(server_url: str):
 
     # Try to open browser automatically
     try:
-        webbrowser.open(verification_uri_complete)
-        rprint("[dim]Browser opened automatically.[/dim]")
+        import platform
+        import subprocess as _sp
+
+        _opened = False
+        _sys = platform.system()
+        if _sys == "Darwin":
+            _sp.Popen(["open", verification_uri_complete], stderr=_sp.DEVNULL, stdout=_sp.DEVNULL)
+            _opened = True
+        elif _sys == "Linux":
+            # WSL: use powershell.exe to open in Windows browser
+            _wsl = _sp.run(["wslpath", "-w", "/"], capture_output=True)
+            if _wsl.returncode == 0:
+                _sp.Popen(
+                    ["powershell.exe", "-NoProfile", "-c", f"Start-Process '{verification_uri_complete}'"],
+                    stderr=_sp.DEVNULL,
+                    stdout=_sp.DEVNULL,
+                )
+            else:
+                _sp.Popen(["xdg-open", verification_uri_complete], stderr=_sp.DEVNULL, stdout=_sp.DEVNULL)
+            _opened = True
+        else:
+            webbrowser.open(verification_uri_complete)
+            _opened = True
+        if _opened:
+            rprint("[dim]Browser opened automatically.[/dim]")
     except Exception:
         rprint("[dim]Could not open browser automatically. Please open the URL manually.[/dim]")
 
