@@ -10,6 +10,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.4] - 2026-06-01
+
+### Added
+
+- allow agent owners and co-authors to generate insights (**insights**) ([d285cd7](https://github.com/BlazeUp-AI/Observal/commit/d285cd7c3ba68cc42fb799461b0d0b4db9f8fede))
+- replace custom LLM calls with LiteLLM (**insights**) ([0b59845](https://github.com/BlazeUp-AI/Observal/commit/0b59845a45cf3ddfaf4aae86a6e803079e876791))
+
+### Changed
+
+- remove global admin Insights page from sidebar (**web**) ([68ef1e2](https://github.com/BlazeUp-AI/Observal/commit/68ef1e2677441dd4f843155400bc8e8f6e73e4d6))
+- consolidate command structure, remove duplicates (**cli**) ([a222745](https://github.com/BlazeUp-AI/Observal/commit/a22274599bc6d55b349eb200add889dbba1a0655))
+
+### Fixed
+
+- remove dots from approved/pending badges, remove placeholder Analytics tab (**web**) ([4851822](https://github.com/BlazeUp-AI/Observal/commit/485182235f3a7fa0a92029aedd224e22dc21bce0))
+- skip AWS credential check when direct API key is configured (**insights**) ([4b72c76](https://github.com/BlazeUp-AI/Observal/commit/4b72c76c1513ed04cea182e834af01a4d7beb3be))
+- increase API health check start_period to 60s (**docker**) ([de74ff4](https://github.com/BlazeUp-AI/Observal/commit/de74ff4ba56647fd59843eff9d895b7878eb9653))
+- chunk all session push paths to respect MAX_SESSION_LINES (**ingest**) ([1478885](https://github.com/BlazeUp-AI/Observal/commit/1478885b1657949486e39df448e877c2a3d25791))
 ## [1.4.3] - 2026-05-31
 
 ### Added
