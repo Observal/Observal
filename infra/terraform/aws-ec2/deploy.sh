@@ -17,6 +17,7 @@ REGION=$(terraform output -raw region)
 DOMAIN=$(terraform output -raw domain)
 OBSERVAL_REF=$(terraform output -raw observal_ref)
 OBSERVAL_REPO=$(terraform output -raw observal_repo)
+ENV_OVERRIDES=$(terraform output -json env_overrides 2>/dev/null || echo "{}")
 
 echo "=== Observal EC2 Deploy ==="
 echo "  Instance:  $INSTANCE_ID"
@@ -119,7 +120,16 @@ run_remote "rm -rf /opt/observal && git clone $OBSERVAL_REPO /opt/observal && cd
 
 echo "Configuring environment..."
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null || openssl rand -base64 32)
-run_remote "cd /opt/observal && cp .env.example .env && sed -i \"s|SECRET_KEY=.*|SECRET_KEY=$SECRET_KEY|\" .env"
+
+# Build sed commands for env overrides (skip empty values)
+SED_CMDS="sed -i \"s|SECRET_KEY=.*|SECRET_KEY=$SECRET_KEY|\" .env"
+while IFS='=' read -r key value; do
+  [ -z "$key" ] && continue
+  [ -z "$value" ] && continue
+  SED_CMDS="$SED_CMDS && sed -i \"s|${key}=.*|${key}=${value}|\" .env"
+done < <(echo "$ENV_OVERRIDES" | python3 -c "import sys,json; [print(f'{k}={v}') for k,v in json.load(sys.stdin).items()]" 2>/dev/null || true)
+
+run_remote "cd /opt/observal && cp .env.example .env && $SED_CMDS"
 
 # ── Configure nginx + TLS ────────────────────────────────────────────────────
 

@@ -36,6 +36,12 @@ output "observal_ref" {
   value       = var.observal_ref
 }
 
+output "env_overrides" {
+  description = "Environment overrides (for deploy.sh)"
+  value       = var.env_overrides
+  sensitive   = true
+}
+
 output "observal_repo" {
   description = "Git repository URL"
   value       = var.observal_repo

@@ -42,6 +42,12 @@ variable "subnet_id" {
   default     = ""
 }
 
+variable "env_overrides" {
+  description = "Map of environment variables to override in .env (empty values are ignored, defaults from .env.example are kept)"
+  type        = map(string)
+  default     = {}
+}
+
 variable "observal_ref" {
   description = "Git branch, tag, or commit SHA to deploy"
   type        = string
