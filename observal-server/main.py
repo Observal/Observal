@@ -436,7 +436,6 @@ if HAS_LICENSE:
         register_enterprise_middleware(app, settings)
         mount_ee_routes(app)
     except (ImportError, RuntimeError) as _ee_err:
-        pass
         optic.warning("enterprise features unavailable: {}", str(_ee_err))
         app.state.enterprise_issues = [str(_ee_err)]
 
