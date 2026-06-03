@@ -44,8 +44,11 @@
 
 * [Overview](self-hosting/README.md)
 * [Requirements](self-hosting/requirements.md)
+* [Single-node deployment](self-hosting/single-node-deploy.md)
+* [Production deployment](self-hosting/production-deploy.md)
 * [Docker Compose setup](self-hosting/docker-compose.md)
 * [AWS deployment with Terraform](self-hosting/aws-terraform.md)
+* [GCP deployment with Terraform](self-hosting/gcp-terraform.md)
 * [Configuration](self-hosting/configuration.md)
 * [Ports and volumes](self-hosting/ports-and-volumes.md)
 * [Databases](self-hosting/databases.md)
