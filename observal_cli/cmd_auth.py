@@ -766,6 +766,7 @@ def register_config(app: typer.Typer):
 def _post_login_setup():
     """Post-login setup: install skills unconditionally, then run doctor."""
     _install_observal_skill()
+    _generate_initial_layer_snapshot()
     rprint()
     try:
         from unittest.mock import MagicMock
@@ -834,6 +835,20 @@ def _post_auth_onboarding():
 
     except Exception:
         pass
+
+
+def _generate_initial_layer_snapshot():
+    """Generate ~/.observal/layer_snapshot.json scanning all detected IDEs.
+
+    Runs once after login to establish the initial baseline of the user's
+    IDE configuration state. Silent on failure.
+    """
+    try:
+        from observal_cli.layer import ensure_local_snapshot
+
+        ensure_local_snapshot()
+    except Exception:
+        pass  # Never block login on snapshot failure
 
 
 def _install_observal_skill():

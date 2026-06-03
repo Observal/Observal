@@ -197,6 +197,7 @@ class McpInstallRequest(BaseModel):
     ide: str
     env_values: dict[str, str] = {}
     header_values: dict[str, str] = {}
+    version: str | None = None  # Specific version to install (None = latest)
 
 
 class McpInstallResponse(BaseModel):

@@ -377,6 +377,54 @@ Rules:
 - Find something SPECIFIC and HUMAN. Not "the agent processed 1000 files" but "you discovered your WhatsApp bridge was broadcasting auth codes to all your contacts."
 - If session summaries contain anything amusing, surprising, or distinctly human, use that.
 - Avoid generic observations about volume or statistics.""",
+    "version_impact": """Analyze configuration differences across users of this agent and their impact on outcomes.
+
+{data_block}
+
+If the data block contains a 'version_impact' key with groups, analyze how different
+configurations (layer states) correlate with success or failure. This is CROSS-USER:
+multiple users of the same agent have different configs. Find patterns.
+
+RESPOND WITH ONLY A VALID JSON OBJECT (or null if no version_impact data):
+{{
+  "version_impact": {{
+    "summary": "1-2 sentence overview: how many distinct configs exist, which performs best",
+    "canonical_vs_dirty": {{
+      "canonical_count": "<number of groups with unmodified installs>",
+      "dirty_count": "<number of groups with user modifications>",
+      "finding": "Which performs better and why (based on content differences)"
+    }},
+    "best_practices": [
+      {{
+        "pattern": "What the high-performing configs have in common (e.g. 'includes explicit error handling rules in CLAUDE.md')",
+        "evidence": "Metric difference (e.g. '40% fewer tool errors, 0.82 success rate vs 0.61')",
+        "recommendation": "Actionable suggestion for other users"
+      }}
+    ],
+    "anti_patterns": [
+      {{
+        "pattern": "What the low-performing configs have in common (e.g. 'added overly restrictive rules that cause refusals')",
+        "evidence": "Metric difference",
+        "recommendation": "What to change or remove"
+      }}
+    ],
+    "version_findings": [
+      {{
+        "component": "Component name and type",
+        "finding": "e.g. 'users on skill v1.1.0 have 20% better outcomes than v1.0.0'"
+      }}
+    ]
+  }}
+}}
+
+Rules:
+- ANONYMIZE: never mention user names, emails, or identifiers. Say 'users with config X' not 'user john'.
+- Focus on CONTENT differences: what rules, agents, or skills differ between high and low performers.
+- If version pins differ between groups, highlight which versions correlate with better outcomes.
+- canonical (unmodified from registry) vs dirty (user-edited) is a key axis of comparison.
+- Be specific: quote actual rule content snippets that correlate with outcomes.
+- Minimum 3 sessions per group to draw conclusions (already filtered).
+- If all groups perform similarly, say so and skip the anti_patterns.""",
 }
 
 SYNTHESIS_PROMPT = """You're writing an "At a Glance" section for a usage insights report. The goal is to help the user understand their patterns and improve how they work with their AI coding agent.

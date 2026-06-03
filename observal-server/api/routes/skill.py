@@ -242,6 +242,24 @@ async def install_skill(
         if not listing or get_effective_component_permission(listing, current_user) != "owner":
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
 
+    # Resolve specific version if requested
+    version_override = None
+    if req.version:
+        from models.skill import SkillVersion
+
+        ver_stmt = select(SkillVersion).where(
+            SkillVersion.listing_id == listing.id,
+            SkillVersion.version == req.version,
+            SkillVersion.status == "approved",
+        )
+        ver_result = await db.execute(ver_stmt)
+        version_override = ver_result.scalar_one_or_none()
+        if not version_override:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Version {req.version!r} not found for this skill",
+            )
+
     db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     await db.commit()
 
@@ -249,7 +267,13 @@ async def install_skill(
     from services.skill_config_generator import generate_skill_config
 
     endpoints = await derive_endpoints(request)
-    config = generate_skill_config(listing, req.ide, server_url=endpoints["api"], scope=req.scope)
+    config = generate_skill_config(
+        listing,
+        req.ide,
+        server_url=endpoints["api"],
+        scope=req.scope,
+        version_override=version_override,
+    )
     return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 

@@ -292,6 +292,17 @@ def post_lines_chunked(
         if not success:
             return False
 
+        # On first chunk, upload layer snapshot if hash changed
+        if i == 0 and payload.get("layer_hash"):
+            _maybe_upload_layer_snapshot(
+                server_url=server_url,
+                access_token=access_token,
+                layer_hash=payload["layer_hash"],
+                ide=ide,
+                cwd=cwd,
+                config=config,
+            )
+
     return True
 
 
@@ -317,11 +328,13 @@ def build_payload(
     for other IDEs.
     """
     agent_id, agent_version = _resolve_agent(cwd, lines, session_jsonl)
+    layer_hash = _get_cached_layer_hash(session_id, cwd)
     payload: dict = {
         "session_id": session_id,
         "ide": "claude-code",
         "agent_id": agent_id,
         "agent_version": agent_version,
+        "layer_hash": layer_hash,
         "lines": lines,
         "start_offset": start_offset,
         "hook_event": hook_event,
@@ -331,7 +344,106 @@ def build_payload(
         payload["final"] = True
         payload["total_line_count"] = line_count_before + len(lines)
         payload["total_offset"] = new_offset
+        _evict_layer_hash_cache(session_id)
     return payload
+
+
+# Per-session layer_hash cache: avoids re-scanning IDE dirs on every chunk
+_layer_hash_cache: dict[str, str | None] = {}
+
+
+def _get_cached_layer_hash(session_id: str, cwd: str) -> str | None:
+    """Return cached layer_hash for this session, computing once on first call."""
+    if session_id not in _layer_hash_cache:
+        _layer_hash_cache[session_id] = _compute_layer_hash_safe(cwd, "claude-code")
+    return _layer_hash_cache[session_id]
+
+
+def _evict_layer_hash_cache(session_id: str) -> None:
+    """Remove cached hash when session ends (Stop event)."""
+    _layer_hash_cache.pop(session_id, None)
+
+
+def _compute_layer_hash_safe(cwd: str, ide: str) -> str | None:
+    """Compute layer_hash without ever blocking the session push.
+
+    Computes across ALL detected IDEs (not just the session's IDE).
+    Returns None on any failure.
+    """
+    try:
+        from observal_cli.layer import compute_layer_hash
+
+        return compute_layer_hash(ide=None, project_dir=cwd or None)
+    except Exception:
+        return None
+
+
+def _is_layer_canonical() -> bool | None:
+    """Check if the current layer state matches lockfile integrity (canonical).
+
+    Returns True if no drift detected, False if files were modified,
+    None if unable to determine.
+    """
+    try:
+        from observal_cli.layer import _compute_drift, _detect_active_ides, build_layer_manifest
+        from observal_cli.lockfile import read_lockfile
+
+        lockfile_data = read_lockfile()
+        ides_section: dict = {}
+        for scan_ide in _detect_active_ides():
+            ides_section[scan_ide] = build_layer_manifest(scan_ide, include_content=False)
+
+        drift = _compute_drift(lockfile_data, ides_section)
+        return drift["is_canonical"]
+    except Exception:
+        return None
+
+
+def _maybe_upload_layer_snapshot(
+    server_url: str,
+    access_token: str,
+    layer_hash: str,
+    ide: str,
+    cwd: str,
+    config: dict | None = None,
+) -> None:
+    """Upload layer snapshot to server if the hash has changed since last upload.
+
+    Fire-and-forget: never blocks session push on failure.
+    Saves the snapshot locally as ~/.observal/layer_snapshot.json (mirror of server).
+    """
+    try:
+        from observal_cli.layer import (
+            build_upload_payload,
+            needs_upload,
+            save_local_snapshot,
+        )
+
+        if not needs_upload(layer_hash):
+            return
+
+        # Build the full manifest with content
+        payload = build_upload_payload(ide, project_dir=cwd or None)
+
+        # POST to server
+        import httpx
+
+        url = f"{server_url.rstrip('/')}/api/v1/layer-snapshots"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code < 300:
+                # Save locally: same content as what server now has
+                save_local_snapshot(payload)
+                optic.debug("layer snapshot uploaded and saved locally: hash={}", layer_hash)
+            else:
+                optic.debug("layer snapshot upload failed: status={}", resp.status_code)
+    except Exception as e:
+        optic.debug("layer snapshot upload skipped: {}", e)
 
 
 def _resolve_agent(cwd: str, lines: list[str], session_jsonl: Path | None) -> tuple[str | None, str | None]:
@@ -339,6 +451,7 @@ def _resolve_agent(cwd: str, lines: list[str], session_jsonl: Path | None) -> tu
 
     1. OBSERVAL_AGENT_NAME env var (Kiro per-agent hook commands)
     2. agent-setting line in JSONL (Claude Code embeds active agent)
+    3. Lock file lookup by cwd + IDE
     """
     import os
 
@@ -351,6 +464,19 @@ def _resolve_agent(cwd: str, lines: list[str], session_jsonl: Path | None) -> tu
     agent_from_jsonl = _parse_agent_from_lines(lines)
     if agent_from_jsonl:
         return agent_from_jsonl, None
+
+    # 3. Lock file lookup
+    if cwd:
+        try:
+            from observal_cli.lockfile import get_agent_for_directory
+
+            # Try common IDEs (the caller may override ide later)
+            for ide in ("claude-code", "cursor", "kiro", "pi"):
+                agent = get_agent_for_directory(ide, cwd)
+                if agent:
+                    return agent.get("id") or agent.get("name"), agent.get("version")
+        except Exception:
+            pass
 
     return None, None
 

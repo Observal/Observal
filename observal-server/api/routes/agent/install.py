@@ -62,7 +62,27 @@ async def install_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to install this agent")
-    if not agent.latest_version:
+
+    # Resolve specific version if requested, otherwise use latest
+    if req.version:
+        from models.agent import AgentVersion
+
+        version_stmt = select(AgentVersion).where(
+            AgentVersion.agent_id == agent.id,
+            AgentVersion.version == req.version,
+            AgentVersion.status == AgentStatus.approved,
+        )
+        version_result = await db.execute(version_stmt)
+        target_version = version_result.scalar_one_or_none()
+        if not target_version:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Version {req.version!r} not found or not approved for this agent",
+            )
+        # Use the target version for config gen without mutating the ORM object
+        # (dirtying agent would persist on db.commit and corrupt latest_version for all users)
+        install_version = target_version  # noqa: F841
+    elif not agent.latest_version:
         raise HTTPException(status_code=400, detail="Agent has no published version available for install")
 
     # Pre-load MCP listings for config generation

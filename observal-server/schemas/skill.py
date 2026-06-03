@@ -120,6 +120,7 @@ class SkillListingSummary(BaseModel):
 class SkillInstallRequest(BaseModel):
     ide: str
     scope: str = "project"
+    version: str | None = None  # Specific version to install (None = latest)
 
 
 class SkillInstallResponse(BaseModel):

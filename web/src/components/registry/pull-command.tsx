@@ -17,12 +17,16 @@ import {
 } from "@/components/ui/select";
 import { useIdes } from "@/hooks/use-ides";
 
-export function PullCommand({ agentName }: { agentName: string }) {
+export function PullCommand({ agentName, versions }: { agentName: string; versions?: { version: string; status: string }[] }) {
   const { data: ides } = useIdes();
   const [ide, setIde] = useState("cursor");
   const [copied, setCopied] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<string>("latest");
 
-  const command = `observal agent pull ${agentName} --ide ${ide}`;
+  const approvedVersions = (versions ?? []).filter((v) => v.status === "approved");
+
+  const versionFlag = selectedVersion && selectedVersion !== "latest" ? ` --version ${selectedVersion}` : "";
+  const command = `observal agent pull ${agentName} --ide ${ide}${versionFlag}`;
 
   function handleCopy() {
     copyToClipboard(command);
@@ -36,7 +40,22 @@ export function PullCommand({ agentName }: { agentName: string }) {
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
         <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground">Install</span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {approvedVersions.length > 1 && (
+            <Select value={selectedVersion} onValueChange={setSelectedVersion}>
+              <SelectTrigger className="h-7 w-[100px] text-xs border-border">
+                <SelectValue placeholder="latest" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="latest">latest</SelectItem>
+                {approvedVersions.map((v) => (
+                  <SelectItem key={v.version} value={v.version}>
+                    v{v.version}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={ide} onValueChange={setIde}>
             <SelectTrigger className="h-7 w-[130px] text-xs border-border">
               <SelectValue />

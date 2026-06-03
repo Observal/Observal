@@ -34,26 +34,33 @@ def _short_description(desc: str, max_len: int = 200) -> str:
     return sentence.strip()
 
 
-def _generate_skill_file(skill_listing, ide: str, scope: str = "project") -> dict | None:
+def _generate_skill_file(skill_source, ide: str, scope: str = "project") -> dict | None:
     """Generate an IDE-specific skill file dict with path and content.
 
+    skill_source can be a SkillListing or SkillVersion (both have skill_md_content).
     Returns None for monolithic IDEs (gemini, codex, copilot) that inline
     skills into their rules markdown.
     """
-    optic.debug("generating skill config for {} (ide={}, scope={})", skill_listing.name, ide, scope)
+    name_attr = getattr(skill_source, "name", None)
+    # SkillVersion doesn't have .name, get it from the listing relationship
+    if not name_attr and hasattr(skill_source, "listing"):
+        name_attr = getattr(skill_source.listing, "name", "skill")
+    if not name_attr:
+        name_attr = "skill"
+    optic.debug("generating skill config for {} (ide={}, scope={})", name_attr, ide, scope)
     ide_key = ide.replace("_", "-")
     spec = IDE_REGISTRY.get(ide_key, {})
     skill_paths = spec.get("skill_file")
     if not skill_paths:
         return None
 
-    name = _sanitize_name(skill_listing.name)
-    desc = getattr(skill_listing, "description", "") or ""
-    slash_cmd = getattr(skill_listing, "slash_command", None)
+    name = _sanitize_name(name_attr)
+    desc = getattr(skill_source, "description", "") or ""
+    slash_cmd = getattr(skill_source, "slash_command", None)
     path = skill_paths.get(scope, next(iter(skill_paths.values()))).format(name=name)
 
     # Fast path: verbatim SKILL.md cached from the git repo.
-    skill_md_content = getattr(skill_listing, "skill_md_content", None)
+    skill_md_content = getattr(skill_source, "skill_md_content", None)
     if skill_md_content:
         return {"path": path, "content": skill_md_content}
 
@@ -78,8 +85,13 @@ def generate_skill_config(
     ide: str,
     server_url: str = "http://localhost:8000",
     scope: str = "project",
+    version_override=None,
 ) -> dict:
-    """Generate config snippet for skill install: telemetry hooks + skill file."""
+    """Generate config snippet for skill install: telemetry hooks + skill file.
+
+    If version_override is provided, uses content from that specific version
+    instead of the listing's latest content.
+    """
     optic.trace("generating skill frontmatter for {} on {}", skill_listing.name, ide)
     skill_id = str(skill_listing.id)
     skill_name = str(skill_listing.name)
@@ -107,33 +119,41 @@ def generate_skill_config(
     }
 
     # Always include git coordinates - they are the install-time source of truth.
-    git_url = getattr(skill_listing, "git_url", None)
+    # When a specific version is requested, use its content over the listing's.
+    source = version_override if version_override else skill_listing
+
+    git_url = getattr(source, "git_url", None) or getattr(skill_listing, "git_url", None)
     if git_url:
         config["skill"]["git_url"] = git_url
-    skill_path = getattr(skill_listing, "skill_path", None)
+    skill_path = getattr(source, "skill_path", None) or getattr(skill_listing, "skill_path", None)
     if skill_path:
         config["skill"]["skill_path"] = skill_path
-    git_ref = getattr(skill_listing, "git_ref", None)
+    git_ref = getattr(source, "git_ref", None) or getattr(skill_listing, "git_ref", None)
     if git_ref:
         config["skill"]["git_ref"] = git_ref
     # Cache skill_md_content as a fast-path fallback (no git needed at install time).
-    skill_md_content = getattr(skill_listing, "skill_md_content", None)
+    skill_md_content = getattr(source, "skill_md_content", None)
     if skill_md_content:
         config["skill"]["skill_md_content"] = skill_md_content
 
     # Delivery mode and registry-direct script
-    delivery_mode = getattr(skill_listing, "delivery_mode", "git_fetch")
+    delivery_mode = getattr(source, "delivery_mode", None) or getattr(skill_listing, "delivery_mode", "git_fetch")
     config["skill"]["delivery_mode"] = delivery_mode
     if delivery_mode == "registry_direct":
-        script_content = getattr(skill_listing, "script_content", None)
-        script_filename = getattr(skill_listing, "script_filename", None)
+        script_content = getattr(source, "script_content", None)
+        script_filename = getattr(source, "script_filename", None)
         if script_content:
             config["skill"]["script_content"] = script_content
         if script_filename:
             config["skill"]["script_filename"] = script_filename
 
+    # Include version info in the response
+    if version_override:
+        config["skill"]["version"] = getattr(version_override, "version", None)
+        config["skill"]["latest_version"] = getattr(skill_listing, "version", None)
+
     # Generate IDE-specific skill file
-    skill_file = _generate_skill_file(skill_listing, ide, scope)
+    skill_file = _generate_skill_file(source, ide, scope)
     if skill_file:
         config["skill_file"] = skill_file
 

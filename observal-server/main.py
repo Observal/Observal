@@ -53,6 +53,7 @@ from api.routes.hook import router as hook_router
 from api.routes.ingest import router as ingest_router
 from api.routes.insights import router as insights_router
 from api.routes.jwks import router as jwks_router
+from api.routes.layer_snapshot import router as layer_snapshot_router
 from api.routes.logs_stream import router as logs_stream_router
 from api.routes.mcp import router as mcp_router
 from api.routes.preview import router as preview_router
@@ -445,6 +446,7 @@ app.include_router(co_authors_router)
 app.include_router(config_router)
 app.include_router(registry_models_router)
 app.include_router(support_router)
+app.include_router(layer_snapshot_router)
 app.include_router(logs_stream_router)
 # Audit CLI event endpoint (license-gated internally, mounted always so
 # CLI gets a clean 200 "skipped" response rather than 404 when unlicensed)

@@ -433,12 +433,12 @@ async def fetch_session_stats(
     query = get_query()
 
     sql = """
-        SELECT session_id, total_credits, ide
+        SELECT session_id, total_credits, ide, layer_hash
         FROM session_stats_agg FINAL
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND last_event_time >= {t_start:String}
           AND last_event_time <= {t_end:String}
-        GROUP BY session_id, total_credits, ide
+        GROUP BY session_id, total_credits, ide, layer_hash
         FORMAT JSON
     """
     params = {
@@ -456,6 +456,7 @@ async def fetch_session_stats(
             row["session_id"]: {
                 "credits": float(row.get("total_credits") or 0),
                 "ide": row.get("ide", ""),
+                "layer_hash": row.get("layer_hash", ""),
             }
             for row in rows
         }

@@ -987,8 +987,8 @@ def _show_impl(mcp_id, output):
             rprint(f"  {icon} {v['stage']}: {v.get('details', '') or 'passed'}")
 
 
-def _install_impl(mcp_id, ide, raw):
-    optic.trace("mcp_id={}, ide={}", mcp_id, ide)
+def _install_impl(mcp_id, ide, raw, version=None):
+    optic.trace("mcp_id={}, ide={}, version={}", mcp_id, ide, version)
     import json as _json
 
     resolved = config.resolve_alias(mcp_id)
@@ -1046,15 +1046,33 @@ def _install_impl(mcp_id, ide, raw):
             header_values[h["name"]] = f"<{h['name']}>"
 
     with spinner(f"Generating {ide} config..."):
+        install_body = {"ide": ide, "env_values": env_values, "header_values": header_values}
+        if version:
+            install_body["version"] = version
         result = client.post(
             f"/api/v1/mcps/{resolved}/install",
-            {"ide": ide, "env_values": env_values, "header_values": header_values},
+            install_body,
         )
 
     snippet = result.get("config_snippet", {})
     if raw:
         print(_json.dumps(snippet, indent=2))
         return
+
+    # Write to lock file (track the install regardless of how user applies config)
+    try:
+        from observal_cli.lockfile import upsert_standalone
+
+        upsert_standalone(
+            ide,
+            component_type="mcp",
+            name=listing.get("name", resolved),
+            component_id=str(listing.get("id", resolved)),
+            version=version or listing.get("version") or listing.get("latest_version"),
+            scope="user",
+        )
+    except Exception:
+        pass  # Never block install on lockfile failure
 
     ide_config_paths = {
         "kiro": ".kiro/settings/mcp.json",
@@ -1284,6 +1302,9 @@ def install(
     mcp_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     ide: str = typer.Option(..., "--ide", "-i", help="Target IDE"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only (for piping)"),
+    version: str | None = typer.Option(
+        None, "--version", "-V", help="Install a specific version (e.g. '2.1.0'). Defaults to latest."
+    ),
 ):
     """Generate an install config snippet for an MCP server.
 
@@ -1308,7 +1329,7 @@ def install(
         observal registry mcp install @db --ide kiro
     """
     optic.trace("mcp_id={}, ide={}", mcp_id, ide)
-    _install_impl(mcp_id, ide, raw)
+    _install_impl(mcp_id, ide, raw, version=version)
 
 
 @mcp_app.command(name="edit")

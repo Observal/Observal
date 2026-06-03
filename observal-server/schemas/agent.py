@@ -208,6 +208,7 @@ class AgentInstallRequest(BaseModel):
     # IDE-specific install options (e.g. scope, model, tools, color for Claude Code)
     options: dict = {}
     platform: str = ""  # e.g. "win32", "darwin", "linux" - empty = Unix default
+    version: str | None = None  # Specific version to install (None = latest)
 
 
 class AgentInstallResponse(BaseModel):

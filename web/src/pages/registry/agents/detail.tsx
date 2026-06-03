@@ -454,7 +454,7 @@ export default function AgentDetailPage() {
 
               {/* Pull command (mobile only) */}
               <div className="lg:hidden">
-                <PullCommand agentName={a.name} />
+                <PullCommand agentName={a.name} versions={versions} />
               </div>
 
               {/* Tabs */}
@@ -660,7 +660,7 @@ export default function AgentDetailPage() {
                       Use the Observal CLI to pull this agent into your project.
                     </p>
                   </div>
-                  <PullCommand agentName={a.name} />
+                  <PullCommand agentName={a.name} versions={versions} />
 
                   <Separator />
 
@@ -697,7 +697,7 @@ export default function AgentDetailPage() {
 
             {/* Sidebar (desktop) */}
             <aside className="hidden lg:block space-y-5 animate-in stagger-1">
-              <PullCommand agentName={a.name} />
+              <PullCommand agentName={a.name} versions={versions} />
 
               <div className="border border-border rounded-md p-4 space-y-4">
                 <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">

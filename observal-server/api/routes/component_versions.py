@@ -170,6 +170,31 @@ async def _publish_version(
     )
     for field_name, value in extra_fields.items():
         setattr(ver, field_name, value)
+
+    # Auto-snapshot content from listing when not explicitly provided in extras.
+    # This ensures each version preserves the content at publish time.
+    content_fields = {
+        "skill": [
+            "skill_md_content",
+            "script_content",
+            "script_filename",
+            "delivery_mode",
+            "git_url",
+            "git_ref",
+            "skill_path",
+            "task_type",
+        ],
+        "hook": ["hook_content", "script_content", "handler_type", "event", "git_url", "git_ref"],
+        "prompt": ["template", "category"],
+        "mcp": ["git_url", "git_ref", "command", "args", "url", "transport"],
+        "sandbox": ["dockerfile_content", "git_url", "git_ref"],
+    }
+    for field in content_fields.get(component_type, []):
+        if field not in extra_fields and hasattr(listing, field):
+            listing_val = getattr(listing, field, None)
+            if listing_val is not None and hasattr(ver, field):
+                setattr(ver, field, listing_val)
+
     db.add(ver)
     await db.commit()
 
@@ -179,6 +204,7 @@ async def _publish_version(
 async def _version_suggestions(
     listing_id: str,
     listing_model,
+    version_model,
     db: AsyncSession,
     current_user: User,
 ) -> dict:
@@ -187,10 +213,24 @@ async def _version_suggestions(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
-    from services.versioning import suggest_versions
+    from services.versioning import parse_semver, suggest_versions
 
-    current = listing.latest_version.version if listing.latest_version else "0.0.0"
-    return {"current": current, "suggestions": suggest_versions(current)}
+    # Use the highest existing version (including pending) to avoid duplicate suggestions
+    all_ver_stmt = (
+        select(version_model.version)
+        .where(version_model.listing_id == listing.id)
+        .order_by(version_model.released_at.desc())
+    )
+    all_ver_result = await db.execute(all_ver_stmt)
+    all_versions = [v for (v,) in all_ver_result.all()]
+
+    highest = listing.latest_version.version if listing.latest_version else "0.0.0"
+    for v in all_versions:
+        parsed = parse_semver(v)
+        if parsed and parsed > (parse_semver(highest) or (0, 0, 0)):
+            highest = v
+
+    return {"current": highest, "suggestions": suggest_versions(highest)}
 
 
 async def _review_version(
@@ -346,6 +386,7 @@ def create_version_router(
         return await _version_suggestions(
             listing_id=listing_id,
             listing_model=listing_model,
+            version_model=version_model,
             db=db,
             current_user=current_user,
         )
