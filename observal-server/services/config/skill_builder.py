@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Consolidated skill file builder.
@@ -12,11 +13,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import yaml
+
 from schemas.ide_registry import IDE_REGISTRY
+from schemas.skill_commands import normalize_slash_command
 from services.shared.utils import sanitize_name as _sanitize_name
+from services.skill_validator import validate_skill_md_content_frontmatter
 
 if TYPE_CHECKING:
     from services.agent_builder_types import AgentFile, AgentManifest
+
+
+def _yaml_frontmatter(data: dict[str, str | bool]) -> str:
+    body = yaml.safe_dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True).strip()
+    return f"---\n{body}\n---\n\n"
 
 
 def generate_skill_file(skill: dict, ide: str, scope: str = "project") -> dict | None:
@@ -40,14 +50,15 @@ def generate_skill_file(skill: dict, ide: str, scope: str = "project") -> dict |
 
     skill_format = spec.get("skill_format")
     if skill_format == "yaml_frontmatter":
-        content = f"---\nname: {name}\n"
+        frontmatter = {"name": name}
         if desc:
-            content += f'description: "{desc}"\n'
+            frontmatter["description"] = desc
         if slash_cmd and ide_key == "claude-code":
-            content += f"command: /{slash_cmd}\n"
-        content += f"---\n\n{desc}\n"
+            frontmatter["command"] = f"/{normalize_slash_command(slash_cmd)}"
+        content = _yaml_frontmatter(frontmatter) + f"{desc}\n"
     else:
-        content = f"---\ndescription: {desc}\nalwaysApply: false\n---\n\n# {name}\n\n{desc}\n"
+        frontmatter = {"description": desc, "alwaysApply": False}
+        content = _yaml_frontmatter(frontmatter) + f"# {name}\n\n{desc}\n"
 
     return {"path": path, "content": content}
 
@@ -79,19 +90,21 @@ def build_skill_files(manifest: AgentManifest, ide: str) -> list[AgentFile]:
         # Fast path: verbatim SKILL.md from git repo
         skill_md_content: str | None = (skill.config_override or {}).get("skill_md_content")
         if skill_md_content:
+            validate_skill_md_content_frontmatter(skill_md_content, slash_command=skill.slash_command)
             files.append(AgentFile(path=path, content=skill_md_content, format="markdown"))
             continue
 
         # Fallback: synthetic stub
         if skill_format == "yaml_frontmatter":
-            content = f"---\nname: {name}\n"
+            frontmatter = {"name": name}
             if desc:
-                content += f'description: "{desc}"\n'
+                frontmatter["description"] = desc
             if skill.slash_command and ide_key == "claude-code":
-                content += f"command: /{skill.slash_command}\n"
-            content += f"---\n\n{desc}\n"
+                frontmatter["command"] = f"/{normalize_slash_command(skill.slash_command)}"
+            content = _yaml_frontmatter(frontmatter) + f"{desc}\n"
         else:
-            content = f"---\ndescription: {desc}\nalwaysApply: false\n---\n\n# {name}\n\n{desc}\n"
+            frontmatter = {"description": desc, "alwaysApply": False}
+            content = _yaml_frontmatter(frontmatter) + f"# {name}\n\n{desc}\n"
 
         files.append(AgentFile(path=path, content=content, format="markdown"))
 
