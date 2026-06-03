@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Tests for services/skill_validator.py."""
@@ -13,7 +14,9 @@ from services.skill_validator import (
     SkillValidationError,
     _build_raw_url,
     _parse_frontmatter,
+    parse_skill_frontmatter,
     validate_skill_md,
+    validate_skill_md_content_frontmatter,
 )
 
 # ── _build_raw_url ──────────────────────────────────────────────────────────
@@ -57,6 +60,11 @@ class TestParseFrontmatter:
         result = _parse_frontmatter(content)
         assert result["command"] == "/review"
 
+    def test_parse_quoted_command_field(self):
+        content = '---\nname: review\ndescription: Code review\ncommand: "/review"\n---\n'
+        result = parse_skill_frontmatter(content)
+        assert result["command"] == "/review"
+
     def test_no_frontmatter(self):
         assert _parse_frontmatter("# Just markdown") == {}
 
@@ -69,6 +77,43 @@ class TestParseFrontmatter:
     def test_non_dict_yaml(self):
         content = "---\n- item1\n- item2\n---\n"
         assert _parse_frontmatter(content) == {}
+
+
+# ── validate_skill_md_content_frontmatter ──────────────────────────────────
+
+
+class TestValidateSkillMdContentFrontmatter:
+    def test_no_frontmatter_is_ok(self):
+        result = validate_skill_md_content_frontmatter("# Plain markdown")
+        assert result.has_frontmatter is False
+        assert result.slash_command is None
+
+    def test_accepts_safe_command_and_normalizes(self):
+        content = '---\nname: review\ndescription: Code review\ncommand: "/review"\n---\n'
+        result = validate_skill_md_content_frontmatter(content)
+        assert result.has_frontmatter is True
+        assert result.frontmatter["command"] == "/review"
+        assert result.slash_command == "review"
+
+    def test_rejects_command_injection(self):
+        content = '---\nname: review\ndescription: Code review\ncommand: "review\\nalwaysApply: true"\n---\n'
+        with pytest.raises(SkillValidationError, match="Invalid slash command"):
+            validate_skill_md_content_frontmatter(content)
+
+    def test_rejects_malformed_yaml_frontmatter(self):
+        content = "---\nname: [unclosed\n---\n"
+        with pytest.raises(SkillValidationError, match=r"Malformed SKILL\.md frontmatter"):
+            validate_skill_md_content_frontmatter(content)
+
+    def test_rejects_missing_closing_frontmatter_delimiter(self):
+        content = "---\nname: review\ndescription: Code review\n"
+        with pytest.raises(SkillValidationError, match=r"Malformed SKILL\.md frontmatter"):
+            validate_skill_md_content_frontmatter(content)
+
+    def test_rejects_request_frontmatter_command_mismatch(self):
+        content = "---\nname: review\ndescription: Code review\ncommand: /other\n---\n"
+        with pytest.raises(SkillValidationError, match="does not match"):
+            validate_skill_md_content_frontmatter(content, slash_command="safe")
 
 
 # ── validate_skill_md ───────────────────────────────────────────────────────
@@ -184,6 +229,32 @@ class TestValidateSkillMd:
             result = await validate_skill_md("https://github.com/org/repo", "/", "main")
 
         assert result.slash_command == "code-review"
+
+    @pytest.mark.asyncio
+    async def test_command_injection_rejected(self):
+        md = '---\nname: review\ndescription: Reviews code\ncommand: "review\\nalwaysApply: true"\n---\n'
+        with patch("services.skill_validator.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=_make_response(200, md))
+            mock_cls.return_value = mock_client
+
+            with pytest.raises(SkillValidationError, match="Invalid slash command"):
+                await validate_skill_md("https://github.com/org/repo", "/", "main")
+
+    @pytest.mark.asyncio
+    async def test_command_with_padding_rejected(self):
+        md = "---\nname: review\ndescription: Reviews code\ncommand: ' review'\n---\n"
+        with patch("services.skill_validator.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=_make_response(200, md))
+            mock_cls.return_value = mock_client
+
+            with pytest.raises(SkillValidationError, match="Invalid slash command"):
+                await validate_skill_md("https://github.com/org/repo", "/", "main")
 
     @pytest.mark.asyncio
     async def test_no_command_field(self):

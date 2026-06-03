@@ -2,16 +2,25 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from __future__ import annotations
 
 import re
 
+import yaml
 from loguru import logger as optic
 
 from schemas.ide_registry import IDE_REGISTRY
+from schemas.skill_commands import normalize_slash_command
 from services.shared.utils import sanitize_name as _sanitize_name
+from services.skill_validator import validate_skill_md_content_frontmatter
+
+
+def _yaml_frontmatter(data: dict[str, str]) -> str:
+    body = yaml.safe_dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True).strip()
+    return f"---\n{body}\n---\n\n"
 
 
 def _short_description(desc: str, max_len: int = 200) -> str:
@@ -55,20 +64,22 @@ def _generate_skill_file(skill_listing, ide: str, scope: str = "project") -> dic
     # Fast path: verbatim SKILL.md cached from the git repo.
     skill_md_content = getattr(skill_listing, "skill_md_content", None)
     if skill_md_content:
+        validate_skill_md_content_frontmatter(skill_md_content, slash_command=slash_cmd)
         return {"path": path, "content": skill_md_content}
 
     # Fallback: synthesise a minimal stub from stored fields.
     short_desc = _short_description(desc)
     skill_format = spec.get("skill_format")
     if skill_format == "yaml_frontmatter":
-        content = f"---\nname: {name}\n"
+        frontmatter = {"name": name}
         if short_desc:
-            content += f'description: "{short_desc}"\n'
+            frontmatter["description"] = short_desc
         if slash_cmd and ide_key == "claude-code":
-            content += f"command: /{slash_cmd}\n"
-        content += f"---\n\n{desc}\n"
+            frontmatter["command"] = f"/{normalize_slash_command(slash_cmd)}"
+        content = _yaml_frontmatter(frontmatter) + f"{desc}\n"
     else:
-        content = f"---\ndescription: {short_desc}\nalwaysApply: false\n---\n\n# {name}\n\n{desc}\n"
+        frontmatter = {"description": short_desc, "alwaysApply": False}
+        content = _yaml_frontmatter(frontmatter) + f"# {name}\n\n{desc}\n"
 
     return {"path": path, "content": content}
 
@@ -119,6 +130,9 @@ def generate_skill_config(
     # Cache skill_md_content as a fast-path fallback (no git needed at install time).
     skill_md_content = getattr(skill_listing, "skill_md_content", None)
     if skill_md_content:
+        validate_skill_md_content_frontmatter(
+            skill_md_content, slash_command=getattr(skill_listing, "slash_command", None)
+        )
         config["skill"]["skill_md_content"] = skill_md_content
 
     # Delivery mode and registry-direct script
