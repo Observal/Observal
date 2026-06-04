@@ -25,6 +25,7 @@ import {
 	AlertTriangle,
 	ShieldAlert,
 } from "lucide-react";
+import { InsightsSection } from "./settings/insights-section";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAdminSettings, useSystemWarnings } from "@/hooks/use-api";
@@ -1559,6 +1560,22 @@ export default function SettingsPage() {
 							{SETTING_SECTIONS.filter((s) => !s.danger && (!s.requiresFeature || licensedFeatures.includes(s.requiresFeature) || licensedFeatures.includes("all"))).map((section) => {
 								const visibleSettings = section.settings.filter((d) => !d.requiresFeature || licensedFeatures.includes(d.requiresFeature) || licensedFeatures.includes("all"));
 								if (visibleSettings.length === 0) return null;
+
+								if (section.title === "Agent Insights") {
+									return (
+										<InsightsSection
+											key={section.title}
+											entries={entries as { key: string; value: string; is_sensitive?: boolean; is_set?: boolean }[]}
+											onSave={async (key, value) => {
+												await admin.updateSetting(key, { value });
+												refetch();
+											}}
+											onRevoke={(key) => setRevokeConfirmKey(key)}
+											refetch={refetch}
+										/>
+									);
+								}
+
 								// Check for deprecated AWS settings that are still configured
 								const deprecatedAwsKeys = ["insights.aws_region", "insights.aws_access_key_id", "insights.aws_secret_access_key", "insights.aws_session_token", "insights.model_url", "insights.model_api_key"];
 								const hasNewApiKey = entries.some((e) => e.key === "insights.api_key" && e.value && e.value !== "");

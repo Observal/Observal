@@ -583,6 +583,14 @@ export const admin = {
 			`/admin/settings/${key}/revoke`,
 			{},
 		),
+	testInsightsConnection: (body?: { model?: string }) =>
+		post<{
+			success: boolean;
+			model?: string;
+			latency_ms?: number;
+			error?: string;
+			hint?: string;
+		}>("/admin/insights/test-connection", body ?? {}),
 	users: () => get<AdminUser[]>("/admin/users"),
 	createUser: (body: {
 		email: string;

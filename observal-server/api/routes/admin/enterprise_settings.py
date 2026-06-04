@@ -4,8 +4,12 @@
 
 """Admin settings, diagnostics, and resource tuning routes."""
 
+import time
+
+import litellm
 from fastapi import Depends, HTTPException
 from loguru import logger as optic
+from pydantic import BaseModel
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +19,7 @@ from config import HAS_LICENSE, settings
 from models.enterprise_config import EnterpriseConfig
 from models.user import User, UserRole
 from schemas.admin import EnterpriseConfigResponse, EnterpriseConfigUpdate, SettingRevokedResponse
+from services.insights import _normalize_model_id
 from services.secrets_redactor import REDACTED
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
@@ -321,3 +326,95 @@ async def apply_resources(
         "applied": {k: current[k] for k in applied_keys},
         "message": "ClickHouse resource settings applied",
     }
+
+
+# ── Insights Test Connection ───────────────────────────────
+
+
+class _TestConnectionRequest(BaseModel):
+    model: str | None = None
+
+
+class _TestConnectionResponse(BaseModel):
+    success: bool
+    model: str | None = None
+    latency_ms: int | None = None
+    error: str | None = None
+    hint: str | None = None
+
+
+def _get_connection_error_hint(error_str: str, model: str) -> str:
+    model_lower = model.lower()
+    if "model identifier is invalid" in error_str or "model_not_found" in error_str:
+        if "bedrock" in model_lower:
+            return (
+                "Model ID is not available in your region. "
+                "Ensure the Base URL region matches where the model is enabled. "
+                "Cross-region models use prefixes like us./eu./apac. (e.g., bedrock/us.anthropic.claude-sonnet-4-6-v1)."
+            )
+        return "Model ID not recognized. Verify the format: provider/model-name"
+    if "auth" in error_str or "401" in error_str or "invalid api key" in error_str or "forbidden" in error_str:
+        if "anthropic" in model_lower:
+            return "Invalid API key. Get one at console.anthropic.com"
+        if "bedrock" in model_lower:
+            return "Bearer token may be expired. Regenerate in AWS Console."
+        if "openai" in model_lower:
+            return "Invalid API key. Get one at platform.openai.com/api-keys"
+        if "gemini" in model_lower:
+            return "Invalid API key. Get one at aistudio.google.com/apikey"
+        return "Authentication failed. Verify your API key."
+    if "timeout" in error_str or "timed out" in error_str or "connect" in error_str:
+        return "Could not reach endpoint. Check your Base URL and network connectivity."
+    if "not found" in error_str or "does not exist" in error_str or "unknown provider" in error_str:
+        return "Model ID not recognized. Verify the format: provider/model-name"
+    if "rate" in error_str or "429" in error_str:
+        return "Rate limited by provider. The key is valid, try again in a moment."
+    if "access" in error_str and "bedrock" in model_lower:
+        return "Model access not enabled. Enable the model in your AWS Bedrock console for this region."
+    return "Connection test failed. Check your settings and try again."
+
+
+@router.post("/insights/test-connection", response_model=_TestConnectionResponse)
+async def test_insights_connection(
+    req: _TestConnectionRequest,
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Test LLM connectivity with a minimal prompt."""
+    api_key = await ds.get("insights.api_key")
+    api_base = await ds.get("insights.api_base")
+    aws_region = await ds.get("insights.aws_region")
+    model = req.model or await ds.get("insights.model_sections")
+
+    if not model:
+        return _TestConnectionResponse(
+            success=False,
+            error="No model configured",
+            hint="Set the Sections Model first, or provide a model in the request.",
+        )
+
+    model = _normalize_model_id(model)
+
+    kwargs: dict = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Say hello in exactly one word."}],
+        "max_tokens": 10,
+        "timeout": 15,
+        "drop_params": True,
+    }
+    if api_key:
+        kwargs["api_key"] = api_key
+    if api_base:
+        kwargs["api_base"] = api_base
+    if aws_region and "bedrock" in model:
+        kwargs["aws_region_name"] = aws_region
+
+    start = time.time()
+    try:
+        await litellm.acompletion(**kwargs)
+        latency_ms = int((time.time() - start) * 1000)
+        return _TestConnectionResponse(success=True, model=model, latency_ms=latency_ms)
+    except Exception as e:
+        optic.warning("insights connection test failed, model={}, error={}", model, str(e))
+        error_str = str(e).lower()
+        hint = _get_connection_error_hint(error_str, model)
+        return _TestConnectionResponse(success=False, model=model, error=str(e)[:200], hint=hint)
