@@ -157,7 +157,7 @@ def _build_auth(config, sp_private_key: str, request_data: dict) -> OneLogin_Sam
 async def _issue_tokens(user: User) -> tuple[str, str, int]:
     access_token, expires_in = create_access_token(user.id, user.role)
     refresh_token, jti = create_refresh_token(user.id, user.role)
-    refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 7) * 86400
+    refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 30) * 86400
     redis = get_redis()
     await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
     await redis.delete(f"revoked_user:{user.id}")

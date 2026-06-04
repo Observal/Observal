@@ -196,7 +196,7 @@ DEFAULTS: dict[str, str] = {
     "saml.sp_key_encryption_password": "",
     # JWT (runtime-tunable expiry settings)
     "jwt.access_token_expire_minutes": "60",
-    "jwt.refresh_token_expire_days": "7",
+    "jwt.refresh_token_expire_days": "30",
     "jwt.hooks_token_expire_minutes": "43200",
     # Resources
     "resource.db_pool_size": "10",

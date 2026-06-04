@@ -139,6 +139,20 @@ async def lifespan(app: FastAPI):
 
     from database import async_session as _session_factory
 
+    # Migrate refresh token expiry: 7 → 30 days
+    async with _session_factory() as db:
+        from models.enterprise_config import EnterpriseConfig
+
+        result = await db.execute(
+            select(EnterpriseConfig).where(EnterpriseConfig.key == "jwt.refresh_token_expire_days")
+        )
+        cfg = result.scalar_one_or_none()
+        if cfg and cfg.value == "7":
+            cfg.value = "30"
+            await db.commit()
+            await ds.invalidate("jwt.refresh_token_expire_days")
+            await ds.refresh_sync_cache()
+
     # Ensure default org exists and backfill any users missing one
     async with _session_factory() as db:
         default_org = await get_or_create_default_org(db)

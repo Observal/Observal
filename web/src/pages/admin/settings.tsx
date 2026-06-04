@@ -106,7 +106,7 @@ function getPlaceholder(key: string): string {
 		"saml.sp_key_encryption_password": "strong-random-password",
 		// JWT
 		"jwt.access_token_expire_minutes": "60",
-		"jwt.refresh_token_expire_days": "7",
+		"jwt.refresh_token_expire_days": "30",
 		"jwt.hooks_token_expire_minutes": "43200",
 		// Resources
 		"resource.db_pool_size": "10",
@@ -433,7 +433,7 @@ const SETTING_SECTIONS: SettingSection[] = [
 				label: "Refresh Token Lifetime",
 				subtitle: "Days before refresh tokens expire",
 				tooltip:
-					"How long a refresh token is valid. After expiry, users must re-authenticate fully (login again). Shorter = more secure but users log in more often. Default: 7 days.",
+					"How long a refresh token is valid. After expiry, users must re-authenticate fully (login again). Shorter = more secure but users log in more often. Default: 30 days.",
 			},
 			{
 				key: "jwt.hooks_token_expire_minutes",

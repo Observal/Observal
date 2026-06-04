@@ -251,6 +251,7 @@ async function request<T = unknown>(
 			clearSession();
 			if (typeof window !== "undefined") {
 				window.location.href = "/login?reason=session_expired";
+				return new Promise<T>(() => {});
 			}
 			throw new Error("Session expired");
 		}

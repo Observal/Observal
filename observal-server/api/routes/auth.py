@@ -122,7 +122,7 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
 
     try:
         redis = get_redis()
-        refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 7) * 86400
+        refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 30) * 86400
         await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
         # Clear any logout revocation so hooks resume after re-login
         await redis.delete(f"revoked_user:{user.id}")
@@ -620,7 +620,7 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
     new_refresh_token, new_jti = create_refresh_token(user.id, user.role, groups=groups)
 
     try:
-        refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 7) * 86400
+        refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 30) * 86400
         await redis.setex(f"refresh_jti:{new_jti}", refresh_ttl, str(user.id))
     except RedisError as e:
         optic.warning("Redis unavailable when storing new refresh JTI: {}", e)

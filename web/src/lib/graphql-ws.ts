@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { createClient, type Client } from "graphql-ws";
+import { clearSession } from "@/lib/api";
 
 function getWsUrl(): string {
   const api =
@@ -19,6 +20,21 @@ function getToken(): string | null {
 }
 
 let client: Client | null = null;
+
+function handleSubscriptionAuthError(err: unknown) {
+  const msg = String(err ?? "").toLowerCase();
+  if (
+    msg.includes("not authenticated") ||
+    msg.includes("unauthorized") ||
+    msg.includes("invalid token") ||
+    msg.includes("token expired")
+  ) {
+    clearSession();
+    if (typeof window !== "undefined") {
+      window.location.href = "/login?reason=session_expired";
+    }
+  }
+}
 
 function getClient(): Client {
   if (!client) {
@@ -55,7 +71,7 @@ export function subscribeToSessionUpdates(
           onEvent(data.sessionId, data.eventName);
         }
       },
-      error: () => {},
+      error: (err) => handleSubscriptionAuthError(err),
       complete: () => {},
     },
   );
@@ -81,7 +97,7 @@ export function subscribeToReviewUpdates(
           onEvent(data.listingId, data.action);
         }
       },
-      error: () => {},
+      error: (err) => handleSubscriptionAuthError(err),
       complete: () => {},
     },
   );

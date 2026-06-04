@@ -64,7 +64,7 @@ def create_refresh_token(user_id: uuid.UUID, role: UserRole, groups: list[str] |
         "groups": groups or [],
         "jti": jti,
         "iat": now,
-        "exp": now + timedelta(days=ds.get_sync_int("jwt.refresh_token_expire_days", 7)),
+        "exp": now + timedelta(days=ds.get_sync_int("jwt.refresh_token_expire_days", 30)),
     }
     token = sign_token(payload)
     return token, jti
