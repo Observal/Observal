@@ -437,32 +437,10 @@ INIT_SQL = [
         anyLastIf(model, model != '')         AS model
     FROM session_events
     GROUP BY project_id, session_id""",
-    # ── Fix existing poisoned timestamps in session_stats_agg ──────────────────
-    # The kiro_credits row (timestamp 2099-12-31) previously poisoned min/max.
-    # Truncate the agg table and backfill from source with correct filters.
-    """TRUNCATE TABLE IF EXISTS session_stats_agg""",
-    """INSERT INTO session_stats_agg
-    SELECT
-        project_id,
-        session_id,
-        coalesce(anyIf(agent_id, agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id,
-        coalesce(anyIf(user_id, user_id != ''), '')                             AS user_id,
-        coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL AND parent_session_id != ''), '') AS parent_session_id,
-        coalesce(anyIf(ide, ide != ''), '')                                     AS ide,
-        minIf(timestamp, timestamp > '1971-01-01 00:00:00' AND timestamp < '2099-01-01 00:00:00') AS first_event_time,
-        maxIf(timestamp, timestamp > '1971-01-01 00:00:00' AND timestamp < '2099-01-01 00:00:00') AS last_event_time,
-        count()                               AS event_count,
-        countIf(event_type = 'user_prompt')   AS prompt_count,
-        countIf(event_type = 'tool_call')     AS tool_call_count,
-        countIf(event_type = 'tool_result')   AS tool_result_count,
-        sum(input_tokens)                     AS input_tokens,
-        sum(output_tokens)                    AS output_tokens,
-        sum(cache_read_tokens)                AS cache_read_tokens,
-        sum(cache_write_tokens)               AS cache_write_tokens,
-        max(credits)                          AS total_credits,
-        anyLastIf(model, model != '')         AS model
-    FROM session_events
-    GROUP BY project_id, session_id""",
+    # ── Poisoned timestamp fix (applied once, now a no-op) ──────────────────────
+    # Previously this TRUNCATED session_stats_agg and backfilled on every deploy,
+    # wiping all trace data. Removed: the partition migration handles backfill
+    # correctly and only runs once. The MV filters timestamps going forward.
     # ── Add layer_hash to session_stats_agg for version-aware insights ─────────
     """ALTER TABLE session_stats_agg ADD COLUMN IF NOT EXISTS layer_hash String DEFAULT ''""",
     """DROP VIEW IF EXISTS session_stats_mv""",
