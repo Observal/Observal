@@ -17,6 +17,32 @@ resource "azurerm_container_app_environment" "main" {
   ]
 }
 
+# Persistent storage for JWT keys (survives container restarts)
+resource "azurerm_storage_account" "keys" {
+  name                     = replace("${var.name_prefix}${var.environment}keys", "-", "")
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  tags = local.tags
+}
+
+resource "azurerm_storage_share" "jwt_keys" {
+  name               = "jwt-keys"
+  storage_account_id = azurerm_storage_account.keys.id
+  quota              = 1
+}
+
+resource "azurerm_container_app_environment_storage" "jwt_keys" {
+  name                         = "jwtkeys"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  account_name                 = azurerm_storage_account.keys.name
+  share_name                   = azurerm_storage_share.jwt_keys.name
+  access_key                   = azurerm_storage_account.keys.primary_access_key
+  access_mode                  = "ReadWrite"
+}
+
 # -- API service -------------------------------------------------------------
 
 resource "azurerm_container_app" "api" {
@@ -60,6 +86,12 @@ resource "azurerm_container_app" "api" {
     min_replicas = var.api_min_replicas
     max_replicas = var.api_max_replicas
 
+    volume {
+      name         = "jwt-keys"
+      storage_name = azurerm_container_app_environment_storage.jwt_keys.name
+      storage_type = "AzureFile"
+    }
+
     container {
       name   = "api"
       image  = local.api_image
@@ -72,6 +104,11 @@ resource "azurerm_container_app" "api" {
         "--workers", "2",
         "--proxy-headers", "--forwarded-allow-ips", "*",
       ]
+
+      volume_mounts {
+        name = "jwt-keys"
+        path = "/app/keys"
+      }
 
       env {
         name        = "DATABASE_URL"
@@ -100,7 +137,7 @@ resource "azurerm_container_app" "api" {
 
       env {
         name  = "JWT_KEY_DIR"
-        value = "/tmp/keys"
+        value = "/app/keys"
       }
 
       liveness_probe {
