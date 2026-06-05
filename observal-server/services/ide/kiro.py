@@ -42,6 +42,12 @@ class KiroAdapter:
             "stop": [{"command": push_cmd}],
         }
 
+        kiro_spec = IDE_REGISTRY["kiro"]
+        kiro_scope = options.get("scope", kiro_spec["default_scope"])
+
+        # Determine scope-aware hooks dir
+        hooks_dir = "~/.kiro/hooks" if kiro_scope == "user" else ".kiro/hooks"
+
         # Merge custom hook components
         for hc in hook_configs:
             event = hc.get("event")
@@ -52,11 +58,13 @@ class KiroAdapter:
             handler_config = hc.get("handler_config", {})
             if handler_type == "command":
                 cmd = handler_config.get("command", "")
-                if not cmd:
-                    continue
                 script_filename = hc.get("script_filename")
-                if script_filename and cmd == script_filename:
-                    cmd = f".kiro/hooks/{script_filename}"
+                if not cmd and script_filename:
+                    cmd = f"{hooks_dir}/{script_filename}"
+                elif not cmd:
+                    continue
+                elif script_filename:
+                    cmd = f"{hooks_dir}/{script_filename}"
                 entry: dict = {"command": cmd}
                 if kiro_event in ("preToolUse", "postToolUse"):
                     entry["matcher"] = handler_config.get("matcher", "*")
@@ -70,8 +78,6 @@ class KiroAdapter:
                     entry["matcher"] = handler_config.get("matcher", "*")
                 hooks.setdefault(kiro_event, []).append(entry)
 
-        kiro_spec = IDE_REGISTRY["kiro"]
-        kiro_scope = options.get("scope", kiro_spec["default_scope"])
         agent_path = kiro_spec["rules_file"][kiro_scope].format(name=safe_name)
         kiro_model = options.get("_resolved_model", None)
 
@@ -105,6 +111,10 @@ class KiroAdapter:
 
         kiro_hook_files = _collect_hook_script_files(hook_configs, ctx.hook_listings, "kiro")
         if kiro_hook_files:
+            # Fix paths for user scope
+            if kiro_scope == "user":
+                for hf in kiro_hook_files:
+                    hf["path"] = hf["path"].replace(".kiro/hooks", "~/.kiro/hooks", 1)
             result["hook_files"] = kiro_hook_files
 
         warnings_combined = list(ctx.compatibility_warnings)

@@ -14,6 +14,7 @@ The flow:
 import json
 import secrets
 import time
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -54,21 +55,61 @@ def _normalize_user_code(code: str) -> str:
     return code.replace("-", "").upper()
 
 
+def _is_localhost_url(url: str) -> bool:
+    """Return True if url points to a localhost address (i.e. not explicitly configured)."""
+    parsed = urlparse(url)
+    return parsed.hostname in ("localhost", "127.0.0.1", "::1") if parsed.hostname else True
+
+
 def _resolve_frontend_url(request: Request) -> str:
-    """Derive the frontend base URL from the request when frontend_url is not configured."""
+    """Derive the frontend base URL for verification links.
+
+    Resolution order:
+      1. deployment.frontend_url (if explicitly set to a non-localhost value)
+      2. deployment.public_url hostname (scheme + host, no port/path)
+      3. Request headers (x-forwarded-proto/host, or Host)
+      4. Fallback to http://localhost (local dev only)
+    """
     import services.dynamic_settings as ds
 
-    configured = ds.get_sync("deployment.frontend_url", "http://localhost:3000")
-    if configured and configured != "http://localhost:3000":
+    # 1. Explicitly configured frontend URL
+    configured = ds.get_sync("deployment.frontend_url")
+    if configured and not _is_localhost_url(configured):
         return configured.rstrip("/")
-    # Only infer from headers when behind a TLS-terminating proxy (https)
+
+    # 2. Derive from public_url if set
+    public_url = ds.get_sync("deployment.public_url")
+    if public_url and not _is_localhost_url(public_url):
+        parsed = urlparse(public_url)
+        scheme = parsed.scheme or "https"
+        host = parsed.hostname or "localhost"
+        # Include non-standard ports
+        port_suffix = ""
+        if parsed.port and parsed.port not in (80, 443):
+            port_suffix = f":{parsed.port}"
+        return f"{scheme}://{host}{port_suffix}"
+
+    # 3. Infer from request headers (works behind any reverse proxy)
     forwarded_proto = request.headers.get("x-forwarded-proto")
-    if forwarded_proto == "https":
-        host = request.headers.get("x-forwarded-host") or request.headers.get("host")
-        if host:
-            return f"https://{host}".rstrip("/")
-    # Local dev: use the configured default (localhost:3000 = frontend dev server)
-    return configured.rstrip("/")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if host:
+        # Strip port from host header if present (will re-add if needed)
+        clean_host = host.split(",")[0].strip()  # first value if comma-separated
+        # Infer scheme from port suffix only when no forwarded-proto is available
+        if ":" in clean_host:
+            host_part, port_str = clean_host.rsplit(":", 1)
+            inferred_scheme = {"443": "https", "80": "http"}.get(port_str, "http")
+            # Remove standard ports for clean URLs
+            if port_str in ("80", "443"):
+                clean_host = host_part
+        else:
+            inferred_scheme = "http"
+        scheme = forwarded_proto or inferred_scheme
+        if not _is_localhost_url(f"{scheme}://{clean_host}"):
+            return f"{scheme}://{clean_host}"
+
+    # 4. Local dev fallback
+    return "http://localhost"
 
 
 @router.post("/authorize", response_model=DeviceAuthResponse)

@@ -82,14 +82,26 @@ async def _periodic_refresh() -> None:
 
 
 async def _listen_for_invalidation() -> None:
-    """Subscribe to Redis pub/sub for immediate cache invalidation."""
-    try:
-        async for _msg in subscribe(INVALIDATION_CHANNEL):
-            await _refresh_all()
-    except asyncio.CancelledError:
-        pass
-    except Exception:
-        optic.error("registry cache subscriber crashed - cache will not auto-update")
+    """Subscribe to Redis pub/sub for immediate cache invalidation.
+
+    Retries indefinitely with backoff — the periodic refresh task ensures
+    the cache stays reasonably fresh even if pub/sub is temporarily down.
+    """
+    backoff = 5
+    while True:
+        try:
+            async for _msg in subscribe(INVALIDATION_CHANNEL):
+                backoff = 5
+                await _refresh_all()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            optic.warning(
+                "registry cache subscriber lost connection - retrying in {}s (periodic refresh still active)",
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60)
 
 
 async def start() -> None:

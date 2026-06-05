@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+variable "name" {
+  description = "Deployment name (used for resource naming)"
+  type        = string
+}
+
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "instance_type" {
+  description = "EC2 instance type (t3.large recommended minimum)"
+  type        = string
+  default     = "t3.large"
+}
+
+variable "domain" {
+  description = "Domain for this instance (e.g. observal.company.io). Leave empty for IP-only access over HTTP."
+  type        = string
+  default     = ""
+}
+
+variable "route53_zone_id" {
+  description = "Route53 hosted zone ID (required if domain is set)"
+  type        = string
+  default     = ""
+}
+
+variable "vpc_id" {
+  description = "VPC ID (leave empty for default VPC)"
+  type        = string
+  default     = ""
+}
+
+variable "subnet_id" {
+  description = "Subnet ID (leave empty for default)"
+  type        = string
+  default     = ""
+}
+
+variable "env_overrides" {
+  description = "Map of environment variables to override in .env (empty values are ignored, defaults from .env.example are kept)"
+  type        = map(string)
+  default     = {}
+}
+
+variable "observal_ref" {
+  description = "Git branch, tag, or commit SHA to deploy"
+  type        = string
+  default     = "main"
+}
+
+variable "observal_repo" {
+  description = "Git repository URL"
+  type        = string
+  default     = "https://github.com/BlazeUp-AI/Observal.git"
+}

@@ -116,12 +116,20 @@ All types support `--draft` (save without review) and `--submit NAME` (submit ex
 ```bash
 observal registry mcp install NAME --ide kiro
 observal registry mcp install NAME --ide claude-code --raw
+observal registry mcp install NAME --ide cursor --version 2.1.0
 observal registry skill install NAME --ide kiro --scope user
 observal registry skill install NAME --ide claude-code --scope project
+observal registry skill install NAME --ide claude-code --version 1.2.0
 observal registry hook install NAME --ide kiro
 observal registry hook install NAME --ide claude-code --platform darwin --dir .
 observal registry prompt install NAME --ide kiro
 ```
+
+**Flags (all install commands):**
+- `--ide` (required): target IDE
+- `--version <semver>`: install a specific version instead of latest
+- `--raw`: output JSON only (MCP)
+- `--scope user|project`: install scope (skill)
 
 `sandbox install` is deprecated. Use `observal agent add sandbox UUID` + `observal agent pull` instead.
 

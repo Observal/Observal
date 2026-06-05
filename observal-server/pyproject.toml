@@ -6,7 +6,7 @@
 
 [project]
 name = "observal-server"
-version = "1.4.3"
+version = "1.4.4"
 description = "Observal API server"
 requires-python = ">=3.11"
 license = "AGPL-3.0-only"
@@ -34,7 +34,7 @@ dependencies = [
     "python3-saml>=1.16.0",
     "cffi",
     "slowapi",
-    "PyJWT>=2.8.0",
+    "PyJWT>=2.13.0",
     "aiosqlite>=0.22.1",
     "tenacity>=8.0.0",
     "python-multipart>=0.0.26",

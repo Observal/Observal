@@ -10,6 +10,7 @@ Every command available in the installed CLI. This block is generated from the T
 
 **Root commands**
 
+- `observal outdated`: Show installed components that have newer versions available.
 - `observal scan`: Show a read-only inventory of your local IDE setup.
 
 **`observal admin`**: Admin commands

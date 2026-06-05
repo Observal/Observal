@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from datetime import UTC, datetime
@@ -36,10 +37,18 @@ from schemas.skill import (
     SkillSubmitRequest,
     SkillUpdateRequest,
 )
+from schemas.skill_commands import normalize_slash_command
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
-from services.skill_validator import SkillValidationError, validate_skill_md
+from services.skill_validator import SkillValidationError, validate_skill_md, validate_skill_md_content_frontmatter
 
 router = APIRouter(prefix="/api/v1/skills", tags=["skills"])
+
+
+def _validate_stored_skill_md(skill_md_content: str | None, slash_command: str | None = None):
+    try:
+        return validate_skill_md_content_frontmatter(skill_md_content, slash_command=slash_command)
+    except SkillValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/submit", response_model=SkillListingResponse)
@@ -70,22 +79,17 @@ async def submit_skill(
         # Registry direct: skill_md_content is required, no git validation
         if not skill_md_content:
             raise HTTPException(status_code=422, detail="skill_md_content is required for registry_direct delivery")
-        # Parse frontmatter for auto-fill using simple string ops (no regex on user data)
-        import re as _re
-
-        fm_match = _re.match(r"^---\r?\n([\s\S]*?)\r?\n---", skill_md_content)
-        if fm_match:
-            for line in fm_match.group(1).split("\n"):
-                if line.startswith("name:") and not name:
-                    name = line[5:].strip()
-                elif line.startswith("description:") and not description:
-                    val = line[12:].strip()
-                    # Strip surrounding quotes
-                    if len(val) >= 2 and val[0] in ("'", '"') and val[-1] == val[0]:
-                        val = val[1:-1]
-                    description = val
-                elif line.startswith("command:") and slash_command is None:
-                    slash_command = line[8:].strip().lstrip("/")
+        content_analysis = _validate_stored_skill_md(skill_md_content, slash_command)
+        fm = content_analysis.frontmatter
+        if fm:
+            fm_name = fm.get("name")
+            fm_description = fm.get("description")
+            if isinstance(fm_name, str) and not name:
+                name = fm_name
+            if isinstance(fm_description, str) and not description:
+                description = fm_description
+            if content_analysis.slash_command is not None:
+                slash_command = content_analysis.slash_command
         validated = True  # Content is inline, no need to fetch from git
     elif req.git_url:
         try:
@@ -105,13 +109,24 @@ async def submit_skill(
                 description = analysis.description
             if slash_command is None:
                 slash_command = analysis.slash_command
+            elif analysis.slash_command is not None and slash_command != analysis.slash_command:
+                raise HTTPException(status_code=422, detail="slash_command does not match SKILL.md frontmatter command")
         except SkillValidationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if skill_md_content:
+        content_analysis = _validate_stored_skill_md(skill_md_content, slash_command)
+        if content_analysis.slash_command is not None:
+            slash_command = content_analysis.slash_command
 
     if not name:
         raise HTTPException(status_code=422, detail="name is required")
     if not description:
         raise HTTPException(status_code=422, detail="description is required")
+    try:
+        slash_command = normalize_slash_command(slash_command)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid slash_command: {exc}") from exc
 
     # Re-check uniqueness with resolved name (may differ from req.name when auto-filled).
     if name != req.name:
@@ -242,6 +257,24 @@ async def install_skill(
         if not listing or get_effective_component_permission(listing, current_user) != "owner":
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
 
+    # Resolve specific version if requested
+    version_override = None
+    if req.version:
+        from models.skill import SkillVersion
+
+        ver_stmt = select(SkillVersion).where(
+            SkillVersion.listing_id == listing.id,
+            SkillVersion.version == req.version,
+            SkillVersion.status == "approved",
+        )
+        ver_result = await db.execute(ver_stmt)
+        version_override = ver_result.scalar_one_or_none()
+        if not version_override:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Version {req.version!r} not found for this skill",
+            )
+
     db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     await db.commit()
 
@@ -249,7 +282,13 @@ async def install_skill(
     from services.skill_config_generator import generate_skill_config
 
     endpoints = await derive_endpoints(request)
-    config = generate_skill_config(listing, req.ide, server_url=endpoints["api"], scope=req.scope)
+    config = generate_skill_config(
+        listing,
+        req.ide,
+        server_url=endpoints["api"],
+        scope=req.scope,
+        version_override=version_override,
+    )
     return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
@@ -260,6 +299,9 @@ async def save_skill_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("req={}", req)
+    content_analysis = _validate_stored_skill_md(req.skill_md_content, req.slash_command)
+    slash_command = content_analysis.slash_command
+
     listing = SkillListing(
         name=req.name,
         owner=req.owner or current_user.username or current_user.email,
@@ -282,7 +324,7 @@ async def save_skill_draft(
         script_filename=req.script_filename,
         target_agents=req.target_agents,
         task_type=req.task_type,
-        slash_command=req.slash_command,
+        slash_command=slash_command,
         supported_ides=req.supported_ides,
         status=ListingStatus.draft,
         released_by=current_user.id,
@@ -317,6 +359,19 @@ async def update_skill_draft(
     if not ver:
         raise HTTPException(status_code=400, detail="Listing has no version to update")
 
+    slash_command_should_update = "slash_command" in req.model_fields_set
+    slash_command_explicit_clear = slash_command_should_update and req.slash_command is None
+    slash_command = req.slash_command if slash_command_should_update else None
+    if req.skill_md_content is not None:
+        content_analysis = _validate_stored_skill_md(req.skill_md_content, slash_command)
+        if content_analysis.slash_command is not None and not slash_command_explicit_clear:
+            slash_command = content_analysis.slash_command
+            slash_command_should_update = True
+    elif slash_command_should_update:
+        content_analysis = _validate_stored_skill_md(ver.skill_md_content, slash_command)
+        if not slash_command_explicit_clear:
+            slash_command = content_analysis.slash_command
+
     for field in (
         "version",
         "description",
@@ -329,12 +384,14 @@ async def update_skill_draft(
         "script_filename",
         "target_agents",
         "task_type",
-        "slash_command",
         "supported_ides",
     ):
         val = getattr(req, field)
         if val is not None:
             setattr(ver, field, val)
+
+    if slash_command_should_update:
+        ver.slash_command = slash_command
 
     # Don't allow saving over another user's active lock
     if ver.is_editing and ver.editing_by != current_user.id and not _is_lock_expired(ver.editing_since):
@@ -417,6 +474,13 @@ async def submit_skill_draft(
         raise HTTPException(status_code=403, detail="Not the listing owner")
     if listing.status not in (ListingStatus.draft, ListingStatus.rejected):
         raise HTTPException(status_code=400, detail="Listing is not a draft")
+
+    ver = listing.latest_version
+    if not ver:
+        raise HTTPException(status_code=400, detail="Listing has no version")
+    content_analysis = _validate_stored_skill_md(ver.skill_md_content, ver.slash_command)
+    if content_analysis.slash_command is not None:
+        ver.slash_command = content_analysis.slash_command
 
     if not listing.description:
         raise HTTPException(status_code=400, detail="Description is required before submitting")

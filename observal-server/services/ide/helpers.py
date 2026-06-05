@@ -525,12 +525,12 @@ def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[d
         ide_event = events_map.get(event, event)
         handler_config = hc.get("handler_config", {})
         command = handler_config.get("command", "")
-        if not command:
-            continue
-
-        # If hook has a script_filename, rewrite command to the IDE scripts dir
         script_filename = hc.get("script_filename")
-        if script_filename and scripts_dir:
+        if not command and script_filename and scripts_dir:
+            command = f"{scripts_dir}/{script_filename}"
+        elif not command:
+            continue
+        elif script_filename and scripts_dir:
             command = f"{scripts_dir}/{script_filename}"
 
         if ide == "cursor":

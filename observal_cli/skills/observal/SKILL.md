@@ -36,6 +36,7 @@ observal agent pull AGENT_NAME --ide kiro --no-prompt --dir .
 
 **Flags:**
 - `--ide` (required): `claude-code`, `kiro`, `cursor`, `gemini-cli`, `vscode`, `codex`, `copilot`, `copilot-cli`, `opencode`
+- `--version <semver>`: install a specific version (e.g. `1.2.0`). Omit for latest.
 - `--scope user|project`: install scope (Claude Code, Kiro, Gemini only)
 - `--model <name>` or `--model <ide>=<name>`: override saved model (repeatable)
 - `--tools t1,t2`: Claude Code tool whitelist
@@ -45,7 +46,23 @@ observal agent pull AGENT_NAME --ide kiro --no-prompt --dir .
 
 **Merge behavior:** MCP configs are merged with existing IDE config files, not overwritten. Existing user entries are preserved.
 
+**Version pinning:** When `--version` is specified, the exact content from that version is installed. The lockfile (`~/.observal/lockfile.json`) records the pin. If another agent depends on the same component at a different version, a warning is displayed.
+
 If the user did not specify an IDE, ask which one before running.
+
+---
+
+## Procedure: Outdated
+
+Check for newer versions of installed agents and components.
+
+```bash
+observal outdated
+observal outdated --ide claude-code
+observal outdated --output json
+```
+
+Reads `~/.observal/lockfile.json` and compares each pinned version against the registry's latest. Reports a table of outdated items with current vs latest version.
 
 ---
 

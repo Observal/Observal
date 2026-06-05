@@ -71,3 +71,4 @@ node_modules
 .mcp.json
 *.bak
 scripts/seed_demo.py
+.playwright-cli/

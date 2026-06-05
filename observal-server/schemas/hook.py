@@ -110,6 +110,8 @@ class HookListingResponse(BaseModel):
     handler_config: dict
     scope: str
     supported_ides: list[str]
+    script_content: str | None = None
+    script_filename: str | None = None
     status: ListingStatus
     rejection_reason: str | None = None
     submitted_by: uuid.UUID

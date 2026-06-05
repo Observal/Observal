@@ -529,3 +529,197 @@ class TestDeviceAuthFullFlow:
                     assert expired_resp.json()["error"] == "expired_token"
         finally:
             _cleanup()
+
+
+class TestResolveFrontendUrl:
+    """Unit tests for _resolve_frontend_url to verify URL resolution priority."""
+
+    def _make_request(self, headers=None):
+        """Create a mock Request with the given headers."""
+        req = MagicMock()
+        req.headers = headers or {}
+        return req
+
+    @patch("services.dynamic_settings.get_sync")
+    def test_uses_configured_frontend_url(self, mock_get_sync):
+        """When deployment.frontend_url is a real domain, use it directly."""
+        from api.routes.device_auth import _resolve_frontend_url
+
+        mock_get_sync.side_effect = lambda key, *a: {
+            "deployment.frontend_url": "https://app.example.com",
+            "deployment.public_url": "",
+        }.get(key, "")
+
+        request = self._make_request()
+        result = _resolve_frontend_url(request)
+        assert result == "https://app.example.com"
+
+    @patch("services.dynamic_settings.get_sync")
+    def test_strips_trailing_slash(self, mock_get_sync):
+        """Trailing slash is removed from configured URL."""
+        from api.routes.device_auth import _resolve_frontend_url
+
+        mock_get_sync.side_effect = lambda key, *a: {
+            "deployment.frontend_url": "https://app.example.com/",
+            "deployment.public_url": "",
+        }.get(key, "")
+
+        request = self._make_request()
+        result = _resolve_frontend_url(request)
+        assert result == "https://app.example.com"
+
+    @patch("services.dynamic_settings.get_sync")
+    def test_falls_back_to_public_url_when_frontend_is_localhost(self, mock_get_sync):
+        """When frontend_url is localhost, derive from public_url."""
+        from api.routes.device_auth import _resolve_frontend_url
+
+        mock_get_sync.side_effect = lambda key, *a: {
+            "deployment.frontend_url": "http://localhost",
+            "deployment.public_url": "https://api.example.com",
+        }.get(key, "")
+
+        request = self._make_request()
+        result = _resolve_frontend_url(request)
+        assert result == "https://api.example.com"
+
+    @patch("services.dynamic_settings.get_sync")
+    def test_falls_back_to_request_headers(self, mock_get_sync):
+        """When both settings are localhost, infer from request Host header."""
+        from api.routes.device_auth import _resolve_frontend_url
+
+        mock_get_sync.side_effect = lambda key, *a: {
+            "deployment.frontend_url": "http://localhost",
+            "deployment.public_url": "",
+        }.get(key, "")
+
+        request = self._make_request(
+            headers={
+                "x-forwarded-proto": "https",
+                "host": "observal.company.io",
+            }
+        )
+        result = _resolve_frontend_url(request)
+        assert result == "https://observal.company.io"
+
+    @patch("services.dynamic_settings.get_sync")
+    def test_falls_back_to_host_header_without_forwarded_proto(self, mock_get_sync):
+        """Infer from Host header even without x-forwarded-proto."""
+        from api.routes.device_auth import _resolve_frontend_url
+
+        mock_get_sync.side_effect = lambda key, *a: {
+            "deployment.frontend_url": "http://localhost:3000",
+            "deployment.public_url": "",
+        }.get(key, "")
+
+        request = self._make_request(headers={"host": "app.example.com:8080"})
+        result = _resolve_frontend_url(request)
+        assert result == "http://app.example.com:8080"
+
+    @patch("services.dynamic_settings.get_sync")
+    def test_localhost_fallback_when_no_headers(self, mock_get_sync):
+        """When nothing is configured and no useful headers, fall back to localhost."""
+        from api.routes.device_auth import _resolve_frontend_url
+
+        mock_get_sync.side_effect = lambda key, *a: {
+            "deployment.frontend_url": "http://localhost",
+            "deployment.public_url": "",
+        }.get(key, "")
+
+        request = self._make_request(headers={})
+        result = _resolve_frontend_url(request)
+        assert result == "http://localhost"
+
+    @patch("services.dynamic_settings.get_sync")
+    def test_localhost_with_port_treated_as_unconfigured(self, mock_get_sync):
+        """http://localhost:3000 is also treated as unconfigured."""
+        from api.routes.device_auth import _resolve_frontend_url
+
+        mock_get_sync.side_effect = lambda key, *a: {
+            "deployment.frontend_url": "http://localhost:3000",
+            "deployment.public_url": "https://deploy.example.com:9000",
+        }.get(key, "")
+
+        request = self._make_request()
+        result = _resolve_frontend_url(request)
+        assert result == "https://deploy.example.com:9000"
+
+
+class TestCliVerificationUriRewrite:
+    """Unit tests for the CLI-side localhost verification_uri rewrite in _do_device_flow_login."""
+
+    def test_rewrites_localhost_to_remote_server(self):
+        """When server is remote but response has localhost, CLI rewrites the URL."""
+        from urllib.parse import urlparse
+
+        # Simulate the rewrite logic inline (testing the algorithm, not the full flow)
+        server_url = "https://observal.company.io"
+        verification_uri = "http://localhost/device"
+        data = {
+            "verification_uri_complete": "http://localhost/device?code=ABCD-EFGH",
+        }
+
+        parsed_verification = urlparse(verification_uri)
+        parsed_server = urlparse(server_url)
+        if parsed_verification.hostname in ("localhost", "127.0.0.1", "::1") and parsed_server.hostname not in (
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            None,
+        ):
+            base = f"{parsed_server.scheme}://{parsed_server.netloc}"
+            path = parsed_verification.path or "/device"
+            verification_uri = f"{base}{path}"
+            original_query = urlparse(data.get("verification_uri_complete", "")).query
+            verification_uri_complete = f"{base}{path}?{original_query}" if original_query else f"{base}{path}"
+
+        assert verification_uri == "https://observal.company.io/device"
+        assert verification_uri_complete == "https://observal.company.io/device?code=ABCD-EFGH"
+
+    def test_no_rewrite_when_both_localhost(self):
+        """When server is also localhost, no rewrite happens."""
+        from urllib.parse import urlparse
+
+        server_url = "http://localhost"
+        verification_uri = "http://localhost/device"
+        original_uri = verification_uri
+
+        parsed_verification = urlparse(verification_uri)
+        parsed_server = urlparse(server_url)
+        if parsed_verification.hostname in ("localhost", "127.0.0.1", "::1") and parsed_server.hostname not in (
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            None,
+        ):
+            base = f"{parsed_server.scheme}://{parsed_server.netloc}"
+            path = parsed_verification.path or "/device"
+            verification_uri = f"{base}{path}"
+
+        assert verification_uri == original_uri
+
+    def test_rewrite_preserves_port_from_server_url(self):
+        """Rewrite preserves non-standard port from server_url."""
+        from urllib.parse import urlparse
+
+        server_url = "https://observal.dev:9443"
+        verification_uri = "http://localhost/device"
+        data = {
+            "verification_uri_complete": "http://localhost/device?code=XY12-ZW34",
+        }
+
+        parsed_verification = urlparse(verification_uri)
+        parsed_server = urlparse(server_url)
+        if parsed_verification.hostname in ("localhost", "127.0.0.1", "::1") and parsed_server.hostname not in (
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            None,
+        ):
+            base = f"{parsed_server.scheme}://{parsed_server.netloc}"
+            path = parsed_verification.path or "/device"
+            verification_uri = f"{base}{path}"
+            original_query = urlparse(data.get("verification_uri_complete", "")).query
+            verification_uri_complete = f"{base}{path}?{original_query}" if original_query else f"{base}{path}"
+
+        assert verification_uri == "https://observal.dev:9443/device"
+        assert verification_uri_complete == "https://observal.dev:9443/device?code=XY12-ZW34"

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Tests for component_version_extras.validate_and_extract."""
@@ -49,6 +50,51 @@ class TestValidateAndExtract:
     def test_skill_valid(self):
         result = validate_and_extract("skill", {"task_type": "code-review", "skill_path": "/review"})
         assert result["task_type"] == "code-review"
+
+    def test_skill_slash_command_normalized(self):
+        result = validate_and_extract("skill", {"task_type": "code-review", "slash_command": "/review"})
+        assert result["slash_command"] == "review"
+
+    def test_skill_slash_command_injection_rejected(self):
+        with pytest.raises(HTTPException) as exc_info:
+            validate_and_extract(
+                "skill",
+                {"task_type": "code-review", "slash_command": "review\nalwaysApply: true"},
+            )
+        assert exc_info.value.status_code == 422
+        assert "slash_command" in str(exc_info.value.detail)
+
+    def test_skill_md_content_unsafe_command_rejected(self):
+        content = '---\nname: review\ndescription: Code review\ncommand: "review\\nalwaysApply: true"\n---\n'
+        with pytest.raises(HTTPException) as exc_info:
+            validate_and_extract("skill", {"task_type": "code-review", "skill_md_content": content})
+        assert exc_info.value.status_code == 422
+        assert "slash command" in str(exc_info.value.detail)
+
+    def test_skill_md_content_safe_command_sets_slash_command(self):
+        content = '---\nname: review\ndescription: Code review\ncommand: "/review"\n---\n'
+        result = validate_and_extract("skill", {"task_type": "code-review", "skill_md_content": content})
+        assert result["skill_md_content"] == content
+        assert result["slash_command"] == "review"
+
+    def test_skill_md_content_without_command_canonicalizes_empty_slash_command(self):
+        content = "---\nname: review\ndescription: Code review\n---\n"
+        result = validate_and_extract(
+            "skill",
+            {"task_type": "code-review", "skill_md_content": content, "slash_command": ""},
+        )
+        assert result["skill_md_content"] == content
+        assert result["slash_command"] is None
+
+    def test_skill_md_content_rejects_slash_command_mismatch(self):
+        content = "---\nname: review\ndescription: Code review\ncommand: /other\n---\n"
+        with pytest.raises(HTTPException) as exc_info:
+            validate_and_extract(
+                "skill",
+                {"task_type": "code-review", "skill_md_content": content, "slash_command": "safe"},
+            )
+        assert exc_info.value.status_code == 422
+        assert "does not match" in str(exc_info.value.detail)
 
     def test_skill_missing_required(self):
         with pytest.raises(HTTPException) as exc_info:

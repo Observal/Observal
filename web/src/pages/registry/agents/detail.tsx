@@ -16,10 +16,13 @@ import {
   Copy,
   Users,
   Download,
-  BarChart3,
   Loader2,
-  Activity,
   Trash2,
+  Play,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Sparkles,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { toast } from "sonner";
@@ -32,10 +35,14 @@ import {
   useWhoami,
   useAgentVersions,
   useAgentVersionDetail,
+  useInsightReports,
+  useInsightSessionCount,
+  useGenerateInsight,
+  useInsightsStatus,
 } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
-import type { FeedbackItem } from "@/lib/types";
+import type { FeedbackItem, InsightReportListItem } from "@/lib/types";
 import { PullCommand } from "@/components/registry/pull-command";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
@@ -162,29 +169,136 @@ function DeleteButton({ agentId, agentName }: { agentId: string; agentName: stri
   );
 }
 
-function AnalyticsTab({ agentId }: { agentId: string }) {
+
+function InsightStatusBadge({ status }: { status: InsightReportListItem["status"] }) {
+  switch (status) {
+    case "completed":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-dark-green bg-light-green px-2 py-0.5 rounded-full">
+          <CheckCircle2 className="h-3 w-3" /> Completed
+        </span>
+      );
+    case "running":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-dark-blue bg-light-blue px-2 py-0.5 rounded-full">
+          <Loader2 className="h-3 w-3 animate-spin" /> Running
+        </span>
+      );
+    case "pending":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+          <Clock className="h-3 w-3" /> Queued
+        </span>
+      );
+    case "failed":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-dark-red bg-light-red px-2 py-0.5 rounded-full">
+          <XCircle className="h-3 w-3" /> Failed
+        </span>
+      );
+  }
+}
+
+function InsightsTab({ agentId }: { agentId: string }) {
+  const { data: reports, isLoading: reportsLoading } = useInsightReports(agentId);
+  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId);
+  const { data: insightsStatus } = useInsightsStatus();
+  const generateInsight = useGenerateInsight();
+
+  const availableSessions = sessionCountData?.session_count ?? 0;
+  const notConfigured = insightsStatus && !insightsStatus.available;
+  const hasRunning = (reports ?? []).some((r) => r.status === "pending" || r.status === "running");
+
   return (
     <div className="space-y-6">
-      <EmptyState
-        icon={BarChart3}
-        title="No analytics yet"
-        description="No analytics data yet. Traces and spans will be collected as the agent is used."
-      />
-
-      {/* Link to traces */}
-      <div className="rounded-md border border-border p-4 space-y-2">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-muted-foreground" />
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Traces & Spans</h4>
+      {/* Status / Generate bar */}
+      <div className="flex items-center justify-between gap-4 rounded-md border border-border p-4">
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold font-display flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Agent Insights
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {countLoading
+              ? "Checking sessions..."
+              : `${availableSessions} session${availableSessions !== 1 ? "s" : ""} available (last 14 days)`}
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">View detailed trace and span data for this agent in the admin dashboard.</p>
-        <Link to="/traces" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-          View traces →
-        </Link>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          disabled={
+            !!notConfigured ||
+            (!countLoading && availableSessions === 0) ||
+            generateInsight.isPending ||
+            hasRunning
+          }
+          onClick={() => generateInsight.mutate({ agentId })}
+        >
+          {generateInsight.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Play className="h-3.5 w-3.5" />
+          )}
+          Generate
+        </Button>
       </div>
+
+      {notConfigured && (
+        <p className="text-xs text-muted-foreground">
+          Insights are not configured on this server. Contact your admin.
+        </p>
+      )}
+
+      {/* Reports list */}
+      {reportsLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading reports...
+        </div>
+      ) : !reports || reports.length === 0 ? (
+        <EmptyState
+          icon={Sparkles}
+          title="No insights yet"
+          description="Generate your first insight report to see how this agent is performing."
+        />
+      ) : (
+        <div className="space-y-3">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reports</h4>
+          <div className="space-y-2">
+            {reports.map((report) => (
+              <Link
+                key={report.id}
+                to="/insights/$reportId"
+                params={{ reportId: report.id }}
+                className="flex items-center justify-between gap-4 rounded-md border border-border p-3 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <InsightStatusBadge status={report.status} />
+                  <span className="text-xs text-muted-foreground font-mono tabular-nums">
+                    {new Date(report.created_at).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
+                  {report.sessions_analyzed > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {report.sessions_analyzed} sessions analyzed
+                    </span>
+                  )}
+                </div>
+                {report.status === "completed" && (
+                  <span className="text-xs text-primary">View →</span>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 export default function AgentDetailPage() {
   const { agentId: id } = useParams({ from: "/_authed/agents/$agentId" });
@@ -340,7 +454,7 @@ export default function AgentDetailPage() {
 
               {/* Pull command (mobile only) */}
               <div className="lg:hidden">
-                <PullCommand agentName={a.name} />
+                <PullCommand agentName={a.name} versions={versions} />
               </div>
 
               {/* Tabs */}
@@ -365,7 +479,8 @@ export default function AgentDetailPage() {
                   </TabsTrigger>
                   <TabsTrigger value="install">Install</TabsTrigger>
                   {canEdit && <TabsTrigger value="edit">Edit</TabsTrigger>}
-                  {isAdmin && <TabsTrigger value="analytics">Analytics</TabsTrigger>}
+                  {canEdit && <TabsTrigger value="insights">Insights</TabsTrigger>}
+
                 </TabsList>
 
                 <TabsContent value="overview" className="space-y-6 mt-6">
@@ -545,7 +660,7 @@ export default function AgentDetailPage() {
                       Use the Observal CLI to pull this agent into your project.
                     </p>
                   </div>
-                  <PullCommand agentName={a.name} />
+                  <PullCommand agentName={a.name} versions={versions} />
 
                   <Separator />
 
@@ -571,17 +686,18 @@ export default function AgentDetailPage() {
                     />
                   </TabsContent>
                 )}
-                {isAdmin && (
-                  <TabsContent value="analytics" className="mt-6">
-                    <AnalyticsTab agentId={id} />
+                {canEdit && (
+                  <TabsContent value="insights" className="mt-6">
+                    <InsightsTab agentId={id} />
                   </TabsContent>
                 )}
+
               </Tabs>
             </div>
 
             {/* Sidebar (desktop) */}
             <aside className="hidden lg:block space-y-5 animate-in stagger-1">
-              <PullCommand agentName={a.name} />
+              <PullCommand agentName={a.name} versions={versions} />
 
               <div className="border border-border rounded-md p-4 space-y-4">
                 <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">

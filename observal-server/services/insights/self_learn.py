@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Self-learning pipeline: applies insight suggestions as pending registry items.
@@ -23,6 +24,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import yaml
 from loguru import logger as optic
 from sqlalchemy import select
 
@@ -583,12 +585,14 @@ async def _create_skill_listing(
 ) -> dict | None:
     """Create a pending SkillListing from a features_to_try suggestion.
 
-    Validates through SkillSubmitRequest to ensure proper field values.
+    Validates through SkillSubmitRequest and SKILL.md frontmatter validation to
+    ensure proper field values.
     Wraps the example in proper SKILL.md frontmatter if not already formatted.
     """
     from pydantic import ValidationError
 
     from schemas.skill import SkillSubmitRequest
+    from services.skill_validator import SkillValidationError, validate_skill_md_content_frontmatter
 
     one_liner = feature.get("one_liner", "")
     example = feature.get("example", "")
@@ -606,8 +610,9 @@ async def _create_skill_listing(
     # Build proper SKILL.md content if the example is raw text
     skill_md = _ensure_skill_md_format(name, one_liner, example)
 
-    # Validate through Pydantic schema
+    # Validate through Pydantic schema and stored SKILL.md frontmatter rules.
     try:
+        validate_skill_md_content_frontmatter(skill_md)
         validated = SkillSubmitRequest(
             name=name,
             version="1.0.0",
@@ -619,7 +624,7 @@ async def _create_skill_listing(
             task_type="general",
             supported_ides=["claude-code", "kiro", "pi"],
         )
-    except ValidationError as e:
+    except (SkillValidationError, ValidationError) as e:
         optic.warning("self_learn_skill_validation_failed", name=name, errors=str(e))
         return None
 
@@ -673,11 +678,15 @@ def _ensure_skill_md_format(name: str, description: str, raw_example: str) -> st
     if raw_example.strip().startswith("---"):
         return raw_example  # Already has frontmatter
 
+    frontmatter = {
+        "name": name,
+        "description": description,
+        "version": "1.0.0",
+        "task_type": "general",
+    }
+    body = yaml.safe_dump(frontmatter, sort_keys=False, default_flow_style=False, allow_unicode=True).strip()
     return f"""---
-name: {name}
-description: "{description}"
-version: 1.0.0
-task_type: general
+{body}
 ---
 
 # {name}

@@ -437,11 +437,15 @@ INIT_SQL = [
         anyLastIf(model, model != '')         AS model
     FROM session_events
     GROUP BY project_id, session_id""",
-    # ── Fix existing poisoned timestamps in session_stats_agg ──────────────────
-    # The kiro_credits row (timestamp 2099-12-31) previously poisoned min/max.
-    # Truncate the agg table and backfill from source with correct filters.
-    """TRUNCATE TABLE IF EXISTS session_stats_agg""",
-    """INSERT INTO session_stats_agg
+    # ── Poisoned timestamp fix (applied once, now a no-op) ──────────────────────
+    # Previously this TRUNCATED session_stats_agg and backfilled on every deploy,
+    # wiping all trace data. Removed: the partition migration handles backfill
+    # correctly and only runs once. The MV filters timestamps going forward.
+    # ── Add layer_hash to session_stats_agg for version-aware insights ─────────
+    """ALTER TABLE session_stats_agg ADD COLUMN IF NOT EXISTS layer_hash String DEFAULT ''""",
+    """DROP VIEW IF EXISTS session_stats_mv""",
+    """CREATE MATERIALIZED VIEW IF NOT EXISTS session_stats_mv
+    TO session_stats_agg AS
     SELECT
         project_id,
         session_id,
@@ -449,6 +453,7 @@ INIT_SQL = [
         coalesce(anyIf(user_id, user_id != ''), '')                             AS user_id,
         coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL AND parent_session_id != ''), '') AS parent_session_id,
         coalesce(anyIf(ide, ide != ''), '')                                     AS ide,
+        coalesce(anyIf(layer_hash, layer_hash IS NOT NULL AND layer_hash != ''), '') AS layer_hash,
         minIf(timestamp, timestamp > '1971-01-01 00:00:00' AND timestamp < '2099-01-01 00:00:00') AS first_event_time,
         maxIf(timestamp, timestamp > '1971-01-01 00:00:00' AND timestamp < '2099-01-01 00:00:00') AS last_event_time,
         count()                               AS event_count,
@@ -463,6 +468,20 @@ INIT_SQL = [
         anyLastIf(model, model != '')         AS model
     FROM session_events
     GROUP BY project_id, session_id""",
+    # Layer snapshots: stores full IDE config manifests for version-aware insights.
+    # Keyed by (project_id, user_id, hash). ReplacingMergeTree deduplicates.
+    """CREATE TABLE IF NOT EXISTS layer_snapshots (
+        hash            String,
+        project_id      String,
+        user_id         String,
+        ide             LowCardinality(String),
+        content         String CODEC(ZSTD(3)),
+        uploaded_at     DateTime64(3, 'UTC') DEFAULT now(),
+        file_count      UInt16,
+        total_size      UInt32,
+        lockfile_hash   String DEFAULT ''
+    ) ENGINE = ReplacingMergeTree(uploaded_at)
+    ORDER BY (project_id, user_id, hash)""",
 ]
 
 # ── Resource tuning ───────────────────────────────────────────────────────────

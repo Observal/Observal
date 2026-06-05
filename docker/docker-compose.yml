@@ -84,8 +84,8 @@ services:
         ]
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 15s
+      retries: 5
+      start_period: 60s
     read_only: true
     tmpfs:
       - /tmp
@@ -95,7 +95,7 @@ services:
       replicas: ${API_REPLICAS:-1}
       resources:
         limits:
-          memory: 512M
+          memory: ${API_MEMORY_LIMIT:-1536M}
     networks:
       - observal-net
 
@@ -205,7 +205,7 @@ services:
       replicas: ${WORKER_REPLICAS:-1}
       resources:
         limits:
-          memory: 512M
+          memory: ${WORKER_MEMORY_LIMIT:-1536M}
     networks:
       - observal-net
 

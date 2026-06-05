@@ -114,6 +114,8 @@ async def _call_litellm(prompt: str, model: str, max_tokens: int = 16384) -> dic
     api_key = await ds.get("insights.api_key")
     api_base = await ds.get("insights.api_base")
 
+    aws_region = await ds.get("insights.aws_region")
+
     kwargs: dict = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -129,6 +131,8 @@ async def _call_litellm(prompt: str, model: str, max_tokens: int = 16384) -> dic
         kwargs["api_key"] = api_key
     if api_base:
         kwargs["api_base"] = api_base
+    if aws_region and "bedrock" in model:
+        kwargs["aws_region_name"] = aws_region
 
     try:
         response = await litellm.acompletion(**kwargs)

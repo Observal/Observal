@@ -78,7 +78,13 @@ async def subscribe(channel: str):
     max_reconnects = 5
     reconnect_count = 0
     while reconnect_count < max_reconnects:
-        r = get_redis()
+        pubsub_pool = aioredis.ConnectionPool.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            max_connections=2,
+            socket_connect_timeout=settings.REDIS_SOCKET_TIMEOUT,
+        )
+        r = aioredis.Redis(connection_pool=pubsub_pool)
         pubsub = r.pubsub()
         try:
             await pubsub.subscribe(channel)
@@ -91,7 +97,7 @@ async def subscribe(channel: str):
                     except (json.JSONDecodeError, TypeError):
                         optic.trace("malformed message on '{}', skipping", channel)
                         continue
-        except (ConnectionError, OSError) as e:
+        except (ConnectionError, OSError, TimeoutError) as e:
             reconnect_count += 1
             optic.warning(
                 "lost connection to '{}', reconnecting ({}/{}) - {}",
@@ -105,6 +111,10 @@ async def subscribe(channel: str):
             try:
                 await pubsub.unsubscribe(channel)
                 await pubsub.close()
+            except Exception:
+                pass
+            try:
+                await pubsub_pool.disconnect()
             except Exception:
                 pass
 

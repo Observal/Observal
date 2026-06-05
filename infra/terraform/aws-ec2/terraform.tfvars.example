@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Deployment name (used for resource naming — lowercase, no spaces)
+name = "mycompany"
+
+# AWS region
+region = "us-east-1"
+
+# Instance size (t3.medium minimum, t3.large recommended, t3.xlarge for heavy usage)
+instance_type = "t3.large"
+
+# Domain (optional — leave empty to access via IP over HTTP)
+# If set, the deploy script will configure HTTPS with Let's Encrypt.
+# DNS must be managed in Route53 for automatic record creation.
+domain          = ""
+route53_zone_id = ""
+
+# Git ref to deploy (branch, tag, or commit SHA)
+observal_ref = "main"
+
+# Environment variable overrides
+# Empty values ("") use the default from .env.example. Only fill in what you need to change.
+env_overrides = {
+  OBSERVAL_LICENSE_KEY      = ""
+  OAUTH_CLIENT_ID           = ""
+  OAUTH_CLIENT_SECRET       = ""
+  JWT_KEY_DIR               = ""
+  JWT_SIGNING_ALGORITHM     = ""
+  LOG_LEVEL                 = ""
+  LOG_FORMAT                = ""
+  SEED_DEMO_ACCOUNTS        = ""
+  DEMO_SUPER_ADMIN_EMAIL    = ""
+  DEMO_SUPER_ADMIN_PASSWORD = ""
+  DEMO_ADMIN_EMAIL          = ""
+  DEMO_ADMIN_PASSWORD       = ""
+  DEMO_REVIEWER_EMAIL       = ""
+  DEMO_REVIEWER_PASSWORD    = ""
+  DEMO_USER_EMAIL           = ""
+  DEMO_USER_PASSWORD        = ""
+  DATABASE_URL              = ""
+  CLICKHOUSE_URL            = ""
+  REDIS_URL                 = ""
+  POSTGRES_USER             = ""
+  POSTGRES_PASSWORD         = ""
+  CLICKHOUSE_USER           = ""
+  CLICKHOUSE_PASSWORD       = ""
+}
+
+# VPC (optional — leave empty for default VPC)
+# vpc_id    = "vpc-0123456789abcdef0"
+# subnet_id = "subnet-0123456789abcdef0"

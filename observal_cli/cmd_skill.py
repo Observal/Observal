@@ -407,6 +407,9 @@ def skill_install(
     scope: str = typer.Option("user", "--scope", "-s", help="Install scope: user (global, default) or project"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
     no_write: bool = typer.Option(False, "--no-write", help="Print config without writing files"),
+    version: str | None = typer.Option(
+        None, "--version", "-V", help="Install a specific version (e.g. '1.0.0'). Defaults to latest."
+    ),
 ):
     """Install a skill by fetching the full skill directory from git.
 
@@ -427,7 +430,10 @@ def skill_install(
     """
     resolved = config.resolve_alias(skill_id)
     with spinner(f"Generating {ide} config..."):
-        result = client.post(f"/api/v1/skills/{resolved}/install", {"ide": ide, "scope": scope})
+        install_body = {"ide": ide, "scope": scope}
+        if version:
+            install_body["version"] = version
+        result = client.post(f"/api/v1/skills/{resolved}/install", install_body)
     snippet = result.get("config_snippet", result)
 
     if raw:
@@ -459,6 +465,23 @@ def skill_install(
             )
     else:
         rprint("[dim]Skill install skipped (--no-write)[/dim]")
+
+    # Write to lock file
+    if not no_write:
+        try:
+            from observal_cli.lockfile import upsert_standalone
+
+            upsert_standalone(
+                ide,
+                component_type="skill",
+                name=skill_info.get("name", resolved),
+                component_id=str(skill_info.get("id", resolved)),
+                version=version or skill_info.get("version") or skill_info.get("latest_version"),
+                scope=scope,
+                directory=str(Path.cwd()) if scope == "project" else None,
+            )
+        except Exception:
+            pass  # Never block install on lockfile failure
 
     rprint(f"\n[bold]Config for {ide}:[/bold]\n")
     console.print_json(_json.dumps(snippet, indent=2))

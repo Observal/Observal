@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import uuid
@@ -10,6 +11,7 @@ from pydantic import BaseModel, field_validator
 
 from models.mcp import ListingStatus
 from schemas.constants import VALID_SKILL_TASK_TYPES, make_ide_list_validator, make_option_validator
+from schemas.skill_commands import normalize_slash_command
 
 
 class SkillSubmitRequest(BaseModel):
@@ -32,6 +34,11 @@ class SkillSubmitRequest(BaseModel):
     _validate_task_type = field_validator("task_type")(make_option_validator("task_type", VALID_SKILL_TASK_TYPES))
     _validate_ides = field_validator("supported_ides")(make_ide_list_validator())
 
+    @field_validator("slash_command")
+    @classmethod
+    def _validate_slash_command(cls, v: str | None) -> str | None:
+        return normalize_slash_command(v)
+
 
 class SkillDraftRequest(BaseModel):
     name: str
@@ -52,6 +59,11 @@ class SkillDraftRequest(BaseModel):
 
     _validate_ides = field_validator("supported_ides")(make_ide_list_validator())
 
+    @field_validator("slash_command")
+    @classmethod
+    def _validate_slash_command(cls, v: str | None) -> str | None:
+        return normalize_slash_command(v)
+
 
 class SkillUpdateRequest(BaseModel):
     name: str | None = None
@@ -69,6 +81,11 @@ class SkillUpdateRequest(BaseModel):
     task_type: str | None = None
     slash_command: str | None = None
     supported_ides: list[str] | None = None
+
+    @field_validator("slash_command")
+    @classmethod
+    def _validate_slash_command(cls, v: str | None) -> str | None:
+        return normalize_slash_command(v)
 
 
 class SkillListingResponse(BaseModel):
@@ -120,6 +137,7 @@ class SkillListingSummary(BaseModel):
 class SkillInstallRequest(BaseModel):
     ide: str
     scope: str = "project"
+    version: str | None = None  # Specific version to install (None = latest)
 
 
 class SkillInstallResponse(BaseModel):

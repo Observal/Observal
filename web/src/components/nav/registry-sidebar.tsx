@@ -38,7 +38,6 @@ import {
 	ShieldAlert,
 	Stethoscope,
 	KeyRound,
-	Lightbulb,
 } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import {
@@ -87,13 +86,6 @@ const adminNav: NavItem[] = [
 		icon: LayoutDashboard,
 		minRole: "admin",
 		requiresFeature: "exec_dashboard",
-	},
-	{
-		title: "Insights",
-		href: "/insights",
-		icon: Lightbulb,
-		minRole: "admin",
-		requiresFeature: "insights",
 	},
 	{ title: "Users", href: "/users", icon: Users, minRole: "admin" },
 	{

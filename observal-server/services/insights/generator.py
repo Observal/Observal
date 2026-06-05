@@ -266,6 +266,23 @@ async def _run_pipeline(
         estimated_waste=estimated_waste,
     )
 
+    # ── Step 4b: Version impact analysis ─────────────────────────────────
+    try:
+        from .version_impact import build_version_impact_data
+
+        version_impact = await build_version_impact_data(
+            agent_id=agent_id or "",
+            period_start=period_start,
+            period_end=period_end,
+            agent_name=agent_name,
+            project_id="default",
+        )
+        if version_impact:
+            data_block += f"\n\n## Version Impact\n{json.dumps(version_impact, indent=2)}"
+            logger.info("version_impact_detected", groups=version_impact["group_count"])
+    except Exception as e:
+        logger.warning("version_impact_analysis_failed", error=str(e))
+
     # ── Step 5: Generate narrative sections (7 parallel + 1 synthesis) ────
     narrative = await generate_sections(
         data_block=data_block,

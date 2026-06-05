@@ -13,7 +13,7 @@ from loguru import logger as optic
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, require_role, resolve_prefix_id
+from api.deps import get_db, get_effective_agent_permission, require_role, resolve_prefix_id
 from models.agent import Agent
 from models.insight_meta_cache import InsightMetaCache
 from models.insight_report import InsightReport, InsightReportStatus
@@ -40,8 +40,15 @@ def _require_insights():
         )
 
 
+def _require_agent_edit_access(agent: Agent, user: User) -> None:
+    """Raise 403 unless user is admin or has owner/edit permission on the agent."""
+    perm = get_effective_agent_permission(agent, user)
+    if perm not in ("owner", "edit"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions for this agent")
+
+
 @router.get("/status")
-async def insights_status(current_user: User = Depends(require_role(UserRole.admin))):
+async def insights_status(current_user: User = Depends(require_role(UserRole.user))):
     """Return whether insights is available and properly configured."""
     import services.dynamic_settings as ds
 
@@ -52,8 +59,11 @@ async def insights_status(current_user: User = Depends(require_role(UserRole.adm
     if not model:
         return {"available": False, "reason": "No model configured. Set insights.model_sections in admin settings."}
 
+    # If a direct API key is configured, skip AWS credential checks
+    api_key = await ds.get("insights.api_key")
+
     # Check if AWS credentials are set and valid (for Bedrock models)
-    if "anthropic" in model:
+    if "anthropic" in model and not api_key:
         aws_key = await ds.get("insights.aws_access_key_id")
         aws_secret = await ds.get("insights.aws_secret_access_key")
         if not aws_key:
@@ -108,12 +118,13 @@ async def insights_status(current_user: User = Depends(require_role(UserRole.adm
 async def agent_session_count(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Return the number of sessions available for insight generation."""
     from services.clickhouse import _query
 
     agent = await resolve_prefix_id(Agent, agent_id, db)
+    _require_agent_edit_access(agent, current_user)
     now = datetime.now(UTC)
     period_start = now - timedelta(days=14)
 
@@ -147,12 +158,13 @@ async def generate_insight(
     agent_id: str,
     req: GenerateInsightRequest | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Trigger generation of an insight report for an agent."""
     optic.trace("agent_id={}, req={}", agent_id, req)
     _require_insights()
     agent = await resolve_prefix_id(Agent, agent_id, db)
+    _require_agent_edit_access(agent, current_user)
 
     if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
@@ -229,12 +241,13 @@ async def generate_insight(
 async def list_reports(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     """List insight reports for an agent, newest first."""
     optic.trace("agent_id={}", agent_id)
     _require_insights()
     agent = await resolve_prefix_id(Agent, agent_id, db)
+    _require_agent_edit_access(agent, current_user)
 
     if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
@@ -254,7 +267,7 @@ async def list_reports(
 async def get_report(
     report_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Get a single insight report by ID."""
     optic.trace("report_id={}", report_id)
@@ -270,7 +283,10 @@ async def get_report(
     agent_stmt = select(Agent).where(Agent.id == report.agent_id)
     agent_result = await db.execute(agent_stmt)
     agent = agent_result.scalar_one_or_none()
-    if agent and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
+    if not agent:
+        raise HTTPException(status_code=404, detail="Report not found")
+    _require_agent_edit_access(agent, current_user)
+    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
 
     return InsightReportResponse.model_validate(report)
@@ -280,7 +296,7 @@ async def get_report(
 async def export_report_html(
     report_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Export an insight report as a self-contained HTML document."""
     optic.trace("report_id={}", report_id)
@@ -299,7 +315,10 @@ async def export_report_html(
     agent_stmt = select(Agent).where(Agent.id == report.agent_id)
     agent_result = await db.execute(agent_stmt)
     agent = agent_result.scalar_one_or_none()
-    if agent and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
+    if not agent:
+        raise HTTPException(status_code=404, detail="Report not found")
+    _require_agent_edit_access(agent, current_user)
+    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
 
     # Build report dict for the renderer

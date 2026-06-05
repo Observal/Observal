@@ -321,3 +321,18 @@ async def insert_session_events(rows: list[dict]):
     except Exception as e:
         optic.error("failed to insert {} session events - session will appear incomplete: {}", len(rows), e)
         raise
+
+
+async def insert_layer_snapshot(row: dict):
+    """Insert a single layer snapshot row into ClickHouse."""
+    optic.trace("inserting layer snapshot: hash={}", row.get("hash", "?"))
+    sql = (
+        "INSERT INTO layer_snapshots (hash, project_id, user_id, ide, content, "
+        "file_count, total_size, lockfile_hash) FORMAT JSONEachRow"
+    )
+    try:
+        r = await _client._query(sql, data=json.dumps(row, default=str))
+        r.raise_for_status()
+    except Exception as e:
+        optic.error("failed to insert layer snapshot: {}", e)
+        raise

@@ -5,6 +5,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { lazy } from "react";
 const InsightDetail = lazy(() => import("@/pages/admin/insights/detail"));
 
-export const Route = createFileRoute("/_authed/_admin/insights/$reportId")({
+export const Route = createFileRoute("/_authed/insights/$reportId")({
   component: InsightDetail,
 });

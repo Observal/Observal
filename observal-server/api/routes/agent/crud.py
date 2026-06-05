@@ -459,9 +459,26 @@ async def version_suggestions(
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
+    # Use the highest existing version (including pending) to avoid duplicate suggestions
+    from models.agent import AgentVersion
     from services.versioning import suggest_versions
 
-    return {"current": agent.version, "suggestions": suggest_versions(agent.version)}
+    all_versions_stmt = (
+        select(AgentVersion.version).where(AgentVersion.agent_id == agent.id).order_by(AgentVersion.created_at.desc())
+    )
+    all_versions_result = await db.execute(all_versions_stmt)
+    all_versions = [v for (v,) in all_versions_result.all()]
+
+    # Find the highest semver among all existing versions
+    from services.versioning import parse_semver
+
+    highest = agent.version or "0.0.0"
+    for v in all_versions:
+        parsed = parse_semver(v)
+        if parsed and parsed > (parse_semver(highest) or (0, 0, 0)):
+            highest = v
+
+    return {"current": highest, "suggestions": suggest_versions(highest)}
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)

@@ -97,6 +97,9 @@ def main(
     # Auto-update on minor/patch releases (non-blocking, exempt self/server commands)
     _try_auto_update()
 
+    # One-time migration: .observal/agent markers → lockfile.json
+    _try_lockfile_migration()
+
 
 def _try_auto_update() -> None:
     """Attempt auto-update for minor/patch releases on startup.
@@ -125,6 +128,25 @@ def _try_auto_update() -> None:
         pass  # Never crash the CLI for auto-update
 
 
+def _try_lockfile_migration() -> None:
+    """One-time migration of .observal/agent markers to lockfile.json.
+
+    Runs only when: lockfile.json doesn't exist but config.json DOES
+    (meaning the user has previously logged in but never had a lockfile).
+    Skips entirely if ~/.observal/ doesn't exist yet (fresh install).
+    """
+    try:
+        from observal_cli.lockfile import CONFIG_DIR, LOCKFILE_PATH, migrate_agent_markers
+
+        # Don't run if the config dir doesn't exist yet (auth login hasn't happened)
+        if not CONFIG_DIR.exists():
+            return
+        if not LOCKFILE_PATH.exists():
+            migrate_agent_markers()
+    except Exception:
+        pass  # Never crash the CLI for migration
+
+
 # ── Register command groups ──────────────────────────────
 
 from observal_cli.cmd_agent import agent_app
@@ -142,6 +164,7 @@ from observal_cli.cmd_ops import (
     ops_app,
     self_app,
 )
+from observal_cli.cmd_outdated import register_outdated
 from observal_cli.cmd_prompt import prompt_app
 from observal_cli.cmd_pull import register_pull
 from observal_cli.cmd_sandbox import sandbox_app
@@ -174,6 +197,7 @@ app.add_typer(auth_app, name="auth")
 # ── Primary user workflows (root) ─────────────────────────
 register_config(app)
 register_scan(app)
+register_outdated(app)
 
 
 # ── Agent pull (full-featured, lives under `observal agent pull`) ──
