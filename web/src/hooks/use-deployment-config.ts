@@ -18,6 +18,7 @@ export function useDeploymentConfig() {
 	return {
 		licensed: data?.licensed ?? false,
 		ssoEnabled: data?.sso_enabled ?? false,
+		googleSsoEnabled: data?.google_sso_enabled ?? false,
 		ssoOnly: data?.sso_only ?? false,
 		samlEnabled: data?.saml_enabled ?? false,
 		licensedFeatures: data?.licensed_features ?? [],

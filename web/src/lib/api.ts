@@ -746,6 +746,7 @@ export type RetentionWarnings = {
 export type PublicConfig = {
 	licensed: boolean;
 	sso_enabled: boolean;
+	google_sso_enabled: boolean;
 	sso_only: boolean;
 	saml_enabled: boolean;
 	exec_dashboard_available: boolean;
