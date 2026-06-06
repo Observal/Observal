@@ -199,13 +199,3 @@ Kiro does not currently support native OTEL, which limits what Observal can obse
 | Distributed trace context propagation | ❌ Not available |
 
 Token, cost, and model data will become available if Kiro adds native OTEL support in a future release.
-
----
-
-## Related issues
-
-- [#141 — Build hook-based telemetry bridge](https://github.com/BlazeUp-AI/Observal/issues/141)
-- [#143 — Generate shell-based hook configs](https://github.com/BlazeUp-AI/Observal/issues/143)
-- [#144 — Token/cost/model data not accessible via hooks](https://github.com/BlazeUp-AI/Observal/issues/144)
-- [#148 — Add Kiro Skills installation support](https://github.com/BlazeUp-AI/Observal/issues/148)
-- [#152 — Enhance doctor diagnostics for Kiro](https://github.com/BlazeUp-AI/Observal/issues/152)
