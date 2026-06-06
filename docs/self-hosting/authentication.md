@@ -77,6 +77,45 @@ The first user who logs in via OAuth is **not** automatically an admin. Bootstra
 
 Observal requests standard `openid profile email` scope. The IdP's `email` claim is the canonical user identifier.
 
+## Google OAuth (first-class provider)
+
+Google sign-in runs as its own provider — separate from the generic OIDC slot above. Both can be enabled at the same time, so an org can offer Okta *and* Google on the login screen.
+
+Set these two and the **Sign in with Google** button appears:
+
+```
+GOOGLE_OAUTH_CLIENT_ID=1234567890-abc...apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=GOCSPX-...
+```
+
+The Google OIDC discovery URL is hardcoded server-side, so you don't need to set it.
+
+### Creating the Google OAuth client
+
+1. Open the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) in the project you want to use.
+2. Click **Create Credentials → OAuth client ID**.
+3. **Application type:** Web application.
+4. **Authorized JavaScript origins:** `{FRONTEND_URL}` (e.g. `https://observal.your-company.internal`).
+5. **Authorized redirect URI:** `{FRONTEND_URL}/api/v1/auth/oauth/google/callback`.
+6. Copy the generated **Client ID** and **Client secret** into your `.env`.
+7. Restart the API container.
+
+### Restricting to specific email domains
+
+Set `GOOGLE_OAUTH_ALLOWED_DOMAINS` to a comma-separated list of domains. Anyone outside the list is rejected with a 403, even if they have a valid Google account.
+
+```
+GOOGLE_OAUTH_ALLOWED_DOMAINS=acme.com,acme.io
+```
+
+Leave it unset to allow any Google account (including personal `@gmail.com` addresses) to provision themselves as `role=user`.
+
+### Notes
+
+- Observal additionally requires Google's `email_verified` claim to be `true`. Unverified accounts (rare on Google but possible) are rejected with a 400.
+- The first Google user is **not** automatically an admin (matches the generic OIDC behavior). Bootstrap a local admin first, then use that account to promote the Google user.
+- The auth provider and Google subject ID are recorded on the user row (`auth_provider="google"`, `sso_subject_id=<google-sub>`) for audit purposes.
+
 ## Role-based access control (RBAC)
 
 Four built-in roles enforced on every endpoint:

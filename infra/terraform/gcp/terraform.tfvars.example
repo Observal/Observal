@@ -32,3 +32,8 @@ data_retention_days = 90
 
 # License (leave empty for community edition)
 # observal_license_key = ""
+
+# Google OAuth (leave empty to disable Google sign-in)
+# google_oauth_client_id        = ""
+# google_oauth_client_secret    = ""
+# google_oauth_allowed_domains  = "acme.com,acme.io"

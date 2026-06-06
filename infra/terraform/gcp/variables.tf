@@ -248,6 +248,26 @@ variable "edition" {
   }
 }
 
+variable "google_oauth_client_id" {
+  description = "Google OAuth 2.0 client ID from the GCP console. Leave empty to disable Google sign-in."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_oauth_client_secret" {
+  description = "Google OAuth 2.0 client secret. Required if google_oauth_client_id is set."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_oauth_allowed_domains" {
+  description = "Comma-separated email-domain allowlist for Google sign-in (e.g. 'acme.com,acme.io'). Leave empty to allow any Google account."
+  type        = string
+  default     = ""
+}
+
 # ── Backups ───────────────────────────────────────────────────────────────
 
 variable "backup_retention_days" {

@@ -117,6 +117,31 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      env {
+        name = "GOOGLE_OAUTH_CLIENT_ID"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.app["GOOGLE_OAUTH_CLIENT_ID"].secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "GOOGLE_OAUTH_CLIENT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.app["GOOGLE_OAUTH_CLIENT_SECRET"].secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name  = "GOOGLE_OAUTH_ALLOWED_DOMAINS"
+        value = var.google_oauth_allowed_domains
+      }
+
       startup_probe {
         http_get {
           path = "/readyz"
