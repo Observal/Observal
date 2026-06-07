@@ -198,6 +198,7 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                 "~/.codex",
                 [
                     "config.toml",
+                    "hooks.json",
                 ],
             ),
         ],
@@ -207,6 +208,7 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                 [
                     "AGENTS.md",
                     ".codex/config.toml",
+                    ".codex/hooks.json",
                 ],
             ),
         ],
@@ -432,6 +434,9 @@ def _get_observal_managed_files(lockfile_data: dict, ide: str, project_dir: str 
             elif ide == "kiro":
                 managed.add(f"user:agents/{agent_name}.json")
                 managed.add(f"project:.kiro/agents/{agent_name}.json")
+            elif ide == "codex":
+                managed.add("user:AGENTS.md")
+                managed.add("project:AGENTS.md")
 
         # Component files
         for comp in agent.get("components", []):
@@ -442,6 +447,8 @@ def _get_observal_managed_files(lockfile_data: dict, ide: str, project_dir: str 
                     managed.add(f"user:skills/{comp_name}/SKILL.md")
                 elif ide == "cursor":
                     managed.add(f"user:rules/{comp_name}.mdc")
+            elif comp_type == "mcp" and comp_name and ide == "codex":
+                managed.add("user:config.toml")
 
     for item in ide_section.get("standalone", []):
         item_name = item.get("name", "")
@@ -451,6 +458,8 @@ def _get_observal_managed_files(lockfile_data: dict, ide: str, project_dir: str 
                 managed.add(f"user:skills/{item_name}/SKILL.md")
             elif ide == "cursor":
                 managed.add(f"user:rules/{item_name}.mdc")
+        elif item_type == "mcp" and item_name and ide == "codex":
+            managed.add("user:config.toml")
 
     return managed
 
@@ -470,6 +479,7 @@ def _detect_active_ides() -> list[str]:
         "cursor": Path.home() / ".cursor",
         "kiro": Path.home() / ".kiro",
         "pi": Path.home() / ".pi" / "agent",
+        "codex": Path.home() / ".codex",
     }
     return [ide for ide, path in ide_dirs.items() if path.is_dir()]
 
