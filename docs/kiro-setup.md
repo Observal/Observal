@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Kiro setup guide
 
 Connect [Kiro](https://kiro.dev) to [Observal](https://github.com/BlazeUp-AI/Observal) for agent tracing, hook-based telemetry, and registry integration.
