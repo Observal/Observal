@@ -240,6 +240,10 @@ Logs are written to `~/.observal/logs/dev.log` and include structured context fo
 
 Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://github.com/BlazeUp-AI/Observal/security/advisories) or email contact@blazeup.app. Do not open a public issue. See [SECURITY.md](SECURITY.md).
 
+## IDE Integrations
+
+Observal supports first-class IDE integrations with skills, hook bridge, MCP servers, and session parsing. See [docs/integrations/pi.md](docs/integrations/pi.md) for the Pi IDE integration guide.
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=BlazeUp-AI%2FObserval&type=date&legend=top-left">
