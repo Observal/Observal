@@ -124,7 +124,9 @@ class TestCopilotAdapterDetectHooks:
         hooks_dir = tmp_path / ".github" / "hooks"
         hooks_dir.mkdir(parents=True)
         (hooks_dir / "observal.json").write_text(
-            json.dumps({"hooks": {"UserPromptSubmit": [{"bash": "python -m observal_cli.hooks.copilot_cli_session_push"}]}})
+            json.dumps(
+                {"hooks": {"UserPromptSubmit": [{"bash": "python -m observal_cli.hooks.copilot_cli_session_push"}]}}
+            )
         )
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         adapter = CopilotAdapter()
@@ -980,7 +982,6 @@ class TestServerAdapterFormatConfig:
 # ═══════════════════════════════════════════════════════════════════
 # Task 17: Property-Based Tests (Hypothesis)
 # ═══════════════════════════════════════════════════════════════════
-
 
 
 class TestPropertySessionParserRoundTrip:

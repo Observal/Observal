@@ -22,7 +22,7 @@
  ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝
 </pre>
 
-**A unified platform for agent registry and analytics. Enterprise edition adds SSO, SCIM provisioning, and organizational AI insights.**
+**A self-hosted unified agent registry with built in analytics. Enterprise edition adds SSO (OIDC and SAML), Audit Logs, Security Events and organizational AI insights.**
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="License"></a>
@@ -46,8 +46,26 @@
 | Kiro |
 | Cursor |
 | Pi |
+| Copilot (CLI & VS Code Extension) |
+| Codex |
 
 One command to install any agent into any supported IDE. The config files are generated per-IDE automatically.
+
+---
+
+## Session Replay
+
+**Full session overview with token counts, models, tools, and turn-by-turn timeline:**
+
+![Session detail showing tokens, tools, models, and turns](docs/img/ses1.png)
+
+**Every turn captured: user prompt, tool calls, thinking block, assistant response:**
+
+![Turn expanded showing user prompt, thinking, and response](docs/img/complete_capture_thinking_response.png)
+
+**Drill into any span to see exact tool inputs and outputs:**
+
+![Span detail showing bash command input and full output](docs/img/span.png)
 
 ---
 

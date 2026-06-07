@@ -940,7 +940,6 @@ def _patch_codex(dry_run: bool) -> bool:
     return True
 
 
-
 def _patch_copilot(dry_run: bool) -> bool:
     """Install session push hooks for Copilot (VS Code).
 

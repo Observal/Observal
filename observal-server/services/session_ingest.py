@@ -71,6 +71,8 @@ def _usage_codex(parsed: dict) -> dict:
         "cache_write_tokens": 0,
         "model": "",
     }
+
+
 def _usage_copilot_cli(parsed: dict) -> dict:
     """Copilot CLI: tokens are in assistant.message data or assistant.usage events.
 
