@@ -47,6 +47,8 @@ dependencies = [
     "prometheus-fastapi-instrumentator>=7.0.0",
     "urllib3>=2.7.0",
     "idna>=3.15",
+    "orjson>=3.10.0",
+    "xxhash>=3.4.0",
 ]
 
 [tool.uv]

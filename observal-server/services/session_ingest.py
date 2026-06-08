@@ -12,12 +12,12 @@ Classification dispatches strictly by IDE via
 default fallback.  Passing an unknown ``ide`` value raises ``KeyError``.
 """
 
-import hashlib
-import json
 import uuid as _uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import orjson
+import xxhash
 from loguru import logger as optic
 
 from services.clickhouse import insert_session_events, query_existing_for_dedup, query_session_event_count
@@ -339,15 +339,15 @@ async def ingest_session_lines(
 
     for i, raw_line in enumerate(lines):
         line_offset = start_offset + i
-        line_hash = hashlib.sha256(raw_line.encode("utf-8", errors="replace")).hexdigest()
+        line_hash = xxhash.xxh128(raw_line.encode("utf-8", errors="replace")).hexdigest()
 
         if line_offset in existing_offsets or line_hash in existing_hashes:
             skipped += 1
             continue
 
         try:
-            parsed = json.loads(raw_line)
-        except (json.JSONDecodeError, ValueError) as exc:
+            parsed = orjson.loads(raw_line)
+        except (orjson.JSONDecodeError, ValueError) as exc:
             optic.warning(
                 "session_ingest_parse_error: session={}, offset={}, error={}, line_preview={}",
                 session_id,

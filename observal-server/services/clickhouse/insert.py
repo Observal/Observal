@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """ClickHouse insert functions for all telemetry tables."""
 
-import json
-
+import orjson
 from loguru import logger as optic
 
 import services.clickhouse.client as _client
+
+
+def _dumps(obj: dict) -> str:
+    """Fast JSON serialization via orjson with str fallback for unknown types."""
+    return orjson.dumps(obj, default=str).decode()
 
 
 async def insert_traces(traces: list[dict]):
@@ -45,7 +49,7 @@ async def insert_traces(traces: list[dict]):
             "prompt_id": t.get("prompt_id"),
             "agent_version": t.get("agent_version"),
         }
-        lines.append(json.dumps(row, default=str))
+        lines.append(_dumps(row))
     sql = (
         "INSERT INTO traces (trace_id, parent_trace_id, project_id, mcp_id, agent_id, "
         "user_id, session_id, ide, environment, start_time, end_time, trace_type, name, "
@@ -125,7 +129,7 @@ async def insert_spans(spans: list[dict]):
             "rendered_tokens": s.get("rendered_tokens"),
             "agent_version": s.get("agent_version"),
         }
-        lines.append(json.dumps(row, default=str))
+        lines.append(_dumps(row))
     sql = (
         "INSERT INTO spans (span_id, trace_id, parent_span_id, project_id, mcp_id, "
         "agent_id, user_id, type, name, method, input, output, error, start_time, "
@@ -180,7 +184,7 @@ async def insert_scores(scores: list[dict]):
             "is_deleted": 0,
             "agent_version": sc.get("agent_version"),
         }
-        lines.append(json.dumps(row, default=str))
+        lines.append(_dumps(row))
     sql = (
         "INSERT INTO scores (score_id, trace_id, span_id, project_id, mcp_id, agent_id, "
         "user_id, name, source, data_type, value, string_value, comment, "
@@ -213,7 +217,7 @@ async def insert_otel_logs(rows: list[dict]):
             "TraceId": r.get("TraceId", ""),
             "SpanId": r.get("SpanId", ""),
         }
-        lines.append(json.dumps(line, default=str))
+        lines.append(_dumps(line))
     sql = (
         "INSERT INTO otel_logs (Timestamp, Body, LogAttributes, ServiceName, "
         "SeverityText, SeverityNumber, TraceId, SpanId) FORMAT JSONEachRow"
@@ -257,7 +261,7 @@ async def insert_audit_log(events: list[dict]):
             "chain_hash": e.get("chain_hash", ""),
             "source": e.get("source", "server"),
         }
-        lines.append(json.dumps(row, default=str))
+        lines.append(_dumps(row))
     body = "\n".join(lines)
     sql = "INSERT INTO audit_log FORMAT JSONEachRow SETTINGS async_insert=0"
     try:
@@ -287,7 +291,7 @@ async def _insert_webhook_deliveries(records: list[dict]):
             "duration_ms": r["duration_ms"],
             "payload_size": r["payload_size"],
         }
-        lines.append(json.dumps(row, default=str))
+        lines.append(_dumps(row))
     body = "\n".join(lines)
     sql = (
         "INSERT INTO webhook_deliveries (delivery_id, event_id, alert_rule_id, "
@@ -308,7 +312,7 @@ async def insert_session_events(rows: list[dict]):
         return
     lines = []
     for row in rows:
-        lines.append(json.dumps(row, default=str))
+        lines.append(_dumps(row))
     sql = (
         "INSERT INTO session_events (session_id, project_id, user_id, agent_id, "
         "agent_version, layer_hash, ide, line_offset, line_hash, event_type, timestamp, uuid, parent_uuid, "
@@ -331,7 +335,7 @@ async def insert_layer_snapshot(row: dict):
         "file_count, total_size, lockfile_hash) FORMAT JSONEachRow"
     )
     try:
-        r = await _client._query(sql, data=json.dumps(row, default=str))
+        r = await _client._query(sql, data=_dumps(row))
         r.raise_for_status()
     except Exception as e:
         optic.error("failed to insert layer snapshot: {}", e)
