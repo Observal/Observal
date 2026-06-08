@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 BlazeUp AI
+# SPDX-License-Identifier: AGPL-3.0-only
+
 variable "region" {
   type    = string
   default = "us-east-1"
