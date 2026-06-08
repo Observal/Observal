@@ -1,9 +1,20 @@
+# SPDX-FileCopyrightText: 2026 BlazeUp AI
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # Deploy Observal into an existing VPC.
 #
 # Prerequisites:
 #   - VPC with DNS hostnames + DNS support enabled
 #   - At least 2 private subnets (with NAT/TGW route for outbound)
 #   - At least 2 public subnets (if ALB is internet-facing)
+
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 5.70" }
+  }
+}
 
 module "observal" {
   source = "../.."

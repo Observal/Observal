@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 BlazeUp AI
+# SPDX-License-Identifier: AGPL-3.0-only
+
 output "app_url" {
   description = "Observal application URL."
   value       = module.observal.app_url
