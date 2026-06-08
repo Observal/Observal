@@ -72,6 +72,7 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                     "mcp.json",
                     "hooks.json",
                     "agents/*.md",
+                    "skills/*/SKILL.md",
                 ],
             ),
         ],
@@ -83,6 +84,7 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                     ".cursor/mcp.json",
                     ".cursor/hooks.json",
                     ".cursor/agents/*.md",
+                    ".cursor/skills/*/SKILL.md",
                 ],
             ),
         ],
@@ -132,32 +134,13 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
             ),
         ],
     },
-    "gemini-cli": {
-        "user": [
-            (
-                "~/.gemini",
-                [
-                    "GEMINI.md",
-                    "settings.json",
-                ],
-            ),
-        ],
-        "project": [
-            (
-                ".",
-                [
-                    "GEMINI.md",
-                    ".gemini/settings.json",
-                ],
-            ),
-        ],
-    },
     "copilot": {
         "user": [
             (
                 "~/.copilot",
                 [
                     "instructions.md",
+                    "hooks/*.json",
                 ],
             ),
         ],
@@ -168,6 +151,9 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                     ".github/copilot-instructions.md",
                     ".github/agents/*.agent.md",
                     ".vscode/mcp.json",
+                    ".github/hooks/*.json",
+                    ".github/skills/*/SKILL.md",
+                    ".github/copilot/settings.json",
                 ],
             ),
         ],
@@ -179,6 +165,8 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                 [
                     "agents/*.md",
                     "opencode.json",
+                    "skills/*/SKILL.md",
+                    "plugins/*.ts",
                 ],
             ),
         ],
@@ -188,6 +176,8 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                 [
                     ".opencode/agents/*.md",
                     "opencode.json",
+                    ".opencode/skills/*/SKILL.md",
+                    ".opencode/plugins/*.ts",
                 ],
             ),
         ],
@@ -209,6 +199,7 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                     "AGENTS.md",
                     ".codex/config.toml",
                     ".codex/hooks.json",
+                    ".agents/skills/*/SKILL.md",
                 ],
             ),
         ],
@@ -220,6 +211,11 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                 [
                     "mcp-config.json",
                     "skills/*/SKILL.md",
+                    "agents/*.agent.md",
+                    "hooks/*.json",
+                    "copilot-instructions.md",
+                    "instructions/*.instructions.md",
+                    "settings.json",
                 ],
             ),
         ],
@@ -231,6 +227,8 @@ IDE_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
                     ".github/agents/*.agent.md",
                     ".mcp.json",
                     ".agents/skills/*/SKILL.md",
+                    ".github/hooks/*.json",
+                    ".github/copilot/settings.json",
                 ],
             ),
         ],
@@ -440,6 +438,11 @@ def _get_observal_managed_files(lockfile_data: dict, ide: str, project_dir: str 
             elif ide in ("copilot", "copilot-cli"):
                 # Both generate .github/agents/{name}.agent.md (project scope)
                 managed.add(f"project:.github/agents/{agent_name}.agent.md")
+            elif ide == "pi":
+                managed.add("user:AGENTS.md")
+            elif ide == "opencode":
+                managed.add(f"user:agents/{agent_name}.md")
+                managed.add(f"project:.opencode/agents/{agent_name}.md")
 
         # Component files
         for comp in agent.get("components", []):
@@ -450,6 +453,12 @@ def _get_observal_managed_files(lockfile_data: dict, ide: str, project_dir: str 
                     managed.add(f"user:skills/{comp_name}/SKILL.md")
                 elif ide == "cursor":
                     managed.add(f"user:rules/{comp_name}.mdc")
+                    managed.add(f"user:skills/{comp_name}/SKILL.md")
+                elif ide == "opencode":
+                    managed.add(f"user:skills/{comp_name}/SKILL.md")
+                    managed.add(f"project:.opencode/skills/{comp_name}/SKILL.md")
+                elif ide == "pi":
+                    managed.add(f"user:skills/{comp_name}/SKILL.md")
             elif comp_type == "mcp" and comp_name and ide == "codex":
                 managed.add("user:config.toml")
             elif comp_type == "skill" and comp_name and ide == "copilot-cli":
@@ -465,6 +474,12 @@ def _get_observal_managed_files(lockfile_data: dict, ide: str, project_dir: str 
                 managed.add(f"user:skills/{item_name}/SKILL.md")
             elif ide == "cursor":
                 managed.add(f"user:rules/{item_name}.mdc")
+                managed.add(f"user:skills/{item_name}/SKILL.md")
+            elif ide == "opencode":
+                managed.add(f"user:skills/{item_name}/SKILL.md")
+                managed.add(f"project:.opencode/skills/{item_name}/SKILL.md")
+            elif ide == "pi":
+                managed.add(f"user:skills/{item_name}/SKILL.md")
         elif item_type == "mcp" and item_name and ide == "codex":
             managed.add("user:config.toml")
         elif item_type == "skill" and item_name and ide == "copilot-cli":
