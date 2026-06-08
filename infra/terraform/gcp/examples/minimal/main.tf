@@ -1,6 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+terraform {
+  required_version = ">= 1.6.0"
+}
+
 module "observal" {
   source = "../../"
 

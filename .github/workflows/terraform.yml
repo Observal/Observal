@@ -1,11 +1,20 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Terraform — fmt + validate for the AWS self-hosting module.
+# Terraform — fmt + validate + tflint + env consistency for all modules.
 #
-# Runs on PRs that touch infra/terraform/aws/** and on pushes to main.
-# No AWS credentials needed — `terraform init -backend=false` is used.
+# Runs on PRs and pushes to main that touch infra/terraform/**, .env.example,
+# or observal-server/config.py. No cloud credentials needed.
+#
+# Modules covered:
+#   • infra/terraform/aws  (ECS Fargate — full matrix)
+#   • infra/terraform/gcp  (Cloud Run — full matrix)
+#   • infra/terraform/aws-ec2 (single-instance — fmt+validate only)
+#
+# aws-ec2 is excluded from the matrix and consistency checks because it uses
+# different variable conventions (name vs name_prefix, no clickhouse_mode).
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Terraform
@@ -14,25 +23,40 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'infra/terraform/aws/**'
+      - 'infra/terraform/**'
       - '.github/workflows/terraform.yml'
+      - '.env.example'
+      - 'observal-server/config.py'
   push:
     branches: [main]
     paths:
-      - 'infra/terraform/aws/**'
+      - 'infra/terraform/**'
       - '.github/workflows/terraform.yml'
+      - '.env.example'
+      - 'observal-server/config.py'
 
 concurrency:
   group: terraform-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # ── fmt + validate (aws, gcp) ──────────────────────────────────────────────
   fmt-validate:
-    name: fmt + validate
+    name: "${{ matrix.module }} fmt+validate"
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [aws, gcp]
+        include:
+          - module: aws
+            working_dir: infra/terraform/aws
+            has_bootstrap: true
+          - module: gcp
+            working_dir: infra/terraform/gcp
+            has_bootstrap: false
 
     steps:
       - name: Checkout
@@ -45,38 +69,64 @@ jobs:
           terraform_wrapper: false
 
       - name: terraform fmt (recursive)
-        working-directory: infra/terraform/aws
+        working-directory: ${{ matrix.working_dir }}
         run: terraform fmt -check -recursive -diff
 
       - name: terraform init (root module, no backend)
-        working-directory: infra/terraform/aws
+        working-directory: ${{ matrix.working_dir }}
         run: terraform init -backend=false -input=false
 
       - name: terraform validate (root module)
-        working-directory: infra/terraform/aws
+        working-directory: ${{ matrix.working_dir }}
         run: terraform validate -no-color
 
       - name: terraform init (examples/minimal)
-        working-directory: infra/terraform/aws/examples/minimal
+        working-directory: ${{ matrix.working_dir }}/examples/minimal
         run: terraform init -backend=false -input=false
 
       - name: terraform validate (examples/minimal)
-        working-directory: infra/terraform/aws/examples/minimal
+        working-directory: ${{ matrix.working_dir }}/examples/minimal
+        run: terraform validate -no-color
+
+      - name: Check examples/byovpc exists
+        id: byovpc
+        run: test -f "${{ matrix.working_dir }}/examples/byovpc/main.tf" && echo "exists=true" >> "$GITHUB_OUTPUT" || echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - name: terraform init (examples/byovpc)
+        if: steps.byovpc.outputs.exists == 'true'
+        working-directory: ${{ matrix.working_dir }}/examples/byovpc
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate (examples/byovpc)
+        if: steps.byovpc.outputs.exists == 'true'
+        working-directory: ${{ matrix.working_dir }}/examples/byovpc
         run: terraform validate -no-color
 
       - name: terraform init (bootstrap)
-        working-directory: infra/terraform/aws/bootstrap
+        if: matrix.has_bootstrap
+        working-directory: ${{ matrix.working_dir }}/bootstrap
         run: terraform init -backend=false -input=false
 
       - name: terraform validate (bootstrap)
-        working-directory: infra/terraform/aws/bootstrap
+        if: matrix.has_bootstrap
+        working-directory: ${{ matrix.working_dir }}/bootstrap
         run: terraform validate -no-color
 
+  # ── tflint (aws, gcp) ─────────────────────────────────────────────────────
   tflint:
-    name: tflint
+    name: "${{ matrix.module }} tflint"
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [aws, gcp]
+        include:
+          - module: aws
+            working_dir: infra/terraform/aws
+          - module: gcp
+            working_dir: infra/terraform/gcp
 
     steps:
       - name: Checkout
@@ -88,11 +138,57 @@ jobs:
           tflint_version: v0.55.0
 
       - name: tflint init
-        working-directory: infra/terraform/aws
+        working-directory: ${{ matrix.working_dir }}
         run: tflint --init
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: tflint
-        working-directory: infra/terraform/aws
+        working-directory: ${{ matrix.working_dir }}
         run: tflint --recursive --format=compact
+
+  # ── aws-ec2 (lightweight, different conventions) ───────────────────────────
+  fmt-validate-ec2:
+    name: "aws-ec2 fmt+validate"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        working-directory: infra/terraform/aws-ec2
+        run: terraform fmt -check -diff
+
+      - name: terraform init + validate
+        working-directory: infra/terraform/aws-ec2
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate -no-color
+
+  # ── Terraform <-> App env consistency ──────────────────────────────────────
+  consistency:
+    name: "terraform-env consistency"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run consistency checks
+        run: python scripts/check_terraform_consistency.py
