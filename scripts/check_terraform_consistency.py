@@ -44,9 +44,17 @@ PROVIDER_SPECIFIC: dict[str, set[str]] = {
 
 
 def parse_variables(tf_path: Path) -> set[str]:
-    """Extract variable names from a variables.tf file."""
+    """Extract variable names from a variables.tf file (ignoring commented lines)."""
     content = tf_path.read_text()
-    return set(re.findall(r'variable\s+"([^"]+)"', content))
+    results: set[str] = set()
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith("//"):
+            continue
+        m = re.match(r'\s*variable\s+"([^"]+)"', line)
+        if m:
+            results.add(m.group(1))
+    return results
 
 
 def check_common_variables() -> list[str]:
@@ -68,6 +76,15 @@ def check_common_variables() -> list[str]:
 
 PLACEHOLDER_DEFAULTS = {"change-me-to-a-random-string"}
 
+# Env vars in .env.example that only apply to docker-compose (not Terraform deployments)
+DOCKER_COMPOSE_ONLY = {
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "CLICKHOUSE_USER",
+    "CLICKHOUSE_PASSWORD",
+    "SEED_DEMO_ACCOUNTS",
+}
+
 
 def parse_settings_fields() -> dict[str, bool]:
     """Parse observal-server/config.py Settings class for field names + defaults.
@@ -75,6 +92,10 @@ def parse_settings_fields() -> dict[str, bool]:
     Returns dict of {FIELD_NAME: has_usable_default}.
     """
     config_path = ROOT / "observal-server" / "config.py"
+    if not config_path.exists():
+        print("  WARNING: observal-server/config.py not found")
+        return {}
+
     content = config_path.read_text()
 
     # Extract the Settings class body
@@ -108,7 +129,12 @@ def parse_settings_fields() -> dict[str, bool]:
 
 
 def parse_terraform_provisioned(module_path: Path) -> set[str]:
-    """Extract env var names provisioned by Terraform for a module."""
+    """Extract env var names provisioned by Terraform for a module.
+
+    Only matches name = "UPPER_CASE" patterns which in these .tf files
+    exclusively appear inside container env blocks (environment/secrets lists
+    in ecs.tf, env {} blocks in cloud-run.tf). Resource names use lowercase.
+    """
     provisioned: set[str] = set()
 
     # secrets.tf: keys in local maps like "DATABASE_URL" = ...
@@ -122,7 +148,6 @@ def parse_terraform_provisioned(module_path: Path) -> set[str]:
         path = module_path / tf_file
         if path.exists():
             content = path.read_text()
-            # Match: { name = "ENV_VAR_NAME", ... } or env { name = "..." }
             provisioned.update(re.findall(r'name\s*=\s*"([A-Z][A-Z_0-9]+)"', content))
 
     # variables.tf: demo_* terraform vars map to DEMO_* env vars
@@ -200,13 +225,6 @@ def check_injected_vars() -> list[str]:
 
 # ── Check 5: .env.example coverage ───────────────────────────────────────────
 
-DOCKER_COMPOSE_ONLY = {
-    "POSTGRES_USER",
-    "POSTGRES_PASSWORD",
-    "CLICKHOUSE_USER",
-    "CLICKHOUSE_PASSWORD",
-}
-
 
 def parse_env_example() -> set[str]:
     """Extract KEY names from .env.example."""
@@ -247,8 +265,6 @@ def check_env_example_coverage() -> list[str]:
             continue
         if key in KNOWN_NON_CONFIG_VARS:
             continue
-        if key == "SEED_DEMO_ACCOUNTS":
-            continue
         errors.append(f"  .env.example has {key} but no Terraform module provisions it")
 
     return errors
@@ -268,32 +284,32 @@ def main() -> None:
     all_errors: list[str] = []
     all_warnings: list[str] = []
 
-    print("\n[1/5] Common variables across modules...")
+    print("\n[1/4] Common variables across modules...")
     errs = check_common_variables()
     all_errors.extend(errs)
     print(f"  {PASS_ICON} PASS" if not errs else "\n".join(errs))
 
-    print("\n[2/5] Required env var coverage (no default, must be provisioned)...")
+    print("\n[2/4] App env var coverage...")
     errs, warns = check_env_coverage()
     all_errors.extend(errs)
     all_warnings.extend(warns)
-    print(f"  {PASS_ICON} PASS" if not errs else "\n".join(errs))
-
-    print("\n[3/5] Optional env vars not exposed via Terraform...")
+    if errs:
+        print("\n".join(errs))
+    else:
+        print(f"  {PASS_ICON} Required vars: PASS")
     if warns:
         for w in warns:
             print(f"  {WARN_ICON} {w.strip()}")
-            # GitHub Actions annotation — shows as yellow badge on the PR Checks tab
             print(f"::warning title=Terraform env gap::{w.strip()}")
     else:
-        print(f"  {PASS_ICON} All optional vars are exposed")
+        print(f"  {PASS_ICON} Optional vars: all exposed")
 
-    print("\n[4/5] Injected secrets cross-check...")
+    print("\n[3/4] Injected secrets cross-check...")
     errs = check_injected_vars()
     all_errors.extend(errs)
     print(f"  {PASS_ICON} PASS" if not errs else "\n".join(errs))
 
-    print("\n[5/5] .env.example coverage...")
+    print("\n[4/4] .env.example coverage...")
     errs = check_env_example_coverage()
     all_errors.extend(errs)
     print(f"  {PASS_ICON} PASS" if not errs else "\n".join(errs))
