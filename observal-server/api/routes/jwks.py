@@ -30,5 +30,3 @@ async def jwks() -> JSONResponse:
         content=km.get_jwks(),
         headers={"Cache-Control": "public, max-age=3600"},
     )
-
-    optic.debug("jwks.jwks called")

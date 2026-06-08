@@ -514,5 +514,3 @@ async def collect_diagnostics(
         server_version = "0.1.0"
 
     return CollectResponse(server_version=server_version, collectors=collectors_out)
-
-    optic.debug("support.collect_diagnostics called")

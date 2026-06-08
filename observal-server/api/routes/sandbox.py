@@ -274,10 +274,6 @@ async def update_sandbox_draft(
 
     await db.commit()
     await db.refresh(listing)
-    if listing.status == ListingStatus.pending or listing.status == ListingStatus.rejected:
-        pass
-    else:
-        pass
     return SandboxListingResponse.model_validate(listing)
 
 

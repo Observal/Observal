@@ -316,10 +316,6 @@ async def update_prompt_draft(
 
     await db.commit()
     await db.refresh(listing)
-    if listing.status == ListingStatus.pending or listing.status == ListingStatus.rejected:
-        pass
-    else:
-        pass
     return PromptListingResponse.model_validate(listing)
 
 

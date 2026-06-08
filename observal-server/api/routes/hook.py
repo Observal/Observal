@@ -299,10 +299,6 @@ async def update_hook_draft(
 
     await db.commit()
     await db.refresh(listing)
-    if listing.status == ListingStatus.pending or listing.status == ListingStatus.rejected:
-        pass
-    else:
-        pass
     return HookListingResponse.model_validate(listing)
 
 
