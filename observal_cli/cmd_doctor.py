@@ -90,7 +90,27 @@ def doctor(
     rprint("[cyan]Checking Pi...[/cyan]")
     _check_pi(issues, warnings)
 
-    # 5. Check if observal skill is installed
+    # 5. Check Cursor
+    rprint("[cyan]Checking Cursor...[/cyan]")
+    _check_cursor(issues, warnings)
+
+    # 6. Check Codex
+    rprint("[cyan]Checking Codex...[/cyan]")
+    _check_codex(issues, warnings)
+
+    # 7. Check Copilot (VS Code)
+    rprint("[cyan]Checking Copilot (VS Code)...[/cyan]")
+    _check_copilot(issues, warnings)
+
+    # 8. Check Copilot CLI
+    rprint("[cyan]Checking Copilot CLI...[/cyan]")
+    _check_copilot_cli(issues, warnings)
+
+    # 9. Check OpenCode
+    rprint("[cyan]Checking OpenCode...[/cyan]")
+    _check_opencode(issues, warnings)
+
+    # 10. Check if observal skill is installed
     skill_missing = _check_observal_skill_missing()
     if skill_missing:
         warnings.append(
@@ -315,6 +335,168 @@ def _check_pi(issues: list, warnings: list):
         )
 
 
+def _check_cursor(issues: list, warnings: list):
+    """Check if Observal session push hooks are installed in Cursor."""
+    optic.debug("_check_cursor")
+    hooks_path = Path.home() / ".cursor" / "hooks.json"
+    if not (Path.home() / ".cursor").exists():
+        rprint("  [dim]Cursor not detected[/dim]")
+        return
+
+    if not hooks_path.exists():
+        warnings.append(
+            "Cursor session push hooks not installed. Run `observal doctor patch --all --ide cursor` to inject them."
+        )
+        return
+
+    data = _load_json(hooks_path)
+    if data is None:
+        issues.append(f"{hooks_path}: not valid JSON.")
+        return
+
+    hooks = data.get("hooks", {})
+    has_session_push = False
+    for event in ("beforeSubmitPrompt", "stop"):
+        entries = hooks.get(event, [])
+        for e in entries:
+            if "cursor_session_push" in e.get("command", ""):
+                has_session_push = True
+                break
+
+    if not has_session_push:
+        warnings.append(
+            "Cursor session push hooks not installed. Run `observal doctor patch --all --ide cursor` to inject them."
+        )
+
+
+def _check_codex(issues: list, warnings: list):
+    """Check if Observal session push hooks are installed in Codex."""
+    optic.debug("_check_codex")
+    codex_dir = Path.home() / ".codex"
+    if not codex_dir.exists():
+        rprint("  [dim]Codex not detected[/dim]")
+        return
+
+    hooks_path = codex_dir / "hooks.json"
+    config_path = codex_dir / "config.toml"
+
+    # Check hooks
+    has_session_push = False
+    if hooks_path.exists():
+        data = _load_json(hooks_path)
+        if data is not None:
+            hooks = data.get("hooks", {})
+            for event in ("UserPromptSubmit", "Stop"):
+                groups = hooks.get(event, [])
+                for g in groups:
+                    if isinstance(g, dict):
+                        for h in g.get("hooks", []):
+                            if isinstance(h, dict) and "codex_session_push" in h.get("command", ""):
+                                has_session_push = True
+                                break
+
+    if not has_session_push:
+        warnings.append(
+            "Codex session push hooks not installed. Run `observal doctor patch --all --ide codex` to inject them."
+        )
+
+    # Check codex_hooks flag
+    if config_path.exists():
+        try:
+            content = config_path.read_text()
+            if "codex_hooks = false" in content:
+                issues.append(f"{config_path}: `codex_hooks = false`. Observal hooks will not fire.")
+        except OSError:
+            pass
+
+
+def _check_copilot(issues: list, warnings: list):
+    """Check if Observal session push hooks are installed for Copilot (VS Code agent mode)."""
+    optic.debug("_check_copilot")
+    # Copilot VS Code uses project-level hooks in .github/hooks/
+    # and user-level hooks in ~/.copilot/hooks/
+    user_hooks = Path.home() / ".copilot" / "hooks" / "observal.json"
+    project_hooks = Path.cwd() / ".github" / "hooks" / "observal.json"
+
+    # Check if VS Code / Copilot is even present
+    has_vscode = (Path.home() / ".vscode").exists()
+    if not has_vscode:
+        rprint("  [dim]Copilot (VS Code) not detected[/dim]")
+        return
+
+    has_hooks = False
+    for hooks_path in (user_hooks, project_hooks):
+        if hooks_path.exists():
+            data = _load_json(hooks_path)
+            if data is not None:
+                hooks = data.get("hooks", {})
+                for entries in hooks.values():
+                    if isinstance(entries, list):
+                        for e in entries:
+                            cmd = e.get("command", "") + e.get("bash", "")
+                            if "copilot_vscode_session_push" in cmd or "run_hook.ps1" in cmd:
+                                has_hooks = True
+                                break
+
+    if not has_hooks:
+        warnings.append(
+            "Copilot (VS Code) session push hooks not installed. "
+            "Run `observal doctor patch --all --ide copilot` to inject them."
+        )
+
+
+def _check_copilot_cli(issues: list, warnings: list):
+    """Check if Observal session push hooks are installed for Copilot CLI."""
+    optic.debug("_check_copilot_cli")
+    copilot_dir = Path.home() / ".copilot"
+    if not copilot_dir.exists():
+        rprint("  [dim]Copilot CLI not detected[/dim]")
+        return
+
+    hooks_path = copilot_dir / "hooks" / "observal.json"
+    if not hooks_path.exists():
+        warnings.append(
+            "Copilot CLI session push hooks not installed. "
+            "Run `observal doctor patch --all --ide copilot-cli` to inject them."
+        )
+        return
+
+    data = _load_json(hooks_path)
+    if data is None:
+        issues.append(f"{hooks_path}: not valid JSON.")
+        return
+
+    hooks = data.get("hooks", {})
+    has_session_push = False
+    for event in ("sessionStart", "sessionEnd", "userPromptSubmitted"):
+        entries = hooks.get(event, [])
+        for e in entries:
+            if "copilot_cli_session_push" in e.get("bash", ""):
+                has_session_push = True
+                break
+
+    if not has_session_push:
+        warnings.append(
+            "Copilot CLI session push hooks not installed. "
+            "Run `observal doctor patch --all --ide copilot-cli` to inject them."
+        )
+
+
+def _check_opencode(issues: list, warnings: list):
+    """Check if Observal plugin is installed for OpenCode."""
+    optic.debug("_check_opencode")
+    opencode_dir = Path.home() / ".config" / "opencode"
+    if not opencode_dir.exists():
+        rprint("  [dim]OpenCode not detected[/dim]")
+        return
+
+    plugin_path = opencode_dir / "plugins" / "observal-plugin.ts"
+    if not plugin_path.exists():
+        warnings.append(
+            "OpenCode observal plugin not installed. Run `observal doctor patch --all --ide opencode` to inject it."
+        )
+
+
 # ── Cleanup command ──────────────────────────────────────────
 
 
@@ -324,7 +506,13 @@ def doctor_cleanup(
         None,
         "--ide",
         "-i",
-        help="Target IDE only (claude-code, kiro). Default: all.",
+        help="Target IDE only (claude-code, kiro, cursor, codex, copilot, copilot-cli, opencode). Default: all.",
+    ),
+    exclude: list[str] = typer.Option(
+        [],
+        "--exclude",
+        "-x",
+        help="Exclude specific IDE(s) from cleanup (repeatable).",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be removed without doing it"),
 ):
@@ -342,8 +530,10 @@ def doctor_cleanup(
       observal doctor cleanup --ide kiro               # Kiro only
       observal doctor cleanup --ide claude-code --dry-run  # Preview without changes
     """
-    optic.trace("ide={}, dry_run={}", ide, dry_run)
-    targets = [ide] if ide else ["claude-code", "kiro"]
+    optic.trace("ide={}, exclude={}, dry_run={}", ide, exclude, dry_run)
+    all_ides = ["claude-code", "kiro", "cursor", "codex", "copilot", "copilot-cli", "opencode"]
+    targets = [ide] if ide else all_ides
+    targets = [t for t in targets if t not in exclude]
     any_changes = False
 
     rprint("[bold]Observal Doctor - Cleanup[/bold]\n")
@@ -355,6 +545,26 @@ def doctor_cleanup(
 
         elif target in ("kiro", "kiro-cli"):
             changed = _cleanup_kiro(dry_run)
+            any_changes = any_changes or changed
+
+        elif target == "cursor":
+            changed = _cleanup_cursor(dry_run)
+            any_changes = any_changes or changed
+
+        elif target == "codex":
+            changed = _cleanup_codex(dry_run)
+            any_changes = any_changes or changed
+
+        elif target == "copilot":
+            changed = _cleanup_copilot(dry_run)
+            any_changes = any_changes or changed
+
+        elif target == "copilot-cli":
+            changed = _cleanup_copilot_cli(dry_run)
+            any_changes = any_changes or changed
+
+        elif target == "opencode":
+            changed = _cleanup_opencode(dry_run)
             any_changes = any_changes or changed
 
         else:
@@ -472,6 +682,174 @@ def _cleanup_kiro(dry_run: bool) -> bool:
         rprint("  [dim]No Observal artifacts found in Kiro agents[/dim]")
 
     return changed
+
+
+def _cleanup_cursor(dry_run: bool) -> bool:
+    """Remove Observal hooks from ~/.cursor/hooks.json."""
+    rprint("[cyan]Cursor[/cyan]")
+    hooks_path = Path.home() / ".cursor" / "hooks.json"
+    if not hooks_path.exists():
+        rprint("  [dim]No ~/.cursor/hooks.json found - skipping[/dim]")
+        return False
+
+    try:
+        data = json.loads(hooks_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        rprint(f"  [red]Failed to read hooks: {e}[/red]")
+        return False
+
+    hooks = data.get("hooks", {})
+    changed = False
+    removed_events = []
+
+    for event, entries in list(hooks.items()):
+        if not isinstance(entries, list):
+            continue
+        cleaned = [
+            h
+            for h in entries
+            if "cursor_session_push" not in h.get("command", "") and "session_push" not in h.get("command", "")
+        ]
+        if len(cleaned) < len(entries):
+            removed_events.append(f"{event} ({len(entries) - len(cleaned)} removed)")
+            if not dry_run:
+                if cleaned:
+                    hooks[event] = cleaned
+                else:
+                    del hooks[event]
+            changed = True
+
+    if changed:
+        verb = "Would remove" if dry_run else "Removed"
+        rprint(f"  {verb} hooks: {', '.join(removed_events)}")
+        if not dry_run:
+            if not data.get("hooks"):
+                data.pop("hooks", None)
+            hooks_path.write_text(json.dumps(data, indent=2) + "\n")
+            rprint(f"  [green]Written {hooks_path}[/green]")
+    else:
+        rprint("  [dim]No Observal artifacts found[/dim]")
+
+    return changed
+
+
+def _cleanup_codex(dry_run: bool) -> bool:
+    """Remove Observal hooks from ~/.codex/hooks.json."""
+    rprint("[cyan]Codex[/cyan]")
+    codex_dir = Path.home() / ".codex"
+    hooks_path = codex_dir / "hooks.json"
+    if not hooks_path.exists():
+        rprint("  [dim]No ~/.codex/hooks.json found - skipping[/dim]")
+        return False
+
+    try:
+        data = json.loads(hooks_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        rprint(f"  [red]Failed to read hooks: {e}[/red]")
+        return False
+
+    hooks = data.get("hooks", {})
+    changed = False
+    removed_events = []
+
+    for event, groups in list(hooks.items()):
+        if not isinstance(groups, list):
+            continue
+        cleaned = [
+            g
+            for g in groups
+            if not isinstance(g, dict)
+            or not any("session_push" in h.get("command", "") for h in g.get("hooks", []) if isinstance(h, dict))
+        ]
+        if len(cleaned) < len(groups):
+            removed_events.append(f"{event} ({len(groups) - len(cleaned)} removed)")
+            if not dry_run:
+                if cleaned:
+                    hooks[event] = cleaned
+                else:
+                    del hooks[event]
+            changed = True
+
+    if changed:
+        verb = "Would remove" if dry_run else "Removed"
+        rprint(f"  {verb} hooks: {', '.join(removed_events)}")
+        if not dry_run:
+            if not data.get("hooks"):
+                data.pop("hooks", None)
+            hooks_path.write_text(json.dumps(data, indent=2) + "\n")
+            rprint(f"  [green]Written {hooks_path}[/green]")
+    else:
+        rprint("  [dim]No Observal artifacts found[/dim]")
+
+    return changed
+
+
+def _cleanup_copilot(dry_run: bool) -> bool:
+    """Remove Observal hooks from .github/hooks/observal.json and ~/.copilot/hooks/."""
+    rprint("[cyan]Copilot (VS Code)[/cyan]")
+    changed = False
+
+    targets = [
+        Path.cwd() / ".github" / "hooks" / "observal.json",
+        Path.home() / ".copilot" / "hooks" / "observal.json",
+    ]
+    ps1_path = Path.cwd() / ".github" / "hooks" / "run_hook.ps1"
+
+    for hooks_path in targets:
+        if hooks_path.exists():
+            verb = "Would remove" if dry_run else "Removed"
+            rprint(f"  {verb} {hooks_path}")
+            if not dry_run:
+                hooks_path.unlink()
+            changed = True
+
+    if ps1_path.exists():
+        existing = ps1_path.read_text()
+        if "copilot_vscode_session_push" in existing:
+            verb = "Would remove" if dry_run else "Removed"
+            rprint(f"  {verb} {ps1_path}")
+            if not dry_run:
+                ps1_path.unlink()
+            changed = True
+
+    if not changed:
+        rprint("  [dim]No Observal artifacts found[/dim]")
+
+    return changed
+
+
+def _cleanup_copilot_cli(dry_run: bool) -> bool:
+    """Remove Observal hooks from ~/.copilot/hooks/observal.json."""
+    rprint("[cyan]Copilot CLI[/cyan]")
+    hooks_path = Path.home() / ".copilot" / "hooks" / "observal.json"
+
+    if not hooks_path.exists():
+        rprint("  [dim]No ~/.copilot/hooks/observal.json found - skipping[/dim]")
+        return False
+
+    verb = "Would remove" if dry_run else "Removed"
+    rprint(f"  {verb} {hooks_path}")
+    if not dry_run:
+        hooks_path.unlink()
+
+    return True
+
+
+def _cleanup_opencode(dry_run: bool) -> bool:
+    """Remove Observal plugin from ~/.config/opencode/plugins/."""
+    rprint("[cyan]OpenCode[/cyan]")
+    plugin_path = Path.home() / ".config" / "opencode" / "plugins" / "observal-plugin.ts"
+
+    if not plugin_path.exists():
+        rprint("  [dim]No observal plugin found - skipping[/dim]")
+        return False
+
+    verb = "Would remove" if dry_run else "Removed"
+    rprint(f"  {verb} {plugin_path}")
+    if not dry_run:
+        plugin_path.unlink()
+
+    return True
 
 
 # ── Shim helpers ────────────────────────────────────────────
@@ -619,6 +997,9 @@ def doctor_patch(
                 any_changes = any_changes or changed
             elif target == "copilot-cli":
                 changed = _patch_copilot_cli(dry_run)
+                any_changes = any_changes or changed
+            elif target == "opencode":
+                changed = _patch_opencode(dry_run)
                 any_changes = any_changes or changed
 
         # ── Shims (all IDEs with home MCP config) ──
@@ -1110,4 +1491,32 @@ def _patch_copilot_cli(dry_run: bool) -> bool:
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {hooks_path}")
+    return True
+
+
+def _patch_opencode(dry_run: bool) -> bool:
+    """Install observal telemetry plugin into ~/.config/opencode/plugins/."""
+    optic.debug("_patch_opencode: dry_run={}", dry_run)
+    from observal_cli.ide_specs.opencode_hooks_spec import get_plugin_source
+
+    rprint("[cyan]OpenCode - telemetry plugin[/cyan]")
+
+    plugins_dir = Path.home() / ".config" / "opencode" / "plugins"
+    plugin_path = plugins_dir / "observal-plugin.ts"
+
+    # Check if already installed
+    if plugin_path.exists():
+        existing = plugin_path.read_text()
+        if "observal" in existing.lower() and "offline stub" not in existing:
+            rprint("  [dim]Already installed[/dim]")
+            return False
+
+    plugin_source = get_plugin_source()
+
+    if not dry_run:
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        plugin_path.write_text(plugin_source)
+
+    verb = "Would install" if dry_run else "Installed"
+    rprint(f"  {verb} plugin at {plugin_path}")
     return True
