@@ -8,11 +8,13 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi_cache.decorator import cache
 from loguru import logger as optic
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import services.dynamic_settings as ds
 from api.deps import (
     ROLE_HIERARCHY,
     apply_visibility_filter,
@@ -175,10 +177,14 @@ async def submit_skill(
 
 
 @router.get("", response_model=list[SkillListingSummary])
+@cache(expire=ds.get_sync_int("data.cache_ttl_registry", 30), namespace="registry")
 async def list_skills(
+    response: Response,
     task_type: str | None = Query(None),
     target_agent: str | None = Query(None),
     search: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(optional_current_user),
 ):
@@ -196,8 +202,10 @@ async def list_skills(
         safe = escape_like(search)
         stmt = stmt.where(SkillListing.name.ilike(f"%{safe}%") | SkillVersion.description.ilike(f"%{safe}%"))
     stmt = apply_visibility_filter(stmt, SkillListing, current_user)
-    result = await db.execute(stmt.order_by(SkillListing.created_at.desc()))
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+    result = await db.execute(stmt.order_by(SkillListing.created_at.desc()).limit(limit).offset(offset))
     listings = [SkillListingSummary.model_validate(r) for r in result.scalars().all()]
+    response.headers["X-Total-Count"] = str(total or 0)
     return listings
 
 

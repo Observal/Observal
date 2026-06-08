@@ -7,11 +7,13 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from fastapi_cache.decorator import cache
 from loguru import logger as optic
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import services.dynamic_settings as ds
 from api.deps import (
     ROLE_HIERARCHY,
     apply_visibility_filter,
@@ -192,9 +194,13 @@ async def submit_mcp(
 
 
 @router.get("", response_model=list[McpListingSummary])
+@cache(expire=ds.get_sync_int("data.cache_ttl_registry", 30), namespace="registry")
 async def list_mcps(
+    response: Response,
     category: str | None = Query(None),
     search: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(optional_current_user),
 ):
@@ -210,8 +216,10 @@ async def list_mcps(
         safe = escape_like(search)
         stmt = stmt.where(McpListing.name.ilike(f"%{safe}%") | McpVersion.description.ilike(f"%{safe}%"))
     stmt = apply_visibility_filter(stmt, McpListing, current_user)
-    result = await db.execute(stmt.order_by(McpListing.created_at.desc()))
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+    result = await db.execute(stmt.order_by(McpListing.created_at.desc()).limit(limit).offset(offset))
     listings = [McpListingSummary.model_validate(r) for r in result.scalars().all()]
+    response.headers["X-Total-Count"] = str(total or 0)
     return listings
 
 
