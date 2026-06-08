@@ -38,7 +38,7 @@ export const IDE_FEATURES = [
 
 export type IdeFeature = (typeof IDE_FEATURES)[number];
 
-export const IDE_FEATURE_MATRIX: Record<IdeName, ReadonlySet<IdeFeature>> = {
+const IDE_FEATURE_MATRIX: Record<IdeName, ReadonlySet<IdeFeature>> = {
   "claude-code": new Set(["skills", "hook_bridge", "mcp_servers", "rules", "otlp_telemetry"]),
   kiro: new Set(["superpowers", "hook_bridge", "mcp_servers", "rules", "steering_files", "otlp_telemetry"]),
   cursor: new Set(["hook_bridge", "mcp_servers", "rules"]),
@@ -89,7 +89,7 @@ export const IDE_ACCEPTS_MODEL_CHOICE: Record<IdeName, boolean> = {
   "copilot-cli": false,
 };
 
-export function ideAcceptsModelChoice(ide: string): boolean {
+function ideAcceptsModelChoice(ide: string): boolean {
   return IDE_ACCEPTS_MODEL_CHOICE[ide as IdeName] === true;
 }
 

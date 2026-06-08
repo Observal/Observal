@@ -25,7 +25,7 @@ const MONTH_NAMES = [
   "Dec",
 ];
 
-export interface FormattedModel {
+interface FormattedModel {
   primary: string;
   secondary: string | null;
   isRolling: boolean;

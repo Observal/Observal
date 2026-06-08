@@ -788,9 +788,6 @@ def _integrity_check_paths(ide: str, comp_type: str, comp_name: str) -> list[str
     paths: list[str] = []
     if comp_type == "skill":
         paths.append(f"user:skills/{comp_name}/SKILL.md")
-    elif comp_type == "mcp":
-        # MCPs are in settings/mcp.json (not individually checkable)
-        pass
-    elif comp_type == "hook":
-        pass  # Hooks are in hooks.json
+    # MCPs and hooks are in settings/mcp.json and hooks.json respectively,
+    # not individually checkable via path.
     return paths

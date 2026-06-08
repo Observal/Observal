@@ -234,10 +234,6 @@ async def update_draft(
 
     await db.commit()
     agent = await _load_agent(db, str(agent.id))
-    if agent.status == AgentStatus.pending or agent.status == AgentStatus.rejected:
-        pass
-    else:
-        pass
     return _agent_to_response(agent, created_by_email=current_user.email, created_by_username=current_user.username)
 
 

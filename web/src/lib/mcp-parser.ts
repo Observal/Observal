@@ -112,7 +112,7 @@ export function parseMcpConfigJson(raw: string): { parsed?: ParsedMcpConfig; err
   return { parsed: result };
 }
 
-export function parseServerJsonManifest(cfg: Record<string, unknown>): ParsedMcpConfig {
+function parseServerJsonManifest(cfg: Record<string, unknown>): ParsedMcpConfig {
   const result: ParsedMcpConfig = { envVars: [] };
   const packages = Array.isArray(cfg.packages) ? cfg.packages : [];
   const remotes = Array.isArray(cfg.remotes) ? cfg.remotes : [];
@@ -226,7 +226,7 @@ export function applyParsedConfig(
   }
 }
 
-export function unwrapMcpConfig(cfg: Record<string, unknown>): { inner: Record<string, unknown>; serverName?: string } {
+function unwrapMcpConfig(cfg: Record<string, unknown>): { inner: Record<string, unknown>; serverName?: string } {
   // Shape 1: {mcpServers: {name: config}}
   if (cfg.mcpServers && typeof cfg.mcpServers === "object") {
     const servers = cfg.mcpServers as Record<string, unknown>;
