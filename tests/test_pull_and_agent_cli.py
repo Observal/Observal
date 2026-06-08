@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
@@ -729,12 +730,13 @@ def _patch_put(return_value):
 class TestAgentInit:
     def test_creates_yaml_with_correct_fields(self, tmp_path: Path):
         """Interactive prompts produce a valid YAML file."""
-        inputs = "my-agent\n1.0.0\nA cool agent\nmy-team\nclaude-sonnet-4\nDo helpful things\n"
-        result = runner.invoke(
-            cli_app,
-            ["agent", "init", "--dir", str(tmp_path)],
-            input=inputs,
-        )
+        inputs = "my-agent\n1.0.0\nA cool agent\nclaude-sonnet-4\nDo helpful things\n"
+        with patch("observal_cli.config.load", return_value={"username": "my-team"}):
+            result = runner.invoke(
+                cli_app,
+                ["agent", "init", "--dir", str(tmp_path)],
+                input=inputs,
+            )
         assert result.exit_code == 0, result.output
         assert "Created" in result.output
 

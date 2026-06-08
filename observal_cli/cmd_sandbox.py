@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
@@ -68,12 +69,14 @@ def sandbox_submit(
         except FileNotFoundError:
             rprint(f"[red]File not found:[/red] {from_file}")
             raise typer.Exit(code=1)
+        if not payload.get("owner"):
+            payload["owner"] = config.load().get("username", "")
     else:
         payload = {
             "name": text_input("Sandbox name"),
             "version": text_input("Version", default="1.0.0"),
             "description": text_input("Description"),
-            "owner": text_input("Owner", default=config.load().get("user_name", "")),
+            "owner": config.load().get("username", ""),
             "runtime_type": select_one("Runtime type", VALID_SANDBOX_RUNTIME_TYPES),
             "image": text_input("Image"),
             "resource_limits": _json.loads(text_input("Resource limits (JSON)")),

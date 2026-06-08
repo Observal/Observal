@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Nithin <nithin30302@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
@@ -22,7 +23,7 @@ runner = CliRunner()
 
 
 def _patch_config_load():
-    return patch("observal_cli.config.load", return_value={"user_name": "testuser"})
+    return patch("observal_cli.config.load", return_value={"user_name": "testuser", "username": "testuser"})
 
 
 def _patch_resolve_alias():
@@ -48,8 +49,8 @@ def _patch_delete(return_value=None):
 class TestPromptSubmit:
     def test_submit_interactive(self):
         """Test prompt submit with interactive inputs, ensuring payload validation (name, category, etc)."""
-        # Inputs: name, version, description, owner, category, template
-        inputs = "my-prompt\n1.0.0\nMy description\ntestowner\ngeneral\nHello {{name}}!\n"
+        # Inputs: name, version, description, category, template
+        inputs = "my-prompt\n1.0.0\nMy description\ngeneral\nHello {{name}}!\n"
         with _patch_config_load(), _patch_post({"id": "prompt-123"}) as mock_post:
             result = runner.invoke(cli_app, ["registry", "prompt", "submit"], input=inputs)
 
@@ -64,13 +65,13 @@ class TestPromptSubmit:
             assert payload["name"] == "my-prompt"
             assert payload["version"] == "1.0.0"
             assert payload["description"] == "My description"
-            assert payload["owner"] == "testowner"
+            assert payload["owner"] == "testuser"
             assert payload["category"] == "general"
             assert payload["template"] == "Hello {{name}}!"
 
     def test_submit_draft(self):
         """Test prompt submit --draft saves a draft."""
-        inputs = "draft-prompt\n1.0.0\nDraft desc\ntestowner\ngeneral\nDraft template\n"
+        inputs = "draft-prompt\n1.0.0\nDraft desc\ngeneral\nDraft template\n"
         with _patch_config_load(), _patch_post({"id": "draft-123"}) as mock_post:
             result = runner.invoke(cli_app, ["registry", "prompt", "submit", "--draft"], input=inputs)
 

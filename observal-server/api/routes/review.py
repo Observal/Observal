@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Subramania Raja <dhanpraja231@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
@@ -148,8 +149,8 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
     user_ids.update(v.released_by for v in seen_agents.values())
     user_map: dict[uuid.UUID, str] = {}
     if user_ids:
-        rows = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
-        user_map = {r[0]: r[1] for r in rows.all()}
+        rows = await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))
+        user_map = {r[0]: (r[1] or "") for r in rows.all()}
 
     items = []
     for agent_id, pending_ver in seen_agents.items():
@@ -263,7 +264,7 @@ async def _query_pending_components(db: AsyncSession, type_filter: str | None = 
     if user_ids:
         result = await db.execute(select(User).where(User.id.in_(user_ids)))
         for u in result.scalars().all():
-            user_map[u.id] = u.name or u.email
+            user_map[u.id] = u.username or u.email
 
     for item in items:
         uid = item["submitted_by"]
@@ -528,7 +529,7 @@ async def get_review(
         uid = uuid.UUID(uid_str)
         user = (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
         if user:
-            result["submitted_by"] = user.name or user.email
+            result["submitted_by"] = user.username or user.email
     except (ValueError, AttributeError):
         pass
     return result
@@ -866,7 +867,7 @@ async def get_related_skills(
     if user_ids:
         rows = await db.execute(select(User).where(User.id.in_(user_ids)))
         for u in rows.scalars().all():
-            user_map[u.id] = u.name or u.email
+            user_map[u.id] = u.username or u.email
 
     result = {
         "skills": [

@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
@@ -93,6 +94,8 @@ def hook_submit(
         except FileNotFoundError:
             rprint(f"[red]File not found:[/red] {from_file}")
             raise typer.Exit(code=1)
+        if not payload.get("owner"):
+            payload["owner"] = config.load().get("username", "")
     else:
         # Read script content if --script provided
         script_content: str | None = None
@@ -109,7 +112,7 @@ def hook_submit(
         name = text_input("Hook name")
         version = text_input("Version", default="1.0.0")
         description = text_input("Description")
-        owner = text_input("Owner", default=config.load().get("user_name", ""))
+        owner = config.load().get("username", "")
         event = select_one("Event", VALID_HOOK_EVENTS)
         handler_type = select_one("Handler type", VALID_HOOK_HANDLER_TYPES)
 

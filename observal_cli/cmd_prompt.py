@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
@@ -66,12 +67,14 @@ def prompt_submit(
             content = f.read()
         try:
             payload = _json.loads(content)
+            if not payload.get("owner"):
+                payload["owner"] = config.load().get("username", "")
         except _json.JSONDecodeError:
             payload = {
                 "name": text_input("Prompt name"),
                 "version": text_input("Version", default="1.0.0"),
                 "description": text_input("Description"),
-                "owner": text_input("Owner", default=config.load().get("user_name", "")),
+                "owner": config.load().get("username", ""),
                 "category": select_one("Category", VALID_PROMPT_CATEGORIES),
                 "template": content,
             }
@@ -80,7 +83,7 @@ def prompt_submit(
             "name": text_input("Prompt name"),
             "version": text_input("Version", default="1.0.0"),
             "description": text_input("Description"),
-            "owner": text_input("Owner", default=config.load().get("user_name", "")),
+            "owner": config.load().get("username", ""),
             "category": select_one("Category", VALID_PROMPT_CATEGORIES),
             "template": text_input("Template"),
         }

@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
@@ -172,7 +173,7 @@ def skill_submit(
             "name": text_input("Skill name", default=prefill.get("name", "")),
             "version": text_input("Version", default="1.0.0"),
             "description": text_input("Description", default=prefill.get("description", "")),
-            "owner": text_input("Owner", default=config.load().get("user_name", "")),
+            "owner": config.load().get("username", ""),
             "task_type": select_one("Task type", VALID_SKILL_TASK_TYPES),
             "target_agents": [a.strip() for a in agents_input.split(",") if a.strip()],
             "delivery_mode": effective_delivery_mode,

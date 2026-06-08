@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 // SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
 // SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 // SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
@@ -698,7 +699,7 @@ function AgentBuilderInner() {
       version: (versionOverride ?? version).trim() || "1.0.0",
       description: description.trim(),
       category: category || undefined,
-      owner: whoami?.name || whoami?.email || "unknown",
+      owner: whoami?.username || whoami?.email || "unknown",
       prompt: systemPrompt.trim(),
       model_name: modelName,
       models_by_ide: modelsByIde,

@@ -1,3 +1,4 @@
+<!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
@@ -47,7 +48,6 @@ observal agent create --name my-agent --prompt-file ./PROMPT.md --ide kiro --ide
 | `--name`, `-n` | Agent name (lowercase, hyphens, underscores) |
 | `--version`, `-v` | Version (semver, e.g. 1.0.0) |
 | `--description`, `-d` | Short description |
-| `--owner` | Owner or team name |
 | `--prompt`, `-p` | System prompt text |
 | `--prompt-file` | Read system prompt from a file |
 | `--model`, `-m` | Model name (e.g. claude-sonnet-4) |

@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
@@ -105,7 +106,6 @@ def agent_create(
     name: str | None = typer.Option(None, "--name", "-n", help="Agent name (lowercase, hyphens, underscores)"),
     version: str | None = typer.Option(None, "--version", "-v", help="Version (semver, e.g. 1.0.0)"),
     description: str | None = typer.Option(None, "--description", "-d", help="Short description"),
-    owner: str | None = typer.Option(None, "--owner", help="Owner / team name"),
     prompt: str | None = typer.Option(None, "--prompt", "-p", help="System prompt text"),
     prompt_file: str | None = typer.Option(None, "--prompt-file", help="Read system prompt from a file"),
     model_name: str | None = typer.Option(None, "--model", "-m", help="Model name (e.g. claude-sonnet-4)"),
@@ -166,14 +166,12 @@ def agent_create(
         # Default model
         _model = model_name or "claude-sonnet-4"
 
-        # Resolve owner from whoami if not provided
-        _owner = owner or ""
-        if not _owner:
-            try:
-                whoami = client.get("/api/v1/auth/whoami")
-                _owner = whoami.get("name") or whoami.get("email", "unknown")
-            except (Exception, SystemExit):
-                _owner = "unknown"
+        # Resolve owner from whoami
+        try:
+            whoami = client.get("/api/v1/auth/whoami")
+            _owner = whoami.get("username") or whoami.get("email", "unknown")
+        except (Exception, SystemExit):
+            _owner = config.load().get("username", "") or "unknown"
 
         payload = {
             "name": _name,
@@ -264,10 +262,10 @@ def agent_create(
     default_owner = ""
     try:
         whoami = client.get("/api/v1/auth/whoami")
-        default_owner = whoami.get("name") or whoami.get("email", "")
+        default_owner = whoami.get("username") or whoami.get("email", "")
     except (Exception, SystemExit):
         pass
-    owner = text_input("  Owner / Team", default=default_owner or "")
+    owner = default_owner or config.load().get("username", "") or "unknown"
     prompt_text = text_input("  System prompt (optional)", default="")
     max_tokens = text_input("  Max tokens", default="4096")
     temperature = text_input("  Temperature", default="0.2")
@@ -797,7 +795,7 @@ def agent_init(
     default_version = "0.1.0" if beta else "1.0.0"
     version = text_input("Version", default=default_version)
     description = text_input("Description")
-    owner = text_input("Owner / Team")
+    owner = config.load().get("username", "") or "unknown"
     model_name = text_input("Model name", default="claude-sonnet-4")
     prompt_text = text_input("System prompt")
 

@@ -23,7 +23,7 @@ owner: observal
 
 ## Procedure: Create Agent
 
-Required: `--name`, `--description`, `--prompt`. Optional: `--model` (default: `claude-sonnet-4`), `--ide` (repeatable), `--owner`, `--prompt-file`, `--from-file`.
+Required: `--name`, `--description`, `--prompt`. Optional: `--model` (default: `claude-sonnet-4`), `--ide` (repeatable), `--prompt-file`, `--from-file`.
 
 > **WARNING:** Without `--name` and `--prompt`, the command launches an interactive wizard. Always pass at least `--name`, `--description`, and `--prompt`.
 
@@ -53,7 +53,6 @@ Skips review queue. Overwrites in place.
    name: existing-agent-name
    version: "1.0.0"
    description: "Updated description"
-   owner: "team-name"
    model_name: claude-sonnet-4
    model_config_json: {}
    models_by_ide: {}

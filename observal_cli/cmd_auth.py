@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
@@ -151,6 +152,7 @@ def login(
                 "refresh_token": data["refresh_token"],
                 "user_id": user.get("id", ""),
                 "user_name": user.get("name", ""),
+                "username": user.get("username", ""),
             }
             if endpoints:
                 cfg_data["web_url"] = endpoints.get("web", "")
@@ -495,6 +497,7 @@ def _do_password_login(server_url: str, email: str, password: str):
             "refresh_token": data["refresh_token"],
             "user_id": user.get("id", ""),
             "user_name": user.get("name", ""),
+            "username": user.get("username", ""),
         }
         if endpoints:
             cfg_data["web_url"] = endpoints.get("web", "")
@@ -608,6 +611,7 @@ def _do_device_flow_login(server_url: str):
                     "refresh_token": token_data["refresh_token"],
                     "user_id": user.get("id", ""),
                     "user_name": user.get("name", ""),
+                    "username": user.get("username", ""),
                 }
                 if endpoints:
                     cfg_data["web_url"] = endpoints.get("web", "")

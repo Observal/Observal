@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 // SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
@@ -125,7 +126,6 @@ export function SubmitComponentDialog({
 	const { data: ideList } = useIdes();
 	const defaultOwner =
 		(d?.owner as string) ||
-		whoami?.name ||
 		whoami?.username ||
 		whoami?.email ||
 		"";
@@ -136,8 +136,7 @@ export function SubmitComponentDialog({
 	const [description, setDescription] = useState(
 		(d?.description as string) ?? "",
 	);
-	const [ownerInput, setOwnerInput] = useState((d?.owner as string) ?? "");
-	const owner = ownerInput || defaultOwner;
+	const owner = defaultOwner;
 	const [supportedIdes, setSupportedIdes] = useState<string[]>(
 		Array.isArray(d?.supported_ides) ? (d.supported_ides as string[]) : [],
 	);
@@ -352,7 +351,6 @@ export function SubmitComponentDialog({
 		setName("");
 		setVersion("0.1.0");
 		setDescription("");
-		setOwnerInput("");
 		setSupportedIdes([]);
 		setMcpMode("json");
 		setJsonInput("");
@@ -599,16 +597,6 @@ export function SubmitComponentDialog({
 								placeholder="0.1.0"
 							/>
 						</div>
-					</div>
-
-					<div className="space-y-1.5">
-						<Label htmlFor="comp-owner">Owner</Label>
-						<Input
-							id="comp-owner"
-							value={owner}
-							onChange={(e) => setOwnerInput(e.target.value)}
-							placeholder="your-username"
-						/>
 					</div>
 
 					<div className="space-y-1.5">
