@@ -216,6 +216,17 @@ validate_standard() {
     [ -n "$pub" ] && pass "public_subnet_ids set" || fail "vpc_id set but public_subnet_ids missing"
   fi
 
+  # Check for resource naming conflicts
+  local prefix="${environment:-prod}"
+  local full_name="observal-${prefix}"
+  local region_flag="--region ${region:-us-east-1}"
+  local existing_alb
+  existing_alb=$(aws elbv2 describe-load-balancers $region_flag --names "${full_name}-alb" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || echo "None")
+  if [ "$existing_alb" != "None" ] && [ -n "$existing_alb" ]; then
+    fail "ALB '${full_name}-alb' already exists in this account/region"
+    info "Change name_prefix in terraform.tfvars or delete the existing ALB first"
+  fi
+
   # Check GHCR image accessibility (requires token even for public images)
   local tag="${image_tag:-latest}"
   local token status
@@ -346,8 +357,37 @@ fi
 
 echo ""
 info "Applying..."
-if ! $TF -chdir="$MODULE_DIR" apply tfplan; then
-  fail "terraform apply failed"
+APPLY_OUTPUT=$($TF -chdir="$MODULE_DIR" apply tfplan 2>&1)
+APPLY_EXIT=$?
+
+if [ "$APPLY_EXIT" -ne 0 ]; then
+  echo "$APPLY_OUTPUT"
+  echo ""
+
+  if echo "$APPLY_OUTPUT" | grep -qi "already exists\|AlreadyExists\|BucketAlreadyExists\|EntityAlreadyExists\|ResourceAlreadyExistsException\|ParameterAlreadyExists"; then
+    echo -e "  ${FAIL} ${BOLD}Resource conflict: some AWS resources already exist.${NC}"
+    echo ""
+    echo "  This usually means a previous deployment with the same name_prefix + environment"
+    echo "  left resources behind (no terraform state to track them)."
+    echo ""
+    echo -e "  ${BOLD}Options to fix:${NC}"
+    echo ""
+    echo "  1. Use a different name (easiest):"
+    echo "     Edit $TFVARS and change:"
+    echo "       name_prefix = \"observal-v2\"   # or any unique name"
+    echo "     Then re-run this script."
+    echo ""
+    echo "  2. Delete the old resources first:"
+    echo "     The conflicting resources are listed in the errors above."
+    echo "     Delete them via AWS Console or CLI, then re-run."
+    echo ""
+    echo "  3. Import them into Terraform state:"
+    echo "     terraform -chdir=$MODULE_DIR import <resource_address> <resource_id>"
+    echo "     (advanced — run for each conflicting resource)"
+    echo ""
+  else
+    fail "terraform apply failed (see errors above)"
+  fi
   exit 1
 fi
 
