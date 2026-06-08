@@ -148,11 +148,17 @@ async def resolve_agent(
 
     Looks up each AgentComponent's listing in the correct table,
     validates status, and returns a ResolvedAgent with full details.
+
+    Components are batched by type so each type requires at most one
+    SELECT ... WHERE id IN (...) query, regardless of how many components
+    of that type exist.
     """
     optic.debug("resolving agent components (require_approved={})", require_approved)
     components: list[ResolvedComponent] = []
     errors: list[ResolutionError] = []
 
+    # Group components by type for batched lookups (max 5 queries total)
+    by_type: dict[str, list] = {}
     for comp in agent.components:
         model = _LISTING_MODELS.get(comp.component_type)
         if model is None:
@@ -164,10 +170,24 @@ async def resolve_agent(
                 )
             )
             continue
+        by_type.setdefault(comp.component_type, []).append(comp)
 
-        stmt = select(model).where(model.id == comp.component_id)
-        listing = (await db.execute(stmt)).scalar_one_or_none()
+    # Fetch all listings per type in one query each
+    found: dict[uuid.UUID, object] = {}
+    for comp_type, comps in by_type.items():
+        model = _LISTING_MODELS[comp_type]
+        ids = [c.component_id for c in comps]
+        stmt = select(model).where(model.id.in_(ids))
+        result = await db.execute(stmt)
+        for listing in result.scalars().all():
+            found[listing.id] = listing
 
+    # Process in original order to preserve deterministic output
+    for comp in agent.components:
+        if comp.component_type not in _LISTING_MODELS:
+            continue  # Already recorded as error above
+
+        listing = found.get(comp.component_id)
         if listing is None:
             errors.append(
                 ResolutionError(

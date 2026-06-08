@@ -412,7 +412,7 @@ class TestResolveAgent:
         agent.components = [comp]
 
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalars.return_value.all.return_value = []
         db = AsyncMock()
         db.execute.return_value = mock_result
 
@@ -439,11 +439,12 @@ class TestResolveAgent:
         agent.components = [comp]
 
         listing = MagicMock()
+        listing.id = comp.component_id
         listing.status = ListingStatus.pending
         listing.name = "pending-mcp"
 
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = listing
+        mock_result.scalars.return_value.all.return_value = [listing]
         db = AsyncMock()
         db.execute.return_value = mock_result
 
@@ -472,6 +473,7 @@ class TestResolveAgent:
         agent.components = [comp]
 
         listing = MagicMock()
+        listing.id = comp.component_id
         listing.status = ListingStatus.approved
         listing.name = "good-mcp"
         listing.version = "2.0.0"
@@ -484,7 +486,7 @@ class TestResolveAgent:
         listing.setup_instructions = None
 
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = listing
+        mock_result.scalars.return_value.all.return_value = [listing]
         db = AsyncMock()
         db.execute.return_value = mock_result
 
@@ -517,6 +519,7 @@ class TestResolveAgent:
         agent.components = [comp]
 
         listing = MagicMock()
+        listing.id = comp.component_id
         listing.status = ListingStatus.pending
         listing.name = "pending-skill"
         listing.version = "1.0.0"
@@ -529,7 +532,7 @@ class TestResolveAgent:
         listing.skill_md_content = None
 
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = listing
+        mock_result.scalars.return_value.all.return_value = [listing]
         db = AsyncMock()
         db.execute.return_value = mock_result
 
@@ -566,6 +569,7 @@ class TestResolveAgent:
         agent.components = [good_comp, bad_comp]
 
         good_listing = MagicMock()
+        good_listing.id = good_comp.component_id
         good_listing.status = ListingStatus.approved
         good_listing.name = "good-mcp"
         good_listing.version = "1.0"
@@ -577,14 +581,13 @@ class TestResolveAgent:
         good_listing.mcp_validated = True
         good_listing.setup_instructions = None
 
-        # Return good listing for first call, None for second
-        mock_result_good = MagicMock()
-        mock_result_good.scalar_one_or_none.return_value = good_listing
-        mock_result_bad = MagicMock()
-        mock_result_bad.scalar_one_or_none.return_value = None
+        # Both components are type "mcp" so they are fetched in one batch.
+        # Only good_listing is returned, so bad_comp is "not found".
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [good_listing]
 
         db = AsyncMock()
-        db.execute.side_effect = [mock_result_good, mock_result_bad]
+        db.execute.return_value = mock_result
 
         resolved = await resolve_agent(agent, db)
         assert resolved.ok is False
