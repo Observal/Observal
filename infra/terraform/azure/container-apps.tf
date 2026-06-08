@@ -99,15 +99,13 @@ resource "azurerm_container_app" "api" {
       memory = var.api_memory
 
       command = [
-        "/app/.venv/bin/python", "-m", "uvicorn", "main:app",
-        "--host", "0.0.0.0", "--port", "8000",
-        "--workers", "2",
-        "--proxy-headers", "--forwarded-allow-ips", "*",
+        "/bin/bash", "-c",
+        "mkdir -p /tmp/keys && cp -a /mnt/jwt-keys/. /tmp/keys/ 2>/dev/null; trap 'cp -a /tmp/keys/. /mnt/jwt-keys/ 2>/dev/null' EXIT; exec /app/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips '*'",
       ]
 
       volume_mounts {
         name = "jwt-keys"
-        path = "/app/keys"
+        path = "/mnt/jwt-keys"
       }
 
       env {
@@ -137,7 +135,7 @@ resource "azurerm_container_app" "api" {
 
       env {
         name  = "JWT_KEY_DIR"
-        value = "/app/keys"
+        value = "/tmp/keys"
       }
 
       liveness_probe {
