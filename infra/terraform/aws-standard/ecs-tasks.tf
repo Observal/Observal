@@ -11,6 +11,14 @@ locals {
   app_environment = [
     { name = "NEXT_PUBLIC_API_URL", value = local.app_url },
     { name = "JWT_KEY_DIR", value = "/tmp/keys" },
+    { name = "DEMO_SUPER_ADMIN_EMAIL", value = "super@demo.example" },
+    { name = "DEMO_SUPER_ADMIN_PASSWORD", value = "super-changeme" },
+    { name = "DEMO_ADMIN_EMAIL", value = "admin@demo.example" },
+    { name = "DEMO_ADMIN_PASSWORD", value = "admin-changeme" },
+    { name = "DEMO_REVIEWER_EMAIL", value = "reviewer@demo.example" },
+    { name = "DEMO_REVIEWER_PASSWORD", value = "reviewer-changeme" },
+    { name = "DEMO_USER_EMAIL", value = "user@demo.example" },
+    { name = "DEMO_USER_PASSWORD", value = "user-changeme" },
   ]
 
   # Secrets injected by ECS at task start via SSM Parameter Store ARNs.
