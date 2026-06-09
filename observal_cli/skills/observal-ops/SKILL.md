@@ -27,8 +27,9 @@ observal ops metrics ITEM_NAME --type mcp --watch
 observal ops top --type agent --output json
 observal ops top --type mcp --output json
 observal ops traces --limit 20 --output json
-observal ops traces --agent AGENT_NAME --output json
-observal ops traces --mcp MCP_NAME --output json
+observal ops traces --platform kiro --days 7 --output json
+observal ops traces --turn --limit 5
+observal ops traces --span --limit 3
 observal ops spans TRACE_ID --output json
 observal ops feedback ITEM_NAME --type mcp --output json
 ```

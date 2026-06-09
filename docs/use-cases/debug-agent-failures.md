@@ -20,7 +20,7 @@ Web UI: `http://localhost/traces` → filter by IDE, user, and time range. Click
 CLI:
 
 ```bash
-observal ops traces --type agent --agent <agent-id> --limit 50
+observal ops traces --limit 50
 ```
 
 Every trace belongs to a `session_id`. Related traces (all from the same IDE session) share it.
@@ -30,7 +30,7 @@ Every trace belongs to a `session_id`. Related traces (all from the same IDE ses
 In the web UI the trace list colors errored traces red. In the CLI:
 
 ```bash
-observal ops traces --agent <agent-id> --limit 50
+observal ops traces --turn --limit 50
 ```
 
 Look for non-zero error counts in the summary.

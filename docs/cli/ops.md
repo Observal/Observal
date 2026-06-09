@@ -64,21 +64,21 @@ observal ops top --type agent --limit 20
 
 ## `observal ops traces`
 
-List recent traces. Filter by agent, MCP, or type.
+List recent traces (sessions). By default shows a summary table. Use `--turn` to unfold sessions into a tree showing prompts and tool calls, or `--span` for full detail.
 
 ### Synopsis
 
 ```bash
-observal ops traces [--type <type>] [--agent <id>] [--mcp <id>] [--limit N] [--session <id>] [--output table|json]
+observal ops traces [--platform <ide>] [--days N] [--limit N] [--turn] [--span] [--output table|json]
 ```
 
 ### Examples
 
 ```bash
 observal ops traces --limit 20
-observal ops traces --agent code-reviewer --limit 50
-observal ops traces --mcp github-mcp
-observal ops traces --session <session-id>
+observal ops traces --turn --limit 5
+observal ops traces --span --limit 3
+observal ops traces --platform kiro --days 7
 observal ops traces --output json | jq
 ```
 
