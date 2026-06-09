@@ -1306,105 +1306,184 @@ def admin_set_role(
 # ── Traces / Spans (on ops_app) ─────────────────────────
 
 
+def _graphql_query(query: str, variables: dict | None = None) -> dict:
+    """Execute a GraphQL query via the client module (handles auth refresh + retries)."""
+    payload = {"query": query}
+    if variables:
+        payload["variables"] = variables
+    return client.post("/api/v1/graphql", payload)
+
+
 @ops_app.command(name="traces")
 def _traces(
-    trace_type: str | None = typer.Option(None, "--type", "-t"),
-    mcp_id: str | None = typer.Option(None, "--mcp"),
-    agent_id: str | None = typer.Option(None, "--agent"),
+    platform: str | None = typer.Option(None, "--platform", "-p", help="Filter by IDE platform"),
+    days: int | None = typer.Option(None, "--days", "-d", help="Limit to last N days"),
     limit: int = typer.Option(20, "--limit", "-n"),
+    turn: bool = typer.Option(False, "--turn", help="Unfold sessions to show turns (prompts)"),
+    span: bool = typer.Option(False, "--span", help="Show full detail including tool calls"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """List recent traces.
+    """List recent traces (sessions).
 
-    Queries the GraphQL API for recent telemetry traces. Results can be
-    filtered by trace type, MCP server, or agent. Shows span count,
-    error count, and tool call count per trace.
+    By default shows sessions as a summary table (user prompts).
+    Use --turn to unfold each session and show its turns/spans.
+    Use --span for full detail including tool call inputs/outputs.
 
     Examples:
 
         observal ops traces
 
-        observal ops traces --type tool_call --limit 50
+        observal ops traces --turn
 
-        observal ops traces --mcp my-mcp
+        observal ops traces --span --limit 5
 
-        observal ops traces --agent my-agent --output json
+        observal ops traces --platform kiro --days 7
     """
-    _traces_impl(trace_type, mcp_id, agent_id, limit, output)
+    _traces_impl(platform, days, limit, turn, span, output)
 
 
-def _traces_impl(trace_type, mcp_id, agent_id, limit, output):
-    variables = {"limit": limit}
-    if trace_type:
-        variables["traceType"] = trace_type
-    if mcp_id:
-        variables["mcpId"] = config.resolve_alias(mcp_id)
-    if agent_id:
-        variables["agentId"] = config.resolve_alias(agent_id)
+def _traces_impl(platform, days, limit, turn, span, output):
+    # Fetch sessions from the REST endpoint (same data the web UI shows)
+    params: dict = {"limit": limit}
+    if platform:
+        params["platform"] = platform
+    if days:
+        params["days"] = days
 
-    query = """query($traceType: String, $mcpId: String, $agentId: String, $limit: Int) {
-        traces(traceType: $traceType, mcpId: $mcpId, agentId: $agentId, limit: $limit) {
-            items {
-                traceId traceType name mcpId agentId ide startTime
-                metrics { totalSpans errorCount toolCallCount }
-            }
-        }
-    }"""
-    import httpx
-
-    cfg = config.get_or_exit()
-    token = cfg.get("api_key") or cfg.get("access_token", "")
-    with spinner("Querying traces..."):
-        try:
-            r = httpx.post(
-                f"{cfg['server_url'].rstrip('/')}/api/v1/graphql",
-                json={"query": query, "variables": variables},
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=30,
-            )
-            r.raise_for_status()
-            items = r.json().get("data", {}).get("traces", {}).get("items", [])
-        except Exception as e:
-            rprint(f"[red]Failed to query traces: {e}[/red]")
-            raise typer.Exit(1)
+    with spinner("Querying sessions..."):
+        sessions = client.get("/api/v1/sessions", params=params)
 
     if output == "json":
-        output_json(items)
+        output_json(sessions)
         return
 
-    if not items:
+    if not sessions:
         rprint("[dim]No traces found.[/dim]")
         return
 
-    table = Table(title=f"Traces ({len(items)})", show_lines=False, padding=(0, 1))
+    if span or turn:
+        _render_sessions_detail(sessions, full=span)
+    else:
+        _render_sessions_summary(sessions)
+
+
+def _render_sessions_summary(sessions: list[dict]):
+    """Default view: flat table of sessions (user prompts)."""
+    table = Table(title=f"Sessions ({len(sessions)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
-    table.add_column("Trace ID", style="dim", max_width=14)
-    table.add_column("Type")
-    table.add_column("Name", no_wrap=True)
-    table.add_column("Ref", style="dim", max_width=16)
-    table.add_column("IDE")
-    table.add_column("Spans", justify="right")
-    table.add_column("Err", justify="right")
+    table.add_column("Session", no_wrap=True, max_width=30)
+    table.add_column("User")
+    table.add_column("Platform")
+    table.add_column("Prompts", justify="right")
     table.add_column("Tools", justify="right")
+    table.add_column("Tokens", justify="right")
     table.add_column("When")
-    for i, t in enumerate(items, 1):
-        m = t.get("metrics", {})
-        ref = t.get("mcpId") or t.get("agentId") or "--"
-        errs = m.get("errorCount", 0)
-        err_style = "red" if errs > 0 else ""
+    for i, s in enumerate(sessions, 1):
+        # Build a session name from prompt count
+        prompt_count = int(s.get("prompt_count", 0))
+        name = f"{prompt_count} prompt{'s' if prompt_count != 1 else ''}"
+        tokens_in = int(s.get("total_input_tokens", 0))
+        tokens_out = int(s.get("total_output_tokens", 0))
+        tokens_display = _format_tokens(tokens_in, tokens_out)
         table.add_row(
             str(i),
-            t["traceId"][:12] + "…",
-            t.get("traceType", ""),
-            t.get("name", "") or "--",
-            ref[:16],
-            t.get("ide", "") or "--",
-            str(m.get("totalSpans", 0)),
-            f"[{err_style}]{errs}[/{err_style}]" if err_style else str(errs),
-            str(m.get("toolCallCount", 0)),
-            relative_time(t.get("startTime")),
+            name,
+            s.get("user_name", "--"),
+            s.get("platform", "--"),
+            str(prompt_count),
+            str(int(s.get("tool_result_count", 0))),
+            tokens_display,
+            relative_time(s.get("first_event_time") or s.get("last_event_time")),
         )
     console.print(table)
+
+
+def _render_sessions_detail(sessions: list[dict], full: bool = False):
+    """--turn / --span view: fetch session detail and show turns."""
+    from rich.tree import Tree
+
+    tree = Tree(f"[bold]Sessions ({len(sessions)})[/bold]")
+    for s in sessions:
+        session_id = s.get("session_id", "")
+        prompt_count = int(s.get("prompt_count", 0))
+        tool_count = int(s.get("tool_result_count", 0))
+        tokens_in = int(s.get("total_input_tokens", 0))
+        tokens_out = int(s.get("total_output_tokens", 0))
+        name = f"{prompt_count} prompt{'s' if prompt_count != 1 else ''}"
+        session_label = (
+            f"[bold]{name}[/bold] "
+            f"[dim]{session_id[:12]}…[/dim] "
+            f"[cyan]{s.get('platform', '')}[/cyan] "
+            f"[dim]{s.get('user_name', '')}[/dim] "
+            f"[dim]{relative_time(s.get('first_event_time'))}[/dim]"
+        )
+        session_node = tree.add(session_label)
+
+        # Fetch session detail for turns
+        try:
+            detail = client.get(f"/api/v1/sessions/{session_id}")
+        except Exception:
+            # Detail endpoint failed (e.g. no session parser for this IDE)
+            # Show summary info we already have
+            session_node.add(f"[dim]prompts: {prompt_count}, tools: {tool_count}[/dim]")
+            session_node.add(f"[dim]tokens: {_format_tokens(tokens_in, tokens_out)}[/dim]")
+            if s.get("model"):
+                session_node.add(f"[dim]model: {s['model']}[/dim]")
+            continue
+
+        events = detail.get("events", [])
+        if not events:
+            session_node.add(f"[dim]prompts: {prompt_count}, tools: {tool_count}[/dim]")
+            session_node.add(f"[dim]tokens: {_format_tokens(tokens_in, tokens_out)}[/dim]")
+            continue
+
+        for evt in events:
+            etype = evt.get("event_name", "")
+            body = evt.get("body", "") or ""
+            attrs = evt.get("attributes", {})
+
+            if etype in ("user_prompt", "human_turn", "hook_userpromptsubmit"):
+                prompt_text = body[:100] + ("…" if len(body) > 100 else "")
+                session_node.add(f"[bold green]▶[/bold green] {prompt_text}")
+            elif etype in ("assistant_response", "assistant_turn", "hook_assistant_response"):
+                if full:
+                    resp_text = body[:150] + ("…" if len(body) > 150 else "")
+                    session_node.add(f"  [dim]{resp_text}[/dim]")
+            elif etype in ("tool_call", "hook_pretooluse"):
+                tool_name = attrs.get("tool_name") or body[:50]
+                session_node.add(f"  [cyan]⚡ {tool_name}[/cyan]")
+            elif etype in ("tool_result", "hook_posttooluse") and full:
+                result_text = body[:100] + ("…" if len(body) > 100 else "")
+                session_node.add(f"    [dim]→ {result_text}[/dim]")
+
+        # Show subagent sessions if available
+        for sub in detail.get("subagent_sessions", []):
+            sub_events = sub.get("events", [])
+            sub_node = session_node.add(f"[yellow]↳ subagent ({len(sub_events)} events)[/yellow]")
+            if full:
+                for evt in sub_events[:10]:
+                    etype = evt.get("event_name", "")
+                    body = evt.get("body", "") or ""
+                    if etype in ("user_prompt", "human_turn"):
+                        sub_node.add(f"[green]▶[/green] {body[:80]}")
+                    elif etype == "tool_call":
+                        tool_name = evt.get("attributes", {}).get("tool_name") or body[:40]
+                        sub_node.add(f"  [cyan]⚡ {tool_name}[/cyan]")
+
+    console.print(tree)
+
+
+def _format_tokens(input_tokens: int, output_tokens: int) -> str:
+    """Format token counts compactly (e.g. '13.8k / 137')."""
+
+    def _fmt(n: int) -> str:
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.1f}M"
+        elif n >= 1_000:
+            return f"{n / 1_000:.1f}k"
+        return str(n)
+
+    return f"{_fmt(input_tokens)} / {_fmt(output_tokens)}"
 
 
 @ops_app.command(name="spans")
@@ -1437,23 +1516,10 @@ def _spans_impl(trace_id, output):
             }
         }
     }"""
-    import httpx
 
-    cfg = config.get_or_exit()
-    token = cfg.get("api_key") or cfg.get("access_token", "")
     with spinner("Querying spans..."):
-        try:
-            r = httpx.post(
-                f"{cfg['server_url'].rstrip('/')}/api/v1/graphql",
-                json={"query": query, "variables": {"traceId": trace_id}},
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=30,
-            )
-            r.raise_for_status()
-            trace_data = r.json().get("data", {}).get("trace")
-        except Exception as e:
-            rprint(f"[red]Failed to query spans: {e}[/red]")
-            raise typer.Exit(1)
+        result = _graphql_query(query, {"traceId": trace_id})
+        trace_data = result.get("data", {}).get("trace")
 
     if not trace_data:
         rprint(f"[yellow]Trace {trace_id} not found.[/yellow]")

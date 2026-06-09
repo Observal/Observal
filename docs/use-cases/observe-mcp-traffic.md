@@ -64,8 +64,8 @@ Restart your IDE after `doctor patch`. The next MCP call produces a trace.
 # Last 20 traces
 observal ops traces --limit 20
 
-# Last 20 from a specific MCP server
-observal ops traces --mcp github-mcp
+# Unfold to see tool calls
+observal ops traces --turn --limit 10
 
 # Dive into a specific trace
 observal ops spans <trace-id>

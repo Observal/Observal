@@ -102,7 +102,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal ops rate`: Rate an MCP server or agent.
   - `observal ops spans`: List spans for a trace.
   - `observal ops top`: Show top MCP servers or agents by usage.
-  - `observal ops traces`: List recent traces.
+  - `observal ops traces`: List recent traces (sessions).
 
 **`observal reconcile`**: Push local session transcripts to the server
 
