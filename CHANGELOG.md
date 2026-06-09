@@ -4,13 +4,80 @@
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
-<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Changelog
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-06-09
+
+### Added
+
+- add remote state backend (Azure Blob Storage) (**infra**) ([86c468b](https://github.com/BlazeUp-AI/Observal/commit/86c468b068de32d33d28f508f67f570a59b960c7))
+- add Azure Terraform module for self-hosted deployment (**infra**) ([1c523fd](https://github.com/BlazeUp-AI/Observal/commit/1c523fd3232a6dd6f17015dbf913b195d1b28a35))
+- add Antigravity CLI adapter and session parser (**ide**) ([7b4883e](https://github.com/BlazeUp-AI/Observal/commit/7b4883ef5861d509a655e281134ef27ffaafe2e5))
+- update IDE_LAYER_CONFIGS with accurate file patterns (**layer**) ([cd78179](https://github.com/BlazeUp-AI/Observal/commit/cd78179c61a95f31acb182db7fb52efa9ee0e1ea))
+- add full IDE parity for diagnose, patch, and cleanup (**doctor**) ([ac92e21](https://github.com/BlazeUp-AI/Observal/commit/ac92e21232384aef93eace9271b2a87ef7bf14b0))
+- expand Terraform CI to all modules with env consistency checks (#1395) (**ci**) ([6bac54e](https://github.com/BlazeUp-AI/Observal/commit/6bac54e12f44310e41ceacba7494ad4a87d8852f))
+- add AI assistance confirmation to the template (**template**) ([371284c](https://github.com/BlazeUp-AI/Observal/commit/371284c9f33fc7fcffbe535ea39b76777b4a4ec8))
+- BYOVPC, sizing presets, standard tier module, unified deploy (**infra**) ([0da964b](https://github.com/BlazeUp-AI/Observal/commit/0da964b4bac38323d565ae7809937ec470bad075))
+- promote OpenCode to first-class IDE integration (**ide**) ([b5847b7](https://github.com/BlazeUp-AI/Observal/commit/b5847b7d3a0556283882deb4f0c40286bd855b78))
+- complete Copilot CLI and VS Code integration with hooks and session parser ([5acf73d](https://github.com/BlazeUp-AI/Observal/commit/5acf73d7e8add37834ed43ade01a329c0341042a))
+- integrate Codex into layer scanning and drift detection (**codex**) ([ea3c119](https://github.com/BlazeUp-AI/Observal/commit/ea3c119be8e5765f0b548329e6c0d0fa2411d71f))
+- complete Codex CLI integration with hooks, session parser, and telemetry ([da8ad0e](https://github.com/BlazeUp-AI/Observal/commit/da8ad0e66fa1b3df4a470703fb9d0ac8adb577e7))
+- revamp Agent Insights with provider-aware model selection (**settings**) ([10f2fbd](https://github.com/BlazeUp-AI/Observal/commit/10f2fbd7a1f9e43c366f6a12eddd6a9e437138e4))
+- lock file, version pinning, and version-aware insights ([d45ae2e](https://github.com/BlazeUp-AI/Observal/commit/d45ae2e7448209fe70369001eb8ce2c96ef9ae84))
+
+### Changed
+
+- remove Gemini CLI stubs entirely (**ide**) ([1eae5bb](https://github.com/BlazeUp-AI/Observal/commit/1eae5bbb8aa30696c9993f68a4564242d69351e4))
+- remove dead code, unreachable branches, and orphaned modules ([8eeb38f](https://github.com/BlazeUp-AI/Observal/commit/8eeb38f2f7bfb1b7f5f6789e7a992757bd3f3ccc))
+
+### Documentation
+
+- add Antigravity support and IDE integration checklist (**ide**) ([50cb528](https://github.com/BlazeUp-AI/Observal/commit/50cb528206ff7b43a31e7c9c9b748f5ce4a2a28e))
+- update README with Copilot and Codex IDE support, session replay section ([2524ce5](https://github.com/BlazeUp-AI/Observal/commit/2524ce547180044d9715969349afd084fb3315a9))
+- rebrand README — remove observability framing (#1335) ([f24020c](https://github.com/BlazeUp-AI/Observal/commit/f24020c0efa4c62eb0eed2e7bbbdb00a5983998c))
+
+### Fixed
+
+- persist JWT keys via copy-on-start/save-on-stop pattern (**infra**) ([1b43cec](https://github.com/BlazeUp-AI/Observal/commit/1b43cec0bd7de36148005fd0386f2cfdc5e2096c))
+- persist JWT keys with Azure File Share volume mount (**infra**) ([98bad04](https://github.com/BlazeUp-AI/Observal/commit/98bad0438538244edcacdd42495fc0819782b09d))
+- resolve Azure deployment issues (**infra**) ([f52b0e4](https://github.com/BlazeUp-AI/Observal/commit/f52b0e4b4290df910bf5af93db096f1a2315c8d4))
+- add /health to API path rules (CLI uses it for connectivity check) (**alb**) ([0acc7e7](https://github.com/BlazeUp-AI/Observal/commit/0acc7e7e602c2b59a3360f0ef0a66a693049189f))
+- add demo account env vars to init task for seeding (**aws-standard**) ([64317f6](https://github.com/BlazeUp-AI/Observal/commit/64317f6f080e657a024b4909789a43c911508258))
+- fix Postgres 18 volume mount, increase init wait to 180s (**aws-standard**) ([7c768b5](https://github.com/BlazeUp-AI/Observal/commit/7c768b5de4976fded7919bdc70491ef30b2b85aa))
+- stream terraform apply output live instead of capturing (**deploy**) ([67db264](https://github.com/BlazeUp-AI/Observal/commit/67db264ccb79e25f39a23865c937d6722bc326d0))
+- detect resource conflicts before apply, show clear fix instructions (**deploy**) ([d496132](https://github.com/BlazeUp-AI/Observal/commit/d496132ccf9f619fa83d845bd4ce7d2bb7ebe13e))
+- use token auth for GHCR image validation check (**deploy**) ([621d634](https://github.com/BlazeUp-AI/Observal/commit/621d634a7208b40e91b1a46607409107e0efd320))
+- fix CI failures - coalesce null in validation, add SPDX headers and required_version (**infra**) ([c5d6e17](https://github.com/BlazeUp-AI/Observal/commit/c5d6e179d3239a63b24690b580b80cae576d2c33))
+- auto-fill owner from logged-in username ([0f49c5c](https://github.com/BlazeUp-AI/Observal/commit/0f49c5c1310d5bd591bf816c996c0df0394c49ab))
+- schema compat and session_events support (**migrate**) ([2f5e430](https://github.com/BlazeUp-AI/Observal/commit/2f5e430fcf5b42453ef11ee6bdafa0a8b179130f))
+- redact MCP clone tokens (**security**) ([e26d046](https://github.com/BlazeUp-AI/Observal/commit/e26d046e68d790ce86b03324aeb12d87833bf30f))
+- extend refresh token to 30 days and handle session expiry UX (**auth**) ([fd366e6](https://github.com/BlazeUp-AI/Observal/commit/fd366e6aebf13317598194ba662e0acbaaa50f3c))
+- validate skill slash commands (**security**) ([8ef5fa5](https://github.com/BlazeUp-AI/Observal/commit/8ef5fa506cbe8ac2c8511195d70dc1eac3562050))
+- stop truncating session_stats_agg on every deploy (#1345) (**clickhouse**) ([dc52005](https://github.com/BlazeUp-AI/Observal/commit/dc52005a2fd48d7131e9bec3576ee273f906d78b))
+- pass aws_region_name to LiteLLM for Bedrock calls (**insights**) ([baadd98](https://github.com/BlazeUp-AI/Observal/commit/baadd9880aa9cc2d2360a9b3d5750204b33b361d))
+- bump aiohttp 3.13.5 -> 3.14.0 to fix CVE-2026-34993 and CVE-2026-47265 (**dependency**) ([92dd08b](https://github.com/BlazeUp-AI/Observal/commit/92dd08b49ed9aea4306fa693e5af0abe11cdd951))
+- resolve verification_uri to actual deployment URL (**device-auth**) ([bd8ab19](https://github.com/BlazeUp-AI/Observal/commit/bd8ab19d5ae686c38b18ddf362441403eaf1540e))
+- write hook scripts to disk on pull and derive command from script_filename (**hooks**) ([b98973c](https://github.com/BlazeUp-AI/Observal/commit/b98973c7357ba686d7e611d121a38e5c3da94325))
+- resolve API OOM crash loop and pub/sub subscriber failures (#1334) (**server**) ([ba37ce0](https://github.com/BlazeUp-AI/Observal/commit/ba37ce05be8bb3f0a2bd577d737ff63d367b245f))
+
+### Other
+
+- remove 7 unused frontend dependencies (**web**) ([2b26261](https://github.com/BlazeUp-AI/Observal/commit/2b26261f2deafff0fe31028fe0d5f5f6b2a0905f))
+- normalize changelog eof ([8fba6db](https://github.com/BlazeUp-AI/Observal/commit/8fba6db5854545cad7ba7c3aecb398d4e8f9d2f6))
+
+### Performance
+
+- add pagination and Redis cache to registry list endpoints (**server**) ([b13fa8d](https://github.com/BlazeUp-AI/Observal/commit/b13fa8dc2268cfeaf476edff8602638ad9f20d6d))
+- batch component resolution to eliminate N+1 queries (**server**) ([553516f](https://github.com/BlazeUp-AI/Observal/commit/553516f172523debe84de658de6a3abfb5df6167))
+- replace stdlib json with orjson in ClickHouse inserts and session ingest (**server**) ([061e6c6](https://github.com/BlazeUp-AI/Observal/commit/061e6c6ce041f18021f8ca137a2d222750352252))
+
+### Testing
+
+- use UTC clock for short-TTL cache timestamp (**version-check**) ([c8e868b](https://github.com/BlazeUp-AI/Observal/commit/c8e868bfcd1b5f062633595bccb8a34a94a95b0e))
 ## [1.4.4] - 2026-06-01
 
 ### Added
@@ -1849,3 +1916,4 @@ All notable changes to this project will be documented in this file.
 ### Ui
 
 - brighter borders, responsive text scaling, observal favicon ([909a9b6](https://github.com/BlazeUp-AI/Observal/commit/909a9b6dd7cedc9ddaff31b208f09ace9d35be7e))
+
