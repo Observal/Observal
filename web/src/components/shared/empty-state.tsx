@@ -33,7 +33,12 @@ export function EmptyState({
       )}
       {actionLabel && (actionHref || onAction) && (
         actionHref ? (
-          <a href={actionHref}>
+          <a
+            href={actionHref}
+            {...(actionHref.startsWith("http")
+              ? { target: "_blank", rel: "noopener noreferrer" }
+              : {})}
+          >
             <Button variant="outline" size="sm" className="mt-4">
               {actionLabel}
             </Button>
