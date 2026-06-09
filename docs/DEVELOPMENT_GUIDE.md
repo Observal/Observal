@@ -71,7 +71,7 @@ We are a small, active community and we take the quality of interactions serious
 >
 > - Pinging contributors, maintainers, or reviewers unnecessarily (outside of a direct reply on your own open PR or issue)
 > - Submitting low-effort or unreviewed PRs (slop), including unreviewed AI output or autonomous agent submissions
-> - Violating the [Code of Conduct](../../CODE_OF_CONDUCT.md) in any channel
+> - Violating the [Code of Conduct](../CODE_OF_CONDUCT.md) in any channel
 > - Harassing reviewers over merge timelines
 
 Maintainers volunteer their time. Treat them accordingly.
