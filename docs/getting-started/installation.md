@@ -5,12 +5,36 @@
 
 # Installation
 
-Install the Observal CLI on your machine. The CLI is what you use to log in, instrument IDE configs, pull agents, and query traces.
+Observal has two parts: a **server** you self-host and a **CLI** installed on each developer machine.
 
-If you also want to **self-host** the Observal server (API + web UI + databases), see [Self-Hosting](../self-hosting/docker-compose.md).
+## Install the server
+
+The server runs as a Docker Compose stack (API, web UI, PostgreSQL, ClickHouse, Redis, worker, load balancer, Prometheus, Grafana).
 
 > [!NOTE]
-> Self-hosting requires Docker Engine ≥ 24.0 with Compose v2 (`docker compose`, not `docker-compose`). Homebrew's Docker formula is outdated. Install [Docker Desktop](https://docs.docker.com/get-docker/) or use your distro's upstream packages. Verify with `docker version` and `docker compose version`.
+> Requires Docker Engine ≥ 24.0 with Compose v2 (`docker compose`, not `docker-compose`). Homebrew's Docker formula is outdated. Install [Docker Desktop](https://docs.docker.com/get-docker/) or use your distro's upstream packages. Verify with `docker version` and `docker compose version`.
+
+**One-line install:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash
+```
+
+This downloads a config package, runs guided setup (domain, secrets, ports), pulls container images from GHCR, and starts the full stack.
+
+**From source** (for contributors):
+
+```bash
+git clone https://github.com/BlazeUp-AI/Observal.git && cd Observal
+cp .env.example .env
+make up
+```
+
+For production deployment options, see [Self-Hosting](../self-hosting/docker-compose.md).
+
+## Install the CLI
+
+The CLI is what you use to log in, instrument IDE configs, pull agents, and query traces.
 
 ## Install (standalone binary)
 
