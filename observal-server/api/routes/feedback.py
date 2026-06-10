@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger as optic
@@ -20,34 +20,66 @@ from models.prompt import PromptListing
 from models.sandbox import SandboxListing
 from models.skill import SkillListing
 from models.user import User, UserRole
-from schemas.feedback import FeedbackCreateRequest, FeedbackResponse, FeedbackSummary
+from schemas.feedback import FeedbackCreateRequest, FeedbackResponse, FeedbackSummary, FeedbackUpdateRequest
 from services.clickhouse import insert_scores
 
 router = APIRouter(prefix="/api/v1/feedback", tags=["feedback"])
 
+LISTING_MODELS = {
+    "mcp": McpListing,
+    "agent": Agent,
+    "skill": SkillListing,
+    "hook": HookListing,
+    "prompt": PromptListing,
+    "sandbox": SandboxListing,
+}
 
-@router.post("", response_model=FeedbackResponse)
+
+def _serialize_feedback(fb: Feedback) -> FeedbackResponse:
+    """Serialize feedback, redacting user_id when anonymous."""
+    return FeedbackResponse(
+        id=fb.id,
+        listing_id=fb.listing_id,
+        listing_type=fb.listing_type,
+        user_id=None if fb.anonymous else fb.user_id,
+        rating=fb.rating,
+        comment=fb.comment,
+        anonymous=fb.anonymous,
+        created_at=fb.created_at,
+        updated_at=fb.updated_at,
+    )
+
+
+@router.post("", response_model=FeedbackResponse, status_code=201)
 async def create_feedback(
     req: FeedbackCreateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
+    """Submit a review. One review per user per listing (returns 409 if already reviewed)."""
+    optic.debug("feedback create: user={}, listing={}", current_user.id, req.listing_id)
+
     # Validate listing exists
-    optic.debug("feedback create")
-    listing_models = {
-        "mcp": McpListing,
-        "agent": Agent,
-        "skill": SkillListing,
-        "hook": HookListing,
-        "prompt": PromptListing,
-        "sandbox": SandboxListing,
-    }
-    model = listing_models.get(req.listing_type)
+    model = LISTING_MODELS.get(req.listing_type)
     if not model:
         raise HTTPException(status_code=400, detail=f"Unknown listing type: {req.listing_type}")
     exists = await db.scalar(select(model.id).where(model.id == req.listing_id))
     if not exists:
         raise HTTPException(status_code=404, detail="Listing not found")
+
+    # Enforce one review per user per listing
+    existing = await db.scalar(
+        select(Feedback.id).where(
+            Feedback.user_id == current_user.id,
+            Feedback.listing_id == req.listing_id,
+            Feedback.listing_type == req.listing_type,
+        )
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="You have already reviewed this item. Use PUT to update your review.",
+        )
 
     fb = Feedback(
         listing_id=req.listing_id,
@@ -55,14 +87,13 @@ async def create_feedback(
         user_id=current_user.id,
         rating=req.rating,
         comment=req.comment,
+        anonymous=req.anonymous,
     )
     db.add(fb)
     await db.commit()
     await db.refresh(fb)
 
-    # Dual-write: also insert into ClickHouse scores table
-    from datetime import datetime
-
+    # Dual-write to ClickHouse scores table
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     try:
         await insert_scores(
@@ -78,14 +109,86 @@ async def create_feedback(
                     "data_type": "numeric",
                     "value": float(req.rating),
                     "comment": req.comment,
-                    "metadata": {"listing_type": req.listing_type},
+                    "metadata": {"listing_type": req.listing_type, "anonymous": req.anonymous},
                     "timestamp": now,
                 }
             ]
         )
     except Exception:
-        pass  # Don't fail the request if ClickHouse write fails
-    return FeedbackResponse.model_validate(fb)
+        optic.warning("ClickHouse dual-write failed for feedback id={}", fb.id)
+
+    return _serialize_feedback(fb)
+
+
+@router.get("/mine/{listing_type}/{listing_id}", response_model=FeedbackResponse)
+async def get_my_review(
+    listing_type: str,
+    listing_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Get the current user's review for a specific listing (if it exists)."""
+    if listing_type not in LISTING_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown listing type: {listing_type}")
+    result = await db.execute(
+        select(Feedback).where(
+            Feedback.user_id == current_user.id,
+            Feedback.listing_id == listing_id,
+            Feedback.listing_type == listing_type,
+        )
+    )
+    fb = result.scalar_one_or_none()
+    if not fb:
+        raise HTTPException(status_code=404, detail="You have not reviewed this item")
+    return _serialize_feedback(fb)
+
+
+@router.put("/{feedback_id}", response_model=FeedbackResponse)
+async def update_feedback(
+    feedback_id: uuid.UUID,
+    req: FeedbackUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Update the current user's review. Only the review owner can update."""
+    result = await db.execute(select(Feedback).where(Feedback.id == feedback_id))
+    fb = result.scalar_one_or_none()
+    if not fb:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if fb.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only update your own review")
+
+    if req.rating is not None:
+        fb.rating = req.rating
+    if req.comment is not None:
+        fb.comment = req.comment
+    if req.anonymous is not None:
+        fb.anonymous = req.anonymous
+    fb.updated_at = datetime.now(UTC)
+
+    await db.commit()
+    await db.refresh(fb)
+    optic.debug("feedback updated: id={}", feedback_id)
+    return _serialize_feedback(fb)
+
+
+@router.delete("/{feedback_id}", status_code=204)
+async def delete_feedback(
+    feedback_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Delete the current user's review. Only the review owner can delete."""
+    result = await db.execute(select(Feedback).where(Feedback.id == feedback_id))
+    fb = result.scalar_one_or_none()
+    if not fb:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if fb.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only delete your own review")
+
+    await db.delete(fb)
+    await db.commit()
+    optic.debug("feedback deleted: id={}", feedback_id)
 
 
 @router.get("/me", response_model=list[FeedbackResponse])
@@ -124,7 +227,7 @@ async def my_feedback_received(
         select(Feedback).where(Feedback.listing_id.in_(all_ids)).order_by(Feedback.created_at.desc())
     )
     feedbacks = result.scalars().all()
-    return [FeedbackResponse.model_validate(f) for f in feedbacks]
+    return [_serialize_feedback(f) for f in feedbacks]
 
 
 @router.get("/summary/{listing_id}", response_model=FeedbackSummary)
@@ -146,13 +249,13 @@ async def feedback_summary(listing_id: uuid.UUID, db: AsyncSession = Depends(get
 
 @router.get("/{listing_type}/{listing_id}", response_model=list[FeedbackResponse])
 async def get_feedback(listing_type: str, listing_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Get all reviews for a listing. Anonymous reviews have user_id redacted."""
     optic.trace("listing_type={}, listing_id={}", listing_type, listing_id)
-    valid_types = {"mcp", "agent", "skill", "hook", "prompt", "sandbox"}
-    if listing_type not in valid_types:
+    if listing_type not in LISTING_MODELS:
         raise HTTPException(status_code=400, detail=f"Unknown listing type: {listing_type}")
     result = await db.execute(
         select(Feedback)
         .where(Feedback.listing_id == listing_id, Feedback.listing_type == listing_type)
         .order_by(Feedback.created_at.desc())
     )
-    return [FeedbackResponse.model_validate(f) for f in result.scalars().all()]
+    return [_serialize_feedback(f) for f in result.scalars().all()]

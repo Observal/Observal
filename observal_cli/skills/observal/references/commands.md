@@ -99,7 +99,9 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal ops feedback`: Show feedback for an MCP server or agent.
   - `observal ops metrics`: Show metrics for an MCP server or agent.
   - `observal ops overview`: Show enterprise overview stats.
-  - `observal ops rate`: Rate an MCP server or agent.
+  - `observal ops rate`: Rate an MCP server, agent, or component.
+  - `observal ops rate-delete`: Delete your review for an item.
+  - `observal ops rate-update`: Update your existing review for an item.
   - `observal ops spans`: List spans for a trace.
   - `observal ops top`: Show top MCP servers or agents by usage.
   - `observal ops traces`: List recent traces (sessions).

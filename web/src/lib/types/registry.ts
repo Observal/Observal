@@ -317,9 +317,12 @@ export interface FeedbackItem {
 	listing_id?: string;
 	listing_name?: string;
 	listing_type?: string;
+	user_id?: string | null;
 	rating: number;
 	comment?: string;
+	anonymous?: boolean;
 	user?: string;
 	username?: string;
 	created_at?: string;
+	updated_at?: string | null;
 }

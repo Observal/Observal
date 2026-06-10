@@ -39,10 +39,51 @@ export function useSubmitFeedback() {
     mutationFn: feedback.submit,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["feedback"] });
-      toast.success("Feedback submitted");
+      toast.success("Review submitted");
     },
     onError: (err: Error) => {
-      toast.error(err.message || "Failed to submit feedback");
+      toast.error(err.message || "Failed to submit review");
+    },
+  });
+}
+
+export function useMyFeedback(type: string | undefined, id: string | undefined) {
+  return useQuery({
+    queryKey: ["feedback", "mine", type, id],
+    enabled: !!type && !!id,
+    queryFn: () => feedback.mine(type!, id!),
+    retry: (_count, err: unknown) => {
+      const status = (err as { status?: number })?.status;
+      return status !== 404;
+    },
+  });
+}
+
+export function useUpdateFeedback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ feedbackId, ...body }: { feedbackId: string; rating?: number; comment?: string; anonymous?: boolean }) =>
+      feedback.update(feedbackId, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["feedback"] });
+      toast.success("Review updated");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to update review");
+    },
+  });
+}
+
+export function useDeleteFeedback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (feedbackId: string) => feedback.remove(feedbackId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["feedback"] });
+      toast.success("Review deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to delete review");
     },
   });
 }

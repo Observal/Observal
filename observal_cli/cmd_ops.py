@@ -483,39 +483,28 @@ def _top_impl(item_type, output):
 def _rate(
     listing_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     stars: int = typer.Option(..., "--stars", "-s", min=1, max=5, help="Rating 1-5"),
-    listing_type: str = typer.Option("mcp", "--type", "-t", help="mcp or agent"),
+    listing_type: str = typer.Option("mcp", "--type", "-t", help="mcp, agent, skill, hook, prompt, or sandbox"),
     comment: str | None = typer.Option(None, "--comment", "-c"),
+    anonymous: bool = typer.Option(False, "--anonymous", "-a", help="Submit anonymously"),
 ):
-    """Rate an MCP server or agent.
+    """Rate an MCP server, agent, or component.
 
-    Submits a 1-5 star rating (with optional comment) for the specified
-    item. Ratings are dual-written to PostgreSQL and ClickHouse.
+    Submits a 1-5 star review. Each user can only submit one review per
+    item. Use `observal ops rate-update` to change it later.
 
     Examples:
 
         observal ops rate my-mcp --stars 5
 
         observal ops rate my-agent --type agent -s 4 -c "Great tool usage"
+
+        observal ops rate my-mcp --stars 5 --anonymous
     """
-    _rate_impl(listing_id, stars, listing_type, comment)
+    _rate_impl(listing_id, stars, listing_type, comment, anonymous)
 
 
-def _rate_impl(listing_id, stars, listing_type, comment):
-    resolved = config.resolve_alias(listing_id)
-    # Resolve name to UUID if not already a UUID
-    try:
-        import uuid as _uuid
-
-        _uuid.UUID(resolved)
-    except ValueError:
-        # Not a UUID, resolve via server show endpoint (handles name lookup)
-        endpoint = "/api/v1/agents" if listing_type == "agent" else f"/api/v1/{listing_type}s"
-        try:
-            item = client.get(f"{endpoint}/{resolved}")
-            resolved = item["id"]
-        except Exception:
-            rprint(f"[red]Could not find {listing_type} named '{resolved}'[/red]")
-            raise typer.Exit(1)
+def _rate_impl(listing_id, stars, listing_type, comment, anonymous=False):
+    resolved = _resolve_listing_id(listing_id, listing_type)
     with spinner("Submitting rating..."):
         client.post(
             "/api/v1/feedback",
@@ -524,9 +513,88 @@ def _rate_impl(listing_id, stars, listing_type, comment):
                 "listing_type": listing_type,
                 "rating": stars,
                 "comment": comment,
+                "anonymous": anonymous,
             },
         )
-    rprint(f"[green]u2713 Rated {star_rating(stars)}[/green]")
+    rprint(f"[green]\u2713 Rated {star_rating(stars)}[/green]")
+
+
+@ops_app.command(name="rate-update")
+def _rate_update(
+    listing_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
+    listing_type: str = typer.Option("mcp", "--type", "-t", help="mcp, agent, skill, hook, prompt, or sandbox"),
+    stars: int | None = typer.Option(None, "--stars", "-s", min=1, max=5, help="New rating 1-5"),
+    comment: str | None = typer.Option(None, "--comment", "-c", help="New comment"),
+    anonymous: bool | None = typer.Option(None, "--anonymous/--no-anonymous", help="Set or unset anonymous flag"),
+):
+    """Update your existing review for an item.
+
+    Only the fields you provide will be changed.
+
+    Examples:
+
+        observal ops rate-update my-mcp --stars 4
+
+        observal ops rate-update my-mcp --comment "Updated opinion" --anonymous
+    """
+    resolved = _resolve_listing_id(listing_id, listing_type)
+    # First, get the user's existing review
+    with spinner("Fetching your review..."):
+        review = client.get(f"/api/v1/feedback/mine/{listing_type}/{resolved}")
+    body = {}
+    if stars is not None:
+        body["rating"] = stars
+    if comment is not None:
+        body["comment"] = comment
+    if anonymous is not None:
+        body["anonymous"] = anonymous
+    if not body:
+        rprint("[yellow]Nothing to update. Provide --stars, --comment, or --anonymous.[/yellow]")
+        raise typer.Exit(1)
+    with spinner("Updating review..."):
+        client.put(f"/api/v1/feedback/{review['id']}", body)
+    rprint("[green]\u2713 Review updated[/green]")
+
+
+@ops_app.command(name="rate-delete")
+def _rate_delete(
+    listing_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
+    listing_type: str = typer.Option("mcp", "--type", "-t", help="mcp, agent, skill, hook, prompt, or sandbox"),
+):
+    """Delete your review for an item.
+
+    Permanently removes your review. You can submit a new one afterwards.
+
+    Examples:
+
+        observal ops rate-delete my-mcp
+
+        observal ops rate-delete my-agent --type agent
+    """
+    resolved = _resolve_listing_id(listing_id, listing_type)
+    with spinner("Fetching your review..."):
+        review = client.get(f"/api/v1/feedback/mine/{listing_type}/{resolved}")
+    with spinner("Deleting review..."):
+        client.delete(f"/api/v1/feedback/{review['id']}")
+    rprint("[green]\u2713 Review deleted[/green]")
+
+
+def _resolve_listing_id(listing_id: str, listing_type: str) -> str:
+    """Resolve a name/alias to UUID for feedback operations."""
+    resolved = config.resolve_alias(listing_id)
+    try:
+        import uuid as _uuid
+
+        _uuid.UUID(resolved)
+    except ValueError:
+        endpoint = "/api/v1/agents" if listing_type == "agent" else f"/api/v1/{listing_type}s"
+        try:
+            item = client.get(f"{endpoint}/{resolved}")
+            resolved = item["id"]
+        except Exception:
+            rprint(f"[red]Could not find {listing_type} named '{resolved}'[/red]")
+            raise typer.Exit(1)
+    return resolved
 
 
 @ops_app.command(name="feedback")

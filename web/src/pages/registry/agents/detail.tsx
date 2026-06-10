@@ -32,6 +32,7 @@ import {
   useAgentDownloads,
   useFeedback,
   useFeedbackSummary,
+  useMyFeedback,
   useWhoami,
   useAgentVersions,
   useAgentVersionDetail,
@@ -316,6 +317,7 @@ export default function AgentDetailPage() {
   );
   const { data: feedbackSummary, refetch: refetchSummary } =
     useFeedbackSummary(id);
+  const { data: myReview } = useMyFeedback("agent", id);
 
   const { data: whoami } = useWhoami();
   const { data: versionsData } = useAgentVersions(id);
@@ -477,7 +479,6 @@ export default function AgentDetailPage() {
                       </span>
                     )}
                   </TabsTrigger>
-                  <TabsTrigger value="install">Install</TabsTrigger>
                   {canEdit && <TabsTrigger value="edit">Edit</TabsTrigger>}
                   {canEdit && <TabsTrigger value="insights">Insights</TabsTrigger>}
 
@@ -616,7 +617,9 @@ export default function AgentDetailPage() {
                     />
                   ) : (
                     <div className="space-y-4">
-                      {feedbackItems.map((fb: FeedbackItem) => (
+                      {feedbackItems
+                        .filter((fb: FeedbackItem) => !myReview || fb.id !== myReview.id)
+                        .map((fb: FeedbackItem) => (
                         <div
                           key={fb.id}
                           className="rounded-md border border-border p-4 space-y-2"
@@ -649,31 +652,6 @@ export default function AgentDetailPage() {
                       ))}
                     </div>
                   )}
-                </TabsContent>
-
-                <TabsContent value="install" className="mt-6 space-y-6">
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-semibold font-display">
-                      Quick Install
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      Use the Observal CLI to pull this agent into your project.
-                    </p>
-                  </div>
-                  <PullCommand agentName={a.name} versions={versions} />
-
-                  <Separator />
-
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold font-display">
-                      Manual Configuration
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      Add the following to your IDE configuration to use this
-                      agent directly.
-                    </p>
-                    <ConfigSnippet agentName={a.name} />
-                  </div>
                 </TabsContent>
 
                 {canEdit && (
@@ -827,49 +805,4 @@ export default function AgentDetailPage() {
   );
 }
 
-function ConfigSnippet({
-  agentName,
-}: {
-  agentName: string;
-}) {
-  const [copied, setCopied] = useState(false);
 
-  const snippet = JSON.stringify(
-    {
-      observal: {
-        agent: agentName,
-        registry: "https://registry.observal.dev",
-      },
-    },
-    null,
-    2,
-  );
-
-  const handleCopy = useCallback(() => {
-    copyToClipboard(snippet);
-    setCopied(true);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
-  }, [snippet]);
-
-  return (
-    <div className="relative rounded-md border border-border bg-surface-sunken">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute top-2 right-2 h-7 w-7"
-        onClick={handleCopy}
-        aria-label="Copy config"
-      >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-success" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" />
-        )}
-      </Button>
-      <pre className="p-4 text-xs font-mono leading-relaxed overflow-x-auto text-foreground/80">
-        {snippet}
-      </pre>
-    </div>
-  );
-}

@@ -14,6 +14,7 @@ import {
   useRegistryItem,
   useFeedback,
   useFeedbackSummary,
+  useMyFeedback,
   useRegistryMetrics,
   useComponentVersions,
   useComponentVersionDetail,
@@ -52,6 +53,7 @@ export default function ComponentDetailPage() {
   const { data: item, isLoading, isError, error, refetch } = useRegistryItem(type, id);
   const { data: feedbackItems, refetch: refetchFeedback } = useFeedback(singularType, id);
   const { data: feedbackSummary, refetch: refetchSummary } = useFeedbackSummary(id);
+  const { data: myReview } = useMyFeedback(singularType, id);
   const { data: rawMetrics } = useRegistryMetrics(type, id);
   const { data: versionsData, isLoading: versionsLoading } = useComponentVersions(type, id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
@@ -220,7 +222,9 @@ export default function ComponentDetailPage() {
                   />
                 ) : (
                   <div className="space-y-4">
-                    {feedbackItems.map((fb: FeedbackItem) => (
+                    {feedbackItems
+                      .filter((fb: FeedbackItem) => !myReview || fb.id !== myReview.id)
+                      .map((fb: FeedbackItem) => (
                       <div key={fb.id} className="rounded-md border border-border p-4 space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1">
