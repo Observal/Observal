@@ -196,7 +196,9 @@ async def export_audit_logs(
                 ]
             ),
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"},
+            headers={
+                "Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
+            },
         )
 
     # CSV export with standard column headers
@@ -233,5 +235,7 @@ async def export_audit_logs(
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.csv"},
+        headers={
+            "Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.csv"
+        },
     )

@@ -57,15 +57,19 @@ One command to install any agent into any supported IDE. The config files are ge
 
 ## Quick Start
 
-### One-line server install
+Observal has two parts: a **server** (API + web UI + databases) you self-host, and a **CLI** you install on each developer machine.
+
+### 1. Deploy the server
+
+**One-line install** (requires Docker Engine ≥ 24.0 with Compose v2):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash
 ```
 
-Downloads a config package, runs guided setup, pulls Docker images from GHCR, and starts the full stack.
+This downloads a Docker Compose package, runs guided setup (domain, secrets, ports), pulls container images from GHCR, and starts the full stack (API, web UI, PostgreSQL, ClickHouse, Redis, worker, load balancer, Prometheus, Grafana).
 
-### From source
+**From source** (for contributors):
 
 ```bash
 git clone https://github.com/BlazeUp-AI/Observal.git && cd Observal
@@ -73,29 +77,31 @@ cp .env.example .env
 make up
 ```
 
-### Install the CLI
+### 2. Install the CLI
+
+**Standalone binary** (no Python required):
 
 ```bash
-# pip / pipx (all platforms)
-pipx install observal-cli
-
-# Or with uv
-# uv tool install observal-cli
-
-# Homebrew (macOS, Linux)
-# brew install BlazeUp-AI/observal/observal-cli
+curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash
 ```
 
-### Connect your IDE
+**Python** (3.11+):
+
+```bash
+uv tool install observal-cli
+# or: pipx install observal-cli
+```
+
+### 3. Connect your IDE
 
 ```bash
 observal auth login
 observal doctor --patch
 ```
 
-This registers your IDE, installs telemetry hooks, and starts capturing sessions automatically.
+This authenticates with your server, detects your IDE, installs telemetry hooks, and starts capturing sessions automatically.
 
-Once logged in, run `/observal` inside your IDE and it'll take the wheel. Pull agents, submit components, browse the registry, run diagnostics, manage your setup:
+Once logged in, run `/observal` inside your IDE and it takes the wheel. Pull agents, submit components, browse the registry, run diagnostics:
 
 ```
 /observal pull security-auditor
@@ -103,7 +109,7 @@ Once logged in, run `/observal` inside your IDE and it'll take the wheel. Pull a
 /observal doctor
 ```
 
-Or just tell your agent what you want and it'll figure out the right commands via the CLI.
+Or just tell your agent what you want and it figures out the right commands.
 
 ---
 
@@ -199,9 +205,15 @@ Enterprise adds:
 
 ![Audit log with PHI sensitivity badges and chain hashes](docs/img/audit_logging.png)
 
+The server and CLI are the same package for all editions. Enterprise features activate at runtime when a valid license key is present:
+
 ```bash
-# Enterprise install
+# Pass the key during server install
 curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash -s -- --license-key YOUR_KEY
+
+# Or add it later to your .env
+echo 'OBSERVAL_LICENSE_KEY=your.key' >> .env
+make rebuild
 ```
 
 ---
