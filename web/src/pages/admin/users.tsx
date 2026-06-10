@@ -5,7 +5,6 @@
 // SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-
 import { useState, useCallback } from "react";
 import { Users, Plus, Copy, Check, Loader2, Key, Trash2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -74,7 +73,7 @@ function DepartmentInput({ userId, currentDept }: { userId: string; currentDept:
     return (
       <button
         onClick={() => setEditing(true)}
-        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors min-h-[28px]"
         title="Click to set department"
       >
         {currentDept || "—"}
@@ -223,7 +222,7 @@ export default function UsersPage() {
                     <TableHead className="h-8 text-xs">Role</TableHead>
                     <TableHead className="h-8 text-xs">Department</TableHead>
                     <TableHead className="h-8 text-xs text-right">Joined</TableHead>
-                    <TableHead className="h-8 text-xs w-[60px]" />
+                    <TableHead className="h-8 text-xs w-[80px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -247,26 +246,28 @@ export default function UsersPage() {
                       <TableCell className="py-1.5 text-xs text-muted-foreground text-right tabular-nums">
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}
                       </TableCell>
-                      <TableCell className="py-1.5 text-right space-x-1">
-                        {!ssoOnly && (
+                      <TableCell className="py-1.5">
+                        <div className="flex items-center justify-end gap-1">
+                          {!ssoOnly && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              title="Reset password"
+                              onClick={() => setResetTarget(u)}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                            title="Reset password"
-                            onClick={() => setResetTarget(u)}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => setDeleteTarget(u)}
                           >
-                            <RotateCcw className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleteTarget(u)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
