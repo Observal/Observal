@@ -6,7 +6,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi_cache.decorator import cache
 from loguru import logger as optic
 from sqlalchemy import func, select

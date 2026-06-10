@@ -262,7 +262,6 @@ def prompt_render(
     rprint(result.get("rendered", result))
 
 
-
 @prompt_app.command(name="edit")
 def prompt_edit(
     prompt_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),

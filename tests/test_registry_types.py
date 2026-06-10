@@ -498,7 +498,7 @@ class TestPromptRoutes:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_install_approved_returns_config(self):
+    async def test_install_route_removed(self):
         from api.routes.prompt import router
 
         app, db, user = _app_with(router)
@@ -506,8 +506,7 @@ class TestPromptRoutes:
         db.execute = AsyncMock(return_value=_scalar_result(listing))
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.post(f"/api/v1/prompts/{listing.id}/install")
-        assert r.status_code == 200
-        assert "config_snippet" in r.json()
+        assert r.status_code == 404
 
     @pytest.mark.asyncio
     async def test_render_substitutes_variables(self):
@@ -588,7 +587,7 @@ class TestSandboxRoutes:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_install_approved_returns_config(self):
+    async def test_install_route_removed(self):
         from api.routes.sandbox import router
 
         app, db, user = _app_with(router)
@@ -596,8 +595,7 @@ class TestSandboxRoutes:
         db.execute = AsyncMock(return_value=_scalar_result(listing))
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.post(f"/api/v1/sandboxes/{listing.id}/install", json={"ide": "cursor"})
-        assert r.status_code == 200
-        assert "config_snippet" in r.json()
+        assert r.status_code == 404
 
 
 # ═══════════════════════════════════════════════════════════

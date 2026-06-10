@@ -150,7 +150,6 @@ observal agent co-authors add <agent-id-or-name> @username
 observal agent co-authors remove <agent-id-or-name> <user-uuid>
 ```
 
-Works for all entity types: `agents`, `mcps`, `skills`, `hooks`, `prompts`, `sandboxes`.
 
 
 ## Error Reference

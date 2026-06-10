@@ -185,7 +185,6 @@ def sandbox_show(
     )
 
 
-
 @sandbox_app.command(name="edit")
 def sandbox_edit(
     sandbox_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),

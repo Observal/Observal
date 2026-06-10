@@ -112,5 +112,3 @@ class SandboxListingSummary(BaseModel):
     status: ListingStatus
     rejection_reason: str | None = None
     model_config = {"from_attributes": True}
-
-

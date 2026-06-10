@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import { copyToClipboard } from "@/lib/utils";
@@ -22,10 +22,18 @@ interface ComponentInstallCommandProps {
 
 export function ComponentInstallCommand({ componentType, componentName }: ComponentInstallCommandProps) {
   const { data: ides } = useIdes();
-  const [ide, setIde] = useState("cursor");
+  const [ide, setIde] = useState("");
+  useEffect(() => {
+    if (!ides || ides.length === 0) return;
+    const hasCurrent = ides.some((i) => i.name === ide);
+    if (!ide || !hasCurrent) {
+      setIde(ides[0].name);
+    }
+  }, [ides, ide]);
   const [copied, setCopied] = useState(false);
 
-  const command = `observal registry ${componentType} install ${componentName} --ide ${ide}`;
+  const effectiveIde = ide || ides?.[0]?.name || "cursor";
+  const command = `observal registry ${componentType} install ${componentName} --ide ${effectiveIde}`;
 
   const handleCopy = useCallback(() => {
     copyToClipboard(command);
@@ -40,7 +48,7 @@ export function ComponentInstallCommand({ componentType, componentName }: Compon
         <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground">Install</span>
         <div className="ml-auto">
-          <Select value={ide} onValueChange={setIde}>
+          <Select value={effectiveIde} onValueChange={setIde}>
             <SelectTrigger className="h-7 w-[130px] text-xs border-border">
               <SelectValue />
             </SelectTrigger>
