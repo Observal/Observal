@@ -16,21 +16,19 @@ If you also want to **self-host** the Observal server (API + web UI + databases)
 
 The standalone binary is the simplest way to install. No Python required.
 
-**Community edition (default):**
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash
 ```
 
-**Enterprise edition** (requires a valid license key):
+This downloads the latest release binary for your platform and places it on your `PATH`. The binary is the same for all editions; enterprise features activate at runtime when a valid license key is present.
+
+To save a license key during install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash -s -- --license-key YOUR_KEY
 ```
 
-A valid Ed25519-signed license key downloads the enterprise binary and saves the key to `~/.observal/config.json`. Without a key (or with an invalid one), the installer falls back to community edition.
-
-This downloads the latest release binary for your platform and places it on your `PATH`.
+This validates the Ed25519-signed key, installs the CLI, and writes the key to `~/.observal/config.json`. If the key is invalid or expired, the installer exits with an error.
 
 Verify it worked:
 
