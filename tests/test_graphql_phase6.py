@@ -162,6 +162,45 @@ class TestDataLoaders:
             result = await loader(["s1"])
         assert len(result[0]) == 1
 
+    @pytest.mark.asyncio
+    async def test_span_loader_passes_clickhouse_array_literal(self):
+        """Array params must be single-quoted CH literals, not json.dumps output.
+
+        ClickHouse's Array(String) parser rejects double-quoted JSON
+        (CANNOT_PARSE_QUOTED_STRING), which previously made the span/score
+        loaders silently return no rows.
+        """
+        captured = {}
+
+        async def _fake_ch_json(sql, params=None):
+            captured.update(params or {})
+            return []
+
+        loader = _make_span_loader("default")
+        with patch("api.graphql._ch_json", new=_fake_ch_json):
+            await loader(["a", "b"])
+        assert captured["param_ids"] == "['a','b']"
+        assert '"' not in captured["param_ids"]
+
+
+class TestChStringArray:
+    def test_basic(self):
+        from api.graphql import _ch_string_array
+
+        assert _ch_string_array(["a", "b"]) == "['a','b']"
+
+    def test_empty(self):
+        from api.graphql import _ch_string_array
+
+        assert _ch_string_array([]) == "[]"
+
+    def test_escapes_quotes_and_backslashes(self):
+        from api.graphql import _ch_string_array
+
+        # single quote -> \' and backslash -> \\
+        assert _ch_string_array(["a'b"]) == "['a\\'b']"
+        assert _ch_string_array(["c\\d"]) == "['c\\\\d']"
+
 
 # --- Schema structure ---
 

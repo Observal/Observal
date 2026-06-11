@@ -44,6 +44,17 @@ async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
     return []
 
 
+def _ch_string_array(values: list[str]) -> str:
+    """Render a list of strings as a ClickHouse array literal for an HTTP query param.
+
+    ClickHouse's ``Array(String)`` parameter parser expects single-quoted
+    elements (e.g. ``['a','b']``); ``json.dumps`` emits double quotes and is
+    rejected with CANNOT_PARSE_QUOTED_STRING on ClickHouse 22.3+.
+    """
+    escaped = [v.replace("\\", "\\\\").replace("'", "\\'") for v in values]
+    return "[" + ",".join(f"'{e}'" for e in escaped) + "]"
+
+
 def _parse_json(val: str | None) -> JSON | None:
     if not val:
         return None
@@ -64,7 +75,7 @@ def _make_span_loader(project_id: str):
         )
         params = {
             "param_pid": project_id,
-            "param_ids": json.dumps(list(keys)),
+            "param_ids": _ch_string_array(list(keys)),
         }
         rows = await _ch_json(sql, params)
         grouped: dict[str, list[dict]] = {k: [] for k in keys}
@@ -85,7 +96,7 @@ def _make_score_by_trace_loader(project_id: str):
         )
         params = {
             "param_pid": project_id,
-            "param_ids": json.dumps(list(keys)),
+            "param_ids": _ch_string_array(list(keys)),
         }
         rows = await _ch_json(sql, params)
         grouped: dict[str, list[dict]] = {k: [] for k in keys}
@@ -106,7 +117,7 @@ def _make_score_by_span_loader(project_id: str):
         )
         params = {
             "param_pid": project_id,
-            "param_ids": json.dumps(list(keys)),
+            "param_ids": _ch_string_array(list(keys)),
         }
         rows = await _ch_json(sql, params)
         grouped: dict[str, list[dict]] = {k: [] for k in keys}
