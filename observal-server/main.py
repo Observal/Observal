@@ -52,6 +52,7 @@ from api.routes.feedback import router as feedback_router
 from api.routes.hook import router as hook_router
 from api.routes.ingest import router as ingest_router
 from api.routes.insights import router as insights_router
+from api.routes.invite import router as invite_router
 from api.routes.jwks import router as jwks_router
 from api.routes.layer_snapshot import router as layer_snapshot_router
 from api.routes.logs_stream import router as logs_stream_router
@@ -165,6 +166,10 @@ async def lifespan(app: FastAPI):
     async with _session_factory() as db:
         await seed_demo_accounts(db)
 
+    # Product analytics (PostHog) bus subscribers. Registering is always safe:
+    # every capture is a no-op unless PRODUCT_ANALYTICS_ENABLED + key are set.
+    import services.product_analytics_handlers  # noqa: F401
+
     # Initialize enterprise audit system (license-gated)
     if AUDIT_LICENSED:
         setup_audit()
@@ -183,6 +188,11 @@ async def lifespan(app: FastAPI):
 
     if AUDIT_LICENSED:
         await shutdown_audit()
+
+    # Flush any queued product analytics events (no-op when disabled)
+    import services.product_analytics as product_analytics
+
+    product_analytics.shutdown()
 
     from services.agent_registry_cache import stop as stop_registry_cache
 
@@ -449,6 +459,7 @@ app.include_router(telemetry_router)
 app.include_router(dashboard_router)
 app.include_router(feedback_router)
 app.include_router(insights_router)
+app.include_router(invite_router)
 app.include_router(reconcile_router)
 app.include_router(ingest_router)
 app.include_router(admin_router)

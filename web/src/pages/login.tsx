@@ -11,6 +11,7 @@ import { useRouter, useSearch } from "@tanstack/react-router";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { auth, setTokens, clearSession, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
+import { getFirstTouch } from "@/lib/analytics";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,7 +81,8 @@ function LoginContent() {
       setLoading(true);
       window.history.replaceState({}, "", "/login");
 
-      auth.exchangeCode({ code: ssoCode })
+      // Forward stored first-touch UTMs so OAuth signups carry attribution
+      auth.exchangeCode({ code: ssoCode, ...getFirstTouch() })
         .then((data) => {
           setTokens(data.access_token, data.refresh_token);
           setUserRole(data.user.role);

@@ -8,6 +8,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useRouter, useLocation } from "@tanstack/react-router";
 import { auth, setUserRole, getUserRole, clearSession, refreshAccessToken } from "@/lib/api";
+import { setAnalyticsUser } from "@/lib/analytics";
 
 function subscribe(cb: () => void) {
   window.addEventListener("storage", cb);
@@ -66,6 +67,7 @@ export function useAuthGuard() {
     if (snapshot === "pending") {
       auth.whoami().then((user) => {
         setUserRole(user.role);
+        setAnalyticsUser(user);
         window.dispatchEvent(new Event("storage"));
       }).catch(() => {
         clearSession();
@@ -94,6 +96,7 @@ export function useOptionalAuth() {
     if (hasToken && snapshot === "pending") {
       auth.whoami().then((user) => {
         setUserRole(user.role);
+        setAnalyticsUser(user);
         window.dispatchEvent(new Event("storage"));
       }).catch(() => {
         clearSession();

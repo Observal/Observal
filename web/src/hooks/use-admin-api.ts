@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import {
   auth,
   admin,
+  invites,
   telemetry,
   getUserRole,
 } from "@/lib/api";
@@ -107,6 +108,40 @@ export function useResetPassword() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to reset password");
+    },
+  });
+}
+
+// ── Invites ─────────────────────────────────────────────────────────
+
+export function useInvites() {
+  return useQuery({ queryKey: ["admin", "invites"], queryFn: invites.list });
+}
+
+export function useCreateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: invites.create,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+      toast.success("Invite created");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to create invite");
+    },
+  });
+}
+
+export function useRevokeInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => invites.revoke(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+      toast.success("Invite revoked");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to revoke invite");
     },
   });
 }

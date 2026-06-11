@@ -124,6 +124,17 @@ async def get_public_config(db=Depends(get_db)):
 
     sso_only = await ds.get_bool("deployment.sso_only")
 
+    # Product analytics: posthog-js is only initialized by the frontend when
+    # enabled=true (same gate as server-side capture). The phc_ project key is
+    # public-by-design but still only shipped when analytics is on.
+    from services.product_analytics import is_enabled as analytics_enabled
+
+    product_analytics = {
+        "enabled": analytics_enabled(),
+        "posthog_key": settings.POSTHOG_API_KEY if analytics_enabled() else None,
+        "posthog_host": settings.POSTHOG_HOST if analytics_enabled() else None,
+    }
+
     return {
         "licensed": licensed,
         "sso_enabled": bool(settings.OAUTH_CLIENT_ID),
@@ -134,6 +145,7 @@ async def get_public_config(db=Depends(get_db)):
         "branding_logo": branding_logo,
         "branding_app_name": branding_app_name,
         "branding_wordmark": branding_wordmark,
+        "product_analytics": product_analytics,
     }
 
 

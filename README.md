@@ -272,6 +272,15 @@ Logs are written to `~/.observal/logs/dev.log` and include structured context fo
 
 Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://github.com/BlazeUp-AI/Observal/security/advisories) or email contact@blazeup.app. Do not open a public issue. See [SECURITY.md](SECURITY.md).
 
+## Privacy
+
+Self-hosted Observal sends **no usage telemetry** by default. The hosted
+observal.io instance enables a small set of product analytics events
+(PostHog); private deployments keep them off unless an operator explicitly
+opts in via `PRODUCT_ANALYTICS_ENABLED=true`. See
+[docs/self-hosting/telemetry.md](docs/self-hosting/telemetry.md) for exactly
+what is sent, when, and how to keep it off.
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=BlazeUp-AI%2FObserval&type=date&legend=top-left">

@@ -41,6 +41,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layouts/page-header";
 import { ErrorState } from "@/components/shared/error-state";
 import { insights } from "@/lib/api";
+import { trackInsightsViewed } from "@/lib/analytics";
 import type { InsightReport } from "@/lib/types";
 
 // ── Status Indicator ──────────────────────────────────────────────────────
@@ -1684,6 +1685,11 @@ export default function InsightReportPage() {
 	const { reportId } = useParams({ from: "/_authed/insights/$reportId" });
 	const router = useRouter();
 	const { data: report, isLoading, isError } = useInsightReport(reportId);
+
+	// Product analytics: one event per page visit (no-op unless enabled)
+	React.useEffect(() => {
+		trackInsightsViewed(reportId);
+	}, [reportId]);
 
 	return (
 		<>

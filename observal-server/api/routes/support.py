@@ -194,6 +194,11 @@ CONFIG_ALLOWLIST = frozenset(
         "CLICKHOUSE_URL",
         "REDIS_URL",
         "JWT_SIGNING_ALGORITHM",
+        "PRODUCT_ANALYTICS_ENABLED",
+        # Key value is redacted CLI-side (matches the api_key sensitive-key
+        # pattern); only presence/absence is diagnostically useful.
+        "POSTHOG_API_KEY",
+        "POSTHOG_HOST",
     }
 )
 

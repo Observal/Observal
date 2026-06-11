@@ -346,8 +346,14 @@ type AuthResponse = {
 };
 
 export const auth = {
-	init: (body: { email: string; name: string; password?: string }) =>
-		post<AuthResponse>("/auth/init", body),
+	init: (body: {
+		email: string;
+		name: string;
+		password?: string;
+		utm_source?: string | null;
+		utm_medium?: string | null;
+		utm_campaign?: string | null;
+	}) => post<AuthResponse>("/auth/init", body),
 	login: (body: { email: string; password: string }) =>
 		post<AuthResponse & { must_change_password?: boolean }>(
 			"/auth/login",
@@ -360,10 +366,16 @@ export const auth = {
 			username?: string | null;
 			name: string;
 			role: string;
+			org_id?: string | null;
 			avatar_url?: string | null;
+			trace_privacy?: boolean;
 		}>("/auth/whoami"),
-	exchangeCode: (body: { code: string }) =>
-		post<AuthResponse>("/auth/exchange", body),
+	exchangeCode: (body: {
+		code: string;
+		utm_source?: string | null;
+		utm_medium?: string | null;
+		utm_campaign?: string | null;
+	}) => post<AuthResponse>("/auth/exchange", body),
 	deviceConfirm: (userCode: string) =>
 		post<{ message: string }>("/auth/device/confirm", { user_code: userCode }),
 	changePassword: (body: { current_password: string; new_password: string }) =>
@@ -371,6 +383,48 @@ export const auth = {
 	uploadAvatar: (body: { avatar_url: string }) =>
 		put<{ avatar_url: string | null }>("/auth/profile/avatar", body),
 	deleteAvatar: () => del<{ avatar_url: null }>("/auth/profile/avatar"),
+};
+
+// ── Invites ─────────────────────────────────────────────────────────
+export type Invite = {
+	id: string;
+	email: string | null;
+	role: string;
+	channel: "email" | "link";
+	status: "pending" | "accepted" | "expired" | "revoked";
+	created_at: string;
+	expires_at: string;
+	accepted_at: string | null;
+};
+
+export type InviteCreated = Invite & {
+	token: string;
+	invite_url: string;
+};
+
+export type InviteLookup = {
+	valid: boolean;
+	reason?: "expired" | "revoked" | "accepted" | "not_found" | null;
+	org_name?: string | null;
+	email?: string | null;
+	role?: string | null;
+	expires_at?: string | null;
+};
+
+export const invites = {
+	create: (body: { email?: string | null; role?: string }) =>
+		post<InviteCreated>("/invites", body),
+	list: () => get<Invite[]>("/invites"),
+	revoke: (id: string) => del(`/invites/${id}`),
+	lookup: (token: string) =>
+		get<InviteLookup>(`/invites/lookup/${encodeURIComponent(token)}`),
+	accept: (body: {
+		token: string;
+		email?: string | null;
+		name: string;
+		username?: string;
+		password: string;
+	}) => post<AuthResponse>("/invites/accept", body),
 };
 
 // ── Registry (all 8 types) ─────────────────────────────────────────
@@ -752,6 +806,12 @@ export type RetentionWarnings = {
 };
 
 // ── Config ─────────────────────────────────────────────────────────
+export type ProductAnalyticsConfig = {
+	enabled: boolean;
+	posthog_key: string | null;
+	posthog_host: string | null;
+};
+
 export type PublicConfig = {
 	licensed: boolean;
 	sso_enabled: boolean;
@@ -762,6 +822,7 @@ export type PublicConfig = {
 	branding_logo: string | null;
 	branding_app_name: string | null;
 	branding_wordmark: string | null;
+	product_analytics?: ProductAnalyticsConfig;
 };
 
 export interface IdeEntry {

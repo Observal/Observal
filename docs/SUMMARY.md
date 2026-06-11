@@ -54,6 +54,7 @@
 * [Databases](self-hosting/databases.md)
 * [Authentication and SSO](self-hosting/authentication.md)
 * [Telemetry pipeline](self-hosting/telemetry-pipeline.md)
+* [Product analytics telemetry](self-hosting/telemetry.md)
 * [Upgrades](self-hosting/upgrades.md)
 * [Backup and restore](self-hosting/backup-and-restore.md)
 * [Troubleshooting](self-hosting/troubleshooting.md)

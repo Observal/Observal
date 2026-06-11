@@ -32,6 +32,7 @@ import { Route as AuthedAdminErrorsRouteImport } from './routes/_authed/_admin/e
 import { Route as AuthedAdminDiagnosticsRouteImport } from './routes/_authed/_admin/diagnostics'
 import { Route as AuthedAdminDashboardRouteImport } from './routes/_authed/_admin/dashboard'
 import { Route as AuthedAdminAuditLogRouteImport } from './routes/_authed/_admin/audit-log'
+import { Route as authInviteTokenRouteImport } from './routes/(auth)/invite.$token'
 import { Route as AuthedUserTracesIndexRouteImport } from './routes/_authed/_user/traces/index'
 import { Route as AuthedUserTracesTraceIdRouteImport } from './routes/_authed/_user/traces/$traceId'
 
@@ -149,6 +150,11 @@ const AuthedAdminAuditLogRoute = AuthedAdminAuditLogRouteImport.update({
   path: '/audit-log',
   getParentRoute: () => AuthedAdminRoute,
 } as any)
+const authInviteTokenRoute = authInviteTokenRouteImport.update({
+  id: '/(auth)/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthedUserTracesIndexRoute = AuthedUserTracesIndexRouteImport.update({
   id: '/traces/',
   path: '/traces/',
@@ -165,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/device': typeof authDeviceRoute
   '/login': typeof authLoginRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
+  '/invite/$token': typeof authInviteTokenRoute
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/login': typeof authLoginRoute
   '/': typeof AuthedIndexRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
+  '/invite/$token': typeof authInviteTokenRoute
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
@@ -217,6 +225,7 @@ export interface FileRoutesById {
   '/_authed/_user': typeof AuthedUserRouteWithChildren
   '/_authed/leaderboard': typeof AuthedLeaderboardRoute
   '/_authed/': typeof AuthedIndexRoute
+  '/(auth)/invite/$token': typeof authInviteTokenRoute
   '/_authed/_admin/audit-log': typeof AuthedAdminAuditLogRoute
   '/_authed/_admin/dashboard': typeof AuthedAdminDashboardRoute
   '/_authed/_admin/diagnostics': typeof AuthedAdminDiagnosticsRoute
@@ -243,6 +252,7 @@ export interface FileRouteTypes {
     | '/device'
     | '/login'
     | '/leaderboard'
+    | '/invite/$token'
     | '/audit-log'
     | '/dashboard'
     | '/diagnostics'
@@ -267,6 +277,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/'
     | '/leaderboard'
+    | '/invite/$token'
     | '/audit-log'
     | '/dashboard'
     | '/diagnostics'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/_authed/_user'
     | '/_authed/leaderboard'
     | '/_authed/'
+    | '/(auth)/invite/$token'
     | '/_authed/_admin/audit-log'
     | '/_authed/_admin/dashboard'
     | '/_authed/_admin/diagnostics'
@@ -318,6 +330,7 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   authDeviceRoute: typeof authDeviceRoute
   authLoginRoute: typeof authLoginRoute
+  authInviteTokenRoute: typeof authInviteTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -483,6 +496,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminAuditLogRouteImport
       parentRoute: typeof AuthedAdminRoute
     }
+    '/(auth)/invite/$token': {
+      id: '/(auth)/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof authInviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authed/_user/traces/': {
       id: '/_authed/_user/traces/'
       path: '/traces'
@@ -577,6 +597,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   authDeviceRoute: authDeviceRoute,
   authLoginRoute: authLoginRoute,
+  authInviteTokenRoute: authInviteTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

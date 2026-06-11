@@ -8,10 +8,10 @@
 
 
 import { useState, useCallback } from "react";
-import { Users, Plus, Copy, Check, Loader2, Key, Trash2, RotateCcw } from "lucide-react";
+import { Users, Plus, Copy, Check, Loader2, Key, Trash2, RotateCcw, UserPlus, Link2, Mail, X } from "lucide-react";
 import { toast } from "sonner";
-import { useAdminUsers, useCreateUser, useUpdateUserRole, useUpdateUserDepartment, useDeleteUser, useResetPassword } from "@/hooks/use-api";
-import { admin } from "@/lib/api";
+import { useAdminUsers, useCreateUser, useUpdateUserRole, useUpdateUserDepartment, useDeleteUser, useResetPassword, useInvites, useCreateInvite, useRevokeInvite } from "@/hooks/use-api";
+import { admin, type Invite, type InviteCreated } from "@/lib/api";
 import type { AdminUser } from "@/lib/types";
 import { copyToClipboard } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -107,7 +107,10 @@ function DepartmentInput({ userId, currentDept }: { userId: string; currentDept:
 
 export default function UsersPage() {
   const { data: users, isLoading, isError, error, refetch } = useAdminUsers();
+  const { data: invitesList } = useInvites();
   const createUser = useCreateUser();
+  const createInvite = useCreateInvite();
+  const revokeInvite = useRevokeInvite();
   const deleteUser = useDeleteUser();
   const resetPassword = useResetPassword();
   const assignableRoles = useAssignableRoles();
@@ -126,6 +129,12 @@ export default function UsersPage() {
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [resetCopied, setResetCopied] = useState(false);
+
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<string>("user");
+  const [inviteResult, setInviteResult] = useState<InviteCreated | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
 
   const handleCreate = useCallback(async () => {
     if (!name.trim() || !email.trim()) return;
@@ -177,6 +186,31 @@ export default function UsersPage() {
     setRole("user");
   }, []);
 
+  const handleCreateInvite = useCallback(() => {
+    createInvite.mutate(
+      { email: inviteEmail.trim() || null, role: inviteRole },
+      { onSuccess: (data) => setInviteResult(data) },
+    );
+  }, [inviteEmail, inviteRole, createInvite]);
+
+  const handleCopyInviteUrl = useCallback(() => {
+    if (!inviteResult) return;
+    copyToClipboard(inviteResult.invite_url);
+    setInviteCopied(true);
+    toast.success("Invite link copied");
+    setTimeout(() => setInviteCopied(false), 2000);
+  }, [inviteResult]);
+
+  const closeInviteDialog = useCallback(() => {
+    setShowInvite(false);
+    setInviteResult(null);
+    setInviteEmail("");
+    setInviteRole("user");
+    setInviteCopied(false);
+  }, []);
+
+  const pendingInvites = (invitesList ?? []).filter((i: Invite) => i.status === "pending");
+
   const userCount = (users ?? []).length;
 
   return (
@@ -193,9 +227,14 @@ export default function UsersPage() {
               <Users className="mr-1 h-3.5 w-3.5" /> Bulk Departments
             </Button>
             {!ssoOnly && (
-              <Button size="sm" variant="outline" onClick={() => setShowCreate(true)} className="h-8">
-                <Plus className="mr-1 h-3.5 w-3.5" /> Add User
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={() => setShowInvite(true)} className="h-8">
+                  <UserPlus className="mr-1 h-3.5 w-3.5" /> Invite
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setShowCreate(true)} className="h-8">
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Add User
+                </Button>
+              </>
             )}
           </div>
         }
@@ -269,6 +308,62 @@ export default function UsersPage() {
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
+
+        {pendingInvites.length > 0 && (
+          <div className="animate-in space-y-3 pt-2">
+            <p className="text-xs text-muted-foreground">
+              {pendingInvites.length} pending invite{pendingInvites.length !== 1 ? "s" : ""}
+            </p>
+            <div className="overflow-x-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="h-8 text-xs">Invitee</TableHead>
+                    <TableHead className="h-8 text-xs">Role</TableHead>
+                    <TableHead className="h-8 text-xs">Channel</TableHead>
+                    <TableHead className="h-8 text-xs text-right">Expires</TableHead>
+                    <TableHead className="h-8 text-xs w-[40px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingInvites.map((inv: Invite) => (
+                    <TableRow key={inv.id}>
+                      <TableCell className="py-1.5 text-sm text-muted-foreground font-[family-name:var(--font-mono)]">
+                        {inv.email ?? "Anyone with the link"}
+                      </TableCell>
+                      <TableCell className="py-1.5 text-sm">
+                        {ROLE_LABELS[inv.role as Role] ?? inv.role}
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          {inv.channel === "email" ? <Mail className="h-3 w-3" /> : <Link2 className="h-3 w-3" />}
+                          {inv.channel}
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-1.5 text-xs text-muted-foreground text-right tabular-nums">
+                        {new Date(inv.expires_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        <div className="flex items-center justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                            title="Revoke invite"
+                            onClick={() => revokeInvite.mutate(inv.id)}
+                            disabled={revokeInvite.isPending}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -372,6 +467,87 @@ export default function UsersPage() {
                     <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Creating...</>
                   ) : (
                     "Create User"
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Dialog */}
+      <Dialog open={showInvite} onOpenChange={(open) => { if (!open) closeInviteDialog(); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{inviteResult ? "Invite Created" : "Invite Teammate"}</DialogTitle>
+            <DialogDescription>
+              {inviteResult
+                ? "Share this link — it will not be shown again. It expires in 7 days."
+                : "Generate an invite link. Pin it to an email so only that address can accept, or leave email empty for a shareable link."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {inviteResult ? (
+            <div className="space-y-4">
+              <div className="rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Invite Link</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs font-[family-name:var(--font-mono)] text-foreground break-all flex-1 select-all">
+                    {inviteResult.invite_url}
+                  </code>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleCopyInviteUrl}>
+                    {inviteCopied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" size="sm" onClick={closeInviteDialog}>Done</Button>
+                <Button size="sm" onClick={() => { setInviteResult(null); setInviteEmail(""); }}>Invite Another</Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">Email (optional)</label>
+                <Input
+                  type="email"
+                  placeholder="teammate@example.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  className="h-8 text-sm"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") handleCreateInvite(); }}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">Role</label>
+                <Select value={inviteRole} onValueChange={setInviteRole}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue>
+                      {ROLE_LABELS[inviteRole as Role] ?? inviteRole}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignableRoles.map((r) => (
+                      <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" size="sm" onClick={closeInviteDialog}>Cancel</Button>
+                <Button
+                  size="sm"
+                  onClick={handleCreateInvite}
+                  disabled={createInvite.isPending}
+                >
+                  {createInvite.isPending ? (
+                    <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Creating...</>
+                  ) : (
+                    "Create Invite"
                   )}
                 </Button>
               </DialogFooter>

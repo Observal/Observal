@@ -34,6 +34,7 @@ from schemas.agent import (
     AgentUpdateRequest,
 )
 from services.config_generator import validate_mcp_command
+from services.events import AgentCreated, bus
 from services.ide_feature_inference import compute_supported_ides, infer_required_features
 from services.registry_telemetry import emit_registry_event
 
@@ -198,6 +199,15 @@ async def create_agent(
 
     agent = await _load_agent(db, str(agent.id))
     name_map = await _resolve_component_names(agent.components, db)
+
+    await bus.emit(
+        AgentCreated(
+            agent_id=str(agent.id),
+            org_id=str(current_user.org_id) if current_user.org_id else None,
+            category=agent.category,
+            created_by=str(current_user.id),
+        )
+    )
 
     emit_registry_event(
         action="agent.create",

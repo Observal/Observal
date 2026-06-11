@@ -35,6 +35,7 @@ from ee.observal_server.services.saml import (
 )
 from models.saml_config import SamlConfig
 from models.user import User, UserRole
+from services.events import UserCreated, bus
 from services.jwt_service import create_access_token, create_refresh_token
 from services.redis import get_redis
 from services.security_events import (
@@ -283,8 +284,10 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
+    is_new_user = False
 
     if not user:
+        is_new_user = True
         jit_enabled = getattr(config, "jit_provisioning", True)
         if not jit_enabled:
             await emit_security_event(
@@ -348,6 +351,17 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
     access_token, refresh_token, expires_in = await _issue_tokens(user)
     await db.commit()
+
+    if is_new_user:
+        await bus.emit(
+            UserCreated(
+                user_id=str(user.id),
+                email=user.email,
+                role=user.role.value,
+                org_id=str(user.org_id) if user.org_id else None,
+                auth_provider="saml",
+            )
+        )
 
     code = secrets.token_urlsafe(32)
     redis = get_redis()

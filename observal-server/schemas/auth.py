@@ -8,7 +8,7 @@ import re
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from models.user import UserRole
 
@@ -29,7 +29,17 @@ def _validate_username(v: str | None) -> str | None:
     return v
 
 
-class InitRequest(BaseModel):
+class UtmFields(BaseModel):
+    """First-touch acquisition attribution, captured by the web app on first
+    load and forwarded with signup requests. Used only for product analytics
+    (user_signed_up event); never persisted to the users table."""
+
+    utm_source: str | None = Field(default=None, max_length=255)
+    utm_medium: str | None = Field(default=None, max_length=255)
+    utm_campaign: str | None = Field(default=None, max_length=255)
+
+
+class InitRequest(UtmFields):
     email: EmailStr
     name: str
     username: str | None = None
@@ -62,8 +72,12 @@ class UserResponse(BaseModel):
     username: str | None = None
     name: str
     role: UserRole
+    org_id: uuid.UUID | None = None
     avatar_url: str | None = None
     created_at: datetime
+    # Populated from the org join in get_current_user; consumed by the web
+    # app to suppress product analytics for trace-private orgs.
+    trace_privacy: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -75,7 +89,7 @@ class InitResponse(BaseModel):
     expires_in: int
 
 
-class CodeExchangeRequest(BaseModel):
+class CodeExchangeRequest(UtmFields):
     code: str
 
 

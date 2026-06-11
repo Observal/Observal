@@ -37,6 +37,12 @@ class UserCreated(Event):
     email: str
     role: str
     is_demo: bool = False
+    org_id: str | None = None
+    auth_provider: str = "local"  # "local" | "oidc" | "saml" | "scim"
+    # First-touch acquisition attribution (None for SSO/SCIM-provisioned users)
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +85,35 @@ class AlertRuleChanged(Event):
     action: str  # "created", "updated", "deleted"
     actor_id: str
     actor_email: str
+
+
+@dataclass(frozen=True, slots=True)
+class AgentCreated(Event):
+    """A new agent was registered in the registry (POST agent create)."""
+
+    agent_id: str
+    org_id: str | None
+    category: str | None
+    created_by: str
+
+
+@dataclass(frozen=True, slots=True)
+class InviteSent(Event):
+    """A teammate invite was created (email-pinned or shareable link)."""
+
+    invite_id: str
+    org_id: str | None
+    channel: str  # "email" | "link"
+    invited_by: str
+
+
+@dataclass(frozen=True, slots=True)
+class InviteAccepted(Event):
+    """An invited user completed signup via an invite token."""
+
+    invite_id: str
+    org_id: str | None
+    user_id: str
 
 
 @dataclass(frozen=True, slots=True)

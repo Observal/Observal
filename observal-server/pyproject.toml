@@ -49,6 +49,7 @@ dependencies = [
     "idna>=3.15",
     "orjson>=3.10.0",
     "xxhash>=3.4.0",
+    "posthog>=6.0.0",
 ]
 
 [tool.uv]

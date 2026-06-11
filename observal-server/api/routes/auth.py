@@ -43,6 +43,7 @@ from schemas.auth import (
     UsernameUpdateRequest,
     UserResponse,
 )
+from services.events import UserCreated, bus
 from services.jwt_service import create_access_token, create_refresh_token, decode_access_token, decode_refresh_token
 from services.redis import get_redis
 from services.security_events import (
@@ -160,6 +161,19 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=409, detail="System already initialized or email/username already exists")
     await db.refresh(user)
 
+    await bus.emit(
+        UserCreated(
+            user_id=str(user.id),
+            email=user.email,
+            role=user.role.value,
+            org_id=str(user.org_id) if user.org_id else None,
+            auth_provider="local",
+            utm_source=req.utm_source,
+            utm_medium=req.utm_medium,
+            utm_campaign=req.utm_campaign,
+        )
+    )
+
     access_token, refresh_token, expires_in = await _issue_tokens(user)
     return InitResponse(
         user=UserResponse.model_validate(user),
@@ -197,6 +211,16 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise HTTPException(status_code=409, detail="System already initialized")
     await db.refresh(user)
+
+    await bus.emit(
+        UserCreated(
+            user_id=str(user.id),
+            email=user.email,
+            role=user.role.value,
+            org_id=str(user.org_id) if user.org_id else None,
+            auth_provider="local",
+        )
+    )
 
     access_token, refresh_token, expires_in = await _issue_tokens(user)
     return InitResponse(
@@ -326,6 +350,7 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
     # Check if user exists
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
+    is_new_user = False
 
     if not user:
         # Auto-create new user via SSO
@@ -336,8 +361,10 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
             name=name,
             role=UserRole.user,
             org_id=default_org.id,
+            auth_provider="oidc",
         )
         db.add(user)
+        is_new_user = True
 
         try:
             await db.flush()
@@ -346,6 +373,7 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
             # Race condition: user was created between our check and commit
             result = await db.execute(select(User).where(User.email == email))
             user = result.scalar_one_or_none()
+            is_new_user = False
             if not user:
                 raise HTTPException(status_code=500, detail="Failed to create or find user")
 
@@ -380,6 +408,11 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     "expires_in": expires_in,
                     "user_id": str(user.id),
                     "role": user.role.value,
+                    # Signal to /exchange that this login created the account,
+                    # so the UserCreated event can carry the frontend's
+                    # first-touch UTM attribution (the callback never sees it).
+                    "new_user": is_new_user,
+                    "org_id": str(user.org_id) if user.org_id else None,
                 }
             ),
         )
@@ -445,6 +478,24 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
 
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
+
+    # OAuth signups are created in the redirect callback, which never sees the
+    # frontend's stored first-touch UTMs - so the signup event is emitted here,
+    # on the one-time code exchange that completes the signup.
+    if payload.get("new_user"):
+        await bus.emit(
+            UserCreated(
+                user_id=str(user.id),
+                email=user.email,
+                role=user.role.value,
+                org_id=payload.get("org_id"),
+                auth_provider="oidc",
+                utm_source=req.utm_source,
+                utm_medium=req.utm_medium,
+                utm_campaign=req.utm_campaign,
+            )
+        )
+
     return InitResponse(
         user=UserResponse.model_validate(user),
         access_token=access_token,
@@ -456,7 +507,9 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
 @router.get("/whoami", response_model=UserResponse)
 async def whoami(current_user: User = Depends(get_current_user)):
     optic.debug("auth whoami")
-    return UserResponse.model_validate(current_user)
+    resp = UserResponse.model_validate(current_user)
+    resp.trace_privacy = bool(getattr(current_user, "_trace_privacy", False))
+    return resp
 
 
 @router.post("/logout")
