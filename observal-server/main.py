@@ -169,6 +169,7 @@ async def lifespan(app: FastAPI):
     # Product analytics (PostHog) bus subscribers. Registering is always safe:
     # every capture is a no-op unless PRODUCT_ANALYTICS_ENABLED + key are set.
     import services.product_analytics_handlers  # noqa: F401
+    import services.gtm_signup_handlers  # noqa: F401
 
     # Initialize enterprise audit system (license-gated)
     if AUDIT_LICENSED:

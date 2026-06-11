@@ -274,6 +274,7 @@ async def accept_invite(req: InviteAcceptRequest, request: Request, db: AsyncSes
             user_id=str(user.id),
             email=user.email,
             role=user.role.value,
+            name=user.name,
             org_id=org_id,
             auth_provider="local",
             utm_source="invite",

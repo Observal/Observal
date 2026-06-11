@@ -117,3 +117,22 @@ events are flushed on graceful shutdown.
 `POSTHOG_HOST` so support can confirm the analytics posture of a deployment.
 The `POSTHOG_API_KEY` value is always redacted by the CLI redaction layer
 (only its presence is visible).
+
+## GTM signup webhook (public instance only)
+
+Separate from PostHog, the public observal.io instance can notify the GTM
+dossier builder when a real user signs up. This is also **off by default**.
+
+| Variable | Default | Description |
+|---|---|---|
+| `GTM_SIGNUP_WEBHOOK_ENABLED` | `false` | Master switch. Must be explicitly `true` on public SaaS only. |
+| `GTM_SIGNUP_WEBHOOK_URL` | `https://gtm.useobserval.xyz/webhooks/signup` | GTM engine endpoint. |
+| `GTM_SIGNUP_WEBHOOK_SECRET` | empty | Optional shared HMAC secret (`X-GTM-Signature` header). |
+| `GTM_SIGNUP_WEBHOOK_TIMEOUT_SEC` | `5.0` | Per-request HTTP timeout. |
+
+Unlike PostHog, this webhook intentionally carries signup **email** and **name**
+for GTM prospect matching. Private / enterprise deployments must leave it off.
+
+The server subscribes to `UserCreated` and skips demo accounts, SCIM
+provisioning, localhost bootstrap signups, and orgs with trace privacy enabled.
+Delivery is fire-and-forget and never blocks signup.

@@ -67,6 +67,10 @@ CONFIG_ALLOWLIST = frozenset(
         # Value is redacted by the Redaction Layer (key matches api_key pattern)
         "POSTHOG_API_KEY",
         "POSTHOG_HOST",
+        "GTM_SIGNUP_WEBHOOK_ENABLED",
+        "GTM_SIGNUP_WEBHOOK_URL",
+        "GTM_SIGNUP_WEBHOOK_SECRET",
+        "GTM_SIGNUP_WEBHOOK_TIMEOUT_SEC",
     }
 )
 

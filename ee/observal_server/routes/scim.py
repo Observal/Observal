@@ -226,6 +226,7 @@ async def create_user(
             user_id=str(user.id),
             email=user.email,
             role=user.role.value,
+            name=user.name,
             org_id=str(user.org_id) if user.org_id else None,
             auth_provider="scim",
         )

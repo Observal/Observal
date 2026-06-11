@@ -199,6 +199,10 @@ CONFIG_ALLOWLIST = frozenset(
         # pattern); only presence/absence is diagnostically useful.
         "POSTHOG_API_KEY",
         "POSTHOG_HOST",
+        "GTM_SIGNUP_WEBHOOK_ENABLED",
+        "GTM_SIGNUP_WEBHOOK_URL",
+        "GTM_SIGNUP_WEBHOOK_SECRET",
+        "GTM_SIGNUP_WEBHOOK_TIMEOUT_SEC",
     }
 )
 

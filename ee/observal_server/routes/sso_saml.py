@@ -358,6 +358,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
                 user_id=str(user.id),
                 email=user.email,
                 role=user.role.value,
+                name=user.name,
                 org_id=str(user.org_id) if user.org_id else None,
                 auth_provider="saml",
             )

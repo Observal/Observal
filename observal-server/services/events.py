@@ -36,6 +36,7 @@ class UserCreated(Event):
     user_id: str
     email: str
     role: str
+    name: str | None = None
     is_demo: bool = False
     org_id: str | None = None
     auth_provider: str = "local"  # "local" | "oidc" | "saml" | "scim"

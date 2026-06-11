@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     POSTHOG_API_KEY: str = ""  # phc_... project API key (write-only key, not personal)
     POSTHOG_HOST: str = "https://us.i.posthog.com"
 
+    # GTM signup webhook (dossier builder) - OFF by default.
+    # Only the public observal.io instance should enable this. Private /
+    # enterprise deployments must leave it off: enabling it sends signup
+    # email/name to the GTM engine for concierge outreach.
+    GTM_SIGNUP_WEBHOOK_ENABLED: bool = False
+    GTM_SIGNUP_WEBHOOK_URL: str = "https://gtm.useobserval.xyz/webhooks/signup"
+    GTM_SIGNUP_WEBHOOK_SECRET: str = ""  # shared HMAC secret; empty = no auth (dev only)
+    GTM_SIGNUP_WEBHOOK_TIMEOUT_SEC: float = 5.0
+
     # Demo accounts (boot-time, needed to bootstrap first login)
     SEED_DEMO_ACCOUNTS: bool = True
     DEMO_SUPER_ADMIN_EMAIL: str | None = None
