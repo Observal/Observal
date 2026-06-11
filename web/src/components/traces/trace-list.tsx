@@ -177,7 +177,7 @@ export function TraceList() {
                   <TableRow
                     key={traceId}
                     className="cursor-pointer"
-                    onClick={() => router.push(`/traces/${traceId}`)}
+                    onClick={() => router.push(`/trace/${traceId}`)}
                   >
                     <TableCell className="px-3 py-2 font-mono text-xs">
                       {traceId?.slice(0, 12)}…

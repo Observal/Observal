@@ -54,6 +54,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
+import { TraceList } from "@/components/traces/trace-list";
 import type { Session } from "@/lib/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -541,6 +542,18 @@ export default function TracesPage() {
 						</p>
 					</div>
 				)}
+
+				{/* ── MCP & Tool Traces (from the traces/spans store, not session telemetry) ── */}
+				<section className="space-y-3 pt-2">
+					<div>
+						<h2 className="text-sm font-semibold">MCP &amp; Tool Traces</h2>
+						<p className="text-xs text-muted-foreground">
+							Traces captured directly from MCP servers and tools (e.g. via
+							observal-shim). Click a row to inspect its spans.
+						</p>
+					</div>
+					<TraceList />
+				</section>
 			</div>
 		</>
 	);
