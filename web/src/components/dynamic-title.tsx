@@ -6,11 +6,20 @@ import { useEffect } from "react";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
 export function DynamicTitle() {
-  const { brandingAppName } = useDeploymentConfig();
+  const { brandingAppName, brandingLogo } = useDeploymentConfig();
 
   useEffect(() => {
-    document.title = brandingAppName || "Observal";
-  }, [brandingAppName]);
+    const link = document.querySelector<HTMLLinkElement>(
+      'link[rel="icon"]'
+    );
+
+    if (link && brandingLogo) {
+      link.href = brandingLogo;
+    } else if (link) {
+      link.href = "/favicon.ico";
+    }
+  }, [brandingLogo]);
+
 
   return null;
 }
