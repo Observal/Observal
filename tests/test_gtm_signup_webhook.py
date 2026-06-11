@@ -202,9 +202,7 @@ class TestHandlers:
             lambda **kwargs: scheduled.append(kwargs),
         )
 
-        await gtm_handlers.on_user_created_gtm(
-            UserCreated(user_id="u1", email="a@b.com", role="user", org_id="org1")
-        )
+        await gtm_handlers.on_user_created_gtm(UserCreated(user_id="u1", email="a@b.com", role="user", org_id="org1"))
         assert scheduled == []
 
     @pytest.mark.asyncio
@@ -217,9 +215,7 @@ class TestHandlers:
             lambda **kwargs: scheduled.append(kwargs),
         )
 
-        await gtm_handlers.on_user_created_gtm(
-            UserCreated(user_id="u1", email="a@b.com", role="user", name="A")
-        )
+        await gtm_handlers.on_user_created_gtm(UserCreated(user_id="u1", email="a@b.com", role="user", name="A"))
         assert scheduled == []
 
     def test_schedule_uses_create_task(self, monkeypatch):

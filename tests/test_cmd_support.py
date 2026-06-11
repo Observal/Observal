@@ -43,8 +43,8 @@ class TestConfigAllowlist:
     def test_allowlist_is_frozenset(self):
         assert isinstance(CONFIG_ALLOWLIST, frozenset)
 
-    def test_allowlist_has_18_keys(self):
-        assert len(CONFIG_ALLOWLIST) == 18
+    def test_allowlist_has_22_keys(self):
+        assert len(CONFIG_ALLOWLIST) == 22
 
     def test_allowlist_contains_expected_keys(self):
         expected = {
@@ -66,6 +66,10 @@ class TestConfigAllowlist:
             "PRODUCT_ANALYTICS_ENABLED",
             "POSTHOG_API_KEY",
             "POSTHOG_HOST",
+            "GTM_SIGNUP_WEBHOOK_ENABLED",
+            "GTM_SIGNUP_WEBHOOK_URL",
+            "GTM_SIGNUP_WEBHOOK_SECRET",
+            "GTM_SIGNUP_WEBHOOK_TIMEOUT_SEC",
         }
         assert expected == CONFIG_ALLOWLIST
 
