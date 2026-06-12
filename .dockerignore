@@ -17,10 +17,8 @@ htmlcov/
 **/node_modules
 **/.next
 
-# Documentation (not copied by any Dockerfile)
-*.md
+# Documentation assets (screenshots not needed in images)
 LICENSE
-docs/
 screenshots/
 
 # Testing (not shipped in images)

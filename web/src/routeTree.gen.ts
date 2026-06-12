@@ -16,6 +16,7 @@ import { Route as AuthedUserRouteImport } from './routes/_authed/_user'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/_admin'
 import { Route as authLoginRouteImport } from './routes/(auth)/login'
 import { Route as authDeviceRouteImport } from './routes/(auth)/device'
+import { Route as AuthedWikiIndexRouteImport } from './routes/_authed/wiki/index'
 import { Route as AuthedComponentsIndexRouteImport } from './routes/_authed/components/index'
 import { Route as AuthedAgentsIndexRouteImport } from './routes/_authed/agents/index'
 import { Route as AuthedInsightsReportIdRouteImport } from './routes/_authed/insights/$reportId'
@@ -67,6 +68,11 @@ const authDeviceRoute = authDeviceRouteImport.update({
   id: '/(auth)/device',
   path: '/device',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedWikiIndexRoute = AuthedWikiIndexRouteImport.update({
+  id: '/wiki/',
+  path: '/wiki/',
+  getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedComponentsIndexRoute = AuthedComponentsIndexRouteImport.update({
   id: '/components/',
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/insights/$reportId': typeof AuthedInsightsReportIdRoute
   '/agents/': typeof AuthedAgentsIndexRoute
   '/components/': typeof AuthedComponentsIndexRoute
+  '/wiki/': typeof AuthedWikiIndexRoute
   '/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
   '/traces/': typeof AuthedUserTracesIndexRoute
 }
@@ -213,6 +220,7 @@ export interface FileRoutesByTo {
   '/insights/$reportId': typeof AuthedInsightsReportIdRoute
   '/agents': typeof AuthedAgentsIndexRoute
   '/components': typeof AuthedComponentsIndexRoute
+  '/wiki': typeof AuthedWikiIndexRoute
   '/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
   '/traces': typeof AuthedUserTracesIndexRoute
 }
@@ -242,6 +250,7 @@ export interface FileRoutesById {
   '/_authed/insights/$reportId': typeof AuthedInsightsReportIdRoute
   '/_authed/agents/': typeof AuthedAgentsIndexRoute
   '/_authed/components/': typeof AuthedComponentsIndexRoute
+  '/_authed/wiki/': typeof AuthedWikiIndexRoute
   '/_authed/_user/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
   '/_authed/_user/traces/': typeof AuthedUserTracesIndexRoute
 }
@@ -269,6 +278,7 @@ export interface FileRouteTypes {
     | '/insights/$reportId'
     | '/agents/'
     | '/components/'
+    | '/wiki/'
     | '/traces/$traceId'
     | '/traces/'
   fileRoutesByTo: FileRoutesByTo
@@ -294,6 +304,7 @@ export interface FileRouteTypes {
     | '/insights/$reportId'
     | '/agents'
     | '/components'
+    | '/wiki'
     | '/traces/$traceId'
     | '/traces'
   id:
@@ -322,6 +333,7 @@ export interface FileRouteTypes {
     | '/_authed/insights/$reportId'
     | '/_authed/agents/'
     | '/_authed/components/'
+    | '/_authed/wiki/'
     | '/_authed/_user/traces/$traceId'
     | '/_authed/_user/traces/'
   fileRoutesById: FileRoutesById
@@ -383,6 +395,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/device'
       preLoaderRoute: typeof authDeviceRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authed/wiki/': {
+      id: '/_authed/wiki/'
+      path: '/wiki'
+      fullPath: '/wiki/'
+      preLoaderRoute: typeof AuthedWikiIndexRouteImport
+      parentRoute: typeof AuthedRoute
     }
     '/_authed/components/': {
       id: '/_authed/components/'
@@ -575,6 +594,7 @@ interface AuthedRouteChildren {
   AuthedInsightsReportIdRoute: typeof AuthedInsightsReportIdRoute
   AuthedAgentsIndexRoute: typeof AuthedAgentsIndexRoute
   AuthedComponentsIndexRoute: typeof AuthedComponentsIndexRoute
+  AuthedWikiIndexRoute: typeof AuthedWikiIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
@@ -588,6 +608,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedInsightsReportIdRoute: AuthedInsightsReportIdRoute,
   AuthedAgentsIndexRoute: AuthedAgentsIndexRoute,
   AuthedComponentsIndexRoute: AuthedComponentsIndexRoute,
+  AuthedWikiIndexRoute: AuthedWikiIndexRoute,
 }
 
 const AuthedRouteWithChildren =
