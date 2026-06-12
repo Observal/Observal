@@ -399,66 +399,6 @@ Only after Steps 14–16 succeed:
 
 ## Part D - Optional follow-ups
 
-### SCIM provisioning (enterprise)
-
-To sync users from Okta **before** first login (create/update/deactivate), configure SCIM separately:
-
-- Observal docs: `ee/docs/scim-setup.md`
-- Base URL: `https://<OBSERVAL_DOMAIN>/api/v1/scim`
-- Requires a SCIM bearer token from Observal admin API
-
-OIDC SSO (this guide) and SCIM are complementary: SSO handles login; SCIM handles directory lifecycle.
-
-### Local development redirect URI
-
-If testing against localhost with a reverse proxy:
-
-| Field | Value |
-|-------|-------|
-| Sign-in redirect URI (Okta) | `http://localhost/api/v1/auth/oauth/callback` |
-| **Frontend URL** (Observal **Settings**) | Same origin you use in the browser, e.g. `http://localhost:3000` or `http://localhost` |
-
-Keep production URIs separate; do not mix localhost URIs into the customer’s production Okta app.
-
----
-
-## Quick reference - URLs and variables
-
-| Purpose | Where to set | Value |
-|---------|----------------|-------|
-| Sign-in redirect URI | Okta app | `https://<OBSERVAL_DOMAIN>/api/v1/auth/oauth/callback` |
-| Sign-out redirect URI | Okta app | `https://<OBSERVAL_DOMAIN>/login` |
-| OIDC metadata | `.env` → `OAUTH_SERVER_METADATA_URL` | `https://<OKTA_DOMAIN>/oauth2/default/.well-known/openid-configuration` |
-| Client ID / secret | `.env` → `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | From Okta app **General** tab |
-| Frontend URL | **Settings → Deployment → Frontend URL** | `https://<OBSERVAL_DOMAIN>` |
-| Enterprise license | `.env` → `OBSERVAL_LICENSE_KEY` | From Observal |
-| OAuth login entrypoint | (built-in) | `GET /api/v1/auth/oauth/login` |
-| OAuth callback | (built-in) | `GET /api/v1/auth/oauth/callback` |
-
----
-
-## Per-customer completion checklist
-
-Print or copy this for each new managed instance:
-
-- [ ] Observal instance live at `https://<OBSERVAL_DOMAIN>` (HTTPS valid)
-- [ ] Okta OIDC app created with correct redirect and sign-out URIs
-- [ ] Client ID, secret, and metadata URL recorded in secure store
-- [ ] Groups created and users assigned to groups
-- [ ] Groups assigned to Observal application
-- [ ] `groups` scope, claim, and access policy configured on **default** auth server
-- [ ] Authentication / MFA policy applied
-- [ ] `.env`: `OAUTH_*` and `OBSERVAL_LICENSE_KEY` set; API restarted
-- [ ] **Settings → Frontend URL** matches Okta redirect base
-- [ ] `sso_enabled: true` on `/api/v1/config/public`
-- [ ] Test SSO login succeeded (incognito)
-- [ ] Groups visible in Observal after login
-- [ ] At least one user promoted to admin
-- [ ] (Optional) SSO-only enabled
-- [ ] (Optional) SCIM configured
-
----
-
 ## Troubleshooting
 
 | Issue | Cause | Fix |
@@ -480,5 +420,4 @@ Print or copy this for each new managed instance:
 - [Authentication and SSO](authentication.md) - JWT, RBAC, SSO behavior
 - [Configuration](configuration.md) - `.env` reference
 - `ee/docs/oidc-setup.md` - OIDC reference (multi-IdP)
-- `ee/docs/scim-setup.md` - user provisioning from Okta
 - `ee/docs/cli-sso.md` - CLI login when SSO-only is enabled

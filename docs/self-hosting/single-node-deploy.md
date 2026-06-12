@@ -21,25 +21,36 @@ Run the full Observal stack on a single VM with Docker Compose. Best for teams o
 
 ## Architecture
 
-```
-  ┌──────────────────────────────────────────────────┐
-  │                   Single VM                      │
-  │                                                  │
-  │  ┌─────────┐    ┌───────────┐   ┌────────────┐  │
-  │  │  nginx   │───►│   API     │   │   Worker   │  │
-  │  │  (TLS)   │    │ (FastAPI) │   │   (arq)    │  │
-  │  └────┬─────┘    └─────┬─────┘   └──────┬─────┘  │
-  │       │                │                │        │
-  │  ┌────▼─────┐    ┌─────▼─────┐   ┌──────▼─────┐ │
-  │  │   Web    │    │ Postgres  │   │   Redis    │  │
-  │  │ (Next.js)│    └───────────┘   └────────────┘  │
-  │  └──────────┘    ┌───────────┐   ┌────────────┐  │
-  │                  │ClickHouse │   │  Grafana   │  │
-  │                  └───────────┘   └────────────┘  │
-  │                                                  │
-  │  [systemd] ──► docker compose (auto-restart)     │
-  │  [cron]    ──► daily backups to S3               │
-  └──────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph vm[Single VM]
+        nginx["nginx - TLS"]
+        web[Web UI]
+        api["API - FastAPI"]
+        worker["Worker - arq"]
+        pg[(Postgres)]
+        redis[(Redis)]
+        ch[(ClickHouse)]
+        grafana[Grafana]
+        systemd["systemd - docker compose restart"]
+        cron["cron - daily backups to S3"]
+    end
+
+    nginx --> web
+    nginx --> api
+    api --> pg
+    api --> ch
+    api --> redis
+    api --> worker
+    worker --> pg
+    worker --> redis
+    worker --> ch
+    grafana --> ch
+    systemd -.-> nginx
+    systemd -.-> api
+    systemd -.-> worker
+    cron -.-> pg
+    cron -.-> ch
 ```
 
 Everything runs as Docker containers on a single host. The nginx LB routes traffic and terminates TLS. Docker's restart policy and systemd keep the stack running across reboots.
@@ -136,7 +147,7 @@ sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|" .env
 sed -i "s|^CLICKHOUSE_PASSWORD=.*|CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD|" .env
 ```
 
-> **Enterprise edition:** Set `OBSERVAL_LICENSE_KEY=eyJ...` in `.env` to enable SAML SSO, SCIM, audit logs, and executive dashboards. See [Configuration](configuration.md).
+> **Enterprise edition:** Set `OBSERVAL_LICENSE_KEY=eyJ...` in `.env` to enable SAML SSO, audit logs, and executive dashboards. See [Configuration](configuration.md).
 
 ## Step 4: Set up TLS
 

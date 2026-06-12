@@ -28,7 +28,6 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal support`](support.md) | Generate and inspect diagnostic support bundles |
 | [`observal doctor`](doctor.md) | Diagnose IDE compatibility; `doctor patch` applies instrumentation |
 | [`observal migrate`](migrate.md) | Export/import PostgreSQL registry (shallow copy) and ClickHouse telemetry (deep copy) |
-| [`observal profile`](profile.md) | Switch IDE configs to a git-hosted profile |
 | [`observal self`](self.md) | Upgrade or downgrade the CLI |
 | [`observal prompt`](prompt.md) | Manage reusable prompts in the registry |
 | [`observal server`](server.md) | Manage the embedded server (start, stop, upgrade, rollback) |

@@ -182,11 +182,20 @@ This drops agent files, skills, hooks, and MCP configs into the right places for
 
 ## What you just built
 
-```
-Your IDE  <-->  observal-shim  <-->  MCP server
-                      │
-                      ▼  (fire-and-forget)
-               Observal API  ──►  ClickHouse  ──►  Web UI
+```mermaid
+flowchart LR
+    ide[Your IDE]
+    shim[observal-shim]
+    mcp[MCP server]
+    api[Observal API]
+    ch[(ClickHouse)]
+    ui[Web UI]
+
+    ide <--> shim
+    shim <--> mcp
+    shim -->|fire and forget| api
+    api --> ch
+    ch --> ui
 ```
 
 Every MCP request/response is now a span. Spans group into traces. Traces form sessions.

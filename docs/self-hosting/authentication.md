@@ -138,7 +138,6 @@ An operator reads the log and passes the code to the user out-of-band (Slack, ph
 
 Enterprise edition adds:
 
-* **SCIM 2.0 provisioning**: provision / deprovision users from your IdP
 * **Audit logging**: every privileged action lands in ClickHouse's `audit_log`
 * **SSO-only mode** (`DEPLOYMENT_MODE=enterprise`)
 

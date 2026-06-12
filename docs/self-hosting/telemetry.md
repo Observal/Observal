@@ -56,7 +56,7 @@ passes, and `posthog-js` is only initialized when it does.
 
 | Event | Source | Fired when | Properties |
 |---|---|---|---|
-| `user_signed_up` | server | A real (non-demo) user account is created via `/auth/init`, `/auth/bootstrap`, OIDC signup, SAML JIT provisioning, or SCIM provisioning | `utm_source`, `utm_medium`, `utm_campaign` (all nullable), `auth_provider` (`local` / `oidc` / `saml` / `scim`), `org_id` (UUID, nullable) |
+| `user_signed_up` | server | A real (non-demo) user account is created via `/auth/init`, `/auth/bootstrap`, OIDC signup, or SAML JIT provisioning | `utm_source`, `utm_medium`, `utm_campaign` (all nullable), `auth_provider` (`local` / `oidc` / `saml`), `org_id` (UUID, nullable) |
 | `agent_registered` | server | An agent is created in the registry | `workspace_id` (org UUID), `agent_id` (agent UUID), `agent_type` (agent category, nullable) |
 | `invite_sent` | server | An admin creates a teammate invite | `workspace_id` (org UUID), `invite_channel` (`email` / `link`) |
 | `invite_accepted` | server | An invited user completes signup via an invite link | `workspace_id` (org UUID) |
@@ -65,7 +65,7 @@ passes, and `posthog-js` is only initialized when it does.
 Notes:
 
 - **Demo accounts emit nothing.**
-- SSO/SCIM-provisioned users are counted as signups with null UTMs (bucketed
+- SSO-provisioned users are counted as signups with null UTMs (bucketed
   as organic by downstream consumers).
 - `utm_*` values come from first-touch attribution: the web app stores
   `utm_source` / `utm_medium` / `utm_campaign` from the first URL that carried
@@ -133,6 +133,5 @@ dossier builder when a real user signs up. This is also **off by default**.
 Unlike PostHog, this webhook intentionally carries signup **email** and **name**
 for GTM prospect matching. Private / enterprise deployments must leave it off.
 
-The server subscribes to `UserCreated` and skips demo accounts, SCIM
-provisioning, localhost bootstrap signups, and orgs with trace privacy enabled.
+The server subscribes to `UserCreated` and skips demo accounts, localhost bootstrap signups, and orgs with trace privacy enabled.
 Delivery is fire-and-forget and never blocks signup.

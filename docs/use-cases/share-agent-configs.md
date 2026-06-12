@@ -95,15 +95,6 @@ The IDE feature matrix (defined in `observal_cli/ide_registry.py`) controls what
 * Warns about the unsupported parts
 * Exits non-zero if the agent *requires* something the IDE cannot provide
 
-## Snapshot an entire IDE config as a profile
-
-`observal use` and `observal profile` move at a level above single agents; they switch your whole IDE config to a git-hosted or local profile:
-
-```bash
-observal use https://github.com/your-org/your-profile.git
-observal profile                     # show active profile + backup info
-```
-
 Useful when onboarding a new machine or swapping between "work setup" and "personal setup."
 
 ## Next

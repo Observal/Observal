@@ -15,8 +15,6 @@ Every file Observal reads or writes on the client (`~/.observal/`) and in each I
 | `aliases.json` | User-defined shortcuts (`@my-mcp` → UUID) | `0600` |
 | `last_results.json` | Last `list` / `show` output - enables row-number references | `0600` |
 | `telemetry_buffer.db` | SQLite buffer for events when server is unreachable | `0600` |
-| `profile.json` | Active `observal use` profile metadata | `0600` |
-| `backups/` | Pre-switch IDE config backups (from `observal use`) | - |
 | `keys/` | Server-side JWT keys (operators only; path controlled by `JWT_KEY_DIR`) | `0600` |
 
 ### `config.json` schema
@@ -102,7 +100,7 @@ Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
 
 ## Backups
 
-Every config modification by `observal doctor patch`, `observal agent pull`, or `observal use` creates a timestamped `.bak` file next to the original:
+Every config modification by `observal doctor patch` or `observal agent pull` creates a timestamped `.bak` file next to the original:
 
 ```
 ~/.claude/settings.json.20260421_143055.bak

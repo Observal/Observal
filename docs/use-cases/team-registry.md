@@ -19,24 +19,25 @@ Once two or more people are authoring agents, you need a single source of truth.
 
 Deploy once, everyone points at it.
 
-```
-                        ┌──────────────────────┐
-                        │  Observal server     │
-                        │  (self-hosted)       │
-                        │                      │
-                        │   Postgres           │
-                        │   ClickHouse         │
-                        │   Redis              │
-                        │   API + Web UI       │
-                        └──────────┬───────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              │                    │                    │
-         Engineer A           Engineer B           Engineer C
-         Claude Code            Kiro                Cursor
+```mermaid
+flowchart TB
+    server["Observal server - API + Web UI"]
+    db[(PostgreSQL)]
+    ch[(ClickHouse)]
+    redis[(Redis)]
+    a["Engineer A - Claude Code"]
+    b["Engineer B - Kiro"]
+    c["Engineer C - Cursor"]
+
+    server --> db
+    server --> ch
+    server --> redis
+    a --> server
+    b --> server
+    c --> server
 ```
 
-Install the server once ([Self-Hosting](../self-hosting/README.md). Then every engineer installs the CLI and runs `observal auth login` pointed at your shared server URL.
+Install the server once ([Self-Hosting](../self-hosting/README.md)). Then every engineer installs the CLI and runs `observal auth login` pointed at your shared server URL.
 
 ## Users and roles
 
@@ -69,9 +70,9 @@ curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh
 observal auth login --server https://observal.your-company.internal
 ```
 
-Self-registration is enabled in `DEPLOYMENT_MODE=local`. For enterprise mode (SSO / SCIM), users provision via your IdP. See [Authentication and SSO](../self-hosting/authentication.md).
+For managed deployments, users authenticate through SSO or are provisioned by an admin. See [Authentication and SSO](../self-hosting/authentication.md).
 
-After registering, they can:
+After logging in, they can:
 
 ```bash
 observal agent list                           # see every agent the team has published
@@ -114,7 +115,7 @@ Filters in the web UI let you slice by user, agent, IDE, and time range.
 
 ## Enterprise concerns
 
-For orgs that need SSO, SCIM, and audit logging, enable enterprise mode:
+For orgs that need SSO and audit logging, enable enterprise mode:
 
 ```
 DEPLOYMENT_MODE=enterprise
@@ -123,7 +124,7 @@ OAUTH_CLIENT_SECRET=...
 OAUTH_SERVER_METADATA_URL=...
 ```
 
-See [Authentication and SSO](../self-hosting/authentication.md). The enterprise CLI adds SCIM-related commands (see `/ee/docs/cli.md` in the repo).
+See [Authentication and SSO](../self-hosting/authentication.md).
 
 ## Next
 

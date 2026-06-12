@@ -28,19 +28,34 @@ Observal ships Terraform modules for both AWS and GCP. They provision equivalent
 
 ### AWS
 
-```
-  Internet ──► ALB (HTTPS) ──┬── /api/*  ──► ECS Fargate: api (2–10×)
-                              ├── default ──► ECS Fargate: web (2–6×)
-                              └── /grafana/* ► EC2 data host
-                                                │
-                              ECS Fargate: worker (1–5×)
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-              RDS Postgres    ElastiCache      EC2 + EBS
-              (Multi-AZ)     Redis (2-node)   ClickHouse
-                                              Grafana
-                                              Prometheus
+```mermaid
+flowchart TB
+    internet[Internet]
+    alb[ALB HTTPS]
+    api["ECS Fargate: api - 2 to 10 tasks"]
+    web["ECS Fargate: web - 2 to 6 tasks"]
+    worker["ECS Fargate: worker - 1 to 5 tasks"]
+    data[EC2 data host]
+    pg["RDS Postgres - Multi-AZ"]
+    redis["ElastiCache Redis - 2-node"]
+    ch["ClickHouse - EBS gp3"]
+    grafana[Grafana]
+    prometheus[Prometheus]
+
+    internet --> alb
+    alb -->|/api/*| api
+    alb -->|default| web
+    alb -->|/grafana/*| data
+    api --> worker
+    api --> pg
+    api --> redis
+    api --> ch
+    worker --> pg
+    worker --> redis
+    worker --> ch
+    data --> ch
+    data --> grafana
+    data --> prometheus
 ```
 
 | Component | AWS Service | Notes |
@@ -81,20 +96,36 @@ Apply takes ~20–30 minutes (RDS Multi-AZ provisioning dominates). Baseline cos
 
 ### GCP
 
-```
-  Internet ──► Global HTTPS LB ──┬── /api/*  ──► Cloud Run: api
-               (managed SSL)     ├── default ──► Cloud Run: web
-                                 └── /grafana/* ► GCE data host (IAP)
-                                
-                              Cloud Run Job: init (migrations)
-                              Cloud Run: worker
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-              Cloud SQL         Memorystore      GCE + PD
-              (Postgres)        (Redis)          ClickHouse
-                                                 Grafana
-                                                 Prometheus
+```mermaid
+flowchart TB
+    internet[Internet]
+    lb["Global HTTPS LB - managed SSL"]
+    api[Cloud Run: api]
+    web[Cloud Run: web]
+    init["Cloud Run Job: init - migrations"]
+    worker[Cloud Run: worker]
+    data["GCE data host - IAP"]
+    pg["Cloud SQL - Postgres"]
+    redis["Memorystore - Redis"]
+    ch["ClickHouse - Persistent Disk"]
+    grafana[Grafana]
+    prometheus[Prometheus]
+
+    internet --> lb
+    lb -->|/api/*| api
+    lb -->|default| web
+    lb -->|/grafana/*| data
+    init --> pg
+    api --> worker
+    api --> pg
+    api --> redis
+    api --> ch
+    worker --> pg
+    worker --> redis
+    worker --> ch
+    data --> ch
+    data --> grafana
+    data --> prometheus
 ```
 
 | Component | GCP Service | Notes |
@@ -158,7 +189,7 @@ observal_license_key = "eyJ...your-key..."
 When a license key is provided, Terraform:
 1. Stores the key in SSM Parameter Store (AWS) or Secret Manager (GCP) as an encrypted secret
 2. Injects `OBSERVAL_LICENSE_KEY` into every compute task at startup
-3. Enterprise features (SAML SSO, SCIM, audit logs, executive dashboards) activate automatically
+3. Enterprise features (SAML SSO, audit logs, executive dashboards) activate automatically
 
 Leave the key empty to deploy community edition.
 

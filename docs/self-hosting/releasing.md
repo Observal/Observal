@@ -58,7 +58,7 @@ The final `release` job:
 | Type | When | Examples |
 |------|------|---------|
 | `patch` | Bug fixes, dependency updates, docs, CI tweaks | Fix login redirect, update ruff version, typo in docs |
-| `feature` | New functionality, new endpoints, new CLI commands | Add SCIM support, add audit log viewer, new alert rule type |
+| `feature` | New functionality, new endpoints, new CLI commands | Add SAML support, add audit log viewer, new alert rule type |
 | `major` | Breaking changes, major rewrites, incompatible API changes | Auth system rewrite, database schema migration required, CLI flag rename |
 
 ## Conventional commits
@@ -73,7 +73,7 @@ chore: bump dependencies
 perf: optimize ClickHouse batch inserts
 refactor: extract audit helper from event bus
 ci: add PyInstaller binary builds
-test: add SCIM provisioning tests
+test: add SAML configuration tests
 ```
 
 Commits prefixed with `bump(release):` are automatically excluded from the changelog.

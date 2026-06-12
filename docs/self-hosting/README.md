@@ -9,22 +9,27 @@ Run Observal entirely on your own infrastructure. No SaaS, no egress, every byte
 
 ## Architecture at a glance
 
-```
-                  ┌────────────────────────────────────────────────────┐
-                  │              observal-net (bridge)                 │
-                  │                                                    │
-  [Engineers] ──► │  observal-web  ◄──►  observal-api                  │
-   (port 3000)    │      │                    │                        │
-                  │      ▼                    ▼                        │
-                  │  (static)        observal-worker                   │
-                  │                     │  │  │                        │
-                  │          ┌──────────┘  │  └──────────┐             │
-                  │          ▼             ▼             ▼             │
-                  │   observal-db   observal-redis  observal-clickhouse│
-                  │   (Postgres)    (jobs, pubsub)   (telemetry)       │
-                  │                                                    │
-                  │   observal-grafana  ──►  clickhouse (optional)     │
-                  └────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    engineers[Engineers]
+    web["observal-web - static web UI"]
+    api["observal-api - FastAPI backend"]
+    worker["observal-worker - async jobs"]
+    db["observal-db - Postgres"]
+    redis["observal-redis - jobs + pub/sub"]
+    ch["observal-clickhouse - telemetry"]
+    grafana["observal-grafana - optional dashboards"]
+
+    engineers --> web
+    web <--> api
+    api --> worker
+    api --> db
+    api --> redis
+    api --> ch
+    worker --> db
+    worker --> redis
+    worker --> ch
+    grafana --> ch
 ```
 
 **Seven services:**

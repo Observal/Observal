@@ -24,7 +24,7 @@ This applies to all code outside the `ee/` directory.
 
 ## Enterprise Edition (Commercial License)
 
-The `ee/` directory contains proprietary enterprise features (SAML SSO, SCIM provisioning, exec dashboard, compliance audit) that require a commercial license for production use.
+The `ee/` directory contains proprietary enterprise features (SAML SSO, exec dashboard, compliance audit) that require a commercial license for production use.
 
 ### What the commercial license grants
 

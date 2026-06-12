@@ -8,29 +8,40 @@ The vocabulary you need to be productive with Observal. Read once; every other p
 
 ## The big picture
 
+```mermaid
+flowchart TB
+    ide["AI coding agent - Claude Code, Kiro, Cursor, Pi"]
+    sessions["Local session store - JSONL transcripts / SQLite buffers"]
+    hooks["IDE hooks - session + lifecycle events"]
+    shim["observal-shim / proxy - MCP request + response capture"]
+    mcp[MCP servers]
+    cli["observal CLI - reconcile + push"]
+    api[Observal API]
+    pg["PostgreSQL - registry + users + review state"]
+    ch["ClickHouse - traces + spans + session events"]
+
+    ide --> sessions
+    ide --> hooks
+    ide <--> shim
+    shim <--> mcp
+    hooks --> api
+    shim --> api
+    sessions --> cli
+    cli --> api
+    api --> pg
+    api --> ch
 ```
-┌─────────────┐     ┌───────────────┐     ┌──────────────┐
-│   Your IDE  │ ◄─► │ observal-shim │ ◄─► │  MCP Server  │
-└─────────────┘     └───────┬───────┘     └──────────────┘
-                            │
-                            ▼  fire-and-forget
-                   ┌────────────────┐
-                   │   Observal API │
-                   └────────┬───────┘
-                            │
-              ┌─────────────┴──────────────┐
-              ▼                            ▼
-      ┌──────────────┐             ┌───────────────┐
-      │  PostgreSQL  │             │   ClickHouse  │
-      │ (registry,   │             │ (traces,      │
-      │  users, RBAC)│             │  spans, scores)│
-      └──────────────┘             └───────────────┘
-```
+
+Observal collects agent activity through three complementary paths:
+
+* **Session capture** reads the coding agent's local session files or SQLite buffers and reconciles them into normalized traces.
+* **IDE hooks** capture lifecycle events such as session start, user prompt, tool use, stop, and notifications when the IDE exposes them.
+* **MCP shims and proxies** capture MCP requests and responses without modifying the traffic.
 
 Two data stores, two concerns:
 
-* **Postgres** holds the *registry*: users, accounts, agent configs, MCP listings, review state, alert rules. Transactional, relational.
-* **ClickHouse** holds the *telemetry*: traces, spans, and scores. High-volume, time-series, fast analytical queries.
+* **Postgres** holds the *registry*: users, accounts, agent configs, MCP listings, review state, and alert rules. Transactional, relational.
+* **ClickHouse** holds the *telemetry*: traces, spans, and session events. High-volume, time-series, fast analytical queries.
 
 ## The registry
 
@@ -39,19 +50,19 @@ Six component types. Agents bundle the other five.
 | Type | What it is |
 | --- | --- |
 | **Agent** | A complete, installable AI agent. Bundles MCP servers, skills, hooks, prompts, and sandboxes into one YAML. |
-| **MCP Server** | A [Model Context Protocol](https://modelcontextprotocol.io/) server - the tools an agent can call. |
+| **MCP Server** | A [Model Context Protocol](https://modelcontextprotocol.io/) server, the tools an agent can call. |
 | **Skill** | A portable instruction package agents load on demand. |
-| **Hook** | A lifecycle callback - runs on session start, tool use, session end, etc. |
+| **Hook** | A lifecycle callback that runs on session start, tool use, session end, etc. |
 | **Prompt** | A named, parameterized prompt template with variable substitution. |
 | **Sandbox** | A Docker execution environment for running code the agent generates. |
 
 Anyone can publish. Admin review controls what appears in the public listing, but your own items are usable immediately without approval.
 
-## Telemetry: traces, spans, sessions, scores
+## Telemetry: traces, spans, sessions
 
 ### Span
 
-A single operation. Typically one MCP tool call. Includes the tool name, input, output, latency, status, and any error. Spans can nest via `parent_span_id`.
+A single operation. Typically one MCP tool call or lifecycle event. Includes the name, input/output metadata, latency, status, and any error. Spans can nest via `parent_span_id`.
 
 ### Trace
 
@@ -60,10 +71,6 @@ A top-level operation that can contain many spans. Most traces are a single agen
 ### Session
 
 A logical grouping of related traces, typically one IDE session or one user task. Identified by `session_id` in trace metadata. A long Claude Code session produces many traces that all share a `session_id`.
-
-### Score
-
-A quality signal attached to a trace or span. Produced by user ratings or automated rules. Each score has a dimension, a numeric value, and an optional comment.
 
 ## The shim and the proxy
 
@@ -77,17 +84,6 @@ Observal intercepts MCP traffic without modifying it. Two flavors:
 You rarely call either one directly. `observal doctor patch --shim` (or `--all`) rewrites your IDE config to route MCP servers through the appropriate one.
 
 Interception is **transparent**: nothing is changed on the wire. If Observal is unreachable, the tool call still succeeds, and the telemetry is queued locally (see [Telemetry buffer](#telemetry-buffer) below) and flushed later.
-
-The shim handles stdio transport; the proxy handles HTTP/SSE transport. Both are installed as CLI entry points.
-
-## Hooks (a different kind)
-
-Confusingly, "hook" means two things in this ecosystem:
-
-1. **Registry hooks**: packaged, reusable hook definitions you publish and install via `observal registry hook`.
-2. **IDE hooks**: the underlying lifecycle mechanism your IDE exposes (`PreToolUse`, `PostToolUse`, `SessionStart`, `Stop`, etc.). Observal's installer wires hooks into `~/.claude/settings.json` for Claude Code and into agent JSON for Kiro.
-
-Both use the same event vocabulary (`PreToolUse`, `PostToolUse`, `SessionStart`, `Stop`, `SubagentStop`, `UserPromptSubmit`, `Notification`). See the [Hooks spec](../reference/hooks-spec.md) for the full schema.
 
 ## Telemetry buffer
 
@@ -113,7 +109,7 @@ Two server-side modes, controlled by the `DEPLOYMENT_MODE` environment variable:
 | Mode | Self-registration | Bootstrap | Auth |
 | --- | --- | --- | --- |
 | `local` (default) | Yes | Yes (fresh server creates admin on first login) | Email + password or API key |
-| `enterprise` | No | No | SSO / OIDC only; SCIM provisioning |
+| `enterprise` | No | No | SSO / OIDC only |
 
 You pick this when you set up the server. Most self-hosters use `local`.
 
