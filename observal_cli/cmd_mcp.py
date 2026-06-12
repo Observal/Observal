@@ -986,7 +986,17 @@ def _show_impl(mcp_id, output):
             rprint(f"  {icon} {v['stage']}: {v.get('details', '') or 'passed'}")
 
 
-def _install_impl(mcp_id, ide, raw, version=None):
+def _install_impl(
+    mcp_id,
+    ide,
+    raw,
+    version=None,
+    *,
+    env_overrides: dict[str, str] | None = None,
+    header_overrides: dict[str, str] | None = None,
+    env_file: str | None = None,
+    no_prompt: bool = False,
+):
     optic.trace("mcp_id={}, ide={}, version={}", mcp_id, ide, version)
     import json as _json
 
@@ -996,53 +1006,98 @@ def _install_impl(mcp_id, ide, raw, version=None):
     with spinner("Fetching server details..."):
         listing = client.get(f"/api/v1/mcps/{resolved}")
 
+    # Build env overrides from --env flags and --env-file
+    _env_from_flags: dict[str, str] = dict(env_overrides) if env_overrides else {}
+    if env_file:
+        for ev in _parse_env_file(env_file):
+            if ev["name"] not in _env_from_flags:
+                _env_from_flags[ev["name"]] = ""
+        # Re-parse as key=value (env file has names only), read actual values from file
+        path = Path(env_file).expanduser().resolve()
+        if path.exists():
+            for line in path.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    k, _, v = line.partition("=")
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k:
+                        _env_from_flags[k] = v
+
+    _header_from_flags: dict[str, str] = dict(header_overrides) if header_overrides else {}
+    skip_prompts = raw or no_prompt
+
     env_values: dict[str, str] = {}
     env_var_list = listing.get("environment_variables") or []
-    if env_var_list and not raw:
+    if env_var_list and not skip_prompts:
         required = [ev for ev in env_var_list if ev.get("required", True)]
         optional = [ev for ev in env_var_list if not ev.get("required", True)]
 
         if required:
             rprint(f"\n[bold]This server requires {len(required)} environment variable(s):[/bold]")
             for ev in required:
-                desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                val = text_input(f"  {ev['name']}{desc}")
-                env_values[ev["name"]] = val
+                if ev["name"] in _env_from_flags:
+                    env_values[ev["name"]] = _env_from_flags[ev["name"]]
+                    rprint(f"  [green]✓[/green] {ev['name']} [dim](from --env)[/dim]")
+                else:
+                    desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
+                    val = text_input(f"  {ev['name']}{desc}")
+                    env_values[ev["name"]] = val
 
         if optional:
             rprint(f"\n[dim]{len(optional)} optional env var(s) available:[/dim]")
             for ev in optional:
-                desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                val = text_input(f"  {ev['name']}{desc} (press Enter to skip)", default="")
-                if val:
-                    env_values[ev["name"]] = val
-    elif env_var_list and raw:
-        # In raw mode, include placeholders so the user knows what's needed
+                if ev["name"] in _env_from_flags:
+                    env_values[ev["name"]] = _env_from_flags[ev["name"]]
+                    rprint(f"  [green]✓[/green] {ev['name']} [dim](from --env)[/dim]")
+                else:
+                    desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
+                    val = text_input(f"  {ev['name']}{desc} (press Enter to skip)", default="")
+                    if val:
+                        env_values[ev["name"]] = val
+    elif env_var_list and skip_prompts:
+        # Non-interactive: use --env flag values, placeholders for the rest
         for ev in env_var_list:
-            env_values[ev["name"]] = f"<{ev['name']}>"
+            if ev["name"] in _env_from_flags:
+                env_values[ev["name"]] = _env_from_flags[ev["name"]]
+            else:
+                env_values[ev["name"]] = f"<{ev['name']}>"
 
     # Prompt for headers (SSE/HTTP servers with auth)
     header_values: dict[str, str] = {}
     header_list = listing.get("headers") or []
-    if header_list and not raw:
+    if header_list and not skip_prompts:
         required_headers = [h for h in header_list if h.get("required", True)]
         optional_headers = [h for h in header_list if not h.get("required", True)]
         if required_headers:
             rprint(f"\n[bold]This server requires {len(required_headers)} header(s):[/bold]")
             for h in required_headers:
-                desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
-                val = text_input(f"  {h['name']}{desc}")
-                header_values[h["name"]] = val
+                if h["name"] in _header_from_flags:
+                    header_values[h["name"]] = _header_from_flags[h["name"]]
+                    rprint(f"  [green]✓[/green] {h['name']} [dim](from --header)[/dim]")
+                else:
+                    desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
+                    val = text_input(f"  {h['name']}{desc}")
+                    header_values[h["name"]] = val
         if optional_headers:
             rprint(f"\n[dim]{len(optional_headers)} optional header(s) available:[/dim]")
             for h in optional_headers:
-                desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
-                val = text_input(f"  {h['name']}{desc} (press Enter to skip)", default="")
-                if val:
-                    header_values[h["name"]] = val
-    elif header_list and raw:
+                if h["name"] in _header_from_flags:
+                    header_values[h["name"]] = _header_from_flags[h["name"]]
+                    rprint(f"  [green]✓[/green] {h['name']} [dim](from --header)[/dim]")
+                else:
+                    desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
+                    val = text_input(f"  {h['name']}{desc} (press Enter to skip)", default="")
+                    if val:
+                        header_values[h["name"]] = val
+    elif header_list and skip_prompts:
         for h in header_list:
-            header_values[h["name"]] = f"<{h['name']}>"
+            if h["name"] in _header_from_flags:
+                header_values[h["name"]] = _header_from_flags[h["name"]]
+            else:
+                header_values[h["name"]] = f"<{h['name']}>"
 
     with spinner(f"Generating {ide} config..."):
         install_body = {"ide": ide, "env_values": env_values, "header_values": header_values}
@@ -1302,31 +1357,64 @@ def install(
     version: str | None = typer.Option(
         None, "--version", "-V", help="Install a specific version (e.g. '2.1.0'). Defaults to latest."
     ),
+    env: list[str] | None = typer.Option(None, "--env", "-e", help="Environment variable (KEY=VALUE, repeatable)"),
+    header: list[str] | None = typer.Option(None, "--header", help="Header value (KEY=VALUE, repeatable)"),
+    env_file: str | None = typer.Option(None, "--env-file", help="Path to .env file for environment variables"),
+    no_prompt: bool = typer.Option(False, "--no-prompt", "-y", help="Skip interactive prompts"),
 ):
     """Generate an install config snippet for an MCP server.
 
     Produces IDE-specific configuration that you paste into your editor's
     MCP settings file. Prompts for required environment variables and
-    headers interactively (unless --raw is used).
+    headers interactively (unless --raw or --no-prompt is used).
+
+    Use --env KEY=VALUE to pass environment variables non-interactively
+    (repeatable). Use --header KEY=VALUE for headers. Use --env-file to
+    load values from a .env file.
 
     The --raw flag outputs bare JSON suitable for piping directly into
-    config files, with placeholder values for env vars.
+    config files, with placeholder values for any missing env vars.
 
     Examples:
         # Generate config for Claude Code
         observal registry mcp install my-server --ide claude-code
 
+        # Non-interactive with env vars
+        observal registry mcp install my-server --ide kiro --no-prompt --env API_KEY=sk-123
+
+        # Multiple env vars
+        observal registry mcp install my-server --ide cursor --env API_KEY=sk-123 --env SECRET=abc
+
+        # From env file
+        observal registry mcp install my-server --ide claude-code --env-file .env --no-prompt
+
         # Generate for Cursor and pipe to config file
         observal registry mcp install my-server --ide cursor --raw > .cursor/mcp.json
 
-        # Install by row number for VS Code
-        observal registry mcp install 2 --ide vscode
-
-        # Install using an alias
-        observal registry mcp install @db --ide kiro
+        # With headers for SSE servers
+        observal registry mcp install my-server --ide kiro --header Authorization='Bearer token'
     """
     optic.trace("mcp_id={}, ide={}", mcp_id, ide)
-    _install_impl(mcp_id, ide, raw, version=version)
+    env_overrides = {}
+    for item in env or []:
+        k, _, v = item.partition("=")
+        if k:
+            env_overrides[k.strip()] = v
+    header_overrides = {}
+    for item in header or []:
+        k, _, v = item.partition("=")
+        if k:
+            header_overrides[k.strip()] = v
+    _install_impl(
+        mcp_id,
+        ide,
+        raw,
+        version=version,
+        env_overrides=env_overrides or None,
+        header_overrides=header_overrides or None,
+        env_file=env_file,
+        no_prompt=no_prompt,
+    )
 
 
 @mcp_app.command(name="edit")
@@ -1340,6 +1428,8 @@ def edit_mcp(
     git_url: str | None = typer.Option(None, "--git-url", help="New git URL"),
     command: str | None = typer.Option(None, "--command", help="New command"),
     url: str | None = typer.Option(None, "--url", help="New URL"),
+    bump: str | None = typer.Option(None, "--bump", help="Version bump type: patch, minor, or major (skips prompt)"),
+    changelog: str | None = typer.Option(None, "--changelog", help="Changelog text for new version (skips prompt)"),
 ):
     """Edit an MCP server submission.
 
@@ -1476,7 +1566,10 @@ def edit_mcp(
         # Approved listing → publish a new version with semver bump
         current_ver = listing.get("version", "0.1.0") if listing else "0.1.0"
         rprint(f"[dim]Current version: {current_ver}[/dim]")
-        bump_type = select_one("Version bump", ["patch", "minor", "major"], default="patch")
+        if bump and bump in ("patch", "minor", "major"):
+            bump_type = bump
+        else:
+            bump_type = select_one("Version bump", ["patch", "minor", "major"], default="patch")
 
         parts = current_ver.split(".")
         if len(parts) == 3 and all(p.isdigit() for p in parts):
@@ -1491,7 +1584,7 @@ def edit_mcp(
             _new_version = "0.2.0"
 
         rprint(f"[bold]New version:[/bold] {_new_version}")
-        _changelog = text_input("Changelog (what changed?)", default="")
+        _changelog = changelog if changelog is not None else text_input("Changelog (what changed?)", default="")
 
         # Separate top-level fields from extra (version-specific) fields
         version_description = updates.pop("description", None) or (listing.get("description", "") if listing else "")

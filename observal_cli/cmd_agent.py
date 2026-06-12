@@ -919,6 +919,7 @@ def agent_publish(
     update: bool = typer.Option(False, "--update", "-u", help="Update existing agent instead of creating"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit: str | None = typer.Option(None, "--submit", help="Submit a draft agent for review (agent ID)"),
+    bump: str | None = typer.Option(None, "--bump", help="Version bump type: patch, minor, or major (skips prompt)"),
 ):
     """Publish the agent definition to the server.
 
@@ -975,10 +976,13 @@ def agent_publish(
             raise typer.Exit(code=1)
         agent_id = match["id"]
 
-        # Version bump selection (interactive only)
+        # Version bump selection (interactive only when --bump not provided)
         import sys
 
-        if sys.stdin.isatty():
+        if bump and bump in ("patch", "minor", "major"):
+            payload["version_bump_type"] = bump
+            payload.pop("version", None)
+        elif sys.stdin.isatty():
             current_version = match.get("version", "1.0.0")
             try:
                 suggestions = client.get(f"/api/v1/agents/{agent_id}/version-suggestions")
