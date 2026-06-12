@@ -46,6 +46,7 @@
     "graphql-ws": "^6.0.8",
     "js-yaml": "^4.1.1",
     "lucide-react": "^1.7.0",
+    "mermaid": "^11.15.0",
     "posthog-js": "^1.386.1",
     "react": "19.2.6",
     "react-dom": "19.2.6",
