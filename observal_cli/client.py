@@ -109,8 +109,13 @@ def _handle_error(e: httpx.HTTPStatusError, path: str = ""):
             type_singular = type_plural[:-1]  # mcps -> mcp, skills -> skill
         else:
             type_singular = type_plural
-        # 'agent' is a top-level subcommand, not nested under 'registry'
-        browse_cmd = "observal agent list" if type_singular == "agent" else f"observal registry {type_singular} list"
+        if len(parts) > 3 and parts[2] == "insights" and parts[3] == "agents":
+            browse_cmd = "observal agent list"
+        else:
+            # 'agent' is a top-level subcommand, not nested under 'registry'
+            browse_cmd = (
+                "observal agent list" if type_singular == "agent" else f"observal registry {type_singular} list"
+            )
         rprint(f"[dim]  Check that the resource ID is correct, or use [bold]{browse_cmd}[/bold] to browse.[/dim]")
     elif code == 429:
         rprint(f"[red]Rate limited{path_info}.[/red]")

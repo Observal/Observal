@@ -90,6 +90,10 @@ Every command available in the installed CLI. This block is generated from the T
 
 **`observal ops`**: Observability and operational commands (traces, telemetry, dashboard, feedback)
 
+- `observal ops insights`: Agent insight reports
+  - `observal ops insights generate`: Trigger generation of a new insight report.
+  - `observal ops insights list`: List insight reports for an agent.
+  - `observal ops insights show`: Show an insight report with pretty-printed narrative.
 - `observal ops logs`: Live log viewer (open in a separate tab)
 - `observal ops telemetry`: Telemetry commands
   - `observal ops telemetry status`: Check telemetry data flow status.
