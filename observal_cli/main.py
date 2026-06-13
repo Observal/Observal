@@ -155,6 +155,7 @@ from observal_cli.cmd_co_authors import make_co_authors_typer
 from observal_cli.cmd_component import version_app
 from observal_cli.cmd_doctor import doctor_app
 from observal_cli.cmd_hook import hook_app
+from observal_cli.cmd_insights import insights_app
 from observal_cli.cmd_logs import logs_app
 from observal_cli.cmd_mcp import mcp_app
 from observal_cli.cmd_migrate import migrate_app
@@ -222,6 +223,8 @@ app.add_typer(doctor_app, name="doctor")
 # ── Nest under parent groups ──────────────────────────────
 # logs → ops logs (dev log viewer, complements traces/telemetry)
 ops_app.add_typer(logs_app, name="logs")
+# insights → ops insights (agent insight reports)
+ops_app.add_typer(insights_app, name="insights")
 # support → doctor support (diagnostic bundles, related to doctor troubleshooting)
 doctor_app.add_typer(support_app, name="support")
 # uninstall → self uninstall (CLI lifecycle alongside upgrade/downgrade/rollback)
