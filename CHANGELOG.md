@@ -10,6 +10,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-06-13
+
+### Added
+
+- add version-aware report generation (**insights**) ([dc95544](https://github.com/BlazeUp-AI/Observal/commit/dc95544fa8593fca84c1e241a044f59fd78a82ac))
+- use agent-scoped report routes (**insights**) ([84cec66](https://github.com/BlazeUp-AI/Observal/commit/84cec66d5c1960d7ab9e8b0a39235c4cbd5cd89b))
+- add insights CLI pretty print commands (**ops**) ([cf13c35](https://github.com/BlazeUp-AI/Observal/commit/cf13c35c71037ac8e2c6b4762a2b9a466c608043))
+- add contextual help panel (**wiki**) ([c724b78](https://github.com/BlazeUp-AI/Observal/commit/c724b78f1e77559c2071ab2cceff65cc9aba1408))
+- add bundled wiki browser (**wiki**) ([30b5f6b](https://github.com/BlazeUp-AI/Observal/commit/30b5f6bdabad9fb454980879d7564973aad0a16b))
+- add non-interactive flags for skill automation (**cli**) ([253928f](https://github.com/BlazeUp-AI/Observal/commit/253928f0be5b088291d4d424ab121008d89965f6))
+- notify dossier builder on UserCreated signups (**gtm**) ([90e462f](https://github.com/BlazeUp-AI/Observal/commit/90e462f7147a0a36db820a9c845ef8264e95d6f3))
+- add teammate invites with admin UI and PostHog analytics (**invites**) ([9d57aac](https://github.com/BlazeUp-AI/Observal/commit/9d57aacc2e25b634fe9921e9863e8d5d74e59eff))
+- add Install sidebar widget for components, track download counts (**registry**) ([a420e28](https://github.com/BlazeUp-AI/Observal/commit/a420e2831fd78ff71e8f72661a0e5172fa711547))
+- enforce one review per user with full CRUD and anonymous support (**feedback**) ([fecfdee](https://github.com/BlazeUp-AI/Observal/commit/fecfdee13f0b49da67658549abf83aeffc2f1348))
+- add three-state empty illustrations to traces page (**web**) ([3079ad5](https://github.com/BlazeUp-AI/Observal/commit/3079ad561d197520a877c7b62018ef672076c34b))
+
+### Changed
+
+- rename logger alias to optic (**audit**) ([9fe6d30](https://github.com/BlazeUp-AI/Observal/commit/9fe6d30a846e6bfa0959554b629737d14d53ce93))
+- fold co-authors under registry and agent commands (**cli**) ([5d1375c](https://github.com/BlazeUp-AI/Observal/commit/5d1375cb4fbe59fbbf351aed9abc7ac75a9be90f))
+
+### Documentation
+
+- curate user-facing wiki content (**wiki**) ([20dc93b](https://github.com/BlazeUp-AI/Observal/commit/20dc93b8f4d192194fcf047f346d5aa1ce6f2dcf))
+- add skill sync rule, update CLI tree in AGENTS.md ([2ac4f32](https://github.com/BlazeUp-AI/Observal/commit/2ac4f32d443c823f7083a4e302bc1899f31b8c90))
+- add server install section to installation guide (**install**) ([984529f](https://github.com/BlazeUp-AI/Observal/commit/984529f42a093be6d269fe484cc395240f68ed06))
+- rewrite Quick Start and Enterprise sections for clarity (**readme**) ([8324f2c](https://github.com/BlazeUp-AI/Observal/commit/8324f2c31a2f84cf8004ef7ecc935aecf240e535))
+- clarify single-binary model and license activation (**install**) ([5868102](https://github.com/BlazeUp-AI/Observal/commit/5868102799278b328cd292fb3febf47e885f657b))
+- add two-tier deployment guides (single-node and production) ([38e1833](https://github.com/BlazeUp-AI/Observal/commit/38e183353e14fe538d7eda94f2fc2df7be1099aa))
+- update code of conduct redirect file path in development guide ([1715446](https://github.com/BlazeUp-AI/Observal/commit/1715446c85cd1194523e131a4c76b0ef3874f27a))
+
+### Fixed
+
+- render agent insight report route (**web**) ([43c2e76](https://github.com/BlazeUp-AI/Observal/commit/43c2e7695b46b758663708671bdcdcd26b0f16d1))
+- remove dead pass before optic.warning (**main**) ([044bc29](https://github.com/BlazeUp-AI/Observal/commit/044bc295cee62cb90d442240c51db6e1123d65a7))
+- honor IDE allowlist in install selectors (**config**) ([9f4f625](https://github.com/BlazeUp-AI/Observal/commit/9f4f625d3fda1654ea3b78a53d89c04fb657b03c))
+- sort imports in main.py and update allowlist test for GTM keys (**ci**) ([a76f5fc](https://github.com/BlazeUp-AI/Observal/commit/a76f5fc02af85d1e582ea187869ed28234237aa3))
+- disable autofill for app name (**settings**) ([6f086bf](https://github.com/BlazeUp-AI/Observal/commit/6f086bf02285a11954e1a3cfa1c8b4d1d4752d2f))
+- admin users page layout is misaligned  #1407 ([9dddaa7](https://github.com/BlazeUp-AI/Observal/commit/9dddaa7db80a6cec5673b7be00f4f5ae8a34421c))
+- repair silent data loss and remove HIPAA branding (**audit**) ([8e0c343](https://github.com/BlazeUp-AI/Observal/commit/8e0c343305d84cff74bb6200546a1e29fb6f7420))
+- fix ops traces auth and add tiered display (**cli**) ([20d44e5](https://github.com/BlazeUp-AI/Observal/commit/20d44e5a1ca7f9ddc67f67cfc8b43ae7a618c5f0))
+- standardize skill paths to Agent Skills spec for all IDEs (**ide**) ([aa73fea](https://github.com/BlazeUp-AI/Observal/commit/aa73fea213a127464745f69b9465a72b5622a240))
+
+### Other
+
+- remove VSA-sensitive integrations (**compliance**) ([aa40028](https://github.com/BlazeUp-AI/Observal/commit/aa40028fe5784e66a07f70e6637ac004f9268de4))
+- add CloudFront head script (**web**) ([6ddcc78](https://github.com/BlazeUp-AI/Observal/commit/6ddcc78e9d68bd23c7d8f4a2cd4fe8fa2b25c37d))
+
+### Testing
+
+- align prompt and sandbox install expectations with command removals (**cli**) ([32dec8b](https://github.com/BlazeUp-AI/Observal/commit/32dec8ba9bc01d6f6575c30c24fddbe2812fa55a))
 ## [1.5.0] - 2026-06-09
 
 ### Added
