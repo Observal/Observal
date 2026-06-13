@@ -140,6 +140,8 @@ def render_report_html(report: dict) -> str:
     period_end = report.get("period_end", "")
     sessions_analyzed = report.get("sessions_analyzed", 0)
     report_id = report.get("id", "")
+    agent_version = report.get("agent_version") or ""
+    comparison_agent_version = report.get("comparison_agent_version") or ""
 
     # Format dates
     if isinstance(period_start, datetime):
@@ -161,6 +163,7 @@ def render_report_html(report: dict) -> str:
     suggestions = narrative.get("suggestions") or {}
     usage_cost = narrative.get("usage_cost_analysis") or {}
     regression = narrative.get("regression_detection") or {}
+    version_comparison = narrative.get("version_comparison") or {}
     fun_ending = narrative.get("fun_ending") or {}
 
     # Metrics sub-dicts
@@ -248,6 +251,9 @@ def render_report_html(report: dict) -> str:
     rich_top_tools = rich.get("top_tools", [])
     rich_top_langs = rich.get("top_languages", [])
     rich_error_cats = rich.get("tool_error_categories", {})
+    cache_hit_rate = rich.get("cache_hit_rate_pct")
+    cache_tokens_saved = rich.get("cache_tokens_saved") or rich.get("total_cache_read_tokens", 0)
+    canonical_dirty = rich.get("canonical_dirty_summary") or {}
 
     def _fmt_tokens(n: int | float) -> str:
         if n >= 1_000_000:
@@ -281,6 +287,10 @@ def render_report_html(report: dict) -> str:
         ("Tool Errors", _format_number(tool_errors_total), ""),
         ("Interruptions", _format_number(interruptions_total), ""),
     ]
+    if cache_hit_rate is not None:
+        stat_items.append(
+            ("Cache Efficiency", f"{float(cache_hit_rate):.1f}%", f"{_fmt_tokens(cache_tokens_saved)} tokens saved")
+        )
     if subagent_sessions:
         stat_items.append(("Subagent Sessions", _format_number(subagent_sessions), ""))
 
@@ -297,6 +307,18 @@ def render_report_html(report: dict) -> str:
 <section class="stats-row-section">
   <div class="stats-row">
     {stat_cells}
+  </div>
+</section>""")
+
+    if canonical_dirty:
+        sections_html.append(f"""
+<section class="content-section">
+  <h2>Canonical vs Dirty Installs</h2>
+  <div class="stats-row">
+    <div class="stat-item"><span class="stat-value">{_format_number(canonical_dirty.get("canonical_sessions", 0))}</span><span class="stat-label">Canonical Sessions</span></div>
+    <div class="stat-item"><span class="stat-value">{_format_number(canonical_dirty.get("dirty_sessions", 0))}</span><span class="stat-label">Dirty Sessions</span></div>
+    <div class="stat-item"><span class="stat-value">{_format_number(canonical_dirty.get("canonical_users", 0))}</span><span class="stat-label">Canonical Users</span></div>
+    <div class="stat-item"><span class="stat-value">{_format_number(canonical_dirty.get("dirty_users", 0))}</span><span class="stat-label">Dirty Users</span></div>
   </div>
 </section>""")
 
@@ -824,6 +846,27 @@ def render_report_html(report: dict) -> str:
 </section>""")
 
     # ══════════════════════════════════════════════════════════════════════════
+    # VERSION COMPARISON
+    # ══════════════════════════════════════════════════════════════════════════
+    if version_comparison:
+        changes_html = ""
+        for change in version_comparison.get("changes", [])[:8]:
+            changes_html += f"""
+    <div class="insight-card">
+      <h4>{_esc(change.get("metric", "Change"))}: {_esc(change.get("direction", ""))}</h4>
+      <p>{_esc(change.get("prior_value", "?"))} &rarr; {_esc(change.get("current_value", "?"))}</p>
+      <p class="muted">Attribution: {_esc(change.get("attribution", "unknown"))} &middot; Risk: {_esc(change.get("risk", "none"))}</p>
+      <p>{_esc(change.get("evidence", ""))}</p>
+    </div>"""
+        sections_html.append(f"""
+<section class="content-section">
+  <h2>Version Comparison</h2>
+  <p>{_esc(version_comparison.get("summary", ""))}</p>
+  <p class="muted">Confidence: {_esc(version_comparison.get("confidence", ""))}</p>
+  <div class="insights-list">{changes_html}</div>
+</section>""")
+
+    # ══════════════════════════════════════════════════════════════════════════
     # FUN ENDING
     # ══════════════════════════════════════════════════════════════════════════
     if fun_ending and fun_ending.get("headline"):
@@ -840,6 +883,12 @@ def render_report_html(report: dict) -> str:
     # ══════════════════════════════════════════════════════════════════════════
     body_content = "\n".join(sections_html)
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+    version_bits = []
+    if agent_version:
+        version_bits.append(f"Version v{_esc(agent_version)}")
+    if comparison_agent_version:
+        version_bits.append(f"Compared to v{_esc(comparison_agent_version)}")
+    version_text = " &nbsp;&middot;&nbsp; ".join(version_bits)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1708,6 +1757,7 @@ def render_report_html(report: dict) -> str:
       <div class="brand">OBSERVAL AGENT INSIGHTS</div>
       <h1>{_esc(agent_name)}</h1>
       <p class="subtitle">
+        {version_text + " &nbsp;&middot;&nbsp;" if version_text else ""}
         Period: {_esc(period_start)} &mdash; {_esc(period_end)} &nbsp;&middot;&nbsp;
         {sessions_analyzed} sessions analyzed &nbsp;&middot;&nbsp;
         Report {_esc(str(report_id)[:8])}

@@ -7,6 +7,19 @@ SPDX-License-Identifier: AGPL-3.0-only
 
 Control how long telemetry is stored and how aggressively expensive API responses are cached.
 
+## Purge Traces and Insights {#purge-traces-and-insights}
+
+The **Purge Traces & Insights** danger-zone action permanently deletes telemetry and generated insight data for the current project/organization.
+
+It removes:
+
+- ClickHouse telemetry traces, spans, scores, session events, and session aggregates for the current project.
+- Agent insight reports and insight caches/facets for agents in the current organization.
+
+It does **not** delete registry agents, versions, skills, hooks, prompts, users, reviews, or audit/security logs.
+
+Use this only when you intentionally need a clean telemetry slate, for example before handing over a demo instance or after importing accidental/private trace data. The action cannot be undone from Observal; take database backups first if you may need the data later.
+
 ## Data Retention {#data-retention}
 
 Maximum age, in days, for telemetry data such as traces, spans, scores, and derived analytics.

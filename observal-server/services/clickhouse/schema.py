@@ -329,6 +329,7 @@ INIT_SQL = [
         project_id          String,
         session_id          String,
         agent_id            LowCardinality(String) DEFAULT '',
+        agent_version       LowCardinality(String) DEFAULT '',
         user_id             String                 DEFAULT '',
         parent_session_id   String                 DEFAULT '',
         ide                 LowCardinality(String) DEFAULT '',
@@ -441,8 +442,10 @@ INIT_SQL = [
     # Previously this TRUNCATED session_stats_agg and backfilled on every deploy,
     # wiping all trace data. Removed: the partition migration handles backfill
     # correctly and only runs once. The MV filters timestamps going forward.
-    # ── Add layer_hash to session_stats_agg for version-aware insights ─────────
+    # ── Add layer_hash and agent_version to session_stats_agg for version-aware insights ─────────
     """ALTER TABLE session_stats_agg ADD COLUMN IF NOT EXISTS layer_hash String DEFAULT ''""",
+    """ALTER TABLE session_stats_agg ADD COLUMN IF NOT EXISTS agent_version LowCardinality(String) DEFAULT ''""",
+    """ALTER TABLE session_stats_agg ADD INDEX IF NOT EXISTS idx_ssa_agent_version agent_version TYPE bloom_filter(0.01) GRANULARITY 1""",
     """DROP VIEW IF EXISTS session_stats_mv""",
     """CREATE MATERIALIZED VIEW IF NOT EXISTS session_stats_mv
     TO session_stats_agg AS
@@ -450,6 +453,7 @@ INIT_SQL = [
         project_id,
         session_id,
         coalesce(anyIf(agent_id, agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id,
+        coalesce(anyIf(agent_version, agent_version IS NOT NULL AND agent_version != ''), '') AS agent_version,
         coalesce(anyIf(user_id, user_id != ''), '')                             AS user_id,
         coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL AND parent_session_id != ''), '') AS parent_session_id,
         coalesce(anyIf(ide, ide != ''), '')                                     AS ide,

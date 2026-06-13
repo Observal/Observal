@@ -601,6 +601,15 @@ export const admin = {
 			error?: string;
 			hint?: string;
 		}>("/admin/insights/test-connection", body ?? {}),
+	purgeTracesAndInsights: () =>
+		post<{
+			project_id: string;
+			clickhouse_tables: string[];
+			deleted_reports?: number;
+			deleted_facets?: number;
+			deleted_session_meta?: number;
+			deleted_meta_cache?: number;
+		}>("/admin/settings/danger/purge-traces-insights", {}),
 	users: () => get<AdminUser[]>("/admin/users"),
 	createUser: (body: {
 		email: string;
@@ -797,12 +806,16 @@ export const bulk = {
 // ── Insights ───────────────────────────────────────────────────────
 export const insights = {
 	status: () => get<{ available: boolean; reason: string | null }>("/insights/status"),
-	sessionCount: (agentId: string) => get<{ session_count: number }>(`/agents/${agentId}/insights/session-count`),
-	generate: (agentId: string, periodDays?: number) =>
-		post<InsightReportListItem>(
-			`/agents/${agentId}/insights/reports`,
-			periodDays ? { period_days: periodDays } : {},
+	sessionCount: (agentId: string, agentVersion?: string) =>
+		get<{ session_count: number; agent_version?: string; agent_version_id?: string }>(
+			`/agents/${agentId}/insights/session-count${agentVersion ? `?agent_version=${encodeURIComponent(agentVersion)}` : ""}`,
 		),
+	generate: (agentId: string, periodDays?: number, agentVersion?: string, comparisonAgentVersion?: string) =>
+		post<InsightReportListItem>(`/agents/${agentId}/insights/reports`, {
+			...(periodDays ? { period_days: periodDays } : {}),
+			...(agentVersion ? { agent_version: agentVersion } : {}),
+			...(comparisonAgentVersion ? { comparison_agent_version: comparisonAgentVersion } : {}),
+		}),
 	listReports: (agentId: string) =>
 		get<InsightReportListItem[]>(`/agents/${agentId}/insights/reports`),
 	getReport: (agentId: string, reportId: string) =>

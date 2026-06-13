@@ -602,8 +602,8 @@ function SuggestionsSection({ data, report }: { data: unknown; report?: InsightR
 	const obj = data as Record<string, unknown>;
 
 	// V4 format
-	const configAdditions = obj.config_additions as { addition: string; why: string; where: string }[] | undefined;
-	const featuresToTry = obj.features_to_try as { feature: string; one_liner: string; why_for_you: string; example: string }[] | undefined;
+	const configAdditions = obj.config_additions as { addition: string; why: string; where: string; confidence?: string; risk?: string }[] | undefined;
+	const featuresToTry = obj.features_to_try as { feature: string; action_type?: string; one_liner: string; why_for_you: string; example: string; confidence?: string; risk?: string }[] | undefined;
 	const usagePatterns = obj.usage_patterns as { title: string; suggestion: string; detail: string; copyable_prompt: string }[] | undefined;
 
 	// V3 fallback
@@ -728,6 +728,8 @@ function SuggestionsSection({ data, report }: { data: unknown; report?: InsightR
 										)}
 										<div className="flex-1">
 											<span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground mr-2">{c.where}</span>
+											{c.confidence && <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground mr-2">{c.confidence} confidence</span>}
+											{c.risk && <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground mr-2">{c.risk} risk</span>}
 											<span className="text-sm font-medium">{c.addition}</span>
 										</div>
 										<CopyButton text={c.addition} />
@@ -751,7 +753,9 @@ function SuggestionsSection({ data, report }: { data: unknown; report?: InsightR
 											<input type="checkbox" checked={selectedFeatures.has(i)} onChange={() => toggleFeature(i)} className="mt-1 h-4 w-4 rounded border-border" />
 										)}
 										<div className="flex-1">
-											<span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{f.feature}</span>
+											<span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{f.action_type ?? f.feature}</span>
+											{f.confidence && <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{f.confidence} confidence</span>}
+											{f.risk && <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{f.risk} risk</span>}
 											<div className="font-medium text-sm mt-2">{f.one_liner}</div>
 											<p className="text-xs text-foreground/60 mt-1">{f.why_for_you}</p>
 											{f.example && (
@@ -1518,6 +1522,7 @@ function ReportContent({ report }: { report: InsightReport }) {
 	const outputTokens = Number(rich?.total_output_tokens || metrics?.tokens?.total_output_tokens) || 0;
 	const cacheReadTokens = Number(rich?.total_cache_read_tokens || metrics?.tokens?.total_cache_read_tokens) || 0;
 	const cacheWriteTokens = Number(rich?.total_cache_write_tokens || metrics?.tokens?.total_cache_write_tokens) || 0;
+	const cacheHitRate = typeof rich?.cache_hit_rate_pct === "number" ? rich.cache_hit_rate_pct : (cacheReadTokens + inputTokens + cacheWriteTokens > 0 ? (cacheReadTokens / (cacheReadTokens + inputTokens + cacheWriteTokens)) * 100 : null);
 	const totalCost = Number(rich?.total_cost_usd || metrics?.cost?.total_cost_usd) || 0;
 	const activeHours = Number(rich?.active_hours) || 0;
 	const daysActive = Number(rich?.days_active) || 0;
@@ -1538,6 +1543,7 @@ function ReportContent({ report }: { report: InsightReport }) {
 	const topTools = (rich?.top_tools || []) as [string, number][];
 	const topLanguages = (rich?.top_languages || []) as [string, number][];
 	const toolErrorCats = (rich?.tool_error_categories || {}) as Record<string, number>;
+	const canonicalDirty = (rich?.canonical_dirty_summary || {}) as Record<string, number>;
 
 	const fmt = (n: number) => {
 		if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -1561,7 +1567,7 @@ function ReportContent({ report }: { report: InsightReport }) {
 				{sessionsWithTokens > 0 && <MetricCard label="Tokens Out" value={fmt(outputTokens)} icon={Database} />}
 				{cacheReadTokens > 0 && <MetricCard label="Cache Read" value={fmt(cacheReadTokens)} icon={Database} />}
 				{cacheWriteTokens > 0 && <MetricCard label="Cache Write" value={fmt(cacheWriteTokens)} icon={Database} />}
-				{cacheReadTokens > 0 && <MetricCard label="Cache Efficiency" value={`${((cacheReadTokens / (cacheReadTokens + inputTokens)) * 100).toFixed(1)}%`} icon={Zap} />}
+				{cacheHitRate != null && <MetricCard label="Cache Efficiency" value={`${cacheHitRate.toFixed(1)}%`} icon={Zap} subtext={`${fmt(cacheReadTokens)} tokens saved`} />}
 				{totalCost > 0 && <MetricCard label="Total Cost" value={`$${totalCost.toFixed(2)}`} icon={DollarSign} subtext={totalSessions > 0 ? `$${(totalCost / totalSessions).toFixed(2)}/session` : undefined} />}
 				{sessionsWithCredits > 0 && <MetricCard label="Credits Used" value={totalCredits.toFixed(2)} icon={Coins} subtext={totalSessions > 0 ? `${(totalCredits / totalSessions).toFixed(2)}/session` : undefined} />}
 				<MetricCard label="Lines Added" value={fmt(linesAdded)} icon={Zap} />
@@ -1573,6 +1579,18 @@ function ReportContent({ report }: { report: InsightReport }) {
 				{subagentSessions > 0 && <MetricCard label="Subagent Sessions" value={subagentSessions} icon={Users} />}
 				{mcpSessions > 0 && <MetricCard label="MCP Sessions" value={mcpSessions} icon={Wrench} />}
 			</div>
+
+			{(canonicalDirty.canonical_sessions || canonicalDirty.dirty_sessions) && (
+				<div className="rounded-lg border border-border bg-card p-4">
+					<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Canonical vs Dirty Installs</div>
+					<div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+						<div><div className="text-lg font-bold tabular-nums">{canonicalDirty.canonical_sessions ?? 0}</div><div className="text-xs text-muted-foreground">canonical sessions</div></div>
+						<div><div className="text-lg font-bold tabular-nums">{canonicalDirty.dirty_sessions ?? 0}</div><div className="text-xs text-muted-foreground">dirty sessions</div></div>
+						<div><div className="text-lg font-bold tabular-nums">{canonicalDirty.canonical_users ?? 0}</div><div className="text-xs text-muted-foreground">canonical users</div></div>
+						<div><div className="text-lg font-bold tabular-nums">{canonicalDirty.dirty_users ?? 0}</div><div className="text-xs text-muted-foreground">dirty users</div></div>
+					</div>
+				</div>
+			)}
 
 			{/* Top Tools + Languages (bar charts like pi /insights) */}
 			{(topTools.length > 0 || topLanguages.length > 0) && (
@@ -1727,6 +1745,8 @@ export default function InsightReportPage() {
 						<div className="flex items-center justify-between">
 							<StatusIndicator status={report.status} />
 							<div className="text-xs text-muted-foreground space-x-3">
+								{report.agent_version && <span>Version v{report.agent_version}</span>}
+								{report.comparison_agent_version && <span>Compared to v{report.comparison_agent_version}</span>}
 								<span>
 									{new Date(report.period_start).toLocaleDateString()} -{" "}
 									{new Date(report.period_end).toLocaleDateString()}
@@ -1739,13 +1759,21 @@ export default function InsightReportPage() {
 
 						{/* Loading state */}
 						{(report.status === "pending" || report.status === "running") && (
-							<div className="flex flex-col items-center justify-center py-16 gap-3">
+							<div className="flex flex-col items-center justify-center py-16 gap-4">
 								<Loader2 className="h-8 w-8 animate-spin text-primary-accent" />
-								<p className="text-sm text-muted-foreground">
-									{report.status === "pending"
-										? "Waiting in queue..."
-										: "Computing metrics and generating analysis..."}
-								</p>
+								<div className="w-full max-w-md space-y-2">
+									<div className="h-2 rounded-full bg-muted overflow-hidden">
+										<div className="h-full bg-primary-accent transition-all" style={{ width: `${report.progress_percent ?? 0}%` }} />
+									</div>
+									<p className="text-sm text-center text-muted-foreground">
+										{report.progress_message || (report.status === "pending" ? "Waiting in queue..." : "Computing metrics and generating analysis...")}
+									</p>
+									{report.progress_phase && (
+										<p className="text-xs text-center text-muted-foreground font-mono">
+											{report.progress_phase.replace(/_/g, " ")} · {report.progress_percent ?? 0}%
+										</p>
+									)}
+								</div>
 							</div>
 						)}
 

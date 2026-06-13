@@ -38,12 +38,15 @@ MAX_FACET_SESSIONS = 50
 async def generate_report_content(
     agent_name: str,
     agent_id: str | None = None,
+    agent_version: str | None = None,
+    comparison_agent_version: str | None = None,
     period_start: str = "",
     period_end: str = "",
     previous_metrics: dict | None = None,
     agent_config: dict | None = None,
     registry_catalog: dict | None = None,
     db=None,
+    progress_callback=None,
 ) -> dict:
     """Generate a complete insight report for an agent.
 
@@ -60,12 +63,15 @@ async def generate_report_content(
         return await _run_pipeline(
             agent_name=agent_name,
             agent_id=agent_id,
+            agent_version=agent_version,
+            comparison_agent_version=comparison_agent_version,
             period_start=period_start,
             period_end=period_end,
             previous_metrics=previous_metrics,
             agent_config=agent_config,
             registry_catalog=registry_catalog,
             db=db,
+            progress_callback=progress_callback,
         )
     finally:
         if owns_session:
@@ -75,12 +81,15 @@ async def generate_report_content(
 async def _run_pipeline(
     agent_name: str,
     agent_id: str | None,
+    agent_version: str | None,
+    comparison_agent_version: str | None,
     period_start: str,
     period_end: str,
     previous_metrics: dict | None,
     agent_config: dict | None,
     registry_catalog: dict | None,
     db=None,
+    progress_callback=None,
 ) -> dict:
     """Core pipeline execution."""
 
@@ -88,8 +97,11 @@ async def _run_pipeline(
         "insight_pipeline_started",
         agent=agent_name,
         agent_id=agent_id,
+        agent_version=agent_version,
         period=f"{period_start} to {period_end}",
     )
+
+    await _emit_progress(progress_callback, "extracting_metadata", 1, 9, "Extracting deterministic session metadata")
 
     # ── Step 1: Deterministic metadata extraction from raw JSONL ──────────
     # This reads actual session content from ClickHouse and computes:
@@ -100,6 +112,7 @@ async def _run_pipeline(
         period_start=period_start,
         period_end=period_end,
         agent_name=agent_name,
+        agent_version=agent_version,
     )
 
     if not session_metas:
@@ -107,6 +120,7 @@ async def _run_pipeline(
         return _empty_report()
 
     logger.info("insight_metas_extracted", count=len(session_metas))
+    await _emit_progress(progress_callback, "building_transcripts", 2, 9, "Building session transcripts")
 
     # Aggregate deterministic stats
     agg = aggregate_metas(session_metas)
@@ -129,6 +143,7 @@ async def _run_pipeline(
                 transcripts[meta["session_id"]] = result
 
     logger.info("insight_transcripts_built", count=len(transcripts))
+    await _emit_progress(progress_callback, "extracting_facets", 3, 9, "Extracting qualitative session facets")
 
     # ── Step 3: Extract facets (concurrency-limited Haiku calls) ──────────
     import services.dynamic_settings as ds
@@ -146,6 +161,7 @@ async def _run_pipeline(
         )
 
     logger.info("insight_facets_extracted", count=len(all_facets))
+    await _emit_progress(progress_callback, "analyzing_versions", 4, 9, "Analyzing versions, layers, and dirty cohorts")
 
     # ── Step 3b: Model efficiency analysis ─────────────────────────────────
     # Cross-reference per-session model usage with facets to detect waste.
@@ -252,8 +268,68 @@ async def _run_pipeline(
     model_efficiency.sort(key=lambda x: -x.get("cost", 0))
     model_efficiency = model_efficiency[:20]
 
+    component_utilization = _analyze_component_utilization(agent_config or {}, session_metas, all_facets)
+
+    # ── Step 3c: Facet a bounded prior-version cohort for A/B comparison ──
+    comparison_cohort: dict | None = None
+    if comparison_agent_version and comparison_agent_version != agent_version:
+        try:
+            prior_metas = await extract_all_session_metas(
+                agent_id=agent_id or "",
+                period_start=period_start,
+                period_end=period_end,
+                agent_name=agent_name,
+                agent_version=comparison_agent_version,
+            )
+            if prior_metas:
+                prior_agg = aggregate_metas(prior_metas)
+                prior_ranked = sorted(
+                    prior_metas,
+                    key=lambda m: m.get("duration_seconds", 0) * sum(m.get("tool_counts", {}).values()),
+                    reverse=True,
+                )[: min(MAX_FACET_SESSIONS, 25)]
+                prior_transcripts: dict[str, str] = {}
+                prior_results = await asyncio.gather(
+                    *[build_session_transcript(m["session_id"]) for m in prior_ranked],
+                    return_exceptions=True,
+                )
+                for meta, result in zip(prior_ranked, prior_results, strict=False):
+                    if isinstance(result, str) and result.strip():
+                        prior_transcripts[meta["session_id"]] = result
+                prior_facets: list[dict] = []
+                if prior_transcripts:
+                    prior_facets = await _extract_facets_batch(
+                        transcripts=prior_transcripts,
+                        session_metas={m["session_id"]: m for m in prior_metas},
+                        agent_id=agent_id or "",
+                        db=db,
+                        max_concurrent=max_concurrent,
+                    )
+                comparison_cohort = {
+                    "current_version": agent_version,
+                    "prior_version": comparison_agent_version,
+                    "prior_sessions": len(prior_metas),
+                    "prior_metrics": prior_agg,
+                    "prior_facets_summary": aggregate_facets(prior_facets),
+                    "prior_faceted_sessions": len(prior_facets),
+                }
+                logger.info(
+                    "insight_prior_version_cohort_faceted",
+                    current_version=agent_version,
+                    prior_version=comparison_agent_version,
+                    sessions=len(prior_metas),
+                    facets=len(prior_facets),
+                )
+        except Exception as e:
+            logger.warning("prior_version_comparison_failed", prior_version=comparison_agent_version, error=str(e))
+
     # ── Step 4: Build the data block (pi-style focused format) ────────────
     facets_summary = aggregate_facets(all_facets)
+    cache_read_tokens = agg.get("total_cache_read_tokens", 0)
+    cache_write_tokens = agg.get("total_cache_write_tokens", 0)
+    input_tokens = agg.get("total_input_tokens", 0)
+    cache_denominator = input_tokens + cache_read_tokens + cache_write_tokens
+    cache_hit_rate_pct = round((cache_read_tokens / cache_denominator) * 100, 1) if cache_denominator else None
     data_block = _build_data_block(
         agent_name=agent_name,
         agg=agg,
@@ -264,9 +340,13 @@ async def _run_pipeline(
         agent_config=agent_config,
         model_efficiency=model_efficiency,
         estimated_waste=estimated_waste,
+        component_utilization=component_utilization,
     )
+    if comparison_cohort:
+        data_block += f"\n\n## Prior Version Comparison Cohort\n{json.dumps(comparison_cohort, indent=2, default=str)}"
 
     # ── Step 4b: Version impact analysis ─────────────────────────────────
+    version_impact = None
     try:
         from .version_impact import build_version_impact_data
 
@@ -275,6 +355,7 @@ async def _run_pipeline(
             period_start=period_start,
             period_end=period_end,
             agent_name=agent_name,
+            agent_version=agent_version,
             project_id="default",
         )
         if version_impact:
@@ -284,11 +365,14 @@ async def _run_pipeline(
         logger.warning("version_impact_analysis_failed", error=str(e))
 
     # ── Step 5: Generate narrative sections (7 parallel + 1 synthesis) ────
+    await _emit_progress(progress_callback, "generating_sections", 7, 9, "Generating report sections")
     narrative = await generate_sections(
         data_block=data_block,
         previous_report=previous_metrics,
         registry_catalog=registry_catalog,
     )
+
+    await _emit_progress(progress_callback, "synthesizing", 8, 9, "Synthesizing report")
 
     logger.info(
         "insight_pipeline_complete",
@@ -317,8 +401,11 @@ async def _run_pipeline(
             "total_credits": round(agg.get("total_credits", 0), 4),
             "total_input_tokens": agg.get("total_input_tokens", 0),
             "total_output_tokens": agg.get("total_output_tokens", 0),
-            "total_cache_read_tokens": agg.get("total_cache_read_tokens", 0),
-            "total_cache_write_tokens": agg.get("total_cache_write_tokens", 0),
+            "total_cache_read_tokens": cache_read_tokens,
+            "total_cache_write_tokens": cache_write_tokens,
+            "cache_hit_rate_pct": cache_hit_rate_pct,
+            "estimated_uncached_input_tokens": input_tokens + cache_read_tokens,
+            "cache_tokens_saved": cache_read_tokens,
             "top_tools": agg.get("top_tools", [])[:15],
             "top_languages": agg.get("top_languages", [])[:10],
             "tool_error_categories": agg.get("tool_error_categories", {}),
@@ -337,6 +424,11 @@ async def _run_pipeline(
             },
             "model_efficiency": model_efficiency[:10],
             "estimated_waste_usd": round(estimated_waste, 2),
+            "version_comparison_baseline": comparison_cohort,
+            "canonical_dirty_summary": (version_impact or {}).get("canonical_dirty_summary"),
+            "inspiration_candidates": (version_impact or {}).get("inspiration_candidates", []),
+            "isolated_regressions": (version_impact or {}).get("isolated_regressions", []),
+            "component_utilization": component_utilization,
         },
         "overview": {
             "total_sessions": agg.get("total_sessions", 0),
@@ -354,6 +446,48 @@ async def _run_pipeline(
         "facets_summary": facets_summary,
         "cross_user_patterns": {},
     }
+
+
+async def _emit_progress(progress_callback, phase: str, current: int, total: int, message: str) -> None:
+    if not progress_callback:
+        return
+    try:
+        await progress_callback(phase, current, total, message)
+    except Exception as e:
+        logger.debug("insight_progress_callback_failed", phase=phase, error=str(e))
+
+
+def _analyze_component_utilization(agent_config: dict, session_metas: list[dict], all_facets: list[dict]) -> list[dict]:
+    """Best-effort deterministic utilization for currently attached components."""
+    components = []
+    for name in agent_config.get("configured_skills", []) or []:
+        components.append(("skill", str(name)))
+    for name in agent_config.get("configured_hooks", []) or []:
+        components.append(("hook", str(name)))
+    if not components:
+        return []
+
+    searchable = "\n".join(
+        [str(m.get("first_prompt", "")) for m in session_metas]
+        + [str(f.get("brief_summary", "")) for f in all_facets if f]
+        + [" ".join(m.get("tool_counts", {}).keys()) for m in session_metas]
+    ).lower()
+    results = []
+    for comp_type, name in components:
+        key = name.lower().replace("-", " ")
+        compact = name.lower()
+        mentions = searchable.count(key) + searchable.count(compact)
+        status = "used" if mentions > 0 else "unused_or_unobserved"
+        results.append(
+            {
+                "type": comp_type,
+                "name": name,
+                "observed_mentions": mentions,
+                "status": status,
+                "confidence": "medium" if mentions > 0 else "low",
+            }
+        )
+    return results
 
 
 async def _extract_facets_batch(
@@ -396,6 +530,7 @@ def _build_data_block(
     agent_config: dict | None = None,
     model_efficiency: list[dict] | None = None,
     estimated_waste: float = 0.0,
+    component_utilization: list[dict] | None = None,
 ) -> str:
     """Build the DATA_BLOCK for section prompts.
 
@@ -421,6 +556,31 @@ def _build_data_block(
         "commits": agg.get("git_commits", 0),
         "pushes": agg.get("git_pushes", 0),
         "cost_usd": round(agg.get("total_cost", 0), 2),
+        "cache_efficiency": {
+            "cache_read_tokens": agg.get("total_cache_read_tokens", 0),
+            "cache_write_tokens": agg.get("total_cache_write_tokens", 0),
+            "input_tokens": agg.get("total_input_tokens", 0),
+            "cache_hit_rate_pct": (
+                round(
+                    agg.get("total_cache_read_tokens", 0)
+                    / max(
+                        1,
+                        agg.get("total_input_tokens", 0)
+                        + agg.get("total_cache_read_tokens", 0)
+                        + agg.get("total_cache_write_tokens", 0),
+                    )
+                    * 100,
+                    1,
+                )
+                if (
+                    agg.get("total_input_tokens", 0)
+                    or agg.get("total_cache_read_tokens", 0)
+                    or agg.get("total_cache_write_tokens", 0)
+                )
+                else None
+            ),
+            "cache_tokens_saved": agg.get("total_cache_read_tokens", 0),
+        },
         "lines_added": agg.get("total_lines_added", 0),
         "lines_removed": agg.get("total_lines_removed", 0),
         "files_modified": agg.get("total_files_modified", 0),
@@ -513,6 +673,10 @@ def _build_data_block(
             "\nREPEATED INSTRUCTIONS (by frequency):\n"
             + "\n".join(f'- "{r["instruction"]}" (frequency: {r["frequency"]})' for r in repeated[:10])
         )
+
+    # Component utilization analysis (pre-computed, constrains suggestions)
+    if component_utilization:
+        sections.append("\nCOMPONENT UTILIZATION:\n" + json.dumps(component_utilization, indent=2))
 
     # Model efficiency analysis (pre-computed, helps LLM write cost section)
     if model_efficiency:

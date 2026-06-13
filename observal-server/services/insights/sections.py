@@ -194,18 +194,25 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
   "suggestions": {{
     "config_additions": [
       {{
+        "action_type": "modify_prompt",
         "addition": "exact text to add to the agent's system prompt or AGENTS.md",
         "why": "1 sentence explaining why based on actual sessions",
-        "where": "system_prompt | AGENTS.md | agent_config"
+        "where": "system_prompt | AGENTS.md | agent_config",
+        "confidence": "high | medium | low | insufficient_data",
+        "risk": "low | medium | high"
       }}
     ],
     "features_to_try": [
       {{
-        "feature": "Skill | Hook",
+        "action_type": "reuse_existing_component | attach_registry_component | remove_component | create_new_skill | create_new_hook | no_action",
+        "feature": "Skill | Hook | Prompt | Component",
         "name": "short-kebab-name (max 30 chars, e.g. 'scope-guard', 'pr-review', 'test-runner')",
+        "existing_component_id": "registry/current component id when action_type is reuse/attach/remove, else null",
         "one_liner": "what it does in one sentence",
         "why_for_you": "why this would help YOU based on your sessions",
-        "example": "see format rules below"
+        "confidence": "high | medium | low | insufficient_data",
+        "risk": "low | medium | high",
+        "example": "required only for create_new_skill/create_new_hook; see format rules below"
       }}
     ],
     "usage_patterns": [
@@ -221,9 +228,11 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
 
 Rules:
 - config_additions: PRIORITIZE instructions from USER INSTRUCTIONS and REPEATED INSTRUCTIONS sections. These are things the user has ALREADY told the agent but it keeps forgetting. Maximum 7.
-- features_to_try: 2-3 concrete suggestions. ONLY suggest Skills or Hooks. NEVER suggest MCP servers.
+- features_to_try: 2-3 concrete suggestions. Prefer reuse_existing_component or attach_registry_component when the registry/current agent already has a matching component. ONLY create new Skills or Hooks when no existing component fits. NEVER suggest MCP servers.
 - usage_patterns: 2-4 suggestions for how to prompt differently. Each must include a copyable prompt the user can try immediately.
 - NEVER suggest vague improvements. Be specific: include the exact text, command, or config.
+- If COMPONENT UTILIZATION marks a component unused/harmful, you may suggest action_type=remove_component with the existing component id/name and risk.
+- Every suggested action must include confidence and risk.
 
 FEATURE FORMAT REQUIREMENTS:
 
@@ -311,6 +320,35 @@ Rules:
 - Maximum 3 opportunities, empty array is fine.
 - If cache efficiency is above 90%, just note it's good and move on.
 - Use plain language, not statistical jargon.""",
+    "version_comparison": """Compare this selected agent version against the prior approved version.
+
+{data_block}
+
+Use the 'Prior Version Comparison Cohort' data if present. This cohort has its own deterministic metrics and facets; do not base improvement/degradation only on stale aggregate report numbers.
+
+RESPOND WITH ONLY A VALID JSON OBJECT:
+{{
+  "version_comparison": {{
+    "has_comparison": <true|false>,
+    "current_version": "version string or null",
+    "prior_version": "version string or null",
+    "summary": "1-2 sentences stating whether the current version improved, degraded, or is inconclusive. Use 'you'.",
+    "confidence": "high | medium | low | insufficient_data",
+    "changes": [
+      {{
+        "metric": "metric name",
+        "direction": "improved | degraded | stable | inconclusive",
+        "current_value": "formatted value",
+        "prior_value": "formatted value",
+        "evidence": "specific evidence from current and prior cohorts",
+        "attribution": "prompt changed | skill changed | hook changed | model changed | dirty user edit | external/environment | unknown",
+        "risk": "low | medium | high | none"
+      }}
+    ]
+  }}
+}}
+
+If no prior cohort exists, return {{"version_comparison": {{"has_comparison": false, "summary": "No prior approved version cohort was available.", "confidence": "insufficient_data", "changes": []}}}}""",
     "regression_detection": """Compare current and previous period metrics for this agent.
 
 {data_block}

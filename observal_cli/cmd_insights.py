@@ -85,6 +85,7 @@ def insights_list(
     table = Table(title=f"Insight Reports ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
     table.add_column("Status")
+    table.add_column("Version")
     table.add_column("Period")
     table.add_column("Sessions", justify="right")
     table.add_column("Completed")
@@ -94,6 +95,7 @@ def insights_list(
         table.add_row(
             str(i),
             status_badge(r.get("status", "")),
+            str(r.get("agent_version") or "-"),
             f"{start} → {end}",
             str(r.get("sessions_analyzed", 0)),
             relative_time(r.get("completed_at")),
@@ -130,6 +132,13 @@ def insights_show(
         return
     if data.get("status") != "completed":
         rprint(f"  Status: {status_badge(data.get('status', 'unknown'))}")
+        if data.get("progress_phase"):
+            rprint(
+                f"  Phase: [cyan]{str(data.get('progress_phase')).replace('_', ' ')}[/cyan] "
+                f"({data.get('progress_percent', 0)}%)"
+            )
+        if data.get("progress_message"):
+            rprint(f"  [dim]{data['progress_message']}[/dim]")
         if data.get("error_message"):
             rprint(f"  [red]Error:[/red] {data['error_message']}")
         return
@@ -147,8 +156,17 @@ def insights_show(
     start = data.get("period_start", "")[:10]
     end = data.get("period_end", "")[:10]
     rprint()
-    rprint(f"  [bold]Insight Report[/bold]  {start} → {end}")
-    rprint(f"  Sessions: {data.get('sessions_analyzed', 0)}  Model: {data.get('llm_model_used', 'unknown')}")
+    version = data.get("agent_version") or "unknown"
+    comparison = data.get("comparison_agent_version")
+    comparison_text = f"  Compared to: v{comparison}" if comparison else ""
+    rprint(f"  [bold]Insight Report[/bold]  v{version}  {start} → {end}")
+    rprint(
+        f"  Sessions: {data.get('sessions_analyzed', 0)}  Model: {data.get('llm_model_used', 'unknown')}"
+        f"{comparison_text}"
+    )
+    rich = (data.get("metrics") or {}).get("rich") or {}
+    if rich.get("cache_hit_rate_pct") is not None:
+        rprint(f"  Cache: {rich.get('cache_hit_rate_pct')}% hit rate, {rich.get('cache_tokens_saved', 0)} tokens saved")
     rprint()
 
     # Render sections in logical order
@@ -161,6 +179,7 @@ def insights_show(
         "friction_analysis",
         "suggestions",
         "usage_cost_analysis",
+        "version_comparison",
         "regression_detection",
         "on_the_horizon",
         "fun_ending",
@@ -184,6 +203,7 @@ _SECTION_TITLES = {
     "friction_analysis": "⚠️  Friction Analysis",
     "suggestions": "💡 Suggestions",
     "usage_cost_analysis": "💰 Cost Analysis",
+    "version_comparison": "🧪 Version Comparison",
     "regression_detection": "📈 Regression Detection",
     "on_the_horizon": "🔮 On the Horizon",
     "fun_ending": "🎉 Fun Moment",
@@ -395,6 +415,25 @@ def _render_horizon(title: str, data: dict):
         console.print(Panel("\n".join(lines), title=f"[bold]{title}[/bold]", border_style="magenta", expand=False))
 
 
+def _render_version_comparison(title: str, data: dict):
+    lines = []
+    if data.get("summary"):
+        lines.append(data["summary"])
+    if data.get("confidence"):
+        lines.append(f"[dim]Confidence: {data['confidence']}[/dim]")
+    for change in data.get("changes", [])[:6]:
+        lines.append(
+            f"\n[bold]{change.get('metric', '')}[/bold]: {change.get('direction', '')} "
+            f"({change.get('prior_value', '?')} → {change.get('current_value', '?')})"
+        )
+        if change.get("attribution"):
+            lines.append(f"[dim]Attribution: {change['attribution']}[/dim]")
+        if change.get("evidence"):
+            lines.append(f"[dim]{change['evidence']}[/dim]")
+    if lines:
+        console.print(Panel("\n".join(lines), title=f"[bold]{title}[/bold]", border_style="blue", expand=False))
+
+
 def _render_fun_ending(title: str, data: dict):
     headline = data.get("headline", "")
     detail = data.get("detail", "")
@@ -414,6 +453,7 @@ _RENDERERS = {
     "friction_analysis": _render_friction,
     "suggestions": _render_suggestions,
     "usage_cost_analysis": _render_cost,
+    "version_comparison": _render_version_comparison,
     "regression_detection": _render_regression,
     "on_the_horizon": _render_horizon,
     "fun_ending": _render_fun_ending,
@@ -424,7 +464,10 @@ _RENDERERS = {
 def insights_generate(
     agent_id: str = typer.Argument(..., help="Agent ID, name, or @alias"),
     period_days: int = typer.Option(14, "--period", "-p", help="Analysis period in days"),
+    agent_version: str | None = typer.Option(None, "--version", "-v", help="Agent version to analyze"),
+    compare_version: str | None = typer.Option(None, "--compare", help="Baseline agent version for A/B comparison"),
     output: str = typer.Option("table", "--output", "-o"),
+    wait: bool = typer.Option(False, "--wait", help="Poll until the report completes"),
 ):
     """Trigger generation of a new insight report.
 
@@ -451,11 +494,38 @@ def insights_generate(
 
     with spinner("Generating insight report..."):
         resolved = _resolve_agent_id(agent_id)
-        data = client.post(f"/api/v1/agents/{resolved}/insights/reports", {"period_days": period_days})
+        body = {"period_days": period_days}
+        if agent_version:
+            body["agent_version"] = agent_version
+        if compare_version:
+            body["comparison_agent_version"] = compare_version
+        data = client.post(f"/api/v1/agents/{resolved}/insights/reports", body)
+
+    if wait and output != "json":
+        import time
+
+        report_id = str(data.get("id"))
+        for _ in range(120):
+            current = client.get(f"/api/v1/agents/{resolved}/insights/reports/{report_id}")
+            phase = str(current.get("progress_phase") or current.get("status") or "queued").replace("_", " ")
+            percent = current.get("progress_percent", 0)
+            rprint(f"\r  {status_badge(current.get('status', 'pending'))} {phase} ({percent}%)", end="")
+            if current.get("status") in {"completed", "failed"}:
+                rprint()
+                data = current
+                break
+            time.sleep(3)
+
     if output == "json":
         output_json(data)
         return
     rprint(f"[green]✓ Report queued[/green] (status: {status_badge(data.get('status', 'pending'))})")
     rprint(f"  ID: [dim]{data.get('id', '')}[/dim]")
+    if data.get("agent_version"):
+        rprint(f"  Version: v{data.get('agent_version')}")
+    if data.get("comparison_agent_version"):
+        rprint(f"  Compare: v{data.get('comparison_agent_version')}")
     rprint(f"  Period: {str(data.get('period_start', ''))[:10]} → {str(data.get('period_end', ''))[:10]}")
-    rprint("[dim]  Run `observal ops insights show <id>` when complete.[/dim]")
+    if data.get("progress_phase"):
+        rprint(f"  Phase: {str(data.get('progress_phase')).replace('_', ' ')} ({data.get('progress_percent', 0)}%)")
+    rprint("[dim]  Run `observal ops insights show <agent>` when complete.[/dim]")

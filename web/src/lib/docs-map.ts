@@ -78,6 +78,7 @@ export const SETTING_DOCS: Record<string, DocRef> = {
 	"resource.join_memory_mb": { file: "self-hosting/resource-tuning.md", anchor: "join-memory-limit", label: "JOIN Memory Limit" },
 
 	// Data & Retention
+	"danger.purge_traces_insights": { file: "self-hosting/data-retention.md", anchor: "purge-traces-and-insights", label: "Purge Traces & Insights" },
 	"data.retention_days": { file: "self-hosting/data-retention.md", anchor: "data-retention", label: "Data Retention" },
 	"data.cache_ttl_default": { file: "self-hosting/data-retention.md", anchor: "default-cache-ttl", label: "Default Cache TTL" },
 	"data.cache_ttl_dashboard": { file: "self-hosting/data-retention.md", anchor: "dashboard-cache-ttl", label: "Dashboard Cache TTL" },
@@ -106,6 +107,7 @@ export const SECTION_DOCS: Record<string, DocRef> = {
 	"JWT Token Expiry": { file: "self-hosting/token-expiry.md", label: "Token Expiry Settings" },
 	"Resource Tuning": { file: "self-hosting/resource-tuning.md", label: "Resource Tuning" },
 	"Data & Retention": { file: "self-hosting/data-retention.md", label: "Data & Retention Settings" },
+	"Telemetry Purge": { file: "self-hosting/data-retention.md", anchor: "purge-traces-and-insights", label: "Purge Traces & Insights" },
 	"Observability": { file: "self-hosting/observability-settings.md", label: "Observability Settings" },
 	"Miscellaneous": { file: "self-hosting/miscellaneous.md", label: "Miscellaneous Settings" },
 };

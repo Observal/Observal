@@ -269,6 +269,22 @@ const SETTING_SECTIONS: SettingSection[] = [
 		],
 	},
 	{
+		title: "Telemetry Purge",
+		icon: <AlertTriangle className="h-3.5 w-3.5" />,
+		description:
+			"Irreversible data purge actions for telemetry and generated insights.",
+		danger: true,
+		settings: [
+			{
+				key: "danger.purge_traces_insights",
+				label: "Purge Traces & Insights",
+				subtitle: "Delete all traces, sessions, scores, and insight reports",
+				tooltip:
+					"Irreversibly deletes all ClickHouse telemetry traces/session data for the current project and all agent insight reports/caches for this organization. Registry agents and components are not deleted.",
+			},
+		],
+	},
+	{
 		title: "Deployment",
 		icon: <Shield className="h-3.5 w-3.5" />,
 		description:
@@ -766,6 +782,7 @@ export default function SettingsPage() {
 	const [revokeConfirmKey, setRevokeConfirmKey] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [applyingResources, setApplyingResources] = useState(false);
+	const [purgingTracesInsights, setPurgingTracesInsights] = useState(false);
 	const [tracePrivacy, setTracePrivacy] = useState(false);
 	const [tracePrivacyLoading, setTracePrivacyLoading] = useState(true);
 	const [tracePrivacyToggling, setTracePrivacyToggling] = useState(false);
@@ -850,6 +867,22 @@ export default function SettingsPage() {
 			.catch(() => {})
 			.finally(() => setRetentionLoading(false));
 	}, []);
+
+	const handlePurgeTracesInsights = useCallback(async () => {
+		if (!window.confirm("Permanently delete all traces/session telemetry and insight reports for this project/org? This cannot be undone.")) {
+			return;
+		}
+		setPurgingTracesInsights(true);
+		try {
+			const res = await admin.purgeTracesAndInsights();
+			queryClient.invalidateQueries();
+			toast.success(`Purged telemetry and insights (${res.deleted_reports ?? 0} reports removed)`);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Failed to purge traces and insights");
+		} finally {
+			setPurgingTracesInsights(false);
+		}
+	}, [queryClient]);
 
 	const handleTracePrivacyToggle = useCallback(async (checked: boolean) => {
 		setTracePrivacyToggling(true);
@@ -1869,6 +1902,19 @@ export default function SettingsPage() {
 														)}
 														<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
 															{visibleDangerSettings.map((d) => {
+														if (d.key === "danger.purge_traces_insights") {
+															return (
+																<div key={d.key} className={`rounded-md border-2 border-destructive/40 bg-destructive/5 p-3 relative ${helpTargetClass(d.key)}`}>
+																	<SettingHelpIcon settingKey={d.key} tooltip={d.tooltip} openHelp={openHelp} />
+																	<span className="text-sm font-semibold text-destructive">{d.label}</span>
+																	<p className="text-xs text-foreground/60 mt-1 pr-6">{d.subtitle}</p>
+																	<Button variant="destructive" size="sm" className="mt-3 h-8" onClick={handlePurgeTracesInsights} disabled={purgingTracesInsights}>
+																		{purgingTracesInsights ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1 h-3.5 w-3.5" />}
+																		Purge traces & insights
+																	</Button>
+																</div>
+															);
+														}
 														const existing = entries.find((e) => e.key === d.key);
 														const isEditing = editingKey === d.key;
 														if (isEditing) {

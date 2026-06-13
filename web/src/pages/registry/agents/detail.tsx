@@ -201,9 +201,9 @@ function InsightStatusBadge({ status }: { status: InsightReportListItem["status"
   }
 }
 
-function InsightsTab({ agentId }: { agentId: string }) {
+function InsightsTab({ agentId, agentVersion }: { agentId: string; agentVersion?: string | null }) {
   const { data: reports, isLoading: reportsLoading } = useInsightReports(agentId);
-  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId);
+  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId, agentVersion);
   const { data: insightsStatus } = useInsightsStatus();
   const generateInsight = useGenerateInsight();
 
@@ -223,7 +223,7 @@ function InsightsTab({ agentId }: { agentId: string }) {
           <p className="text-xs text-muted-foreground">
             {countLoading
               ? "Checking sessions..."
-              : `${availableSessions} session${availableSessions !== 1 ? "s" : ""} available (last 14 days)`}
+              : `${availableSessions} session${availableSessions !== 1 ? "s" : ""} available for ${sessionCountData?.agent_version ?? agentVersion ?? "latest approved"} (last 14 days)`}
           </p>
         </div>
         <Button
@@ -235,7 +235,7 @@ function InsightsTab({ agentId }: { agentId: string }) {
             generateInsight.isPending ||
             hasRunning
           }
-          onClick={() => generateInsight.mutate({ agentId })}
+          onClick={() => generateInsight.mutate({ agentId, agentVersion: agentVersion ?? undefined })}
         >
           {generateInsight.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -283,9 +283,19 @@ function InsightsTab({ agentId }: { agentId: string }) {
                       year: "numeric",
                     })}
                   </span>
+                  {report.agent_version && (
+                    <span className="text-xs text-muted-foreground">
+                      v{report.agent_version}
+                    </span>
+                  )}
                   {report.sessions_analyzed > 0 && (
                     <span className="text-xs text-muted-foreground">
                       {report.sessions_analyzed} sessions analyzed
+                    </span>
+                  )}
+                  {(report.status === "pending" || report.status === "running") && report.progress_phase && (
+                    <span className="text-xs text-muted-foreground">
+                      {report.progress_phase.replace(/_/g, " ")}
                     </span>
                   )}
                 </div>
@@ -667,7 +677,7 @@ export default function AgentDetailPage() {
                 )}
                 {canEdit && (
                   <TabsContent value="insights" className="mt-6">
-                    <InsightsTab agentId={id} />
+                    <InsightsTab agentId={id} agentVersion={effectiveVersion} />
                   </TabsContent>
                 )}
 

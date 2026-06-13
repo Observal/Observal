@@ -34,6 +34,8 @@ class LayerSnapshotRequest(BaseModel):
     hash: str = Field(..., min_length=8, max_length=64)
     ides: dict[str, list[LayerFile]] = Field(default_factory=dict)  # {ide_name: [files]}
     lockfile_hash: str = Field("", max_length=64)
+    pinned_versions: dict = Field(default_factory=dict)
+    drift: dict = Field(default_factory=dict)
 
 
 class LayerSnapshotResponse(BaseModel):
@@ -151,11 +153,15 @@ async def upload_layer_snapshot(
             total_file_count += 1
         redacted_ides[ide_name] = redacted_files
 
-    # Serialize the full manifest (with redacted content)
+    # Serialize the full manifest (with redacted content). Preserve version pins
+    # and drift metadata so version-aware insights can distinguish canonical vs
+    # dirty installs and compare component/version cohorts.
     content_json = json.dumps(
         {
             "ides": redacted_ides,
             "lockfile_hash": req.lockfile_hash,
+            "pinned_versions": req.pinned_versions or {},
+            "drift": req.drift or {},
         }
     )
 

@@ -3,7 +3,7 @@
 
 """Agent-scoped insight report routes."""
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,13 +22,14 @@ from ._router import router
 @router.get("/{agent_id}/insights/session-count")
 async def agent_insight_session_count(
     agent_id: str,
+    agent_version: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Return the number of sessions available for insight generation."""
     from api.routes.insights import agent_session_count
 
-    return await agent_session_count(agent_id, db, current_user)
+    return await agent_session_count(agent_id, agent_version, db, current_user)
 
 
 @router.get("/{agent_id}/insights/reports", response_model=list[InsightReportListItem])

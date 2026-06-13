@@ -7,7 +7,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from loguru import logger as optic
 from sqlalchemy import delete, select
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, get_effective_agent_permission, require_role
 from api.routes.agent.helpers import _load_agent
-from models.agent import Agent
+from models.agent import Agent, AgentStatus, AgentVersion
 from models.insight_meta_cache import InsightMetaCache
 from models.insight_report import InsightReport, InsightReportStatus
 from models.insight_session_facets import InsightSessionFacets
@@ -63,6 +63,111 @@ async def _resolve_insights_agent(agent_id: str, db: AsyncSession, current_user:
     if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
     return agent
+
+
+async def _resolve_insight_agent_version(
+    agent: Agent,
+    db: AsyncSession,
+    requested_version: str | None = None,
+) -> AgentVersion:
+    """Resolve the requested version or the latest approved version for a report."""
+    stmt = select(AgentVersion).where(
+        AgentVersion.agent_id == agent.id,
+        AgentVersion.status == AgentStatus.approved,
+    )
+    if requested_version:
+        stmt = stmt.where(AgentVersion.version == requested_version)
+    else:
+        stmt = stmt.order_by(AgentVersion.released_at.desc(), AgentVersion.created_at.desc()).limit(1)
+
+    result = await db.execute(stmt)
+    version = result.scalar_one_or_none()
+    if not version:
+        detail = (
+            f"Approved version {requested_version!r} not found"
+            if requested_version
+            else "No approved agent version found"
+        )
+        raise HTTPException(status_code=404, detail=detail)
+    return version
+
+
+async def _previous_approved_version(
+    agent: Agent, db: AsyncSession, current_version: AgentVersion
+) -> AgentVersion | None:
+    """Return a bounded default comparison target: the previous approved version."""
+    from services.versioning import parse_semver
+
+    current_parsed = parse_semver(current_version.version) or (0, 0, 0)
+    stmt = select(AgentVersion).where(
+        AgentVersion.agent_id == agent.id,
+        AgentVersion.status == AgentStatus.approved,
+        AgentVersion.id != current_version.id,
+    )
+    result = await db.execute(stmt)
+    candidates = list(result.scalars().all())
+    older: list[tuple[tuple[int, int, int], AgentVersion]] = []
+    for candidate in candidates:
+        parsed = parse_semver(candidate.version) or (0, 0, 0)
+        if parsed < current_parsed:
+            older.append((parsed, candidate))
+    if not older:
+        return None
+    older.sort(key=lambda item: item[0], reverse=True)
+    return older[0][1]
+
+
+async def _count_insight_sessions(
+    *,
+    agent: Agent,
+    period_start: datetime,
+    period_end: datetime,
+    agent_version: str | None = None,
+) -> int:
+    """Count sessions for an agent, optionally scoped to telemetry agent_version."""
+    from services.clickhouse import _query
+
+    base_where = (
+        "WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String}) "
+        "AND last_event_time >= {t_start:String} "
+        "AND last_event_time <= {t_end:String} "
+    )
+    params = {
+        "param_agent_id": str(agent.id),
+        "param_agent_name": agent.name,
+        "param_t_start": period_start.strftime("%Y-%m-%d %H:%M:%S"),
+        "param_t_end": period_end.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    if agent_version:
+        base_where += "AND agent_version = {agent_version:String} "
+        params["param_agent_version"] = agent_version
+
+    count_sql = "SELECT count() AS cnt FROM session_stats_agg FINAL " + base_where + "FORMAT JSON"
+    try:
+        r = await _query(count_sql, params)
+        count_data = r.json().get("data", []) if r.status_code == 200 else []
+        return int(count_data[0]["cnt"]) if count_data else 0
+    except Exception as e:
+        optic.warning("insight_session_count_agg_failed", agent=str(agent.id), version=agent_version, error=str(e))
+
+    # Safe fallback for older ClickHouse aggregates that do not yet expose agent_version.
+    fallback_where = (
+        "WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String}) "
+        "AND timestamp >= {t_start:String} "
+        "AND timestamp <= {t_end:String} "
+    )
+    if agent_version:
+        fallback_where += "AND agent_version = {agent_version:String} "
+    fallback_sql = (
+        "SELECT count(DISTINCT session_id) AS cnt FROM session_events FINAL " + fallback_where + "FORMAT JSON"
+    )
+    try:
+        r = await _query(fallback_sql, params)
+        count_data = r.json().get("data", []) if r.status_code == 200 else []
+        return int(count_data[0]["cnt"]) if count_data else 0
+    except Exception as e:
+        optic.warning("insight_session_count_fallback_failed", agent=str(agent.id), version=agent_version, error=str(e))
+        return 0
 
 
 @router.get("/status")
@@ -135,39 +240,23 @@ async def insights_status(current_user: User = Depends(require_role(UserRole.use
 @router.get("/agents/{agent_id}/session-count")
 async def agent_session_count(
     agent_id: str,
+    agent_version: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Return the number of sessions available for insight generation."""
-    from services.clickhouse import _query
-
     agent = await _resolve_insights_agent(agent_id, db, current_user)
+    version = await _resolve_insight_agent_version(agent, db, agent_version)
     now = datetime.now(UTC)
     period_start = now - timedelta(days=14)
-
-    count_sql = (
-        "SELECT count() AS cnt FROM session_stats_agg FINAL "
-        "WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String}) "
-        "AND last_event_time >= {t_start:String} "
-        "AND last_event_time <= {t_end:String} "
-        "FORMAT JSON"
+    count = await _count_insight_sessions(
+        agent=agent,
+        period_start=period_start,
+        period_end=now,
+        agent_version=version.version,
     )
-    try:
-        r = await _query(
-            count_sql,
-            {
-                "param_agent_id": str(agent.id),
-                "param_agent_name": agent.name,
-                "param_t_start": period_start.strftime("%Y-%m-%d %H:%M:%S"),
-                "param_t_end": now.strftime("%Y-%m-%d %H:%M:%S"),
-            },
-        )
-        count_data = r.json().get("data", []) if r.status_code == 200 else []
-        count = int(count_data[0]["cnt"]) if count_data else 0
-    except Exception:
-        count = 0
 
-    return {"session_count": count}
+    return {"session_count": count, "agent_version": version.version, "agent_version_id": str(version.id)}
 
 
 @router.post("/agents/{agent_id}/generate", response_model=InsightReportListItem)
@@ -183,38 +272,29 @@ async def generate_insight(
     agent = await _resolve_insights_agent(agent_id, db, current_user)
 
     period_days = req.period_days if req else 14
+    requested_version = req.agent_version if req else None
+    version_scope = (req.version_scope if req else None) or "canonical_and_dirty"
+    agent_version = await _resolve_insight_agent_version(agent, db, requested_version)
+    comparison_version = (
+        await _resolve_insight_agent_version(agent, db, req.comparison_agent_version)
+        if req and req.comparison_agent_version
+        else await _previous_approved_version(agent, db, agent_version)
+    )
     now = datetime.now(UTC)
     period_start = now - timedelta(days=period_days)
 
-    # Check if there are any sessions for this agent in the period
-    from services.clickhouse import _query
-
-    count_sql = (
-        "SELECT count() AS cnt FROM session_stats_agg FINAL "
-        "WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String}) "
-        "AND last_event_time >= {t_start:String} "
-        "AND last_event_time <= {t_end:String} "
-        "FORMAT JSON"
+    # Check if there are any sessions for this agent/version in the period.
+    session_count = await _count_insight_sessions(
+        agent=agent,
+        period_start=period_start,
+        period_end=now,
+        agent_version=agent_version.version,
     )
-    try:
-        r = await _query(
-            count_sql,
-            {
-                "param_agent_id": str(agent.id),
-                "param_agent_name": agent.name,
-                "param_t_start": period_start.strftime("%Y-%m-%d %H:%M:%S"),
-                "param_t_end": now.strftime("%Y-%m-%d %H:%M:%S"),
-            },
-        )
-        count_data = r.json().get("data", []) if r.status_code == 200 else []
-        session_count = int(count_data[0]["cnt"]) if count_data else 0
-    except Exception:
-        session_count = 0
 
     if session_count == 0:
         raise HTTPException(
             status_code=422,
-            detail=f"No sessions found for this agent in the last {period_days} days. Cannot generate a report.",
+            detail=f"No sessions found for this agent version ({agent_version.version}) in the last {period_days} days. Cannot generate a report.",
         )
 
     # Find previous completed report for regression linking
@@ -222,6 +302,7 @@ async def generate_insight(
         select(InsightReport)
         .where(
             InsightReport.agent_id == agent.id,
+            InsightReport.agent_version == agent_version.version,
             InsightReport.status == InsightReportStatus.completed,
         )
         .order_by(InsightReport.created_at.desc())
@@ -238,6 +319,14 @@ async def generate_insight(
         period_end=now,
         started_at=now,
         previous_report_id=prev_report.id if prev_report else None,
+        agent_version_id=agent_version.id,
+        agent_version=agent_version.version,
+        version_scope=version_scope,
+        comparison_agent_version_id=comparison_version.id if comparison_version else None,
+        comparison_agent_version=comparison_version.version if comparison_version else None,
+        progress_phase="queued",
+        progress_message="Queued for generation",
+        progress_updated_at=now,
     )
     db.add(report)
     await db.flush()
@@ -334,6 +423,8 @@ async def export_report_html(
     report_data = {
         "id": str(report.id),
         "agent_id": str(report.agent_id),
+        "agent_version": report.agent_version,
+        "comparison_agent_version": report.comparison_agent_version,
         "status": report.status.value if hasattr(report.status, "value") else str(report.status),
         "period_start": report.period_start,
         "period_end": report.period_end,

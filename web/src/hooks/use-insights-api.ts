@@ -98,10 +98,10 @@ export function useInsightsStatus() {
   });
 }
 
-export function useInsightSessionCount(agentId: string | undefined) {
+export function useInsightSessionCount(agentId: string | undefined, agentVersion?: string | null) {
   return useQuery({
-    queryKey: ["insights", "session-count", agentId],
-    queryFn: () => insights.sessionCount(agentId!),
+    queryKey: ["insights", "session-count", agentId, agentVersion],
+    queryFn: () => insights.sessionCount(agentId!, agentVersion ?? undefined),
     enabled: !!agentId,
     refetchInterval: 30_000,
   });
@@ -144,8 +144,8 @@ export function useLegacyInsightReport(reportId: string) {
 export function useGenerateInsight() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { agentId: string; periodDays?: number }) =>
-      insights.generate(vars.agentId, vars.periodDays),
+    mutationFn: (vars: { agentId: string; periodDays?: number; agentVersion?: string; comparisonAgentVersion?: string }) =>
+      insights.generate(vars.agentId, vars.periodDays, vars.agentVersion, vars.comparisonAgentVersion),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["insights", "reports", vars.agentId] });
       toast.success("Insight report queued");

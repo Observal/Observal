@@ -172,6 +172,8 @@ DEFAULTS: dict[str, str] = {
     "deployment.frontend_url": "http://localhost",
     "deployment.public_url": "",
     "deployment.cors_origins": "http://localhost:3000",
+    # Danger-zone actions (rendered as buttons; value is informational only)
+    "danger.purge_traces_insights": "",
     # Security
     "security.allow_internal_git_urls": "false",
     "security.allow_draft_install": "false",
@@ -237,6 +239,14 @@ SECTIONS: list[dict[str, Any]] = [
         "description": "Configure LLM provider for the insights engine. Supports any LiteLLM-compatible provider (Anthropic, OpenAI, Bedrock, Gemini, Azure, Ollama, etc).",
         "icon": "sparkles",
         "keys": [k for k in DEFAULTS if k.startswith("insights.")],
+    },
+    {
+        "id": "danger",
+        "title": "Danger Zone",
+        "description": "Destructive maintenance actions. Use only when you intentionally want to purge stored data.",
+        "icon": "alert-triangle",
+        "danger": True,
+        "keys": [k for k in DEFAULTS if k.startswith("danger.")],
     },
     {
         "id": "deployment",
