@@ -39,6 +39,7 @@
     - [After review feedback](#after-review-feedback)
 - [Working on the Backend](#working-on-the-backend)
     - [Running tests](#running-tests)
+    - [Testing conventions](#testing-conventions)
     - [Running a single test](#running-a-single-test)
     - [Code coverage](#code-coverage)
     - [Adding a database migration](#adding-a-database-migration)
@@ -380,10 +381,18 @@ Tests mock all external services. Docker does not need to be running.
 
 ```bash
 make test
+make test-v
+make test-eval-completeness
+make test-adversarial
+make test-all
 # or directly:
 cd observal-server
 uv run --with pytest --with pytest-asyncio --with hypothesis --with pyarrow pytest ../tests/ -q
 ```
+
+### Testing conventions
+
+New Python tests should follow the [Testing Guide](testing/Testing_Guide.md). The current suite has mixed historical patterns, so do not rewrite old tests only for style. When adding or touching tests, prefer the clean pattern documented there: one behavior area per file, small local helper factories, hermetic CLI and API test setup, explicit async mocks, and behavior-focused assertions.
 
 ### Running a single test
 

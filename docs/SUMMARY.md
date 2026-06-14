@@ -68,4 +68,5 @@
 
 * [Contributing Guide](../CONTRIBUTING.md)
 * [Development Guide](DEVELOPMENT_GUIDE.md)
+* [Testing Guide](testing/Testing_Guide.md)
 * [AI Policy](../AI_POLICY.md)

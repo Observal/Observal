@@ -12,7 +12,7 @@
 Thank you for considering contributing to Observal. Contributions of all kinds are welcome: bug reports, bug fixes, new features, documentation improvements, and tests.
 
 > [!TIP]
-> This page is a quick-start summary. For the full setup walkthrough, architecture notes, and detailed workflows, see the [Development Guide](docs/DEVELOPMENT_GUIDE.md).
+> This page is a quick-start summary. For the full setup walkthrough, architecture notes, and detailed workflows, see the [Development Guide](docs/DEVELOPMENT_GUIDE.md). For new Python tests, follow the [Testing Guide](docs/testing/Testing_Guide.md).
 
 > [!IMPORTANT]
 > **Discord is our primary communication channel.** Join at [discord.observal.io](https://discord.observal.io) and ask questions in **#contributing**, report bugs in **#bug**, or discuss ideas in **#feature-requests**. GitHub issues and PRs are for concrete, actionable items, not exploratory discussion.
@@ -145,6 +145,8 @@ make test-v    # verbose
 ```
 
 All tests must pass before submitting. Tests mock all external services so Docker is not required. Include tests for any feature or bug fix.
+
+New Python tests should follow the [Testing Guide](docs/testing/Testing_Guide.md). In short, keep tests hermetic, assert behavior over implementation details, use small local helpers for setup, and avoid touching real user configuration.
 
 ### Commit Messages
 
