@@ -3,7 +3,7 @@
 
 
 import { useQuery } from "@tanstack/react-query";
-import { config, type IdeEntry } from "@/lib/api";
+import { config } from "@/lib/api";
 
 /**
  * Fetches the canonical IDE list from the server (filtered by allowlist).

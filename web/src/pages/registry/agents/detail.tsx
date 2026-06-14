@@ -49,7 +49,6 @@ import { PullCommand } from "@/components/registry/pull-command";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { IdeBadges } from "@/components/registry/ide-badges";
-import { FEATURE_LABELS, type IdeFeature } from "@/lib/ide-features";
 import { ReviewForm } from "@/components/registry/review-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,6 +63,16 @@ import { AgentEditForm, type AgentEditFormProps } from "@/components/registry/ag
 import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
 import { compactNumber, copyToClipboard } from "@/lib/utils";
 import { DIMENSION_META } from "@/components/dashboard/score-overview";
+
+const FEATURE_LABELS: Record<string, string> = {
+  skills: "Slash-command skills",
+  superpowers: "Kiro superpowers",
+  hook_bridge: "Hook bridge",
+  mcp_servers: "MCP servers",
+  rules: "Rules / system prompt",
+  steering_files: "Steering files",
+  otlp_telemetry: "OTLP telemetry",
+};
 
 interface AgentDetail {
   name: string;
@@ -766,7 +775,7 @@ export default function AgentDetailPage() {
                     <div className="flex flex-wrap gap-1">
                       {versionRequiredFeatures.map((f: string) => (
                         <span key={f} className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                          {FEATURE_LABELS[f as IdeFeature] ?? f}
+                          {FEATURE_LABELS[f] ?? f}
                         </span>
                       ))}
                     </div>

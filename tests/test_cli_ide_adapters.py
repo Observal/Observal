@@ -16,6 +16,7 @@ from observal_cli.ide import (
     get_adapter,
     get_all_adapters,
 )
+from observal_cli.ide_registry import IDE_REGISTRY
 
 
 @pytest.fixture(autouse=True)
@@ -27,20 +28,9 @@ def _load_adapters():
 class TestAdapterRegistry:
     """Test adapter registration and lookup."""
 
-    def test_all_eight_adapters_registered(self):
+    def test_all_registry_adapters_registered(self):
         adapters = get_all_adapters()
-        expected = {
-            "claude-code",
-            "cursor",
-            "kiro",
-            "codex",
-            "copilot",
-            "copilot-cli",
-            "opencode",
-            "pi",
-            "antigravity",
-        }
-        assert set(adapters.keys()) == expected
+        assert set(adapters.keys()) == set(IDE_REGISTRY)
 
     def test_get_adapter_by_canonical_name(self):
         adapter = get_adapter("claude-code")

@@ -29,7 +29,7 @@ from hypothesis import strategies as st
 
 
 class TestRegistryAndFrontend:
-    """Registry entries and frontend feature matrix validation."""
+    """Registry entries for Copilot IDE support."""
 
     def test_copilot_feature_matrix(self):
         """Copilot features == {"mcp_servers", "hooks", "skills"}."""
@@ -90,23 +90,6 @@ class TestRegistryAndFrontend:
         # Test that an unknown IDE raises KeyError (not silently falls through)
         with pytest.raises(KeyError):
             get_classifier("unknown-ide-xyz")
-
-    def test_frontend_copilot_features_include_hook_bridge(self):
-        """Frontend ide-features.ts: copilot features include hook_bridge."""
-        repo_root = Path(__file__).resolve().parent.parent
-        ts_file = repo_root / "web" / "src" / "lib" / "ide-features.ts"
-        if not ts_file.exists():
-            pytest.skip("web/src/lib/ide-features.ts not found")
-        content = ts_file.read_text()
-        lines = content.split("\n")
-        copilot_line = ""
-        for line in lines:
-            stripped = line.strip()
-            if (stripped.startswith("copilot:") or stripped.startswith('"copilot":')) and "copilot-cli" not in stripped:
-                copilot_line = line
-                break
-        assert copilot_line, "Could not find copilot entry in IDE_FEATURE_MATRIX"
-        assert "hook_bridge" in copilot_line, "copilot entry should include hook_bridge"
 
 
 # ═══════════════════════════════════════════════════════════════════

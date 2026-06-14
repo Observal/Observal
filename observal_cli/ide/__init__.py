@@ -22,6 +22,7 @@ from observal_cli.ide.protocol import (
     NotSupportedError,
     ScanResult,
 )
+from observal_cli.ide_registry import IDE_REGISTRY
 
 __all__ = [
     "METHOD_FEATURE_MAP",
@@ -90,11 +91,7 @@ def get_all_adapters() -> dict[str, IdeAdapter]:
     return dict(_ADAPTER_REGISTRY)
 
 
-# Expected number of adapters (updated when new IDEs are added)
-_EXPECTED_ADAPTER_COUNT = 10
-
-
 def ensure_loaded() -> None:
     """Ensure all adapter modules have been imported and registered."""
-    if len(_ADAPTER_REGISTRY) < _EXPECTED_ADAPTER_COUNT:
+    if len(_ADAPTER_REGISTRY) < len(IDE_REGISTRY):
         import observal_cli.ide.load_all  # noqa: F401
