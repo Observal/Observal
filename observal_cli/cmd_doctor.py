@@ -6,6 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Madhumidha <madhumidha072005@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """observal doctor: diagnose and patch IDE settings for Observal session telemetry.
@@ -113,6 +114,10 @@ def doctor(
     # 10. Check Antigravity
     rprint("[cyan]Checking Antigravity...[/cyan]")
     _check_antigravity(issues, warnings)
+
+    # 11. Check Gemini CLI
+    rprint("[cyan]Checking Gemini CLI...[/cyan]")
+    _check_gemini(issues, warnings)
 
     # 11. Check if observal skill is installed
     skill_missing = _check_observal_skill_missing()
@@ -557,7 +562,7 @@ def doctor_cleanup(
         None,
         "--ide",
         "-i",
-        help="Target IDE only (claude-code, kiro, cursor, codex, copilot, copilot-cli, opencode). Default: all.",
+        help="Target IDE only (claude-code, kiro, cursor, codex, copilot, copilot-cli, opencode, gemini-cli). Default: all.",
     ),
     exclude: list[str] = typer.Option(
         [],
@@ -582,7 +587,7 @@ def doctor_cleanup(
       observal doctor cleanup --ide claude-code --dry-run  # Preview without changes
     """
     optic.trace("ide={}, exclude={}, dry_run={}", ide, exclude, dry_run)
-    all_ides = ["claude-code", "kiro", "cursor", "codex", "copilot", "copilot-cli", "opencode"]
+    all_ides = ["claude-code", "kiro", "cursor", "codex", "copilot", "copilot-cli", "opencode", "gemini-cli"]
     targets = [ide] if ide else all_ides
     targets = [t for t in targets if t not in exclude]
     any_changes = False
@@ -616,6 +621,10 @@ def doctor_cleanup(
 
         elif target == "opencode":
             changed = _cleanup_opencode(dry_run)
+            any_changes = any_changes or changed
+
+        elif target == "gemini-cli":
+            changed = _cleanup_gemini(dry_run)
             any_changes = any_changes or changed
 
         else:
@@ -1056,6 +1065,9 @@ def doctor_patch(
             elif target == "antigravity":
                 changed = _patch_antigravity(dry_run)
                 any_changes = any_changes or changed
+            elif target == "gemini-cli":
+                changed = _patch_gemini(dry_run)
+                any_changes = any_changes or changed
 
         # ── Shims (all IDEs with home MCP config) ──
         if do_shims:
@@ -1267,6 +1279,130 @@ def _patch_antigravity(dry_run: bool) -> bool:
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {hooks_path}")
+    return True
+
+
+def _check_gemini(issues: list, warnings: list):
+    """Check if Observal session push hooks are installed in Gemini CLI."""
+    optic.trace("issues={}, warnings={}", issues, warnings)
+
+    gemini_dir = Path.home() / ".gemini"
+    if not gemini_dir.is_dir():
+        rprint("  [dim]No ~/.gemini/ directory - skipping[/dim]")
+        return
+
+    hooks_path = gemini_dir / "settings.json"
+    if not hooks_path.exists():
+        warnings.append(
+            "Gemini CLI session push hooks not installed. "
+            "Run `observal doctor patch --all --ide gemini-cli` to inject them."
+        )
+        return
+
+    data = _load_json(hooks_path)
+    if data is None:
+        issues.append(f"{hooks_path}: not valid JSON.")
+        return
+
+    has_session_push = False
+    for event in ("BeforeAgent", "SessionEnd"):
+        groups = data.get(event, [])
+        if not isinstance(groups, list):
+            continue
+        for g in groups:
+            for h in g.get("hooks", []):
+                cmd = h.get("command", "")
+                if "session_push" in cmd:
+                    has_session_push = True
+                    break
+
+    if not has_session_push:
+        warnings.append(
+            "Gemini CLI session push hooks not installed. "
+            "Run `observal doctor patch --all --ide gemini-cli` to inject them."
+        )
+
+
+def _patch_gemini(dry_run: bool) -> bool:
+    """Install session push hooks into ~/.gemini/settings.json."""
+    from observal_cli.ide_specs.gemini_cli_hooks_spec import get_desired_hooks
+    from observal_cli.shared.utils import OBSERVAL_METADATA_KEY
+
+    rprint("[cyan]Gemini CLI - session push hooks[/cyan]")
+
+    settings_path = Path.home() / ".gemini" / "settings.json"
+    if not settings_path.exists():
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+    else:
+        try:
+            data = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+
+    desired_hooks = get_desired_hooks()
+    changed = False
+
+    for event, desired_entries in desired_hooks.items():
+        existing = data.get(event, [])
+        if not isinstance(existing, list):
+            existing = []
+
+        cleaned = [g for g in existing if not (isinstance(g, dict) and OBSERVAL_METADATA_KEY in g)]
+        new_list = cleaned + desired_entries
+        if new_list != existing:
+            data[event] = new_list
+            changed = True
+
+    if not changed:
+        rprint("  [dim]Already up to date[/dim]")
+        return False
+
+    if not dry_run:
+        settings_path.write_text(json.dumps(data, indent=2) + "\n")
+
+    verb = "Would install" if dry_run else "Installed"
+    rprint(f"  {verb} hooks in {settings_path}")
+    return True
+
+
+def _cleanup_gemini(dry_run: bool) -> bool:
+    """Remove Observal hooks from ~/.gemini/settings.json."""
+    from observal_cli.shared.utils import OBSERVAL_METADATA_KEY
+
+    rprint("[cyan]Gemini CLI[/cyan]")
+    settings_path = Path.home() / ".gemini" / "settings.json"
+
+    if not settings_path.exists():
+        rprint("  [dim]No settings.json found - skipping[/dim]")
+        return False
+
+    try:
+        data = json.loads(settings_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        rprint(f"  [red]Failed to read settings.json: {e}[/red]")
+        return False
+
+    changed = False
+    for event in list(data.keys()):
+        groups = data.get(event, [])
+        if isinstance(groups, list):
+            new_groups = [g for g in groups if not (isinstance(g, dict) and OBSERVAL_METADATA_KEY in g)]
+            if len(new_groups) != len(groups):
+                data[event] = new_groups
+                changed = True
+                if not new_groups:
+                    del data[event]
+
+    if not changed:
+        rprint("  [dim]No Observal artifacts found[/dim]")
+        return False
+
+    if not dry_run:
+        settings_path.write_text(json.dumps(data, indent=2) + "\n")
+
+    verb = "Would remove" if dry_run else "Removed"
+    rprint(f"  {verb} Observal hooks from {settings_path}")
     return True
 
 
