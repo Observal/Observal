@@ -220,9 +220,20 @@ async def run_single_report(report_id: str) -> None:
             logger.exception("insight_report_failed", report_id=report_id, error=str(e))
 
 
-async def _count_agent_sessions(agent_name: str, since: str) -> int:
-    """Count sessions in otel_logs for an agent since a given timestamp."""
-    sql = """
+async def _count_agent_sessions(agent_name: str, since: str, agent_id: str | None = None) -> int:
+    """Count sessions for an agent since a given timestamp.
+
+    Counts via two independent pipelines and returns the larger of the two:
+
+    - ``otel_logs`` by ``agent_name``/``agent_type`` (hook / OTLP telemetry)
+    - ``session_stats_agg`` by ``agent_id`` (session-transcript ingest, e.g. the
+      Cursor bridge). Agents fed only this way have **no** ``otel_logs`` rows, so
+      the otel-only count would always be 0 and they'd never be auto-discovered.
+
+    The two pipelines are mutually exclusive in practice, so ``max`` avoids both
+    double-counting (sum) and undercounting (single source).
+    """
+    otel_sql = """
         SELECT count(DISTINCT LogAttributes['session.id']) AS cnt
         FROM otel_logs
         WHERE (LogAttributes['agent_type'] = {aname:String}
@@ -231,15 +242,33 @@ async def _count_agent_sessions(agent_name: str, since: str) -> int:
           AND LogAttributes['session.id'] != ''
         FORMAT JSON
     """
-    params = {"param_aname": agent_name, "param_t_start": since}
+    otel_count = 0
     try:
-        r = await _query(sql, params)
+        r = await _query(otel_sql, {"param_aname": agent_name, "param_t_start": since})
         r.raise_for_status()
         data = r.json().get("data", [])
-        return int(data[0]["cnt"]) if data else 0
+        otel_count = int(data[0]["cnt"]) if data else 0
     except Exception as e:
         logger.warning("insight_batch_count_failed", agent_name=agent_name, error=str(e))
-        return 0
+
+    agg_count = 0
+    if agent_id:
+        agg_sql = """
+            SELECT count(DISTINCT session_id) AS cnt
+            FROM session_stats_agg
+            WHERE agent_id = {aid:String}
+              AND last_event_time >= {t_start:String}
+            FORMAT JSON
+        """
+        try:
+            r = await _query(agg_sql, {"param_aid": agent_id, "param_t_start": since})
+            r.raise_for_status()
+            data = r.json().get("data", [])
+            agg_count = int(data[0]["cnt"]) if data else 0
+        except Exception as e:
+            logger.warning("insight_batch_count_agg_failed", agent_id=agent_id, error=str(e))
+
+    return max(otel_count, agg_count)
 
 
 async def discover_and_queue_reports() -> int:
@@ -294,7 +323,7 @@ async def discover_and_queue_reports() -> int:
 
                 # Count new sessions for this agent
                 since_str = period_start.strftime("%Y-%m-%d %H:%M:%S")
-                session_count = await _count_agent_sessions(agent.name, since_str)
+                session_count = await _count_agent_sessions(agent.name, since_str, agent_id=str(agent.id))
 
                 if session_count < min_sessions:
                     logger.debug(

@@ -11,6 +11,7 @@ THRESHOLDS = {
     "satisfaction_drop": 0.15,  # >15% drop in positive satisfaction
     "friction_spike": 0.25,  # >25% increase in any friction category
     "interruption_increase": 0.15,  # >15% increase in user interruptions
+    "tool_call_increase": 0.20,  # >20% relative change in tool calls per session
 }
 
 
@@ -129,6 +130,33 @@ def detect_regressions(current: dict, previous: dict) -> list[dict]:
                     "severity": "medium",
                 }
             )
+
+    # Tool calls per session comparison.
+    # Friction proxy: more tool calls per session = the agent is working harder
+    # for the same outcome. Normalized by session count so it is not confounded
+    # by usage volume. This is the primary measurable signal for agents whose
+    # transcripts carry no token/cost or per-tool error data (e.g. Cursor bridge).
+    curr_tool_calls = int(current_errors.get("total_tool_calls", 0))
+    prev_tool_calls = int(previous_errors.get("total_tool_calls", 0))
+    curr_sess_for_tools = int(current.get("overview", {}).get("total_sessions", 0))
+    prev_sess_for_tools = int(previous.get("overview", {}).get("total_sessions", 0))
+
+    if prev_tool_calls > 0 and prev_sess_for_tools > 0 and curr_sess_for_tools > 0:
+        curr_tcps = curr_tool_calls / curr_sess_for_tools
+        prev_tcps = prev_tool_calls / prev_sess_for_tools
+        if prev_tcps > 0:
+            tcps_change = (curr_tcps - prev_tcps) / prev_tcps
+            if abs(tcps_change) > THRESHOLDS["tool_call_increase"]:
+                regressions.append(
+                    {
+                        "metric": "tool_calls_per_session",
+                        "direction": "degraded" if tcps_change > 0 else "improved",
+                        "magnitude": round(tcps_change * 100, 1),
+                        "current_value": round(curr_tcps, 2),
+                        "previous_value": round(prev_tcps, 2),
+                        "severity": "medium" if abs(tcps_change) < 0.5 else "high",
+                    }
+                )
 
     # Session count change (informational, not a regression)
     curr_sessions = int(current.get("overview", {}).get("total_sessions", 0))
