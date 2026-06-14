@@ -24,6 +24,11 @@ class AgentStatus(str, enum.Enum):
     approved = "approved"
     rejected = "rejected"
     archived = "archived"
+    # Self-learning loop: auto-generated candidate versions move through these
+    # before a human approves/rejects them. Never auto-merged to active.
+    pending_review = "pending_review"
+    verification_failed = "verification_failed"
+    verification_inconclusive = "verification_inconclusive"
 
 
 class AgentVisibility(str, enum.Enum):
@@ -86,6 +91,10 @@ class AgentVersion(Base):
     editing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     editing_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     gaming_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Self-learning loop: VerificationResult JSON + link to the insight report
+    # that motivated this candidate version (null for human-authored versions).
+    verification_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_report_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     agent: Mapped["Agent"] = relationship(back_populates="versions", foreign_keys=[agent_id])
     components: Mapped[list["AgentComponent"]] = relationship(

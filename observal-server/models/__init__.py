@@ -10,6 +10,11 @@ from models.agent_component import AgentComponent
 from models.alert import AlertRule
 from models.alert_history import AlertHistory
 from models.base import Base
+from models.candidate_artifact import (
+    CandidateArtifact,
+    CandidateArtifactStatus,
+    CandidateArtifactType,
+)
 from models.component_bundle import ComponentBundle
 from models.component_source import ComponentSource
 from models.download import AgentDownloadRecord, ComponentDownloadRecord
@@ -57,6 +62,9 @@ __all__ = [
     "AlertHistory",
     "AlertRule",
     "Base",
+    "CandidateArtifact",
+    "CandidateArtifactStatus",
+    "CandidateArtifactType",
     "ComponentBundle",
     "ComponentDownloadRecord",
     "ComponentSource",
