@@ -31,6 +31,7 @@ from observal_cli.shared.utils import (
 class ClaudeCodeAdapter(BaseAdapter):
     """Adapter for Claude Code (Anthropic)."""
 
+    home_markers = (".claude",)
     managed_agent_files = ("user:agents/{name}.md", "project:.claude/agents/{name}.md")
     managed_skill_files = ("user:skills/{name}/SKILL.md",)
 

@@ -427,24 +427,23 @@ def _get_observal_managed_files(lockfile_data: dict, ide: str, project_dir: str 
 
 
 def _detect_active_ides() -> list[str]:
-    """Detect which first-class IDEs are installed by checking their config directories."""
+    """Detect installed IDEs by asking CLI adapters for their home markers."""
     from pathlib import Path
 
-    # First-class IDEs (full session parsing, hooks, scanning, e2e tested).
-    # copilot-cli is detected via ~/.copilot (its own home dir).
-    # VS Code copilot has no reliable home-dir marker (uses .github/ + VS Code
-    # settings); its project files are still scanned via project-scope globs
-    # when another IDE triggers a scan.
-    ide_dirs = {
-        "claude-code": Path.home() / ".claude",
-        "cursor": Path.home() / ".cursor",
-        "kiro": Path.home() / ".kiro",
-        "pi": Path.home() / ".pi" / "agent",
-        "codex": Path.home() / ".codex",
-        "copilot-cli": Path.home() / ".copilot",
-        "opencode": Path.home() / ".config" / "opencode",
-    }
-    return [ide for ide, path in ide_dirs.items() if path.is_dir()]
+    from observal_cli.ide import ensure_loaded, get_adapter
+    from observal_cli.ide_registry import IDE_REGISTRY
+
+    ensure_loaded()
+    home = Path.home()
+    active: list[str] = []
+    for ide in IDE_REGISTRY:
+        try:
+            adapter = get_adapter(ide)
+        except KeyError:
+            continue
+        if adapter.is_installed(home):
+            active.append(ide)
+    return active
 
 
 def compute_layer_hash(ide: str | None = None, project_dir: str | None = None) -> str:

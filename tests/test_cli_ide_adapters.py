@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from observal_cli.ide import (
@@ -47,6 +49,7 @@ class TestAdapterRegistry:
     def test_all_adapters_have_required_methods(self):
         required_methods = [
             "scan_home",
+            "is_installed",
             "scan_project",
             "get_hook_spec",
             "generate_hook_config",
@@ -171,6 +174,40 @@ class TestManagedLayerFiles:
             "project:AGENTS.md",
             "user:config.toml",
         }
+
+
+class TestActiveIdeDetection:
+    """Test adapter-owned active IDE detection."""
+
+    @pytest.mark.parametrize(
+        ("ide_name", "marker"),
+        [
+            ("claude-code", ".claude"),
+            ("cursor", ".cursor"),
+            ("kiro", ".kiro"),
+            ("codex", ".codex"),
+            ("copilot", ".vscode/extensions/github.copilot-1.0.0"),
+            ("copilot-cli", ".copilot"),
+            ("opencode", ".config/opencode"),
+            ("antigravity", ".gemini/antigravity-cli"),
+            ("pi", ".pi/agent"),
+        ],
+    )
+    def test_adapter_is_installed_uses_home_markers(self, ide_name, marker, tmp_path):
+        adapter = get_adapter(ide_name)
+        assert adapter.is_installed(tmp_path) is False
+        (tmp_path / Path(marker)).mkdir(parents=True)
+        assert adapter.is_installed(tmp_path) is True
+
+    def test_layer_detect_active_ides_delegates_to_adapters(self, tmp_path, monkeypatch):
+        from observal_cli.layer import _detect_active_ides
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        (tmp_path / ".cursor").mkdir()
+        (tmp_path / ".codex").mkdir()
+        (tmp_path / ".pi" / "agent").mkdir(parents=True)
+
+        assert _detect_active_ides() == ["cursor", "codex", "pi"]
 
 
 class TestAdapterProtocol:

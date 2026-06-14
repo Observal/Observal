@@ -21,6 +21,7 @@ from observal_cli.shared.utils import extract_mcp_servers
 class CursorAdapter(BaseAdapter):
     """Adapter for Cursor."""
 
+    home_markers = (".cursor",)
     managed_agent_files = (
         "user:rules/{name}.mdc",
         "user:agents/{name}.md",

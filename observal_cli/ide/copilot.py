@@ -35,6 +35,7 @@ def _vscode_user_settings_path(home: Path | None = None) -> Path:
 class CopilotAdapter(BaseAdapter):
     """Adapter for GitHub Copilot (VS Code based)."""
 
+    home_markers = (".vscode/extensions/github.copilot-*", ".vscode/extensions/github.copilot-chat-*")
     managed_agent_files = ("project:.github/agents/{name}.agent.md",)
 
     @property

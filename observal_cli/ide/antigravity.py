@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 class AntigravityAdapter(BaseAdapter):
     """Adapter for Antigravity CLI."""
 
+    home_markers = (".gemini/antigravity-cli",)
+
     @property
     def ide_name(self) -> str:
         return "antigravity"

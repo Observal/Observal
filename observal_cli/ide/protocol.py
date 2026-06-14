@@ -169,6 +169,14 @@ class IdeAdapter(Protocol):
         """
         ...
 
+    def is_installed(self, home: Path | None = None) -> bool:
+        """Return whether this IDE has a detectable home config marker.
+
+        Args:
+            home: Override home directory (defaults to Path.home()).
+        """
+        ...
+
     def scan_project(self, project_dir: Path) -> ScanResult:
         """Scan a project directory for this IDE's configuration.
 

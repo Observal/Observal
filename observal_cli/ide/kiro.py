@@ -30,6 +30,7 @@ from observal_cli.shared.utils import (
 class KiroAdapter(BaseAdapter):
     """Adapter for Kiro (AWS)."""
 
+    home_markers = (".kiro",)
     managed_agent_files = ("user:agents/{name}.json", "project:.kiro/agents/{name}.json")
     managed_skill_files = ("user:skills/{name}/SKILL.md",)
 

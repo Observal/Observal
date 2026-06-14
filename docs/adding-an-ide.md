@@ -137,8 +137,8 @@ Before moving on, always wire the new IDE into these shared paths:
   - Add `_cleanup_<ide>()` support in `doctor cleanup`
 - `observal_cli/layer.py`:
   - Add user/project file globs under `IDE_LAYER_CONFIGS`
-  - Ensure `_detect_active_ides()` has a reliable home-dir marker
 - `observal_cli/ide/<ide_name>.py`:
+  - Add `home_markers` for active IDE detection when the IDE has a reliable home config marker. Glob patterns are supported.
   - Add `managed_agent_files`, `managed_skill_files`, and `managed_mcp_files` patterns for layer source attribution
   - Override `get_observal_managed_files()` only if simple `{name}` patterns are not enough
 
@@ -179,6 +179,7 @@ from observal_cli.shared.utils import (
 
 
 class MyIdeAdapter(BaseAdapter):
+    home_markers = (".my-ide",)
     managed_agent_files = ("user:agents/{name}.md", "project:.my-ide/agents/{name}.md")
     managed_skill_files = ("user:skills/{name}/SKILL.md", "project:.my-ide/skills/{name}/SKILL.md")
     managed_mcp_files = ("user:mcp.json", "project:.my-ide/mcp.json")
@@ -460,7 +461,7 @@ custom session push script (most can reuse `session_push.py`).
    from observal_cli.ide import my_ide as _my_ide  # noqa: F401
    ```
 
-2. `observal_cli/ide/<ide_name>.py`: set managed file attribution patterns used by layer snapshots.
+2. `observal_cli/ide/<ide_name>.py`: set `home_markers` and managed file attribution patterns used by layer snapshots.
 
 3. `observal-server/services/ide/load_all.py`:
    ```python
@@ -483,6 +484,12 @@ class TestMyIdeAdapter:
         result = adapter.scan_home(tmp_path)
         assert result.mcps == []
         assert result.skills == []
+
+    def test_is_installed_uses_home_marker(self, tmp_path):
+        adapter = MyIdeAdapter()
+        assert adapter.is_installed(tmp_path) is False
+        (tmp_path / ".my-ide").mkdir()
+        assert adapter.is_installed(tmp_path) is True
 
     def test_scan_home_discovers_mcps(self, tmp_path):
         ide_dir = tmp_path / ".my-ide"

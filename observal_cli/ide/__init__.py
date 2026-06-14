@@ -60,6 +60,7 @@ def register_adapter(adapter: IdeAdapter) -> None:
     required = (
         "ide_name",
         "scan_home",
+        "is_installed",
         "scan_project",
         "get_hook_spec",
         "generate_hook_config",

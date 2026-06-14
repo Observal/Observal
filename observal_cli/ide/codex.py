@@ -43,6 +43,7 @@ def _load_toml(path: Path) -> dict:
 class CodexAdapter(BaseAdapter):
     """Adapter for Codex CLI (OpenAI)."""
 
+    home_markers = (".codex",)
     managed_agent_files = ("user:AGENTS.md", "project:AGENTS.md")
     managed_mcp_files = ("user:config.toml",)
 
