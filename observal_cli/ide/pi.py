@@ -27,6 +27,9 @@ class PiAdapter(BaseAdapter):
     Hooks are delivered as the observal-pi package.
     """
 
+    managed_agent_files = ("user:AGENTS.md",)
+    managed_skill_files = ("user:skills/{name}/SKILL.md",)
+
     @property
     def ide_name(self) -> str:
         return "pi"

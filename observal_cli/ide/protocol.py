@@ -243,3 +243,15 @@ class IdeAdapter(Protocol):
             NotSupportedError: If this IDE does not have mcp_servers feature.
         """
         ...
+
+    def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:
+        """Return layer snapshot display paths managed by Observal for this IDE.
+
+        Args:
+            lockfile_data: Parsed Observal lockfile content.
+            project_dir: Optional project directory for project-scoped installs.
+
+        Returns:
+            Display paths that correspond to Observal-installed files.
+        """
+        ...

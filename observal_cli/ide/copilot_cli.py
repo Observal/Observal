@@ -29,6 +29,9 @@ from observal_cli.shared.utils import (
 class CopilotCliAdapter(BaseAdapter):
     """Adapter for GitHub Copilot CLI."""
 
+    managed_agent_files = ("project:.github/agents/{name}.agent.md",)
+    managed_skill_files = ("project:.agents/skills/{name}/SKILL.md", "user:skills/{name}/SKILL.md")
+
     @property
     def ide_name(self) -> str:
         return "copilot-cli"

@@ -35,6 +35,8 @@ def _vscode_user_settings_path(home: Path | None = None) -> Path:
 class CopilotAdapter(BaseAdapter):
     """Adapter for GitHub Copilot (VS Code based)."""
 
+    managed_agent_files = ("project:.github/agents/{name}.agent.md",)
+
     @property
     def ide_name(self) -> str:
         return "copilot"

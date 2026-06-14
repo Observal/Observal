@@ -410,83 +410,15 @@ def build_layer_manifest(
 
 
 def _get_observal_managed_files(lockfile_data: dict, ide: str, project_dir: str | None) -> set[str]:
-    """Determine which display paths are managed by Observal (from the lock file).
+    """Determine which display paths are managed by Observal from the lock file."""
+    from observal_cli.ide import ensure_loaded, get_adapter
 
-    Returns a set of display_path strings that correspond to Observal-installed components.
-    """
-    managed: set[str] = set()
-    ide_section = lockfile_data.get("ides", {}).get(ide, {})
-
-    for agent in ide_section.get("agents", []):
-        agent_name = agent.get("name", "")
-        if agent_name:
-            # Agent rules files, depends on IDE
-            if ide == "claude-code":
-                managed.add(f"user:agents/{agent_name}.md")
-                managed.add(f"project:.claude/agents/{agent_name}.md")
-            elif ide == "cursor":
-                managed.add(f"user:rules/{agent_name}.mdc")
-                managed.add(f"user:agents/{agent_name}.md")
-                managed.add(f"project:.cursor/rules/{agent_name}.mdc")
-                managed.add(f"project:.cursor/agents/{agent_name}.md")
-            elif ide == "kiro":
-                managed.add(f"user:agents/{agent_name}.json")
-                managed.add(f"project:.kiro/agents/{agent_name}.json")
-            elif ide == "codex":
-                managed.add("user:AGENTS.md")
-                managed.add("project:AGENTS.md")
-            elif ide in ("copilot", "copilot-cli"):
-                # Both generate .github/agents/{name}.agent.md (project scope)
-                managed.add(f"project:.github/agents/{agent_name}.agent.md")
-            elif ide == "pi":
-                managed.add("user:AGENTS.md")
-            elif ide == "opencode":
-                managed.add(f"user:agents/{agent_name}.md")
-                managed.add(f"project:.opencode/agents/{agent_name}.md")
-
-        # Component files
-        for comp in agent.get("components", []):
-            comp_name = comp.get("name", "")
-            comp_type = comp.get("type", "")
-            if comp_type == "skill" and comp_name:
-                if ide == "claude-code" or ide == "kiro":
-                    managed.add(f"user:skills/{comp_name}/SKILL.md")
-                elif ide == "cursor":
-                    managed.add(f"user:rules/{comp_name}.mdc")
-                    managed.add(f"user:skills/{comp_name}/SKILL.md")
-                elif ide == "opencode":
-                    managed.add(f"user:skills/{comp_name}/SKILL.md")
-                    managed.add(f"project:.opencode/skills/{comp_name}/SKILL.md")
-                elif ide == "pi":
-                    managed.add(f"user:skills/{comp_name}/SKILL.md")
-            elif comp_type == "mcp" and comp_name and ide == "codex":
-                managed.add("user:config.toml")
-            elif comp_type == "skill" and comp_name and ide == "copilot-cli":
-                # Copilot CLI skills: project .agents/skills/ + user ~/.copilot/skills/
-                managed.add(f"project:.agents/skills/{comp_name}/SKILL.md")
-                managed.add(f"user:skills/{comp_name}/SKILL.md")
-
-    for item in ide_section.get("standalone", []):
-        item_name = item.get("name", "")
-        item_type = item.get("type", "")
-        if item_type == "skill" and item_name:
-            if ide == "claude-code" or ide == "kiro":
-                managed.add(f"user:skills/{item_name}/SKILL.md")
-            elif ide == "cursor":
-                managed.add(f"user:rules/{item_name}.mdc")
-                managed.add(f"user:skills/{item_name}/SKILL.md")
-            elif ide == "opencode":
-                managed.add(f"user:skills/{item_name}/SKILL.md")
-                managed.add(f"project:.opencode/skills/{item_name}/SKILL.md")
-            elif ide == "pi":
-                managed.add(f"user:skills/{item_name}/SKILL.md")
-        elif item_type == "mcp" and item_name and ide == "codex":
-            managed.add("user:config.toml")
-        elif item_type == "skill" and item_name and ide == "copilot-cli":
-            managed.add(f"project:.agents/skills/{item_name}/SKILL.md")
-            managed.add(f"user:skills/{item_name}/SKILL.md")
-
-    return managed
+    ensure_loaded()
+    try:
+        adapter = get_adapter(ide)
+    except KeyError:
+        return set()
+    return adapter.get_observal_managed_files(lockfile_data, project_dir)
 
 
 # ---------------------------------------------------------------------------

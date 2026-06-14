@@ -50,6 +50,10 @@ class BaseAdapter:
     method body. Subclasses override methods they support.
     """
 
+    managed_agent_files: tuple[str, ...] = ()
+    managed_skill_files: tuple[str, ...] = ()
+    managed_mcp_files: tuple[str, ...] = ()
+
     @property
     def ide_name(self) -> str:
         raise NotImplementedError("Subclasses must define ide_name")
@@ -91,3 +95,34 @@ class BaseAdapter:
         if shimmed == len(mcps):
             return "all"
         return "partial"
+
+    def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:
+        """Return layer snapshot display paths managed by Observal for this IDE."""
+        managed: set[str] = set()
+        ide_section = lockfile_data.get("ides", {}).get(self.ide_name, {})
+
+        for agent in ide_section.get("agents", []):
+            agent_name = agent.get("name", "")
+            if agent_name:
+                managed.update(self._format_managed_paths(self.managed_agent_files, agent_name))
+
+            for component in agent.get("components", []):
+                managed.update(self._managed_component_files(component.get("type", ""), component.get("name", "")))
+
+        for item in ide_section.get("standalone", []):
+            managed.update(self._managed_component_files(item.get("type", ""), item.get("name", "")))
+
+        return managed
+
+    def _managed_component_files(self, component_type: str, component_name: str) -> set[str]:
+        if not component_name:
+            return set()
+        if component_type == "skill":
+            return self._format_managed_paths(self.managed_skill_files, component_name)
+        if component_type == "mcp":
+            return self._format_managed_paths(self.managed_mcp_files, component_name)
+        return set()
+
+    @staticmethod
+    def _format_managed_paths(patterns: tuple[str, ...], name: str) -> set[str]:
+        return {pattern.format(name=name) for pattern in patterns}

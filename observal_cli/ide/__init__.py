@@ -65,6 +65,7 @@ def register_adapter(adapter: IdeAdapter) -> None:
         "generate_hook_config",
         "detect_hooks",
         "shim_status",
+        "get_observal_managed_files",
     )
     for method in required:
         if not hasattr(adapter, method) or not callable(getattr(adapter, method, None)):

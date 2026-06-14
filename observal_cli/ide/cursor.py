@@ -21,6 +21,14 @@ from observal_cli.shared.utils import extract_mcp_servers
 class CursorAdapter(BaseAdapter):
     """Adapter for Cursor."""
 
+    managed_agent_files = (
+        "user:rules/{name}.mdc",
+        "user:agents/{name}.md",
+        "project:.cursor/rules/{name}.mdc",
+        "project:.cursor/agents/{name}.md",
+    )
+    managed_skill_files = ("user:rules/{name}.mdc", "user:skills/{name}/SKILL.md")
+
     @property
     def ide_name(self) -> str:
         return "cursor"

@@ -52,11 +52,125 @@ class TestAdapterRegistry:
             "generate_hook_config",
             "detect_hooks",
             "shim_status",
+            "get_observal_managed_files",
         ]
         for name, adapter in get_all_adapters().items():
             for method in required_methods:
                 assert hasattr(adapter, method), f"{name} missing {method}"
                 assert callable(getattr(adapter, method)), f"{name}.{method} not callable"
+
+
+class TestManagedLayerFiles:
+    """Test adapter-owned layer source attribution."""
+
+    @staticmethod
+    def _lockfile_for(ide_name: str) -> dict:
+        return {
+            "ides": {
+                ide_name: {
+                    "agents": [
+                        {
+                            "name": "agent-one",
+                            "components": [
+                                {"type": "skill", "name": "skill-one"},
+                                {"type": "mcp", "name": "mcp-one"},
+                            ],
+                        }
+                    ],
+                    "standalone": [
+                        {"type": "skill", "name": "standalone-skill"},
+                        {"type": "mcp", "name": "standalone-mcp"},
+                    ],
+                }
+            }
+        }
+
+    @pytest.mark.parametrize(
+        ("ide_name", "expected"),
+        [
+            (
+                "claude-code",
+                {
+                    "user:agents/agent-one.md",
+                    "project:.claude/agents/agent-one.md",
+                    "user:skills/skill-one/SKILL.md",
+                    "user:skills/standalone-skill/SKILL.md",
+                },
+            ),
+            (
+                "cursor",
+                {
+                    "user:rules/agent-one.mdc",
+                    "user:agents/agent-one.md",
+                    "project:.cursor/rules/agent-one.mdc",
+                    "project:.cursor/agents/agent-one.md",
+                    "user:rules/skill-one.mdc",
+                    "user:skills/skill-one/SKILL.md",
+                    "user:rules/standalone-skill.mdc",
+                    "user:skills/standalone-skill/SKILL.md",
+                },
+            ),
+            (
+                "kiro",
+                {
+                    "user:agents/agent-one.json",
+                    "project:.kiro/agents/agent-one.json",
+                    "user:skills/skill-one/SKILL.md",
+                    "user:skills/standalone-skill/SKILL.md",
+                },
+            ),
+            (
+                "codex",
+                {"user:AGENTS.md", "project:AGENTS.md", "user:config.toml"},
+            ),
+            (
+                "copilot",
+                {"project:.github/agents/agent-one.agent.md"},
+            ),
+            (
+                "copilot-cli",
+                {
+                    "project:.github/agents/agent-one.agent.md",
+                    "project:.agents/skills/skill-one/SKILL.md",
+                    "user:skills/skill-one/SKILL.md",
+                    "project:.agents/skills/standalone-skill/SKILL.md",
+                    "user:skills/standalone-skill/SKILL.md",
+                },
+            ),
+            (
+                "opencode",
+                {
+                    "user:agents/agent-one.md",
+                    "project:.opencode/agents/agent-one.md",
+                    "user:skills/skill-one/SKILL.md",
+                    "project:.opencode/skills/skill-one/SKILL.md",
+                    "user:skills/standalone-skill/SKILL.md",
+                    "project:.opencode/skills/standalone-skill/SKILL.md",
+                },
+            ),
+            (
+                "pi",
+                {
+                    "user:AGENTS.md",
+                    "user:skills/skill-one/SKILL.md",
+                    "user:skills/standalone-skill/SKILL.md",
+                },
+            ),
+        ],
+    )
+    def test_adapter_managed_files_match_existing_layer_paths(self, ide_name, expected):
+        adapter = get_adapter(ide_name)
+        assert adapter.get_observal_managed_files(self._lockfile_for(ide_name)) == expected
+
+    def test_layer_managed_files_delegates_to_adapter(self):
+        from observal_cli.layer import _get_observal_managed_files
+
+        lockfile = self._lockfile_for("codex")
+        assert _get_observal_managed_files(lockfile, "codex", None) == {
+            "user:AGENTS.md",
+            "project:AGENTS.md",
+            "user:config.toml",
+        }
 
 
 class TestAdapterProtocol:
