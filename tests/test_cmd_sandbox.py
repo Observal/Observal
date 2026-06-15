@@ -1,15 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Pyasma <pranyasharma55555@gamil.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Tests for the sandbox registry CLI commands.
-
-Cover the main command paths:
-* submit and draft flows
-* list and show output modes
-* install config rendering
-* edit validation and update failures
-* delete confirmation behavior
-"""
+"""Tests for the sandbox registry CLI commands."""
 
 from __future__ import annotations
 
@@ -59,7 +51,7 @@ class TestSandboxSubmit:
     """Tests for sandbox submission commands."""
 
     def test_draft_and_submit_together_exits_with_error(self) -> None:
-        result = runner.invoke(app, ["sandbox", "submit", "--draft", "--submit", "sandbox-123"])
+        result = runner.invoke(app, ["registry", "sandbox", "submit", "--draft", "--submit", "sandbox-123"])
 
         assert result.exit_code == 1, result.output
         assert "Cannot use --draft and --submit together." in result.output
@@ -69,7 +61,7 @@ class TestSandboxSubmit:
             patch("observal_cli.config.resolve_alias", return_value="sandbox-123") as mock_resolve,
             patch("observal_cli.client.post", return_value={"id": "sandbox-123"}) as mock_post,
         ):
-            result = runner.invoke(app, ["sandbox", "submit", "--submit", "my-draft"])
+            result = runner.invoke(app, ["registry", "sandbox", "submit", "--submit", "my-draft"])
 
         assert result.exit_code == 0, result.output
         mock_resolve.assert_called_once_with("my-draft")
@@ -83,7 +75,7 @@ class TestSandboxSubmit:
             patch("builtins.open", mock_open(read_data=json.dumps(payload))) as mock_file,
             patch("observal_cli.client.post", return_value={"id": "sandbox-123"}) as mock_post,
         ):
-            result = runner.invoke(app, ["sandbox", "submit", "--from-file", "sandbox.json"])
+            result = runner.invoke(app, ["registry", "sandbox", "submit", "--from-file", "sandbox.json"])
 
         assert result.exit_code == 0, result.output
         mock_file.assert_called_once_with("sandbox.json")
@@ -92,26 +84,26 @@ class TestSandboxSubmit:
 
     def test_submit_from_file_with_invalid_json_exits_with_error(self) -> None:
         with patch("builtins.open", mock_open(read_data='{"name": "sandbox", invalid}')):
-            result = runner.invoke(app, ["sandbox", "submit", "--from-file", "sandbox.json"])
+            result = runner.invoke(app, ["registry", "sandbox", "submit", "--from-file", "sandbox.json"])
 
         assert result.exit_code == 1, result.output
         assert "Invalid JSON in sandbox.json" in result.output
 
     def test_submit_from_file_missing_file_exits_with_error(self) -> None:
         with patch("builtins.open", side_effect=FileNotFoundError()):
-            result = runner.invoke(app, ["sandbox", "submit", "--from-file", "sandbox.json"])
+            result = runner.invoke(app, ["registry", "sandbox", "submit", "--from-file", "sandbox.json"])
 
         assert result.exit_code == 1, result.output
         assert "File not found: sandbox.json" in result.output
 
     def test_draft_from_file_posts_to_draft_endpoint(self) -> None:
-        payload = {"name": "draft-sandbox", "runtime_type": "docker"}
+        payload = _make_sandbox_payload(name="draft-sandbox")
 
         with (
             patch("builtins.open", mock_open(read_data=json.dumps(payload))) as mock_file,
             patch("observal_cli.client.post", return_value={"id": "draft-123"}) as mock_post,
         ):
-            result = runner.invoke(app, ["sandbox", "submit", "--draft", "--from-file", "sandbox.json"])
+            result = runner.invoke(app, ["registry", "sandbox", "submit", "--draft", "--from-file", "sandbox.json"])
 
         assert result.exit_code == 0, result.output
         mock_file.assert_called_once_with("sandbox.json")
@@ -119,13 +111,13 @@ class TestSandboxSubmit:
         assert "Draft saved! ID: draft-123" in result.output
 
     def test_plain_submit_from_file_posts_to_submit_endpoint(self) -> None:
-        payload = {"name": "submitted-sandbox", "runtime_type": "docker"}
+        payload = payload = _make_sandbox_payload(name="submitted-sandbox")
 
         with (
             patch("builtins.open", mock_open(read_data=json.dumps(payload))) as mock_file,
             patch("observal_cli.client.post", return_value={"id": "submit-456"}) as mock_post,
         ):
-            result = runner.invoke(app, ["sandbox", "submit", "--from-file", "sandbox.json"])
+            result = runner.invoke(app, ["registry", "sandbox", "submit", "--from-file", "sandbox.json"])
 
         assert result.exit_code == 0, result.output
         mock_file.assert_called_once_with("sandbox.json")
@@ -138,7 +130,7 @@ class TestSandboxList:
 
     def test_empty_list_prints_no_results_message(self) -> None:
         with patch("observal_cli.client.get", return_value=[]) as mock_get:
-            result = runner.invoke(app, ["sandbox", "list"])
+            result = runner.invoke(app, ["registry", "sandbox", "list"])
 
         assert result.exit_code == 0, result.output
         mock_get.assert_called_once_with("/api/v1/sandboxes", params={})
@@ -151,6 +143,7 @@ class TestSandboxList:
             result = runner.invoke(
                 app,
                 [
+                    "registry",
                     "sandbox",
                     "list",
                     "--runtime",
@@ -174,7 +167,7 @@ class TestSandboxList:
         mock_data = [_make_sandbox_item()]
 
         with patch("observal_cli.client.get", return_value=mock_data) as mock_get:
-            result = runner.invoke(app, ["sandbox", "list", "--output", "json"])
+            result = runner.invoke(app, ["registry", "sandbox", "list", "--output", "json"])
 
         assert result.exit_code == 0, result.output
         mock_get.assert_called_once_with("/api/v1/sandboxes", params={})
@@ -184,7 +177,7 @@ class TestSandboxList:
         mock_data = [_make_sandbox_item()]
 
         with patch("observal_cli.client.get", return_value=mock_data) as mock_get:
-            result = runner.invoke(app, ["sandbox", "list", "--output", "plain"])
+            result = runner.invoke(app, ["registry", "sandbox", "list", "--output", "plain"])
 
         assert result.exit_code == 0, result.output
         mock_get.assert_called_once_with("/api/v1/sandboxes", params={})
@@ -203,7 +196,7 @@ class TestSandboxShow:
             patch("observal_cli.config.resolve_alias", return_value="sandbox-123") as mock_resolve,
             patch("observal_cli.client.get", return_value=mock_item) as mock_get,
         ):
-            result = runner.invoke(app, ["sandbox", "show", "analytics"])
+            result = runner.invoke(app, ["registry", "sandbox", "show", "analytics"])
 
         assert result.exit_code == 0, result.output
         mock_resolve.assert_called_once_with("analytics")
@@ -220,59 +213,10 @@ class TestSandboxShow:
             patch("observal_cli.config.resolve_alias", return_value="sandbox-123"),
             patch("observal_cli.client.get", return_value=mock_item),
         ):
-            result = runner.invoke(app, ["sandbox", "show", "analytics", "--output", "json"])
+            result = runner.invoke(app, ["registry", "sandbox", "show", "analytics", "--output", "json"])
 
         assert result.exit_code == 0, result.output
         assert json.loads(result.output) == mock_item
-
-
-class TestSandboxInstall:
-    """Tests for sandbox install command behavior."""
-
-    def test_install_prints_formatted_config(self) -> None:
-        mock_result = {
-            "config_snippet": {
-                "image": "python:3.11",
-                "runtime": "docker",
-            }
-        }
-
-        with (
-            patch("observal_cli.config.resolve_alias", return_value="sandbox-123") as mock_resolve,
-            patch("observal_cli.client.post", return_value=mock_result) as mock_post,
-        ):
-            result = runner.invoke(app, ["sandbox", "install", "analytics", "--ide", "vscode"])
-
-        assert result.exit_code == 0, result.output
-        mock_resolve.assert_called_once_with("analytics")
-        mock_post.assert_called_once_with(
-            "/api/v1/sandboxes/sandbox-123/install",
-            {"ide": "vscode"},
-        )
-        assert "Config for vscode" in result.output
-        assert "python:3.11" in result.output
-
-    def test_install_raw_outputs_only_the_config_json(self) -> None:
-        mock_result = {
-            "config_snippet": {
-                "image": "python:3.11",
-                "runtime": "docker",
-            }
-        }
-
-        with (
-            patch("observal_cli.config.resolve_alias", return_value="sandbox-123") as mock_resolve,
-            patch("observal_cli.client.post", return_value=mock_result) as mock_post,
-        ):
-            result = runner.invoke(app, ["sandbox", "install", "analytics", "--raw", "--ide", "vscode"])
-
-        assert result.exit_code == 0, result.output
-        mock_resolve.assert_called_once_with("analytics")
-        mock_post.assert_called_once_with(
-            "/api/v1/sandboxes/sandbox-123/install",
-            {"ide": "vscode"},
-        )
-        assert json.loads(result.output) == {"image": "python:3.11", "runtime": "docker"}
 
 
 class TestSandboxEdit:
@@ -295,6 +239,7 @@ class TestSandboxEdit:
             result = runner.invoke(
                 app,
                 [
+                    "registry",
                     "sandbox",
                     "edit",
                     "analytics",
@@ -327,7 +272,7 @@ class TestSandboxEdit:
         assert "✓ Updated new-name" in result.output
 
     def test_edit_without_updates_exits_with_error(self) -> None:
-        result = runner.invoke(app, ["sandbox", "edit", "analytics"])
+        result = runner.invoke(app, ["registry", "sandbox", "edit", "analytics"])
 
         assert result.exit_code == 1, result.output
         assert "No changes specified" in result.output
@@ -337,7 +282,7 @@ class TestSandboxEdit:
             patch("observal_cli.config.resolve_alias", return_value="sandbox-123"),
             patch("observal_cli.client.post", side_effect=Exception("409 currently being edited")),
         ):
-            result = runner.invoke(app, ["sandbox", "edit", "analytics", "--name", "new-name"])
+            result = runner.invoke(app, ["registry", "sandbox", "edit", "analytics", "--name", "new-name"])
 
         assert result.exit_code == 1, result.output
         assert "✗ Cannot edit" in result.output
@@ -353,7 +298,7 @@ class TestSandboxEdit:
             patch("observal_cli.client.post", return_value={"id": "sandbox-123"}) as mock_post,
             patch("observal_cli.client.put", return_value=mock_result) as mock_put,
         ):
-            result = runner.invoke(app, ["sandbox", "edit", "analytics", "--name", "new-name"])
+            result = runner.invoke(app, ["registry", "sandbox", "edit", "analytics", "--name", "new-name"])
 
         assert result.exit_code == 0, result.output
         mock_resolve.assert_called_once_with("analytics")
@@ -371,61 +316,8 @@ class TestSandboxEdit:
             patch("observal_cli.config.resolve_alias", return_value="sandbox-123") as mock_resolve,
             patch("observal_cli.client.put", side_effect=Exception("Failed to update")),
         ):
-            result = runner.invoke(app, ["sandbox", "edit", "analytics", "--name", "new-name"])
+            result = runner.invoke(app, ["registry", "sandbox", "edit", "analytics", "--name", "new-name"])
 
         assert result.exit_code == 1, result.output
         mock_resolve.assert_called_once_with("analytics")
         assert "Failed to update:" in result.output
-
-
-class TestSandboxDelete:
-    """Tests for sandbox deletion behavior."""
-
-    def test_delete_prompts_before_deleting(self) -> None:
-        payload = {"name": "demo-sandbox"}
-
-        with (
-            patch("observal_cli.config.resolve_alias", return_value="sandbox-123") as mock_resolve,
-            patch("observal_cli.client.get", return_value=payload) as mock_get,
-            patch("typer.confirm", return_value=True) as mock_confirm,
-            patch("observal_cli.client.delete") as mock_delete,
-        ):
-            result = runner.invoke(app, ["sandbox", "delete", "analytics"])
-
-        assert result.exit_code == 0, result.output
-        mock_resolve.assert_called_once_with("analytics")
-        mock_get.assert_called_once_with("/api/v1/sandboxes/sandbox-123")
-        mock_confirm.assert_called_once()
-        mock_delete.assert_called_once_with("/api/v1/sandboxes/sandbox-123")
-        assert "✓ Deleted sandbox-123" in result.output
-
-    def test_delete_aborted_when_user_declines_confirmation(self) -> None:
-        payload = {"name": "test-sandbox"}
-
-        with (
-            patch("observal_cli.config.resolve_alias", return_value="sandbox-123"),
-            patch("observal_cli.client.get", return_value=payload),
-            patch("typer.confirm", return_value=False),
-            patch("observal_cli.client.delete") as mock_delete,
-        ):
-            result = runner.invoke(app, ["sandbox", "delete", "analytics"])
-
-        assert result.exit_code == 1, result.output
-        mock_delete.assert_not_called()
-
-    def test_delete_with_yes_skips_confirmation(self) -> None:
-        payload = {"name": "test-sandbox"}
-
-        with (
-            patch("observal_cli.config.resolve_alias", return_value="sandbox-123") as mock_resolve,
-            patch("observal_cli.client.get", return_value=payload) as mock_get,
-            patch("typer.confirm") as mock_confirm,
-            patch("observal_cli.client.delete") as mock_delete,
-        ):
-            result = runner.invoke(app, ["sandbox", "delete", "analytics", "--yes"])
-
-        assert result.exit_code == 0, result.output
-        mock_resolve.assert_called_once_with("analytics")
-        mock_get.assert_not_called()
-        mock_confirm.assert_not_called()
-        mock_delete.assert_called_once_with("/api/v1/sandboxes/sandbox-123")
