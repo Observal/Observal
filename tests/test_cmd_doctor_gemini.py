@@ -1,4 +1,3 @@
-# SPDX-FileCopyrightText: 2026 Madhumidha
 # SPDX-FileCopyrightText: 2026 Madhumidha <madhumidha072005@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
@@ -96,19 +95,22 @@ def test_cleanup_gemini(tmp_path, monkeypatch):
         )
     )
 
-    # Run
+    # Dry Run
     changed = _cleanup_gemini(dry_run=True)
     assert changed
     data = json.loads(hooks_path.read_text())
     assert OBSERVAL_METADATA_KEY in data["BeforeAgent"][0]
 
+    # Actual Cleanup
     changed = _cleanup_gemini(dry_run=False)
     assert changed
 
+    # After cleanup, the Observal-managed hook should be removed, but the user-defined hook and other settings should remain intact.
     data = json.loads(hooks_path.read_text())
     assert len(data["BeforeAgent"]) == 1
     assert "foreign_command" in data["BeforeAgent"][0]["hooks"][0]["command"]
     assert data["other_setting"] is True
 
+    # Idempotency check - running cleanup again should not change anything
     changed = _cleanup_gemini(dry_run=False)
     assert not changed

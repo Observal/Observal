@@ -1,4 +1,3 @@
-# SPDX-FileCopyrightText: 2026 Madhumidha
 # SPDX-FileCopyrightText: 2026 Madhumidha <madhumidha072005@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
@@ -19,6 +18,7 @@ HOOKS_SPEC_VERSION = "1"
 _PKG_ROOT = str(Path(__file__).resolve().parent.parent.parent)
 
 
+# Helper function to construct the python command with PYTHONPATH set to the package root if observal_cli is not already in the path.
 def _python_cmd() -> str:
     """Return python command with PYTHONPATH set if needed."""
     try:
@@ -33,6 +33,7 @@ def _python_cmd() -> str:
     return f"PYTHONPATH={_PKG_ROOT} {sys.executable}"
 
 
+# The desired hooks spec for Gemini CLI, injected into BeforeAgent and SessionEnd.
 def get_desired_hooks() -> dict[str, list[dict]]:
     """Return the desired hooks spec for Gemini CLI.
 

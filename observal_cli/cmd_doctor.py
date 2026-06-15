@@ -1305,6 +1305,8 @@ def _check_gemini(issues: list, warnings: list):
         return
 
     has_session_push = False
+    # Iterate through Gemini's lifecycle events to check if our hook is installed.
+    # session_push hook - to synchronize local state to the server.
     for event in ("BeforeAgent", "SessionEnd"):
         groups = data.get(event, [])
         if not isinstance(groups, list):
@@ -1343,6 +1345,7 @@ def _patch_gemini(dry_run: bool) -> bool:
     desired_hooks = get_desired_hooks()
     changed = False
 
+    # For each lifecycle event, safely merge the Observal-managed hooks, while preserving any user-defined hooks in the settings.json file.
     for event, desired_entries in desired_hooks.items():
         existing = data.get(event, [])
         if not isinstance(existing, list):
@@ -1384,6 +1387,7 @@ def _cleanup_gemini(dry_run: bool) -> bool:
         return False
 
     changed = False
+    # Safely iterate through all events and filter out ONLY the hooks, while preserving any user-defined hooks.
     for event in list(data.keys()):
         groups = data.get(event, [])
         if isinstance(groups, list):
