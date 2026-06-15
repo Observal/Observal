@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Tests for enterprise audit logging (SOC 2 / ISO 27001 / HIPAA compliance)."""
+"""Tests for enterprise audit logging (SOC 2 / ISO 27001 compliance)."""
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch

@@ -5,7 +5,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,7 @@ class Feedback(Base):
     __tablename__ = "feedback"
     __table_args__ = (
         CheckConstraint("rating >= 1 AND rating <= 5", name="ck_feedback_rating"),
+        UniqueConstraint("user_id", "listing_id", "listing_type", name="uq_feedback_user_listing"),
         Index("ix_feedback_listing", "listing_id", "listing_type"),
         Index("ix_feedback_user", "user_id"),
     )
@@ -26,4 +27,6 @@ class Feedback(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    anonymous: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

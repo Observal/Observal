@@ -3,7 +3,22 @@
 
 
 import { Badge } from "@/components/ui/badge";
-import { IDE_DISPLAY_NAMES, type IdeName } from "@/lib/ide-features";
+import { useIdes } from "@/hooks/use-ides";
+
+function formatIdeSlug(ide: string): string {
+  return ide
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getIdeDisplayName(
+  ide: string,
+  ides: { name: string; display_name: string }[] | undefined,
+): string {
+  return ides?.find((entry) => entry.name === ide)?.display_name ?? formatIdeSlug(ide);
+}
 
 interface IdeBadgesProps {
   supportedIdes?: string[];
@@ -24,6 +39,8 @@ export function IdeBadges({
       ? supportedIdes
       : inferredSupportedIdes ?? [];
 
+  const { data: ideList } = useIdes();
+
   if (ides.length === 0) return null;
 
   const visible = ides.slice(0, max);
@@ -37,7 +54,7 @@ export function IdeBadges({
           variant="outline"
           className="text-[10px] px-1.5 py-0 font-normal leading-4"
         >
-          {IDE_DISPLAY_NAMES[ide as IdeName] ?? ide}
+          {getIdeDisplayName(ide, ideList)}
         </Badge>
       ))}
       {overflow > 0 && (

@@ -18,6 +18,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/web/node_modules ./web/node_modules
 COPY web/ ./web/
+COPY docs/ ./docs/
 WORKDIR /app/web
 RUN corepack enable pnpm && pnpm run build
 

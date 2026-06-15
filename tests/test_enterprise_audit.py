@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Tests for the HIPAA audit logging system."""
+"""Tests for the enterprise audit logging system."""
 
 from __future__ import annotations
 
@@ -275,12 +275,12 @@ class TestMiddleware:
 
         call_next = AsyncMock(return_value=MagicMock(status_code=200))
 
-        with patch("api.middleware.audit.logger") as mock_logger:
+        with patch("api.middleware.audit.optic") as mock_optic:
             mock_bound = MagicMock()
-            mock_logger.bind.return_value = mock_bound
+            mock_optic.bind.return_value = mock_bound
             await middleware.dispatch(request, call_next)
-            mock_logger.bind.assert_called_once()
-            kwargs = mock_logger.bind.call_args[1]
+            mock_optic.bind.assert_called_once()
+            kwargs = mock_optic.bind.call_args[1]
             assert kwargs["audit"] is True
             assert kwargs["outcome"] == "success"
             assert kwargs["sensitivity"] == "high"
@@ -309,11 +309,11 @@ class TestMiddleware:
 
         call_next = AsyncMock(return_value=MagicMock(status_code=403))
 
-        with patch("api.middleware.audit.logger") as mock_logger:
+        with patch("api.middleware.audit.optic") as mock_optic:
             mock_bound = MagicMock()
-            mock_logger.bind.return_value = mock_bound
+            mock_optic.bind.return_value = mock_bound
             await middleware.dispatch(request, call_next)
-            kwargs = mock_logger.bind.call_args[1]
+            kwargs = mock_optic.bind.call_args[1]
             assert kwargs["outcome"] == "denied"
             assert kwargs["actor_id"] == "anonymous"
 

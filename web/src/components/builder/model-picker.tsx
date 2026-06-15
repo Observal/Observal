@@ -15,11 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useModels } from "@/hooks/use-api";
-import {
-  IDE_DISPLAY_NAMES,
-  type IdeName,
-  getModelChoiceIdes,
-} from "@/lib/ide-features";
+import { useIdes } from "@/hooks/use-ides";
 import { annotateForDisplay, formatModel } from "@/lib/model-display";
 import type { CatalogModel } from "@/lib/types";
 
@@ -56,9 +52,13 @@ export function ModelPicker({
   showPerIdeOverrides = true,
 }: ModelPickerProps) {
   const { data: catalog, isLoading } = useModels();
+  const { data: ides, isLoading: idesLoading } = useIdes();
   const models = useMemo(() => catalog?.models ?? [], [catalog]);
   const annotated = useMemo(() => annotateForDisplay(models), [models]);
-  const idesWithChoice = useMemo(() => getModelChoiceIdes(), []);
+  const idesWithChoice = useMemo(
+    () => (ides ?? []).filter((ide) => ide.accepts_model_choice),
+    [ides],
+  );
 
   function renderSelect(
     value: string,
@@ -142,23 +142,23 @@ export function ModelPicker({
           </summary>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {idesWithChoice.map((ide) => {
-              const rows = modelsForIde(models, ide);
-              const value = modelsByIde[ide] ?? "";
+              const rows = modelsForIde(models, ide.name);
+              const value = modelsByIde[ide.name] ?? "";
               return (
-                <div key={ide} className="space-y-1.5">
+                <div key={ide.name} className="space-y-1.5">
                   <Label className="text-xs font-medium">
-                    {IDE_DISPLAY_NAMES[ide as IdeName] ?? ide}
+                    {ide.display_name}
                   </Label>
                   {renderSelect(
                     value,
                     (next) => {
                       const copy: Record<string, string> = { ...modelsByIde };
-                      if (!next) delete copy[ide];
-                      else copy[ide] = next;
+                      if (!next) delete copy[ide.name];
+                      else copy[ide.name] = next;
                       onModelsByIdeChange(copy);
                     },
                     rows,
-                    isLoading ? "Loading…" : "Use default",
+                    isLoading || idesLoading ? "Loading…" : "Use default",
                     { includeAuto: true, autoLabel: "Use default" },
                   )}
                 </div>
@@ -168,7 +168,7 @@ export function ModelPicker({
           {catalog?.degraded ? (
             <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
               Catalog is in degraded mode (offline snapshot). Saved selections
-              will still install — admins can refresh from the diagnostics
+              will still install, admins can refresh from the diagnostics
               page.
             </p>
           ) : null}

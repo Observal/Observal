@@ -47,7 +47,7 @@ observal-server/       FastAPI server
     clickhouse/        ClickHouse subpackage (client, schema, insert, query)
     ide/               Server-side IDE adapters (config generation)
     session_parsers/   Per-IDE JSONL parsers (claude_code, kiro, cursor, pi)
-    audit/             HIPAA audit system (loguru-based)
+    audit/             Compliance audit system (loguru-based)
     config/            Config generation helpers (mcp_builder, skill_builder)
     insights/          Insight engine (report generation, facets, sections, HTML export)
     shared/            Cross-service utilities
@@ -97,6 +97,7 @@ A stub IDE has:
 - **Ruff** for lint and format. Line length 120. Pre-commit enforces it.
 - **Loguru for dev logging** (`from loguru import logger as optic`). Positional args only: `optic.debug("x={}", x)`. Never f-strings in log calls.
 - **Typer for CLI.** `B008` suppressed because Typer requires function calls in argument defaults.
+- **Skill files track CLI changes.** When any CLI command is added, removed, renamed, or has its flags changed, update the corresponding skill files in `observal_cli/skills/`. These are the agent's source of truth for command syntax.
 - **Dynamic settings** for runtime config: `from services.dynamic_settings import get, get_int, get_bool`. Non-boot settings live in the DB, not env vars.
 - **SSRF guard** for all outbound network: `from services.ssrf_guard import check_url`. Used in webhooks, git clone, MCP analysis.
 - **Feature gating via license**: `from ee.license import is_feature_licensed`. Never import other `ee/` modules from core.
@@ -131,14 +132,14 @@ observal
 ├── auth                     # login, register, reset-password, logout, whoami, status
 ├── config                   # show, set, path, alias, aliases
 ├── registry                 # component parent group
-│   ├── mcp                  #   submit, list, show, install, delete
-│   ├── skill                #   submit, list, show, install, delete
-│   ├── hook                 #   submit, list, show, install, delete
-│   ├── prompt               #   submit, list, show, install, render, delete
-│   ├── sandbox              #   submit, list, show, install, delete
+│   ├── mcp                  #   submit, list, show, install, edit, delete, co-authors
+│   ├── skill                #   submit, list, show, install, edit, delete, co-authors
+│   ├── hook                 #   submit, list, show, install, edit, delete, co-authors
+│   ├── prompt               #   submit, list, show, edit, render, delete, co-authors
+│   ├── sandbox              #   submit, list, show, edit, delete, co-authors
 │   └── models               #   list (public model catalog)
 ├── component                # version commands (list-versions, publish, show-version)
-├── agent                    # create, list, show, install, delete, init, add, build, publish
+├── agent                    # create, list, show, install, delete, init, add, build, publish, co-authors
 ├── ops                      # overview, metrics, top, rate, feedback
 │   └── telemetry            #   status, test
 ├── admin                    # settings, set, users, review (list/show/approve/reject)
@@ -188,7 +189,7 @@ Source-available, separate license. Loaded via signed JWT (`OBSERVAL_LICENSE_KEY
 
 **Critical constraint:** Core never imports from `ee/`. The `ee/` code imports core. Open-source is fully functional without a license key.
 
-Contents: SAML SSO, SCIM provisioning, exec dashboard, HIPAA audit, license generation script.
+Contents: SAML SSO, SCIM provisioning, exec dashboard, compliance audit, license generation script.
 
 ## Commands
 

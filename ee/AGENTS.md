@@ -33,9 +33,9 @@ Usage in code: `from ee.license import is_feature_licensed`. Returns bool. Gener
 
 ## Feature inventory
 
-### Audit (HIPAA-compliant)
+### Audit (compliance-grade)
 
-Loguru-based middleware captures every API request. Events classified for HIPAA compliance.
+Loguru-based middleware captures every API request. Events classified by sensitivity level.
 
 - `ee/observal_server/routes/audit.py`: query + export (CSV/JSON, max 10k rows)
 - `ee/observal_server/services/audit.py`: sink to ClickHouse `audit_log` table

@@ -45,6 +45,10 @@ def _strip_jsonc_comments(text: str) -> str:
 class OpenCodeAdapter(BaseAdapter):
     """Adapter for OpenCode."""
 
+    home_markers = (".config/opencode",)
+    managed_agent_files = ("user:agents/{name}.md", "project:.opencode/agents/{name}.md")
+    managed_skill_files = ("user:skills/{name}/SKILL.md", "project:.opencode/skills/{name}/SKILL.md")
+
     @property
     def ide_name(self) -> str:
         return "opencode"

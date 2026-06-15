@@ -3,6 +3,7 @@
 // SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+// SPDX-FileCopyrightText: 2026 Anupam Kumar <anupam9594.kumar@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
@@ -247,7 +248,8 @@ export default function UsersPage() {
                       <TableCell className="py-1.5 text-xs text-muted-foreground text-right tabular-nums">
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}
                       </TableCell>
-                      <TableCell className="py-1.5 text-right space-x-1">
+                      <TableCell className="py-1.5">
+                        <div className="flex items-center justify-end gap-1">
                         {!ssoOnly && (
                           <Button
                             variant="ghost"
@@ -267,6 +269,7 @@ export default function UsersPage() {
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

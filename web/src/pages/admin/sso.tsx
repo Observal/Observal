@@ -5,23 +5,21 @@
 import { useState, useCallback } from "react";
 import {
   Shield,
-  Plus,
   Trash2,
   Loader2,
   CheckCircle2,
   XCircle,
-  Copy,
   RefreshCw,
-  KeyRound,
   Fingerprint,
+  HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useHelp } from "@/components/wiki/help-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { admin } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PageHeader } from "@/components/layouts/page-header";
@@ -170,195 +168,10 @@ function SamlConfigSection() {
   );
 }
 
-function ScimTokensSection() {
-  const queryClient = useQueryClient();
-  const { data: tokens, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["admin", "scim-tokens"],
-    queryFn: admin.scimTokens,
-  });
-
-  const [creating, setCreating] = useState(false);
-  const [description, setDescription] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
-  const [newToken, setNewToken] = useState<string | null>(null);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
-
-  const handleCreate = useCallback(async () => {
-    setCreating(true);
-    try {
-      const result = await admin.createScimToken({ description: description || undefined });
-      setNewToken(result.token);
-      setDescription("");
-      setShowCreate(false);
-      toast.success("SCIM token created");
-      queryClient.invalidateQueries({ queryKey: ["admin", "scim-tokens"] });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create token");
-    } finally {
-      setCreating(false);
-    }
-  }, [description, queryClient]);
-
-  const handleRevoke = useCallback(async (id: string) => {
-    if (!confirm("Revoke this SCIM token? Any IdP using it will lose access immediately.")) return;
-    setRevokingId(id);
-    try {
-      await admin.revokeScimToken(id);
-      toast.success("SCIM token revoked");
-      queryClient.invalidateQueries({ queryKey: ["admin", "scim-tokens"] });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to revoke token");
-    } finally {
-      setRevokingId(null);
-    }
-  }, [queryClient]);
-
-  const copyToken = useCallback(() => {
-    if (newToken) {
-      navigator.clipboard.writeText(newToken);
-      toast.success("Token copied to clipboard");
-    }
-  }, [newToken]);
-
-  if (isLoading) {
-    return (
-      <Card className="animate-pulse">
-        <CardHeader className="pb-3">
-          <div className="h-5 w-40 bg-muted rounded" />
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <div className="h-4 w-64 bg-muted rounded" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (isError) {
-    return <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />;
-  }
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm">SCIM Provisioning Tokens</CardTitle>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => { setShowCreate(true); setNewToken(null); }}
-          >
-            <Plus className="h-3 w-3 mr-1" /> New Token
-          </Button>
-        </div>
-        <CardDescription className="text-xs">
-          Bearer tokens for SCIM 2.0 user provisioning from your identity provider.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {newToken && (
-          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
-            <p className="text-xs font-medium text-emerald-600 mb-2">
-              Save this token now. It will not be shown again.
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-mono bg-background px-2 py-1 rounded border flex-1 break-all select-all">
-                {newToken}
-              </code>
-              <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={copyToken}>
-                <Copy className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {showCreate && (
-          <div className="rounded-md border border-border p-3 space-y-2">
-            <Input
-              placeholder="Token description (e.g., Okta SCIM)"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="h-8 text-sm"
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <Button size="sm" className="h-7 text-xs" onClick={handleCreate} disabled={creating}>
-                {creating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
-                Generate Token
-              </Button>
-              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowCreate(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {tokens && tokens.length > 0 ? (
-          <div className="divide-y divide-border">
-            {tokens.map((token) => (
-              <div key={token.id} className="flex items-center justify-between py-2.5 group">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium truncate">
-                      {token.description || "Unnamed token"}
-                    </span>
-                    {token.active ? (
-                      <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/20 text-[10px] px-1.5 py-0">
-                        Active
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Revoked</Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      {token.token_prefix}
-                    </span>
-                    {token.created_at && (
-                      <span className="text-[10px] text-muted-foreground">
-                        Created {new Date(token.created_at).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {token.active && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => handleRevoke(token.id)}
-                    disabled={revokingId === token.id}
-                  >
-                    {revokingId === token.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                    )}
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : !showCreate ? (
-          <div className="text-center py-4">
-            <KeyRound className="h-6 w-6 text-muted-foreground/40 mx-auto mb-2" />
-            <p className="text-xs text-muted-foreground">No SCIM tokens yet.</p>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function SsoPage() {
   const { ready } = useRoleGuard("admin");
   const { licensedFeatures } = useDeploymentConfig();
+  const helpCtx = useHelp();
 
   if (!ready) return null;
 
@@ -366,7 +179,7 @@ export default function SsoPage() {
     return (
       <>
         <PageHeader
-          title="SSO & Provisioning"
+          title="SSO"
           breadcrumbs={[{ label: "Admin" }, { label: "SSO" }]}
         />
         <div className="p-6">
@@ -375,7 +188,7 @@ export default function SsoPage() {
               <Shield className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
               <h3 className="text-sm font-medium">Enterprise Feature</h3>
               <p className="text-xs text-muted-foreground mt-1">
-                SAML SSO and SCIM provisioning are available in enterprise deployments.
+                SAML SSO is available in enterprise deployments.
               </p>
             </CardContent>
           </Card>
@@ -387,20 +200,29 @@ export default function SsoPage() {
   return (
     <>
       <PageHeader
-        title="SSO & Provisioning"
+        title="SSO"
         breadcrumbs={[{ label: "Admin" }, { label: "SSO" }]}
         actionButtonsRight={
-          <Button variant="outline" size="sm" asChild>
-            <a href="/api/v1/sso/saml/metadata" target="_blank" rel="noopener noreferrer">
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-              SP Metadata XML
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-primary transition-colors"
+              onClick={() => helpCtx.openHelp({ pageKey: "sso" })}
+              title="SSO documentation"
+            >
+              <HelpCircle className="h-4 w-4" />
+            </button>
+            <Button variant="outline" size="sm" asChild>
+              <a href="/api/v1/sso/saml/metadata" target="_blank" rel="noopener noreferrer">
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                SP Metadata XML
+              </a>
+            </Button>
+          </div>
         }
       />
       <div className="p-6 w-full mx-auto space-y-6">
         <SamlConfigSection />
-        <ScimTokensSection />
       </div>
     </>
   );

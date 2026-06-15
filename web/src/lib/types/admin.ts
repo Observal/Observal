@@ -79,12 +79,21 @@ export interface DiagnosticsResponse {
 export interface InsightReportListItem {
 	id: string;
 	agent_id: string;
+	agent_version_id?: string | null;
+	agent_version?: string | null;
+	version_scope?: string | null;
 	status: "pending" | "running" | "completed" | "failed";
 	period_start: string;
 	period_end: string;
 	sessions_analyzed: number;
 	created_at: string;
 	completed_at: string | null;
+	progress_phase?: string | null;
+	progress_current?: number;
+	progress_total?: number;
+	progress_percent?: number;
+	progress_message?: string | null;
+	progress_updated_at?: string | null;
 }
 
 export interface InsightCostMetrics {
@@ -199,6 +208,11 @@ export interface InsightRegression {
 export interface InsightReport {
 	id: string;
 	agent_id: string;
+	agent_version_id?: string | null;
+	agent_version?: string | null;
+	version_scope?: string | null;
+	comparison_agent_version_id?: string | null;
+	comparison_agent_version?: string | null;
 	triggered_by: string | null;
 	status: "pending" | "running" | "completed" | "failed";
 	period_start: string;
@@ -212,6 +226,12 @@ export interface InsightReport {
 	started_at: string;
 	completed_at: string | null;
 	created_at: string;
+	progress_phase?: string | null;
+	progress_current?: number;
+	progress_total?: number;
+	progress_percent?: number;
+	progress_message?: string | null;
+	progress_updated_at?: string | null;
 	applied_at: string | null;
 	applied_items: InsightAppliedItems | null;
 }

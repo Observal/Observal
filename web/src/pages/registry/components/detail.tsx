@@ -8,24 +8,25 @@
 
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
-import { Star, Check, Copy, ArrowLeft, History, Loader2, ArrowDownToLine, Users } from "lucide-react";
-import { toast } from "sonner";
+import { Star, ArrowLeft, History, Loader2, ArrowDownToLine } from "lucide-react";
 import {
   useRegistryItem,
   useFeedback,
   useFeedbackSummary,
+  useMyFeedback,
   useRegistryMetrics,
   useComponentVersions,
   useComponentVersionDetail,
 } from "@/hooks/use-api";
 import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
-import { copyToClipboard } from "@/lib/utils";
+import { compactNumber } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ReviewForm } from "@/components/registry/review-form";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { ComponentEditForm } from "@/components/registry/component-edit-form";
+import { ComponentInstallCommand } from "@/components/registry/component-install-command";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -36,7 +37,6 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { IdeBadges } from "@/components/registry/ide-badges";
 import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
-import { compactNumber } from "@/lib/utils";
 
 function statusVariant(status?: string) {
   if (status === "approved") return "default" as const;
@@ -52,6 +52,7 @@ export default function ComponentDetailPage() {
   const { data: item, isLoading, isError, error, refetch } = useRegistryItem(type, id);
   const { data: feedbackItems, refetch: refetchFeedback } = useFeedback(singularType, id);
   const { data: feedbackSummary, refetch: refetchSummary } = useFeedbackSummary(id);
+  const { data: myReview } = useMyFeedback(singularType, id);
   const { data: rawMetrics } = useRegistryMetrics(type, id);
   const { data: versionsData, isLoading: versionsLoading } = useComponentVersions(type, id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
@@ -174,7 +175,6 @@ export default function ComponentDetailPage() {
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="install">Add to Agent</TabsTrigger>
                 <TabsTrigger value="versions">
                   Versions
                   {versions.length > 0 && (
@@ -220,7 +220,9 @@ export default function ComponentDetailPage() {
                   />
                 ) : (
                   <div className="space-y-4">
-                    {feedbackItems.map((fb: FeedbackItem) => (
+                    {feedbackItems
+                      .filter((fb: FeedbackItem) => !myReview || fb.id !== myReview.id)
+                      .map((fb: FeedbackItem) => (
                       <div key={fb.id} className="rounded-md border border-border p-4 space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1">
@@ -247,33 +249,6 @@ export default function ComponentDetailPage() {
                     ))}
                   </div>
                 )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="install" forceMount className="mt-6 data-[state=inactive]:hidden">
-                <div className="space-y-6 w-full min-h-[400px]">
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold font-display">Add to Agent</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Add this {singularType} to a local agent configuration. Run this inside a directory with an <code className="font-mono text-foreground/70">observal-agent.yaml</code> file.
-                  </p>
-                </div>
-                <InstallSnippet type={singularType} name={item.name} />
-
-                {"git_url" in item && item.git_url ? (
-                  <>
-                    <Separator />
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-semibold font-display">From Source</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Clone directly from the source repository.
-                      </p>
-                      <code className="block rounded-md border border-border bg-muted/20 p-3 text-xs font-[family-name:var(--font-mono)]">
-                        git clone {String(item.git_url)}
-                      </code>
-                    </div>
-                  </>
-                ) : null}
                 </div>
               </TabsContent>
 
@@ -344,6 +319,11 @@ export default function ComponentDetailPage() {
 
             {/* Sidebar */}
             <aside className="hidden lg:block space-y-5">
+              {/* Install command (MCPs, Skills, Hooks only) */}
+              {(singularType === "mcp" || singularType === "skill" || singularType === "hook") && (
+                <ComponentInstallCommand componentType={singularType} componentName={item.name} />
+              )}
+
               {/* Stats */}
               <div className="border border-border rounded-md p-4 space-y-4">
                 <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
@@ -360,6 +340,17 @@ export default function ComponentDetailPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Created</span>
                       <span className="font-mono font-medium text-xs">{new Date(item.created_at).toLocaleDateString()}</span>
+                    </div>
+                  )}
+                  {(item as Record<string, unknown>).download_count != null && (item as Record<string, unknown>).download_count !== 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="inline-flex items-center gap-2 text-muted-foreground">
+                        <ArrowDownToLine className="h-3.5 w-3.5" />
+                        Downloads
+                      </span>
+                      <span className="font-mono font-medium">
+                        {compactNumber((item as Record<string, unknown>).download_count as number)}
+                      </span>
                     </div>
                   )}
                   {metricsEntries.map(([key, val]) => (
@@ -536,52 +527,4 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
   );
 }
 
-function MetricsSection({ entries }: { entries: [string, string][] }) {
-  if (entries.length === 0) return null;
-  return (
-    <div className="space-y-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Usage</h3>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {entries.map(([key, display]) => (
-          <div key={key} className="rounded-md border border-border p-3 space-y-1">
-            <span className="text-xs text-muted-foreground">{key.replace(/_/g, " ")}</span>
-            <p className="text-lg font-mono font-bold">{display}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-function InstallSnippet({ type, name }: { type: string; name: string }) {
-  const [copied, setCopied] = useState(false);
-  const cmd = `observal agent add ${type} ${name}`;
-
-  const handleCopy = useCallback(() => {
-    copyToClipboard(cmd);
-    setCopied(true);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
-  }, [cmd]);
-
-  return (
-    <div className="relative rounded-md border border-border bg-surface-sunken">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute top-2 right-2 h-7 w-7"
-        onClick={handleCopy}
-        aria-label="Copy command"
-      >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-success" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" />
-        )}
-      </Button>
-      <pre className="p-4 text-xs font-mono leading-relaxed overflow-x-auto text-foreground/80">
-        $ {cmd}
-      </pre>
-    </div>
-  );
-}

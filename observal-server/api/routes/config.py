@@ -139,10 +139,22 @@ async def get_public_config(db=Depends(get_db)):
 
 @router.get("/ides")
 async def get_ides():
-    """Return the canonical IDE list from IDE_REGISTRY. No auth required."""
+    """Return the canonical IDE list from IDE_REGISTRY, filtered by allowlist."""
+    from services.dynamic_settings import get
+
     optic.debug("config.get_ides called")
+
+    allowlist_raw = await get("misc.ide_allowlist")
+    requested_allowlist = [s.strip() for s in allowlist_raw.split(",") if s.strip()] if allowlist_raw else []
+    valid_allowlist = [name for name in requested_allowlist if name in IDE_REGISTRY]
+    allowlist = set(valid_allowlist) if valid_allowlist else None
+
+    default_ide_raw = await get("misc.default_ide")
+
     ides = []
     for name, spec in IDE_REGISTRY.items():
+        if allowlist and name not in allowlist:
+            continue
         ides.append(
             {
                 "name": name,
@@ -153,7 +165,10 @@ async def get_ides():
         )
     from fastapi.responses import JSONResponse
 
+    available_names = {ide["name"] for ide in ides}
+    default_ide = default_ide_raw if default_ide_raw in available_names else None
+
     return JSONResponse(
-        content={"ides": ides},
-        headers={"Cache-Control": "public, max-age=86400"},
+        content={"ides": ides, "default_ide": default_ide},
+        headers={"Cache-Control": "no-store"},
     )

@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -32,6 +33,7 @@ import {
   useAgentDownloads,
   useFeedback,
   useFeedbackSummary,
+  useMyFeedback,
   useWhoami,
   useAgentVersions,
   useAgentVersionDetail,
@@ -47,7 +49,6 @@ import { PullCommand } from "@/components/registry/pull-command";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { IdeBadges } from "@/components/registry/ide-badges";
-import { FEATURE_LABELS, type IdeFeature } from "@/lib/ide-features";
 import { ReviewForm } from "@/components/registry/review-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,16 @@ import { AgentEditForm, type AgentEditFormProps } from "@/components/registry/ag
 import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
 import { compactNumber, copyToClipboard } from "@/lib/utils";
 import { DIMENSION_META } from "@/components/dashboard/score-overview";
+
+const FEATURE_LABELS: Record<string, string> = {
+  skills: "Slash-command skills",
+  superpowers: "Kiro superpowers",
+  hook_bridge: "Hook bridge",
+  mcp_servers: "MCP servers",
+  rules: "Rules / system prompt",
+  steering_files: "Steering files",
+  otlp_telemetry: "OTLP telemetry",
+};
 
 interface AgentDetail {
   name: string;
@@ -199,9 +210,9 @@ function InsightStatusBadge({ status }: { status: InsightReportListItem["status"
   }
 }
 
-function InsightsTab({ agentId }: { agentId: string }) {
+function InsightsTab({ agentId, agentVersion }: { agentId: string; agentVersion?: string | null }) {
   const { data: reports, isLoading: reportsLoading } = useInsightReports(agentId);
-  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId);
+  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId, agentVersion);
   const { data: insightsStatus } = useInsightsStatus();
   const generateInsight = useGenerateInsight();
 
@@ -221,7 +232,7 @@ function InsightsTab({ agentId }: { agentId: string }) {
           <p className="text-xs text-muted-foreground">
             {countLoading
               ? "Checking sessions..."
-              : `${availableSessions} session${availableSessions !== 1 ? "s" : ""} available (last 14 days)`}
+              : `${availableSessions} session${availableSessions !== 1 ? "s" : ""} available for ${sessionCountData?.agent_version ?? agentVersion ?? "latest approved"} (last 14 days)`}
           </p>
         </div>
         <Button
@@ -233,7 +244,7 @@ function InsightsTab({ agentId }: { agentId: string }) {
             generateInsight.isPending ||
             hasRunning
           }
-          onClick={() => generateInsight.mutate({ agentId })}
+          onClick={() => generateInsight.mutate({ agentId, agentVersion: agentVersion ?? undefined })}
         >
           {generateInsight.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -268,8 +279,8 @@ function InsightsTab({ agentId }: { agentId: string }) {
             {reports.map((report) => (
               <Link
                 key={report.id}
-                to="/insights/$reportId"
-                params={{ reportId: report.id }}
+                to="/agents/$agentId/insights/$reportId"
+                params={{ agentId, reportId: report.id }}
                 className="flex items-center justify-between gap-4 rounded-md border border-border p-3 hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -281,9 +292,19 @@ function InsightsTab({ agentId }: { agentId: string }) {
                       year: "numeric",
                     })}
                   </span>
+                  {report.agent_version && (
+                    <span className="text-xs text-muted-foreground">
+                      v{report.agent_version}
+                    </span>
+                  )}
                   {report.sessions_analyzed > 0 && (
                     <span className="text-xs text-muted-foreground">
                       {report.sessions_analyzed} sessions analyzed
+                    </span>
+                  )}
+                  {(report.status === "pending" || report.status === "running") && report.progress_phase && (
+                    <span className="text-xs text-muted-foreground">
+                      {report.progress_phase.replace(/_/g, " ")}
                     </span>
                   )}
                 </div>
@@ -316,6 +337,7 @@ export default function AgentDetailPage() {
   );
   const { data: feedbackSummary, refetch: refetchSummary } =
     useFeedbackSummary(id);
+  const { data: myReview } = useMyFeedback("agent", id);
 
   const { data: whoami } = useWhoami();
   const { data: versionsData } = useAgentVersions(id);
@@ -477,7 +499,6 @@ export default function AgentDetailPage() {
                       </span>
                     )}
                   </TabsTrigger>
-                  <TabsTrigger value="install">Install</TabsTrigger>
                   {canEdit && <TabsTrigger value="edit">Edit</TabsTrigger>}
                   {canEdit && <TabsTrigger value="insights">Insights</TabsTrigger>}
 
@@ -616,7 +637,9 @@ export default function AgentDetailPage() {
                     />
                   ) : (
                     <div className="space-y-4">
-                      {feedbackItems.map((fb: FeedbackItem) => (
+                      {feedbackItems
+                        .filter((fb: FeedbackItem) => !myReview || fb.id !== myReview.id)
+                        .map((fb: FeedbackItem) => (
                         <div
                           key={fb.id}
                           className="rounded-md border border-border p-4 space-y-2"
@@ -651,31 +674,6 @@ export default function AgentDetailPage() {
                   )}
                 </TabsContent>
 
-                <TabsContent value="install" className="mt-6 space-y-6">
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-semibold font-display">
-                      Quick Install
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      Use the Observal CLI to pull this agent into your project.
-                    </p>
-                  </div>
-                  <PullCommand agentName={a.name} versions={versions} />
-
-                  <Separator />
-
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold font-display">
-                      Manual Configuration
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      Add the following to your IDE configuration to use this
-                      agent directly.
-                    </p>
-                    <ConfigSnippet agentName={a.name} />
-                  </div>
-                </TabsContent>
-
                 {canEdit && (
                   <TabsContent value="edit" className="mt-6">
                     <AgentEditForm
@@ -688,7 +686,7 @@ export default function AgentDetailPage() {
                 )}
                 {canEdit && (
                   <TabsContent value="insights" className="mt-6">
-                    <InsightsTab agentId={id} />
+                    <InsightsTab agentId={id} agentVersion={effectiveVersion} />
                   </TabsContent>
                 )}
 
@@ -777,7 +775,7 @@ export default function AgentDetailPage() {
                     <div className="flex flex-wrap gap-1">
                       {versionRequiredFeatures.map((f: string) => (
                         <span key={f} className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                          {FEATURE_LABELS[f as IdeFeature] ?? f}
+                          {FEATURE_LABELS[f] ?? f}
                         </span>
                       ))}
                     </div>
@@ -827,49 +825,4 @@ export default function AgentDetailPage() {
   );
 }
 
-function ConfigSnippet({
-  agentName,
-}: {
-  agentName: string;
-}) {
-  const [copied, setCopied] = useState(false);
 
-  const snippet = JSON.stringify(
-    {
-      observal: {
-        agent: agentName,
-        registry: "https://registry.observal.dev",
-      },
-    },
-    null,
-    2,
-  );
-
-  const handleCopy = useCallback(() => {
-    copyToClipboard(snippet);
-    setCopied(true);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
-  }, [snippet]);
-
-  return (
-    <div className="relative rounded-md border border-border bg-surface-sunken">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute top-2 right-2 h-7 w-7"
-        onClick={handleCopy}
-        aria-label="Copy config"
-      >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-success" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" />
-        )}
-      </Button>
-      <pre className="p-4 text-xs font-mono leading-relaxed overflow-x-auto text-foreground/80">
-        {snippet}
-      </pre>
-    </div>
-  );
-}

@@ -122,7 +122,6 @@ observal registry skill install NAME --ide claude-code --scope project
 observal registry skill install NAME --ide claude-code --version 1.2.0
 observal registry hook install NAME --ide kiro
 observal registry hook install NAME --ide claude-code --platform darwin --dir .
-observal registry prompt install NAME --ide kiro
 ```
 
 **Flags (all install commands):**
@@ -130,8 +129,6 @@ observal registry prompt install NAME --ide kiro
 - `--version <semver>`: install a specific version instead of latest
 - `--raw`: output JSON only (MCP)
 - `--scope user|project`: install scope (skill)
-
-`sandbox install` is deprecated. Use `observal agent add sandbox UUID` + `observal agent pull` instead.
 
 ---
 
@@ -182,16 +179,15 @@ Co-authors have equal access to the component owner (edit, publish, manage co-au
 
 ```bash
 # List
-observal co-authors list mcps <id-or-name>
+observal registry mcp co-authors list <id-or-name>
+observal registry skill co-authors list <id-or-name>
 
 # Add
-observal co-authors add skills <id-or-name> user@example.com
+observal registry skill co-authors add <id-or-name> user@example.com
 
 # Remove
-observal co-authors remove hooks <id-or-name> <user-uuid>
+observal registry hook co-authors remove <id-or-name> <user-uuid>
 ```
-
-Entity types: `mcps`, `skills`, `hooks`, `prompts`, `sandboxes`.
 
 
 ## Error Reference

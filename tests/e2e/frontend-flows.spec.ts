@@ -112,14 +112,8 @@ test.describe("Frontend Flows", () => {
     await page.goto(`/agents/${agentName}`);
     await page.waitForLoadState("networkidle");
 
-    // Click the "Install" tab to show the pull command
-    const installTab = page.locator('[role="tab"]:has-text("Install")');
-    await installTab.click();
-    await page.waitForTimeout(300);
-
-    // Click the copy button next to the install command in the main content area
-    // The main tabpanel has the pull command with a copy button
-    const copyBtn = page.locator('[role="tabpanel"] button[aria-label="Copy command"]').first();
+    // The install command now lives in the detail sidebar.
+    const copyBtn = page.getByRole("button", { name: "Copy command" }).first();
     await expect(copyBtn).toBeVisible({ timeout: 5_000 });
     await copyBtn.click();
 

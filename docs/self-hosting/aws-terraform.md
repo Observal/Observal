@@ -162,7 +162,7 @@ The EC2 data host, EBS volume, internal DNS records, Grafana, and Prometheus are
 ### Application options
 
 ```hcl
-deployment_mode     = "enterprise"   # SSO-only login, SCIM provisioning
+deployment_mode     = "enterprise"   # SSO-only login
 data_retention_days = 90             # ClickHouse TTL; 0 to disable
 log_retention_days  = 30             # CloudWatch log group retention
 image_tag           = "v1.4.0"       # specific Observal release; "latest" pulls main

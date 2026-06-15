@@ -16,7 +16,10 @@ import {
 	ArrowUp,
 	ArrowDown,
 	BarChart3,
+	SlidersHorizontal,
+	HelpCircle,
 } from "lucide-react";
+import { useHelp } from "@/components/wiki/help-context";
 import {
 	useSessions2,
 	useSessionsSummary,
@@ -44,6 +47,14 @@ import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { Session } from "@/lib/types";
+
+/** Quickstart docs URL shown in the first-time empty state CTA. */
+const DOCS_QUICKSTART_URL =
+	"https://github.com/BlazeUp-AI/Observal/blob/main/docs/getting-started/quickstart.md";
+
+function truncateQuery(q: string, max = 50): string {
+	return q.length > max ? `${q.slice(0, max)}…` : q;
+}
 
 // ── Search query parser (Discord-style: platform:kiro user:"John Doe") ───────
 
@@ -74,6 +85,103 @@ function parseSearchQuery(query: string): { text: string; filters: Record<string
 	// Remaining text after removing filter tokens
 	const text = query.replace(/(\w+):(?:"[^"]*"|[^\s]*)/g, "").trim();
 	return { text, filters };
+}
+
+function filterTokensOnly(query: string): string {
+	const tokens = query.match(/(\w+):(?:"[^"]*"|[^\s]*)/g);
+	return tokens ? tokens.join(" ").trim() : "";
+}
+
+type TracesEmptyStateKind = "first-time" | "filter" | "search" | "fallback";
+
+function applyParameterFilters(
+	sessions: Session[],
+	filters: Record<string, string>,
+): Session[] {
+	let result = sessions;
+
+	if (filters.platform) {
+		const p = filters.platform.toLowerCase();
+		result = result.filter(
+			(s) =>
+				(s.service_name ?? "").toLowerCase().includes(p) ||
+				(s.platform ?? "").toLowerCase().includes(p),
+		);
+	}
+	if (filters.user) {
+		const u = filters.user.toLowerCase();
+		result = result.filter((s) =>
+			(s.user_name ?? "").toLowerCase().includes(u),
+		);
+	}
+	if (filters.agent) {
+		const a = filters.agent.toLowerCase();
+		result = result.filter((s) =>
+			(s.agent_name ?? "").toLowerCase().includes(a),
+		);
+	}
+	if (filters.model) {
+		const m = filters.model.toLowerCase();
+		result = result.filter((s) =>
+			(s.model ?? "").toLowerCase().includes(m),
+		);
+	}
+	if (filters.days) {
+		const d = parseInt(filters.days, 10);
+		if (!isNaN(d) && d > 0) {
+			const cutoff = Date.now() - d * 86_400_000;
+			result = result.filter((s) =>
+				s.first_event_time && toDate(s.first_event_time).getTime() >= cutoff,
+			);
+		}
+	}
+	if (filters.status) {
+		const st = filters.status.toLowerCase();
+		if (st === "active") result = result.filter((s) => s.is_active);
+		else if (st === "inactive") result = result.filter((s) => !s.is_active);
+	}
+
+	return result;
+}
+
+function applyTextFilter(sessions: Session[], text: string): Session[] {
+	if (!text) return sessions;
+	const lower = text.toLowerCase();
+	return sessions.filter(
+		(s) =>
+			(s.session_id ?? "").toLowerCase().includes(lower) ||
+			(s.user_name ?? "").toLowerCase().includes(lower) ||
+			(s.agent_name ?? "").toLowerCase().includes(lower) ||
+			(s.model ?? "").toLowerCase().includes(lower) ||
+			(s.platform ?? "").toLowerCase().includes(lower),
+	);
+}
+
+function getTracesEmptyStateKind(
+	sessions: Session[],
+	query: string,
+): TracesEmptyStateKind {
+	const { text, filters } = parseSearchQuery(query);
+	const hasFilters = Object.keys(filters).length > 0;
+	const hasText = text.length > 0;
+
+	if (sessions.length === 0) {
+		if (hasText) return "search";
+		if (hasFilters) return "filter";
+		return "first-time";
+	}
+
+	if (hasFilters) {
+		const afterFilters = applyParameterFilters(sessions, filters);
+		if (afterFilters.length === 0) return "filter";
+		if (hasText && applyTextFilter(afterFilters, text).length === 0) {
+			return "search";
+		}
+		return "fallback";
+	}
+
+	if (hasText && applyTextFilter(sessions, text).length === 0) return "search";
+	return "fallback";
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -310,6 +418,7 @@ function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
 // ── Page ─────────────────────────────────────────────────────────────
 
 export default function TracesPage() {
+	const helpCtx = useHelp();
 	const router = useRouter();
 	const { search: searchParam } = useSearch({ from: "/_authed/_user/traces/" });
 	const { pathname } = useLocation();
@@ -363,68 +472,33 @@ export default function TracesPage() {
 		[updateURL],
 	);
 
+	const clearSearch = useCallback(() => {
+		const remaining = filterTokensOnly(globalFilter);
+		clearTimeout(debounceRef.current);
+		setSearchValue(remaining);
+		setGlobalFilter(remaining);
+		updateURL(remaining);
+	}, [globalFilter, updateURL]);
+
+	const clearFilters = useCallback(() => {
+		const { text } = parseSearchQuery(globalFilter);
+		clearTimeout(debounceRef.current);
+		setSearchValue(text);
+		setGlobalFilter(text);
+		updateURL(text);
+	}, [globalFilter, updateURL]);
+
 	const allSessions = useMemo(() => (sessions ?? []) as Session[], [sessions]);
 
-	// Apply parameterized filters from search query
+	const parsedQuery = useMemo(() => parseSearchQuery(globalFilter), [globalFilter]);
+	const emptyStateKind = useMemo(
+		() => getTracesEmptyStateKind(allSessions, globalFilter),
+		[allSessions, globalFilter],
+	);
+
 	const filteredSessions = useMemo(() => {
 		const { text, filters } = parseSearchQuery(globalFilter);
-		let result = allSessions;
-
-		if (filters.platform) {
-			const p = filters.platform.toLowerCase();
-			result = result.filter(
-				(s) =>
-					(s.service_name ?? "").toLowerCase().includes(p) ||
-					(s.platform ?? "").toLowerCase().includes(p),
-			);
-		}
-		if (filters.user) {
-			const u = filters.user.toLowerCase();
-			result = result.filter((s) =>
-				(s.user_name ?? "").toLowerCase().includes(u),
-			);
-		}
-		if (filters.agent) {
-			const a = filters.agent.toLowerCase();
-			result = result.filter((s) =>
-				(s.agent_name ?? "").toLowerCase().includes(a),
-			);
-		}
-		if (filters.model) {
-			const m = filters.model.toLowerCase();
-			result = result.filter((s) =>
-				(s.model ?? "").toLowerCase().includes(m),
-			);
-		}
-		if (filters.days) {
-			const d = parseInt(filters.days, 10);
-			if (!isNaN(d) && d > 0) {
-				const cutoff = Date.now() - d * 86_400_000;
-				result = result.filter((s) =>
-					s.first_event_time && toDate(s.first_event_time).getTime() >= cutoff,
-				);
-			}
-		}
-		if (filters.status) {
-			const st = filters.status.toLowerCase();
-			if (st === "active") result = result.filter((s) => s.is_active);
-			else if (st === "inactive") result = result.filter((s) => !s.is_active);
-		}
-
-		// Free text search on session label / user / model
-		if (text) {
-			const lower = text.toLowerCase();
-			result = result.filter(
-				(s) =>
-					(s.session_id ?? "").toLowerCase().includes(lower) ||
-					(s.user_name ?? "").toLowerCase().includes(lower) ||
-					(s.agent_name ?? "").toLowerCase().includes(lower) ||
-					(s.model ?? "").toLowerCase().includes(lower) ||
-					(s.platform ?? "").toLowerCase().includes(lower),
-			);
-		}
-
-		return result;
+		return applyTextFilter(applyParameterFilters(allSessions, filters), text);
 	}, [allSessions, globalFilter]);
 
 	const data = useMemo(
@@ -443,6 +517,49 @@ export default function TracesPage() {
 
 	const todaySessions = summary?.today_sessions ?? allSessions.length;
 
+	const tracesEmptyState = (() => {
+		switch (emptyStateKind) {
+			case "search":
+				return (
+					<EmptyState
+						icon={Search}
+						title="No traces match your search"
+						description={`No traces found for "${truncateQuery(parsedQuery.text)}". Try a different search term.`}
+						actionLabel="Clear search"
+						onAction={clearSearch}
+					/>
+				);
+			case "filter":
+				return (
+					<EmptyState
+						icon={SlidersHorizontal}
+						title="No results for this filter"
+						description="No traces match the selected filters. Try adjusting your filter criteria or clear all filters."
+						actionLabel="Clear filters"
+						onAction={clearFilters}
+					/>
+				);
+			case "first-time":
+				return (
+					<EmptyState
+						icon={Activity}
+						title="No traces yet"
+						description="Traces are created automatically when tools are invoked through Observal. Connect an IDE to start collecting traces."
+						actionLabel="Connect your first IDE"
+						actionHref={DOCS_QUICKSTART_URL}
+					/>
+				);
+			default:
+				return (
+					<EmptyState
+						icon={Activity}
+						title="No matching sessions"
+						description="No sessions match the current view."
+					/>
+				);
+		}
+	})();
+
 	return (
 		<>
 			<PageHeader
@@ -451,6 +568,16 @@ export default function TracesPage() {
 					{ label: "Dashboard", href: "/dashboard" },
 					{ label: "Traces" },
 				]}
+				actionButtonsRight={
+					<button
+						type="button"
+						className="text-muted-foreground hover:text-primary transition-colors"
+						onClick={() => helpCtx.openHelp({ pageKey: "traces" })}
+						title="Telemetry documentation"
+					>
+						<HelpCircle className="h-4 w-4" />
+					</button>
+				}
 			/>
 			<div className="p-6 w-full mx-auto space-y-5">
 				{isLoading ? (
@@ -458,11 +585,7 @@ export default function TracesPage() {
 				) : isError ? (
 					<ErrorState message={error?.message} onRetry={() => refetch()} />
 				) : allSessions.length === 0 ? (
-					<EmptyState
-						icon={Activity}
-						title="No sessions yet"
-						description="Sessions will appear here once telemetry data is collected from your IDE."
-					/>
+					tracesEmptyState
 				) : (
 					<div className="animate-in space-y-5">
 						{/* ── Summary ── */}
@@ -533,12 +656,9 @@ export default function TracesPage() {
 								</TableHeader>
 								<TableBody>
 									{table.getRowModel().rows.length === 0 ? (
-										<TableRow>
-											<TableCell
-												colSpan={columns.length}
-												className="h-32 text-center text-sm text-muted-foreground"
-											>
-												No matching sessions.
+										<TableRow className="hover:bg-transparent">
+											<TableCell colSpan={columns.length} className="p-0">
+												{tracesEmptyState}
 											</TableCell>
 										</TableRow>
 									) : (

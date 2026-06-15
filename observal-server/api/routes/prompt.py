@@ -160,34 +160,6 @@ async def get_prompt(
     raise HTTPException(status_code=404, detail="Listing not found")
 
 
-@router.post("/{listing_id}/install", response_model=dict)
-async def install_prompt(
-    listing_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
-):
-    optic.debug("prompt install: listing_id={}", listing_id)
-    listing = await resolve_listing(PromptListing, listing_id, db, require_status=ListingStatus.approved)
-    if not listing:
-        listing = await resolve_listing(PromptListing, listing_id, db)
-        if not listing or get_effective_component_permission(listing, current_user) != "owner":
-            raise HTTPException(status_code=404, detail="Listing not found or not approved")
-
-    db.add(PromptDownload(listing_id=listing.id, user_id=current_user.id, ide="api"))
-    await db.commit()
-    return {
-        "listing_id": str(listing.id),
-        "config_snippet": {
-            "prompt": {
-                "id": str(listing.id),
-                "name": listing.name,
-                "render_url": f"/api/v1/prompts/{listing.id}/render",
-                "template_preview": listing.template[:200] if listing.template else "",
-            },
-        },
-    }
-
-
 @router.post("/{listing_id}/render", response_model=PromptRenderResponse)
 async def render_prompt(
     listing_id: str,

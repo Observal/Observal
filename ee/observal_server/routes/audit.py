@@ -3,7 +3,7 @@
 
 """Enterprise audit log query and export endpoints.
 
-HIPAA-compliant audit trail with tamper-detection chain hashes,
+Compliance-grade audit trail with tamper-detection chain hashes,
 sensitivity classification, and outcome tracking.
 """
 
@@ -135,10 +135,10 @@ async def export_audit_logs(
     format: str = Query("csv", description="Export format: csv or json"),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Export audit log for HIPAA compliance review.
+    """Export audit log for compliance review.
 
-    Supports CSV (default) and JSON formats. CSV uses headers matching
-    the HIPAA audit trail specification (45 CFR 164.312(b)).
+    Supports CSV (default) and JSON formats. Column headers follow the
+    standard audit trail schema.
     """
     conditions = []
     params = {}
@@ -196,10 +196,12 @@ async def export_audit_logs(
                 ]
             ),
             media_type="application/json",
-            headers={"Content-Disposition": "attachment; filename=hipaa_audit_trail.json"},
+            headers={
+                "Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
+            },
         )
 
-    # CSV export with HIPAA-standard column headers
+    # CSV export with standard column headers
     output = io.StringIO()
     fieldnames = [
         "event_id",
@@ -233,5 +235,7 @@ async def export_audit_logs(
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=hipaa_audit_trail.csv"},
+        headers={
+            "Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.csv"
+        },
     )

@@ -9,22 +9,27 @@ Run Observal entirely on your own infrastructure. No SaaS, no egress, every byte
 
 ## Architecture at a glance
 
-```
-                  ┌────────────────────────────────────────────────────┐
-                  │              observal-net (bridge)                 │
-                  │                                                    │
-  [Engineers] ──► │  observal-web  ◄──►  observal-api                  │
-   (port 3000)    │      │                    │                        │
-                  │      ▼                    ▼                        │
-                  │  (static)        observal-worker                   │
-                  │                     │  │  │                        │
-                  │          ┌──────────┘  │  └──────────┐             │
-                  │          ▼             ▼             ▼             │
-                  │   observal-db   observal-redis  observal-clickhouse│
-                  │   (Postgres)    (jobs, pubsub)   (telemetry)       │
-                  │                                                    │
-                  │   observal-grafana  ──►  clickhouse (optional)     │
-                  └────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    engineers[Engineers]
+    web["observal-web - static web UI"]
+    api["observal-api - FastAPI backend"]
+    worker["observal-worker - async jobs"]
+    db["observal-db - Postgres"]
+    redis["observal-redis - jobs + pub/sub"]
+    ch["observal-clickhouse - telemetry"]
+    grafana["observal-grafana - optional dashboards"]
+
+    engineers --> web
+    web <--> api
+    api --> worker
+    api --> db
+    api --> redis
+    api --> ch
+    worker --> db
+    worker --> redis
+    worker --> ch
+    grafana --> ch
 ```
 
 **Seven services:**
@@ -41,13 +46,33 @@ Run Observal entirely on your own infrastructure. No SaaS, no egress, every byte
 
 All services run on a private `observal-net` bridge network. Named volumes (`pgdata`, `chdata`, `redisdata`, `grafanadata`, `apidata`) hold persistent data.
 
-## Where to start
+## Deployment tiers
+
+Choose the deployment model that fits your team:
+
+| | [Single-node](single-node-deploy.md) | [Production](production-deploy.md) |
+|---|---|---|
+| **How** | Docker Compose on one VM | Terraform on AWS or GCP |
+| **Best for** | ≤50 users, internal tools, POCs | Enterprise, SLA-bound, 50+ users |
+| **Cost** | $20–150/mo | ~$180–255/mo |
+| **HA** | No | Yes (Multi-AZ databases, autoscaling) |
+| **Time to deploy** | 10 minutes | 20–30 minutes |
+
+**Start here:**
+
+| If you want to... | Read |
+| --- | --- |
+| Deploy on a single VM (simplest) | [Single-node deployment](single-node-deploy.md) |
+| Deploy a production HA stack | [Production deployment](production-deploy.md) |
+| Deploy on AWS specifically | [AWS deployment with Terraform](aws-terraform.md) |
+| Deploy on GCP specifically | [GCP deployment with Terraform](gcp-terraform.md) |
+
+**Then configure and operate:**
 
 | If you want to... | Read |
 | --- | --- |
 | Confirm your machine can run Observal | [Requirements](requirements.md) |
-| Get the stack running locally | [Docker Compose setup](docker-compose.md) |
-| Deploy to AWS in one command | [AWS deployment with Terraform](aws-terraform.md) |
+| Get the stack running locally for dev | [Docker Compose setup](docker-compose.md) |
 | Know every env var that matters | [Configuration](configuration.md) |
 | See every port and volume at a glance | [Ports and volumes](ports-and-volumes.md) |
 | Understand the DBs and retention | [Databases](databases.md) |

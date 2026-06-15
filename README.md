@@ -22,7 +22,7 @@
  ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝
 </pre>
 
-**A self-hosted unified agent registry with built in analytics. Enterprise edition adds SSO (OIDC and SAML), Audit Logs, Security Events and organizational AI insights.**
+**A registry and insight platform for portable AI coding agents. Define context once, install it across tools, and learn what works.**
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="License"></a>
@@ -35,6 +35,22 @@
 </p>
 
 > If you find Observal useful, please consider giving it a star. It helps others discover the project and keeps development going.
+
+---
+
+## What Observal is for
+
+Observal is for teams doing context engineering across AI coding tools. If your organization maintains Skills, AGENTS files, MCP servers, hooks, prompts, sandboxes, or subagent definitions, Observal gives you one place to package them into versioned agents, publish them to a registry, and install them into the IDE or harness your developers use.
+
+Define an agent once. Observal renders the right configuration for Claude Code, Cursor, Kiro, Pi, Copilot, Codex, OpenCode, and other supported tools. As teams use those agents, Observal turns real usage into insights about which prompts, skills, tools, and policies are helping.
+
+### Why teams use Observal
+
+- **Package context into reusable agents:** Bundle Skills, MCP servers, hooks, prompts, sandboxes, and policy into one versioned unit.
+- **Run a governed registry:** Review submissions, approve internal agents, inspect version diffs, and give developers one trusted place to install from.
+- **Render across coding tools:** Generate the correct config for each supported IDE instead of maintaining separate setup instructions for every harness.
+- **Learn what works:** Use real adoption and session data to find which agents, tools, prompts, and workflows are helping teams.
+- **Replay sessions when needed:** Use traces as evidence for debugging, review, audits, and deeper analysis without making observability the main workflow.
 
 ---
 
@@ -57,15 +73,19 @@ One command to install any agent into any supported IDE. The config files are ge
 
 ## Quick Start
 
-### One-line server install
+Observal has two parts: a **server** (API + web UI + databases) you self-host, and a **CLI** you install on each developer machine.
+
+### 1. Deploy the server
+
+**One-line install** (requires Docker Engine ≥ 24.0 with Compose v2):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash
 ```
 
-Downloads a config package, runs guided setup, pulls Docker images from GHCR, and starts the full stack.
+This downloads a Docker Compose package, runs guided setup (domain, secrets, ports), pulls container images from GHCR, and starts the full stack (API, web UI, PostgreSQL, ClickHouse, Redis, worker, load balancer, Prometheus, Grafana).
 
-### From source
+**From source** (for contributors):
 
 ```bash
 git clone https://github.com/BlazeUp-AI/Observal.git && cd Observal
@@ -73,29 +93,31 @@ cp .env.example .env
 make up
 ```
 
-### Install the CLI
+### 2. Install the CLI
+
+**Standalone binary** (no Python required):
 
 ```bash
-# pip / pipx (all platforms)
-pipx install observal-cli
-
-# Or with uv
-# uv tool install observal-cli
-
-# Homebrew (macOS, Linux)
-# brew install BlazeUp-AI/observal/observal-cli
+curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash
 ```
 
-### Connect your IDE
+**Python** (3.11+):
+
+```bash
+uv tool install observal-cli
+# or: pipx install observal-cli
+```
+
+### 3. Connect your IDE
 
 ```bash
 observal auth login
 observal doctor --patch
 ```
 
-This registers your IDE, installs telemetry hooks, and starts capturing sessions automatically.
+This authenticates with your server, detects your IDE, installs telemetry hooks, starts capturing sessions automatically, and prepares it for agent installs and registry commands.
 
-Once logged in, run `/observal` inside your IDE and it'll take the wheel. Pull agents, submit components, browse the registry, run diagnostics, manage your setup:
+Once logged in, run `/observal` inside your IDE and it takes the wheel. Pull agents, submit components, browse the registry, run diagnostics:
 
 ```
 /observal pull security-auditor
@@ -103,27 +125,31 @@ Once logged in, run `/observal` inside your IDE and it'll take the wheel. Pull a
 /observal doctor
 ```
 
-Or just tell your agent what you want and it'll figure out the right commands via the CLI.
+Or just tell your agent what you want and it figures out the right commands.
 
 ---
 
-## What Observal Does
+## How Observal works
 
-### Agents are the primary unit
+### Agents are portable context packages
 
-An agent bundles 5 component types into a single installable package: **MCP servers**, **skills**, **hooks**, **prompts**, and **sandboxes**. You define them in YAML, publish to the registry, and anyone can pull them with one command. The platform generates the right config files for whichever IDE the user runs.
+An agent bundles 5 component types into a single installable package: **MCP servers**, **skills**, **hooks**, **prompts**, and **sandboxes**. You define the agent once, publish it to the registry, and Observal generates the right config files for whichever supported IDE or harness the user runs.
 
 ```bash
 observal pull security-auditor --ide pi
 ```
 
-### Every session becomes a trace
+### The registry is the distribution layer
 
-Once connected, Observal captures your entire coding session: every user prompt, every thinking block, every assistant response, every tool call with its full input and output. No sampling, no summarization. The raw session flows into ClickHouse for querying and analysis.
+Browse published agents, see which IDEs they support, check download counts and ratings, and install with one command. Admins review submissions before they go live. Version diffs show exactly what changed between releases, so teams can safely evolve shared context.
 
-### The registry is a package manager for agents
+### Insights show what is helping
 
-Browse published agents, see which IDEs they support, check download counts and ratings, and install with one command. Admins review submissions before they go live. Version diffs show exactly what changed between releases.
+Observal turns real usage into reports about which agents, prompts, tools, and workflows are working or getting in the way. Use those insights to improve shared context instead of guessing from anecdotes.
+
+### Session traces provide the evidence
+
+When you need to debug, audit, or understand a result, Observal can replay the full coding session: user prompts, thinking blocks, assistant responses, and tool calls with their inputs and outputs. The traces support registry and insight workflows rather than defining the product.
 
 ---
 
@@ -140,6 +166,16 @@ Browse published agents, see which IDEs they support, check download counts and 
 **Components library: MCPs, Skills, Hooks, Prompts, Sandboxes:**
 
 ![Component registry showing MCP servers](docs/img/component_registry.png)
+
+---
+
+## Agent Insights
+
+**AI-powered insight reports** analyze usage patterns across all sessions, what's working, what's hindering, and quick wins. Powered by [LiteLLM](https://docs.litellm.ai/docs/providers), works with any provider (Anthropic, OpenAI, Bedrock, Gemini, Azure, Ollama).
+
+![Insight report with What's Working, What's Hindering, Quick Wins](docs/img/insights.png)
+
+See [Insights LLM Setup](docs/insights-setup.md) for configuration.
 
 ---
 
@@ -175,16 +211,6 @@ Browse published agents, see which IDEs they support, check download counts and 
 
 ---
 
-## Agent Insights
-
-**AI-powered insight reports** analyze usage patterns across all sessions — what's working, what's hindering, and quick wins. Powered by [LiteLLM](https://docs.litellm.ai/docs/providers), works with any provider (Anthropic, OpenAI, Bedrock, Gemini, Azure, Ollama).
-
-![Insight report with What's Working, What's Hindering, Quick Wins](docs/img/insights.png)
-
-See [Insights LLM Setup](docs/insights-setup.md) for configuration.
-
----
-
 ## Enterprise Edition
 
 Source-available under a separate license. Activated with a signed JWT key. Core never imports from `ee/`, the open-source edition is fully functional without it.
@@ -199,9 +225,15 @@ Enterprise adds:
 
 ![Audit log with PHI sensitivity badges and chain hashes](docs/img/audit_logging.png)
 
+The server and CLI are the same package for all editions. Enterprise features activate at runtime when a valid license key is present:
+
 ```bash
-# Enterprise install
+# Pass the key during server install
 curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash -s -- --license-key YOUR_KEY
+
+# Or add it later to your .env
+echo 'OBSERVAL_LICENSE_KEY=your.key' >> .env
+make rebuild
 ```
 
 ---

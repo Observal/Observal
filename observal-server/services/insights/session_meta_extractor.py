@@ -425,6 +425,7 @@ async def fetch_session_stats(
     period_start: str,
     period_end: str,
     agent_name: str = "",
+    agent_version: str | None = None,
 ) -> dict[str, dict]:
     """Fetch per-session stats (credits, ide) from session_stats_agg.
 
@@ -438,6 +439,7 @@ async def fetch_session_stats(
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND last_event_time >= {t_start:String}
           AND last_event_time <= {t_end:String}
+          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
         GROUP BY session_id, total_credits, ide, layer_hash
         FORMAT JSON
     """
@@ -446,6 +448,7 @@ async def fetch_session_stats(
         "param_agent_name": agent_name,
         "param_t_start": period_start,
         "param_t_end": period_end,
+        "param_agent_version": agent_version or "",
     }
 
     try:
@@ -461,7 +464,36 @@ async def fetch_session_stats(
             for row in rows
         }
     except Exception as e:
-        logger.warning("fetch_session_stats_failed", error=str(e))
+        logger.warning("fetch_session_stats_agg_failed", error=str(e))
+
+    fallback_sql = """
+        SELECT
+            session_id,
+            max(credits) AS total_credits,
+            anyIf(ide, ide != '') AS ide,
+            anyIf(layer_hash, layer_hash IS NOT NULL AND layer_hash != '') AS layer_hash
+        FROM session_events FINAL
+        WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
+          AND timestamp >= {t_start:String}
+          AND timestamp <= {t_end:String}
+          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+        GROUP BY session_id
+        FORMAT JSON
+    """
+    try:
+        r = await query(fallback_sql, params)
+        r.raise_for_status()
+        rows = r.json().get("data", [])
+        return {
+            row["session_id"]: {
+                "credits": float(row.get("total_credits") or 0),
+                "ide": row.get("ide", ""),
+                "layer_hash": row.get("layer_hash", ""),
+            }
+            for row in rows
+        }
+    except Exception as e:
+        logger.warning("fetch_session_stats_fallback_failed", error=str(e))
         return {}
 
 
@@ -470,6 +502,7 @@ async def fetch_all_session_transcripts(
     period_start: str,
     period_end: str,
     agent_name: str = "",
+    agent_version: str | None = None,
     batch_size: int = 50,
 ) -> dict[str, list[str]]:
     """Fetch raw JSONL lines for all sessions of an agent from ClickHouse.
@@ -488,6 +521,7 @@ async def fetch_all_session_transcripts(
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND last_event_time >= {t_start:String}
           AND last_event_time <= {t_end:String}
+          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
         GROUP BY session_id
         ORDER BY min(last_event_time)
         FORMAT JSON
@@ -497,6 +531,7 @@ async def fetch_all_session_transcripts(
         "param_agent_name": agent_name,
         "param_t_start": period_start,
         "param_t_end": period_end,
+        "param_agent_version": agent_version or "",
     }
 
     try:
@@ -504,8 +539,24 @@ async def fetch_all_session_transcripts(
         r.raise_for_status()
         session_ids = [row["session_id"] for row in r.json().get("data", [])]
     except Exception as e:
-        logger.error("fetch_session_ids_failed", error=str(e))
-        return {}
+        logger.warning("fetch_session_ids_agg_failed", error=str(e))
+        fallback_id_sql = """
+            SELECT DISTINCT session_id
+            FROM session_events FINAL
+            WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
+              AND timestamp >= {t_start:String}
+              AND timestamp <= {t_end:String}
+              AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+            ORDER BY session_id
+            FORMAT JSON
+        """
+        try:
+            r = await query(fallback_id_sql, params)
+            r.raise_for_status()
+            session_ids = [row["session_id"] for row in r.json().get("data", [])]
+        except Exception as fallback_error:
+            logger.error("fetch_session_ids_failed", error=str(fallback_error))
+            return {}
 
     if not session_ids:
         return {}
@@ -553,6 +604,7 @@ async def extract_all_session_metas(
     period_start: str,
     period_end: str,
     agent_name: str = "",
+    agent_version: str | None = None,
 ) -> list[dict]:
     """Fetch transcripts and extract deterministic metadata for all sessions.
 
@@ -560,18 +612,32 @@ async def extract_all_session_metas(
     then runs extract_session_meta on each session.
     Also enriches each meta with credits and IDE info from session_stats_agg.
     """
-    transcripts = await fetch_all_session_transcripts(agent_id, period_start, period_end, agent_name=agent_name)
+    transcripts = await fetch_all_session_transcripts(
+        agent_id,
+        period_start,
+        period_end,
+        agent_name=agent_name,
+        agent_version=agent_version,
+    )
 
-    # Fetch per-session stats (credits, ide) for enrichment
-    session_stats = await fetch_session_stats(agent_id, period_start, period_end, agent_name=agent_name)
+    # Fetch per-session stats (credits, ide, layer hash) for enrichment
+    session_stats = await fetch_session_stats(
+        agent_id,
+        period_start,
+        period_end,
+        agent_name=agent_name,
+        agent_version=agent_version,
+    )
 
     metas = []
     for session_id, lines in transcripts.items():
         meta = extract_session_meta(session_id, lines)
-        # Enrich with credits and IDE from session_stats_agg
+        # Enrich with credits, IDE, layer hash, and report version scope from session_stats_agg
         stats = session_stats.get(session_id, {})
         meta["credits"] = stats.get("credits", 0.0)
         meta["ide"] = stats.get("ide", "")
+        meta["layer_hash"] = stats.get("layer_hash", "")
+        meta["agent_version"] = agent_version or ""
         metas.append(meta)
 
     logger.info(

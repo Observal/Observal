@@ -226,7 +226,7 @@ export default function AuditLogPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "hipaa_audit_trail.csv";
+      a.download = `observal_audit-log_${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -245,7 +245,7 @@ export default function AuditLogPage() {
           <EmptyState
             icon={ScrollText}
             title="Enterprise feature"
-            description="HIPAA-level audit logging requires the audit license feature."
+            description="Enterprise audit logging requires the audit license feature."
           />
         </div>
       </>

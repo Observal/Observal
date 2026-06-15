@@ -165,7 +165,7 @@ async def lifespan(app: FastAPI):
     async with _session_factory() as db:
         await seed_demo_accounts(db)
 
-    # Initialize HIPAA audit system (enterprise, license-gated)
+    # Initialize enterprise audit system (license-gated)
     if AUDIT_LICENSED:
         setup_audit()
 
@@ -368,7 +368,7 @@ app.add_middleware(ContentTypeMiddleware)
 # --- Request ID ---
 app.add_middleware(RequestIDMiddleware)
 
-# --- Audit logging (HIPAA, enterprise license-gated) ---
+# --- Audit logging (enterprise, license-gated) ---
 if AUDIT_LICENSED:
     app.add_middleware(AuditMiddleware)
 
@@ -425,7 +425,6 @@ if HAS_LICENSE:
         register_enterprise_middleware(app, settings)
         mount_ee_routes(app)
     except (ImportError, RuntimeError) as _ee_err:
-        pass
         optic.warning("enterprise features unavailable: {}", str(_ee_err))
         app.state.enterprise_issues = [str(_ee_err)]
 

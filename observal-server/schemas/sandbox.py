@@ -112,13 +112,3 @@ class SandboxListingSummary(BaseModel):
     status: ListingStatus
     rejection_reason: str | None = None
     model_config = {"from_attributes": True}
-
-
-class SandboxInstallRequest(BaseModel):
-    ide: str
-
-
-class SandboxInstallResponse(BaseModel):
-    listing_id: uuid.UUID
-    ide: str
-    config_snippet: dict

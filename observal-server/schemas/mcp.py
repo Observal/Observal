@@ -169,6 +169,7 @@ class McpListingResponse(BaseModel):
     updated_at: datetime
     custom_fields: list[McpCustomFieldResponse] = []
     validation_results: list[McpValidationResultResponse] = []
+    download_count: int = 0
     user_permission: str | None = None
 
     @field_validator("user_permission", mode="before")

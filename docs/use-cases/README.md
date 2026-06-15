@@ -14,11 +14,16 @@ Observal solves five concrete problems in the AI-agent lifecycle. Each page belo
 
 ## How these relate
 
-```
- Observe  ───►  Debug    (traces give you the evidence)
-    │
-    ▼
- Share  ──►  Team registry  (ties the loop together for an org)
+```mermaid
+flowchart LR
+    observe[Observe MCP traffic]
+    debug[Debug agent failures]
+    share[Share agent configs]
+    registry[Team registry]
+
+    observe -->|traces give you evidence| debug
+    observe --> share
+    share -->|governance + reuse| registry
 ```
 
 You typically adopt Observal in that order: **observe** first (low-risk, instant value), then **debug**, then **share**, and finally **run a team registry** once you have enough published agents to justify governance.

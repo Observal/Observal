@@ -31,11 +31,16 @@ def _make_app(user):
     app.dependency_overrides[get_current_user] = lambda: user
     # Mock DB session
     mock_db = AsyncMock()
-    mock_db.scalar = AsyncMock(return_value=uuid.uuid4())  # listing exists
+    # First scalar call checks listing exists (return UUID), second checks existing review (return None)
+    mock_db.scalar = AsyncMock(side_effect=[uuid.uuid4(), None])
     mock_db.add = MagicMock()
     mock_db.commit = AsyncMock()
     mock_db.refresh = AsyncMock(
-        side_effect=lambda fb: setattr(fb, "id", uuid.uuid4()) or setattr(fb, "created_at", "2026-01-01")
+        side_effect=lambda fb: (
+            setattr(fb, "id", uuid.uuid4())
+            or setattr(fb, "created_at", "2026-01-01")
+            or setattr(fb, "updated_at", None)
+        )
     )
     app.dependency_overrides[get_db] = lambda: mock_db
     return app
@@ -59,7 +64,7 @@ class TestFeedbackDualWrite:
                         "comment": "Great tool!",
                     },
                 )
-            assert r.status_code == 200
+            assert r.status_code == 201
             mock_insert.assert_called_once()
             scores = mock_insert.call_args[0][0]
             assert len(scores) == 1
@@ -104,7 +109,7 @@ class TestFeedbackDualWrite:
                         "rating": 3,
                     },
                 )
-            assert r.status_code == 200  # request still succeeds
+            assert r.status_code == 201  # request still succeeds
 
 
 # --- Phase 10: CLI Updates ---

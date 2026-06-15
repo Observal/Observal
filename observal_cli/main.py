@@ -151,10 +151,11 @@ def _try_lockfile_migration() -> None:
 
 from observal_cli.cmd_agent import agent_app
 from observal_cli.cmd_auth import auth_app, register_config
-from observal_cli.cmd_co_authors import co_authors_app
+from observal_cli.cmd_co_authors import make_co_authors_typer
 from observal_cli.cmd_component import version_app
 from observal_cli.cmd_doctor import doctor_app
 from observal_cli.cmd_hook import hook_app
+from observal_cli.cmd_insights import insights_app
 from observal_cli.cmd_logs import logs_app
 from observal_cli.cmd_mcp import mcp_app
 from observal_cli.cmd_migrate import migrate_app
@@ -191,6 +192,14 @@ registry_app.add_typer(sandbox_app, name="sandbox")
 registry_app.add_typer(models_app, name="models")
 registry_app.add_typer(version_app, name="version")
 
+# ── Co-authors sub-typers ────────────────────────────────
+mcp_app.add_typer(make_co_authors_typer("mcps"), name="co-authors")
+skill_app.add_typer(make_co_authors_typer("skills"), name="co-authors")
+hook_app.add_typer(make_co_authors_typer("hooks"), name="co-authors")
+prompt_app.add_typer(make_co_authors_typer("prompts"), name="co-authors")
+sandbox_app.add_typer(make_co_authors_typer("sandboxes"), name="co-authors")
+agent_app.add_typer(make_co_authors_typer("agents"), name="co-authors")
+
 # ── Auth subgroup ────────────────────────────────────────
 app.add_typer(auth_app, name="auth")
 
@@ -210,11 +219,12 @@ app.add_typer(ops_app, name="ops")
 app.add_typer(admin_app, name="admin")
 app.add_typer(self_app, name="self")
 app.add_typer(doctor_app, name="doctor")
-app.add_typer(co_authors_app, name="co-authors")
 
 # ── Nest under parent groups ──────────────────────────────
 # logs → ops logs (dev log viewer, complements traces/telemetry)
 ops_app.add_typer(logs_app, name="logs")
+# insights → ops insights (agent insight reports)
+ops_app.add_typer(insights_app, name="insights")
 # support → doctor support (diagnostic bundles, related to doctor troubleshooting)
 doctor_app.add_typer(support_app, name="support")
 # uninstall → self uninstall (CLI lifecycle alongside upgrade/downgrade/rollback)

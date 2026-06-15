@@ -48,11 +48,27 @@ async def _load_agent_config(db, agent_id) -> dict | None:
     # Build a summary of configured MCPs
     mcp_names = []
     skill_names = []
+    hook_names = []
+    prompt_names = []
+    current_components = []
     for comp in version.components or []:
+        comp_name = comp.component_name or str(comp.component_id)[:8]
+        current_components.append(
+            {
+                "type": comp.component_type,
+                "id": str(comp.component_id),
+                "name": comp_name,
+                "resolved_version": comp.resolved_version,
+            }
+        )
         if comp.component_type == "mcp":
-            mcp_names.append(comp.component_name or str(comp.component_id)[:8])
+            mcp_names.append(comp_name)
         elif comp.component_type == "skill":
-            skill_names.append(comp.component_name or str(comp.component_id)[:8])
+            skill_names.append(comp_name)
+        elif comp.component_type == "hook":
+            hook_names.append(comp_name)
+        elif comp.component_type == "prompt":
+            prompt_names.append(comp_name)
 
     # Also include external MCPs from the version config
     for ext_mcp in version.external_mcps or []:
@@ -75,6 +91,12 @@ async def _load_agent_config(db, agent_id) -> dict | None:
         config["configured_mcps"] = mcp_names
     if skill_names:
         config["configured_skills"] = skill_names
+    if hook_names:
+        config["configured_hooks"] = hook_names
+    if prompt_names:
+        config["configured_prompts"] = prompt_names
+    if current_components:
+        config["current_components"] = current_components
     if version.model_config_json:
         config["model_config"] = version.model_config_json
 
@@ -156,6 +178,19 @@ async def _reap_stale_reports() -> int:
     return len(stale)
 
 
+async def _update_report_progress(
+    db, report: InsightReport, phase: str, current: int, total: int, message: str
+) -> None:
+    now = datetime.now(UTC)
+    report.progress_phase = phase
+    report.progress_current = current
+    report.progress_total = total
+    report.progress_percent = int((current / total) * 100) if total else 0
+    report.progress_message = message
+    report.progress_updated_at = now
+    await db.commit()
+
+
 async def run_single_report(report_id: str) -> None:
     """Generate an insight report: load from DB, run pipeline, save results.
 
@@ -178,7 +213,7 @@ async def run_single_report(report_id: str) -> None:
         # Mark as running
         report.status = InsightReportStatus.running
         report.started_at = datetime.now(UTC)
-        await db.commit()
+        await _update_report_progress(db, report, "loading_sessions", 0, 9, "Loading report and agent context")
 
         try:
             # Load agent
@@ -205,17 +240,25 @@ async def run_single_report(report_id: str) -> None:
             # Load registry catalog for component-aware suggestions
             registry_catalog = await _load_registry_catalog(db)
 
+            async def progress_callback(phase: str, current: int, total: int, message: str) -> None:
+                await _update_report_progress(db, report, phase, current, total, message)
+
             # Run the insights pipeline
             content = await generate_report_content(
                 agent_name=agent_name,
                 agent_id=str(report.agent_id),
+                agent_version=report.agent_version,
+                comparison_agent_version=report.comparison_agent_version,
                 period_start=start_str,
                 period_end=end_str,
                 previous_metrics=previous_metrics,
                 agent_config=agent_config,
                 registry_catalog=registry_catalog,
                 db=db,
+                progress_callback=progress_callback,
             )
+
+            await _update_report_progress(db, report, "saving", 9, 9, "Saving report")
 
             # Persist results
             report.metrics = content.get("metrics")
@@ -234,6 +277,10 @@ async def run_single_report(report_id: str) -> None:
 
             report.status = InsightReportStatus.completed
             report.completed_at = datetime.now(UTC)
+            report.progress_phase = "completed"
+            report.progress_percent = 100
+            report.progress_message = "Report completed"
+            report.progress_updated_at = report.completed_at
             await db.commit()
 
             logger.info(
@@ -247,29 +294,54 @@ async def run_single_report(report_id: str) -> None:
             report.status = InsightReportStatus.failed
             report.error_message = str(e)
             report.completed_at = datetime.now(UTC)
+            report.progress_phase = "failed"
+            report.progress_message = str(e)
+            report.progress_updated_at = report.completed_at
             await db.commit()
             logger.exception("insight_report_failed", report_id=report_id, error=str(e))
 
 
-async def _count_agent_sessions(agent_name: str, since: str) -> int:
-    """Count sessions in otel_logs for an agent since a given timestamp."""
+async def _count_agent_sessions(agent_id: str, agent_name: str, since: str, agent_version: str | None = None) -> int:
+    """Count sessions for an agent/version since a given timestamp."""
     sql = """
-        SELECT count(DISTINCT LogAttributes['session.id']) AS cnt
-        FROM otel_logs
-        WHERE (LogAttributes['agent_type'] = {aname:String}
-               OR LogAttributes['agent_name'] = {aname:String})
-          AND Timestamp >= {t_start:String}
-          AND LogAttributes['session.id'] != ''
+        SELECT count() AS cnt
+        FROM session_stats_agg FINAL
+        WHERE (agent_id = {agent_id:String} OR agent_id = {aname:String})
+          AND last_event_time >= {t_start:String}
+          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
         FORMAT JSON
     """
-    params = {"param_aname": agent_name, "param_t_start": since}
+    params = {
+        "param_agent_id": agent_id,
+        "param_aname": agent_name,
+        "param_t_start": since,
+        "param_agent_version": agent_version or "",
+    }
     try:
         r = await _query(sql, params)
         r.raise_for_status()
         data = r.json().get("data", [])
         return int(data[0]["cnt"]) if data else 0
     except Exception as e:
-        logger.warning("insight_batch_count_failed", agent_name=agent_name, error=str(e))
+        logger.warning("insight_batch_count_agg_failed", agent_name=agent_name, version=agent_version, error=str(e))
+
+    fallback_sql = """
+        SELECT count(DISTINCT session_id) AS cnt
+        FROM session_events FINAL
+        WHERE (agent_id = {agent_id:String} OR agent_id = {aname:String})
+          AND timestamp >= {t_start:String}
+          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+        FORMAT JSON
+    """
+    try:
+        r = await _query(fallback_sql, params)
+        r.raise_for_status()
+        data = r.json().get("data", [])
+        return int(data[0]["cnt"]) if data else 0
+    except Exception as e:
+        logger.warning(
+            "insight_batch_count_fallback_failed", agent_name=agent_name, version=agent_version, error=str(e)
+        )
         return 0
 
 
@@ -330,9 +402,17 @@ async def discover_and_queue_reports() -> int:
                 if latest_report and latest_report.created_at > period_start:
                     continue
 
-                # Count new sessions for this agent
+                # Count new sessions for the latest approved version by default.
+                latest_version = agent.latest_version
+                if not latest_version or latest_version.status != AgentStatus.approved:
+                    continue
                 since_str = period_start.strftime("%Y-%m-%d %H:%M:%S")
-                session_count = await _count_agent_sessions(agent.name, since_str)
+                session_count = await _count_agent_sessions(
+                    str(agent.id),
+                    agent.name,
+                    since_str,
+                    latest_version.version,
+                )
 
                 if session_count < min_sessions:
                     logger.debug(
@@ -348,6 +428,7 @@ async def discover_and_queue_reports() -> int:
                     select(InsightReport)
                     .where(
                         InsightReport.agent_id == agent.id,
+                        InsightReport.agent_version == latest_version.version,
                         InsightReport.status == InsightReportStatus.completed,
                     )
                     .order_by(InsightReport.created_at.desc())
@@ -366,6 +447,12 @@ async def discover_and_queue_reports() -> int:
                     started_at=now,
                     created_at=now,
                     previous_report_id=prev_report.id if prev_report else None,
+                    agent_version_id=latest_version.id,
+                    agent_version=latest_version.version,
+                    version_scope="canonical_and_dirty",
+                    progress_phase="queued",
+                    progress_message="Queued by scheduled insights batch",
+                    progress_updated_at=now,
                 )
                 db.add(report)
                 await db.flush()

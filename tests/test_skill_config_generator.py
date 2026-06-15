@@ -86,18 +86,20 @@ class TestGenerateSkillFile:
     def test_cursor_project_scope(self):
         listing = _make_skill_listing()
         result = _generate_skill_file(listing, "cursor", scope="project")
-        assert result["path"] == ".cursor/rules/code-review.mdc"
-        assert _frontmatter(result["content"])["alwaysApply"] is False
-        assert "# code-review" in result["content"]
+        assert result["path"] == ".cursor/skills/code-review/SKILL.md"
+        fm = _frontmatter(result["content"])
+        assert fm["name"] == "code-review"
 
     def test_cursor_user_scope(self):
         listing = _make_skill_listing()
         result = _generate_skill_file(listing, "cursor", scope="user")
-        assert result["path"] == "~/.cursor/rules/code-review.mdc"
+        assert result["path"] == "~/.cursor/skills/code-review/SKILL.md"
 
-    def test_monolithic_ide_returns_none(self):
+    def test_codex_generates_skill_file(self):
         listing = _make_skill_listing()
-        assert _generate_skill_file(listing, "codex") is None
+        result = _generate_skill_file(listing, "codex")
+        assert result is not None
+        assert result["path"] == "~/.codex/skills/code-review/SKILL.md"
 
     def test_no_slash_command(self):
         listing = _make_skill_listing(slash_command=None)
@@ -161,10 +163,11 @@ class TestGenerateSkillConfig:
         assert "skill_file" in config
         assert config["skill_file"]["path"] == ".kiro/skills/code-review/SKILL.md"
 
-    def test_no_skill_file_for_codex(self):
+    def test_skill_file_for_codex(self):
         listing = _make_skill_listing()
         config = generate_skill_config(listing, "codex")
-        assert "skill_file" not in config
+        assert "skill_file" in config
+        assert config["skill_file"]["path"] == "~/.codex/skills/code-review/SKILL.md"
 
     def test_scope_user(self):
         listing = _make_skill_listing()

@@ -38,6 +38,19 @@ class InsightReport(Base):
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    # Version scope for version-aware reports. `agent_version` is a denormalized
+    # snapshot used for telemetry filtering/display even if the AgentVersion row
+    # is later changed or removed.
+    agent_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_versions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    agent_version: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    version_scope: Mapped[str | None] = mapped_column(String(50), nullable=True, default="canonical_and_dirty")
+    comparison_agent_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_versions.id", ondelete="SET NULL"), nullable=True
+    )
+    comparison_agent_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     # Deterministic metrics from ClickHouse
     metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
@@ -62,3 +75,11 @@ class InsightReport(Base):
     # Self-learn fields
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     applied_items: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Progress fields for long-running report generation.
+    progress_phase: Mapped[str | None] = mapped_column(String(50), nullable=True, default="queued")
+    progress_current: Mapped[int] = mapped_column(Integer, default=0)
+    progress_total: Mapped[int] = mapped_column(Integer, default=0)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    progress_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    progress_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

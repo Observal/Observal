@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Route sensitivity classification for HIPAA audit logging."""
+"""Route sensitivity classification for audit logging."""
 
 from __future__ import annotations
 

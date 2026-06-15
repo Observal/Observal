@@ -84,17 +84,17 @@ class TestBuildSkillFilesFallbackPath:
         assert "name: code-review" in content
         assert "command: /review" in content
 
-    def test_cursor_fallback_has_mdc_format(self):
+    def test_cursor_fallback_has_yaml_frontmatter(self):
         manifest = _skill_manifest()
         files = _build_skill_files(manifest, "cursor")
         assert len(files) == 1
-        assert "alwaysApply: false" in files[0].content
+        assert "name: code-review" in files[0].content
 
-    def test_monolithic_ides_return_empty(self):
-        """Only IDEs with no skill_file entry in IDE_REGISTRY return empty."""
+    def test_all_ides_produce_skill_files(self):
+        """All IDEs have skill_file entries and produce output."""
         manifest = _skill_manifest(skill_md_content=VERBATIM_MD)
-        # codex has no skill_file in IDE_REGISTRY.
-        assert _build_skill_files(manifest, "codex") == []
+        for ide in ("codex", "copilot", "cursor", "claude-code", "kiro"):
+            assert _build_skill_files(manifest, ide) != [], f"{ide} should produce skill files"
 
 
 class TestSkillFilePaths:
@@ -103,7 +103,7 @@ class TestSkillFilePaths:
         [
             ("claude-code", ".claude/skills/"),
             ("kiro", ".kiro/skills/"),
-            ("cursor", ".cursor/rules/"),
+            ("cursor", ".cursor/skills/"),
         ],
     )
     def test_skill_file_path(self, ide: str, expected_prefix: str):
@@ -118,7 +118,7 @@ class TestSkillFilePaths:
 class TestGenerateIdeAgentFilesWithSkills:
     @pytest.mark.parametrize(
         "ide",
-        ["claude-code", "cursor", "kiro", "opencode"],
+        ["claude-code", "cursor", "kiro", "opencode", "codex", "copilot"],
     )
     def test_skill_file_in_ide_output(self, ide: str):
         manifest = _skill_manifest(skill_md_content=VERBATIM_MD)
@@ -126,15 +126,3 @@ class TestGenerateIdeAgentFilesWithSkills:
         # The verbatim content uniquely identifies the skill file regardless of path.
         skill_files = [f for f in config.files if f.content == VERBATIM_MD]
         assert len(skill_files) == 1
-
-    @pytest.mark.parametrize(
-        "ide",
-        ["codex", "copilot"],
-    )
-    def test_no_skill_file_in_monolithic_ides(self, ide: str):
-        manifest = _skill_manifest(skill_md_content=VERBATIM_MD)
-        config = generate_ide_agent_files(manifest, ide)
-        skill_files = [
-            f for f in config.files if "SKILL.md" in f.path or "rules/" in f.path or "instructions/" in f.path
-        ]
-        assert len(skill_files) == 0

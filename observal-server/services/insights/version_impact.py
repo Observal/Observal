@@ -24,11 +24,55 @@ from ._deps import get_query
 logger = structlog.get_logger(__name__)
 
 
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _robust_outlier_labels(groups: list[dict], metric: str) -> dict[str, str]:
+    """Label layer cohorts using median/MAD so outliers do not poison means."""
+    values = [float(g.get(metric, 0) or 0) for g in groups]
+    if len(values) < 3:
+        return {g["layer_hash"]: "normal" for g in groups}
+    med = _median(values)
+    deviations = [abs(v - med) for v in values]
+    mad = _median(deviations) or 1e-9
+    labels: dict[str, str] = {}
+    for group in groups:
+        value = float(group.get(metric, 0) or 0)
+        robust_z = 0.6745 * (value - med) / mad
+        if robust_z >= 2.5:
+            labels[group["layer_hash"]] = "positive_outlier"
+        elif robust_z <= -2.5:
+            labels[group["layer_hash"]] = "negative_outlier"
+        else:
+            labels[group["layer_hash"]] = "normal"
+    return labels
+
+
+def _confidence_for_groups(groups: list[dict], significant: bool) -> str:
+    total_sessions = sum(int(g.get("sessions", 0)) for g in groups)
+    multi_user_groups = sum(1 for g in groups if int(g.get("users", 0)) >= 2)
+    if total_sessions < 10 or len(groups) < 2:
+        return "insufficient_data"
+    if significant and total_sessions >= 30 and multi_user_groups >= 2:
+        return "high"
+    if significant and total_sessions >= 15:
+        return "medium"
+    return "low"
+
+
 async def detect_layer_groups(
     agent_id: str,
     period_start: str,
     period_end: str,
     agent_name: str = "",
+    agent_version: str | None = None,
 ) -> list[dict]:
     """Group sessions by layer_hash and compute metrics per group.
 
@@ -53,6 +97,7 @@ async def detect_layer_groups(
 
     sql = """
         SELECT
+            coalesce(agent_version, '') AS agent_version,
             layer_hash,
             count() AS sessions,
             uniq(user_id) AS users,
@@ -71,7 +116,8 @@ async def detect_layer_groups(
           AND last_event_time >= {t_start:String}
           AND last_event_time <= {t_end:String}
           AND layer_hash != ''
-        GROUP BY layer_hash
+          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+        GROUP BY agent_version, layer_hash
         HAVING sessions >= 3
         ORDER BY sessions DESC
         LIMIT 20
@@ -82,6 +128,7 @@ async def detect_layer_groups(
         "param_agent_name": agent_name,
         "param_t_start": period_start,
         "param_t_end": period_end,
+        "param_agent_version": agent_version or "",
     }
 
     try:
@@ -94,6 +141,7 @@ async def detect_layer_groups(
 
     return [
         {
+            "agent_version": row.get("agent_version", ""),
             "layer_hash": row["layer_hash"],
             "sessions": int(row.get("sessions", 0)),
             "users": int(row.get("users", 0)),
@@ -217,6 +265,7 @@ async def build_version_impact_data(
     period_start: str,
     period_end: str,
     agent_name: str = "",
+    agent_version: str | None = None,
     project_id: str = "default",
 ) -> dict | None:
     """Build the complete version impact data block for the insight report.
@@ -233,6 +282,7 @@ async def build_version_impact_data(
         period_start=period_start,
         period_end=period_end,
         agent_name=agent_name,
+        agent_version=agent_version,
     )
 
     if len(groups) < 2:
@@ -246,9 +296,14 @@ async def build_version_impact_data(
 
     success_gap = best_success - worst_success
     error_gap = worst_error - best_error
+    outlier_labels = _robust_outlier_labels(groups, "success_proxy")
 
-    # Threshold: at least 20% absolute gap in success or 15% in error rate
-    significant = success_gap >= 0.20 or error_gap >= 0.15
+    # Threshold: at least 20% absolute gap in success or 15% in error rate.
+    # Robust outlier labels add sensitivity without letting outliers poison means.
+    significant = (
+        success_gap >= 0.20 or error_gap >= 0.15 or any(label != "normal" for label in outlier_labels.values())
+    )
+    confidence = _confidence_for_groups(groups, significant)
 
     if not significant:
         # Return lightweight summary (no snapshot content, saves context)
@@ -257,6 +312,7 @@ async def build_version_impact_data(
             "total_sessions": sum(g["sessions"] for g in groups),
             "total_users": sum(g["users"] for g in groups),
             "significant": False,
+            "confidence": confidence,
             "groups": [
                 {
                     "layer_hash": g["layer_hash"],
@@ -264,6 +320,7 @@ async def build_version_impact_data(
                     "users": g["users"],
                     "success_proxy": g["success_proxy"],
                     "tool_error_rate": g["tool_error_rate"],
+                    "outlier_label": outlier_labels.get(g["layer_hash"], "normal"),
                 }
                 for g in groups[:5]
             ],
@@ -279,6 +336,20 @@ async def build_version_impact_data(
     if len(groups_with_data) < 2:
         return None
 
+    canonical_sessions = 0
+    dirty_sessions = 0
+    canonical_users = 0
+    dirty_users = 0
+    for group in groups_with_data:
+        snap = snapshots.get(group["layer_hash"], {})
+        is_canonical = snap.get("drift", {}).get("is_canonical", None)
+        if is_canonical is True:
+            canonical_sessions += group["sessions"]
+            canonical_users += group["users"]
+        elif is_canonical is False:
+            dirty_sessions += group["sessions"]
+            dirty_users += group["users"]
+
     # Sort by success_proxy (higher = better)
     sorted_by_success = sorted(groups_with_data, key=lambda g: g["success_proxy"], reverse=True)
     best_group = sorted_by_success[0]
@@ -293,6 +364,42 @@ async def build_version_impact_data(
     best_summary = extract_content_summary(best_snap)
     worst_summary = extract_content_summary(worst_snap)
 
+    # Extract positive dirty/canonical outlier inspiration candidates and
+    # negative isolated regressions. These are kept separate from baseline means.
+    inspiration_candidates = []
+    isolated_regressions = []
+    for group in groups_with_data:
+        label = outlier_labels.get(group["layer_hash"], "normal")
+        if group.get("sessions", 0) < 3:
+            continue
+        snap = snapshots.get(group["layer_hash"], {})
+        candidate = {
+            "layer_hash": group["layer_hash"],
+            "agent_version": group.get("agent_version", ""),
+            "sessions": group["sessions"],
+            "users": group["users"],
+            "success_proxy": group["success_proxy"],
+            "tool_error_rate": group["tool_error_rate"],
+            "is_canonical": snap.get("drift", {}).get("is_canonical", None),
+            "content_summary": extract_content_summary(snap),
+            "confidence": confidence,
+        }
+        if label == "positive_outlier":
+            inspiration_candidates.append(
+                {
+                    **candidate,
+                    "diff_vs_baseline": diff_snapshots(worst_snap, snap) if worst_snap else {},
+                }
+            )
+        elif label == "negative_outlier":
+            isolated_regressions.append(
+                {
+                    **candidate,
+                    "diff_vs_best": diff_snapshots(best_snap, snap) if best_snap else {},
+                    "baseline_policy": "excluded_from_canonical_mean",
+                }
+            )
+
     # Extract version pins if available
     best_versions = best_snap.get("pinned_versions", {})
     worst_versions = worst_snap.get("pinned_versions", {})
@@ -302,8 +409,15 @@ async def build_version_impact_data(
         "total_sessions": sum(g["sessions"] for g in groups),
         "total_users": sum(g["users"] for g in groups),
         "significant": True,
+        "confidence": confidence,
         "success_gap_pct": round(success_gap * 100, 1),
         "error_gap_pct": round(error_gap * 100, 1),
+        "canonical_dirty_summary": {
+            "canonical_sessions": canonical_sessions,
+            "dirty_sessions": dirty_sessions,
+            "canonical_users": canonical_users,
+            "dirty_users": dirty_users,
+        },
         "groups": [
             {
                 "layer_hash": g["layer_hash"],
@@ -313,6 +427,7 @@ async def build_version_impact_data(
                 "tool_error_rate": g["tool_error_rate"],
                 "avg_cost": g["avg_cost"],
                 "avg_duration_seconds": g["avg_duration_seconds"],
+                "outlier_label": outlier_labels.get(g["layer_hash"], "normal"),
                 "is_canonical": snapshots.get(g["layer_hash"], {}).get("drift", {}).get("is_canonical", None),
             }
             for g in groups_with_data
@@ -330,4 +445,6 @@ async def build_version_impact_data(
             "versions": worst_versions,
         },
         "config_diff_best_vs_worst": config_diff,
+        "inspiration_candidates": inspiration_candidates,
+        "isolated_regressions": isolated_regressions,
     }

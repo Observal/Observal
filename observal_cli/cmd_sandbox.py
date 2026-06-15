@@ -185,45 +185,6 @@ def sandbox_show(
     )
 
 
-@sandbox_app.command(name="install")
-def sandbox_install(
-    sandbox_id: str = typer.Argument(..., help="Sandbox ID, name, row number, or @alias"),
-    ide: str = typer.Option(..., "--ide", "-i", help="Target IDE"),
-    raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
-):
-    """Generate IDE install configuration for a sandbox.
-
-    [Deprecated] Standalone sandbox install is deprecated. Sandboxes should
-    be added as agent components instead.
-
-    Preferred workflow:
-      1. observal agent add --type sandbox --id <sandbox-id>
-      2. observal pull <agent-name> --ide <ide>
-
-    Use --raw to pipe the JSON directly to a file.
-
-    Examples:
-        observal registry sandbox install my-sandbox --ide claude-code
-        observal registry sandbox install @env --ide cursor --raw
-    """
-    rprint(
-        "[yellow]\u26a0 Standalone sandbox install is deprecated.[/yellow]\n"
-        "  Sandboxes work best as agent components. Add to an agent:\n"
-        "    observal agent add --type sandbox --id <sandbox-id>\n"
-        "  Then pull the agent:\n"
-        "    observal agent pull <agent-name> --ide <ide>\n"
-    )
-    resolved = config.resolve_alias(sandbox_id)
-    with spinner(f"Generating {ide} config..."):
-        result = client.post(f"/api/v1/sandboxes/{resolved}/install", {"ide": ide})
-    snippet = result.get("config_snippet", result)
-    if raw:
-        print(_json.dumps(snippet, indent=2))
-        return
-    rprint(f"\n[bold]Config for {ide}:[/bold]\n")
-    console.print_json(_json.dumps(snippet, indent=2))
-
-
 @sandbox_app.command(name="edit")
 def sandbox_edit(
     sandbox_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),

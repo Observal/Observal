@@ -6,7 +6,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi_cache.decorator import cache
 from loguru import logger as optic
 from sqlalchemy import func, select
@@ -30,8 +30,6 @@ from models.sandbox import SandboxDownload, SandboxListing, SandboxVersion
 from models.user import User, UserRole
 from schemas.sandbox import (
     SandboxDraftRequest,
-    SandboxInstallRequest,
-    SandboxInstallResponse,
     SandboxListingResponse,
     SandboxListingSummary,
     SandboxSubmitRequest,
@@ -159,32 +157,6 @@ async def get_sandbox(
         return resp
 
     raise HTTPException(status_code=404, detail="Listing not found")
-
-
-@router.post("/{listing_id}/install", response_model=SandboxInstallResponse)
-async def install_sandbox(
-    listing_id: str,
-    req: SandboxInstallRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
-):
-    optic.debug("sandbox install: listing_id={}", listing_id)
-    listing = await resolve_listing(SandboxListing, listing_id, db, require_status=ListingStatus.approved)
-    if not listing:
-        listing = await resolve_listing(SandboxListing, listing_id, db)
-        if not listing or get_effective_component_permission(listing, current_user) != "owner":
-            raise HTTPException(status_code=404, detail="Listing not found or not approved")
-
-    db.add(SandboxDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
-    await db.commit()
-
-    from api.routes.config import derive_endpoints
-    from services.sandbox_config_generator import generate_sandbox_config
-
-    endpoints = await derive_endpoints(request)
-    config = generate_sandbox_config(listing, req.ide, server_url=endpoints["api"])
-    return SandboxInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
 
 
 @router.post("/draft", response_model=SandboxListingResponse)

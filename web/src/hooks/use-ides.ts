@@ -3,17 +3,23 @@
 
 
 import { useQuery } from "@tanstack/react-query";
-import { config, type IdeEntry } from "@/lib/api";
+import { config } from "@/lib/api";
 
 /**
- * Fetches the canonical IDE list from the server. Cached indefinitely
- * since the IDE list rarely changes during a session.
+ * Fetches the canonical IDE list from the server (filtered by allowlist).
+ * Also returns the configured default IDE if set.
  */
 export function useIdes() {
-	return useQuery<IdeEntry[]>({
+	const query = useQuery({
 		queryKey: ["config", "ides"],
 		queryFn: config.ides,
 		staleTime: Infinity,
 		gcTime: Infinity,
 	});
+
+	return {
+		...query,
+		data: query.data?.ides,
+		defaultIde: query.data?.default_ide ?? undefined,
+	};
 }

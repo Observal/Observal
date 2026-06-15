@@ -566,10 +566,19 @@ export const feedback = {
 		listing_id: string;
 		rating: number;
 		comment?: string;
+		anonymous?: boolean;
 	}) => post<FeedbackItem>("/feedback", body),
 	get: (type: string, id: string) =>
 		get<FeedbackItem[]>(`/feedback/${type}/${id}`),
 	summary: (id: string) => get<FeedbackSummary>(`/feedback/summary/${id}`),
+	mine: (type: string, id: string) =>
+		get<FeedbackItem>(`/feedback/mine/${type}/${id}`),
+	update: (feedbackId: string, body: {
+		rating?: number;
+		comment?: string;
+		anonymous?: boolean;
+	}) => put<FeedbackItem>(`/feedback/${feedbackId}`, body),
+	remove: (feedbackId: string) => del<void>(`/feedback/${feedbackId}`),
 };
 
 // ── Admin ───────────────────────────────────────────────────────────
@@ -592,6 +601,15 @@ export const admin = {
 			error?: string;
 			hint?: string;
 		}>("/admin/insights/test-connection", body ?? {}),
+	purgeTracesAndInsights: () =>
+		post<{
+			project_id: string;
+			clickhouse_tables: string[];
+			deleted_reports?: number;
+			deleted_facets?: number;
+			deleted_session_meta?: number;
+			deleted_meta_cache?: number;
+		}>("/admin/settings/danger/purge-traces-insights", {}),
 	users: () => get<AdminUser[]>("/admin/users"),
 	createUser: (body: {
 		email: string;
@@ -764,11 +782,12 @@ export interface IdeEntry {
 
 interface IdesResponse {
 	ides: IdeEntry[];
+	default_ide?: string | null;
 }
 
 export const config = {
 	public: () => get<PublicConfig>("/config/public"),
-	ides: () => get<IdesResponse>("/config/ides").then((r) => r.ides),
+	ides: () => get<IdesResponse>("/config/ides"),
 };
 
 // ── Models ─────────────────────────────────────────────────────────
@@ -787,24 +806,30 @@ export const bulk = {
 // ── Insights ───────────────────────────────────────────────────────
 export const insights = {
 	status: () => get<{ available: boolean; reason: string | null }>("/insights/status"),
-	sessionCount: (agentId: string) => get<{ session_count: number }>(`/insights/agents/${agentId}/session-count`),
-	generate: (agentId: string, periodDays?: number) =>
-		post<InsightReportListItem>(
-			`/insights/agents/${agentId}/generate`,
-			periodDays ? { period_days: periodDays } : {},
+	sessionCount: (agentId: string, agentVersion?: string) =>
+		get<{ session_count: number; agent_version?: string; agent_version_id?: string }>(
+			`/agents/${agentId}/insights/session-count${agentVersion ? `?agent_version=${encodeURIComponent(agentVersion)}` : ""}`,
 		),
+	generate: (agentId: string, periodDays?: number, agentVersion?: string, comparisonAgentVersion?: string) =>
+		post<InsightReportListItem>(`/agents/${agentId}/insights/reports`, {
+			...(periodDays ? { period_days: periodDays } : {}),
+			...(agentVersion ? { agent_version: agentVersion } : {}),
+			...(comparisonAgentVersion ? { comparison_agent_version: comparisonAgentVersion } : {}),
+		}),
 	listReports: (agentId: string) =>
-		get<InsightReportListItem[]>(`/insights/agents/${agentId}/reports`),
-	getReport: (reportId: string) =>
+		get<InsightReportListItem[]>(`/agents/${agentId}/insights/reports`),
+	getReport: (agentId: string, reportId: string) =>
+		get<InsightReport>(`/agents/${agentId}/insights/reports/${reportId}`),
+	getReportById: (reportId: string) =>
 		get<InsightReport>(`/insights/reports/${reportId}`),
-	applySuggestions: (reportId: string, selection?: { config_indices?: number[]; feature_indices?: number[]; pattern_indices?: number[] }) =>
+	applySuggestions: (agentId: string, reportId: string, selection?: { config_indices?: number[]; feature_indices?: number[]; pattern_indices?: number[] }) =>
 		post<{ applied: boolean; report_id: string; items: InsightAppliedItems }>(
-			`/insights/reports/${reportId}/apply`,
+			`/agents/${agentId}/insights/reports/${reportId}/apply`,
 			selection ?? {},
 		),
-	exportHtml: async (reportId: string): Promise<void> => {
+	exportHtml: async (agentId: string, reportId: string): Promise<void> => {
 		const token = getAccessToken();
-		const res = await fetch(`${API}/insights/reports/${reportId}/export/html`, {
+		const res = await fetch(`${API}/agents/${agentId}/insights/reports/${reportId}/export/html`, {
 			headers: token ? { Authorization: `Bearer ${token}` } : {},
 		});
 		if (!res.ok) throw new Error("Export failed");

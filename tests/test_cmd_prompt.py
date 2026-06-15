@@ -177,19 +177,12 @@ class TestPromptRender:
 
 
 class TestPromptInstall:
-    def test_install_prompt(self):
-        """Test prompt install command."""
-        mock_data = {"config_snippet": {"key": "value"}}
-        with _patch_resolve_alias(), _patch_post(mock_data) as mock_post:
-            result = runner.invoke(cli_app, ["registry", "prompt", "install", "p123", "--ide", "vscode"])
+    def test_install_prompt_removed(self):
+        """Prompt install command is intentionally removed."""
+        result = runner.invoke(cli_app, ["registry", "prompt", "install", "p123", "--ide", "vscode"])
 
-            assert result.exit_code == 0
-            assert "Config for vscode:" in result.output
-
-            mock_post.assert_called_once()
-            url, payload = mock_post.call_args[0]
-            assert url == "/api/v1/prompts/p123/install"
-            assert payload["ide"] == "vscode"
+        assert result.exit_code == 2
+        assert "No such command 'install'" in result.output
 
 
 class TestPromptEdit:
@@ -245,17 +238,12 @@ class TestPromptEdgeCases:
             assert result.exit_code == 1
             assert "File not found" in result.output
 
-    def test_install_api_error(self):
-        """API errors during install should propagate as failures (non-zero exit)."""
+    def test_install_command_missing(self):
+        """Prompt install should fail fast because the command does not exist."""
+        result = runner.invoke(cli_app, ["registry", "prompt", "install", "p123", "--ide", "vscode"])
 
-        def _raise(*_a, **_kw):
-            raise Exception("500 Internal")
-
-        with _patch_resolve_alias(), patch("observal_cli.client.post", side_effect=_raise):
-            result = runner.invoke(cli_app, ["registry", "prompt", "install", "p123", "--ide", "vscode"])
-
-            assert result.exit_code == 1
-            assert "500 Internal" in (result.output or str(result.exception))
+        assert result.exit_code == 2
+        assert "No such command 'install'" in result.output
 
     def test_select_one_integration_gap(self):
         """Document that category passed via CLI is not validated client-side (integration gap).

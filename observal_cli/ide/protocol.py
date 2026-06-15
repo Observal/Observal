@@ -169,6 +169,14 @@ class IdeAdapter(Protocol):
         """
         ...
 
+    def is_installed(self, home: Path | None = None) -> bool:
+        """Return whether this IDE has a detectable home config marker.
+
+        Args:
+            home: Override home directory (defaults to Path.home()).
+        """
+        ...
+
     def scan_project(self, project_dir: Path) -> ScanResult:
         """Scan a project directory for this IDE's configuration.
 
@@ -241,5 +249,17 @@ class IdeAdapter(Protocol):
 
         Raises:
             NotSupportedError: If this IDE does not have mcp_servers feature.
+        """
+        ...
+
+    def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:
+        """Return layer snapshot display paths managed by Observal for this IDE.
+
+        Args:
+            lockfile_data: Parsed Observal lockfile content.
+            project_dir: Optional project directory for project-scoped installs.
+
+        Returns:
+            Display paths that correspond to Observal-installed files.
         """
         ...

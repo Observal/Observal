@@ -10,7 +10,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING
 
-from loguru import logger
+from loguru import logger as optic
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from services.audit.classification import classify_route
@@ -57,7 +57,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
         resource_name = getattr(request.state, "audit_resource_name", "")
         detail = getattr(request.state, "audit_detail", "")
 
-        logger.bind(
+        optic.bind(
             audit=True,
             event_id=event_id,
             request_id=request_id,

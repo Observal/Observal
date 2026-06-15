@@ -111,13 +111,20 @@ def _resolve_hook_paths(content: str) -> str:
     return content
 
 
-def _collect_mcp_env_vars(agent_detail: dict) -> dict[str, dict[str, str]]:
+def _collect_mcp_env_vars(
+    agent_detail: dict, *, no_prompt: bool = False, env_overrides: dict[str, str] | None = None
+) -> dict[str, dict[str, str]]:
     """Discover MCP env vars from agent components and prompt the user for values.
+
+    When *no_prompt* is True, uses values from *env_overrides* for known vars
+    and skips prompting entirely. Missing vars are omitted (server handles
+    placeholders).
 
     Returns {mcp_listing_id: {VAR_NAME: value}} for all MCPs that have env vars.
     """
     optic.trace("agent_detail={}", agent_detail)
     env_values: dict[str, dict[str, str]] = {}
+    _overrides = env_overrides or {}
 
     # Collect MCP component IDs from both mcp_links and component_links
     mcp_ids: list[tuple[str, str]] = []  # (listing_id, display_name)
@@ -149,20 +156,34 @@ def _collect_mcp_env_vars(agent_detail: dict) -> dict[str, dict[str, str]]:
         mcp_name = display_name or listing.get("name", listing_id[:8])
         mcp_env: dict[str, str] = {}
 
-        if required:
-            rprint(f"\n[bold]{mcp_name}[/bold] requires {len(required)} environment variable(s):")
-            for ev in required:
-                desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                val = text_input(f"  {ev['name']}{desc}")
-                mcp_env[ev["name"]] = val
+        if no_prompt:
+            # Non-interactive: use --env flag values for matching vars
+            for ev in required + optional:
+                if ev["name"] in _overrides:
+                    mcp_env[ev["name"]] = _overrides[ev["name"]]
+        else:
+            if required:
+                rprint(f"\n[bold]{mcp_name}[/bold] requires {len(required)} environment variable(s):")
+                for ev in required:
+                    if ev["name"] in _overrides:
+                        mcp_env[ev["name"]] = _overrides[ev["name"]]
+                        rprint(f"  [green]\u2713[/green] {ev['name']} [dim](from --env)[/dim]")
+                    else:
+                        desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
+                        val = text_input(f"  {ev['name']}{desc}")
+                        mcp_env[ev["name"]] = val
 
-        if optional:
-            rprint(f"\n[dim]{mcp_name}: {len(optional)} optional env var(s):[/dim]")
-            for ev in optional:
-                desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                val = text_input(f"  {ev['name']}{desc} (press Enter to skip)", default="")
-                if val:
-                    mcp_env[ev["name"]] = val
+            if optional:
+                rprint(f"\n[dim]{mcp_name}: {len(optional)} optional env var(s):[/dim]")
+                for ev in optional:
+                    if ev["name"] in _overrides:
+                        mcp_env[ev["name"]] = _overrides[ev["name"]]
+                        rprint(f"  [green]\u2713[/green] {ev['name']} [dim](from --env)[/dim]")
+                    else:
+                        desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
+                        val = text_input(f"  {ev['name']}{desc} (press Enter to skip)", default="")
+                        if val:
+                            mcp_env[ev["name"]] = val
 
         if mcp_env:
             env_values[listing_id] = mcp_env
@@ -453,6 +474,9 @@ def register_pull(app: typer.Typer):
             False, "--refresh-models", help="Bust the local model catalog cache before showing the model picker"
         ),
         no_prompt: bool = typer.Option(False, "--no-prompt", "-y", help="Skip interactive prompts"),
+        env: list[str] | None = typer.Option(
+            None, "--env", "-e", help="MCP environment variable (KEY=VALUE, repeatable)"
+        ),
         version: str | None = typer.Option(
             None, "--version", "-V", help="Install a specific version (e.g. '1.2.0'). Defaults to latest."
         ),
@@ -463,20 +487,32 @@ def register_pull(app: typer.Typer):
         then writes rules files, MCP configs, and agent files into the target
         directory.  Use --dry-run to preview without writing.
 
+        Use --env KEY=VALUE to pass MCP environment variables non-interactively
+        (repeatable). When --no-prompt is set, env var prompts are skipped and
+        only values from --env flags are used.
+
         Examples:
           observal agent pull my-agent --ide claude-code --no-prompt
           observal agent pull my-agent --ide claude-code --version 1.2.0
           observal agent pull my-agent --ide kiro --no-prompt --scope user
           observal agent pull my-agent --ide cursor --no-prompt --dry-run
+          observal agent pull my-agent --ide kiro --no-prompt --env API_KEY=sk-123 --env SECRET=abc
         """
         resolved = config.resolve_alias(agent_id)
         target_dir = Path(directory).resolve()
+
+        # Parse --env flags into overrides dict
+        env_overrides: dict[str, str] = {}
+        for item in env or []:
+            k, _, v = item.partition("=")
+            if k:
+                env_overrides[k.strip()] = v
 
         # Fetch agent details to discover MCP env vars
         with spinner("Fetching agent details..."):
             agent_detail = client.get(f"/api/v1/agents/{resolved}")
 
-        env_values = _collect_mcp_env_vars(agent_detail)
+        env_values = _collect_mcp_env_vars(agent_detail, no_prompt=no_prompt, env_overrides=env_overrides or None)
 
         rprint(f"\n[bold]Install options for [cyan]{ide}[/cyan]:[/bold]")
         if refresh_models:

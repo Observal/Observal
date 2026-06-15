@@ -41,18 +41,11 @@ def install_observal_skill():
 
     installed: list[str] = []
 
-    # Additional user-scope skill paths not formally in the registry but known to work.
-    # Kiro supports ~/.kiro/skills/<name>/SKILL.md at user scope even though the
-    # registry only documents the project-scope path.
-    _extra_user_paths: dict[str, str] = {
-        "kiro": "~/.kiro/skills/{name}/SKILL.md",
-    }
-
-    for ide, spec in IDE_REGISTRY.items():
+    for _ide, spec in IDE_REGISTRY.items():
         skill_file_spec = spec.get("skill_file") or {}
 
         # Install to user scope (global)
-        user_path = skill_file_spec.get("user") or _extra_user_paths.get(ide)
+        user_path = skill_file_spec.get("user")
         if not user_path:
             continue
 

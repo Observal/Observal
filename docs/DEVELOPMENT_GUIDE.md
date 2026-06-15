@@ -39,6 +39,7 @@
     - [After review feedback](#after-review-feedback)
 - [Working on the Backend](#working-on-the-backend)
     - [Running tests](#running-tests)
+    - [Testing conventions](#testing-conventions)
     - [Running a single test](#running-a-single-test)
     - [Code coverage](#code-coverage)
     - [Adding a database migration](#adding-a-database-migration)
@@ -71,7 +72,7 @@ We are a small, active community and we take the quality of interactions serious
 >
 > - Pinging contributors, maintainers, or reviewers unnecessarily (outside of a direct reply on your own open PR or issue)
 > - Submitting low-effort or unreviewed PRs (slop), including unreviewed AI output or autonomous agent submissions
-> - Violating the [Code of Conduct](../../CODE_OF_CONDUCT.md) in any channel
+> - Violating the [Code of Conduct](../CODE_OF_CONDUCT.md) in any channel
 > - Harassing reviewers over merge timelines
 
 Maintainers volunteer their time. Treat them accordingly.
@@ -380,10 +381,18 @@ Tests mock all external services. Docker does not need to be running.
 
 ```bash
 make test
+make test-v
+make test-eval-completeness
+make test-adversarial
+make test-all
 # or directly:
 cd observal-server
 uv run --with pytest --with pytest-asyncio --with hypothesis --with pyarrow pytest ../tests/ -q
 ```
+
+### Testing conventions
+
+New Python tests should follow the [Testing Guide](testing/Testing_Guide.md). The current suite has mixed historical patterns, so do not rewrite old tests only for style. When adding or touching tests, prefer the clean pattern documented there: one behavior area per file, small local helper factories, hermetic CLI and API test setup, explicit async mocks, and behavior-focused assertions.
 
 ### Running a single test
 

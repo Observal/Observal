@@ -2,8 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import { copyToClipboard } from "@/lib/utils";
@@ -18,15 +17,23 @@ import {
 import { useIdes } from "@/hooks/use-ides";
 
 export function PullCommand({ agentName, versions }: { agentName: string; versions?: { version: string; status: string }[] }) {
-  const { data: ides } = useIdes();
-  const [ide, setIde] = useState("cursor");
+  const { data: ides, defaultIde } = useIdes();
+  const [ide, setIde] = useState("");
   const [copied, setCopied] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<string>("latest");
 
-  const approvedVersions = (versions ?? []).filter((v) => v.status === "approved");
+  useEffect(() => {
+    if (!ides || ides.length === 0) return;
+    const defaultAllowed = defaultIde && ides.some((i) => i.name === defaultIde) ? defaultIde : ides[0].name;
+    if (!ide || !ides.some((i) => i.name === ide)) {
+      setIde(defaultAllowed);
+    }
+  }, [ides, defaultIde, ide]);
 
+  const approvedVersions = (versions ?? []).filter((v) => v.status === "approved");
+  const effectiveIde = ide || (defaultIde && ides?.some((i) => i.name === defaultIde) ? defaultIde : ides?.[0]?.name) || "cursor";
   const versionFlag = selectedVersion && selectedVersion !== "latest" ? ` --version ${selectedVersion}` : "";
-  const command = `observal agent pull ${agentName} --ide ${ide}${versionFlag}`;
+  const command = `observal agent pull ${agentName} --ide ${effectiveIde}${versionFlag}`;
 
   function handleCopy() {
     copyToClipboard(command);
@@ -56,7 +63,7 @@ export function PullCommand({ agentName, versions }: { agentName: string; versio
               </SelectContent>
             </Select>
           )}
-          <Select value={ide} onValueChange={setIde}>
+          <Select value={effectiveIde} onValueChange={setIde}>
             <SelectTrigger className="h-7 w-[130px] text-xs border-border">
               <SelectValue />
             </SelectTrigger>

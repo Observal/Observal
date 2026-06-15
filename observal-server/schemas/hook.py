@@ -117,6 +117,7 @@ class HookListingResponse(BaseModel):
     submitted_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    download_count: int = 0
     user_permission: str | None = None
 
     @field_validator("user_permission", mode="before")

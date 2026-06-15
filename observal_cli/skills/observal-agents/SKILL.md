@@ -140,17 +140,16 @@ Co-authors have full edit and publish access (equal to owner).
 
 ```bash
 # List co-authors
-observal co-authors list agents <agent-id-or-name>
+observal agent co-authors list <agent-id-or-name>
 
 # Add by email or username
-observal co-authors add agents <agent-id-or-name> user@example.com
-observal co-authors add agents <agent-id-or-name> @username
+observal agent co-authors add <agent-id-or-name> user@example.com
+observal agent co-authors add <agent-id-or-name> @username
 
 # Remove by user UUID (from list output)
-observal co-authors remove agents <agent-id-or-name> <user-uuid>
+observal agent co-authors remove <agent-id-or-name> <user-uuid>
 ```
 
-Works for all entity types: `agents`, `mcps`, `skills`, `hooks`, `prompts`, `sandboxes`.
 
 
 ## Error Reference

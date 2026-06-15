@@ -22,6 +22,7 @@ from observal_cli.ide.protocol import (
     NotSupportedError,
     ScanResult,
 )
+from observal_cli.ide_registry import IDE_REGISTRY
 
 __all__ = [
     "METHOD_FEATURE_MAP",
@@ -59,11 +60,13 @@ def register_adapter(adapter: IdeAdapter) -> None:
     required = (
         "ide_name",
         "scan_home",
+        "is_installed",
         "scan_project",
         "get_hook_spec",
         "generate_hook_config",
         "detect_hooks",
         "shim_status",
+        "get_observal_managed_files",
     )
     for method in required:
         if not hasattr(adapter, method) or not callable(getattr(adapter, method, None)):
@@ -90,11 +93,7 @@ def get_all_adapters() -> dict[str, IdeAdapter]:
     return dict(_ADAPTER_REGISTRY)
 
 
-# Expected number of adapters (updated when new IDEs are added)
-_EXPECTED_ADAPTER_COUNT = 10
-
-
 def ensure_loaded() -> None:
     """Ensure all adapter modules have been imported and registered."""
-    if len(_ADAPTER_REGISTRY) < _EXPECTED_ADAPTER_COUNT:
+    if len(_ADAPTER_REGISTRY) < len(IDE_REGISTRY):
         import observal_cli.ide.load_all  # noqa: F401

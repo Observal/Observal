@@ -27,18 +27,18 @@ When a user runs `observal scan`, Observal reads those same locations to discove
 |---|------|-------------|
 | 1 | `observal-server/schemas/ide_registry.py` | IDE metadata: paths, keys, event maps, formats |
 | 2 | `observal_cli/ide_registry.py` | CLI mirror (must be identical, enforced by test) |
-| 3 | `observal_cli/ide/<ide_name>.py` | CLI adapter: scanning, hook detection, shim status |
+| 3 | `observal_cli/ide/<ide_name>.py` | CLI adapter: scanning, hook detection, shim status, managed file attribution |
 | 4 | `observal_cli/ide/load_all.py` | Add import line for auto-registration |
-| 5 | `observal_cli/ide/__init__.py` | Bump `_EXPECTED_ADAPTER_COUNT` |
+| 5 | `observal_cli/ide/__init__.py` | Adapter registry and protocol validation |
 | 6 | `observal-server/services/ide/<ide_name>.py` | Server adapter: config generation for install |
 | 7 | `observal-server/services/ide/load_all.py` | Add import line for server adapter |
 | 8 | `observal_cli/ide_specs/<ide_name>_hooks_spec.py` | Hook spec: what hooks to install, event names |
 | 9 | `observal_cli/sessions/<ide_name>.py` | Session parser (if IDE writes JSONL sessions) |
 | 10 | `observal_cli/hooks/<ide_name>_session_push.py` | Session push hook script |
 | 11 | `observal_cli/cmd_doctor.py` | Doctor diagnose/patch/cleanup coverage for the new IDE |
-| 12 | `observal_cli/layer.py` | Layer scanning globs (`IDE_LAYER_CONFIGS`) and managed file attribution |
+| 12 | `observal_cli/layer.py` | Layer scanning globs (`IDE_LAYER_CONFIGS`) and active IDE detection |
 | 13 | `tests/test_cli_ide_adapters.py` | Adapter unit tests |
-| 14 | `web/src/lib/ide-features.ts` | Frontend IDE display (name, icon, capabilities) |
+| 14 | `/api/v1/config/ides` consumers | Frontend uses server IDE metadata through `useIdes()` |
 
 ## Step 1: Research the IDE
 
@@ -137,8 +137,10 @@ Before moving on, always wire the new IDE into these shared paths:
   - Add `_cleanup_<ide>()` support in `doctor cleanup`
 - `observal_cli/layer.py`:
   - Add user/project file globs under `IDE_LAYER_CONFIGS`
-  - Update `_get_observal_managed_files()` for source attribution if needed
-  - Ensure `_detect_active_ides()` has a reliable home-dir marker
+- `observal_cli/ide/<ide_name>.py`:
+  - Add `home_markers` for active IDE detection when the IDE has a reliable home config marker. Glob patterns are supported.
+  - Add `managed_agent_files`, `managed_skill_files`, and `managed_mcp_files` patterns for layer source attribution
+  - Override `get_observal_managed_files()` only if simple `{name}` patterns are not enough
 
 If these are skipped, the IDE can appear supported in pull/scan while doctor and layer observability remain incomplete.
 
@@ -177,6 +179,11 @@ from observal_cli.shared.utils import (
 
 
 class MyIdeAdapter(BaseAdapter):
+    home_markers = (".my-ide",)
+    managed_agent_files = ("user:agents/{name}.md", "project:.my-ide/agents/{name}.md")
+    managed_skill_files = ("user:skills/{name}/SKILL.md", "project:.my-ide/skills/{name}/SKILL.md")
+    managed_mcp_files = ("user:mcp.json", "project:.my-ide/mcp.json")
+
     @property
     def ide_name(self) -> str:
         return "my-ide"
@@ -454,7 +461,7 @@ custom session push script (most can reuse `session_push.py`).
    from observal_cli.ide import my_ide as _my_ide  # noqa: F401
    ```
 
-2. `observal_cli/ide/__init__.py`: bump `_EXPECTED_ADAPTER_COUNT`
+2. `observal_cli/ide/<ide_name>.py`: set `home_markers` and managed file attribution patterns used by layer snapshots.
 
 3. `observal-server/services/ide/load_all.py`:
    ```python
@@ -477,6 +484,12 @@ class TestMyIdeAdapter:
         result = adapter.scan_home(tmp_path)
         assert result.mcps == []
         assert result.skills == []
+
+    def test_is_installed_uses_home_marker(self, tmp_path):
+        adapter = MyIdeAdapter()
+        assert adapter.is_installed(tmp_path) is False
+        (tmp_path / ".my-ide").mkdir()
+        assert adapter.is_installed(tmp_path) is True
 
     def test_scan_home_discovers_mcps(self, tmp_path):
         ide_dir = tmp_path / ".my-ide"
@@ -516,6 +529,22 @@ class TestMyIdeAdapter:
         }))
         adapter = MyIdeAdapter()
         assert adapter.detect_hooks(tmp_path) == "installed"
+
+    def test_managed_files_for_layer_source_attribution(self):
+        lockfile = {
+            "ides": {
+                "my-ide": {
+                    "agents": [{"name": "agent-one", "components": [{"type": "skill", "name": "helper"}]}],
+                }
+            }
+        }
+        adapter = MyIdeAdapter()
+        assert adapter.get_observal_managed_files(lockfile) == {
+            "user:agents/agent-one.md",
+            "project:.my-ide/agents/agent-one.md",
+            "user:skills/helper/SKILL.md",
+            "project:.my-ide/skills/helper/SKILL.md",
+        }
 ```
 
 ## Step 10: Verify

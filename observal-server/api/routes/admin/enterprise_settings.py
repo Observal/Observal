@@ -14,9 +14,14 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
-from api.deps import get_db, require_role
+from api.deps import get_db, get_project_id, require_role
 from config import HAS_LICENSE, settings
+from models.agent import Agent
 from models.enterprise_config import EnterpriseConfig
+from models.insight_meta_cache import InsightMetaCache
+from models.insight_report import InsightReport
+from models.insight_session_facets import InsightSessionFacets
+from models.insight_session_meta import InsightSessionMeta
 from models.user import User, UserRole
 from schemas.admin import EnterpriseConfigResponse, EnterpriseConfigUpdate, SettingRevokedResponse
 from services.insights import _normalize_model_id
@@ -326,6 +331,75 @@ async def apply_resources(
         "applied": {k: current[k] for k in applied_keys},
         "message": "ClickHouse resource settings applied",
     }
+
+
+# ── Danger Zone Purge ───────────────────────────────
+
+
+class _PurgeTracesInsightsResponse(BaseModel):
+    project_id: str
+    clickhouse_tables: list[str]
+    deleted_reports: int | None = None
+    deleted_facets: int | None = None
+    deleted_session_meta: int | None = None
+    deleted_meta_cache: int | None = None
+
+
+@router.post("/settings/danger/purge-traces-insights", response_model=_PurgeTracesInsightsResponse)
+async def purge_traces_and_insights(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Danger-zone purge: delete all telemetry traces/sessions and insight reports for this org."""
+    optic.warning("danger purge traces+insights requested by user={}", current_user.id)
+    project_id = get_project_id(current_user)
+
+    from services.clickhouse.client import _query as ch_query
+
+    clickhouse_tables = ["traces", "spans", "scores", "session_events", "session_stats_agg"]
+    for table in clickhouse_tables:
+        try:
+            await ch_query(
+                f"ALTER TABLE {table} DELETE WHERE project_id = {{project_id:String}}",
+                {"param_project_id": project_id},
+            )
+        except Exception as e:
+            optic.warning("danger purge failed for ClickHouse table {}: {}", table, e)
+
+    agent_ids_stmt = select(Agent.id)
+    if current_user.org_id is not None:
+        agent_ids_stmt = agent_ids_stmt.where(Agent.owner_org_id == current_user.org_id)
+
+    report_result = await db.execute(delete(InsightReport).where(InsightReport.agent_id.in_(agent_ids_stmt)))
+    facets_result = await db.execute(
+        delete(InsightSessionFacets).where(InsightSessionFacets.agent_id.in_(agent_ids_stmt))
+    )
+    meta_result = await db.execute(delete(InsightSessionMeta).where(InsightSessionMeta.agent_id.in_(agent_ids_stmt)))
+    cache_result = await db.execute(delete(InsightMetaCache).where(InsightMetaCache.agent_id.in_(agent_ids_stmt)))
+    await db.commit()
+
+    await emit_security_event(
+        SecurityEvent(
+            event_type=EventType.SETTING_CHANGED,
+            severity=Severity.CRITICAL,
+            outcome="success",
+            actor_id=str(current_user.id),
+            actor_email=current_user.email,
+            actor_role=current_user.role.value,
+            target_id="danger.purge_traces_insights",
+            target_type="danger_zone",
+            detail="Purged telemetry traces/session data and insight reports for current project/org",
+        )
+    )
+
+    return _PurgeTracesInsightsResponse(
+        project_id=project_id,
+        clickhouse_tables=clickhouse_tables,
+        deleted_reports=report_result.rowcount,
+        deleted_facets=facets_result.rowcount,
+        deleted_session_meta=meta_result.rowcount,
+        deleted_meta_cache=cache_result.rowcount,
+    )
 
 
 # ── Insights Test Connection ───────────────────────────────

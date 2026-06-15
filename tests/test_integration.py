@@ -373,7 +373,7 @@ class TestFeedback:
                 "comment": "Great MCP!",
             },
         )
-        assert r2.status_code == 200, f"Feedback failed: {r2.text}"
+        assert r2.status_code in (200, 201), f"Feedback failed: {r2.text}"
 
         # Verify feedback appears
         r3 = await client.get(f"/api/v1/feedback/mcp/{mcp_id}", headers=admin_headers)

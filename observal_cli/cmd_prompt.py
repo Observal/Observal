@@ -262,32 +262,6 @@ def prompt_render(
     rprint(result.get("rendered", result))
 
 
-@prompt_app.command(name="install")
-def prompt_install(
-    prompt_id: str = typer.Argument(..., help="Prompt ID, name, row number, or @alias"),
-    ide: str = typer.Option(..., "--ide", "-i", help="Target IDE"),
-    raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
-):
-    """Generate IDE install configuration for a prompt.
-
-    Produces the config snippet needed to make this prompt available in
-    the specified IDE. Use --raw to pipe the JSON directly to a file.
-
-    Examples:
-        observal registry prompt install my-prompt --ide claude-code
-        observal registry prompt install @tpl --ide cursor --raw > prompt.json
-    """
-    resolved = config.resolve_alias(prompt_id)
-    with spinner(f"Generating {ide} config..."):
-        result = client.post(f"/api/v1/prompts/{resolved}/install", {"ide": ide})
-    snippet = result.get("config_snippet", result)
-    if raw:
-        print(_json.dumps(snippet, indent=2))
-        return
-    rprint(f"\n[bold]Config for {ide}:[/bold]\n")
-    console.print_json(_json.dumps(snippet, indent=2))
-
-
 @prompt_app.command(name="edit")
 def prompt_edit(
     prompt_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),

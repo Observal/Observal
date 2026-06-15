@@ -38,6 +38,7 @@ import {
 	ShieldAlert,
 	Stethoscope,
 	KeyRound,
+	BookOpen,
 } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import {
@@ -69,6 +70,7 @@ const registryNav: NavItem[] = [
 		icon: Hammer,
 		requiresAuth: true,
 	},
+	{ title: "Wiki", href: "/wiki", icon: BookOpen },
 ];
 
 const reviewNav: NavItem[] = [
@@ -103,7 +105,7 @@ const adminNav: NavItem[] = [
 		requiresFeature: "security_events",
 	},
 	{
-		title: "SSO & SCIM",
+		title: "SSO",
 		href: "/sso",
 		icon: KeyRound,
 		minRole: "admin",

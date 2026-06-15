@@ -8,20 +8,23 @@ import { RegistrySidebar } from "@/components/nav/registry-sidebar";
 import { CommandMenu } from "@/components/nav/command-menu";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthGuard } from "@/components/layouts/auth-guard";
+import { HelpProvider } from "@/components/wiki/help-context";
 
 function AuthedLayout() {
   return (
     <AuthGuard>
-      <SidebarProvider>
-        <RegistrySidebar />
-        <SidebarInset>
-          <Suspense fallback={<div className="flex h-screen w-full items-center justify-center" />}>
-            <Outlet />
-          </Suspense>
-        </SidebarInset>
-        <CommandMenu />
-        <Toaster visibleToasts={1} />
-      </SidebarProvider>
+      <HelpProvider>
+        <SidebarProvider>
+          <RegistrySidebar />
+          <SidebarInset>
+            <Suspense fallback={<div className="flex h-screen w-full items-center justify-center" />}>
+              <Outlet />
+            </Suspense>
+          </SidebarInset>
+          <CommandMenu />
+          <Toaster visibleToasts={1} />
+        </SidebarProvider>
+      </HelpProvider>
     </AuthGuard>
   );
 }

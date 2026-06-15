@@ -19,8 +19,10 @@ import {
   ArrowRight,
   Save,
   Info,
+  HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useHelp } from "@/components/wiki/help-context";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -340,6 +342,7 @@ export default function AgentBuilderPage() {
 function AgentBuilderInner() {
   // Require auth for builder
   const { ready } = useAuthGuard();
+  const helpCtx = useHelp();
 
   const router = useRouter();
   const { edit: editId, draft: draftParam } = useSearch({ from: "/_authed/agents/builder" });
@@ -807,6 +810,16 @@ function AgentBuilderInner() {
           { label: "Agents", href: "/agents" },
           { label: isEditMode ? "Edit" : "Builder" },
         ]}
+        actionButtonsRight={
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-primary transition-colors"
+            onClick={() => helpCtx.openHelp({ pageKey: "agents.builder" })}
+            title="Agent builder documentation"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
+        }
       />
 
       <div className="p-6 lg:p-8 w-full mx-auto">

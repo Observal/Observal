@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""HIPAA-grade audit logging via loguru.
+"""Compliance-grade audit logging via loguru.
 
 Enterprise feature, gated by is_feature_licensed("audit").
 

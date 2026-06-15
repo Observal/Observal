@@ -11,6 +11,9 @@ from models.insight_report import InsightReportStatus
 
 class GenerateInsightRequest(BaseModel):
     period_days: int = 14
+    agent_version: str | None = None
+    comparison_agent_version: str | None = None
+    version_scope: str | None = "canonical_and_dirty"
 
 
 class ApplySuggestionsRequest(BaseModel):
@@ -24,18 +27,32 @@ class ApplySuggestionsRequest(BaseModel):
 class InsightReportListItem(BaseModel):
     id: uuid.UUID
     agent_id: uuid.UUID
+    agent_version_id: uuid.UUID | None = None
+    agent_version: str | None = None
+    version_scope: str | None = None
     status: InsightReportStatus
     period_start: datetime
     period_end: datetime
     sessions_analyzed: int
     created_at: datetime
     completed_at: datetime | None
+    progress_phase: str | None = None
+    progress_current: int = 0
+    progress_total: int = 0
+    progress_percent: int = 0
+    progress_message: str | None = None
+    progress_updated_at: datetime | None = None
     model_config = {"from_attributes": True}
 
 
 class InsightReportResponse(BaseModel):
     id: uuid.UUID
     agent_id: uuid.UUID
+    agent_version_id: uuid.UUID | None = None
+    agent_version: str | None = None
+    version_scope: str | None = None
+    comparison_agent_version_id: uuid.UUID | None = None
+    comparison_agent_version: str | None = None
     triggered_by: uuid.UUID | None
     status: InsightReportStatus
     period_start: datetime
@@ -48,6 +65,12 @@ class InsightReportResponse(BaseModel):
     started_at: datetime
     completed_at: datetime | None
     created_at: datetime
+    progress_phase: str | None = None
+    progress_current: int = 0
+    progress_total: int = 0
+    progress_percent: int = 0
+    progress_message: str | None = None
+    progress_updated_at: datetime | None = None
     # V2+ fields
     previous_report_id: uuid.UUID | None = None
     aggregated_data: dict | None = None

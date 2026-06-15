@@ -36,10 +36,10 @@ IDE_REGISTRY: dict[str, dict] = {
         },
         "mcp_servers_key": "mcpServers",
         "skill_file": {
-            "project": ".cursor/rules/{name}.mdc",
-            "user": "~/.cursor/rules/{name}.mdc",
+            "project": ".cursor/skills/{name}/SKILL.md",
+            "user": "~/.cursor/skills/{name}/SKILL.md",
         },
-        "skill_format": "markdown_frontmatter",
+        "skill_format": "yaml_frontmatter",
         "home_mcp_config": "~/.cursor/mcp.json",
         "hook_type": "command",
         "hook_config_path": {
@@ -78,6 +78,7 @@ IDE_REGISTRY: dict[str, dict] = {
         "mcp_servers_key": "mcpServers",
         "skill_file": {
             "project": ".kiro/skills/{name}/SKILL.md",
+            "user": "~/.kiro/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
         "home_mcp_config": "~/.kiro/settings/mcp.json",
@@ -154,8 +155,10 @@ IDE_REGISTRY: dict[str, dict] = {
             "user": "~/.codex/config.toml",
         },
         "mcp_servers_key": "mcp.servers",
-        "skill_file": None,
-        "skill_format": None,
+        "skill_file": {
+            "user": "~/.codex/skills/{name}/SKILL.md",
+        },
+        "skill_format": "yaml_frontmatter",
         "home_mcp_config": "~/.codex/config.toml",
         "hook_type": "command",
         "hook_config_path": {
@@ -189,8 +192,9 @@ IDE_REGISTRY: dict[str, dict] = {
         "mcp_servers_key": "servers",
         "skill_file": {
             "project": ".github/skills/{name}/SKILL.md",
+            "user": "~/.copilot/skills/{name}/SKILL.md",
         },
-        "skill_format": "markdown",
+        "skill_format": "yaml_frontmatter",
         "home_mcp_config": "~/.vscode/mcp.json",
         "hook_type": "command",
         "hook_config_path": {
@@ -228,7 +232,7 @@ IDE_REGISTRY: dict[str, dict] = {
             "project": ".agents/skills/{name}/SKILL.md",
             "user": "~/.copilot/skills/{name}/SKILL.md",
         },
-        "skill_format": "markdown",
+        "skill_format": "yaml_frontmatter",
         "home_mcp_config": "~/.copilot/mcp-config.json",
         "hook_type": "command",
         "hook_config_path": {
@@ -306,9 +310,9 @@ IDE_REGISTRY: dict[str, dict] = {
         "mcp_servers_key": "mcpServers",
         "skill_file": {
             "project": ".agents/skills/{name}/SKILL.md",
-            "user": "~/.gemini/antigravity-cli/skills/{name}/SKILL.md",
+            "user": "~/.gemini/config/skills/{name}/SKILL.md",
         },
-        "skill_format": "markdown",
+        "skill_format": "yaml_frontmatter",
         "home_mcp_config": "~/.gemini/antigravity-cli/mcp_config.json",
         "hook_type": "command",
         "hook_config_path": {

@@ -11,42 +11,10 @@ from rich.table import Table
 
 from observal_cli import client
 
-co_authors_app = typer.Typer(help="Manage co-authors for agents and components")
 
-VALID_ENTITY_TYPES = ("agents", "mcps", "skills", "hooks", "prompts", "sandboxes")
-
-
-def _resolve_entity_type(entity_type: str) -> str:
-    """Normalize entity type input."""
-    t = entity_type.lower().strip()
-    # Allow singular forms
-    if t == "agent":
-        return "agents"
-    if t == "mcp":
-        return "mcps"
-    if t == "skill":
-        return "skills"
-    if t == "hook":
-        return "hooks"
-    if t == "prompt":
-        return "prompts"
-    if t == "sandbox":
-        return "sandboxes"
-    if t in VALID_ENTITY_TYPES:
-        return t
-    rprint(f"[red]Invalid entity type:[/red] {entity_type}")
-    rprint(f"Valid types: {', '.join(VALID_ENTITY_TYPES)}")
-    raise typer.Exit(code=1)
-
-
-@co_authors_app.command(name="list")
-def co_authors_list(
-    entity_type: str = typer.Argument(help="Entity type (agent, mcp, skill, hook, prompt, sandbox)"),
-    entity_id: str = typer.Argument(help="Entity UUID or name"),
-):
-    """List co-authors for an agent or component."""
-    t = _resolve_entity_type(entity_type)
-    resp = client.get(f"/{t}/{entity_id}/co-authors")
+def _list_co_authors(entity_type: str, entity_id: str) -> None:
+    """List co-authors for an entity."""
+    resp = client.get(f"/{entity_type}/{entity_id}/co-authors")
     if not resp:
         rprint("[dim]No co-authors.[/dim]")
         return
@@ -66,29 +34,44 @@ def co_authors_list(
     rprint(table)
 
 
-@co_authors_app.command(name="add")
-def co_authors_add(
-    entity_type: str = typer.Argument(help="Entity type (agent, mcp, skill, hook, prompt, sandbox)"),
-    entity_id: str = typer.Argument(help="Entity UUID or name"),
-    user: str = typer.Argument(help="Email or username of the user to add"),
-):
-    """Add a co-author to an agent or component."""
-    t = _resolve_entity_type(entity_type)
-
-    # Determine if email or username
+def _add_co_author(entity_type: str, entity_id: str, user: str) -> None:
+    """Add a co-author to an entity."""
     body = {"email": user.lower()} if "@" in user and not user.startswith("@") else {"username": user.lstrip("@")}
-
-    resp = client.post(f"/{t}/{entity_id}/co-authors", json_data=body)
+    resp = client.post(f"/{entity_type}/{entity_id}/co-authors", json_data=body)
     rprint(f"[green]Added co-author:[/green] {resp.get('email', user)} ({resp.get('username', '')})")
 
 
-@co_authors_app.command(name="remove")
-def co_authors_remove(
-    entity_type: str = typer.Argument(help="Entity type (agent, mcp, skill, hook, prompt, sandbox)"),
-    entity_id: str = typer.Argument(help="Entity UUID or name"),
-    user_id: str = typer.Argument(help="UUID of the co-author to remove"),
-):
-    """Remove a co-author from an agent or component."""
-    t = _resolve_entity_type(entity_type)
-    client.delete(f"/{t}/{entity_id}/co-authors/{user_id}")
+def _remove_co_author(entity_type: str, entity_id: str, user_id: str) -> None:
+    """Remove a co-author from an entity."""
+    client.delete(f"/{entity_type}/{entity_id}/co-authors/{user_id}")
     rprint("[green]Co-author removed.[/green]")
+
+
+def make_co_authors_typer(entity_type: str) -> typer.Typer:
+    """Create a co-authors sub-typer for a given entity type (agents, mcps, skills, etc.)."""
+    co_app = typer.Typer(help=f"Manage co-authors for {entity_type}")
+
+    @co_app.command(name="list")
+    def list_cmd(
+        entity_id: str = typer.Argument(help="Entity UUID or name"),
+    ):
+        """List co-authors."""
+        _list_co_authors(entity_type, entity_id)
+
+    @co_app.command(name="add")
+    def add_cmd(
+        entity_id: str = typer.Argument(help="Entity UUID or name"),
+        user: str = typer.Argument(help="Email or username of the user to add"),
+    ):
+        """Add a co-author."""
+        _add_co_author(entity_type, entity_id, user)
+
+    @co_app.command(name="remove")
+    def remove_cmd(
+        entity_id: str = typer.Argument(help="Entity UUID or name"),
+        user_id: str = typer.Argument(help="UUID of the co-author to remove"),
+    ):
+        """Remove a co-author."""
+        _remove_co_author(entity_type, entity_id, user_id)
+
+    return co_app

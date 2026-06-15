@@ -499,6 +499,9 @@ def _generate_codex(manifest: AgentManifest) -> IdeAgentConfig:
         ),
     ]
 
+    skill_files = _build_skill_files(manifest, "codex")
+    files.extend(skill_files)
+
     saved_model = _saved_model_for(manifest, "codex")
     if saved_model:
         toml_lines: list[str] = [f'model = "{saved_model}"', ""]
@@ -529,6 +532,9 @@ def _generate_copilot(manifest: AgentManifest) -> IdeAgentConfig:
             format="markdown",
         ),
     ]
+
+    skill_files = _build_skill_files(manifest, "copilot")
+    files.extend(skill_files)
 
     if mcp_entries:
         copilot_mcp_entries = {}

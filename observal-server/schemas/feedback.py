@@ -5,7 +5,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class FeedbackCreateRequest(BaseModel):
@@ -13,16 +13,31 @@ class FeedbackCreateRequest(BaseModel):
     listing_type: str = Field(pattern="^(mcp|agent|skill|hook|prompt|sandbox)$")
     rating: int = Field(ge=1, le=5)
     comment: str | None = Field(None, max_length=5000)
+    anonymous: bool = False
+
+
+class FeedbackUpdateRequest(BaseModel):
+    rating: int | None = Field(None, ge=1, le=5)
+    comment: str | None = Field(None, max_length=5000)
+    anonymous: bool | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> "FeedbackUpdateRequest":
+        if self.rating is None and self.comment is None and self.anonymous is None:
+            raise ValueError("At least one of rating, comment, or anonymous must be provided")
+        return self
 
 
 class FeedbackResponse(BaseModel):
     id: uuid.UUID
     listing_id: uuid.UUID
     listing_type: str
-    user_id: uuid.UUID
+    user_id: uuid.UUID | None  # None when anonymous
     rating: int
     comment: str | None
+    anonymous: bool
     created_at: datetime
+    updated_at: datetime | None = None
     model_config = {"from_attributes": True}
 
 

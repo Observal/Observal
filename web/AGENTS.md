@@ -62,7 +62,7 @@ src/app/
 │   ├── users/page.tsx              #   User management
 │   ├── settings/page.tsx           #   Settings (sections gated by feature flags)
 │   ├── sso/page.tsx                #   SSO / SAML / OIDC config (license-gated)
-│   ├── audit-log/page.tsx          #   HIPAA audit log with parameterized search
+│   ├── audit-log/page.tsx          #   Audit log with parameterized search
 │   ├── security-events/page.tsx    #   Security event log
 │   ├── diagnostics/page.tsx        #   System diagnostics
 │   └── errors/page.tsx             #   Error log (stubbed, pending rework)

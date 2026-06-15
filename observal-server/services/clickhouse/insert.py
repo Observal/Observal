@@ -263,7 +263,7 @@ async def insert_audit_log(events: list[dict]):
         }
         lines.append(_dumps(row))
     body = "\n".join(lines)
-    sql = "INSERT INTO audit_log FORMAT JSONEachRow SETTINGS async_insert=0"
+    sql = "INSERT INTO audit_log SETTINGS async_insert=0 FORMAT JSONEachRow"
     try:
         r = await _client._query(sql, data=body)
         r.raise_for_status()

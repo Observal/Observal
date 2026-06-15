@@ -99,6 +99,8 @@ async def apply_insight_suggestions(
         "skills": [],
         "hooks": [],
         "prompts": [],
+        "linked_existing": [],
+        "removed_components": [],
     }
 
     # Determine which indices to apply per category
@@ -115,19 +117,89 @@ async def apply_insight_suggestions(
         suggestions.get("usage_patterns", []),
     )
 
+    # Regeneration semantics: applying a newer report hard-replaces older
+    # pending insight-generated versions so users do not see competing fixes.
+    superseded_versions = await _withdraw_stale_insight_generated_versions(agent, db)
+    if superseded_versions:
+        applied["superseded_agent_versions"] = superseded_versions
+
     # 1. Create SkillListings and HookListings from features_to_try
     features_to_try = suggestions.get("features_to_try", [])
     created_skill_ids: list[uuid.UUID] = []
     created_hook_ids: list[uuid.UUID] = []
+    existing_skill_ids: list[uuid.UUID] = []
+    existing_hook_ids: list[uuid.UUID] = []
+    removed_component_ids: list[uuid.UUID] = []
 
     for idx in feature_indices:
         if idx >= len(features_to_try):
             continue
         feature = features_to_try[idx]
+        action_type = str(feature.get("action_type") or "").lower()
+        existing_id = feature.get("existing_component_id")
         # Never create MCPs from insights
         if _is_mcp_suggestion(feature):
             continue
+        if action_type in {"reuse_existing_component", "attach_registry_component"} and existing_id:
+            try:
+                cid = uuid.UUID(str(existing_id))
+            except ValueError:
+                cid = None
+            if cid and _is_skill_suggestion(feature):
+                existing_skill_ids.append(cid)
+                applied["linked_existing"].append(
+                    {
+                        "type": "skill",
+                        "id": str(cid),
+                        "reason": feature.get("why_for_you"),
+                        "confidence": feature.get("confidence"),
+                        "risk": feature.get("risk"),
+                    }
+                )
+            elif cid and _is_hook_suggestion(feature):
+                existing_hook_ids.append(cid)
+                applied["linked_existing"].append(
+                    {
+                        "type": "hook",
+                        "id": str(cid),
+                        "reason": feature.get("why_for_you"),
+                        "confidence": feature.get("confidence"),
+                        "risk": feature.get("risk"),
+                    }
+                )
+            continue
+        if action_type == "remove_component" and existing_id:
+            try:
+                cid = uuid.UUID(str(existing_id))
+            except ValueError:
+                cid = None
+            if cid:
+                removed_component_ids.append(cid)
+                applied["removed_components"].append(
+                    {
+                        "id": str(cid),
+                        "name": feature.get("name"),
+                        "reason": feature.get("why_for_you"),
+                        "confidence": feature.get("confidence"),
+                        "risk": feature.get("risk"),
+                    }
+                )
+            continue
         if _is_skill_suggestion(feature):
+            existing_match = await _find_existing_skill_match(feature, db)
+            if existing_match:
+                existing_skill_ids.append(existing_match.id)
+                applied["linked_existing"].append(
+                    {
+                        "type": "skill",
+                        "id": str(existing_match.id),
+                        "name": existing_match.name,
+                        "reason": "matched existing registry skill",
+                        "confidence": feature.get("confidence"),
+                        "risk": feature.get("risk") or "low",
+                    }
+                )
+                continue
             skill_info = await _create_skill_listing(
                 agent=agent,
                 feature=feature,
@@ -135,6 +207,9 @@ async def apply_insight_suggestions(
                 db=db,
             )
             if skill_info:
+                skill_info["confidence"] = feature.get("confidence")
+                skill_info["risk"] = feature.get("risk")
+                skill_info["why"] = feature.get("why_for_you")
                 applied["skills"].append(skill_info)
                 created_skill_ids.append(uuid.UUID(skill_info["id"]))
         elif _is_hook_suggestion(feature):
@@ -145,6 +220,9 @@ async def apply_insight_suggestions(
                 db=db,
             )
             if hook_info:
+                hook_info["confidence"] = feature.get("confidence")
+                hook_info["risk"] = feature.get("risk")
+                hook_info["why"] = feature.get("why_for_you")
                 applied["hooks"].append(hook_info)
                 created_hook_ids.append(uuid.UUID(hook_info["id"]))
 
@@ -170,16 +248,31 @@ async def apply_insight_suggestions(
     # 3. Create new AgentVersion with selected config additions + linked components
     config_additions = suggestions.get("config_additions", [])
     selected_additions = [config_additions[i] for i in config_indices if i < len(config_additions)]
+    if selected_additions:
+        applied["prompt_additions"] = [
+            {
+                "addition": item.get("addition"),
+                "where": item.get("where"),
+                "why": item.get("why"),
+                "confidence": item.get("confidence"),
+                "risk": item.get("risk") or "low",
+            }
+            for item in selected_additions
+        ]
 
-    if selected_additions or created_skill_ids or created_hook_ids or created_prompt_ids:
+    linked_skill_ids = created_skill_ids + existing_skill_ids
+    linked_hook_ids = created_hook_ids + existing_hook_ids
+
+    if selected_additions or linked_skill_ids or linked_hook_ids or created_prompt_ids or removed_component_ids:
         version_info = await _create_agent_version_with_additions(
             agent=agent,
             config_additions=selected_additions,
             submitter_id=submitter_id,
             db=db,
-            linked_skill_ids=created_skill_ids,
-            linked_hook_ids=created_hook_ids,
+            linked_skill_ids=linked_skill_ids,
+            linked_hook_ids=linked_hook_ids,
             linked_prompt_ids=created_prompt_ids,
+            removed_component_ids=removed_component_ids,
         )
         if version_info:
             applied["agent_version"] = version_info
@@ -201,6 +294,23 @@ async def apply_insight_suggestions(
     )
 
     return applied
+
+
+async def _withdraw_stale_insight_generated_versions(agent: Agent, db: AsyncSession) -> list[dict]:
+    stmt = select(AgentVersion).where(
+        AgentVersion.agent_id == agent.id,
+        AgentVersion.status == AgentStatus.pending,
+    )
+    result = await db.execute(stmt)
+    withdrawn = []
+    for version in result.scalars().all():
+        if not (version.description or "").startswith("Self-learned from insights"):
+            continue
+        version.status = AgentStatus.rejected
+        version.rejection_reason = "Superseded by newer insight-generated proposal"
+        withdrawn.append({"id": str(version.id), "version": version.version})
+    await db.flush()
+    return withdrawn
 
 
 async def handle_component_rejection(
@@ -290,6 +400,7 @@ async def _create_agent_version_with_additions(
     linked_skill_ids: list[uuid.UUID] | None = None,
     linked_hook_ids: list[uuid.UUID] | None = None,
     linked_prompt_ids: list[uuid.UUID] | None = None,
+    removed_component_ids: list[uuid.UUID] | None = None,
 ) -> dict | None:
     """Create a new pending AgentVersion with config_additions appended to the prompt.
 
@@ -313,12 +424,24 @@ async def _create_agent_version_with_additions(
         optic.warning("self_learn_no_approved_version", agent=agent.name)
         return None
 
-    # Build the new prompt with additions
+    # Build the new prompt with additions, skipping exact duplicates already present.
     current_prompt = latest_version.prompt or ""
+    existing_prompt_lower = current_prompt.lower()
+    config_additions = [
+        item
+        for item in config_additions
+        if item.get("addition") and item.get("addition", "").strip().lower() not in existing_prompt_lower
+    ]
     additions_text = _build_additions_text(config_additions)
 
     # Even without text additions, we might be linking new components
-    if not additions_text.strip() and not linked_skill_ids and not linked_hook_ids and not linked_prompt_ids:
+    if (
+        not additions_text.strip()
+        and not linked_skill_ids
+        and not linked_hook_ids
+        and not linked_prompt_ids
+        and not removed_component_ids
+    ):
         return None
 
     new_prompt = current_prompt
@@ -353,6 +476,8 @@ async def _create_agent_version_with_additions(
         desc_parts.append(f"{len(config_additions)} prompt additions")
     if total_linked:
         desc_parts.append(f"{total_linked} linked components")
+    if removed_component_ids:
+        desc_parts.append(f"{len(removed_component_ids)} removed components")
     description = "Self-learned from insights: " + ", ".join(desc_parts)
 
     now = datetime.now(UTC)
@@ -378,7 +503,10 @@ async def _create_agent_version_with_additions(
     from models.agent_component import AgentComponent
 
     order_idx = 0
+    removed_set = set(removed_component_ids or [])
     for comp in latest_version.components or []:
+        if comp.component_id in removed_set:
+            continue
         db.add(
             AgentComponent(
                 agent_version_id=new_version.id,
@@ -439,6 +567,7 @@ async def _create_agent_version_with_additions(
         "version": new_ver,
         "additions_count": len(config_additions),
         "linked_components": total_linked,
+        "removed_components": len(removed_component_ids or []),
     }
 
 
@@ -575,6 +704,35 @@ def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9\-]", "-", slug)
     slug = re.sub(r"-+", "-", slug)
     return slug.strip("-")
+
+
+async def _find_existing_skill_match(feature: dict, db: AsyncSession) -> SkillListing | None:
+    """Deterministically find an existing approved skill before creating a duplicate."""
+    raw_name = _slugify(str(feature.get("name") or ""))
+    one_liner = str(feature.get("one_liner") or feature.get("why_for_you") or "")
+    keywords = set(_extract_keywords(f"{raw_name} {one_liner}", max_words=6).split("-"))
+    if not raw_name and not keywords:
+        return None
+
+    rows = (
+        (
+            await db.execute(
+                select(SkillListing)
+                .join(SkillVersion, SkillListing.latest_version_id == SkillVersion.id, isouter=True)
+                .where(SkillVersion.status == ListingStatus.approved)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for listing in rows:
+        listing_slug = _slugify(listing.name or "")
+        if raw_name and (listing_slug == raw_name or raw_name in listing_slug or listing_slug in raw_name):
+            return listing
+        haystack = f"{listing.name} {getattr(listing.latest_version, 'description', '')}".lower()
+        if keywords and sum(1 for kw in keywords if kw and kw in haystack) >= min(3, len(keywords)):
+            return listing
+    return None
 
 
 async def _create_skill_listing(

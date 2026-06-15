@@ -43,6 +43,10 @@ Every command available in the installed CLI. This block is generated from the T
 
 **`observal agent`**: Agent registry commands
 
+- `observal agent co-authors`: Manage co-authors for agents
+  - `observal agent co-authors add`: Add a co-author.
+  - `observal agent co-authors list`: List co-authors.
+  - `observal agent co-authors remove`: Remove a co-author.
   - `observal agent add`: Add a component reference to observal-agent.yaml.
   - `observal agent build`: Validate agent definition against the server (dry-run).
   - `observal agent bulk-create`: Bulk-create agents from a JSON file.
@@ -68,12 +72,6 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal auth change-password`: Change your password.
   - `observal auth set-username`: Set or update your username.
 
-**`observal co-authors`**: Manage co-authors for agents and components
-
-  - `observal co-authors add`: Add a co-author to an agent or component.
-  - `observal co-authors list`: List co-authors for an agent or component.
-  - `observal co-authors remove`: Remove a co-author from an agent or component.
-
 **`observal config`**: CLI configuration
 
   - `observal config alias`: Set or remove an alias for an MCP/agent ID.
@@ -92,6 +90,10 @@ Every command available in the installed CLI. This block is generated from the T
 
 **`observal ops`**: Observability and operational commands (traces, telemetry, dashboard, feedback)
 
+- `observal ops insights`: Agent insight reports
+  - `observal ops insights generate`: Trigger generation of a new insight report.
+  - `observal ops insights list`: List insight reports for an agent.
+  - `observal ops insights show`: Show an insight report with pretty-printed narrative.
 - `observal ops logs`: Live log viewer (open in a separate tab)
 - `observal ops telemetry`: Telemetry commands
   - `observal ops telemetry status`: Check telemetry data flow status.
@@ -99,10 +101,12 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal ops feedback`: Show feedback for an MCP server or agent.
   - `observal ops metrics`: Show metrics for an MCP server or agent.
   - `observal ops overview`: Show enterprise overview stats.
-  - `observal ops rate`: Rate an MCP server or agent.
+  - `observal ops rate`: Rate an MCP server, agent, or component.
+  - `observal ops rate-delete`: Delete your review for an item.
+  - `observal ops rate-update`: Update your existing review for an item.
   - `observal ops spans`: List spans for a trace.
   - `observal ops top`: Show top MCP servers or agents by usage.
-  - `observal ops traces`: List recent traces.
+  - `observal ops traces`: List recent traces (sessions).
 
 **`observal reconcile`**: Push local session transcripts to the server
 
@@ -111,6 +115,10 @@ Every command available in the installed CLI. This block is generated from the T
 **`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes)
 
 - `observal registry hook`: Hook registry commands
+- `observal registry hook co-authors`: Manage co-authors for hooks
+  - `observal registry hook co-authors add`: Add a co-author.
+  - `observal registry hook co-authors list`: List co-authors.
+  - `observal registry hook co-authors remove`: Remove a co-author.
   - `observal registry hook delete`: Delete a hook from the registry.
   - `observal registry hook edit`: Edit a draft, rejected, or pending hook submission.
   - `observal registry hook install`: Install a hook for a specific IDE.
@@ -118,6 +126,10 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry hook show`: Show detailed information for a single hook.
   - `observal registry hook submit`: Submit a new hook for review.
 - `observal registry mcp`: MCP server registry commands
+- `observal registry mcp co-authors`: Manage co-authors for mcps
+  - `observal registry mcp co-authors add`: Add a co-author.
+  - `observal registry mcp co-authors list`: List co-authors.
+  - `observal registry mcp co-authors remove`: Remove a co-author.
   - `observal registry mcp submit`: Submit an MCP server to the registry.
   - `observal registry mcp show`: Show full details of an MCP server.
   - `observal registry mcp install`: Generate an install config snippet for an MCP server.
@@ -128,22 +140,32 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal registry models`: Inspect the model catalog (live from models.dev with offline fallback).
   - `observal registry models list`: Show models from the registry.
 - `observal registry prompt`: Prompt registry commands
+- `observal registry prompt co-authors`: Manage co-authors for prompts
+  - `observal registry prompt co-authors add`: Add a co-author.
+  - `observal registry prompt co-authors list`: List co-authors.
+  - `observal registry prompt co-authors remove`: Remove a co-author.
   - `observal registry prompt delete`: Delete a prompt from the registry.
   - `observal registry prompt edit`: Edit a draft, rejected, or pending prompt submission.
-  - `observal registry prompt install`: Generate IDE install configuration for a prompt.
   - `observal registry prompt list`: List approved prompts in the registry.
   - `observal registry prompt my`: List your own prompts across all statuses.
   - `observal registry prompt render`: Render a prompt template with variable substitution.
   - `observal registry prompt show`: Show detailed information about a prompt.
   - `observal registry prompt submit`: Submit a new prompt template for review.
 - `observal registry sandbox`: Sandbox registry commands
+- `observal registry sandbox co-authors`: Manage co-authors for sandboxes
+  - `observal registry sandbox co-authors add`: Add a co-author.
+  - `observal registry sandbox co-authors list`: List co-authors.
+  - `observal registry sandbox co-authors remove`: Remove a co-author.
   - `observal registry sandbox delete`: Delete a sandbox from the registry.
   - `observal registry sandbox edit`: Edit a draft, rejected, or pending sandbox submission.
-  - `observal registry sandbox install`: Generate IDE install configuration for a sandbox.
   - `observal registry sandbox list`: List approved sandboxes in the registry.
   - `observal registry sandbox show`: Show detailed information about a sandbox.
   - `observal registry sandbox submit`: Submit a new sandbox environment for review.
 - `observal registry skill`: Skill registry commands
+- `observal registry skill co-authors`: Manage co-authors for skills
+  - `observal registry skill co-authors add`: Add a co-author.
+  - `observal registry skill co-authors list`: List co-authors.
+  - `observal registry skill co-authors remove`: Remove a co-author.
   - `observal registry skill delete`: Delete a skill from the registry.
   - `observal registry skill edit`: Edit a draft, rejected, or pending skill submission.
   - `observal registry skill install`: Install a skill by fetching the full skill directory from git.
