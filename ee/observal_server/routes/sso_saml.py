@@ -200,7 +200,19 @@ async def saml_health_probe(db: AsyncSession) -> dict | None:
             return {"ok": False, "error": cert_error}
         return {"ok": True, "latency_ms": round((time.monotonic() - start) * 1000)}
     except Exception as e:
-        return {"ok": False, "error": str(e)[:200]}
+        # Map known SAML config errors to safe public messages; never echo the
+        # raw exception text on an unauthenticated endpoint (CodeQL py/stack-trace-exposure).
+        msg_lower = str(e).lower()
+        logger.exception("saml_health_probe: build/login failed")
+        if "idp_cert" in msg_lower:
+            error = "IdP certificate missing or malformed"
+        elif "sp_cert" in msg_lower or ("sp" in msg_lower and "key" in msg_lower):
+            error = "SP key or certificate invalid"
+        elif "idp_sso_url" in msg_lower:
+            error = "IdP SSO URL missing or invalid"
+        else:
+            error = "SAML configuration error"
+        return {"ok": False, "error": error}
 
 
 @router.get("/login")

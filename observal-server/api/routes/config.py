@@ -241,8 +241,16 @@ async def sso_health(db=Depends(get_db)):
                             result["oidc"] = {"ok": False, "error": "The IdP does not advertise an 'email' scope/claim"}
                         else:
                             result["oidc"] = {"ok": True, "latency_ms": round((time.monotonic() - start) * 1000)}
-        except Exception as e:
-            result["oidc"] = {"ok": False, "error": str(e)[:200]}
+        except httpx.TimeoutException:
+            result["oidc"] = {"ok": False, "error": "Timed out reaching the OIDC provider"}
+        except httpx.HTTPError:
+            optic.warning("sso_health: OIDC probe network error", exc_info=True)
+            result["oidc"] = {"ok": False, "error": "Network error reaching the OIDC provider"}
+        except Exception:
+            # Don't expose raw exception text on an unauthenticated endpoint
+            # (CodeQL py/stack-trace-exposure). Details are in server logs.
+            optic.exception("sso_health: OIDC probe failed unexpectedly")
+            result["oidc"] = {"ok": False, "error": "OIDC health probe failed"}
 
     # ── SAML: delegated to the enterprise layer via the registered hook so the
     # core package stays decoupled. Returns None when SAML is unavailable. ──
