@@ -349,11 +349,12 @@ async def validate_oidc(
             "hint": f"Check that {metadata_url} is correct and accessible from the server.",
             "latency_ms": round((time.monotonic() - start) * 1000),
         }
-    except Exception as e:
+    except Exception:
+        logger.exception("validate_oidc: discovery fetch failed for %s", metadata_url)
         return {
             "success": False,
-            "error": f"Failed to fetch OIDC metadata: {e}",
-            "hint": "Verify the OAUTH_SERVER_METADATA_URL is a valid URL reachable from this server.",
+            "error": "Failed to fetch OIDC metadata",
+            "hint": "Verify the OAUTH_SERVER_METADATA_URL is a valid URL reachable from this server. Check server logs for details.",
             "latency_ms": round((time.monotonic() - start) * 1000),
         }
 
@@ -428,11 +429,12 @@ async def validate_oidc(
             "hint": "The IdP did not respond. Check network connectivity.",
             "latency_ms": round((time.monotonic() - start) * 1000),
         }
-    except Exception as e:
+    except Exception:
+        logger.exception("validate_oidc: authorization endpoint probe failed")
         return {
             "success": False,
-            "error": f"Failed to reach authorization endpoint: {e}",
-            "hint": "Check that the IdP is reachable from this server.",
+            "error": "Failed to reach authorization endpoint",
+            "hint": "Check that the IdP is reachable from this server. Check server logs for details.",
             "latency_ms": round((time.monotonic() - start) * 1000),
         }
 
@@ -515,11 +517,12 @@ async def validate_saml(
             config.sp_private_key_enc,
             ds.get_sync("saml.sp_key_encryption_password"),
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("validate_saml: SP private key decryption failed")
         return {
             "success": False,
-            "error": f"Failed to decrypt SP private key: {e}",
-            "hint": "Check SAML_SP_KEY_ENCRYPTION_PASSWORD is correct.",
+            "error": "Failed to decrypt SP private key",
+            "hint": "Check SAML_SP_KEY_ENCRYPTION_PASSWORD is correct. See server logs for details.",
             "latency_ms": round((time.monotonic() - start) * 1000),
         }
 
@@ -557,14 +560,19 @@ async def validate_saml(
         )
         auth_obj = OneLogin_Saml2_Auth(request_data, old_settings=saml_settings)
     except Exception as e:
-        error_msg = str(e)
-        hint = "The SAML settings are invalid. "
-        if "idp_cert" in error_msg.lower():
-            hint += "The IdP X.509 certificate is missing or malformed."
-        elif "sp" in error_msg.lower() and "key" in error_msg.lower():
-            hint += "The SP private key or certificate is invalid."
+        # Classify the OneLogin exception locally without echoing its message into
+        # the response (information-disclosure rule from CodeQL).
+        msg_lower = str(e).lower()
+        logger.exception("validate_saml: OneLogin settings build failed")
+        if "idp_cert" in msg_lower:
+            error_msg = "IdP X.509 certificate is missing or malformed"
+            hint = "Re-import the IdP signing certificate from your identity provider."
+        elif "sp" in msg_lower and "key" in msg_lower:
+            error_msg = "SP private key or certificate is invalid"
+            hint = "Regenerate the SP key pair from the admin SAML page."
         else:
-            hint += "Check all SAML configuration values."
+            error_msg = "SAML settings validation failed"
+            hint = "Check all SAML configuration values. See server logs for details."
         return {
             "success": False,
             "error": error_msg,
@@ -575,11 +583,12 @@ async def validate_saml(
     # Try generating a login URL — this is what saml_login does last
     try:
         auth_obj.login(return_to="/")
-    except Exception as e:
+    except Exception:
+        logger.exception("validate_saml: AuthnRequest generation failed")
         return {
             "success": False,
-            "error": f"Failed to generate SAML AuthnRequest: {e}",
-            "hint": "The SAML settings are valid but the login request could not be built. Check SP key and IdP SSO URL.",
+            "error": "Failed to generate SAML AuthnRequest",
+            "hint": "The SAML settings are valid but the login request could not be built. Check SP key and IdP SSO URL. See server logs for details.",
             "latency_ms": round((time.monotonic() - start) * 1000),
         }
 

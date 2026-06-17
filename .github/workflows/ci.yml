@@ -196,6 +196,10 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         if: needs.changes.outputs.web == 'true'
+        with:
+          # Skip the npm-registry install-then-downgrade dance (it hit a
+          # registry timeout); pull the standalone binary from GitHub releases.
+          standalone: true
 
       - uses: actions/setup-node@v6
         if: needs.changes.outputs.web == 'true'
@@ -283,6 +287,8 @@ jobs:
           uv run --with pip-audit pip-audit --desc --ignore-vuln PYSEC-2025-183 --ignore-vuln PYSEC-2026-161 --ignore-vuln CVE-2026-47265
 
       - uses: pnpm/action-setup@v6
+        with:
+          standalone: true
 
       - uses: actions/setup-node@v6
         with:
