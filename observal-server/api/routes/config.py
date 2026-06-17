@@ -137,6 +137,124 @@ async def get_public_config(db=Depends(get_db)):
     }
 
 
+@router.get("/sso-health")
+async def sso_health(db=Depends(get_db)):
+    """Public (unauthenticated) SSO health check for the login page.
+
+    Exercises the same code paths as the real login — hits the IdP authorization
+    endpoint with the real redirect_uri (OIDC) and builds the OneLogin auth object
+    (SAML). If these succeed, the login button will work.
+    """
+    import time
+
+    import httpx
+
+    import services.dynamic_settings as ds_mod
+
+    result = {"oidc": None, "saml": None}
+
+    # ── OIDC: probe the authorization endpoint with real params ──
+    if settings.OAUTH_CLIENT_ID and settings.OAUTH_SERVER_METADATA_URL:
+        start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=8, follow_redirects=False) as client:
+                resp = await client.get(settings.OAUTH_SERVER_METADATA_URL)
+                resp.raise_for_status()
+                metadata = resp.json()
+                authz_endpoint = metadata.get("authorization_endpoint")
+                token_endpoint = metadata.get("token_endpoint")
+                if not authz_endpoint:
+                    result["oidc"] = {"ok": False, "error": "Missing authorization_endpoint in discovery"}
+                else:
+                    redirect_uri = (
+                        ds_mod.get_sync("deployment.frontend_url", "http://localhost:3000").rstrip("/")
+                        + "/api/v1/auth/oauth/callback"
+                    )
+                    ar = await client.get(
+                        authz_endpoint,
+                        params={
+                            "client_id": settings.OAUTH_CLIENT_ID,
+                            "redirect_uri": redirect_uri,
+                            "response_type": "code",
+                            "scope": "openid email profile groups",
+                            "state": "observal_health_probe",
+                            "nonce": "observal_health_nonce",
+                        },
+                    )
+                    authz_ok = False
+                    if ar.status_code in (301, 302, 303, 307, 308):
+                        # A redirect to the IdP's own login page = accepted. A redirect that
+                        # carries an OAuth error back to our redirect_uri = rejected.
+                        location = ar.headers.get("location", "")
+                        if "error=" in location:
+                            result["oidc"] = {
+                                "ok": False,
+                                "error": "IdP returned an authorization error (check redirect URI / client config)",
+                            }
+                        else:
+                            authz_ok = True
+                    elif ar.status_code == 200:
+                        # IdP rendered its hosted login form — params accepted. (Don't scan the
+                        # body for "error"; every login page contains that word in its JS.)
+                        authz_ok = True
+                    else:
+                        result["oidc"] = {
+                            "ok": False,
+                            "error": f"Authorization endpoint returned HTTP {ar.status_code}",
+                        }
+
+                    if authz_ok:
+                        # client_secret correctness: exchange a bogus code; invalid_client/401 ⇒ wrong secret
+                        secret_ok = True
+                        if token_endpoint and settings.OAUTH_CLIENT_SECRET:
+                            try:
+                                tr = await client.post(
+                                    token_endpoint,
+                                    data={
+                                        "grant_type": "authorization_code",
+                                        "code": "observal_health_invalid_code",
+                                        "redirect_uri": redirect_uri,
+                                        "client_id": settings.OAUTH_CLIENT_ID,
+                                        "client_secret": settings.OAUTH_CLIENT_SECRET,
+                                    },
+                                )
+                                terr = ""
+                                try:
+                                    terr = (tr.json().get("error") or "").lower()
+                                except Exception:
+                                    pass
+                                if tr.status_code == 401 or terr in ("invalid_client", "unauthorized_client"):
+                                    secret_ok = False
+                            except Exception:
+                                pass
+                        # email scope/claim must be advertised
+                        scopes = [s.lower() for s in (metadata.get("scopes_supported") or [])]
+                        claims = [c.lower() for c in (metadata.get("claims_supported") or [])]
+                        email_ok = not scopes or "email" in scopes or "email" in claims
+
+                        if not secret_ok:
+                            result["oidc"] = {
+                                "ok": False,
+                                "error": "The IdP rejected our client credentials — client_secret is incorrect",
+                            }
+                        elif not email_ok:
+                            result["oidc"] = {"ok": False, "error": "The IdP does not advertise an 'email' scope/claim"}
+                        else:
+                            result["oidc"] = {"ok": True, "latency_ms": round((time.monotonic() - start) * 1000)}
+        except Exception as e:
+            result["oidc"] = {"ok": False, "error": str(e)[:200]}
+
+    # ── SAML: delegated to the enterprise layer via the registered hook so the
+    # core package stays decoupled. Returns None when SAML is unavailable. ──
+    from services.saml_health import run_saml_health_probe
+
+    result["saml"] = await run_saml_health_probe(db)
+
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(content=result, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/ides")
 async def get_ides():
     """Return the canonical IDE list from IDE_REGISTRY, filtered by allowlist."""

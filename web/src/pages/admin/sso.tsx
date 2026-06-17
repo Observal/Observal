@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Fingerprint,
   HelpCircle,
+  Globe,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useHelp } from "@/components/wiki/help-context";
@@ -22,8 +23,112 @@ import { useRoleGuard } from "@/hooks/use-role-guard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/layouts/page-header";
 import { ErrorState } from "@/components/shared/error-state";
+
+type ValidateResult = {
+  success: boolean;
+  error?: string;
+  hint?: string;
+  latency_ms?: number;
+  issuer?: string;
+  idp_entity_id?: string;
+};
+
+function OidcConfigSection() {
+  const { ssoEnabled } = useDeploymentConfig();
+  const [validating, setValidating] = useState(false);
+  const [result, setResult] = useState<ValidateResult | null>(null);
+
+  const handleValidate = useCallback(async () => {
+    setValidating(true);
+    setResult(null);
+    try {
+      const res = await admin.validateOidc();
+      setResult(res);
+      if (res.success) {
+        toast.success("OIDC configuration is valid");
+      } else {
+        toast.error(res.error || "OIDC validation failed");
+      }
+    } catch (e) {
+      setResult({ success: false, error: e instanceof Error ? e.message : "Validation request failed" });
+      toast.error("Failed to validate OIDC");
+    } finally {
+      setValidating(false);
+    }
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm">OIDC / OAuth 2.0</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            {ssoEnabled ? (
+              <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/20">Active</Badge>
+            ) : (
+              <Badge variant="secondary">Not configured</Badge>
+            )}
+          </div>
+        </div>
+        <CardDescription className="text-xs">
+          {ssoEnabled ? "Configured via environment variables" : "Set OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, and OAUTH_SERVER_METADATA_URL"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={handleValidate}
+            disabled={validating || !ssoEnabled}
+          >
+            {validating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+            Validate
+          </Button>
+          {result && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 text-xs">
+                    {result.success ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-destructive" />
+                    )}
+                    {result.success ? "Connected" : "Failed"}
+                    {result.latency_ms != null && (
+                      <span className="text-muted-foreground">({result.latency_ms}ms)</span>
+                    )}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs">
+                  {result.success ? (
+                    <div className="space-y-1">
+                      <p>Issuer: {result.issuer}</p>
+                      <p className="text-muted-foreground">Server-side config verified (discovery, redirect URI, client secret, email scope). Does not test a full user login.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="font-medium text-destructive">{result.error}</p>
+                      {result.hint && <p className="text-muted-foreground">{result.hint}</p>}
+                    </div>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function SamlConfigSection() {
   const queryClient = useQueryClient();
@@ -33,6 +138,8 @@ function SamlConfigSection() {
   });
 
   const [deleting, setDeleting] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete SAML configuration? This will disable SAML SSO immediately.")) return;
@@ -48,6 +155,25 @@ function SamlConfigSection() {
       setDeleting(false);
     }
   }, [queryClient]);
+
+  const handleValidateSaml = useCallback(async () => {
+    setValidating(true);
+    setValidateResult(null);
+    try {
+      const res = await admin.validateSaml();
+      setValidateResult(res);
+      if (res.success) {
+        toast.success("SAML configuration is valid");
+      } else {
+        toast.error(res.error || "SAML validation failed");
+      }
+    } catch (e) {
+      setValidateResult({ success: false, error: e instanceof Error ? e.message : "Validation request failed" });
+      toast.error("Failed to validate SAML");
+    } finally {
+      setValidating(false);
+    }
+  }, []);
 
   if (isLoading) {
     return (
@@ -134,8 +260,50 @@ function SamlConfigSection() {
               <div className="text-xs">{String(data?.default_role || "user")}</div>
             </div>
 
-            {source === "database" && (
-              <div className="pt-2 border-t border-border">
+            <div className="pt-2 border-t border-border flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleValidateSaml}
+                disabled={validating}
+              >
+                {validating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                Validate
+              </Button>
+              {validateResult && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-1 text-xs">
+                        {validateResult.success ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-destructive" />
+                        )}
+                        {validateResult.success ? "Valid" : "Failed"}
+                        {validateResult.latency_ms != null && (
+                          <span className="text-muted-foreground">({validateResult.latency_ms}ms)</span>
+                        )}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      {validateResult.success ? (
+                        <div className="space-y-1">
+                          <p>IdP: {validateResult.idp_entity_id}</p>
+                          <p className="text-muted-foreground">Server-side config verified (settings build, AuthnRequest, IdP cert match). Does not test a full user login.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <p className="font-medium text-destructive">{validateResult.error}</p>
+                          {validateResult.hint && <p className="text-muted-foreground">{validateResult.hint}</p>}
+                        </div>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {source === "database" && (
                 <Button
                   variant="destructive"
                   size="sm"
@@ -146,10 +314,10 @@ function SamlConfigSection() {
                   {deleting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Trash2 className="h-3 w-3 mr-1" />}
                   Delete SAML Config
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
             {source === "env" && (
-              <p className="text-xs text-muted-foreground pt-2 border-t border-border">
+              <p className="text-xs text-muted-foreground pt-2">
                 Configured via environment variables. Use the admin API to override with database-stored config.
               </p>
             )}
@@ -222,6 +390,7 @@ export default function SsoPage() {
         }
       />
       <div className="p-6 w-full mx-auto space-y-6">
+        <OidcConfigSection />
         <SamlConfigSection />
       </div>
     </>

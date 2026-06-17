@@ -8,11 +8,13 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearch } from "@tanstack/react-router";
-import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { auth, setTokens, clearSession, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
+import { auth, config as configApi, setTokens, clearSession, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
+import type { SsoHealthResult } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -30,6 +32,17 @@ function LoginContent() {
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [ssoHealth, setSsoHealth] = useState<SsoHealthResult | null>(null);
+  const [ssoHealthLoading, setSsoHealthLoading] = useState(false);
+
+  useEffect(() => {
+    if (!ssoEnabled && !samlEnabled) return;
+    setSsoHealthLoading(true);
+    configApi.ssoHealth()
+      .then(setSsoHealth)
+      .catch(() => {})
+      .finally(() => setSsoHealthLoading(false));
+  }, [ssoEnabled, samlEnabled]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -89,7 +102,9 @@ function LoginContent() {
           if (data.user.username) setUserUsername(data.user.username);
           if (data.user.avatar_url) setUserAvatar(data.user.avatar_url);
           window.dispatchEvent(new Event("storage"));
-          window.location.href = "/";
+          const nextPath = searchParams.next;
+          const redirectTo = nextPath && nextPath.startsWith("/") ? nextPath : "/";
+          window.location.href = redirectTo;
         })
         .catch((err) => {
           const msg = err instanceof Error ? err.message : "SSO sign-in failed";
@@ -377,38 +392,86 @@ function LoginContent() {
                 )}
 
                 {(ssoOnly || ssoEnabled) && (
-                  <Button
-                    type="button"
-                    variant={ssoOnly ? "default" : "outline"}
-                    className="w-full"
-                    onClick={handleSsoLogin}
-                    disabled={loading || ssoLoading}
-                  >
-                    {ssoLoading ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="mr-2 h-4 w-4" />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant={ssoOnly ? "default" : "outline"}
+                      className="flex-1"
+                      onClick={handleSsoLogin}
+                      disabled={loading || ssoLoading}
+                    >
+                      {ssoLoading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                      )}
+                      Sign in with SSO
+                    </Button>
+                    {ssoHealthLoading ? (
+                      <Loader2 className="h-5 w-5 shrink-0 animate-spin text-muted-foreground" />
+                    ) : ssoHealth?.oidc && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="shrink-0">
+                              {ssoHealth.oidc.ok ? (
+                                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                              ) : (
+                                <XCircle className="h-5 w-5 text-destructive" />
+                              )}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-xs text-xs">
+                            {ssoHealth.oidc.ok
+                              ? `OIDC config verified (${ssoHealth.oidc.latency_ms}ms) — does not test a full user login`
+                              : ssoHealth.oidc.error}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
-                    Sign in with SSO
-                  </Button>
+                  </div>
                 )}
 
                 {samlEnabled && (
-                  <Button
-                    type="button"
-                    variant={ssoOnly ? "default" : "outline"}
-                    className="w-full"
-                    onClick={() => {
-                      const nextParam = searchParams.next;
-                      const samlUrl = nextParam && nextParam.startsWith("/")
-                        ? `/api/v1/sso/saml/login?next=${encodeURIComponent(nextParam)}`
-                        : "/api/v1/sso/saml/login";
-                      window.location.href = samlUrl;
-                    }}
-                    disabled={loading || ssoLoading}
-                  >
-                    Sign in with SAML SSO
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant={ssoOnly ? "default" : "outline"}
+                      className="flex-1"
+                      onClick={() => {
+                        const nextParam = searchParams.next;
+                        const samlUrl = nextParam && nextParam.startsWith("/")
+                          ? `/api/v1/sso/saml/login?next=${encodeURIComponent(nextParam)}`
+                          : "/api/v1/sso/saml/login";
+                        window.location.href = samlUrl;
+                      }}
+                      disabled={loading || ssoLoading}
+                    >
+                      Sign in with SAML SSO
+                    </Button>
+                    {ssoHealthLoading ? (
+                      <Loader2 className="h-5 w-5 shrink-0 animate-spin text-muted-foreground" />
+                    ) : ssoHealth?.saml && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="shrink-0">
+                              {ssoHealth.saml.ok ? (
+                                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                              ) : (
+                                <XCircle className="h-5 w-5 text-destructive" />
+                              )}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-xs text-xs">
+                            {ssoHealth.saml.ok
+                              ? `SAML config verified (${ssoHealth.saml.latency_ms}ms) — does not test a full user login`
+                              : ssoHealth.saml.error}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
                 )}
               </div>
 

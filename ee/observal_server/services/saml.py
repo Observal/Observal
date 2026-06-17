@@ -157,9 +157,52 @@ def build_saml_settings(
     return settings_dict
 
 
+async def check_idp_cert_against_metadata(configured_cert: str) -> str | None:
+    """Compare the configured IdP cert against the IdP metadata signing cert(s).
+
+    Only runs when ``saml.idp_metadata_url`` is set. Returns an error string when
+    the configured cert matches nothing in the metadata (catches silent IdP cert
+    rotations), or None when there is nothing to flag.
+    """
+    import re
+
+    import httpx
+
+    import services.dynamic_settings as ds
+
+    metadata_url = ds.get_sync("saml.idp_metadata_url", "")
+    if not metadata_url:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(metadata_url)
+            resp.raise_for_status()
+            xml = resp.text
+    except Exception:
+        return None  # metadata not reachable — don't hard-fail an optional check
+    certs = re.findall(r"<[^>]*X509Certificate[^>]*>(.*?)</[^>]*X509Certificate>", xml, re.DOTALL)
+    if not certs:
+        return None
+    configured = _strip_pem_headers(configured_cert)
+    if configured and configured not in [_strip_pem_headers(c) for c in certs]:
+        return "The configured IdP X.509 certificate does not match any signing certificate in the IdP metadata — assertions will fail signature validation."
+    return None
+
+
 def _strip_pem_headers(pem: str) -> str:
-    lines = pem.strip().splitlines()
-    return "".join(line.strip() for line in lines if not line.strip().startswith("-----"))
+    """Return the bare base64 body of a PEM blob.
+
+    Robust to certs/keys that arrive as a single line with spaces in place of
+    newlines (newlines often get collapsed by form fields, env vars, or XML).
+    The previous line-based filter dropped the whole blob in that case because
+    the lone line started with the ``-----BEGIN ...-----`` armor.
+    """
+    import re
+
+    if not pem:
+        return ""
+    body = re.sub(r"-----[A-Z0-9 ]+-----", "", pem)
+    return re.sub(r"\s+", "", body)
 
 
 def extract_name_id_and_attrs(auth) -> tuple[str, dict[str, list[str]]]:

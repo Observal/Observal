@@ -696,6 +696,22 @@ export const admin = {
 	updateSamlConfig: (body: Record<string, unknown>) =>
 		put<Record<string, unknown>>("/admin/saml-config", body),
 	deleteSamlConfig: () => del("/admin/saml-config"),
+	validateOidc: () =>
+		post<{
+			success: boolean;
+			issuer?: string;
+			latency_ms?: number;
+			error?: string;
+			hint?: string;
+		}>("/admin/sso/validate-oidc", {}),
+	validateSaml: () =>
+		post<{
+			success: boolean;
+			idp_entity_id?: string;
+			latency_ms?: number;
+			error?: string;
+			hint?: string;
+		}>("/admin/sso/validate-saml", {}),
 	scimTokens: () =>
 		get<
 			{
@@ -800,10 +816,16 @@ interface IdesResponse {
 	default_ide?: string | null;
 }
 
+export type SsoHealthResult = {
+	oidc: { ok: boolean; latency_ms?: number; error?: string } | null;
+	saml: { ok: boolean; latency_ms?: number; error?: string } | null;
+};
+
 export const config = {
 	public: () => get<PublicConfig>("/config/public"),
 	version: () => get<VersionConfig>("/config/version"),
 	ides: () => get<IdesResponse>("/config/ides"),
+	ssoHealth: () => get<SsoHealthResult>("/config/sso-health"),
 };
 
 // ── Models ─────────────────────────────────────────────────────────

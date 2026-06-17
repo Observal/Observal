@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 import services.dynamic_settings as ds
 from ee.observal_server.services.saml import (
     build_saml_settings,
+    check_idp_cert_against_metadata,
     decrypt_private_key,
     encrypt_private_key,
     extract_name_id_and_attrs,
@@ -162,6 +163,44 @@ async def _issue_tokens(user: User) -> tuple[str, str, int]:
     await redis.setex(f"refresh_jti:{jti}", refresh_ttl, str(user.id))
     await redis.delete(f"revoked_user:{user.id}")
     return access_token, refresh_token, expires_in
+
+
+async def saml_health_probe(db: AsyncSession) -> dict | None:
+    """Public SSO health probe for SAML — exercises the saml_login code path.
+
+    Registered into the core hook (services.saml_health) at startup so the
+    unauthenticated /config/sso-health endpoint can report SAML status without
+    core importing ee/. Returns None when SAML is not configured.
+    """
+    import time
+
+    config = await _get_saml_config(db)
+    if not config:
+        return None
+
+    start = time.monotonic()
+    try:
+        sp_key = _decrypt_sp_key(config)
+        frontend_url = _get_frontend_url()
+        parsed = urlparse(frontend_url)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        request_data = {
+            "https": "on" if parsed.scheme == "https" else "off",
+            "http_host": f"{parsed.hostname}:{port}" if port not in (80, 443) else parsed.hostname,
+            "server_port": str(port),
+            "script_name": "/api/v1/sso/saml/login",
+            "get_data": {},
+            "post_data": {},
+        }
+        auth = _build_auth(config, sp_key, request_data)
+        auth.login(return_to="/")
+
+        cert_error = await check_idp_cert_against_metadata(config.idp_x509_cert)
+        if cert_error:
+            return {"ok": False, "error": cert_error}
+        return {"ok": True, "latency_ms": round((time.monotonic() - start) * 1000)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
 
 
 @router.get("/login")

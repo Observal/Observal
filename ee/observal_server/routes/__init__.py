@@ -22,8 +22,11 @@ def mount_ee_routes(app: FastAPI) -> None:
 
     if is_feature_licensed("saml"):
         from ee.observal_server.routes.sso_saml import router as saml_router
+        from ee.observal_server.routes.sso_saml import saml_health_probe
+        from services.saml_health import register_saml_health_probe
 
         app.include_router(saml_router)
+        register_saml_health_probe(saml_health_probe)
 
     if is_feature_licensed("scim"):
         from ee.observal_server.routes.scim import router as scim_router
