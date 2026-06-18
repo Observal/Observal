@@ -5,15 +5,14 @@
 
 from __future__ import annotations
 
-import logging
 import secrets
 import time
 import uuid
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger as optic
 from sqlalchemy import select
 
 if TYPE_CHECKING:
@@ -25,6 +24,12 @@ from api.deps import get_db, get_or_create_default_org, require_role
 from config import settings
 from ee.observal_server.services.saml import (
     build_saml_settings,
+    check_cert_expiry,
+    check_idp_cert_against_metadata,
+    check_idp_sso_url_reachable,
+    check_nameid_format,
+    check_sp_cert_key_match,
+    check_sp_host_consistency,
     decrypt_private_key,
     encrypt_private_key,
     generate_sp_key_pair,
@@ -33,14 +38,14 @@ from ee.observal_server.services.scim_service import hash_scim_token
 from models.saml_config import SamlConfig
 from models.scim_token import ScimToken
 from models.user import User, UserRole
+from schemas.sso_health import all_pass, make_check
+from services.oidc_health import run_oidc_checks
 from services.security_events import (
     EventType,
     SecurityEvent,
     Severity,
     emit_security_event,
 )
-
-logger = logging.getLogger("observal.ee.admin_sso")
 
 
 def _get_frontend_url() -> str:
@@ -226,327 +231,107 @@ async def delete_saml_config(
 # ── SSO Validation ────────────────────────────────────────
 
 
-def _normalize_cert(cert: str) -> str:
-    """Strip PEM armor and whitespace so two cert encodings can be compared."""
-    import re
-
-    body = re.sub(r"-----(BEGIN|END) CERTIFICATE-----", "", cert or "")
-    return re.sub(r"\s+", "", body)
-
-
-async def _probe_oidc_client_secret(token_endpoint: str, redirect_uri: str) -> str | None:
-    """Verify the client_secret by exchanging a deliberately-invalid code.
-
-    A correct secret yields `invalid_grant` (the bogus code is rejected, but our
-    credentials were accepted). A wrong secret yields `invalid_client`/401.
-    Returns an error string on failure, or None if the secret is accepted.
-    """
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                token_endpoint,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": "observal_validate_invalid_code",
-                    "redirect_uri": redirect_uri,
-                    "client_id": settings.OAUTH_CLIENT_ID,
-                    "client_secret": settings.OAUTH_CLIENT_SECRET,
-                },
-            )
-        err = ""
-        try:
-            err = (resp.json().get("error") or "").lower()
-        except Exception:
-            pass
-        if resp.status_code == 401 or err in ("invalid_client", "unauthorized_client"):
-            return "The IdP rejected our client credentials — the client_secret is incorrect or the client is disabled."
-        return None
-    except Exception:
-        # Network issues are surfaced by the authorization probe; don't double-fail here.
-        return None
-
-
-def _check_oidc_email_scope(metadata: dict) -> str | None:
-    """Ensure the IdP advertises the email scope/claim that Observal needs for login."""
-    scopes = [s.lower() for s in (metadata.get("scopes_supported") or [])]
-    claims = [c.lower() for c in (metadata.get("claims_supported") or [])]
-    if scopes and "email" not in scopes and "email" not in claims:
-        return "The IdP does not advertise an 'email' scope or claim — Observal requires the user's email to create accounts."
-    return None
-
-
-async def _check_saml_idp_cert(configured_cert: str) -> str | None:
-    """Compare the configured IdP cert against the IdP metadata signing cert(s).
-
-    Only runs when `saml.idp_metadata_url` is set. Returns an error string if the
-    configured cert matches nothing in the metadata, else None.
-    """
-    import re
-
-    metadata_url = ds.get_sync("saml.idp_metadata_url", "")
-    if not metadata_url:
-        return None
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(metadata_url)
-            resp.raise_for_status()
-            xml = resp.text
-    except Exception:
-        return None  # metadata not reachable — don't hard-fail on an optional check
-    certs = re.findall(r"<[^>]*X509Certificate[^>]*>(.*?)</[^>]*X509Certificate>", xml, re.DOTALL)
-    if not certs:
-        return None
-    norm_configured = _normalize_cert(configured_cert)
-    if norm_configured and norm_configured not in [_normalize_cert(c) for c in certs]:
-        return "The configured IdP X.509 certificate does not match any signing certificate in the IdP metadata — assertions will fail signature validation."
-    return None
+def _first_failure(checks: list[dict]) -> tuple[str | None, str | None]:
+    for c in checks:
+        if c.get("status") == "fail":
+            return c.get("message"), c.get("hint")
+    return None, None
 
 
 @router.post("/sso/validate-oidc")
 async def validate_oidc(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Validate OIDC/OAuth by simulating the exact authorization request the login makes.
+    """Validate OIDC/OAuth end-to-end and return per-check diagnostics.
 
-    Hits the authorization endpoint with client_id, redirect_uri, scope — the same
-    params the real flow uses. If the IdP returns an error (bad redirect_uri, disabled
-    client, etc.) the validator catches it.
+    Note: server-side validation can only verify what the IdP exposes — the
+    final assertion exchange and any per-user authorization decisions are not
+    visible here, so a green result still depends on a real user login round-trip.
     """
+    optic.info("admin.validate_oidc start")
     start = time.monotonic()
 
     if not settings.OAUTH_CLIENT_ID or not settings.OAUTH_CLIENT_SECRET:
         return {
             "success": False,
             "error": "OAUTH_CLIENT_ID or OAUTH_CLIENT_SECRET not configured",
-            "hint": "Set OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, and OAUTH_SERVER_METADATA_URL environment variables.",
+            "hint": "Set OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, and OAUTH_SERVER_METADATA_URL.",
+            "checks": [],
         }
-
-    metadata_url = settings.OAUTH_SERVER_METADATA_URL
-    if not metadata_url:
+    if not settings.OAUTH_SERVER_METADATA_URL:
         return {
             "success": False,
             "error": "OAUTH_SERVER_METADATA_URL not configured",
-            "hint": "Set the OAUTH_SERVER_METADATA_URL environment variable to your IdP's .well-known/openid-configuration URL.",
+            "hint": "Point this at your IdP's .well-known/openid-configuration URL.",
+            "checks": [],
         }
 
-    # Step 1: Fetch discovery document
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(metadata_url)
-            resp.raise_for_status()
-            metadata = resp.json()
-    except httpx.TimeoutException:
-        return {
-            "success": False,
-            "error": f"Timeout fetching OIDC metadata from {metadata_url}",
-            "hint": "The identity provider did not respond within 10 seconds.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-    except httpx.HTTPStatusError as e:
-        return {
-            "success": False,
-            "error": f"OIDC metadata endpoint returned HTTP {e.response.status_code}",
-            "hint": f"Check that {metadata_url} is correct and accessible from the server.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-    except Exception:
-        logger.exception("validate_oidc: discovery fetch failed for %s", metadata_url)
-        return {
-            "success": False,
-            "error": "Failed to fetch OIDC metadata",
-            "hint": "Verify the OAUTH_SERVER_METADATA_URL is a valid URL reachable from this server. Check server logs for details.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-
-    authorization_endpoint = metadata.get("authorization_endpoint")
-    token_endpoint = metadata.get("token_endpoint")
-    if not authorization_endpoint or not token_endpoint:
-        return {
-            "success": False,
-            "error": "Missing authorization_endpoint or token_endpoint in discovery document",
-            "hint": "The OIDC discovery document is incomplete. Verify your IdP configuration.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-
-    # Step 2: Hit the authorization endpoint with the EXACT same redirect_uri the real
-    # login flow uses. Don't follow redirects — we want to see what the IdP itself says.
-    # A working config returns 302 (to login form). A broken config returns 400/error page.
     redirect_uri = (
         ds.get_sync("deployment.frontend_url", "http://localhost:3000").rstrip("/") + "/api/v1/auth/oauth/callback"
     )
 
-    try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
-            resp = await client.get(
-                authorization_endpoint,
-                params={
-                    "client_id": settings.OAUTH_CLIENT_ID,
-                    "redirect_uri": redirect_uri,
-                    "response_type": "code",
-                    "scope": "openid email profile groups",
-                    "state": "observal_validate_probe",
-                    "nonce": "observal_validate_nonce",
-                },
-            )
-
-            # 3xx = redirect. To the IdP's own login page = accepted; back to our
-            # redirect_uri carrying error=... = rejected.
-            if resp.status_code in (301, 302, 303, 307, 308):
-                if "error=" in resp.headers.get("location", ""):
-                    return {
-                        "success": False,
-                        "error": "IdP returned an authorization error",
-                        "hint": f"Ensure '{redirect_uri}' is registered as a redirect URI in your IdP and the client is enabled.",
-                        "latency_ms": round((time.monotonic() - start) * 1000),
-                    }
-            # 200 = IdP rendered its hosted login form — params accepted. Do NOT scan the
-            # body for "error"; every IdP login page contains that word in its JS/markup,
-            # which produced false "rejected" results.
-            elif resp.status_code == 200:
-                pass
-            # 400/401/403/etc = IdP explicitly rejected our request
-            else:
-                error_msg = f"IdP authorization endpoint returned HTTP {resp.status_code}"
-                hint = f"Ensure '{redirect_uri}' is registered as a redirect URI in your IdP and the client is enabled."
-                body_text = resp.text.lower()
-                if "redirect_uri" in body_text or "redirect uri" in body_text:
-                    error_msg = "IdP rejected the redirect_uri — it is not registered in the application"
-                elif "invalid_client" in body_text:
-                    error_msg = "IdP does not recognize this client_id"
-                elif "unauthorized_client" in body_text:
-                    error_msg = "Client is not authorized for this grant type"
-                return {
-                    "success": False,
-                    "error": error_msg,
-                    "hint": hint,
-                    "latency_ms": round((time.monotonic() - start) * 1000),
-                }
-            # else: 3xx redirect to login form — params accepted, fall through to deeper checks
-    except httpx.TimeoutException:
-        return {
-            "success": False,
-            "error": "Timeout connecting to authorization endpoint",
-            "hint": "The IdP did not respond. Check network connectivity.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-    except Exception:
-        logger.exception("validate_oidc: authorization endpoint probe failed")
-        return {
-            "success": False,
-            "error": "Failed to reach authorization endpoint",
-            "hint": "Check that the IdP is reachable from this server. Check server logs for details.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-
-    # Step 3: Verify the client_secret by attempting a token exchange. The authorization
-    # probe above never proves the secret is correct (that's only used at token time).
-    secret_error = await _probe_oidc_client_secret(token_endpoint, redirect_uri)
-    if secret_error:
-        return {
-            "success": False,
-            "error": secret_error,
-            "hint": "Check that OAUTH_CLIENT_SECRET matches the secret in your IdP application.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-
-    # Step 4: Ensure the IdP advertises the email scope/claim Observal needs.
-    scope_error = _check_oidc_email_scope(metadata)
-    if scope_error:
-        return {
-            "success": False,
-            "error": scope_error,
-            "hint": "Enable the 'email' scope/claim for this application in your IdP.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-
+    checks, metadata = await run_oidc_checks(
+        settings.OAUTH_SERVER_METADATA_URL,
+        settings.OAUTH_CLIENT_ID,
+        settings.OAUTH_CLIENT_SECRET,
+        redirect_uri,
+    )
+    success = all_pass(checks)
+    err_msg, err_hint = (None, None) if success else _first_failure(checks)
+    latency_ms = round((time.monotonic() - start) * 1000)
+    optic.info("admin.validate_oidc done success={} checks={} latency_ms={}", success, len(checks), latency_ms)
     return {
-        "success": True,
-        "issuer": metadata.get("issuer"),
-        "latency_ms": round((time.monotonic() - start) * 1000),
+        "success": success,
+        "issuer": (metadata or {}).get("issuer"),
+        "checks": checks,
+        "latency_ms": latency_ms,
+        **({"error": err_msg, "hint": err_hint} if not success else {}),
     }
 
 
-@router.post("/sso/validate-saml")
-async def validate_saml(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-    """Validate SAML configuration by exercising the same code path as saml_login.
+async def _run_saml_checks(config, sp_key: str, frontend_url: str) -> list[dict]:
+    """Assemble every SAML check; run-all semantics so the operator sees every issue."""
+    from onelogin.saml2.auth import OneLogin_Saml2_Auth
 
-    This calls _get_saml_config, decrypts the SP key, and builds the OneLogin_Saml2_Auth
-    object — the exact steps that fail with 500 if config is broken.
-    """
-    start = time.monotonic()
+    checks: list[dict] = []
 
-    from ee.observal_server.routes.sso_saml import _get_saml_config
-
-    config = await _get_saml_config(db)
-    if not config:
-        return {
-            "success": False,
-            "error": "SAML is not configured",
-            "hint": "Configure SAML via environment variables or the admin API.",
-        }
-
-    # Check required fields before attempting build
-    errors = []
-    if not getattr(config, "idp_entity_id", None):
-        errors.append("IdP Entity ID is missing")
-    if not getattr(config, "idp_sso_url", None):
-        errors.append("IdP SSO URL is missing")
-    if not getattr(config, "idp_x509_cert", None):
-        errors.append("IdP X.509 certificate is missing")
-    if not getattr(config, "sp_entity_id", None):
-        errors.append("SP Entity ID is missing")
-    if not getattr(config, "sp_acs_url", None):
-        errors.append("SP ACS URL is missing")
-    if not getattr(config, "sp_private_key_enc", None):
-        errors.append("SP private key is missing")
-
-    if errors:
-        return {
-            "success": False,
-            "error": "; ".join(errors),
-            "hint": "Complete the SAML configuration with all required fields.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-
-    # Decrypt SP key — same as saml_login does
-    try:
-        sp_key = decrypt_private_key(
-            config.sp_private_key_enc,
-            ds.get_sync("saml.sp_key_encryption_password"),
+    field_check = make_check("required_fields", "Required SAML fields populated", "pass")
+    missing = []
+    for attr, pretty in (
+        ("idp_entity_id", "IdP Entity ID"),
+        ("idp_sso_url", "IdP SSO URL"),
+        ("idp_x509_cert", "IdP X.509 certificate"),
+        ("sp_entity_id", "SP Entity ID"),
+        ("sp_acs_url", "SP ACS URL"),
+        ("sp_private_key_enc", "SP private key"),
+    ):
+        if not getattr(config, attr, None):
+            missing.append(pretty)
+    if missing:
+        field_check = make_check(
+            "required_fields",
+            "Required SAML fields populated",
+            "fail",
+            f"Missing: {'; '.join(missing)}.",
+            "Complete the SAML configuration with all required fields.",
         )
-    except Exception:
-        logger.exception("validate_saml: SP private key decryption failed")
-        return {
-            "success": False,
-            "error": "Failed to decrypt SP private key",
-            "hint": "Check SAML_SP_KEY_ENCRYPTION_PASSWORD is correct. See server logs for details.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
+    checks.append(field_check)
+    if missing:
+        return checks
 
-    # Build the SAML auth object — this is where OneLogin validates settings and will
-    # throw "idp_cert_or_fingerprint_not_found_and_required" if cert is bad
+    parsed = urlparse(frontend_url)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    request_data = {
+        "https": "on" if parsed.scheme == "https" else "off",
+        "http_host": f"{parsed.hostname}:{port}" if port not in (80, 443) else parsed.hostname,
+        "server_port": str(port),
+        "script_name": "/api/v1/sso/saml/login",
+        "get_data": {},
+        "post_data": {},
+    }
+    sp_slo_url = f"{frontend_url}/api/v1/sso/saml/sls" if getattr(config, "idp_slo_url", "") else ""
+
     try:
-        from onelogin.saml2.auth import OneLogin_Saml2_Auth
-
-        frontend_url = _get_frontend_url()
-        parsed = urlparse(frontend_url)
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        request_data = {
-            "https": "on" if parsed.scheme == "https" else "off",
-            "http_host": f"{parsed.hostname}:{port}" if port not in (80, 443) else parsed.hostname,
-            "server_port": str(port),
-            "script_name": "/api/v1/sso/saml/login",
-            "get_data": {},
-            "post_data": {},
-        }
-
-        sp_slo_url = ""
-        if getattr(config, "idp_slo_url", ""):
-            sp_slo_url = f"{frontend_url}/api/v1/sso/saml/sls"
-
         saml_settings = build_saml_settings(
             idp_entity_id=config.idp_entity_id,
             idp_sso_url=config.idp_sso_url,
@@ -559,56 +344,96 @@ async def validate_saml(
             sp_slo_url=sp_slo_url,
         )
         auth_obj = OneLogin_Saml2_Auth(request_data, old_settings=saml_settings)
-    except Exception as e:
-        # Classify the OneLogin exception locally without echoing its message into
-        # the response (information-disclosure rule from CodeQL).
-        msg_lower = str(e).lower()
-        logger.exception("validate_saml: OneLogin settings build failed")
-        if "idp_cert" in msg_lower:
-            error_msg = "IdP X.509 certificate is missing or malformed"
-            hint = "Re-import the IdP signing certificate from your identity provider."
-        elif "sp" in msg_lower and "key" in msg_lower:
-            error_msg = "SP private key or certificate is invalid"
-            hint = "Regenerate the SP key pair from the admin SAML page."
-        else:
-            error_msg = "SAML settings validation failed"
-            hint = "Check all SAML configuration values. See server logs for details."
-        return {
-            "success": False,
-            "error": error_msg,
-            "hint": hint,
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-
-    # Try generating a login URL — this is what saml_login does last
-    try:
         auth_obj.login(return_to="/")
+        checks.append(make_check("onelogin_build", "OneLogin SAML settings load", "pass"))
+        checks.append(make_check("authn_request", "AuthnRequest builds", "pass"))
+    except Exception as e:
+        msg_lower = str(e).lower()
+        optic.exception("admin._run_saml_checks OneLogin build failed")
+        if "idp_cert" in msg_lower:
+            msg, hint = ("IdP X.509 certificate is missing or malformed.", "Re-import the IdP signing certificate.")
+        elif "sp" in msg_lower and "key" in msg_lower:
+            msg, hint = ("SP private key or certificate is invalid.", "Regenerate the SP key pair.")
+        else:
+            msg, hint = ("SAML settings validation failed.", "Check the configuration values; details in server logs.")
+        checks.append(make_check("onelogin_build", "OneLogin SAML settings load", "fail", msg, hint))
+        return checks
+
+    for opt in (
+        await check_idp_cert_against_metadata(config.idp_x509_cert),
+        check_cert_expiry(config.idp_x509_cert, "IdP"),
+        check_cert_expiry(config.sp_x509_cert, "SP"),
+        check_sp_host_consistency(config.sp_acs_url, frontend_url),
+        check_sp_cert_key_match(config.sp_x509_cert, sp_key),
+        await check_idp_sso_url_reachable(config.idp_sso_url),
+        await check_nameid_format("emailAddress"),
+    ):
+        if opt is not None:
+            checks.append(opt)
+    return checks
+
+
+@router.post("/sso/validate-saml")
+async def validate_saml(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Validate SAML configuration end-to-end and return per-check diagnostics.
+
+    Note: server-side validation cannot replay a signed assertion, so a green
+    result still depends on a real user login from your IdP. Some signals (e.g.
+    NameIDFormat, signing cert rotation) are only visible if ``saml.idp_metadata_url``
+    is configured.
+    """
+    optic.info("admin.validate_saml start")
+    start = time.monotonic()
+
+    from ee.observal_server.routes.sso_saml import _get_saml_config
+
+    config = await _get_saml_config(db)
+    if not config:
+        return {
+            "success": False,
+            "error": "SAML is not configured",
+            "hint": "Configure SAML via environment variables or the admin API.",
+            "checks": [],
+        }
+
+    try:
+        sp_key = decrypt_private_key(
+            config.sp_private_key_enc,
+            ds.get_sync("saml.sp_key_encryption_password"),
+        )
     except Exception:
-        logger.exception("validate_saml: AuthnRequest generation failed")
+        optic.exception("admin.validate_saml SP key decrypt failed")
         return {
             "success": False,
-            "error": "Failed to generate SAML AuthnRequest",
-            "hint": "The SAML settings are valid but the login request could not be built. Check SP key and IdP SSO URL. See server logs for details.",
+            "error": "Failed to decrypt SP private key",
+            "hint": "Check SAML_SP_KEY_ENCRYPTION_PASSWORD is correct.",
+            "checks": [
+                make_check(
+                    "sp_key_decrypt",
+                    "SP private key decrypts",
+                    "fail",
+                    "Decryption failed.",
+                    "Check SAML_SP_KEY_ENCRYPTION_PASSWORD.",
+                )
+            ],
             "latency_ms": round((time.monotonic() - start) * 1000),
         }
 
-    # Deeper check: if an IdP metadata URL is configured, confirm the stored signing
-    # cert actually matches the IdP's current cert (catches silent cert rotations that
-    # only surface as assertion-signature failures at the ACS step).
-    cert_error = await _check_saml_idp_cert(config.idp_x509_cert)
-    if cert_error:
-        return {
-            "success": False,
-            "error": cert_error,
-            "hint": "Re-import the IdP X.509 certificate from your identity provider's current metadata.",
-            "latency_ms": round((time.monotonic() - start) * 1000),
-        }
-
+    frontend_url = _get_frontend_url()
+    checks = await _run_saml_checks(config, sp_key, frontend_url)
+    success = all_pass(checks)
+    err_msg, err_hint = (None, None) if success else _first_failure(checks)
     latency_ms = round((time.monotonic() - start) * 1000)
+    optic.info("admin.validate_saml done success={} checks={} latency_ms={}", success, len(checks), latency_ms)
     return {
-        "success": True,
+        "success": success,
         "idp_entity_id": config.idp_entity_id,
+        "checks": checks,
         "latency_ms": latency_ms,
+        **({"error": err_msg, "hint": err_hint} if not success else {}),
     }
 
 
