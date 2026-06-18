@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import secrets
 import uuid
 from typing import TYPE_CHECKING
@@ -16,6 +15,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
+from loguru import logger as optic
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from sqlalchemy import select
 
@@ -27,7 +27,12 @@ if TYPE_CHECKING:
 import services.dynamic_settings as ds
 from ee.observal_server.services.saml import (
     build_saml_settings,
+    check_cert_expiry,
     check_idp_cert_against_metadata,
+    check_idp_sso_url_reachable,
+    check_nameid_format,
+    check_sp_cert_key_match,
+    check_sp_host_consistency,
     decrypt_private_key,
     encrypt_private_key,
     extract_name_id_and_attrs,
@@ -36,6 +41,7 @@ from ee.observal_server.services.saml import (
 )
 from models.saml_config import SamlConfig
 from models.user import User, UserRole
+from schemas.sso_health import all_pass, make_check
 from services.jwt_service import create_access_token, create_refresh_token
 from services.redis import get_redis
 from services.security_events import (
@@ -45,8 +51,6 @@ from services.security_events import (
     emit_security_event,
 )
 from services.username_generator import generate_unique_username
-
-logger = logging.getLogger("observal.ee.saml")
 
 
 def _get_frontend_url() -> str:
@@ -83,7 +87,7 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
         sp_acs_url = ds.get_sync("saml.sp_acs_url") or f"{_get_frontend_url()}/api/v1/sso/saml/acs"
         enc_password = ds.get_sync("saml.sp_key_encryption_password")
         if not enc_password:
-            logger.warning(
+            optic.warning(
                 "SAML_SP_KEY_ENCRYPTION_PASSWORD is not set -- "
                 "SP private key will be stored unencrypted. "
                 "Set this variable in production."
@@ -166,11 +170,12 @@ async def _issue_tokens(user: User) -> tuple[str, str, int]:
 
 
 async def saml_health_probe(db: AsyncSession) -> dict | None:
-    """Public SSO health probe for SAML — exercises the saml_login code path.
+    """Public SAML health probe — exercises the saml_login code path.
 
-    Registered into the core hook (services.saml_health) at startup so the
-    unauthenticated /config/sso-health endpoint can report SAML status without
-    core importing ee/. Returns None when SAML is not configured.
+    Registered into the core hook so the unauthenticated /config/sso-health
+    endpoint can report SAML status without core importing ee/. Returns ``None``
+    when SAML is not configured. Server-side validation cannot replay a signed
+    assertion, so a green result still depends on a real user login round-trip.
     """
     import time
 
@@ -178,41 +183,81 @@ async def saml_health_probe(db: AsyncSession) -> dict | None:
     if not config:
         return None
 
+    optic.info("saml_health_probe start")
     start = time.monotonic()
+    checks: list[dict] = []
+
     try:
         sp_key = _decrypt_sp_key(config)
-        frontend_url = _get_frontend_url()
-        parsed = urlparse(frontend_url)
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        request_data = {
-            "https": "on" if parsed.scheme == "https" else "off",
-            "http_host": f"{parsed.hostname}:{port}" if port not in (80, 443) else parsed.hostname,
-            "server_port": str(port),
-            "script_name": "/api/v1/sso/saml/login",
-            "get_data": {},
-            "post_data": {},
-        }
+        checks.append(make_check("sp_key_decrypt", "SP private key decrypts", "pass"))
+    except Exception:
+        optic.exception("saml_health_probe SP key decrypt failed")
+        checks.append(
+            make_check(
+                "sp_key_decrypt",
+                "SP private key decrypts",
+                "fail",
+                "SP private key could not be decrypted.",
+                "Check SAML_SP_KEY_ENCRYPTION_PASSWORD.",
+            )
+        )
+        return {"ok": False, "checks": checks, "latency_ms": round((time.monotonic() - start) * 1000)}
+
+    frontend_url = _get_frontend_url()
+    parsed = urlparse(frontend_url)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    request_data = {
+        "https": "on" if parsed.scheme == "https" else "off",
+        "http_host": f"{parsed.hostname}:{port}" if port not in (80, 443) else parsed.hostname,
+        "server_port": str(port),
+        "script_name": "/api/v1/sso/saml/login",
+        "get_data": {},
+        "post_data": {},
+    }
+
+    try:
         auth = _build_auth(config, sp_key, request_data)
         auth.login(return_to="/")
-
-        cert_error = await check_idp_cert_against_metadata(config.idp_x509_cert)
-        if cert_error:
-            return {"ok": False, "error": cert_error}
-        return {"ok": True, "latency_ms": round((time.monotonic() - start) * 1000)}
+        checks.append(make_check("onelogin_build", "OneLogin SAML settings load", "pass"))
+        checks.append(make_check("authn_request", "AuthnRequest builds", "pass"))
     except Exception as e:
-        # Map known SAML config errors to safe public messages; never echo the
-        # raw exception text on an unauthenticated endpoint (CodeQL py/stack-trace-exposure).
         msg_lower = str(e).lower()
-        logger.exception("saml_health_probe: build/login failed")
+        optic.exception("saml_health_probe build/login failed")
         if "idp_cert" in msg_lower:
-            error = "IdP certificate missing or malformed"
+            msg = "IdP certificate missing or malformed."
         elif "sp_cert" in msg_lower or ("sp" in msg_lower and "key" in msg_lower):
-            error = "SP key or certificate invalid"
+            msg = "SP key or certificate invalid."
         elif "idp_sso_url" in msg_lower:
-            error = "IdP SSO URL missing or invalid"
+            msg = "IdP SSO URL missing or invalid."
         else:
-            error = "SAML configuration error"
-        return {"ok": False, "error": error}
+            msg = "SAML configuration error."
+        checks.append(
+            make_check(
+                "onelogin_build",
+                "OneLogin SAML settings load",
+                "fail",
+                msg,
+                "Open the admin SAML page for full diagnostics.",
+            )
+        )
+        return {"ok": False, "checks": checks, "latency_ms": round((time.monotonic() - start) * 1000)}
+
+    for opt in (
+        await check_idp_cert_against_metadata(config.idp_x509_cert),
+        check_cert_expiry(config.idp_x509_cert, "IdP"),
+        check_cert_expiry(config.sp_x509_cert, "SP"),
+        check_sp_host_consistency(config.sp_acs_url, frontend_url),
+        check_sp_cert_key_match(config.sp_x509_cert, sp_key),
+        await check_idp_sso_url_reachable(config.idp_sso_url),
+        await check_nameid_format("emailAddress"),
+    ):
+        if opt is not None:
+            checks.append(opt)
+
+    ok = all_pass(checks)
+    latency_ms = round((time.monotonic() - start) * 1000)
+    optic.info("saml_health_probe done ok={} checks={} latency_ms={}", ok, len(checks), latency_ms)
+    return {"ok": ok, "checks": checks, "latency_ms": latency_ms}
 
 
 @router.get("/login")
@@ -248,14 +293,14 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     auth.process_response()
     errors = auth.get_errors()
 
-    logger.debug("SAML ACS: errors=%s, reason=%s", errors, auth.get_last_error_reason())
+    optic.debug("SAML ACS: errors=%s, reason=%s", errors, auth.get_last_error_reason())
 
     source_ip = request.client.host if request.client else ""
     user_agent = request.headers.get("user-agent", "")
 
     if errors:
         error_reason = auth.get_last_error_reason() or ", ".join(errors)
-        logger.warning("SAML assertion validation failed: %s", error_reason)
+        optic.warning("SAML assertion validation failed: %s", error_reason)
         await emit_security_event(
             SecurityEvent(
                 event_type=EventType.SSO_FAILURE,
@@ -294,7 +339,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
             response_id = hashlib.sha256(raw).hexdigest()
 
     if not response_id:
-        logger.error("SAML replay protection: unable to extract response ID")
+        optic.error("SAML replay protection: unable to extract response ID")
         raise HTTPException(status_code=400, detail="Unable to verify SAML assertion uniqueness")
 
     try:
@@ -302,7 +347,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
         replay_key = f"saml_assertion:{response_id}"
         existing = await redis.get(replay_key)
         if existing:
-            logger.warning("SAML assertion replay detected: response_id=%s", response_id)
+            optic.warning("SAML assertion replay detected: response_id=%s", response_id)
             await emit_security_event(
                 SecurityEvent(
                     event_type=EventType.SSO_FAILURE,
@@ -321,7 +366,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     except HTTPException:
         raise
     except Exception:
-        logger.error("SAML replay protection: Redis unavailable, rejecting assertion")
+        optic.error("SAML replay protection: Redis unavailable, rejecting assertion")
         raise HTTPException(status_code=503, detail="Unable to verify SAML assertion -- try again")
 
     email, attributes = extract_name_id_and_attrs(auth)
@@ -527,7 +572,7 @@ async def saml_sls(request: Request, db: AsyncSession = Depends(get_db)):
     url = auth.process_slo(delete_session_cb=lambda: None)
     errors = auth.get_errors()
     if errors:
-        logger.warning("SAML SLO failed: %s", errors)
+        optic.warning("SAML SLO failed: %s", errors)
 
     login_url = f"{_get_frontend_url()}/login"
     redirect_target = url if url and url.startswith(_get_frontend_url()) else login_url
