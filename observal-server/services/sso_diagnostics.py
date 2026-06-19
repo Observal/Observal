@@ -22,7 +22,9 @@ assertions, no tokens, no PII beyond the actor email that the IdP returned
 
 from __future__ import annotations
 
+import html
 import json
+import re
 import secrets
 import time
 from typing import Any, Literal
@@ -32,6 +34,21 @@ from redis.exceptions import RedisError
 
 from schemas.sso_health import all_pass
 from services.redis import get_redis
+
+# Session ids are URL-safe base64 (token_urlsafe) -- A-Z, a-z, 0-9, _, -.
+# Anything else cannot be a legitimate id and must not flow into URLs/HTML.
+_SAFE_ID_RE = re.compile(r"[A-Za-z0-9_\-]+")
+
+
+def is_safe_session_id(value: str | None, max_len: int = 64) -> bool:
+    """Constant-time-ish predicate for a legitimate session id.
+
+    Used at every boundary where a value derived from external input might be
+    used as a session id (URL state, RelayState, query param). Pairs with
+    ``html.escape`` and ``urllib.parse.quote`` downstream as defence-in-depth.
+    """
+    return bool(value) and len(value) <= max_len and bool(_SAFE_ID_RE.fullmatch(value))
+
 
 SessionMode = Literal["real", "e2e"]
 SessionProvider = Literal["oidc", "saml"]
@@ -303,7 +320,10 @@ def _icon_svg(status: str) -> str:
 
 
 def _escape(value: str) -> str:
-    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    """HTML-escape a value for safe interpolation into element content or
+    attribute-quoted positions. Uses stdlib ``html.escape`` (quote=True) so
+    static analysis recognises it as a sanitizer."""
+    return html.escape(str(value), quote=True)
 
 
 def render_result_page(
@@ -315,7 +335,13 @@ def render_result_page(
     summary: str | None,
     admin_url: str,
 ) -> str:
-    """Render the Observal-themed end-of-flow page shown in the IdP tab."""
+    """Render the Observal-themed end-of-flow page shown in the IdP tab.
+
+    All interpolations go through ``html.escape(quote=True)``. ``session_id``
+    is additionally rejected at the boundary if it doesn't match the safe-id
+    regex (defence-in-depth against tainted state values).
+    """
+    safe_session_id = session_id if is_safe_session_id(session_id) else "invalid"
     provider_label = "OIDC / OAuth 2.0" if provider == "oidc" else "SAML 2.0"
     if ok:
         title = "End-to-end test passed"
@@ -352,7 +378,7 @@ def render_result_page(
         pill_label=_escape(pill_label),
         provider_label=_escape(provider_label),
         actor_label=_escape(actor_email or "(not returned)"),
-        session_id=_escape(session_id),
+        session_id=_escape(safe_session_id),
         checks_html=checks_html,
         admin_url=_escape(admin_url),
     )

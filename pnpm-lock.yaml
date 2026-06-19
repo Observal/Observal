@@ -7,6 +7,7 @@ settings:
 overrides:
   dompurify: ^3.4.11
   postcss: ^8.5.10
+  dompurify: ^3.4.11
 
 importers:
 

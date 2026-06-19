@@ -313,7 +313,9 @@ async def _persist_oidc_failure(diag: list[dict], summary: str, actor_email: str
 
 
 def _oidc_error_redirect(frontend_base: str, corr_id: str) -> RedirectResponse:
-    return RedirectResponse(url=f"{frontend_base.rstrip('/')}/login?sso_error={corr_id}")
+    """Redirect to the login page carrying a sanitized correlation id."""
+    safe = corr_id if sso_diagnostics.is_safe_session_id(corr_id) else "invalid"
+    return RedirectResponse(url=f"{frontend_base.rstrip('/')}/login?sso_error={quote(safe, safe='')}")
 
 
 @router.get("/oauth/callback")

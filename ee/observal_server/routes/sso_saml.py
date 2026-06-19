@@ -15,7 +15,7 @@ import secrets
 import time
 import uuid
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -363,7 +363,17 @@ def _parse_relay_state(raw: str | None) -> tuple[str | None, str]:
 
 
 def _saml_error_redirect(corr_id: str) -> RedirectResponse:
-    return RedirectResponse(url=f"{_get_frontend_url().rstrip('/')}/login?sso_error={corr_id}", status_code=302)
+    """Redirect to the login page with a sanitized correlation id.
+
+    ``corr_id`` is either server-generated (``new_session_id`` → URL-safe
+    base64) or extracted from RelayState after the regex guard in
+    ``_parse_relay_state``. Re-validate at this boundary as defence-in-depth
+    so an upstream regression cannot leak into an open-redirect or query
+    injection. ``quote`` provides a final safety net for the URL writer.
+    """
+    safe = corr_id if sso_diagnostics.is_safe_session_id(corr_id) else "invalid"
+    base = _get_frontend_url().rstrip("/")
+    return RedirectResponse(url=f"{base}/login?sso_error={quote(safe, safe='')}", status_code=302)
 
 
 async def _saml_finalize_diag(

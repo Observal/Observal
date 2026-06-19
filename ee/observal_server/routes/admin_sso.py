@@ -348,6 +348,9 @@ async def validate_saml(
             "latency_ms": round((time.monotonic() - start) * 1000),
         }
 
+    # NOTE: keep the return *outside* the except clause so CodeQL doesn't
+    # taint the static response with the exception's stack trace.
+    sp_key: str | None = None
     try:
         sp_key = decrypt_private_key(
             config.sp_private_key_enc,
@@ -355,6 +358,7 @@ async def validate_saml(
         )
     except Exception:
         optic.exception("admin.validate_saml SP key decrypt failed")
+    if sp_key is None:
         return {
             "success": False,
             "error": "Failed to decrypt SP private key",
@@ -574,12 +578,15 @@ async def e2e_saml_start(
             "checks": [field_failure],
         }
 
+    sp_key: str | None = None
     try:
         sp_key = decrypt_private_key(
             config.sp_private_key_enc,
             ds.get_sync("saml.sp_key_encryption_password"),
         )
     except Exception:
+        optic.exception("admin.e2e_saml_start SP key decrypt failed")
+    if sp_key is None:
         return {
             "success": False,
             "error": "Failed to decrypt SP private key",
