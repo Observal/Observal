@@ -13,7 +13,7 @@ import json
 import re
 import secrets
 from datetime import UTC, datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 import jwt as pyjwt
@@ -313,9 +313,17 @@ async def _persist_oidc_failure(diag: list[dict], summary: str, actor_email: str
 
 
 def _oidc_error_redirect(frontend_base: str, corr_id: str) -> RedirectResponse:
-    """Redirect to the login page carrying a sanitized correlation id."""
-    safe = corr_id if sso_diagnostics.is_safe_session_id(corr_id) else "invalid"
-    return RedirectResponse(url=f"{frontend_base.rstrip('/')}/login?sso_error={quote(safe, safe='')}")
+    """Redirect to the login page carrying a sanitized correlation id.
+
+    ``frontend_base`` is from server deployment config, never request input.
+    ``corr_id`` is server-generated (``new_session_id``) but we re-validate
+    at this boundary anyway. Query values are encoded by ``urlencode``.
+    """
+    if not sso_diagnostics.is_safe_session_id(corr_id):
+        corr_id = "invalid"
+    base = frontend_base.rstrip("/")
+    qs = urlencode({"sso_error": corr_id})
+    return RedirectResponse(url=f"{base}/login?{qs}")
 
 
 @router.get("/oauth/callback")
