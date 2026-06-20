@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate check-migrations new-migration reset rebuild rebuild-prometheus rebuild-observability rebuild-enterprise rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release-major release-feature release-patch sync-skill
+.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-enterprise rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release-major release-feature release-patch sync-skill
 
 # ── Linting ──────────────────────────────────────────────
 
@@ -87,6 +87,14 @@ new-migration:  ## Create a new migration: make new-migration MSG="add foo to ba
 
 rebuild:  ## Rebuild and restart Docker stack (runs migrations automatically)
 	cd docker && docker compose $(COMPOSE_FILES) up --build -d
+	@echo "Waiting for API to be healthy..."
+	@cd docker && until docker compose $(COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
+	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb
+	@echo "API is healthy."
+
+rebuild-fast:  ## Fast app rebuild: build shared API and web images once
+	cd docker && docker compose $(COMPOSE_FILES) build observal-api observal-web
+	cd docker && docker compose $(COMPOSE_FILES) up -d --no-build
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose $(COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
 	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb

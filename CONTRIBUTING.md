@@ -61,8 +61,14 @@ No configuration needed for local development. All settings have working default
 
 ```bash
 cp .env.example .env
-docker compose -f docker/docker-compose.yml up --build -d
+make rebuild-fast
 ```
+
+For normal backend, frontend, and dependency changes, use `make rebuild-fast`. It builds the shared API image once, reuses it for the API, init, and worker services, then builds the web image.
+
+Use `make rebuild` when the Compose topology changes, such as adding services, changing build contexts, changing image names, or updating volumes and networks.
+
+For schema, migration, ClickHouse setup, init path, or worker changes, use `make rebuild-fast` so the shared API image used by `observal-init` and `observal-worker` is refreshed.
 
 Wait for services to be healthy, then:
 
