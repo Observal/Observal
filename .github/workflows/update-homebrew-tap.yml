@@ -82,7 +82,7 @@ jobs:
           repositories: homebrew-observal
 
       - name: Checkout homebrew-observal
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: BlazeUp-AI/homebrew-observal
           token: ${{ steps.app-token.outputs.token }}
