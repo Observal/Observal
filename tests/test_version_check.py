@@ -328,10 +328,23 @@ class TestCheckVersionCompatibility:
         monkeypatch.setattr(version_check, "_read_cache", lambda: None)
 
         def mock_get(*args, **kwargs):
-            return httpx.Response(200, json={"server_version": "1.0.3"})
+            return httpx.Response(200, json={"server_version": "1.0.0"})
 
         monkeypatch.setattr(httpx, "get", mock_get)
         version_check.check_version_compatibility("http://localhost:8000")
+
+    def test_patch_mismatch_exits(self, monkeypatch):
+        from click.exceptions import Exit
+
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(version_check, "_read_cache", lambda: None)
+
+        def mock_get(*args, **kwargs):
+            return httpx.Response(200, json={"server_version": "1.0.3"})
+
+        monkeypatch.setattr(httpx, "get", mock_get)
+        with pytest.raises(Exit):
+            version_check.check_version_compatibility("http://localhost:8000")
 
     def test_cli_ahead_exits(self, monkeypatch):
         from click.exceptions import Exit
@@ -346,7 +359,7 @@ class TestCheckVersionCompatibility:
         with pytest.raises(Exit):
             version_check.check_version_compatibility("http://localhost:8000")
 
-    def test_cli_behind_exits(self, monkeypatch):
+    def test_cli_behind_exits(self, monkeypatch, capsys):
         from click.exceptions import Exit
 
         monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
@@ -358,6 +371,7 @@ class TestCheckVersionCompatibility:
         monkeypatch.setattr(httpx, "get", mock_get)
         with pytest.raises(Exit):
             version_check.check_version_compatibility("http://localhost:8000")
+        assert "python -m pip install observal-cli==1.2.0" in capsys.readouterr().out
 
     def test_uses_short_ttl_cache(self, monkeypatch):
         """Cache younger than 60s is trusted, skipping network."""
@@ -365,7 +379,7 @@ class TestCheckVersionCompatibility:
 
         monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
         fresh_cache = {
-            "server_version": "1.0.5",
+            "server_version": "1.0.0",
             "source": "server",
             "last_checked": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
         }
@@ -374,7 +388,7 @@ class TestCheckVersionCompatibility:
 
         def mock_get(*args, **kwargs):
             network_called["hit"] = True
-            return httpx.Response(200, json={"server_version": "1.0.5"})
+            return httpx.Response(200, json={"server_version": "1.0.0"})
 
         monkeypatch.setattr(httpx, "get", mock_get)
         version_check.check_version_compatibility("http://localhost:8000")
@@ -393,7 +407,7 @@ class TestCheckVersionCompatibility:
 
         def mock_get(*args, **kwargs):
             network_called["hit"] = True
-            return httpx.Response(200, json={"server_version": "1.0.5"})
+            return httpx.Response(200, json={"server_version": "1.0.0"})
 
         monkeypatch.setattr(httpx, "get", mock_get)
         version_check.check_version_compatibility("http://localhost:8000")

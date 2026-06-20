@@ -54,7 +54,7 @@ def _client() -> tuple[str, dict]:
 def _enforce_version_once(server_url: str) -> None:
     """Run version enforcement exactly once per CLI session.
 
-    Checks if CLI major.minor matches server. Hard exits on mismatch.
+    Checks if CLI version exactly matches server. Hard exits on mismatch.
     Exempt: `observal self` and `observal server` subcommands.
     """
     global _version_enforced
@@ -117,6 +117,10 @@ def _handle_error(e: httpx.HTTPStatusError, path: str = ""):
                 "observal agent list" if type_singular == "agent" else f"observal registry {type_singular} list"
             )
         rprint(f"[dim]  Check that the resource ID is correct, or use [bold]{browse_cmd}[/bold] to browse.[/dim]")
+    elif code == 426:
+        rprint(f"[red]Version mismatch{path_info}.[/red]")
+        if detail:
+            rprint(f"[dim]  {detail}[/dim]")
     elif code == 429:
         rprint(f"[red]Rate limited{path_info}.[/red]")
         retry_after = e.response.headers.get("Retry-After", "a few seconds")

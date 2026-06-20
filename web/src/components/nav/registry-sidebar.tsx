@@ -48,7 +48,10 @@ import {
 	getUserUsername,
 } from "@/lib/api";
 import { hasMinRole, type Role } from "@/hooks/use-role-guard";
-import { useDeploymentConfig } from "@/hooks/use-deployment-config";
+import {
+	useDeploymentConfig,
+	useServerVersion,
+} from "@/hooks/use-deployment-config";
 
 type NavItem = {
 	title: string;
@@ -134,6 +137,18 @@ const storeSub = (cb: () => void) => {
 const getAuthSnap = () =>
 	`${sessionStorage.getItem("observal_access_token") ?? ""}|${getUserRole() ?? ""}|${getUserName() ?? ""}|${getUserEmail() ?? ""}|${getUserUsername() ?? ""}`;
 const getServerSnap = () => "||||";
+
+function ServerVersionBadge() {
+	const { serverVersion, loading } = useServerVersion();
+
+	if (loading || !serverVersion || serverVersion === "dev") return null;
+
+	return (
+		<div className="group-data-[collapsible=icon]:hidden rounded-md px-2 py-1.5 text-[11px] leading-none text-sidebar-foreground/55">
+			Server v{serverVersion}
+		</div>
+	);
+}
 
 export function RegistrySidebar() {
 	const { pathname } = useLocation();
@@ -321,6 +336,7 @@ export function RegistrySidebar() {
 				)}
 			</SidebarContent>
 			<SidebarFooter>
+				<ServerVersionBadge />
 				<NavUser
 					user={{
 						name: userName || "User",

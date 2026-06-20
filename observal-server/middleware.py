@@ -24,6 +24,29 @@ from services.audit import AUDIT_LICENSED
 
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:3000"
 DEFAULT_MAX_REQUEST_SIZE_MB = "10"
+CLI_VERSION_EXEMPT_PATHS = {
+    "/api/v1/config/version",
+    "/api/v1/config/public",
+    "/api/v1/config/endpoints",
+    "/api/v1/graphql",
+    "/api/v1/mcp",
+    "/api/v1/skills",
+    "/api/v1/agents",
+}
+CLI_VERSION_EXEMPT_PREFIXES = (
+    "/api/v1/auth/",
+    "/api/v1/ingest/",
+    "/api/v1/telemetry/",
+    "/api/v1/support/",
+    "/api/v1/audit/cli-event",
+    "/api/v1/sessions/crypto/",
+)
+CLI_USER_AGENT_PREFIXES = (
+    "observal-cli/",
+    "python-httpx/",
+    "python-requests/",
+    "python-urllib3/",
+)
 
 
 class RequestSizeLimitMiddleware:
@@ -152,23 +175,64 @@ def configure_rate_limit_handlers(app: FastAPI) -> None:
     app.middleware("http")(set_rate_limit_defaults)
 
 
+def _should_require_cli_version_header(request: Request) -> bool:
+    path = request.url.path
+    if not path.startswith("/api/v1/"):
+        return False
+    if path in CLI_VERSION_EXEMPT_PATHS:
+        return False
+    if path.startswith(CLI_VERSION_EXEMPT_PREFIXES):
+        return False
+    auth_header = request.headers.get("authorization", "").lower()
+    if not auth_header.startswith("bearer "):
+        return False
+    user_agent = request.headers.get("user-agent", "").lower()
+    return user_agent.startswith(CLI_USER_AGENT_PREFIXES)
+
+
+def _cli_version_response(server_ver: str, cli_ver_str: str | None) -> JSONResponse:
+    install_command = f"python -m pip install observal-cli=={server_ver}"
+    shown_cli_version = cli_ver_str or "unknown"
+    return JSONResponse(
+        status_code=426,
+        content={
+            "detail": (
+                f"Observal CLI {shown_cli_version} cannot connect to server {server_ver}. "
+                f"Install the matching CLI with: {install_command}"
+            ),
+            "server_version": server_ver,
+            "cli_version": cli_ver_str,
+            "install_command": install_command,
+        },
+        headers={
+            "X-Observal-Server": server_ver,
+            "X-Observal-Required-CLI": server_ver,
+        },
+    )
+
+
 def configure_version_middleware(app: FastAPI) -> None:
     async def version_middleware(request: Request, call_next):
+        from packaging.version import InvalidVersion, Version
+
         from version import get_server_version
 
         server_ver = get_server_version()
         cli_ver_str = request.headers.get("x-observal-cli-version")
         effective = server_ver
 
-        if cli_ver_str:
-            try:
-                from packaging.version import Version
-
-                client_ver = Version(cli_ver_str)
-                sv = Version(server_ver)
-                effective = str(min(client_ver, sv))
-            except Exception:
-                pass
+        if server_ver != "dev":
+            if not cli_ver_str and _should_require_cli_version_header(request):
+                return _cli_version_response(server_ver, None)
+            if cli_ver_str:
+                try:
+                    client_ver = Version(cli_ver_str)
+                    server_version = Version(server_ver)
+                    if client_ver != server_version:
+                        return _cli_version_response(server_ver, cli_ver_str)
+                    effective = str(server_version)
+                except InvalidVersion:
+                    return _cli_version_response(server_ver, cli_ver_str)
 
         request.state.effective_version = effective
         response = await call_next(request)

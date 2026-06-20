@@ -27,3 +27,17 @@ export function useDeploymentConfig() {
 		loading: isLoading,
 	};
 }
+
+export function useServerVersion() {
+	const { data, isLoading } = useQuery({
+		queryKey: ["config", "version"],
+		queryFn: config.version,
+		staleTime: 5 * 60 * 1000,
+		retry: 1,
+	});
+
+	return {
+		serverVersion: data?.server_version ?? null,
+		loading: isLoading,
+	};
+}

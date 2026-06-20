@@ -544,10 +544,9 @@ def fetch_all_releases(include_pre: bool = False) -> list[dict]:
 
 
 def check_version_compatibility(server_url: str) -> None:
-    """Enforce CLI/server version match. Hard exit on major.minor mismatch.
+    """Enforce exact CLI/server version match.
 
-    The server version is the canonical target. CLI must match its major.minor.
-    Patch differences are tolerated (e.g. CLI 1.0.1 vs server 1.0.0 is fine).
+    The server version is the canonical target. CLI must match it exactly.
 
     Reads from the local version cache first (populated by auto-update check)
     to avoid a duplicate network call. Falls back to a fresh fetch if needed.
@@ -585,28 +584,17 @@ def check_version_compatibility(server_url: str) -> None:
     except InvalidVersion:
         return
 
-    # Compare major.minor only - patch differences are tolerated
-    cli_major_minor = (cli_v.major, cli_v.minor)
-    srv_major_minor = (srv_v.major, srv_v.minor)
+    if cli_v == srv_v:
+        return
 
-    if cli_major_minor == srv_major_minor:
-        return  # versions match, all good
-
-    # Mismatch - hard block
-    if cli_major_minor > srv_major_minor:
-        rprint(
-            f"\n[bold red]\u2716 CLI version {cli_ver_str} is ahead of server {server_ver}.[/bold red]\n"
-            f"  The server is the source of truth for versioning.\n"
-            f"  Downgrade your CLI to match the server:\n\n"
-            f"    [cyan]observal self downgrade --version {server_ver}[/cyan]\n"
-        )
-    else:
-        rprint(
-            f"\n[bold red]\u2716 CLI version {cli_ver_str} is behind server {server_ver}.[/bold red]\n"
-            f"  The server is the source of truth for versioning.\n"
-            f"  Upgrade your CLI to match the server:\n\n"
-            f"    [cyan]observal self upgrade --version {server_ver}[/cyan]\n"
-        )
+    install_command = f"python -m pip install observal-cli=={server_ver}"
+    direction = "ahead of" if cli_v > srv_v else "behind"
+    rprint(
+        f"\n[bold red]\u2716 CLI version {cli_ver_str} is {direction} server {server_ver}.[/bold red]\n"
+        f"  The server is the source of truth for versioning.\n"
+        f"  Install the matching CLI before connecting:\n\n"
+        f"    [cyan]{install_command}[/cyan]\n"
+    )
     raise typer.Exit(1)
 
 

@@ -76,6 +76,45 @@ def _prompt_password(prompt_text: str = "New password") -> str:
             rprint(f"  [red]✗[/red] {f}")
 
 
+def _ensure_cli_matches_server(server_url: str) -> None:
+    """Block login when the CLI does not exactly match the server."""
+    from packaging.version import InvalidVersion, Version
+
+    from observal_cli.version_check import get_current_version
+
+    cli_ver_str = get_current_version()
+    if cli_ver_str == "0.0.0":
+        return
+
+    try:
+        r = httpx.get(f"{server_url}/api/v1/config/version", timeout=10)
+        r.raise_for_status()
+        server_ver = r.json().get("server_version")
+    except Exception:
+        return
+
+    if not server_ver or server_ver == "dev":
+        return
+
+    try:
+        cli_version = Version(cli_ver_str)
+        server_version = Version(server_ver)
+    except InvalidVersion:
+        return
+
+    if cli_version == server_version:
+        return
+
+    install_command = f"python -m pip install observal-cli=={server_ver}"
+    direction = "ahead of" if cli_version > server_version else "behind"
+    rprint(
+        f"\n[bold red]CLI version {cli_ver_str} is {direction} server {server_ver}.[/bold red]\n"
+        f"  Install the matching CLI before logging in:\n\n"
+        f"    [cyan]{install_command}[/cyan]\n"
+    )
+    raise typer.Exit(1)
+
+
 @auth_app.command()
 def login(
     server: str = typer.Option(None, "--server", "-s", help="Server URL"),
@@ -116,6 +155,8 @@ def login(
     except Exception as e:
         rprint(f"[red]Server error:[/red] {e!s}")
         raise typer.Exit(1)
+
+    _ensure_cli_matches_server(server_url)
 
     initialized = health_data.get("initialized", True)
 

@@ -775,6 +775,14 @@ export type PublicConfig = {
 	branding_wordmark: string | null;
 };
 
+export type VersionConfig = {
+	server_version: string;
+	max_cli_version: string | null;
+	api_version: string | null;
+	frontend_version: string;
+	recommended_cli_version: string;
+};
+
 export interface IdeEntry {
 	name: string;
 	display_name: string;
@@ -789,6 +797,7 @@ interface IdesResponse {
 
 export const config = {
 	public: () => get<PublicConfig>("/config/public"),
+	version: () => get<VersionConfig>("/config/version"),
 	ides: () => get<IdesResponse>("/config/ides"),
 };
 
