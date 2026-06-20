@@ -16,11 +16,16 @@ import {
 } from "@/components/ui/select";
 import { useIdes } from "@/hooks/use-ides";
 
-export function PullCommand({ agentName, versions }: { agentName: string; versions?: { version: string; status: string }[] }) {
+interface PullCommandProps {
+  agentName: string;
+  currentVersion?: string | null;
+  latestVersion?: string | null;
+}
+
+export function PullCommand({ agentName, currentVersion, latestVersion }: PullCommandProps) {
   const { data: ides, defaultIde } = useIdes();
   const [ide, setIde] = useState("");
   const [copied, setCopied] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<string>("latest");
 
   useEffect(() => {
     if (!ides || ides.length === 0) return;
@@ -30,9 +35,8 @@ export function PullCommand({ agentName, versions }: { agentName: string; versio
     }
   }, [ides, defaultIde, ide]);
 
-  const approvedVersions = (versions ?? []).filter((v) => v.status === "approved");
   const effectiveIde = ide || (defaultIde && ides?.some((i) => i.name === defaultIde) ? defaultIde : ides?.[0]?.name) || "cursor";
-  const versionFlag = selectedVersion && selectedVersion !== "latest" ? ` --version ${selectedVersion}` : "";
+  const versionFlag = currentVersion && latestVersion && currentVersion !== latestVersion ? ` --version ${currentVersion}` : "";
   const command = `observal agent pull ${agentName} --ide ${effectiveIde}${versionFlag}`;
 
   function handleCopy() {
@@ -48,21 +52,6 @@ export function PullCommand({ agentName, versions }: { agentName: string; versio
         <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground">Install</span>
         <div className="ml-auto flex items-center gap-2">
-          {approvedVersions.length > 1 && (
-            <Select value={selectedVersion} onValueChange={setSelectedVersion}>
-              <SelectTrigger className="h-7 w-[100px] text-xs border-border">
-                <SelectValue placeholder="latest" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="latest">latest</SelectItem>
-                {approvedVersions.map((v) => (
-                  <SelectItem key={v.version} value={v.version}>
-                    v{v.version}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
           <Select value={effectiveIde} onValueChange={setIde}>
             <SelectTrigger className="h-7 w-[130px] text-xs border-border">
               <SelectValue />

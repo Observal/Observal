@@ -12,10 +12,7 @@ import {
   ArrowDownToLine,
   Puzzle,
   Star,
-  Check,
-  Copy,
   Users,
-  Download,
   Loader2,
   Trash2,
   Play,
@@ -24,7 +21,7 @@ import {
   Clock,
   Sparkles,
 } from "lucide-react";
-import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -44,7 +41,12 @@ import {
 } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
-import type { FeedbackItem, InsightReportListItem } from "@/lib/types";
+import type {
+  AgentComponentReference,
+  AgentVersionSummary,
+  FeedbackItem,
+  InsightReportListItem,
+} from "@/lib/types";
 import { PullCommand } from "@/components/registry/pull-command";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
@@ -61,7 +63,7 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { AgentEditForm, type AgentEditFormProps } from "@/components/registry/agent-edit-form";
 import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
-import { compactNumber, copyToClipboard } from "@/lib/utils";
+import { compactNumber } from "@/lib/utils";
 import { DIMENSION_META } from "@/components/dashboard/score-overview";
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -73,6 +75,80 @@ const FEATURE_LABELS: Record<string, string> = {
   steering_files: "Steering files",
   otlp_telemetry: "OTLP telemetry",
 };
+
+const COMPONENT_TYPES = [
+  { value: "mcps", singular: "mcp", label: "MCPs" },
+  { value: "skills", singular: "skill", label: "Skills" },
+  { value: "hooks", singular: "hook", label: "Hooks" },
+  { value: "prompts", singular: "prompt", label: "Prompts" },
+  { value: "sandboxes", singular: "sandbox", label: "Sandboxes" },
+] as const;
+
+type ComponentGroupKey = (typeof COMPONENT_TYPES)[number]["value"];
+
+const COMPONENT_GROUP_BY_TYPE: Record<string, ComponentGroupKey> = {
+  mcp: "mcps",
+  mcps: "mcps",
+  skill: "skills",
+  skills: "skills",
+  hook: "hooks",
+  hooks: "hooks",
+  prompt: "prompts",
+  prompts: "prompts",
+  sandbox: "sandboxes",
+  sandboxes: "sandboxes",
+};
+
+function semverCompareDesc(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i += 1) {
+    const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return b.localeCompare(a);
+}
+
+function getLatestApprovedVersion(versions: AgentVersionSummary[]): string | undefined {
+  return [...versions]
+    .filter((v) => v.status === "approved")
+    .sort((a, b) => semverCompareDesc(a.version, b.version))[0]?.version;
+}
+
+function normalizeVersionComponents(components?: AgentComponentReference[]): ComponentLink[] | undefined {
+  if (!components) return undefined;
+  return components.map((component) => ({
+    component_type: component.component_type,
+    component_id: component.component_id,
+    component_name: component.component_name,
+    mcp_name: component.mcp_name,
+    name: component.name,
+    resolved_version: component.resolved_version,
+    status: component.status,
+  }));
+}
+
+function getComponentName(component: ComponentLink): string {
+  return component.mcp_name ?? component.component_name ?? component.name ?? component.component_id ?? component.mcp_id ?? "Unnamed";
+}
+
+function getComponentType(component: ComponentLink): string {
+  return component.component_type ?? "mcp";
+}
+
+function getComponentGroup(component: ComponentLink): ComponentGroupKey {
+  return COMPONENT_GROUP_BY_TYPE[getComponentType(component)] ?? "mcps";
+}
+
+function groupComponents(components: ComponentLink[]): Record<ComponentGroupKey, ComponentLink[]> {
+  return components.reduce<Record<ComponentGroupKey, ComponentLink[]>>(
+    (groups, component) => {
+      groups[getComponentGroup(component)].push(component);
+      return groups;
+    },
+    { mcps: [], skills: [], hooks: [], prompts: [], sandboxes: [] },
+  );
+}
 
 interface AgentDetail {
   name: string;
@@ -100,36 +176,159 @@ interface ComponentLink {
   component_type?: string;
   component_id?: string;
   mcp_id?: string;
+  resolved_version?: string;
   status?: string;
 }
 
-function ExportButton({ agentId }: { agentId: string }) {
-  const [exporting, setExporting] = useState(false);
+function VersionContentLoading() {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border p-4 text-sm text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      Loading version contents...
+    </div>
+  );
+}
 
-  const handleExport = useCallback(async () => {
-    setExporting(true);
-    try {
-      const manifest = await registry.manifest(agentId);
-      const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `agent-${agentId.slice(0, 8)}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-      toast.success("Agent manifest exported");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to export agent");
-    } finally {
-      setExporting(false);
-    }
-  }, [agentId]);
+function AgentVersionContents({
+  description,
+  modelName,
+  prompt,
+  components,
+}: {
+  description?: string;
+  modelName?: string;
+  prompt?: string;
+  components: ComponentLink[];
+}) {
+  const [activeTab, setActiveTab] = useState<ComponentGroupKey>("mcps");
+  const groupedComponents = useMemo(() => groupComponents(components), [components]);
 
   return (
-    <Button variant="outline" size="sm" className="h-8" onClick={handleExport} disabled={exporting}>
-      {exporting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1 h-3.5 w-3.5" />}
-      Export
-    </Button>
+    <div className="space-y-6">
+      <section className="space-y-4">
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Description</h3>
+          <div className="min-h-20 max-w-lg select-text rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm leading-relaxed text-foreground cursor-default">
+            {description ? (
+              <p className="whitespace-pre-wrap">{description}</p>
+            ) : (
+              <p className="text-muted-foreground">No description provided.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2 max-w-xs">
+          <h3 className="text-sm font-medium">Model</h3>
+          <div className="select-text rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm cursor-default">
+            {modelName ? (
+              <code className="font-mono text-foreground">{modelName}</code>
+            ) : (
+              <span className="text-muted-foreground">No model specified.</span>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium">Agent Prompt</h3>
+        <div className="min-h-40 select-text rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm cursor-default">
+          {prompt ? (
+            <pre className="whitespace-pre-wrap break-words font-mono leading-relaxed text-foreground">{prompt}</pre>
+          ) : (
+            <p className="text-muted-foreground">No inline prompt provided.</p>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Version-specific system prompt. Prompt components, when linked, are listed below.
+        </p>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-sm font-medium font-display">Components</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            MCPs, skills, hooks, prompts, and sandboxes linked to this agent version.
+          </p>
+        </div>
+
+        {components.length === 0 ? (
+          <EmptyState
+            icon={Puzzle}
+            title="No components linked"
+            description="This version does not have any linked MCP servers or components."
+          />
+        ) : (
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ComponentGroupKey)}>
+            <TabsList>
+              {COMPONENT_TYPES.map((componentType) => {
+                const count = groupedComponents[componentType.value].length;
+                return (
+                  <TabsTrigger key={componentType.value} value={componentType.value}>
+                    {componentType.label}
+                    {count > 0 && (
+                      <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                        {count}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+
+            {COMPONENT_TYPES.map((componentType) => {
+              const items = groupedComponents[componentType.value];
+              return (
+                <TabsContent key={componentType.value} value={componentType.value} className="mt-3">
+                  {items.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      No {componentType.label} linked to this version.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {items.map((component, index) => {
+                        const componentName = getComponentName(component);
+                        const componentId = component.component_id ?? component.mcp_id;
+                        const row = (
+                          <div className="flex items-center justify-between gap-3 rounded-md border border-border px-4 py-3 transition-colors hover:bg-accent/40">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <Badge variant="outline" className="shrink-0 text-[10px]">
+                                {componentType.singular}
+                              </Badge>
+                              <span className="truncate text-sm font-medium">{componentName}</span>
+                              {component.resolved_version && (
+                                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                  {component.resolved_version === "latest" ? "latest" : `v${component.resolved_version}`}
+                                </span>
+                              )}
+                            </div>
+                            {component.status && <StatusBadge status={component.status} />}
+                          </div>
+                        );
+
+                        return componentId ? (
+                          <Link
+                            key={`${componentType.value}-${componentId}-${index}`}
+                            to="/components/$componentId"
+                            params={{ componentId }}
+                            search={{ type: componentType.value }}
+                          >
+                            {row}
+                          </Link>
+                        ) : (
+                          <div key={`${componentType.value}-${componentName}-${index}`}>{row}</div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+              );
+            })}
+          </Tabs>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -342,7 +541,7 @@ export default function AgentDetailPage() {
   const { data: whoami } = useWhoami();
   const { data: versionsData } = useAgentVersions(id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
-  const { data: versionDetail } = useAgentVersionDetail(id, selectedVersion);
+  const { data: versionDetail, isLoading: isVersionDetailLoading } = useAgentVersionDetail(id, selectedVersion);
 
   // Co-authors
   const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
@@ -373,20 +572,26 @@ export default function AgentDetailPage() {
 
   const a = agent as unknown as AgentDetail | undefined;
   const versions = versionsData?.items ?? [];
-  const latestApprovedVersion = versions.find((v) => v.status === "approved")?.version;
+  const latestApprovedVersion = useMemo(() => getLatestApprovedVersion(versions), [versions]);
   const effectiveVersion = selectedVersion ?? latestApprovedVersion ?? a?.version;
-  // Overlay version-specific fields when viewing a non-default version
-  const vd = versionDetail as Record<string, unknown> | undefined;
-  const versionDescription = (vd?.description as string) ?? a?.description;
-  const versionPrompt = (vd?.prompt as string) ?? a?.prompt;
-  const versionModelName = (vd?.model_name as string) ?? a?.model_name;
-  const versionSupportedIdes = (vd?.supported_ides as string[]) ?? a?.supported_ides;
-  const versionRequiredFeatures = (vd?.required_ide_features as string[]) ?? a?.required_ide_features;
-  const versionInferredIdes = (vd?.inferred_supported_ides as string[]) ?? a?.inferred_supported_ides;
+  const selectedVersionSummary = versions.find((v) => v.version === effectiveVersion);
+  const vd = versionDetail;
+  const isVersionContentLoading = !!selectedVersion && !vd && isVersionDetailLoading;
+  const baseComponents: ComponentLink[] = a?.component_links ?? a?.mcp_links ?? [];
+  const versionComponents = selectedVersion ? normalizeVersionComponents(vd?.components) : undefined;
+  const components: ComponentLink[] = selectedVersion ? (versionComponents ?? []) : baseComponents;
+  const displayComponentCount = selectedVersion
+    ? (versionComponents?.length ?? selectedVersionSummary?.component_count ?? 0)
+    : components.length;
+  const versionDescription = vd?.description ?? selectedVersionSummary?.description ?? a?.description;
+  const versionPrompt = vd?.prompt ?? (selectedVersion ? undefined : a?.prompt);
+  const versionModelName = vd?.model_name ?? (selectedVersion ? undefined : a?.model_name);
+  const versionSupportedIdes = vd?.supported_ides ?? selectedVersionSummary?.supported_ides ?? a?.supported_ides;
+  const versionRequiredFeatures = vd?.required_ide_features ?? (selectedVersion ? undefined : a?.required_ide_features);
+  const versionInferredIdes = vd?.inferred_supported_ides ?? (selectedVersion ? undefined : a?.inferred_supported_ides);
   const canDelete = isAdmin || (whoami?.id && a?.created_by && whoami.id === String(a.created_by));
   const agentStatus = a?.status as string | undefined;
   const canEdit = (isAdmin || a?.user_permission === "owner" || a?.user_permission === "edit") && ["approved", "pending", "draft", "rejected"].includes(agentStatus ?? "");
-  const components: ComponentLink[] = a?.component_links ?? a?.mcp_links ?? [];
   const agentName = a?.name ?? id.slice(0, 8);
   const totalDownloads = downloadData?.total ?? a?.download_count;
   const uniqueUsers = downloadData?.unique_users;
@@ -402,14 +607,6 @@ export default function AgentDetailPage() {
           { label: "Agents", href: "/agents" },
           { label: isLoading ? "..." : agentName },
         ]}
-        actionButtonsRight={
-          !isLoading && a ? (
-            <div className="flex items-center gap-2">
-              <ExportButton agentId={id} />
-              {canDelete && <DeleteButton agentId={id} agentName={agentName} />}
-            </div>
-          ) : undefined
-        }
       />
 
       <div className="p-6 lg:p-8 w-full">
@@ -464,7 +661,7 @@ export default function AgentDetailPage() {
                 )}
                 <span className="inline-flex items-center gap-1.5">
                   <Puzzle className="h-4 w-4" />
-                  {components.length} components
+                  {displayComponentCount} components
                 </span>
                 {avgRating != null && (
                   <span className="inline-flex items-center gap-1.5">
@@ -476,7 +673,11 @@ export default function AgentDetailPage() {
 
               {/* Pull command (mobile only) */}
               <div className="lg:hidden">
-                <PullCommand agentName={a.name} versions={versions} />
+                <PullCommand
+                  agentName={a.name}
+                  currentVersion={effectiveVersion}
+                  latestVersion={latestApprovedVersion ?? a.version}
+                />
               </div>
 
               {/* Tabs */}
@@ -485,9 +686,9 @@ export default function AgentDetailPage() {
                   <TabsTrigger value="overview">Overview</TabsTrigger>
                   <TabsTrigger value="components">
                     Components
-                    {components.length > 0 && (
+                    {displayComponentCount > 0 && (
                       <span className="ml-1.5 text-[10px] bg-muted px-1.5 py-0.5 rounded-full">
-                        {components.length}
+                        {displayComponentCount}
                       </span>
                     )}
                   </TabsTrigger>
@@ -537,76 +738,16 @@ export default function AgentDetailPage() {
 
                 <TabsContent value="components" className="mt-6">
                   <div className="min-h-[300px]">
-                  {components.length === 0 ? (
-                    versionPrompt ? (
-                      <div className="space-y-3">
-                        <p className="text-xs text-muted-foreground">
-                          This agent was registered via scan and uses an inline system prompt instead of linked components.
-                        </p>
-                        <div className="rounded-md border border-border bg-muted/20 p-4">
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">System Prompt</h4>
-                          <pre className="text-xs font-[family-name:var(--font-mono)] whitespace-pre-wrap break-words text-foreground/80 leading-relaxed max-h-[400px] overflow-y-auto">
-                            {String(versionPrompt)}
-                          </pre>
-                        </div>
-                      </div>
+                    {isVersionContentLoading ? (
+                      <VersionContentLoading />
                     ) : (
-                      <EmptyState
-                        icon={Puzzle}
-                        title="No components linked"
-                        description="This agent does not have any linked MCP servers or components."
+                      <AgentVersionContents
+                        description={versionDescription}
+                        modelName={versionModelName}
+                        prompt={versionPrompt}
+                        components={components}
                       />
-                    )
-                  ) : (
-                    <div className="space-y-2">
-                      {components.map((comp: ComponentLink, i: number) => {
-                        const compName =
-                          comp.mcp_name ??
-                          comp.component_name ??
-                          comp.name ??
-                          "-";
-                        const compType = comp.component_type ?? "mcp";
-                        const compId = comp.component_id ?? comp.mcp_id;
-                        const content = (
-                          <div
-                            className={[
-                              "flex items-center justify-between gap-3 px-4 py-3 rounded-md border border-border",
-                              "transition-colors",
-                              compId
-                                ? "hover:bg-accent/40 cursor-pointer"
-                                : "",
-                            ].join(" ")}
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] shrink-0"
-                              >
-                                {compType}
-                              </Badge>
-                              <span className="text-sm font-medium truncate">
-                                {compName}
-                              </span>
-                            </div>
-                            {comp.status && (
-                              <StatusBadge status={comp.status} />
-                            )}
-                          </div>
-                        );
-
-                        return compId ? (
-                          <Link
-                            key={i}
-                            to="/components/$componentId" params={{ componentId: compId }} search={{ type: `${compType}s` }}
-                          >
-                            {content}
-                          </Link>
-                        ) : (
-                          <div key={i}>{content}</div>
-                        );
-                      })}
-                    </div>
-                  )}
+                    )}
                   </div>
                 </TabsContent>
 
@@ -676,12 +817,16 @@ export default function AgentDetailPage() {
 
                 {canEdit && (
                   <TabsContent value="edit" className="mt-6">
-                    <AgentEditForm
-                      agentId={id}
-                      agent={a as unknown as AgentEditFormProps["agent"]}
-                      versionDetail={vd}
-                      currentVersion={effectiveVersion ?? "1.0.0"}
-                    />
+                    {isVersionContentLoading ? (
+                      <VersionContentLoading />
+                    ) : (
+                      <AgentEditForm
+                        agentId={id}
+                        agent={a as unknown as AgentEditFormProps["agent"]}
+                        versionDetail={vd}
+                        currentVersion={effectiveVersion ?? "1.0.0"}
+                      />
+                    )}
                   </TabsContent>
                 )}
                 {canEdit && (
@@ -695,7 +840,11 @@ export default function AgentDetailPage() {
 
             {/* Sidebar (desktop) */}
             <aside className="hidden lg:block space-y-5 animate-in stagger-1">
-              <PullCommand agentName={a.name} versions={versions} />
+              <PullCommand
+                agentName={a.name}
+                currentVersion={effectiveVersion}
+                latestVersion={latestApprovedVersion ?? a.version}
+              />
 
               <div className="border border-border rounded-md p-4 space-y-4">
                 <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
@@ -744,7 +893,7 @@ export default function AgentDetailPage() {
                       Components
                     </span>
                     <span className="font-mono font-medium">
-                      {components.length}
+                      {displayComponentCount}
                     </span>
                   </div>
                   {versionModelName && (
@@ -815,6 +964,15 @@ export default function AgentDetailPage() {
                       <p key={c.id} className="text-sm text-muted-foreground">{c.username || c.email}</p>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {canDelete && (
+                <div className="border border-border rounded-md p-4 space-y-3">
+                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                    Danger zone
+                  </h3>
+                  <DeleteButton agentId={id} agentName={agentName} />
                 </div>
               )}
             </aside>

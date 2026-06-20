@@ -81,6 +81,29 @@ export interface AgentVersionsResponse {
 	page_size: number;
 }
 
+export interface AgentComponentReference {
+	component_type: string;
+	component_id: string;
+	name?: string;
+	component_name?: string;
+	mcp_name?: string;
+	resolved_version?: string;
+	status?: string;
+}
+
+export interface AgentVersionDetail extends AgentVersionSummary {
+	prompt: string;
+	model_name: string;
+	model_config_json?: Record<string, unknown>;
+	models_by_ide?: Record<string, unknown>;
+	external_mcps?: unknown[];
+	yaml_snapshot?: unknown;
+	ide_configs?: Record<string, unknown>;
+	required_ide_features?: string[];
+	inferred_supported_ides?: string[];
+	components: AgentComponentReference[];
+}
+
 // ── Component Versions ─────────────────────────────────────────────
 
 export interface ComponentVersionSummary {

@@ -35,6 +35,7 @@ import type {
 	LeaderboardWindow,
 	ValidationResult,
 	VersionSuggestions,
+	AgentVersionDetail,
 	AgentVersionsResponse,
 	ComponentVersionsResponse,
 	ComponentVersionDetail,
@@ -438,7 +439,7 @@ export const registry = {
 			`/agents/${agentId}/versions?page=${page}&page_size=${pageSize}`,
 		),
 	getVersion: (agentId: string, version: string) =>
-		get<unknown>(`/agents/${agentId}/versions/${version}`),
+		get<AgentVersionDetail>(`/agents/${agentId}/versions/${version}`),
 	createVersion: (agentId: string, body: unknown) =>
 		post<unknown>(`/agents/${agentId}/versions`, body),
 	getVersionDiff: (agentId: string, v1: string, v2: string) =>

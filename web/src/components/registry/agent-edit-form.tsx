@@ -43,7 +43,11 @@ import {
   useUpdateAgent,
   useVersionSuggestions,
 } from "@/hooks/use-api";
-import type { RegistryItem, ValidationResult } from "@/lib/types";
+import type {
+  AgentVersionDetail,
+  RegistryItem,
+  ValidationResult,
+} from "@/lib/types";
 import type { RegistryType } from "@/lib/api";
 import { SortableComponentList } from "@/components/builder/sortable-component-list";
 import { ValidationPanel } from "@/components/builder/validation-panel";
@@ -80,7 +84,7 @@ interface ComponentLink {
 export interface AgentEditFormProps {
   agentId: string;
   agent: AgentDetail;
-  versionDetail?: Record<string, unknown>;
+  versionDetail?: AgentVersionDetail;
   currentVersion: string;
   onSuccess?: () => void;
 }
@@ -204,9 +208,9 @@ export function AgentEditForm({
 }: AgentEditFormProps) {
   // Merge version-specific fields over base agent data
   const vd = versionDetail;
-  const initialDescription = (vd?.description as string) ?? agent.description ?? "";
-  const initialModelName = (vd?.model_name as string) ?? agent.model_name ?? "";
-  const initialPrompt = (vd?.prompt as string) ?? agent.prompt ?? "";
+  const initialDescription = vd?.description ?? agent.description ?? "";
+  const initialModelName = vd?.model_name ?? agent.model_name ?? "";
+  const initialPrompt = vd?.prompt ?? agent.prompt ?? "";
 
   // ── Form state ───────────────────────────────────────────────
   const [description, setDescription] = useState(initialDescription);
@@ -249,7 +253,9 @@ export function AgentEditForm({
         agent.name,
         currentVersion,
         versionDetail?.description,
+        versionDetail?.model_name,
         versionDetail?.prompt,
+        versionDetail?.components,
       ]),
     [agent.name, currentVersion, versionDetail],
   );
@@ -259,8 +265,15 @@ export function AgentEditForm({
     setDescription(initialDescription);
     setModelName(initialModelName);
 
-    // Load components from component_links / mcp_links
-    const links: ComponentLink[] = agent.component_links ?? agent.mcp_links ?? [];
+    const links: ComponentLink[] = versionDetail?.components
+      ? versionDetail.components.map((component) => ({
+          component_type: component.component_type,
+          component_id: component.component_id,
+          component_name: component.component_name,
+          mcp_name: component.mcp_name,
+          name: component.name,
+        }))
+      : (agent.component_links ?? agent.mcp_links ?? []);
     const grouped: Record<string, RegistryItem[]> = {
       mcps: [], skills: [], hooks: [], prompts: [], sandboxes: [],
     };
