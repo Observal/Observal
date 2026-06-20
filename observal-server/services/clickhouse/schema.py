@@ -622,9 +622,11 @@ async def _migrate_session_stats_partition():
             project_id          String,
             session_id          String,
             agent_id            LowCardinality(String) DEFAULT '',
+            agent_version       LowCardinality(String) DEFAULT '',
             user_id             String                 DEFAULT '',
             parent_session_id   String                 DEFAULT '',
             ide                 LowCardinality(String) DEFAULT '',
+            layer_hash          String                 DEFAULT '',
             first_event_time    SimpleAggregateFunction(min,     DateTime64(3, 'UTC')),
             last_event_time     SimpleAggregateFunction(max,     DateTime64(3, 'UTC')),
             event_count         SimpleAggregateFunction(sum,     Int64),
@@ -637,8 +639,9 @@ async def _migrate_session_stats_partition():
             cache_write_tokens  SimpleAggregateFunction(sum,     Int64),
             total_credits       SimpleAggregateFunction(max,     Float64),
             model               SimpleAggregateFunction(anyLast, String),
-            INDEX idx_ssa_user_id  user_id  TYPE bloom_filter(0.01) GRANULARITY 1,
-            INDEX idx_ssa_agent_id agent_id TYPE bloom_filter(0.01) GRANULARITY 1
+            INDEX idx_ssa_user_id       user_id       TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_ssa_agent_id      agent_id      TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_ssa_agent_version agent_version TYPE bloom_filter(0.01) GRANULARITY 1
         ) ENGINE = AggregatingMergeTree()
         PARTITION BY toYYYYMM(first_event_time)
         ORDER BY (project_id, session_id)""",
@@ -647,9 +650,11 @@ async def _migrate_session_stats_partition():
         SELECT
             project_id, session_id,
             coalesce(anyIf(agent_id, agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id,
+            coalesce(anyIf(agent_version, agent_version IS NOT NULL AND agent_version != ''), '') AS agent_version,
             coalesce(anyIf(user_id, user_id != ''), '') AS user_id,
             coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL AND parent_session_id != ''), '') AS parent_session_id,
             coalesce(anyIf(ide, ide != ''), '') AS ide,
+            coalesce(anyIf(layer_hash, layer_hash IS NOT NULL AND layer_hash != ''), '') AS layer_hash,
             minIf(timestamp, timestamp > '1971-01-01' AND timestamp < '2099-01-01') AS first_event_time,
             maxIf(timestamp, timestamp > '1971-01-01' AND timestamp < '2099-01-01') AS last_event_time,
             count() AS event_count,
@@ -668,9 +673,11 @@ async def _migrate_session_stats_partition():
         SELECT
             project_id, session_id,
             coalesce(anyIf(agent_id, agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id,
+            coalesce(anyIf(agent_version, agent_version IS NOT NULL AND agent_version != ''), '') AS agent_version,
             coalesce(anyIf(user_id, user_id != ''), '') AS user_id,
             coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL AND parent_session_id != ''), '') AS parent_session_id,
             coalesce(anyIf(ide, ide != ''), '') AS ide,
+            coalesce(anyIf(layer_hash, layer_hash IS NOT NULL AND layer_hash != ''), '') AS layer_hash,
             minIf(timestamp, timestamp > '1971-01-01' AND timestamp < '2099-01-01') AS first_event_time,
             maxIf(timestamp, timestamp > '1971-01-01' AND timestamp < '2099-01-01') AS last_event_time,
             count() AS event_count,

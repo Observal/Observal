@@ -21,6 +21,8 @@ from datetime import datetime
 
 import structlog
 
+from services.insight_version_filters import agent_version_filter
+
 from ._deps import get_query
 
 logger = structlog.get_logger(__name__)
@@ -439,10 +441,10 @@ async def fetch_session_stats(
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND last_event_time >= {t_start:String}
           AND last_event_time <= {t_end:String}
-          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+          AND __AGENT_VERSION_FILTER__
         GROUP BY session_id, total_credits, ide, layer_hash
         FORMAT JSON
-    """
+    """.replace("__AGENT_VERSION_FILTER__", agent_version_filter())
     params = {
         "param_agent_id": agent_id,
         "param_agent_name": agent_name,
@@ -476,10 +478,10 @@ async def fetch_session_stats(
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND timestamp >= {t_start:String}
           AND timestamp <= {t_end:String}
-          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+          AND __AGENT_VERSION_FILTER__
         GROUP BY session_id
         FORMAT JSON
-    """
+    """.replace("__AGENT_VERSION_FILTER__", agent_version_filter(nullable=True))
     try:
         r = await query(fallback_sql, params)
         r.raise_for_status()
@@ -521,11 +523,11 @@ async def fetch_all_session_transcripts(
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND last_event_time >= {t_start:String}
           AND last_event_time <= {t_end:String}
-          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+          AND __AGENT_VERSION_FILTER__
         GROUP BY session_id
         ORDER BY min(last_event_time)
         FORMAT JSON
-    """
+    """.replace("__AGENT_VERSION_FILTER__", agent_version_filter())
     params = {
         "param_agent_id": agent_id,
         "param_agent_name": agent_name,
@@ -546,10 +548,10 @@ async def fetch_all_session_transcripts(
             WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
               AND timestamp >= {t_start:String}
               AND timestamp <= {t_end:String}
-              AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+              AND __AGENT_VERSION_FILTER__
             ORDER BY session_id
             FORMAT JSON
-        """
+        """.replace("__AGENT_VERSION_FILTER__", agent_version_filter(nullable=True))
         try:
             r = await query(fallback_id_sql, params)
             r.raise_for_status()

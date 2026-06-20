@@ -19,6 +19,8 @@ import json
 
 import structlog
 
+from services.insight_version_filters import LEGACY_UNVERSIONED_AGENT_VERSION, agent_version_filter
+
 from ._deps import get_query
 
 logger = structlog.get_logger(__name__)
@@ -97,7 +99,11 @@ async def detect_layer_groups(
 
     sql = """
         SELECT
-            coalesce(agent_version, '') AS agent_version,
+            if(
+                agent_version = '' AND {agent_version:String} = '__LEGACY_VERSION__',
+                '__LEGACY_VERSION__',
+                agent_version
+            ) AS agent_version,
             layer_hash,
             count() AS sessions,
             uniq(user_id) AS users,
@@ -116,13 +122,21 @@ async def detect_layer_groups(
           AND last_event_time >= {t_start:String}
           AND last_event_time <= {t_end:String}
           AND layer_hash != ''
-          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
-        GROUP BY agent_version, layer_hash
+          AND __AGENT_VERSION_FILTER__
+        GROUP BY
+            if(
+                agent_version = '' AND {agent_version:String} = '__LEGACY_VERSION__',
+                '__LEGACY_VERSION__',
+                agent_version
+            ),
+            layer_hash
         HAVING sessions >= 3
         ORDER BY sessions DESC
         LIMIT 20
         FORMAT JSON
-    """
+    """.replace("__LEGACY_VERSION__", LEGACY_UNVERSIONED_AGENT_VERSION).replace(
+        "__AGENT_VERSION_FILTER__", agent_version_filter()
+    )
     params = {
         "param_agent_id": agent_id,
         "param_agent_name": agent_name,

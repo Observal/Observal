@@ -105,6 +105,18 @@ function MetricCard({
 	);
 }
 
+function hasText(value: unknown): value is string {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasPositiveNumber(value: unknown): boolean {
+	return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function formatInsightLabel(value: string): string {
+	return value.replace(/_/g, " ");
+}
+
 // ── At a Glance (executive summary) ──────────────────────────────────────
 
 function AtAGlance({ data }: { data: unknown }) {
@@ -890,17 +902,25 @@ function TokenSection({
 	// If we have structured V2 data
 	if (data && typeof data === "object" && !Array.isArray(data)) {
 		const obj = data as Record<string, unknown>;
-		const summary = obj.summary as string | undefined;
+		const summary = hasText(obj.summary) ? obj.summary : undefined;
 		const costMetrics = obj.metrics as
 			| {
-					total_cost_usd: number;
-					cost_per_session: number;
-					cache_efficiency_pct: number;
+					total_cost_usd?: number;
+					cost_per_session?: number;
+					cache_efficiency_pct?: number;
 			  }
 			| undefined;
 		const opportunities = obj.opportunities as
 			| { title: string; description: string; estimated_savings: string }[]
 			| undefined;
+		const hasCostMetrics = Boolean(
+			costMetrics &&
+				(hasPositiveNumber(costMetrics.total_cost_usd) ||
+					hasPositiveNumber(costMetrics.cost_per_session) ||
+					hasPositiveNumber(costMetrics.cache_efficiency_pct))
+		);
+		const hasOpportunities = Boolean(opportunities && opportunities.length > 0);
+		if (!summary && !hasCostMetrics && !hasOpportunities) return null;
 
 		return (
 			<div className="rounded-lg border border-border bg-card">
@@ -913,23 +933,23 @@ function TokenSection({
 				<div className="px-5 py-4 space-y-4">
 					{summary && <p className="text-sm text-foreground/80">{summary}</p>}
 
-					{costMetrics && (
+					{hasCostMetrics && costMetrics && (
 						<div className="grid grid-cols-3 gap-3">
 							<div className="text-center p-2 rounded bg-muted/30">
 								<div className="text-lg font-bold">
-									${costMetrics.total_cost_usd?.toFixed(4)}
+									${Number(costMetrics.total_cost_usd || 0).toFixed(4)}
 								</div>
 								<div className="text-xs text-muted-foreground">total cost</div>
 							</div>
 							<div className="text-center p-2 rounded bg-muted/30">
 								<div className="text-lg font-bold">
-									${costMetrics.cost_per_session?.toFixed(4)}
+									${Number(costMetrics.cost_per_session || 0).toFixed(4)}
 								</div>
 								<div className="text-xs text-muted-foreground">per session</div>
 							</div>
 							<div className="text-center p-2 rounded bg-muted/30">
 								<div className="text-lg font-bold">
-									{costMetrics.cache_efficiency_pct?.toFixed(0)}%
+									{Number(costMetrics.cache_efficiency_pct || 0).toFixed(0)}%
 								</div>
 								<div className="text-xs text-muted-foreground">
 									cache efficiency
@@ -1103,6 +1123,85 @@ function UserExperienceSection({ data }: { data: unknown }) {
 								</div>
 							</div>
 						))}
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
+// ── Version Comparison Section ──────────────────────────────────────────
+
+function VersionComparisonSection({ data }: { data: unknown }) {
+	if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+
+	const obj = data as Record<string, unknown>;
+	if (obj.has_comparison === false) return null;
+
+	const summary = hasText(obj.summary) ? obj.summary : undefined;
+	const confidence = hasText(obj.confidence) ? obj.confidence : undefined;
+	const changes = (obj.changes as
+		| {
+				metric?: string;
+				direction?: string;
+				prior_value?: string;
+				current_value?: string;
+				attribution?: string;
+				risk?: string;
+				evidence?: string;
+		  }[]
+		| undefined) ?? [];
+
+	if (!summary && !confidence && changes.length === 0) return null;
+
+	return (
+		<div className="rounded-lg border border-border bg-card">
+			<div className="flex items-center gap-2 px-5 py-3 border-b border-border">
+				<TrendingUp className="h-4 w-4 text-primary-accent" />
+				<h3 className="text-sm font-semibold">Version Comparison</h3>
+			</div>
+			<div className="px-5 py-4 space-y-4">
+				{summary && <p className="text-sm text-foreground/80">{summary}</p>}
+				{confidence && (
+					<div className="text-xs text-muted-foreground">
+						Confidence: <span className="font-medium">{confidence}</span>
+					</div>
+				)}
+				{changes.length > 0 && (
+					<div className="space-y-3">
+						{changes.slice(0, 8).map((change, i) => {
+							const direction = change.direction || "stable";
+							const directionClass =
+								direction === "improved"
+									? "text-success"
+									: direction === "degraded"
+										? "text-destructive"
+										: "text-muted-foreground";
+							return (
+								<div key={i} className="rounded-md border border-border bg-muted/10 p-3">
+									<div className="flex flex-wrap items-center gap-2 text-sm">
+										<span className="font-medium">
+											{formatInsightLabel(change.metric || "change")}
+										</span>
+										<span className={directionClass}>{direction}</span>
+									</div>
+									{(change.prior_value || change.current_value) && (
+										<div className="mt-1 text-sm text-muted-foreground">
+											{change.prior_value || "?"} → {change.current_value || "?"}
+										</div>
+									)}
+									{(change.attribution || change.risk) && (
+										<div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+											{change.attribution && <span>Attribution: {change.attribution}</span>}
+											{change.risk && <span>Risk: {change.risk}</span>}
+										</div>
+									)}
+									{change.evidence && (
+										<p className="mt-2 text-sm text-foreground/70">{change.evidence}</p>
+									)}
+								</div>
+							);
+						})}
 					</div>
 				)}
 			</div>
@@ -1540,6 +1639,7 @@ function ReportContent({ report }: { report: InsightReport }) {
 	const sessionsWithTokens = Number(rich?.sessions_with_tokens) || 0;
 	const sessionsWithCredits = Number(rich?.sessions_with_credits) || 0;
 	const toolCalls = Number(metrics?.errors?.total_tool_calls) || 0;
+	const showTokenSection = sessionsWithTokens > 0 || totalCost > 0;
 	const topTools = (rich?.top_tools || []) as [string, number][];
 	const topLanguages = (rich?.top_languages || []) as [string, number][];
 	const toolErrorCats = (rich?.tool_error_categories || {}) as Record<string, number>;
@@ -1675,8 +1775,10 @@ function ReportContent({ report }: { report: InsightReport }) {
 			{/* On the Horizon */}
 			<OnTheHorizon data={narrative?.on_the_horizon} />
 
-			{/* Cost & Token Efficiency: show when any billing data exists (tokens or credits) */}
-			{(sessionsWithTokens > 0 || sessionsWithCredits > 0 || totalCost > 0) && <TokenSection data={narrative?.usage_cost_analysis || narrative?.token_optimization} metrics={metrics} />}
+			{/* Cost and token efficiency needs actual token or pay as you go cost data. */}
+			{showTokenSection && <TokenSection data={narrative?.usage_cost_analysis || narrative?.token_optimization} metrics={metrics} />}
+
+			<VersionComparisonSection data={narrative?.version_comparison} />
 
 			{/* Regression Detection */}
 			<RegressionSection
