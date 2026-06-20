@@ -183,7 +183,7 @@ export default function ComponentsPage() {
 
   const { data: myItems } = useMyComponents(activeType);
   const myDrafts = useMemo(
-    () => (myItems ?? []).filter((i) => i.status === "draft" || i.status === "pending" || i.status === "rejected"),
+    () => (myItems ?? []).filter((i) => ["draft", "pending", "rejected", "archived"].includes(i.status ?? "")),
     [myItems],
   );
 

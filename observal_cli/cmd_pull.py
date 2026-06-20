@@ -789,7 +789,7 @@ def register_pull(app: typer.Typer):
             style = "dim" if dry_run else "green"
             rprint(f"  [{style}]{status}[/{style}]  {path}")
 
-        warnings_list = snippet.get("_warnings") or []
+        warnings_list = list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
         if warnings_list:
             rprint("")
             for w in warnings_list:

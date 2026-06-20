@@ -129,6 +129,34 @@ export function useComponentDelete(type: RegistryType) {
   });
 }
 
+export function useComponentArchive(type: RegistryType) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => registry.archiveComponent(type, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["registry", type] });
+      toast.success("Component archived");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to archive component");
+    },
+  });
+}
+
+export function useComponentUnarchive(type: RegistryType) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => registry.unarchiveComponent(type, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["registry", type] });
+      toast.success("Component restored");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to restore component");
+    },
+  });
+}
+
 // ── Component Versions ─────────────────────────────────────────────
 
 export function useComponentVersions(type: RegistryType | undefined, listingId: string | undefined) {

@@ -25,6 +25,7 @@ from api.deps import (
     require_role,
     resolve_listing,
 )
+from api.routes._component_archive import archive_listing, archived_install_warning, unarchive_listing
 from api.routes.component_versions import create_version_router
 from api.sanitize import escape_like
 from database import async_session
@@ -263,8 +264,17 @@ async def install_mcp(
     listing = await resolve_listing(McpListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(McpListing, listing_id, db)
-        if not listing or get_effective_component_permission(listing, current_user) != "owner":
+        if not listing or not check_listing_visibility(listing, current_user):
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
+        if (
+            listing.status != ListingStatus.archived
+            and get_effective_component_permission(listing, current_user) != "owner"
+        ):
+            raise HTTPException(status_code=404, detail="Listing not found or not approved")
+
+    warnings = []
+    if listing.status == ListingStatus.archived:
+        warnings.append(archived_install_warning("MCP", listing.name))
 
     db.add(McpDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     latest_version = getattr(listing, "latest_version", None)
@@ -282,7 +292,7 @@ async def install_mcp(
         env_values=req.env_values,
         header_values=req.header_values,
     )
-    return McpInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=snippet)
+    return McpInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=snippet, warnings=warnings)
 
 
 @router.post("/draft", response_model=McpListingResponse)
@@ -464,6 +474,24 @@ async def submit_mcp_draft(
     await commit_or_name_conflict(db, "listing")
     await db.refresh(listing)
     return McpListingResponse.model_validate(listing)
+
+
+@router.patch("/{listing_id}/archive")
+async def archive_mcp(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    return await archive_listing(McpListing, listing_id, db, current_user, "listing")
+
+
+@router.patch("/{listing_id}/unarchive")
+async def unarchive_mcp(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    return await unarchive_listing(McpListing, listing_id, db, current_user, "listing")
 
 
 @router.delete("/{listing_id}")

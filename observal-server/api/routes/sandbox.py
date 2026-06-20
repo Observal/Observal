@@ -24,6 +24,7 @@ from api.deps import (
     require_role,
     resolve_listing,
 )
+from api.routes._component_archive import archive_listing, unarchive_listing
 from api.routes.component_versions import create_version_router
 from api.sanitize import escape_like
 from models.mcp import ListingStatus
@@ -324,6 +325,24 @@ async def submit_sandbox_draft(
     await commit_or_name_conflict(db, "sandbox")
     await db.refresh(listing)
     return SandboxListingResponse.model_validate(listing)
+
+
+@router.patch("/{listing_id}/archive")
+async def archive_sandbox(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    return await archive_listing(SandboxListing, listing_id, db, current_user, "sandbox")
+
+
+@router.patch("/{listing_id}/unarchive")
+async def unarchive_sandbox(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    return await unarchive_listing(SandboxListing, listing_id, db, current_user, "sandbox")
 
 
 @router.delete("/{listing_id}")

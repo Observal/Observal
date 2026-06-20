@@ -8,7 +8,7 @@
 
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
-import { Star, ArrowLeft, History, Loader2, ArrowDownToLine } from "lucide-react";
+import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore } from "lucide-react";
 import {
   useRegistryItem,
   useFeedback,
@@ -17,6 +17,8 @@ import {
   useRegistryMetrics,
   useComponentVersions,
   useComponentVersionDetail,
+  useComponentArchive,
+  useComponentUnarchive,
 } from "@/hooks/use-api";
 import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
@@ -29,6 +31,7 @@ import { ComponentEditForm } from "@/components/registry/component-edit-form";
 import { ComponentInstallCommand } from "@/components/registry/component-install-command";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layouts/page-header";
@@ -419,11 +422,80 @@ export default function ComponentDetailPage() {
                   </div>
                 </div>
               )}
+
+              {canEdit && (
+                <div className="border border-border rounded-md p-4 space-y-3">
+                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                    Danger zone
+                  </h3>
+                  <ComponentArchiveButton type={type} item={item} onSuccess={() => refetch()} />
+                </div>
+              )}
             </aside>
             </div>
           </div>
         )}
       </div>
+    </>
+  );
+}
+
+function ComponentArchiveButton({
+  type,
+  item,
+  onSuccess,
+}: {
+  type: RegistryType;
+  item: RegistryItem;
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const archiveMutation = useComponentArchive(type);
+  const unarchiveMutation = useComponentUnarchive(type);
+  const isArchived = item.status === "archived";
+  const isBusy = archiveMutation.isPending || unarchiveMutation.isPending;
+
+  function submit() {
+    const mutation = isArchived ? unarchiveMutation : archiveMutation;
+    mutation.mutate(item.id, {
+      onSuccess: () => {
+        setOpen(false);
+        onSuccess();
+      },
+    });
+  }
+
+  return (
+    <>
+      <Button
+        variant={isArchived ? "outline" : "destructive"}
+        size="sm"
+        className="h-8"
+        onClick={() => setOpen(true)}
+        disabled={isBusy}
+      >
+        {isArchived ? <ArchiveRestore className="mr-1 h-3.5 w-3.5" /> : <Archive className="mr-1 h-3.5 w-3.5" />}
+        {isArchived ? "Restore" : "Archive"}
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isArchived ? `Restore ${item.name}?` : `Archive ${item.name}?`}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {isArchived
+              ? "This makes the component discoverable again and removes archived install warnings."
+              : "Archived components stop appearing in registry lists and insight suggestions. Direct installs and agent pulls still work, but users will see a warning."}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant={isArchived ? "default" : "destructive"} onClick={submit} disabled={isBusy}>
+              {isBusy ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Saving...</> : isArchived ? "Restore" : "Archive"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

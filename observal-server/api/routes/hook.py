@@ -25,6 +25,7 @@ from api.deps import (
     require_role,
     resolve_listing,
 )
+from api.routes._component_archive import archive_listing, archived_install_warning, unarchive_listing
 from api.routes.component_versions import create_version_router
 from api.sanitize import escape_like
 from models.hook import HookDownload, HookListing, HookVersion
@@ -180,8 +181,17 @@ async def install_hook(
     listing = await resolve_listing(HookListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(HookListing, listing_id, db)
-        if not listing or get_effective_component_permission(listing, current_user) != "owner":
+        if not listing or not check_listing_visibility(listing, current_user):
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
+        if (
+            listing.status != ListingStatus.archived
+            and get_effective_component_permission(listing, current_user) != "owner"
+        ):
+            raise HTTPException(status_code=404, detail="Listing not found or not approved")
+
+    warnings = []
+    if listing.status == ListingStatus.archived:
+        warnings.append(archived_install_warning("hook", listing.name))
 
     db.add(HookDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
     latest_version = getattr(listing, "latest_version", None)
@@ -201,6 +211,7 @@ async def install_hook(
         requirements=result.get("requirements", []),
         source_fetch=result.get("source_fetch"),
         notes=result.get("notes", []),
+        warnings=warnings,
     )
 
 
@@ -378,6 +389,24 @@ async def submit_hook_draft(
     await commit_or_name_conflict(db, "hook")
     await db.refresh(listing)
     return HookListingResponse.model_validate(listing)
+
+
+@router.patch("/{listing_id}/archive")
+async def archive_hook(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    return await archive_listing(HookListing, listing_id, db, current_user, "hook")
+
+
+@router.patch("/{listing_id}/unarchive")
+async def unarchive_hook(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    return await unarchive_listing(HookListing, listing_id, db, current_user, "hook")
 
 
 @router.delete("/{listing_id}")
