@@ -145,7 +145,7 @@ skips = [
 dev = [
     "fastapi>=0.135.3",
     "pydantic>=2.12.5",
-    "pydantic-settings>=2.13.1",
+    "pydantic-settings>=2.14.2",
     "sqlalchemy>=2.0.49",
     "ruff==0.15.15",
     "pytest>=9.0.3",
