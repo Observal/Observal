@@ -1,7 +1,7 @@
 {
   "name": "observal",
   "private": true,
-  "packageManager": "pnpm@10.34.1",
+  "packageManager": "pnpm@10.34.4",
   "scripts": {
     "e2e": "pnpm --filter web e2e",
     "e2e:list": "pnpm --filter web exec playwright test --list"
