@@ -26,6 +26,7 @@ dependencies = [
     "asyncpg>=0.29.0",
     "packaging>=21.0",
     "loguru>=0.7.0",
+    "observal-shared",
 ]
 
 keywords = ["mcp", "model-context-protocol", "registry", "cli", "agents", "observability"]
@@ -69,6 +70,9 @@ build-backend = "hatchling.build"
 packages = ["observal_cli"]
 
 # ── Ruff ─────────────────────────────────────────────────
+
+[tool.uv.sources]
+observal-shared = { path = "packages/observal-shared" }
 
 [tool.ruff]
 target-version = "py311"

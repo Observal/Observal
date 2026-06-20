@@ -231,7 +231,45 @@ SENSITIVE_KEYS: set[str] = {
     "saml.sp_key_encryption_password",
 }
 
+SETTING_FEATURES: dict[str, str] = {
+    "deployment.sso_only": "saml",
+}
+
+
 # Section definitions for the settings schema endpoint
+def _setting_label(key: str) -> str:
+    label = key.rsplit(".", 1)[-1].replace("_", " ").title()
+    return (
+        label.replace("Api", "API")
+        .replace("Url", "URL")
+        .replace("Sso", "SSO")
+        .replace("Jwt", "JWT")
+        .replace("Idp", "IdP")
+        .replace("Sp ", "SP ")
+        .replace("Db ", "DB ")
+        .replace("Ttl", "TTL")
+    )
+
+
+def settings_schema() -> list[dict[str, Any]]:
+    """Return admin settings metadata for the web UI."""
+    sections = []
+    for section in SECTIONS:
+        items = []
+        for key in section["keys"]:
+            items.append(
+                {
+                    "key": key,
+                    "label": _setting_label(key),
+                    "subtitle": "",
+                    "default": DEFAULTS.get(key, ""),
+                    "requires_feature": SETTING_FEATURES.get(key) or section.get("requires_feature"),
+                }
+            )
+        sections.append({**section, "settings": items})
+    return sections
+
+
 SECTIONS: list[dict[str, Any]] = [
     {
         "id": "insights",
@@ -270,6 +308,7 @@ SECTIONS: list[dict[str, Any]] = [
         "description": "SAML identity provider configuration. Requires 'saml' license feature.",
         "icon": "key",
         "danger": True,
+        "requires_feature": "saml",
         "keys": [k for k in DEFAULTS if k.startswith("saml.")],
     },
     {

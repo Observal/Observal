@@ -25,6 +25,7 @@ import type {
 	IdeUsageData,
 	AdminUser,
 	AdminSetting,
+	AdminSettingSection,
 	Session,
 	SessionsSummary,
 	SessionErrorEvent,
@@ -588,6 +589,7 @@ export const feedback = {
 export const admin = {
 	settings: () =>
 		get<AdminSetting[] | Record<string, string>>("/admin/settings"),
+	settingsSchema: () => get<AdminSettingSection[]>("/admin/settings/schema"),
 	updateSetting: (key: string, body: unknown) =>
 		put<unknown>(`/admin/settings/${key}`, body),
 	deleteSetting: (key: string) => del(`/admin/settings/${key}`),

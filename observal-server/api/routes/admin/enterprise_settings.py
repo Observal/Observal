@@ -130,6 +130,14 @@ async def system_warnings(
     return warnings
 
 
+@router.get("/settings/schema")
+async def settings_schema(
+    _current_user: User = Depends(require_role(UserRole.admin)),
+):
+    optic.debug("admin settings schema")
+    return ds.settings_schema()
+
+
 @router.get("/settings", response_model=list[EnterpriseConfigResponse])
 async def list_settings(
     db: AsyncSession = Depends(get_db),

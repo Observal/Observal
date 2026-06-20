@@ -9,10 +9,9 @@
 Covers Codex CLI, Gemini CLI, GitHub Copilot (VS Code), and OpenCode across:
 
 1. Server-side config generation (agent_config_generator)
-2. CLI scan detection (cmd_scan._parse_project_mcp_servers, _scan_project_dir)
-3. CLI pull command (cmd_pull._dict_to_toml, _write_file, full pull flow)
-4. Constants (VALID_IDES, IDE_FEATURE_MATRIX)
-5. IDE compatibility warnings
+2. CLI pull command (cmd_pull._dict_to_toml, _write_file, full pull flow)
+3. Constants (VALID_IDES, IDE_FEATURE_MATRIX)
+4. IDE compatibility warnings
 """
 
 from __future__ import annotations
@@ -25,12 +24,6 @@ import pytest
 from typer.testing import CliRunner
 
 from observal_cli.cmd_pull import _dict_to_toml, _write_file
-from observal_cli.cmd_scan import (
-    _IDE_PROJECT_CONFIGS,
-    _parse_project_mcp_servers,
-    _scan_copilot_cli_home,
-    _scan_project_dir,
-)
 from observal_cli.constants import IDE_FEATURE_MATRIX, VALID_IDES
 from observal_cli.main import app as cli_app
 from services.ide import generate_agent_config
@@ -135,18 +128,6 @@ class TestConstants:
     def test_copilot_cli_feature_matrix(self):
         assert "copilot-cli" in IDE_FEATURE_MATRIX
         assert IDE_FEATURE_MATRIX["copilot-cli"] == {"mcp_servers", "hooks", "skills"}
-
-    def test_ide_project_configs_include_all_new_ides(self):
-        assert "codex" in _IDE_PROJECT_CONFIGS
-        assert "copilot" in _IDE_PROJECT_CONFIGS
-        assert "copilot-cli" in _IDE_PROJECT_CONFIGS
-        assert "opencode" in _IDE_PROJECT_CONFIGS
-
-    def test_ide_project_config_paths(self):
-        assert _IDE_PROJECT_CONFIGS["codex"] == ".codex/config.toml"
-        assert _IDE_PROJECT_CONFIGS["copilot"] == ".vscode/mcp.json"
-        assert _IDE_PROJECT_CONFIGS["copilot-cli"] == ".mcp.json"
-        assert _IDE_PROJECT_CONFIGS["opencode"] == "opencode.json"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -490,128 +471,6 @@ class TestIdeCompatibilityWarnings:
         warnings = _check_ide_compatibility(agent, "codex")
         # Codex now supports skills
         assert len(warnings) == 0
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 4. SCAN — _parse_project_mcp_servers
-# ═══════════════════════════════════════════════════════════════════
-
-
-class TestParseProjectMcpServers:
-    def test_codex_extracts_nested_servers(self):
-        config = {"mcp": {"servers": {"srv-a": {"command": "npx"}, "srv-b": {"command": "node"}}}}
-        result = _parse_project_mcp_servers(config, "codex")
-        assert "srv-a" in result
-        assert "srv-b" in result
-        assert result["srv-a"]["command"] == "npx"
-
-    def test_codex_empty_servers(self):
-        config = {"mcp": {"servers": {}}}
-        result = _parse_project_mcp_servers(config, "codex")
-        assert result == {}
-
-    def test_codex_missing_servers_key(self):
-        config = {"mcp": {}}
-        result = _parse_project_mcp_servers(config, "codex")
-        assert result == {}
-
-    def test_copilot_extracts_servers_key(self):
-        config = {"servers": {"my-srv": {"type": "stdio", "command": "npx", "args": ["-y", "my-srv"]}}}
-        result = _parse_project_mcp_servers(config, "copilot")
-        assert "my-srv" in result
-
-    def test_copilot_falls_back_to_mcpservers(self):
-        config = {"mcpServers": {"my-srv": {"command": "npx"}}}
-        result = _parse_project_mcp_servers(config, "copilot")
-        assert "my-srv" in result
-
-    def test_copilot_prefers_servers_over_mcpservers(self):
-        config = {
-            "servers": {"primary": {"command": "node"}},
-            "mcpServers": {"secondary": {"command": "python"}},
-        }
-        result = _parse_project_mcp_servers(config, "copilot")
-        assert "primary" in result
-        assert "secondary" not in result
-
-    def test_opencode_extracts_mcp_key(self):
-        config = {"mcp": {"my-srv": {"type": "local", "command": ["npx", "-y", "my-srv"]}}}
-        result = _parse_project_mcp_servers(config, "opencode")
-        assert "my-srv" in result
-
-    def test_cursor_extracts_mcpservers(self):
-        config = {"mcpServers": {"my-srv": {"command": "npx"}}}
-        result = _parse_project_mcp_servers(config, "cursor")
-        assert "my-srv" in result
-
-    def test_unknown_ide_falls_back_to_mcpservers(self):
-        config = {"mcpServers": {"my-srv": {"command": "npx"}}}
-        result = _parse_project_mcp_servers(config, "unknown-ide")
-        assert "my-srv" in result
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 5. SCAN — _scan_project_dir
-# ═══════════════════════════════════════════════════════════════════
-
-
-class TestScanProjectDir:
-    def test_detects_codex_toml(self, tmp_path):
-        codex_dir = tmp_path / ".codex"
-        codex_dir.mkdir()
-        config_file = codex_dir / "config.toml"
-        config_file.write_text('[mcp.servers.my-toml-srv]\ncommand = "echo"\nargs = ["hello"]\n')
-        entries = _scan_project_dir(tmp_path, None)
-        ide_names = [(e[0], e[1]) for e in entries]
-        assert any(ide == "codex" for ide, _ in ide_names)
-
-    def test_detects_copilot_mcp_json(self, tmp_path):
-        vscode_dir = tmp_path / ".vscode"
-        vscode_dir.mkdir()
-        mcp_file = vscode_dir / "mcp.json"
-        mcp_file.write_text(json.dumps({"servers": {"vscode-srv": {"type": "stdio", "command": "npx"}}}))
-        entries = _scan_project_dir(tmp_path, None)
-        ide_names = [(e[0], e[1]) for e in entries]
-        assert any(ide == "copilot" for ide, _ in ide_names)
-
-    def test_detects_opencode_config(self, tmp_path):
-        config_file = tmp_path / "opencode.json"
-        config_file.write_text(json.dumps({"mcp": {"my-srv": {"type": "local", "command": ["npx"]}}}))
-        entries = _scan_project_dir(tmp_path, None)
-        ide_names = [(e[0], e[1]) for e in entries]
-        assert any(ide == "opencode" for ide, _ in ide_names)
-
-    def test_ide_filter(self, tmp_path):
-        vscode_dir = tmp_path / ".vscode"
-        vscode_dir.mkdir()
-        mcp_file = vscode_dir / "mcp.json"
-        mcp_file.write_text(json.dumps({"servers": {"vscode-srv": {"type": "stdio", "command": "npx"}}}))
-        entries = _scan_project_dir(tmp_path, "copilot")
-        ide_names = [e[0] for e in entries]
-        assert "copilot" in ide_names
-
-    def test_includes_already_shimmed_with_flag(self, tmp_path):
-        vscode_dir = tmp_path / ".vscode"
-        vscode_dir.mkdir()
-        mcp_file = vscode_dir / "mcp.json"
-        mcp_file.write_text(
-            json.dumps(
-                {
-                    "servers": {
-                        "shimmed-srv": {
-                            "type": "stdio",
-                            "command": "observal-shim",
-                            "args": ["--mcp-id", "test"],
-                        }
-                    }
-                }
-            )
-        )
-        entries = _scan_project_dir(tmp_path, "copilot")
-        srv_names = [e[1] for e in entries]
-        assert "shimmed-srv" in srv_names
-        shimmed_entry = next(e for e in entries if e[1] == "shimmed-srv")
-        assert shimmed_entry[4] is True  # shimmed flag
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1069,57 +928,6 @@ class TestConfigGeneratorCopilotCli:
         )
         server = cfg["mcpServers"]["my-mcp"]
         assert server["env"]["API_KEY"] == "secret"
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 10d. SCAN — Copilot CLI parse and scan
-# ═══════════════════════════════════════════════════════════════════
-
-
-class TestParseCopilotCliMcpServers:
-    def test_copilot_cli_extracts_mcpservers(self):
-        config = {"mcpServers": {"my-srv": {"type": "stdio", "command": "npx", "args": ["-y", "my-srv"]}}}
-        result = _parse_project_mcp_servers(config, "copilot-cli")
-        assert "my-srv" in result
-
-    def test_copilot_cli_ignores_servers_key(self):
-        config = {"servers": {"my-srv": {"command": "npx"}}, "mcpServers": {"real-srv": {"command": "node"}}}
-        result = _parse_project_mcp_servers(config, "copilot-cli")
-        assert "real-srv" in result
-        assert "my-srv" not in result
-
-
-class TestScanCopilotCliHome:
-    def test_scan_copilot_cli_home_finds_mcp_servers(self, tmp_path):
-
-        copilot_dir = tmp_path / ".copilot"
-        copilot_dir.mkdir()
-        mcp_config = copilot_dir / "mcp-config.json"
-        mcp_config.write_text(
-            json.dumps({"mcpServers": {"my-server": {"type": "stdio", "command": "npx", "args": ["-y", "srv"]}}})
-        )
-        mcps, skills, hooks, agents = _scan_copilot_cli_home(copilot_dir)
-        assert len(mcps) == 1
-        assert mcps[0].name == "my-server"
-        assert mcps[0].source == "copilot-cli:global"
-
-    def test_scan_copilot_cli_home_empty_dir(self, tmp_path):
-
-        copilot_dir = tmp_path / ".copilot"
-        copilot_dir.mkdir()
-        mcps, skills, hooks, agents = _scan_copilot_cli_home(copilot_dir)
-        assert len(mcps) == 0
-
-    def test_scan_copilot_cli_home_no_skills_or_agents(self, tmp_path):
-
-        copilot_dir = tmp_path / ".copilot"
-        copilot_dir.mkdir()
-        mcp_config = copilot_dir / "mcp-config.json"
-        mcp_config.write_text(json.dumps({"mcpServers": {"srv": {"command": "echo"}}}))
-        mcps, skills, hooks, agents = _scan_copilot_cli_home(copilot_dir)
-        assert len(skills) == 0
-        assert len(hooks) == 0
-        assert len(agents) == 0
 
 
 # ═══════════════════════════════════════════════════════════════════

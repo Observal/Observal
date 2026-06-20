@@ -115,6 +115,10 @@ export function useAdminSettings() {
   return useQuery({ queryKey: ["admin", "settings"], queryFn: admin.settings });
 }
 
+export function useAdminSettingsSchema() {
+  return useQuery({ queryKey: ["admin", "settings", "schema"], queryFn: admin.settingsSchema });
+}
+
 // ── Audit & Security ────────────────────────────────────────────────
 
 export function useAuditLog(filters?: Record<string, string>) {

@@ -135,10 +135,6 @@ class NotSupportedError(Exception):
         super().__init__(f"{ide_name} does not support {method_name}")
 
 
-# Keep backward compat alias
-NotSupported = NotSupportedError
-
-
 # ── Protocol ──────────────────────────────────────────────────────
 
 

@@ -12,8 +12,6 @@
 import { Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearch } from "@tanstack/react-router";
 import {
-  Search,
-  Plus,
   Trash2,
   Loader2,
   ArrowRight,
@@ -43,16 +41,8 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/layouts/page-header";
-import { useRegistryList, useRegistryItem, useAgentValidation, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
+import { useRegistryItem, useAgentValidation, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
@@ -65,260 +55,9 @@ import { SubmitComponentDialog } from "@/components/registry/submit-component-di
 import { ValidationPanel } from "@/components/builder/validation-panel";
 import { PreviewPanel } from "@/components/builder/preview-panel";
 import { ModelPicker } from "@/components/builder/model-picker";
-
-const COMPONENT_TYPES: { value: RegistryType; label: string; singular: string }[] = [
-  { value: "mcps", label: "MCPs", singular: "MCP" },
-  { value: "skills", label: "Skills", singular: "Skill" },
-  { value: "hooks", label: "Hooks", singular: "Hook" },
-  { value: "prompts", label: "Prompts", singular: "Prompt" },
-  { value: "sandboxes", label: "Sandboxes", singular: "Sandbox" },
-];
-
-
-
-
-// ── Version bump utility ──────────────────────────────────────────
-
-type BumpType = "patch" | "minor" | "major";
-
-function bumpVersion(current: string, type: BumpType): string {
-  const parts = current.split(".").map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return current;
-  if (type === "major") return `${parts[0] + 1}.0.0`;
-  if (type === "minor") return `${parts[0]}.${parts[1] + 1}.0`;
-  return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
-}
-
-// ── Version Bump Dialog ───────────────────────────────────────────
-
-function VersionBumpDialog({
-  open,
-  onOpenChange,
-  currentVersion,
-  onConfirm,
-  publishing,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  currentVersion: string;
-  onConfirm: (version: string) => void;
-  publishing: boolean;
-}) {
-  const [selection, setSelection] = useState<BumpType | "keep">("patch");
-
-  const previewVersion = useMemo(() => {
-    if (selection === "keep") return currentVersion;
-    return bumpVersion(currentVersion, selection);
-  }, [currentVersion, selection]);
-
-  const options: { value: BumpType | "keep"; label: string; description: string }[] = useMemo(() => [
-    {
-      value: "patch",
-      label: "Patch",
-      description: `${currentVersion} \u2192 ${bumpVersion(currentVersion, "patch")}`,
-    },
-    {
-      value: "minor",
-      label: "Minor",
-      description: `${currentVersion} \u2192 ${bumpVersion(currentVersion, "minor")}`,
-    },
-    {
-      value: "major",
-      label: "Major",
-      description: `${currentVersion} \u2192 ${bumpVersion(currentVersion, "major")}`,
-    },
-    {
-      value: "keep",
-      label: "Keep current",
-      description: currentVersion,
-    },
-  ], [currentVersion]);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Version Bump</DialogTitle>
-          <DialogDescription>
-            Choose how to bump the version for this update.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-2 py-2">
-          {options.map((opt) => (
-            <label
-              key={opt.value}
-              className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition-colors ${
-                selection === opt.value
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:bg-muted/50"
-              }`}
-            >
-              <input
-                type="radio"
-                name="version-bump"
-                value={opt.value}
-                checked={selection === opt.value}
-                onChange={() => setSelection(opt.value)}
-                className="h-4 w-4 accent-primary"
-              />
-              <span className="flex-1">
-                <span className="block text-sm font-medium">{opt.label}</span>
-                <span className="block text-xs text-muted-foreground font-mono">
-                  {opt.description}
-                </span>
-              </span>
-            </label>
-          ))}
-        </div>
-
-        <div className="rounded-md bg-muted/50 px-4 py-2.5 text-center">
-          <span className="text-xs text-muted-foreground">New version: </span>
-          <span className="text-sm font-semibold font-mono">{previewVersion}</span>
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={publishing}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => onConfirm(previewVersion)}
-            disabled={publishing}
-          >
-            {publishing ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowRight className="mr-2 h-4 w-4" />
-            )}
-            Update Agent
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── Component Picker ──────────────────────────────────────────────
-
-function ComponentPicker({
-  type,
-  label,
-  selected,
-  onToggle,
-  onCreateNew,
-}: {
-  type: RegistryType;
-  label: string;
-  selected: Set<string>;
-  onToggle: (item: RegistryItem) => void;
-  onCreateNew: () => void;
-}) {
-  const { data: items, isLoading } = useRegistryList(type);
-  const [search, setSearch] = useState("");
-
-  const filtered = useMemo(() => {
-    if (!items) return [];
-    if (!search) return items;
-    const q = search.toLowerCase();
-    return items.filter(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        (item.description?.toLowerCase().includes(q) ?? false),
-    );
-  }, [items, search]);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={`Search ${label}...`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-9 text-sm"
-          />
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0 text-xs"
-          onClick={onCreateNew}
-        >
-          <Plus className="mr-1 h-3 w-3" />
-          Create new
-        </Button>
-      </div>
-      {isLoading ? (
-        <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Loading...
-        </div>
-      ) : filtered.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">
-          {items?.length === 0
-            ? `No ${type} in registry yet`
-            : "No matches found"}
-        </p>
-      ) : (
-        <div className="max-h-48 space-y-1 overflow-y-auto">
-          {filtered.map((item) => {
-            const isSelected = selected.has(item.id);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onToggle(item)}
-                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                  isSelected
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-muted/50"
-                }`}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">
-                    {item.name}
-                  </span>
-                  {item.description && (
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {item.description}
-                    </span>
-                  )}
-                </span>
-                {isSelected && (
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    Added
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const TYPE_MAP: Record<string, string> = {
-  mcps: "mcp",
-  skills: "skill",
-  hooks: "hook",
-  prompts: "prompt",
-  sandboxes: "sandbox",
-};
-
-const REVERSE_TYPE_MAP: Record<string, string> = {
-  mcp: "mcps",
-  skill: "skills",
-  hook: "hooks",
-  prompt: "prompts",
-  sandbox: "sandboxes",
-};
+import { COMPONENT_TYPES, REVERSE_TYPE_MAP, TYPE_MAP } from "@/components/registry/agent-component-constants";
+import { ComponentPicker } from "@/components/registry/component-picker";
+import { VersionBumpDialog } from "@/components/registry/version-bump-dialog";
 
 const AGENT_NAME_REGEX = /^[a-z0-9][a-z0-9_-]*$/;
 
@@ -450,7 +189,7 @@ function AgentBuilderInner() {
     if (typeof promptField === "string") setSystemPrompt(promptField);
   }, [existingAgent, draftParam]);
 
-  // Edit lock for pending agents — acquire on mount, release on unmount
+  // Edit lock for pending agents, acquire on mount, release on unmount
   const agentIdParam = editId ?? draftParam;
   const startEdit = useStartEdit("agents");
   const editLockAcquiredRef = useRef(false);
@@ -540,7 +279,7 @@ function AgentBuilderInner() {
     }
   }, [isEditMode]);
 
-  // Debounced localStorage auto-save (2s) — skip in edit mode
+  // Debounced localStorage auto-save (2s), skip in edit mode
   useEffect(() => {
     if (isEditMode) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -751,7 +490,7 @@ function AgentBuilderInner() {
           const plural = type as string;
           next[plural] = [...(next[plural] ?? []), { id, name }];
         }
-        // Update selected components synchronously via ref trick — rebuild body after
+        // Update selected components synchronously via ref trick, rebuild body after
         for (const { type, id, name } of flushedIds) {
           const plural = type as string;
           selectedComponents[plural] = [...(selectedComponents[plural] ?? []), { id, name }];
@@ -1129,25 +868,26 @@ function AgentBuilderInner() {
             const name = (body.name as string) || createDialogType.replace(/s$/, "");
             setPendingComponents((prev) => [...prev, { id: tempId, type: createDialogType!, name, body }]);
             setCreateDialogType(null);
-            toast.success(`${name} added — will be submitted with the agent.`);
+            toast.success(`${name} added, will be submitted with the agent.`);
           }}
           onSaveDraft={(body) => {
             const tempId = Math.random().toString(36).slice(2);
             const name = (body.name as string) || createDialogType.replace(/s$/, "");
             setPendingComponents((prev) => [...prev, { id: tempId, type: createDialogType!, name, body }]);
             setCreateDialogType(null);
-            toast.success(`${name} added — will be submitted with the agent.`);
+            toast.success(`${name} added, will be submitted with the agent.`);
           }}
           isSubmitting={false}
           isSavingDraft={false}
         />
       )}
 
-      {/* Version Bump Dialog — shown when updating an existing agent */}
+      {/* Version bump dialog for existing agents */}
       <VersionBumpDialog
         open={showVersionDialog}
         onOpenChange={setShowVersionDialog}
         currentVersion={version}
+        suggestions={undefined}
         onConfirm={handleUpdateWithVersion}
         publishing={publishing}
       />

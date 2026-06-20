@@ -501,6 +501,7 @@ dependencies = [
     { name = "docker" },
     { name = "httpx" },
     { name = "loguru" },
+    { name = "observal-shared" },
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "questionary" },
@@ -533,6 +534,7 @@ requires-dist = [
     { name = "docker", specifier = ">=7.0.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "loguru", specifier = ">=0.7.0" },
+    { name = "observal-shared", directory = "packages/observal-shared" },
     { name = "packaging", specifier = ">=21.0" },
     { name = "pyarrow", marker = "extra == 'migrate'", specifier = ">=15.0.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
@@ -555,6 +557,17 @@ dev = [
     { name = "ruff", specifier = "==0.15.15" },
     { name = "sqlalchemy", specifier = ">=2.0.49" },
 ]
+
+[[package]]
+name = "observal-shared"
+version = "1.6.1"
+source = { directory = "packages/observal-shared" }
+dependencies = [
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyyaml", specifier = ">=6.0.3" }]
 
 [[package]]
 name = "packaging"
