@@ -23,7 +23,7 @@ services:
 
   observal-grafana:
     profiles: ["grafana"]
-    image: grafana/grafana-oss:11.6.5
+    image: grafana/grafana-oss:13.0.2
     ports:
       - "127.0.0.1:${GRAFANA_HOST_PORT:-3001}:3000"
     environment:
