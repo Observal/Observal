@@ -44,7 +44,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "graphql-ws": "^6.0.8",
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^4.2.0",
     "lucide-react": "^1.7.0",
     "mermaid": "^11.15.0",
     "react": "19.2.6",

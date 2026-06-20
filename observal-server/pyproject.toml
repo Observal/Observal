@@ -12,12 +12,12 @@ requires-python = ">=3.11"
 license = "AGPL-3.0-only"
 dependencies = [
     "fastapi>=0.136.0,!=0.136.3",
-    "starlette>=1.0.1",
+    "starlette>=1.3.1",
     "uvicorn[standard]",
     "sqlalchemy[asyncio]",
     "asyncpg",
     "pydantic",
-    "pydantic-settings",
+    "pydantic-settings>=2.14.2",
     "python-dotenv",
     "email-validator",
     "alembic",
@@ -30,15 +30,15 @@ dependencies = [
     "strawberry-graphql[fastapi]>=0.315.4",
     "authlib>=1.6.11",
     "itsdangerous",
-    "cryptography>=44.0.0",
+    "cryptography>=48.0.1",
     "python3-saml>=1.16.0",
     "cffi",
     "slowapi",
     "PyJWT>=2.13.0",
-    "aiohttp>=3.14.0",
+    "aiohttp>=3.14.1",
     "aiosqlite>=0.22.1",
     "tenacity>=8.0.0",
-    "python-multipart>=0.0.26",
+    "python-multipart>=0.0.31",
     "fastapi-cache2>=0.2.2",
     "jinja2>=3.1.0",
     "mako>=1.3.11",
@@ -53,11 +53,12 @@ dependencies = [
 
 [tool.uv]
 # CVE-2026-48710: starlette <1.0.1 has Host header poisoning.
+# CVE-2026-54282 and CVE-2026-54283 require starlette >=1.3.1.
 # prometheus-fastapi-instrumentator 7.1.0 caps starlette<1.0.0 but is
 # runtime-compatible with 1.x (only a type annotation differs).
 # Remove this override when upstream releases starlette 1.x support.
 override-dependencies = [
-    "starlette>=1.0.1",
+    "starlette>=1.3.1",
 ]
 
 [dependency-groups]
