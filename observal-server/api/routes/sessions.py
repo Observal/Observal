@@ -77,6 +77,7 @@ async def list_sessions(
     days: int | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    mine: bool = Query(False),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("status={}, platform={}", status, platform)
@@ -85,11 +86,12 @@ async def list_sessions(
     capped_days = min(days, 365) if days is not None and days > 0 else days
 
     optic.debug(
-        "list_sessions: user={}, is_admin={}, platform={}, days={}",
+        "list_sessions: user={}, is_admin={}, platform={}, days={}, mine={}",
         uid_str,
         is_admin,
         platform,
         capped_days,
+        mine,
     )
 
     rows = await _list_sessions_query(
@@ -99,6 +101,7 @@ async def list_sessions(
         uid=uid_str,
         limit=limit,
         offset=offset,
+        mine=mine,
     )
 
     # Resolve user display names from PostgreSQL
@@ -184,6 +187,7 @@ async def _list_sessions_query(
     uid: str,
     limit: int = 50,
     offset: int = 0,
+    mine: bool = False,
 ) -> list[dict]:
     """Session list from session_stats_agg FINAL.
 
@@ -195,7 +199,7 @@ async def _list_sessions_query(
     where_parts = ["session_id != ''", "parent_session_id = ''", "prompt_count > 0"]
     params: dict[str, str] = {}
 
-    if not is_admin:
+    if mine or not is_admin:
         where_parts.append("user_id = {uid:String}")
         params["param_uid"] = uid
     if days is not None and days > 0:

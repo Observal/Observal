@@ -539,6 +539,7 @@ export const dashboard = {
 		days?: number;
 		limit?: number;
 		offset?: number;
+		mine?: boolean;
 	}) => {
 		const qs = new URLSearchParams();
 		if (params?.status) qs.set("status", params.status);
@@ -546,6 +547,7 @@ export const dashboard = {
 		if (params?.days) qs.set("days", String(params.days));
 		if (params?.limit) qs.set("limit", String(params.limit));
 		if (params?.offset) qs.set("offset", String(params.offset));
+		if (params?.mine) qs.set("mine", "true");
 		const suffix = qs.toString() ? `?${qs}` : "";
 		return get<Session[]>(`/sessions${suffix}`);
 	},

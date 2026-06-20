@@ -28,15 +28,17 @@ export function useSessions2(options?: {
   days?: number;
   limit?: number;
   offset?: number;
+  mine?: boolean;
 }) {
   return useQuery({
-    queryKey: ['sessions', 'list', options?.platform, options?.days, options?.limit, options?.offset],
+    queryKey: ['sessions', 'list', options?.platform, options?.days, options?.limit, options?.offset, options?.mine],
     queryFn: () =>
       dashboard.sessions({
         platform: options?.platform,
         days: options?.days,
         limit: options?.limit,
         offset: options?.offset,
+        mine: options?.mine,
       }),
     refetchInterval: options?.refetchInterval,
     refetchOnMount: "always",
