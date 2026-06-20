@@ -16,9 +16,10 @@ from api.deps import (
     optional_current_user,
     require_role,
 )
+from api.routes._component_archive import archived_install_warning
 from models.agent import AgentStatus
 from models.hook import HookListing
-from models.mcp import McpListing
+from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
 from models.sandbox import SandboxListing
 from models.skill import SkillListing
@@ -150,6 +151,18 @@ async def install_agent(
         )
         sandbox_listings_map = {row.id: row for row in sandbox_rows}
 
+    archived_warnings = []
+    for item_type, rows in (
+        ("MCP", mcp_listings_map.values()),
+        ("skill", skill_listings_map.values()),
+        ("hook", hook_listings_map.values()),
+        ("prompt", prompt_listings_map.values()),
+        ("sandbox", sandbox_listings_map.values()),
+    ):
+        for row in rows:
+            if row.status == ListingStatus.archived:
+                archived_warnings.append(archived_install_warning(item_type, row.name))
+
     # Resolve all component names for rules file content
     name_map = await _resolve_component_names(agent.components, db)
 
@@ -212,7 +225,7 @@ async def install_agent(
         metadata={"ide": req.ide},
     )
 
-    warnings = snippet.pop("_warnings", [])
+    warnings = archived_warnings + snippet.pop("_warnings", [])
     return AgentInstallResponse(agent_id=resolved_agent_id, ide=req.ide, config_snippet=snippet, warnings=warnings)
 
 

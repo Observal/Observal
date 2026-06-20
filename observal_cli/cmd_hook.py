@@ -307,6 +307,7 @@ def hook_install(
     files = result.get("files", [])
     requirements = result.get("requirements", [])
     notes = result.get("notes", [])
+    warnings = result.get("warnings", [])
     config_path = result.get("config_path", "")
 
     if raw:
@@ -351,6 +352,9 @@ def hook_install(
         else:
             cfg_file.write_text(_json.dumps(config_snippet, indent=2) + "\n")
             rprint(f"  [green]✓[/green] Created {config_path}")
+
+    for warning in warnings:
+        rprint(f"\n[yellow]Warning:[/yellow] {warning}")
 
     # Print requirements warning
     if requirements:

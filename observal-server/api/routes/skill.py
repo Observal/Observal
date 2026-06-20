@@ -26,6 +26,7 @@ from api.deps import (
     require_role,
     resolve_listing,
 )
+from api.routes._component_archive import archive_listing, archived_install_warning, unarchive_listing
 from api.routes.component_versions import create_version_router
 from api.sanitize import escape_like
 from models.mcp import ListingStatus
@@ -259,8 +260,17 @@ async def install_skill(
     listing = await resolve_listing(SkillListing, listing_id, db, require_status=ListingStatus.approved)
     if not listing:
         listing = await resolve_listing(SkillListing, listing_id, db)
-        if not listing or get_effective_component_permission(listing, current_user) != "owner":
+        if not listing or not check_listing_visibility(listing, current_user):
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
+        if (
+            listing.status != ListingStatus.archived
+            and get_effective_component_permission(listing, current_user) != "owner"
+        ):
+            raise HTTPException(status_code=404, detail="Listing not found or not approved")
+
+    warnings = []
+    if listing.status == ListingStatus.archived:
+        warnings.append(archived_install_warning("skill", listing.name))
 
     # Resolve specific version if requested
     version_override = None
@@ -270,7 +280,7 @@ async def install_skill(
         ver_stmt = select(SkillVersion).where(
             SkillVersion.listing_id == listing.id,
             SkillVersion.version == req.version,
-            SkillVersion.status == "approved",
+            SkillVersion.status.in_([ListingStatus.approved, listing.status]),
         )
         ver_result = await db.execute(ver_stmt)
         version_override = ver_result.scalar_one_or_none()
@@ -297,7 +307,7 @@ async def install_skill(
         scope=req.scope,
         version_override=version_override,
     )
-    return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config)
+    return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config, warnings=warnings)
 
 
 @router.post("/draft", response_model=SkillListingResponse)
@@ -493,6 +503,24 @@ async def submit_skill_draft(
     await commit_or_name_conflict(db, "skill")
     await db.refresh(listing)
     return SkillListingResponse.model_validate(listing)
+
+
+@router.patch("/{listing_id}/archive")
+async def archive_skill(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    return await archive_listing(SkillListing, listing_id, db, current_user, "skill")
+
+
+@router.patch("/{listing_id}/unarchive")
+async def unarchive_skill(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    return await unarchive_listing(SkillListing, listing_id, db, current_user, "skill")
 
 
 @router.delete("/{listing_id}")

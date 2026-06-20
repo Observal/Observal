@@ -423,6 +423,8 @@ export const registry = {
 	archived: () => get<RegistryItem[]>("/agents/archived"),
 	archive: (id: string) => patch(`/agents/${id}/archive`),
 	unarchive: (id: string) => patch(`/agents/${id}/unarchive`),
+	archiveComponent: (type: RegistryType, id: string) => patch(`/${type}/${id}/archive`),
+	unarchiveComponent: (type: RegistryType, id: string) => patch(`/${type}/${id}/unarchive`),
 	draft: (body: unknown, type?: RegistryType) =>
 		post<RegistryItem>(`/${type ?? "agents"}/draft`, body),
 	updateDraft: (id: string, body: unknown, type?: RegistryType) =>

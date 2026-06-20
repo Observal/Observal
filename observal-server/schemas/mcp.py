@@ -205,6 +205,7 @@ class McpInstallResponse(BaseModel):
     listing_id: uuid.UUID
     ide: str
     config_snippet: dict
+    warnings: list[str] = []
 
 
 class McpAnalyzeRequest(BaseModel):

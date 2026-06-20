@@ -484,6 +484,9 @@ def skill_install(
         except Exception:
             pass  # Never block install on lockfile failure
 
+    for warning in result.get("warnings") or []:
+        rprint(f"\n[yellow]Warning:[/yellow] {warning}")
+
     rprint(f"\n[bold]Config for {ide}:[/bold]\n")
     console.print_json(_json.dumps(snippet, indent=2))
 

@@ -110,7 +110,7 @@ async def _load_registry_catalog(db) -> dict:
     Returns a compact catalog for the LLM to reference when suggesting
     new components the agent could benefit from.
     """
-    from models.mcp import McpListing, McpVersion
+    from models.mcp import ListingStatus, McpListing, McpVersion
     from models.skill import SkillListing, SkillVersion
 
     catalog: dict = {"mcps": [], "skills": []}
@@ -119,7 +119,7 @@ async def _load_registry_catalog(db) -> dict:
     mcp_stmt = (
         select(McpListing.id, McpListing.name, McpListing.category, McpVersion.description)
         .join(McpVersion, McpListing.latest_version_id == McpVersion.id, isouter=True)
-        .where(McpListing.is_private == False)  # noqa: E712 — SQLAlchemy requires ==
+        .where(McpListing.is_private == False, McpVersion.status == ListingStatus.approved)  # noqa: E712
     )
     mcp_result = await db.execute(mcp_stmt)
     for row in mcp_result.all():
@@ -136,7 +136,7 @@ async def _load_registry_catalog(db) -> dict:
     skill_stmt = (
         select(SkillListing.id, SkillListing.name, SkillVersion.description)
         .join(SkillVersion, SkillListing.latest_version_id == SkillVersion.id, isouter=True)
-        .where(SkillListing.is_private == False)  # noqa: E712
+        .where(SkillListing.is_private == False, SkillVersion.status == ListingStatus.approved)  # noqa: E712
     )
     skill_result = await db.execute(skill_stmt)
     for row in skill_result.all():

@@ -146,6 +146,8 @@ async def apply_insight_suggestions(
             except ValueError:
                 cid = None
             if cid and _is_skill_suggestion(feature):
+                if not await _is_active_skill(cid, db):
+                    continue
                 existing_skill_ids.append(cid)
                 applied["linked_existing"].append(
                     {
@@ -157,6 +159,8 @@ async def apply_insight_suggestions(
                     }
                 )
             elif cid and _is_hook_suggestion(feature):
+                if not await _is_active_hook(cid, db):
+                    continue
                 existing_hook_ids.append(cid)
                 applied["linked_existing"].append(
                     {
@@ -704,6 +708,24 @@ def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9\-]", "-", slug)
     slug = re.sub(r"-+", "-", slug)
     return slug.strip("-")
+
+
+async def _is_active_skill(component_id: uuid.UUID, db: AsyncSession) -> bool:
+    result = await db.execute(
+        select(SkillListing.id)
+        .join(SkillVersion, SkillListing.latest_version_id == SkillVersion.id, isouter=True)
+        .where(SkillListing.id == component_id, SkillVersion.status == ListingStatus.approved)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _is_active_hook(component_id: uuid.UUID, db: AsyncSession) -> bool:
+    result = await db.execute(
+        select(HookListing.id)
+        .join(HookVersion, HookListing.latest_version_id == HookVersion.id, isouter=True)
+        .where(HookListing.id == component_id, HookVersion.status == ListingStatus.approved)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def _find_existing_skill_match(feature: dict, db: AsyncSession) -> SkillListing | None:

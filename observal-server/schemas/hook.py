@@ -161,3 +161,4 @@ class HookInstallResponse(BaseModel):
     requirements: list[str] = []
     source_fetch: dict | None = None
     notes: list[str] = []
+    warnings: list[str] = []
