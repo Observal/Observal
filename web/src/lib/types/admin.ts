@@ -190,6 +190,7 @@ export interface InsightNarrative {
 	suggestions: unknown;
 	usage_cost_analysis?: unknown;
 	token_optimization?: unknown;
+	version_comparison?: unknown;
 	regression_detection?: unknown;
 	on_the_horizon?: unknown;
 	fun_ending?: unknown;

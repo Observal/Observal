@@ -26,6 +26,7 @@ from schemas.insights import (
     InsightReportListItem,
     InsightReportResponse,
 )
+from services.insight_version_filters import agent_version_filter
 from services.insights import INSIGHTS_AVAILABLE, render_report_html
 from services.redis import _get_arq_pool
 
@@ -139,7 +140,7 @@ async def _count_insight_sessions(
         "param_t_end": period_end.strftime("%Y-%m-%d %H:%M:%S"),
     }
     if agent_version:
-        base_where += "AND agent_version = {agent_version:String} "
+        base_where += f"AND {agent_version_filter()} "
         params["param_agent_version"] = agent_version
 
     count_sql = "SELECT count() AS cnt FROM session_stats_agg FINAL " + base_where + "FORMAT JSON"
@@ -157,7 +158,7 @@ async def _count_insight_sessions(
         "AND timestamp <= {t_end:String} "
     )
     if agent_version:
-        fallback_where += "AND agent_version = {agent_version:String} "
+        fallback_where += f"AND {agent_version_filter(nullable=True)} "
     fallback_sql = (
         "SELECT count(DISTINCT session_id) AS cnt FROM session_events FINAL " + fallback_where + "FORMAT JSON"
     )

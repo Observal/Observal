@@ -19,6 +19,7 @@ from database import async_session
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.insight_report import InsightReport, InsightReportStatus
 from services.clickhouse import _query
+from services.insight_version_filters import agent_version_filter
 from services.redis import _get_arq_pool
 from services.secrets_redactor import redact_secrets
 
@@ -308,9 +309,9 @@ async def _count_agent_sessions(agent_id: str, agent_name: str, since: str, agen
         FROM session_stats_agg FINAL
         WHERE (agent_id = {agent_id:String} OR agent_id = {aname:String})
           AND last_event_time >= {t_start:String}
-          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+          AND __AGENT_VERSION_FILTER__
         FORMAT JSON
-    """
+    """.replace("__AGENT_VERSION_FILTER__", agent_version_filter())
     params = {
         "param_agent_id": agent_id,
         "param_aname": agent_name,
@@ -330,9 +331,9 @@ async def _count_agent_sessions(agent_id: str, agent_name: str, since: str, agen
         FROM session_events FINAL
         WHERE (agent_id = {agent_id:String} OR agent_id = {aname:String})
           AND timestamp >= {t_start:String}
-          AND ({agent_version:String} = '' OR agent_version = {agent_version:String})
+          AND __AGENT_VERSION_FILTER__
         FORMAT JSON
-    """
+    """.replace("__AGENT_VERSION_FILTER__", agent_version_filter(nullable=True))
     try:
         r = await _query(fallback_sql, params)
         r.raise_for_status()
