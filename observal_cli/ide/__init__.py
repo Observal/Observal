@@ -18,7 +18,6 @@ from observal_cli.ide.protocol import (
     DiscoveredSkill,
     HookSpec,
     IdeAdapter,
-    NotSupported,
     NotSupportedError,
     ScanResult,
 )
@@ -32,7 +31,6 @@ __all__ = [
     "DiscoveredSkill",
     "HookSpec",
     "IdeAdapter",
-    "NotSupported",
     "NotSupportedError",
     "ScanResult",
     "ensure_loaded",

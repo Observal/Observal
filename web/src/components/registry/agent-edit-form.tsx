@@ -35,9 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search } from "lucide-react";
 import {
-  useRegistryList,
   useAgentValidation,
   useCreateAgentVersion,
   useUpdateAgent,
@@ -51,6 +49,8 @@ import type {
 import type { RegistryType } from "@/lib/api";
 import { SortableComponentList } from "@/components/builder/sortable-component-list";
 import { ValidationPanel } from "@/components/builder/validation-panel";
+import { COMPONENT_TYPES, REVERSE_TYPE_MAP, TYPE_MAP } from "@/components/registry/agent-component-constants";
+import { ComponentPicker } from "@/components/registry/component-picker";
 import { VersionBumpDialog } from "@/components/registry/version-bump-dialog";
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -87,114 +87,6 @@ export interface AgentEditFormProps {
   versionDetail?: AgentVersionDetail;
   currentVersion: string;
   onSuccess?: () => void;
-}
-
-// ── Constants ─────────────────────────────────────────────────────
-
-const COMPONENT_TYPES: { value: RegistryType; label: string }[] = [
-  { value: "mcps", label: "MCPs" },
-  { value: "skills", label: "Skills" },
-  { value: "hooks", label: "Hooks" },
-  { value: "prompts", label: "Prompts" },
-  { value: "sandboxes", label: "Sandboxes" },
-];
-
-const TYPE_MAP: Record<string, string> = {
-  mcps: "mcp",
-  skills: "skill",
-  hooks: "hook",
-  prompts: "prompt",
-  sandboxes: "sandbox",
-};
-
-const REVERSE_TYPE_MAP: Record<string, string> = {
-  mcp: "mcps",
-  skill: "skills",
-  hook: "hooks",
-  prompt: "prompts",
-  sandbox: "sandboxes",
-};
-
-
-// ── Utilities ─────────────────────────────────────────────────────
-
-
-// ── Component Picker ──────────────────────────────────────────────
-
-function ComponentPicker({
-  type,
-  selected,
-  onToggle,
-}: {
-  type: RegistryType;
-  selected: Set<string>;
-  onToggle: (item: RegistryItem) => void;
-}) {
-  const { data: items, isLoading } = useRegistryList(type);
-  const [search, setSearch] = useState("");
-
-  const filtered = useMemo(() => {
-    if (!items) return [];
-    if (!search) return items;
-    const q = search.toLowerCase();
-    return items.filter(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        (item.description?.toLowerCase().includes(q) ?? false),
-    );
-  }, [items, search]);
-
-  return (
-    <div className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={`Search ${type}...`}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-8 pl-9 text-sm"
-        />
-      </div>
-      {isLoading ? (
-        <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Loading...
-        </div>
-      ) : filtered.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">
-          {items?.length === 0 ? `No ${type} in registry yet` : "No matches found"}
-        </p>
-      ) : (
-        <div className="max-h-48 space-y-1 overflow-y-auto">
-          {filtered.map((item) => {
-            const isSelected = selected.has(item.id);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onToggle(item)}
-                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                  isSelected ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"
-                }`}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{item.name}</span>
-                  {item.description && (
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {item.description}
-                    </span>
-                  )}
-                </span>
-                {isSelected && (
-                  <span className="shrink-0 text-xs text-muted-foreground">Added</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── Main Component ────────────────────────────────────────────────
@@ -487,7 +379,7 @@ export function AgentEditForm({
 
   return (
     <div className="space-y-6">
-      {/* Agent name — read-only */}
+      {/* Agent name, read-only */}
       <section className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="agent-name" className="text-sm font-medium">

@@ -12,7 +12,7 @@ import pytest
 from observal_cli.ide import (
     DiscoveredMcp,
     HookSpec,
-    NotSupported,
+    NotSupportedError,
     ScanResult,
     ensure_loaded,
     get_adapter,
@@ -380,12 +380,12 @@ class TestKiroAdapter:
 
 
 class TestStubAdapters:
-    """Tests for stub adapters that raise NotSupported for unsupported ops."""
+    """Tests for stub adapters that raise NotSupportedError for unsupported ops."""
 
     @pytest.mark.parametrize("ide_name", ["codex"])
     def test_generate_hook_config_raises_not_supported(self, ide_name):
         adapter = get_adapter(ide_name)
-        with pytest.raises(NotSupported):
+        with pytest.raises(NotSupportedError):
             adapter.generate_hook_config(
                 observal_url="http://localhost:8000",
                 api_key="test-key",

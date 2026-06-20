@@ -103,26 +103,6 @@ SPDX-FileCopyrightText = [
 SPDX-License-Identifier = "AGPL-3.0-only"
 
 [[annotations]]
-path = "screenshots/01-review-queue.png"
-SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "screenshots/02-detail-sheet-mcp.png"
-SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "screenshots/03-after-bulk-approve.png"
-SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
-path = "screenshots/04-rejection-reason-skills.png"
-SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
-
-[[annotations]]
 path = "test-agent.json"
 SPDX-FileCopyrightText = "2026 Naraen Rammoorthi <naraen13@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-only"

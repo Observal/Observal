@@ -26,6 +26,23 @@ export interface AdminSetting {
 	is_set?: boolean;
 }
 
+export interface AdminSettingDef {
+	key: string;
+	label: string;
+	subtitle: string;
+	default: string;
+	requires_feature?: string;
+}
+
+export interface AdminSettingSection {
+	id: string;
+	title: string;
+	description?: string;
+	danger?: boolean;
+	requires_feature?: string;
+	settings: AdminSettingDef[];
+}
+
 export interface AuditLogEntry {
 	event_id: string;
 	timestamp: string;

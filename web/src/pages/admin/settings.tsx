@@ -30,10 +30,10 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHelp } from "@/components/wiki/help-context";
 import { SETTING_DOCS, SECTION_DOCS } from "@/lib/docs-map";
-import { useAdminSettings, useSystemWarnings } from "@/hooks/use-api";
+import { useAdminSettings, useAdminSettingsSchema, useSystemWarnings } from "@/hooks/use-api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { useRoleGuard, hasMinRole } from "@/hooks/use-role-guard";
-import type { AdminSetting, SystemWarning } from "@/lib/types";
+import type { AdminSetting, AdminSettingDef, AdminSettingSection, SystemWarning } from "@/lib/types";
 import { admin, getUserRole } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -57,12 +57,6 @@ import {
 import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 // Sensitive keys that should never be displayed in plaintext.
 // The server enforces this too (returns **REDACTED** for these keys),
@@ -88,78 +82,6 @@ const IDE_OPTIONS = [
 	{ value: "antigravity", label: "Antigravity" },
 ];
 
-/** Generate a helpful placeholder for the value input based on the key */
-function getPlaceholder(key: string): string {
-	const placeholders: Record<string, string> = {
-		// Insights
-		"insights.api_key": "sk-ant-... or sk-... or Bedrock API key",
-		"insights.api_base": "https://bedrock-runtime.us-east-1.amazonaws.com (optional)",
-		"insights.model_sections": "anthropic/claude-sonnet-4-20250514",
-		"insights.model_synthesis": "anthropic/claude-sonnet-4-20250514",
-		"insights.model_facets": "anthropic/claude-haiku-4-5-20251001",
-		"insights.batch_enabled": "true",
-		"insights.batch_period_days": "14",
-		"insights.min_sessions": "5",
-		"insights.facet_max_calls": "100",
-		"insights.facet_concurrency": "25",
-		// Deployment
-		"deployment.sso_only": "true | false",
-		"deployment.frontend_url": "https://app.example.com",
-		"deployment.public_url": "https://api.example.com",
-		"deployment.otlp_http_url": "https://otel.example.com",
-		"deployment.cors_origins":
-			"https://app.example.com,https://admin.example.com",
-		// Security
-		"security.allow_internal_git_urls": "true | false",
-		"security.allow_draft_install": "true | false",
-		"security.rate_limit_auth": "10/minute",
-		"security.rate_limit_auth_strict": "5/minute",
-		"security.trusted_proxy_ips": "10.0.0.1,10.0.0.2",
-		// SAML
-		"saml.idp_entity_id": "https://idp.example.com/entity",
-		"saml.idp_sso_url": "https://idp.example.com/sso",
-		"saml.idp_slo_url": "https://idp.example.com/slo",
-		"saml.idp_x509_cert": "-----BEGIN CERTIFICATE-----...",
-		"saml.idp_metadata_url": "https://idp.example.com/.well-known/metadata",
-		"saml.sp_entity_id": "https://app.example.com/saml/metadata",
-		"saml.sp_acs_url": "https://app.example.com/api/v1/sso/saml/acs",
-		"saml.jit_provisioning": "true | false",
-		"saml.default_role": "user | reviewer | admin",
-		"saml.sp_key_encryption_password": "strong-random-password",
-		// JWT
-		"jwt.access_token_expire_minutes": "60",
-		"jwt.refresh_token_expire_days": "30",
-		"jwt.hooks_token_expire_minutes": "43200",
-		// Resources
-		"resource.db_pool_size": "10",
-		"resource.db_max_overflow": "20",
-		"resource.redis_max_connections": "50",
-		"resource.redis_socket_timeout": "2.0",
-		"resource.clickhouse_max_connections": "20",
-		"resource.clickhouse_max_keepalive": "10",
-		"resource.clickhouse_timeout": "10.0",
-		"resource.skip_ddl_on_startup": "true | false",
-		"resource.max_query_memory_mb": "400",
-		"resource.group_by_spill_mb": "200",
-		"resource.sort_spill_mb": "200",
-		"resource.join_memory_mb": "100",
-		// Data
-		"data.retention_days": "90 (0 = no limit)",
-		"data.cache_ttl_default": "30",
-		"data.cache_ttl_dashboard": "60",
-		"data.cache_ttl_otel": "15",
-		// Observability
-		"observability.log_level": "DEBUG | INFO | WARNING | ERROR",
-		"observability.log_format": "json | console",
-		"observability.enable_openapi": "true | false",
-		"observability.enable_metrics": "true | false",
-		// Misc
-		"misc.git_mirror_base_path": "/var/lib/observal/mirrors",
-	};
-	return placeholders[key] || "Enter value...";
-}
-
-
 const ALLOWED_LOGO_TYPES = [
 	"image/png",
 	"image/svg+xml",
@@ -170,511 +92,23 @@ const ALLOWED_LOGO_TYPES = [
 ];
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 
-interface SettingDef {
-	key: string;
-	label: string;
-	subtitle: string;
-	tooltip: string;
-	/** If set, setting is only shown when this license feature is active (or "all"). */
-	requiresFeature?: string;
+const SECTION_ICONS: Record<string, React.ReactNode> = {
+	insights: <Activity className="h-3.5 w-3.5" />,
+	danger: <AlertTriangle className="h-3.5 w-3.5" />,
+	deployment: <Shield className="h-3.5 w-3.5" />,
+	security: <ShieldAlert className="h-3.5 w-3.5" />,
+	saml: <Shield className="h-3.5 w-3.5" />,
+	jwt: <Shield className="h-3.5 w-3.5" />,
+	resource: <Database className="h-3.5 w-3.5" />,
+	data: <Database className="h-3.5 w-3.5" />,
+	observability: <Activity className="h-3.5 w-3.5" />,
+	misc: <Settings className="h-3.5 w-3.5" />,
+};
+
+function sectionIcon(section: AdminSettingSection) {
+	return SECTION_ICONS[section.id] ?? <Settings className="h-3.5 w-3.5" />;
 }
 
-interface SettingSection {
-	title: string;
-	icon: React.ReactNode;
-	description?: string;
-	danger?: boolean;
-	/** If set, section is only shown when this license feature is active (or "all"). */
-	requiresFeature?: string;
-	settings: SettingDef[];
-}
-
-const SETTING_SECTIONS: SettingSection[] = [
-	{
-		title: "Agent Insights",
-		icon: <Activity className="h-3.5 w-3.5" />,
-		description:
-			"Configure LLM provider for the insights engine. Supports any LiteLLM-compatible provider (Anthropic, OpenAI, Bedrock, Gemini, Azure, Ollama, etc).",
-		settings: [
-			{
-				key: "insights.api_key",
-				label: "API Key",
-				subtitle: "LLM provider API key or Bedrock bearer token",
-				tooltip:
-					"API key for your LLM provider. Works with Anthropic (sk-ant-...), OpenAI (sk-...), Google AI Studio, Azure, or AWS Bedrock API keys. For Bedrock, generate a key from the AWS Bedrock console. Stored encrypted.",
-			},
-			{
-				key: "insights.api_base",
-				label: "API Base URL",
-				subtitle: "Custom endpoint (optional for most providers)",
-				tooltip:
-					"Override the default API endpoint. Required for: Azure (https://<instance>.openai.azure.com), Bedrock (https://bedrock-runtime.<region>.amazonaws.com), Ollama (http://localhost:11434). Leave blank for Anthropic, OpenAI, or Gemini.",
-			},
-			{
-				key: "insights.model_sections",
-				label: "Sections Model",
-				subtitle: "High-quality model for detailed narrative sections",
-				tooltip:
-					"LiteLLM model ID for writing detailed insight sections. Use your best model here. Format: provider/model-name. Examples: anthropic/claude-sonnet-4-20250514, openai/gpt-4o, bedrock/us.anthropic.claude-opus-4-6-v1, gemini/gemini-2.5-pro.",
-			},
-			{
-				key: "insights.model_synthesis",
-				label: "Synthesis Model",
-				subtitle: "Model for aggregation (falls back to Sections Model)",
-				tooltip:
-					"LiteLLM model ID for cross-user synthesis and strategic recommendations. Falls back to Sections Model if not set. Can be the same or a slightly cheaper model.",
-			},
-			{
-				key: "insights.model_facets",
-				label: "Facets Model",
-				subtitle: "Cheap/fast model for per-session extraction (runs many times)",
-				tooltip:
-					"LiteLLM model ID for extracting structured facets from each session. Use a cheap, fast model here since it runs once per session. Examples: anthropic/claude-haiku-4-5-20251001, openai/gpt-4o-mini, gemini/gemini-2.5-flash.",
-			},
-			{
-				key: "insights.batch_enabled",
-				label: "Batch Processing",
-				subtitle: "Enable automatic insight report generation",
-				tooltip:
-					"When true, the system automatically generates insight reports on a schedule for agents with enough new sessions.",
-			},
-			{
-				key: "insights.batch_period_days",
-				label: "Batch Period",
-				subtitle: "Days between automatic report runs",
-				tooltip:
-					"How often to check for and generate new reports. Default 14 days. Shorter periods = more reports but higher LLM cost.",
-			},
-			{
-				key: "insights.min_sessions",
-				label: "Minimum Sessions",
-				subtitle: "Sessions required to trigger a report",
-				tooltip:
-					"An agent needs at least this many new sessions since the last report before a new one is generated.",
-			},
-			{
-				key: "insights.facet_max_calls",
-				label: "Max Facet Calls",
-				subtitle: "LLM call limit per report for facet extraction",
-				tooltip:
-					"Maximum number of LLM calls for extracting facets in a single report. Higher = more thorough but costlier. Default 100.",
-			},
-			{
-				key: "insights.facet_concurrency",
-				label: "Facet Concurrency",
-				subtitle: "Parallel LLM calls for facet extraction",
-				tooltip:
-					"How many facet extraction calls to run in parallel. Higher = faster reports but more provider rate limit pressure. Default 25.",
-			},
-		],
-	},
-	{
-		title: "Telemetry Purge",
-		icon: <AlertTriangle className="h-3.5 w-3.5" />,
-		description:
-			"Irreversible data purge actions for telemetry and generated insights.",
-		danger: true,
-		settings: [
-			{
-				key: "danger.purge_traces_insights",
-				label: "Purge Traces & Insights",
-				subtitle: "Delete all traces, sessions, scores, and insight reports",
-				tooltip:
-					"Irreversibly deletes all ClickHouse telemetry traces/session data for the current project and all agent insight reports/caches for this organization. Registry agents and components are not deleted.",
-			},
-		],
-	},
-	{
-		title: "Deployment",
-		icon: <Shield className="h-3.5 w-3.5" />,
-		description:
-			"Core deployment configuration. Changes may affect authentication and access.",
-		danger: true,
-		settings: [
-			{
-				key: "deployment.sso_only",
-				label: "SSO Only Mode",
-				subtitle: "Disable all password-based authentication",
-				tooltip:
-					"When enabled, password login, registration, and admin password reset are all blocked. Users must authenticate via OAuth/OIDC SSO. Ensure OAuth is configured before enabling or you will lock everyone out.",
-				requiresFeature: "saml",
-			},
-			{
-				key: "deployment.frontend_url",
-				label: "Frontend URL",
-				subtitle: "Base URL where users access the web UI",
-				tooltip:
-					"Used for OAuth redirect URIs, SAML ACS URLs, device auth flows, and email links. Must exactly match what users type in their browser (including https:// and port if non-standard).",
-			},
-			{
-				key: "deployment.public_url",
-				label: "Public API URL",
-				subtitle: "Externally-reachable URL of this API server",
-				tooltip:
-					"Used for OTLP endpoint discovery and CLI auto-configuration. Leave blank to auto-detect from incoming request headers. Set explicitly when behind a reverse proxy with a different external hostname.",
-			},
-			{
-				key: "deployment.otlp_http_url",
-				label: "OTLP Endpoint Override",
-				subtitle: "Custom OpenTelemetry collector URL",
-				tooltip:
-					"If your OTLP ingestion runs on a different host/port from the main API (e.g., a dedicated collector), set it here. Otherwise defaults to the public API URL.",
-			},
-			{
-				key: "deployment.cors_origins",
-				label: "CORS Origins",
-				subtitle: "Allowed cross-origin request origins",
-				tooltip:
-					"Comma-separated list of origins allowed to make browser requests to the API. Typically just your frontend URL. Example: https://app.example.com,https://admin.example.com",
-			},
-		],
-	},
-	{
-		title: "Security",
-		icon: <Shield className="h-3.5 w-3.5" />,
-		description:
-			"Security policies and rate limiting. Misconfiguration can expose the instance.",
-		danger: true,
-		settings: [
-			{
-				key: "security.allow_internal_git_urls",
-				label: "Allow Internal Git URLs",
-				subtitle: "Bypass SSRF protection for private networks",
-				tooltip:
-					"By default, git clone rejects URLs resolving to private/internal IPs (10.x, 172.16.x, 192.168.x) to prevent SSRF attacks. Enable ONLY if you run a self-hosted GitLab/GitHub Enterprise/Gitea on an internal network.",
-			},
-			{
-				key: "security.allow_draft_install",
-				label: "Allow Draft Install",
-				subtitle: "Let owners install their own unapproved agents",
-				tooltip:
-					"When enabled, agent creators can install their own agents before admin review/approval. Only enable for local development or trusted self-hosted testing workflows. Disabled by default for security.",
-			},
-			{
-				key: "security.rate_limit_auth",
-				label: "Auth Rate Limit",
-				subtitle: "Max login attempts per IP per minute",
-				tooltip:
-					"Format: N/minute or N/second. Applied to login, token, and refresh endpoints. Protects against credential brute-force attacks. Default: 10/minute.",
-			},
-			{
-				key: "security.rate_limit_auth_strict",
-				label: "Strict Auth Rate Limit",
-				subtitle: "Limit for sensitive operations (reset, register)",
-				tooltip:
-					"Tighter rate limit for password reset, registration, and other sensitive operations. Should be stricter than the general auth limit. Default: 5/minute.",
-			},
-			{
-				key: "security.trusted_proxy_ips",
-				label: "Trusted Proxy IPs",
-				subtitle: "IPs whose X-Forwarded-For header is trusted",
-				tooltip:
-					"Comma-separated list of proxy/load-balancer IPs. Only these IPs' X-Forwarded-For headers are used for rate limiting. Without this, the direct TCP socket IP is used (safest default). Set to your ALB/nginx IP.",
-			},
-		],
-	},
-	{
-		title: "SAML 2.0 SSO",
-		icon: <Shield className="h-3.5 w-3.5" />,
-		description:
-			"SAML identity provider configuration. Requires 'saml' license feature.",
-		danger: true,
-		requiresFeature: "saml",
-		settings: [
-			{
-				key: "saml.idp_entity_id",
-				label: "IdP Entity ID",
-				subtitle: "Identity Provider's unique identifier",
-				tooltip:
-					"The entity ID from your SAML IdP metadata. Usually a URL like https://idp.example.com/entity. Found in your IdP's SAML configuration or metadata XML.",
-			},
-			{
-				key: "saml.idp_sso_url",
-				label: "IdP SSO URL",
-				subtitle: "Single Sign-On endpoint",
-				tooltip:
-					"The URL where Observal redirects users to authenticate. Found in your IdP's SAML metadata as the SingleSignOnService Location with HTTP-Redirect binding.",
-			},
-			{
-				key: "saml.idp_slo_url",
-				label: "IdP SLO URL",
-				subtitle: "Single Logout endpoint (optional)",
-				tooltip:
-					"The URL for SAML Single Logout. When set, logging out of Observal also logs out of the IdP. Leave blank to disable federated logout.",
-			},
-			{
-				key: "saml.idp_x509_cert",
-				label: "IdP Certificate",
-				subtitle: "X.509 certificate for signature verification",
-				tooltip:
-					"The IdP's public X.509 certificate in PEM format. Used to verify SAML assertion signatures. Copy from your IdP's metadata or certificate download page.",
-			},
-			{
-				key: "saml.idp_metadata_url",
-				label: "IdP Metadata URL",
-				subtitle: "Auto-configure from metadata endpoint",
-				tooltip:
-					"URL to your IdP's SAML metadata XML. If provided, entity ID, SSO URL, and certificate can be auto-populated from this URL. Useful for IdPs that rotate certificates.",
-			},
-			{
-				key: "saml.sp_entity_id",
-				label: "SP Entity ID",
-				subtitle: "This application's SAML identifier",
-				tooltip:
-					"The entity ID that identifies Observal to your IdP. Typically your app's metadata URL, e.g., https://app.example.com/api/v1/sso/saml/metadata. Must match what's configured in your IdP.",
-			},
-			{
-				key: "saml.sp_acs_url",
-				label: "SP ACS URL",
-				subtitle: "Assertion Consumer Service endpoint",
-				tooltip:
-					"The URL where your IdP sends SAML responses after authentication. Must be: https://YOUR_DOMAIN/api/v1/sso/saml/acs. Register this URL in your IdP.",
-			},
-			{
-				key: "saml.jit_provisioning",
-				label: "JIT Provisioning",
-				subtitle: "Auto-create users on first SAML login",
-				tooltip:
-					"When enabled, users who authenticate via SAML are automatically created in Observal if they don't already exist. Disable to require manual user creation before login.",
-			},
-			{
-				key: "saml.default_role",
-				label: "Default Role",
-				subtitle: "Role assigned to JIT-provisioned users",
-				tooltip:
-					"The role given to users created via JIT provisioning. Options: user, reviewer, admin. Most deployments should use 'user' and promote manually.",
-			},
-			{
-				key: "saml.sp_key_encryption_password",
-				label: "SP Key Password",
-				subtitle: "Password to encrypt the SP private key at rest",
-				tooltip:
-					"Used to encrypt the auto-generated SP private key stored in the database. Set a strong random password. If blank, the key is stored unencrypted (not recommended for production).",
-			},
-		],
-	},
-	{
-		title: "JWT Token Expiry",
-		icon: <Settings className="h-3.5 w-3.5" />,
-		description:
-			"Token lifetime settings. Shorter values improve security but increase re-authentication frequency.",
-		settings: [
-			{
-				key: "jwt.access_token_expire_minutes",
-				label: "Access Token Lifetime",
-				subtitle: "Minutes before access tokens expire",
-				tooltip:
-					"How long an access token is valid. After expiry, the client must use a refresh token to get a new one. Shorter = more secure but more refresh requests. Default: 60 minutes.",
-			},
-			{
-				key: "jwt.refresh_token_expire_days",
-				label: "Refresh Token Lifetime",
-				subtitle: "Days before refresh tokens expire",
-				tooltip:
-					"How long a refresh token is valid. After expiry, users must re-authenticate fully (login again). Shorter = more secure but users log in more often. Default: 30 days.",
-			},
-			{
-				key: "jwt.hooks_token_expire_minutes",
-				label: "Hooks Token Lifetime",
-				subtitle: "Minutes before OTEL hook tokens expire",
-				tooltip:
-					"Lifetime for long-lived tokens used by OTEL telemetry hooks. These tokens can't be refreshed mid-session, so they need to be long-lived. Default: 43200 minutes (30 days).",
-			},
-		],
-	},
-	{
-		title: "Resource Tuning",
-		icon: <Database className="h-3.5 w-3.5" />,
-		description:
-			"Connection pool sizes and query limits. Some changes may require restart.",
-		settings: [
-			{
-				key: "resource.db_pool_size",
-				label: "DB Pool Size",
-				subtitle: "PostgreSQL connection pool size",
-				tooltip:
-					"Number of persistent database connections maintained. Increase for high-traffic deployments. Each connection uses ~5MB RAM. Default: 10.",
-			},
-			{
-				key: "resource.db_max_overflow",
-				label: "DB Max Overflow",
-				subtitle: "Extra connections allowed beyond pool size",
-				tooltip:
-					"Temporary connections created when the pool is exhausted. These are closed after use. Total max connections = pool_size + max_overflow. Default: 20.",
-			},
-			{
-				key: "resource.redis_max_connections",
-				label: "Redis Max Connections",
-				subtitle: "Maximum Redis connection pool size",
-				tooltip:
-					"Maximum number of concurrent Redis connections. Increase if you see connection timeout errors under load. Default: 50.",
-			},
-			{
-				key: "resource.redis_socket_timeout",
-				label: "Redis Timeout",
-				subtitle: "Socket timeout in seconds for Redis",
-				tooltip:
-					"How long to wait for a Redis response before timing out. Increase if Redis is on a high-latency network. Too high = slow failure detection. Default: 2.0.",
-			},
-			{
-				key: "resource.clickhouse_max_connections",
-				label: "ClickHouse Max Connections",
-				subtitle: "Maximum concurrent ClickHouse connections",
-				tooltip:
-					"Maximum HTTP connections to ClickHouse. Increase for heavy analytics workloads. Default: 20.",
-			},
-			{
-				key: "resource.clickhouse_max_keepalive",
-				label: "ClickHouse Keepalive",
-				subtitle: "Persistent connections kept alive",
-				tooltip:
-					"Number of ClickHouse connections kept open between requests. Reduces connection overhead for frequent queries. Default: 10.",
-			},
-			{
-				key: "resource.clickhouse_timeout",
-				label: "ClickHouse Query Timeout",
-				subtitle: "Seconds before a query is killed",
-				tooltip:
-					"Maximum time a single ClickHouse query can run before being cancelled. Prevents runaway queries from consuming resources. Default: 10.0.",
-			},
-			{
-				key: "resource.skip_ddl_on_startup",
-				label: "Skip DDL on Startup",
-				subtitle: "Skip database schema creation on boot",
-				tooltip:
-					"Set to true when using a dedicated init container for schema migrations. Prevents the API server from running CREATE TABLE statements on startup. Default: false.",
-			},
-			{
-				key: "resource.max_query_memory_mb",
-				label: "Query Memory Limit",
-				subtitle: "Max MB per ClickHouse query",
-				tooltip:
-					"Maximum memory a single ClickHouse query can use before it is killed. Set below your container memory limit to prevent OOM crashes. Applied live — no restart needed. Default: 400.",
-			},
-			{
-				key: "resource.group_by_spill_mb",
-				label: "GROUP BY Spill Threshold",
-				subtitle: "MB before aggregation spills to disk",
-				tooltip:
-					"When a GROUP BY aggregation exceeds this memory, ClickHouse spills to disk. Lower values = less peak RAM but slower large aggregations. Default: 200.",
-			},
-			{
-				key: "resource.sort_spill_mb",
-				label: "ORDER BY Spill Threshold",
-				subtitle: "MB before sorting spills to disk",
-				tooltip:
-					"When an ORDER BY sort exceeds this memory, ClickHouse spills to disk. Prevents large result sets from consuming all available memory. Default: 200.",
-			},
-			{
-				key: "resource.join_memory_mb",
-				label: "JOIN Memory Limit",
-				subtitle: "MB before JOIN falls back to partial-merge",
-				tooltip:
-					"Maximum memory for hash JOIN operations. When exceeded, ClickHouse falls back to a slower partial-merge join that uses less memory. Default: 100.",
-			},
-		],
-	},
-	{
-		title: "Data & Retention",
-		icon: <Database className="h-3.5 w-3.5" />,
-		description: "Data retention policies and cache TTLs.",
-		settings: [
-			{
-				key: "data.retention_days",
-				label: "Data Retention",
-				subtitle: "Maximum age for telemetry data in days",
-				tooltip:
-					"Global ceiling for how long traces, spans, and scores are kept. After this many days, data is permanently deleted. Set to 0 to keep data forever. Per-org retention cannot exceed this. Default: 90.",
-			},
-			{
-				key: "data.cache_ttl_default",
-				label: "Default Cache TTL",
-				subtitle: "Seconds before cached responses refresh",
-				tooltip:
-					"How long general API responses are cached in Redis. Lower = more real-time data but higher database load. Applies to most list/detail endpoints. Default: 30.",
-			},
-			{
-				key: "data.cache_ttl_dashboard",
-				label: "Dashboard Cache TTL",
-				subtitle: "Seconds for dashboard analytics cache",
-				tooltip:
-					"Cache duration for expensive dashboard aggregation queries. Longer = less load on ClickHouse but slightly stale charts. Default: 60.",
-			},
-			{
-				key: "data.cache_ttl_otel",
-				label: "OTEL Cache TTL",
-				subtitle: "Seconds for trace/session list cache",
-				tooltip:
-					"Cache duration for OpenTelemetry session and trace list endpoints. Short to keep live monitoring fresh. Default: 15.",
-			},
-		],
-	},
-	{
-		title: "Observability",
-		icon: <Activity className="h-3.5 w-3.5" />,
-		description: "Logging and metrics configuration.",
-		settings: [
-			{
-				key: "observability.log_level",
-				label: "Log Level",
-				subtitle: "Server log verbosity",
-				tooltip:
-					"Controls how much the server logs. DEBUG = every request (very noisy). INFO = normal operations (recommended for production). WARNING/ERROR = only problems. Takes effect on restart.",
-			},
-			{
-				key: "observability.log_format",
-				label: "Log Format",
-				subtitle: "Structured JSON or human-readable console",
-				tooltip:
-					"'json' outputs structured logs ideal for log aggregators (Datadog, Loki, CloudWatch). 'console' outputs colored human-readable logs ideal for local development.",
-			},
-			{
-				key: "observability.enable_openapi",
-				label: "Enable OpenAPI",
-				subtitle: "Expose /docs, /redoc, and /openapi.json",
-				tooltip:
-					"When true, exposes interactive API documentation at /docs (Swagger UI) and /redoc. Automatically enabled in local mode. Disable in production to reduce attack surface and hide API schema.",
-			},
-			{
-				key: "observability.enable_metrics",
-				label: "Enable Metrics",
-				subtitle: "Expose Prometheus /metrics endpoint",
-				tooltip:
-					"When true, exposes a Prometheus-compatible metrics endpoint at /metrics for scraping. Enable if you use Prometheus/Grafana for infrastructure monitoring. Automatically enabled in local mode.",
-			},
-		],
-	},
-	{
-		title: "Miscellaneous",
-		icon: <Settings className="h-3.5 w-3.5" />,
-		description: "Other system settings.",
-		settings: [
-			{
-				key: "misc.ide_allowlist",
-				label: "IDE Allowlist",
-				subtitle: "Restrict available IDEs (comma-separated)",
-				tooltip:
-					"Comma-separated IDE identifiers. Only these IDEs appear in install dropdowns and agent compatibility. Leave blank for all. Valid: cursor, claude_code, kiro, pi, copilot, copilot_cli, codex, opencode, gemini_cli, antigravity",
-			},
-			{
-				key: "misc.default_ide",
-				label: "Default IDE",
-				subtitle: "Pre-selected IDE in install dropdowns",
-				tooltip:
-					"The IDE pre-selected in install dropdowns and used as the default for 'observal pull'. Must be one of the allowed IDEs if an allowlist is set.",
-			},
-			{
-				key: "misc.git_mirror_base_path",
-				label: "Git Mirror Path",
-				subtitle: "Directory for cloned repo mirrors",
-				tooltip:
-					"Where git repos are cloned for MCP server analysis and component discovery. Set to a shared/persistent path for multi-instance deployments. Leave blank to use the system temp directory (/tmp).",
-			},
-		],
-	},
-];
-
-const ALL_DEFAULT_SETTINGS = SETTING_SECTIONS.flatMap((s) => s.settings);
 
 function splitIdeList(value: string): string[] {
 	return value
@@ -741,19 +175,21 @@ function IdeAllowlistEditor({ value, onChange }: { value: string; onChange: (val
 	);
 }
 
-/** Help icon that shows a tooltip. If the setting has docs, modifier+click on the card handles it. */
-function SettingHelpIcon({ settingKey, tooltip, openHelp }: { settingKey: string; tooltip: string; openHelp: (key?: string) => boolean }) {
+function SettingHelpIcon({ settingKey, openHelp }: { settingKey: string; openHelp: (key?: string) => boolean }) {
+	if (!SETTING_DOCS[settingKey]) return null;
 	return (
-		<div className="absolute right-2 top-2">
-			<Tooltip>
-				<TooltipTrigger asChild onClick={(e) => e.stopPropagation()}>
-					<HelpCircle className="h-4.5 w-4.5 text-muted-foreground/40 hover:text-foreground transition-colors cursor-help" />
-				</TooltipTrigger>
-				<TooltipContent side="left" className="max-w-[340px] text-sm leading-relaxed p-3">
-					{tooltip}
-				</TooltipContent>
-			</Tooltip>
-		</div>
+		<button
+			type="button"
+			className="absolute right-2 top-2 text-muted-foreground/40 transition-colors hover:text-foreground"
+			onClick={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				openHelp(settingKey);
+			}}
+			aria-label="Open setting help"
+		>
+			<HelpCircle className="h-4.5 w-4.5" />
+		</button>
 	);
 }
 
@@ -767,6 +203,7 @@ export default function SettingsPage() {
 		error,
 		refetch,
 	} = useAdminSettings();
+	const { data: settingsSchema = [] } = useAdminSettingsSchema();
 	const { data: systemWarnings } = useSystemWarnings();
 	const {
 		licensed,
@@ -1129,6 +566,15 @@ export default function SettingsPage() {
 				}))
 	).filter((e) => !e.key.startsWith("branding."));
 
+	const settingSections = settingsSchema;
+	const settingByKey = useMemo(() => {
+		const map = new Map<string, AdminSettingDef>();
+		for (const section of settingSections) {
+			for (const setting of section.settings) map.set(setting.key, setting);
+		}
+		return map;
+	}, [settingSections]);
+
 
 	const handleInlineSave = useCallback(async () => {
 		if (!editingKey) return;
@@ -1172,7 +618,7 @@ export default function SettingsPage() {
 			<Input
 				value={editingValue}
 				onChange={(e) => setEditingValue(e.target.value)}
-				placeholder={getPlaceholder(key)}
+				placeholder={settingByKey.get(key)?.default || "Enter value..."}
 				className="h-8 text-sm flex-1 font-[family-name:var(--font-mono)]"
 				autoFocus
 				onKeyDown={(e) => {
@@ -1543,7 +989,7 @@ export default function SettingsPage() {
 					</div>
 				</section>
 
-				{/* Registered Agents Only — super_admin only */}
+				{/* Registered Agents Only, super_admin only */}
 				{hasMinRole(getUserRole(), "super_admin") && (
 					<section className="animate-in">
 						<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
@@ -1574,7 +1020,7 @@ export default function SettingsPage() {
 					</section>
 				)}
 
-				{/* Data Retention — super_admin only */}
+				{/* Data Retention, super_admin only */}
 				{hasMinRole(getUserRole(), "super_admin") && (
 					<section className="animate-in">
 						<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
@@ -1779,10 +1225,9 @@ export default function SettingsPage() {
 							</div>
 						)}
 						{/* Add new setting form */}
-						{/* Unified sections — each setting stays in its section */}
-						<TooltipProvider delayDuration={300}>
-							{SETTING_SECTIONS.filter((s) => !s.danger && (!s.requiresFeature || licensedFeatures.includes(s.requiresFeature) || licensedFeatures.includes("all"))).map((section) => {
-								const visibleSettings = section.settings.filter((d) => !d.requiresFeature || licensedFeatures.includes(d.requiresFeature) || licensedFeatures.includes("all"));
+						{/* Unified sections, each setting stays in its section */}
+						{settingSections.filter((s) => !s.danger && (!s.requires_feature || licensedFeatures.includes(s.requires_feature) || licensedFeatures.includes("all"))).map((section) => {
+								const visibleSettings = section.settings.filter((d) => !d.requires_feature || licensedFeatures.includes(d.requires_feature) || licensedFeatures.includes("all"));
 								if (visibleSettings.length === 0) return null;
 
 								if (section.title === "Agent Insights") {
@@ -1810,7 +1255,7 @@ export default function SettingsPage() {
 										className={`text-sm font-semibold uppercase tracking-wider text-foreground/80 mb-1 flex items-center gap-1.5 ${SECTION_DOCS[section.title] ? "cursor-pointer hover:text-primary transition-colors" : ""}`}
 										onClick={() => openHelp(undefined, section.title)}
 									>
-										{section.icon}
+										{sectionIcon(section)}
 										{section.title}
 									</h3>
 									{section.description && (
@@ -1846,7 +1291,7 @@ export default function SettingsPage() {
 											const isSet = (existing as AdminSetting).is_set ?? !!existing.value;
 											return (
 												<div key={d.key} className={`rounded-md border-2 border-border bg-card p-3 relative ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
-													<SettingHelpIcon settingKey={d.key} tooltip={d.tooltip} openHelp={openHelp} />
+													<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
 													<span className="text-sm font-semibold text-foreground">{d.label}</span>
 													<div className="flex items-center gap-2 mt-1.5">
 														{isSensitive ? (
@@ -1866,7 +1311,7 @@ export default function SettingsPage() {
 										}
 										return (
 											<button key={d.key} type="button" onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); return; } setEditingKey(d.key); setEditingValue(""); }} className={`text-left rounded-md border-2 border-dashed border-border/80 p-3 hover:border-primary/40 hover:bg-background transition-colors relative ${helpTargetClass(d.key)}`}>
-												<SettingHelpIcon settingKey={d.key} tooltip={d.tooltip} openHelp={openHelp} />
+												<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
 												<span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>
 											</button>
 										);
@@ -1877,7 +1322,7 @@ export default function SettingsPage() {
 							})}
 
 							{/* Danger Zone */}
-							{SETTING_SECTIONS.some((s) => s.danger && (!s.requiresFeature || licensedFeatures.includes(s.requiresFeature) || licensedFeatures.includes("all"))) && (
+							{settingSections.some((s) => s.danger && (!s.requires_feature || licensedFeatures.includes(s.requires_feature) || licensedFeatures.includes("all"))) && (
 								<section className="mt-8">
 									<div className="border-t-2 border-amber-500/30 pt-6">
 										<h2 className="text-sm font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-2 mb-1">
@@ -1886,13 +1331,13 @@ export default function SettingsPage() {
 										</h2>
 										<p className="text-xs text-foreground/60 mb-4">These settings can affect authentication, security, and data integrity.</p>
 										<div className="space-y-4">
-											{SETTING_SECTIONS.filter((s) => s.danger && (!s.requiresFeature || licensedFeatures.includes(s.requiresFeature) || licensedFeatures.includes("all"))).map((section) => {
-												const visibleDangerSettings = section.settings.filter((d) => !d.requiresFeature || licensedFeatures.includes(d.requiresFeature) || licensedFeatures.includes("all"));
+											{settingSections.filter((s) => s.danger && (!s.requires_feature || licensedFeatures.includes(s.requires_feature) || licensedFeatures.includes("all"))).map((section) => {
+												const visibleDangerSettings = section.settings.filter((d) => !d.requires_feature || licensedFeatures.includes(d.requires_feature) || licensedFeatures.includes("all"));
 												if (visibleDangerSettings.length === 0) return null;
 												return (
 												<details key={section.title} className="group rounded-md border-l-4 border-amber-500/60 border-2 border-border/70 bg-card">
 													<summary className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none hover:bg-muted/30 transition-colors">
-														{section.icon}
+														{sectionIcon(section)}
 														<span className={`text-sm font-semibold text-foreground/80 flex-1 ${SECTION_DOCS[section.title] ? "hover:text-primary transition-colors" : ""}`} onClick={(e) => { if (SECTION_DOCS[section.title]) { e.preventDefault(); e.stopPropagation(); openHelp(undefined, section.title); } }}>{section.title}</span>
 														<span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">CAUTION</span>
 													</summary>
@@ -1905,7 +1350,7 @@ export default function SettingsPage() {
 														if (d.key === "danger.purge_traces_insights") {
 															return (
 																<div key={d.key} className={`rounded-md border-2 border-destructive/40 bg-destructive/5 p-3 relative ${helpTargetClass(d.key)}`}>
-																	<SettingHelpIcon settingKey={d.key} tooltip={d.tooltip} openHelp={openHelp} />
+																	<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
 																	<span className="text-sm font-semibold text-destructive">{d.label}</span>
 																	<p className="text-xs text-foreground/60 mt-1 pr-6">{d.subtitle}</p>
 																	<Button variant="destructive" size="sm" className="mt-3 h-8" onClick={handlePurgeTracesInsights} disabled={purgingTracesInsights}>
@@ -1934,7 +1379,7 @@ export default function SettingsPage() {
 															const isSet = (existing as AdminSetting).is_set ?? !!existing.value;
 															return (
 																<div key={d.key} className={`rounded-md border-2 border-border bg-card p-3 relative ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
-																	<SettingHelpIcon settingKey={d.key} tooltip={d.tooltip} openHelp={openHelp} />
+																	<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
 																	<span className="text-sm font-semibold text-foreground">{d.label}</span>
 																	<div className="flex items-center gap-2 mt-1.5">
 																		{isSensitive ? (
@@ -1954,7 +1399,7 @@ export default function SettingsPage() {
 														}
 														return (
 															<button key={d.key} type="button" onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); return; } setEditingKey(d.key); setEditingValue(""); }} className={`text-left rounded-md border-2 border-dashed border-border/80 p-3 hover:border-primary/40 hover:bg-background transition-colors relative ${helpTargetClass(d.key)}`}>
-																<SettingHelpIcon settingKey={d.key} tooltip={d.tooltip} openHelp={openHelp} />
+																<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
 																<span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>
 															</button>
 														);
@@ -1967,7 +1412,6 @@ export default function SettingsPage() {
 									</div>
 								</section>
 							)}
-						</TooltipProvider>
 					</div>
 				)}
 			</div>

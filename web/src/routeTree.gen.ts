@@ -29,7 +29,6 @@ import { Route as AuthedAdminSsoRouteImport } from './routes/_authed/_admin/sso'
 import { Route as AuthedAdminSettingsRouteImport } from './routes/_authed/_admin/settings'
 import { Route as AuthedAdminSecurityEventsRouteImport } from './routes/_authed/_admin/security-events'
 import { Route as AuthedAdminReviewRouteImport } from './routes/_authed/_admin/review'
-import { Route as AuthedAdminErrorsRouteImport } from './routes/_authed/_admin/errors'
 import { Route as AuthedAdminDiagnosticsRouteImport } from './routes/_authed/_admin/diagnostics'
 import { Route as AuthedAdminDashboardRouteImport } from './routes/_authed/_admin/dashboard'
 import { Route as AuthedAdminAuditLogRouteImport } from './routes/_authed/_admin/audit-log'
@@ -136,11 +135,6 @@ const AuthedAdminReviewRoute = AuthedAdminReviewRouteImport.update({
   path: '/review',
   getParentRoute: () => AuthedAdminRoute,
 } as any)
-const AuthedAdminErrorsRoute = AuthedAdminErrorsRouteImport.update({
-  id: '/errors',
-  path: '/errors',
-  getParentRoute: () => AuthedAdminRoute,
-} as any)
 const AuthedAdminDiagnosticsRoute = AuthedAdminDiagnosticsRouteImport.update({
   id: '/diagnostics',
   path: '/diagnostics',
@@ -181,7 +175,6 @@ export interface FileRoutesByFullPath {
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
-  '/errors': typeof AuthedAdminErrorsRoute
   '/review': typeof AuthedAdminReviewRoute
   '/security-events': typeof AuthedAdminSecurityEventsRoute
   '/settings': typeof AuthedAdminSettingsRoute
@@ -207,7 +200,6 @@ export interface FileRoutesByTo {
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
-  '/errors': typeof AuthedAdminErrorsRoute
   '/review': typeof AuthedAdminReviewRoute
   '/security-events': typeof AuthedAdminSecurityEventsRoute
   '/settings': typeof AuthedAdminSettingsRoute
@@ -237,7 +229,6 @@ export interface FileRoutesById {
   '/_authed/_admin/audit-log': typeof AuthedAdminAuditLogRoute
   '/_authed/_admin/dashboard': typeof AuthedAdminDashboardRoute
   '/_authed/_admin/diagnostics': typeof AuthedAdminDiagnosticsRoute
-  '/_authed/_admin/errors': typeof AuthedAdminErrorsRoute
   '/_authed/_admin/review': typeof AuthedAdminReviewRoute
   '/_authed/_admin/security-events': typeof AuthedAdminSecurityEventsRoute
   '/_authed/_admin/settings': typeof AuthedAdminSettingsRoute
@@ -265,7 +256,6 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/dashboard'
     | '/diagnostics'
-    | '/errors'
     | '/review'
     | '/security-events'
     | '/settings'
@@ -291,7 +281,6 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/dashboard'
     | '/diagnostics'
-    | '/errors'
     | '/review'
     | '/security-events'
     | '/settings'
@@ -320,7 +309,6 @@ export interface FileRouteTypes {
     | '/_authed/_admin/audit-log'
     | '/_authed/_admin/dashboard'
     | '/_authed/_admin/diagnostics'
-    | '/_authed/_admin/errors'
     | '/_authed/_admin/review'
     | '/_authed/_admin/security-events'
     | '/_authed/_admin/settings'
@@ -487,13 +475,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminReviewRouteImport
       parentRoute: typeof AuthedAdminRoute
     }
-    '/_authed/_admin/errors': {
-      id: '/_authed/_admin/errors'
-      path: '/errors'
-      fullPath: '/errors'
-      preLoaderRoute: typeof AuthedAdminErrorsRouteImport
-      parentRoute: typeof AuthedAdminRoute
-    }
     '/_authed/_admin/diagnostics': {
       id: '/_authed/_admin/diagnostics'
       path: '/diagnostics'
@@ -543,7 +524,6 @@ interface AuthedAdminRouteChildren {
   AuthedAdminAuditLogRoute: typeof AuthedAdminAuditLogRoute
   AuthedAdminDashboardRoute: typeof AuthedAdminDashboardRoute
   AuthedAdminDiagnosticsRoute: typeof AuthedAdminDiagnosticsRoute
-  AuthedAdminErrorsRoute: typeof AuthedAdminErrorsRoute
   AuthedAdminReviewRoute: typeof AuthedAdminReviewRoute
   AuthedAdminSecurityEventsRoute: typeof AuthedAdminSecurityEventsRoute
   AuthedAdminSettingsRoute: typeof AuthedAdminSettingsRoute
@@ -555,7 +535,6 @@ const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
   AuthedAdminAuditLogRoute: AuthedAdminAuditLogRoute,
   AuthedAdminDashboardRoute: AuthedAdminDashboardRoute,
   AuthedAdminDiagnosticsRoute: AuthedAdminDiagnosticsRoute,
-  AuthedAdminErrorsRoute: AuthedAdminErrorsRoute,
   AuthedAdminReviewRoute: AuthedAdminReviewRoute,
   AuthedAdminSecurityEventsRoute: AuthedAdminSecurityEventsRoute,
   AuthedAdminSettingsRoute: AuthedAdminSettingsRoute,

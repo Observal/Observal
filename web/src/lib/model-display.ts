@@ -10,20 +10,12 @@
  * when display data isn't available.
  */
 
-const MONTH_NAMES = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+const DATE_SHORT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
 
 interface FormattedModel {
   primary: string;
@@ -32,7 +24,7 @@ interface FormattedModel {
 }
 
 function formatDateShort(d: Date): string {
-  return `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  return DATE_SHORT.format(d);
 }
 
 function forceSecondary(

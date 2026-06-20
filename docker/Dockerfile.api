@@ -15,6 +15,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git xmlsec1 libxmlsec1-dev pkg-config && rm -rf /var/lib/apt/lists/*
 
 COPY observal-server/pyproject.toml observal-server/uv.lock ./
+COPY packages/observal-shared/ ../packages/observal-shared/
 RUN uv sync --frozen --no-dev --no-install-project
 
 # observal-insights is now part of ee/ — no separate package install needed.
