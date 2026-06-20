@@ -187,6 +187,10 @@ INIT_SQL = [
     TTL toDateTime(timestamp) + INTERVAL 730 DAY
     PARTITION BY toYYYYMM(timestamp)
     ORDER BY (event_type, severity, timestamp)""",
+    # Security events org scoping: backfill column + index on pre-existing deployments
+    # (CREATE TABLE IF NOT EXISTS above is a no-op once the table exists)
+    """ALTER TABLE security_events ADD COLUMN IF NOT EXISTS org_id String DEFAULT ''""",
+    """ALTER TABLE security_events ADD INDEX IF NOT EXISTS idx_org_id org_id TYPE bloom_filter(0.01) GRANULARITY 1""",
     # Audit log table (enterprise compliance - SOC 2 / ISO 27001)
     """CREATE TABLE IF NOT EXISTS audit_log (
         event_id    UUID,

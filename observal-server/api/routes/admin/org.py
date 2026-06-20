@@ -42,6 +42,9 @@ async def get_security_events(
     if actor_email:
         conditions.append("actor_email = {ae:String}")
         params["param_ae"] = actor_email
+    if current_user.org_id is not None:
+        conditions.append("org_id = {org_id:String}")
+        params["param_org_id"] = str(current_user.org_id)
 
     where = " AND ".join(conditions)
     limit = min(max(int(limit), 1), 1000)

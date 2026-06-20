@@ -221,12 +221,17 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user or not user.verify_password(req.password):
+        # Attribute a wrong-password failure for an existing user to that user so
+        # the event resolves to their org and stays visible to tenant admins;
+        # unknown-identifier attempts have no org and remain global.
         await emit_security_event(
             SecurityEvent(
                 event_type=EventType.LOGIN_FAILURE,
                 severity=Severity.WARNING,
                 outcome="failure",
-                actor_email=identifier,
+                actor_id=str(user.id) if user else "",
+                actor_email=user.email if user else identifier,
+                actor_role=user.role.value if user else "",
                 source_ip=source_ip,
                 user_agent=user_agent,
                 detail="Invalid credentials",
@@ -543,12 +548,17 @@ async def issue_token(request: Request, req: TokenRequest, db: AsyncSession = De
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user or not user.verify_password(req.password):
+        # Attribute a wrong-password failure for an existing user to that user so
+        # the event resolves to their org and stays visible to tenant admins;
+        # unknown-identifier attempts have no org and remain global.
         await emit_security_event(
             SecurityEvent(
                 event_type=EventType.LOGIN_FAILURE,
                 severity=Severity.WARNING,
                 outcome="failure",
-                actor_email=identifier,
+                actor_id=str(user.id) if user else "",
+                actor_email=user.email if user else identifier,
+                actor_role=user.role.value if user else "",
                 source_ip=source_ip,
                 user_agent=user_agent,
                 detail="Invalid credentials (token endpoint)",
