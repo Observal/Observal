@@ -5,8 +5,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 FROM node:24-alpine AS base
-ARG PNPM_VERSION=10.34.1
-ARG PNPM_SHA256=ccff3042d2473f514073323f73a63a49028a85ac79a2cfc5dd6a321a3b41ad59
+ARG PNPM_VERSION=10.34.4
+ARG PNPM_SHA256=15092b4d71f1192f67501116dd87dd20be8c4238434371959820255a374219c1
 RUN apk add --no-cache wget && \
     wget -q "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linuxstatic-x64" -O /usr/local/bin/pnpm && \
     echo "${PNPM_SHA256}  /usr/local/bin/pnpm" | sha256sum -c - && \
