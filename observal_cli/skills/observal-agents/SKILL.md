@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 name: observal-agents
 command: observal
-description: Create, update, version, and manage Observal agents. Use when the user wants to create a new agent, update an existing one, release a new version, scaffold a YAML project, add components, build, publish, bulk-create, delete, or restore agents.
+description: Create, update, version, and manage Observal agents. Use when the user wants to create a new agent, update an existing one, release a new version, scaffold a YAML project, add components, build, publish, bulk-create, archive, delete, or restore agents.
 version: 2.0.0
 owner: observal
 ---
@@ -15,7 +15,7 @@ owner: observal
 1. **EXECUTE commands**: run them in your shell. Set timeout to 60 seconds.
 2. **Use single quotes** for `--prompt` and `--description` values.
 3. **Pass `--output json`** on list/show/versions commands.
-4. **Pass `--yes`** on destructive commands (`delete`, `unarchive`, `bulk-create`).
+4. **Pass `--yes`** on destructive commands (`archive`, `delete`, `unarchive`, `bulk-create`).
 5. **Resolve 409:** `observal agent publish --update` for in-place edits, `observal agent release --bump` for reviewed releases.
 6. **When in doubt about a flag, run `<command> --help` first.**
 
@@ -110,9 +110,10 @@ observal agent bulk-create --from-file agents.json --yes
 
 ---
 
-## Procedure: Delete / Restore
+## Procedure: Archive / Restore
 
 ```bash
+observal agent archive AGENT_NAME --yes
 observal agent delete AGENT_NAME --yes
 observal agent transfer-owner AGENT_NAME @username -y
 observal agent unarchive AGENT_NAME --yes

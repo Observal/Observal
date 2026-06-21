@@ -7,14 +7,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
-import { Link, useParams, useRouter } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import {
   ArrowDownToLine,
   Puzzle,
   Star,
   Users,
   Loader2,
-  Trash2,
+  Archive,
+  ArchiveRestore,
   Play,
   CheckCircle2,
   XCircle,
@@ -24,8 +25,6 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from "react";
 
-import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   useRegistryItem,
   useAgentDownloads,
@@ -39,8 +38,10 @@ import {
   useInsightSessionCount,
   useGenerateInsight,
   useInsightsStatus,
+  useArchiveAgent,
+  useUnarchiveAgent,
 } from "@/hooks/use-api";
-import { registry, getUserRole } from "@/lib/api";
+import { getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import type {
   AgentComponentReference,
@@ -355,45 +356,55 @@ function AgentVersionContents({
   );
 }
 
-function DeleteButton({ agentId, agentName }: { agentId: string; agentName: string }) {
+function AgentArchiveButton({ agentId, agentName, status, onSuccess }: { agentId: string; agentName: string; status?: string; onSuccess: () => void }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const router = useRouter();
-  const qc = useQueryClient();
+  const archiveMutation = useArchiveAgent();
+  const unarchiveMutation = useUnarchiveAgent();
+  const isArchived = status === "archived";
+  const isBusy = archiveMutation.isPending || unarchiveMutation.isPending;
 
-  async function handleDelete() {
-    setDeleting(true);
-    try {
-      await registry.delete("agents", agentId);
-      qc.invalidateQueries({ queryKey: ["registry", "agents"] });
-      toast.success("Agent deleted");
-      router.navigate({ to: "/agents" });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete agent");
-      setDeleting(false);
-      setConfirmOpen(false);
-    }
+  function submit() {
+    const mutation = isArchived ? unarchiveMutation : archiveMutation;
+    mutation.mutate(agentId, {
+      onSuccess: () => {
+        setConfirmOpen(false);
+        onSuccess();
+      },
+    });
   }
 
   return (
     <>
-      <Button variant="destructive" size="sm" className="h-8" onClick={() => setConfirmOpen(true)}>
-        <Trash2 className="mr-1 h-3.5 w-3.5" />
-        Delete
+      <Button
+        variant="outline"
+        size="sm"
+        className={isArchived ? "h-8" : "h-8 border-dark-yellow/40 bg-light-yellow text-dark-yellow hover:bg-light-yellow/80"}
+        onClick={() => setConfirmOpen(true)}
+        disabled={isBusy}
+      >
+        {isArchived ? <ArchiveRestore className="mr-1 h-3.5 w-3.5" /> : <Archive className="mr-1 h-3.5 w-3.5" />}
+        {isArchived ? "Restore" : "Archive"}
       </Button>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete {agentName}?</DialogTitle>
+            <DialogTitle>{isArchived ? `Restore ${agentName}?` : `Archive ${agentName}?`}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            This will permanently delete this agent and all associated data. This action cannot be undone.
+            {isArchived
+              ? "This makes the agent discoverable again."
+              : "Archived agents stop appearing in registry lists. Direct pulls still work by ID."}
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Deleting...</> : "Delete"}
+            <Button
+              variant={isArchived ? "default" : "outline"}
+              className={isArchived ? undefined : "border-dark-yellow/40 bg-light-yellow text-dark-yellow hover:bg-light-yellow/80"}
+              onClick={submit}
+              disabled={isBusy}
+            >
+              {isBusy ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Saving...</> : isArchived ? "Restore" : "Archive"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -612,7 +623,8 @@ export default function AgentDetailPage() {
   const versionSupportedIdes = vd?.supported_ides ?? selectedVersionSummary?.supported_ides ?? a?.supported_ides;
   const versionRequiredFeatures = vd?.required_ide_features ?? (selectedVersion ? undefined : a?.required_ide_features);
   const versionInferredIdes = vd?.inferred_supported_ides ?? (selectedVersion ? undefined : a?.inferred_supported_ides);
-  const canDelete = isAdmin || (whoami?.id && a?.created_by && whoami.id === String(a.created_by));
+  const isOwner = !!(whoami?.id && a?.created_by && whoami.id === String(a.created_by));
+  const canManageLifecycle = isAdmin || isOwner;
   const agentStatus = a?.status as string | undefined;
   const canEdit = (isAdmin || a?.user_permission === "owner" || a?.user_permission === "edit") && ["approved", "pending", "draft", "rejected"].includes(agentStatus ?? "");
   const agentName = a?.name ?? id.slice(0, 8);
@@ -995,12 +1007,12 @@ export default function AgentDetailPage() {
                 </div>
               )}
 
-              {canDelete && (
+              {canManageLifecycle && (agentStatus === "approved" || agentStatus === "archived") && (
                 <div className="border border-border rounded-md p-4 space-y-3">
                   <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-                    Danger zone
+                    Lifecycle
                   </h3>
-                  <DeleteButton agentId={id} agentName={agentName} />
+                  <AgentArchiveButton agentId={id} agentName={agentName} status={agentStatus} onSuccess={() => refetch()} />
                 </div>
               )}
             </aside>

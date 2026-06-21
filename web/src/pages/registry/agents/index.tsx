@@ -172,7 +172,8 @@ function ArchiveAgentButton({ agent }: { agent: RegistryItem }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
             <Button
-              variant="destructive"
+              variant="outline"
+              className="border-dark-yellow/40 bg-light-yellow text-dark-yellow hover:bg-light-yellow/80"
               onClick={(e) => {
                 e.stopPropagation();
                 archiveMutation.mutate(agent.id, {

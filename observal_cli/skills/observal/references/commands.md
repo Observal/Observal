@@ -51,6 +51,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal agent build`: Validate agent definition against the server (dry-run).
   - `observal agent bulk-create`: Bulk-create agents from a JSON file.
   - `observal agent create`: Create a new agent (interactive wizard, from file, or via flags).
+  - `observal agent archive`: Archive an agent.
   - `observal agent delete`: Archive an agent (soft delete).
   - `observal agent init`: Scaffold an observal-agent.yaml definition file.
   - `observal agent install`: Get install config for an agent.

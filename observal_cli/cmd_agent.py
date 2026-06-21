@@ -700,22 +700,7 @@ def agent_install(
     console.print_json(_json.dumps(snippet, indent=2))
 
 
-@agent_app.command(name="delete")
-def agent_delete(
-    agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
-):
-    """Archive an agent (soft delete).
-
-    Marks the agent as archived. It will no longer appear in public
-    listings but can be restored with the unarchive command. Prompts
-    for confirmation unless --yes is provided.
-
-    Examples:
-      observal agent delete my-agent
-      observal agent delete my-agent --yes
-      observal agent delete @myalias
-    """
+def _archive_agent(agent_id: str, yes: bool) -> None:
     resolved = config.resolve_alias(agent_id)
     if not yes:
         with spinner():
@@ -725,6 +710,28 @@ def agent_delete(
     with spinner("Archiving..."):
         client.patch(f"/api/v1/agents/{resolved}/archive")
     rprint("[green]✓ Agent archived[/green]")
+
+
+@agent_app.command(name="archive")
+def agent_archive(
+    agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Archive an agent.
+
+    Marks the agent as archived. It will no longer appear in public
+    listings but can be restored with the unarchive command.
+    """
+    _archive_agent(agent_id, yes)
+
+
+@agent_app.command(name="delete")
+def agent_delete(
+    agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Archive an agent. Prefer the archive command."""
+    _archive_agent(agent_id, yes)
 
 
 @agent_app.command(name="unarchive")
