@@ -22,7 +22,7 @@ import json
 import structlog
 
 from ._deps import get_db_session
-from .facets import aggregate_facets, extract_and_cache_facets
+from .facets import aggregate_facets, extract_and_cache_facets, load_cached_facets_batch
 from .sections import generate_sections
 from .session_meta_extractor import aggregate_metas, extract_all_session_metas
 from .transcript import build_session_transcript
@@ -125,14 +125,17 @@ async def _run_pipeline(
     # Aggregate deterministic stats
     agg = aggregate_metas(session_metas)
 
-    # ── Step 2: Build transcripts for top sessions ────────────────────────
-    # Sort by substantiveness (duration * tool_calls), take top N
+    session_ids = [m["session_id"] for m in session_metas]
+    facets_by_session = await load_cached_facets_batch(session_ids, db)
+    logger.info("insight_cached_facets_loaded", count=len(facets_by_session))
+
+    # Build transcripts only for top sessions that still need facets.
     ranked = sorted(
         session_metas,
         key=lambda m: m.get("duration_seconds", 0) * sum(m.get("tool_counts", {}).values()),
         reverse=True,
     )
-    top_sessions = ranked[:MAX_FACET_SESSIONS]
+    top_sessions = [m for m in ranked if m["session_id"] not in facets_by_session][:MAX_FACET_SESSIONS]
 
     transcripts: dict[str, str] = {}
     if top_sessions:
@@ -145,33 +148,25 @@ async def _run_pipeline(
     logger.info("insight_transcripts_built", count=len(transcripts))
     await _emit_progress(progress_callback, "extracting_facets", 3, 9, "Extracting qualitative session facets")
 
-    # ── Step 3: Extract facets (concurrency-limited Haiku calls) ──────────
     import services.dynamic_settings as ds
 
     max_concurrent = int(await ds.get("insights.facet_concurrency") or 5)
 
-    all_facets: list[dict] = []
     if transcripts:
-        all_facets = await _extract_facets_batch(
-            transcripts=transcripts,
-            session_metas={m["session_id"]: m for m in session_metas},
-            agent_id=agent_id or "",
-            db=db,
-            max_concurrent=max_concurrent,
+        facets_by_session.update(
+            await _extract_facets_batch(
+                transcripts=transcripts,
+                session_metas={m["session_id"]: m for m in session_metas},
+                agent_id=agent_id or "",
+                db=db,
+                max_concurrent=max_concurrent,
+            )
         )
+
+    all_facets = [facets_by_session[sid] for sid in session_ids if facets_by_session.get(sid)]
 
     logger.info("insight_facets_extracted", count=len(all_facets))
     await _emit_progress(progress_callback, "analyzing_versions", 4, 9, "Analyzing versions, layers, and dirty cohorts")
-
-    # ── Step 3b: Model efficiency analysis ─────────────────────────────────
-    # Cross-reference per-session model usage with facets to detect waste.
-    # Build session_id -> facets mapping from the extraction batch.
-    facets_by_session: dict[str, dict] = {}
-    if transcripts and all_facets:
-        session_ids_with_transcripts = list(transcripts.keys())
-        for sid, facet in zip(session_ids_with_transcripts, all_facets, strict=False):
-            if facet:
-                facets_by_session[sid] = facet
 
     model_efficiency: list[dict] = []
     estimated_waste = 0.0
@@ -283,11 +278,17 @@ async def _run_pipeline(
             )
             if prior_metas:
                 prior_agg = aggregate_metas(prior_metas)
-                prior_ranked = sorted(
-                    prior_metas,
-                    key=lambda m: m.get("duration_seconds", 0) * sum(m.get("tool_counts", {}).values()),
-                    reverse=True,
-                )[: min(MAX_FACET_SESSIONS, 25)]
+                prior_ids = [m["session_id"] for m in prior_metas]
+                prior_facets_by_session = await load_cached_facets_batch(prior_ids, db)
+                prior_ranked = [
+                    m
+                    for m in sorted(
+                        prior_metas,
+                        key=lambda m: m.get("duration_seconds", 0) * sum(m.get("tool_counts", {}).values()),
+                        reverse=True,
+                    )
+                    if m["session_id"] not in prior_facets_by_session
+                ][: min(MAX_FACET_SESSIONS, 25)]
                 prior_transcripts: dict[str, str] = {}
                 prior_results = await asyncio.gather(
                     *[build_session_transcript(m["session_id"]) for m in prior_ranked],
@@ -296,15 +297,17 @@ async def _run_pipeline(
                 for meta, result in zip(prior_ranked, prior_results, strict=False):
                     if isinstance(result, str) and result.strip():
                         prior_transcripts[meta["session_id"]] = result
-                prior_facets: list[dict] = []
                 if prior_transcripts:
-                    prior_facets = await _extract_facets_batch(
-                        transcripts=prior_transcripts,
-                        session_metas={m["session_id"]: m for m in prior_metas},
-                        agent_id=agent_id or "",
-                        db=db,
-                        max_concurrent=max_concurrent,
+                    prior_facets_by_session.update(
+                        await _extract_facets_batch(
+                            transcripts=prior_transcripts,
+                            session_metas={m["session_id"]: m for m in prior_metas},
+                            agent_id=agent_id or "",
+                            db=db,
+                            max_concurrent=max_concurrent,
+                        )
                     )
+                prior_facets = [prior_facets_by_session[sid] for sid in prior_ids if prior_facets_by_session.get(sid)]
                 comparison_cohort = {
                     "current_version": agent_version,
                     "prior_version": comparison_agent_version,
@@ -496,7 +499,7 @@ async def _extract_facets_batch(
     agent_id: str,
     db,
     max_concurrent: int = 5,
-) -> list[dict]:
+) -> dict[str, dict]:
     """Extract facets with concurrency limit."""
     semaphore = asyncio.Semaphore(max_concurrent)
 
@@ -510,14 +513,18 @@ async def _extract_facets_batch(
                 db=db,
             )
 
-    tasks = [_one(sid, t) for sid, t in transcripts.items()]
+    session_ids = list(transcripts)
+    tasks = [_one(sid, transcripts[sid]) for sid in session_ids]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for r in results:
-        if isinstance(r, Exception):
-            logger.warning("facet_task_exception", error=str(r), type=type(r).__name__)
+    facets_by_session: dict[str, dict] = {}
+    for sid, result in zip(session_ids, results, strict=False):
+        if isinstance(result, Exception):
+            logger.warning("facet_task_exception", session_id=sid, error=str(result), type=type(result).__name__)
+        elif isinstance(result, dict) and result:
+            facets_by_session[sid] = result
 
-    return [r for r in results if isinstance(r, dict) and r]
+    return facets_by_session
 
 
 def _build_data_block(

@@ -135,15 +135,25 @@ async def store_facets(
 
 async def load_cached_facets(session_id: str, db) -> dict | None:
     """Load previously extracted facets from DB."""
+    cached = await load_cached_facets_batch([session_id], db)
+    return cached.get(session_id)
+
+
+async def load_cached_facets_batch(session_ids: list[str], db) -> dict[str, dict]:
+    """Load cached facets for many sessions in one DB query."""
+    if not session_ids:
+        return {}
+
     from sqlalchemy import select
 
     facets_model = get_facets_model()
-    stmt = select(facets_model).where(facets_model.session_id == session_id)
+    stmt = select(facets_model).where(facets_model.session_id.in_(session_ids))
     result = await db.execute(stmt)
-    row = result.scalar_one_or_none()
-    if row is None:
-        return None
-    return row.facets if hasattr(row, "facets") else None
+    return {
+        row.session_id: row.facets
+        for row in result.scalars().all()
+        if getattr(row, "session_id", None) and getattr(row, "facets", None)
+    }
 
 
 async def extract_and_cache_facets(

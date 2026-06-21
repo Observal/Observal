@@ -13,15 +13,30 @@ import json
 
 import structlog
 
-from ._deps import get_query
+from ._deps import get_call_model, get_query
 
 logger = structlog.get_logger(__name__)
 
 MAX_TRANSCRIPT_CHARS = 30000
+SUMMARY_CHUNK_CHARS = 25000
 MAX_PROMPT_CHARS = 500
 MAX_ASSISTANT_CHARS = 300
 MAX_TOOL_INPUT_CHARS = 200
 MAX_TOOL_OUTPUT_CHARS = 200
+
+CHUNK_SUMMARY_PROMPT = """Summarize this portion of a session transcript. Focus on:
+1. What the user asked for
+2. What the assistant did, including tools used and files modified
+3. Any friction or issues
+4. The outcome
+
+Keep it concise. Preserve specific file names, error messages, and user feedback.
+
+Respond with only this JSON shape:
+{"summary": "3 to 5 sentence summary"}
+
+TRANSCRIPT CHUNK:
+"""
 
 
 async def build_session_transcript(session_id: str) -> str:
@@ -33,7 +48,6 @@ async def build_session_transcript(session_id: str) -> str:
         FROM session_events FINAL
         WHERE session_id = {sid:String}
         ORDER BY line_offset ASC
-        LIMIT 500
         FORMAT JSON
     """
     params = {"param_sid": session_id}
@@ -49,13 +63,15 @@ async def build_session_transcript(session_id: str) -> str:
     if not rows:
         return ""
 
-    return _format_rows(rows)
+    transcript = _format_rows(rows)
+    if len(transcript) <= MAX_TRANSCRIPT_CHARS:
+        return transcript
+    return await _summarize_transcript(session_id, transcript)
 
 
 def _format_rows(rows: list[dict]) -> str:
     """Parse raw_line JSONL rows and format as readable transcript."""
     lines: list[str] = []
-    total_chars = 0
 
     for row in rows:
         event_type = row.get("event_type", "")
@@ -74,13 +90,38 @@ def _format_rows(rows: list[dict]) -> str:
         if not line:
             continue
 
-        if total_chars + len(line) > MAX_TRANSCRIPT_CHARS:
-            lines.append("[...truncated...]")
-            break
         lines.append(line)
-        total_chars += len(line) + 1
 
     return "\n".join(lines)
+
+
+async def _summarize_transcript(session_id: str, transcript: str) -> str:
+    """Summarize an oversized transcript instead of cutting off the tail."""
+    import services.dynamic_settings as ds
+
+    call_model = get_call_model()
+    model_override = await ds.get("insights.model_facets") or None
+    chunks = [transcript[i : i + SUMMARY_CHUNK_CHARS] for i in range(0, len(transcript), SUMMARY_CHUNK_CHARS)]
+    summaries: list[str] = []
+
+    for index, chunk in enumerate(chunks, start=1):
+        try:
+            result = await call_model(CHUNK_SUMMARY_PROMPT + chunk, model_override=model_override, max_tokens=700)
+            summary = result.get("summary", "") if isinstance(result, dict) else ""
+        except Exception as e:
+            logger.warning("transcript_summary_failed", session_id=session_id, chunk=index, error=str(e))
+            summary = ""
+
+        summaries.append(summary.strip() or chunk[:2000])
+
+    return "\n".join(
+        [
+            f"Session: {session_id[:8]}",
+            "[Long session summarized]",
+            "",
+            "\n\n[Next chunk]\n\n".join(summaries),
+        ]
+    )
 
 
 def _format_event(event_type: str, tool_name: str, parsed: dict) -> str:

@@ -4,8 +4,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 name: observal
 command: observal
-description: "Core Observal CLI operations: pull agents into your IDE, scan installed components, diagnose and patch IDE configs, authenticate, and manage CLI settings. Use when the user wants to install an agent, check their IDE setup, login, or configure the CLI."
-version: 2.0.0
+description: "Core Observal CLI operations: pull agents into your IDE, scan installed components, diagnose and patch IDE configs, authenticate, manage CLI settings, and discuss agent insights. Use when the user wants to install an agent, check setup, login, configure the CLI, or ask how an agent is doing."
+version: 2.1.0
 owner: observal
 ---
 
@@ -149,6 +149,45 @@ observal config set server_url https://observal.example.com
 observal config aliases
 observal config alias MY_AGENT abc-123
 ```
+
+---
+
+## Procedure: Discuss Agent Insights
+
+Use this when the user asks how an agent is doing, what is working, what is broken, why a version changed, or what to improve.
+
+Always fetch JSON first so you can reason over every report section, then answer conversationally.
+
+```bash
+observal ops insights list AGENT_NAME --output json
+observal ops insights show AGENT_NAME latest --output json
+observal ops insights show AGENT_NAME latest --section suggestions --output json
+observal ops insights show AGENT_NAME latest --section friction_analysis --output json
+```
+
+Available sections:
+
+- `at_a_glance`: health, working areas, blockers, quick win
+- `what_they_work_on`: project areas and session counts
+- `interaction_style`: how users interact with the agent
+- `usage_patterns`: session shape, tools, prompts, duration
+- `what_works`: strengths backed by sessions
+- `friction_analysis`: recurring failure modes and examples
+- `suggestions`: config additions, features to try, usage changes
+- `usage_cost_analysis`: cost, cache, and model efficiency
+- `version_comparison`: current version compared with a baseline
+- `regression_detection`: what improved or degraded versus previous data
+- `on_the_horizon`: higher leverage workflow opportunities
+- `fun_ending`: memorable qualitative moment
+
+For broad questions, run full `show` JSON and summarize health, top friction, top strengths, cost, and next actions. For narrow questions, fetch the specific section. If no completed report exists, offer to generate one:
+
+```bash
+observal ops insights generate AGENT_NAME --period 14 --wait
+observal ops insights generate AGENT_NAME --version 1.2.0 --compare 1.1.0 --period 30 --wait
+```
+
+Keep the answer grounded in the JSON. Say when the report is missing a section or has low session count.
 
 ---
 

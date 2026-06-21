@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 name: observal-ops
 command: observal
-description: View traces, spans, metrics, feedback, and telemetry health for Observal agents and MCPs. Use when the user wants to see recent traces, check metrics, view top items, submit ratings, or diagnose telemetry pipeline issues.
-version: 2.0.0
+description: View traces, spans, metrics, feedback, telemetry health, and agent insight reports. Use when the user wants to see traces, check metrics, view top items, submit ratings, diagnose telemetry, or discuss how an agent is doing.
+version: 2.1.0
 owner: observal
 ---
 
@@ -57,6 +57,68 @@ observal ops telemetry test
 `status` is the reliable check: it queries server event counts and local SQLite buffer. `test` may return 404 on newer servers (legacy endpoint). If `status` shows events flowing, telemetry is healthy.
 
 **Diagnosis:** status OK → healthy. No events → check `observal auth status`. Server reachable but no events → hooks not installed, suggest `observal doctor`.
+
+---
+
+## Procedure: Agent Insights
+
+Use this when the user asks how an agent is doing, what changed, why a version regressed, what to improve, or wants to talk through an insight report.
+
+Start with machine readable reports:
+
+```bash
+observal ops insights list AGENT_NAME --output json
+observal ops insights show AGENT_NAME latest --output json
+```
+
+Fetch one section when the user asks a narrow question:
+
+```bash
+observal ops insights show AGENT_NAME latest --section at_a_glance --output json
+observal ops insights show AGENT_NAME latest --section what_they_work_on --output json
+observal ops insights show AGENT_NAME latest --section interaction_style --output json
+observal ops insights show AGENT_NAME latest --section usage_patterns --output json
+observal ops insights show AGENT_NAME latest --section what_works --output json
+observal ops insights show AGENT_NAME latest --section friction_analysis --output json
+observal ops insights show AGENT_NAME latest --section suggestions --output json
+observal ops insights show AGENT_NAME latest --section usage_cost_analysis --output json
+observal ops insights show AGENT_NAME latest --section version_comparison --output json
+observal ops insights show AGENT_NAME latest --section regression_detection --output json
+observal ops insights show AGENT_NAME latest --section on_the_horizon --output json
+observal ops insights show AGENT_NAME latest --section fun_ending --output json
+```
+
+Section meanings:
+
+| Section | Use for |
+|---------|---------|
+| `at_a_glance` | Overall health, working areas, blockers, quick win |
+| `what_they_work_on` | Project areas and session counts |
+| `interaction_style` | User behavior and collaboration pattern |
+| `usage_patterns` | Session length, tool distribution, prompts |
+| `what_works` | Agent strengths and evidence |
+| `friction_analysis` | Recurring failures, severity, examples |
+| `suggestions` | Config changes, features, prompts, habits |
+| `usage_cost_analysis` | Cost, cache, model efficiency |
+| `version_comparison` | Current version versus baseline |
+| `regression_detection` | Improvements or degradations over time |
+| `on_the_horizon` | Higher leverage next workflows |
+| `fun_ending` | Memorable qualitative moment |
+
+If no completed report exists, generate one:
+
+```bash
+observal ops insights generate AGENT_NAME --period 14 --wait
+```
+
+For versioned analysis, request or infer versions from `list`, then generate or show version scoped reports:
+
+```bash
+observal ops insights generate AGENT_NAME --version 1.2.0 --compare 1.1.0 --period 30 --wait
+observal ops insights show AGENT_NAME latest --output json
+```
+
+Answer like an analyst: cite the report period, session count, strengths, friction, cost, version notes, and two or three concrete next actions. If data is thin, say so.
 
 ---
 
