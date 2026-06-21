@@ -109,7 +109,7 @@ function isApproved(agent: RegistryItem): boolean {
 }
 
 function sessionPlatform(session: Session): string {
-  return session.platform || session.service_name || "Unknown IDE";
+  return session.platform || session.service_name || "Unknown harness";
 }
 
 function sessionAgentLabel(session: Session): string | null {
@@ -414,7 +414,7 @@ export default function RegistryHome() {
     } else {
       items.push({
         title: "Start capturing sessions",
-        description: "Patch your IDE and send your first coding trace into Observal.",
+        description: "Patch your harness and send your first coding trace into Observal.",
         href: "/wiki",
         icon: Terminal,
         priority: true,
@@ -439,7 +439,7 @@ export default function RegistryHome() {
 
     items.push({
       title: "Browse agents",
-      description: "Find a ready-made agent and pull it into your IDE.",
+      description: "Find a ready-made agent and pull it into your harness.",
       href: "/agents",
       icon: Bot,
     });
@@ -508,7 +508,7 @@ export default function RegistryHome() {
               <BriefMetric
                 label="Tool calls"
                 value={sessionsLoading ? "..." : formatNumber(todayStats.tools)}
-                detail={`${todayStats.agentCount} agents · ${todayStats.platformCount} IDEs`}
+                detail={`${todayStats.agentCount} agents · ${todayStats.platformCount} harnesses`}
               />
               <BriefMetric
                 label="Best rank"
@@ -533,7 +533,7 @@ export default function RegistryHome() {
           <div className="rounded-md border border-border bg-card">
             <SectionHeader
               title="Coding activity today"
-              description="Input, output, tools, and recent sessions from your IDEs."
+              description="Input, output, tools, and recent sessions from your harnesses."
               action={
                 <Button asChild variant="outline" size="sm">
                   <Link to="/traces">View traces</Link>
@@ -562,7 +562,7 @@ export default function RegistryHome() {
                 <div className="px-4 py-3">
                   <p className="text-xs text-muted-foreground">Platforms</p>
                   <p className="mt-2 truncate text-sm font-medium text-foreground">
-                    {todayStats.platforms.length > 0 ? todayStats.platforms.slice(0, 3).join(", ") : "No IDE activity"}
+                    {todayStats.platforms.length > 0 ? todayStats.platforms.slice(0, 3).join(", ") : "No harness activity"}
                   </p>
                 </div>
               </div>

@@ -65,10 +65,10 @@ interface AgentDetail {
   description?: string;
   prompt?: string;
   model_name?: string;
-  models_by_ide?: Record<string, string>;
+  models_by_harness?: Record<string, string>;
   component_links?: ComponentLink[];
   mcp_links?: ComponentLink[];
-  supported_ides?: string[];
+  supported_harnesses?: string[];
   [key: string]: unknown;
 }
 
@@ -104,13 +104,13 @@ export function AgentEditForm({
   const vd = versionDetail;
   const initialDescription = vd?.description ?? agent.description ?? "";
   const initialModelName = vd?.model_name ?? agent.model_name ?? "";
-  const initialModelsByIde = (vd?.models_by_ide ?? agent.models_by_ide ?? {}) as Record<string, string>;
+  const initialModelsByIde = (vd?.models_by_harness ?? agent.models_by_harness ?? {}) as Record<string, string>;
   const initialPrompt = vd?.prompt ?? agent.prompt ?? "";
 
   // ── Form state ───────────────────────────────────────────────
   const [description, setDescription] = useState(initialDescription);
   const [modelName, setModelName] = useState(initialModelName);
-  const [modelsByIde, setModelsByIde] = useState<Record<string, string>>(initialModelsByIde);
+  const [modelsByHarness, setModelsByIde] = useState<Record<string, string>>(initialModelsByIde);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
   const [selectedComponents, setSelectedComponents] = useState<
     Record<string, RegistryItem[]>
@@ -127,7 +127,7 @@ export function AgentEditForm({
   const initialStateRef = useRef({
     description: initialDescription,
     modelName: initialModelName,
-    modelsByIde: initialModelsByIde,
+    modelsByHarness: initialModelsByIde,
     prompt: initialPrompt,
     selectedComponents: {} as Record<string, RegistryItem[]>,
   });
@@ -151,7 +151,7 @@ export function AgentEditForm({
         currentVersion,
         versionDetail?.description,
         versionDetail?.model_name,
-        versionDetail?.models_by_ide,
+        versionDetail?.models_by_harness,
         versionDetail?.prompt,
         versionDetail?.components,
       ]),
@@ -195,7 +195,7 @@ export function AgentEditForm({
     initialStateRef.current = {
       description: initialDescription,
       modelName: initialModelName,
-      modelsByIde: initialModelsByIde,
+      modelsByHarness: initialModelsByIde,
       prompt: initialPrompt,
       selectedComponents: grouped,
     };
@@ -209,11 +209,11 @@ export function AgentEditForm({
     const dirty =
       description !== init.description ||
       modelName !== init.modelName ||
-      JSON.stringify(modelsByIde) !== JSON.stringify(init.modelsByIde) ||
+      JSON.stringify(modelsByHarness) !== JSON.stringify(init.modelsByHarness) ||
       prompt !== init.prompt ||
       JSON.stringify(selectedComponents) !== JSON.stringify(init.selectedComponents);
     setIsDirty(dirty);
-  }, [description, modelName, modelsByIde, prompt, selectedComponents]);
+  }, [description, modelName, modelsByHarness, prompt, selectedComponents]);
 
   // ── Debounced validation ──────────────────────────────────────
   useEffect(() => {
@@ -315,9 +315,9 @@ export function AgentEditForm({
       prompt: prompt.trim(),
       model_name: modelName,
       model_config_json: {},
-      models_by_ide: modelsByIde,
+      models_by_harness: modelsByHarness,
       external_mcps: [],
-      supported_ides: agent.supported_ides ?? [],
+      supported_harnesses: agent.supported_harnesses ?? [],
       components: components.length > 0 ? components : [],
       yaml_snapshot: null,
       is_prerelease: false,
@@ -334,7 +334,7 @@ export function AgentEditForm({
       initialStateRef.current = {
         description,
         modelName,
-        modelsByIde,
+        modelsByHarness,
         prompt,
         selectedComponents,
       };
@@ -356,7 +356,7 @@ export function AgentEditForm({
       initialStateRef.current = {
         description,
         modelName,
-        modelsByIde,
+        modelsByHarness,
         prompt,
         selectedComponents,
       };
@@ -379,7 +379,7 @@ export function AgentEditForm({
     const init = initialStateRef.current;
     setDescription(init.description);
     setModelName(init.modelName);
-    setModelsByIde(init.modelsByIde);
+    setModelsByIde(init.modelsByHarness);
     setPrompt(init.prompt ?? "");
     setSelectedComponents(
       Object.keys(init.selectedComponents).length > 0
@@ -428,8 +428,8 @@ export function AgentEditForm({
           <ModelPicker
             modelName={modelName}
             onModelNameChange={setModelName}
-            modelsByIde={modelsByIde}
-            onModelsByIdeChange={setModelsByIde}
+            modelsByHarness={modelsByHarness}
+            onModelsByHarnessChange={setModelsByIde}
           />
         </div>
       </section>

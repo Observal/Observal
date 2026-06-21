@@ -49,7 +49,7 @@ export interface TokenUsageRow {
 	traces: number;
 }
 
-// ── IDE Usage ───────────────────────────────────────────────────────
+// ── harness Usage ───────────────────────────────────────────────────────
 
 export interface IdeRow {
 	ide: string;

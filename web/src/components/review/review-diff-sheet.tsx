@@ -275,10 +275,10 @@ function buildCleanYaml(
 	if (detail.description) obj.description = detail.description;
 	if (detail.prompt) obj.prompt = detail.prompt;
 	if (detail.model_name) obj.model_name = detail.model_name;
-	const byIde = detail.models_by_ide as Record<string, unknown> | undefined;
-	if (byIde && Object.keys(byIde).length) obj.models_by_ide = byIde;
-	const ides = detail.supported_ides as string[] | undefined;
-	if (ides?.length) obj.supported_ides = ides;
+	const byIde = detail.models_by_harness as Record<string, unknown> | undefined;
+	if (byIde && Object.keys(byIde).length) obj.models_by_harness = byIde;
+	const ides = detail.supported_harnesses as string[] | undefined;
+	if (ides?.length) obj.supported_harnesses = ides;
 	if (comps.length) {
 		obj.components = comps.map((c) => {
 			const cached = componentDataMap?.get(String(c.component_id ?? "")) as
@@ -595,18 +595,18 @@ function DiffDialogBody({
 	// Prefer version detail fields over the sparse review item fields
 	const prompt = (detail?.prompt as string) || item.prompt || "";
 	const modelName = (detail?.model_name as string) || item.model_name || "";
-	const modelsByIdeRaw = detail?.models_by_ide;
-	const modelsByIde =
-		modelsByIdeRaw &&
-		typeof modelsByIdeRaw === "object" &&
-		!Array.isArray(modelsByIdeRaw)
-			? (modelsByIdeRaw as Record<string, string>)
+	const modelsByHarnessRaw = detail?.models_by_harness;
+	const modelsByHarness =
+		modelsByHarnessRaw &&
+		typeof modelsByHarnessRaw === "object" &&
+		!Array.isArray(modelsByHarnessRaw)
+			? (modelsByHarnessRaw as Record<string, string>)
 			: {};
-	const modelsByIdeEntries = Object.entries(modelsByIde).filter(
+	const modelsByHarnessEntries = Object.entries(modelsByHarness).filter(
 		([, value]) => typeof value === "string" && value.trim().length > 0,
 	);
 	const supportedIdes =
-		(detail?.supported_ides as string[]) || item.supported_ides || [];
+		(detail?.supported_harnesses as string[]) || item.supported_harnesses || [];
 	const components =
 		(detail?.components as {
 			component_type: string;
@@ -769,7 +769,7 @@ function DiffDialogBody({
 						</div>
 
 						{/* Model */}
-						{(modelName || modelsByIdeEntries.length > 0) && (
+						{(modelName || modelsByHarnessEntries.length > 0) && (
 							<>
 								<Separator />
 								<div className="space-y-2">
@@ -781,12 +781,12 @@ function DiffDialogBody({
 											{modelName}
 										</p>
 									)}
-									{modelsByIdeEntries.length > 0 && (
+									{modelsByHarnessEntries.length > 0 && (
 										<dl className="space-y-1 text-xs">
 											<dt className="text-[10px] uppercase tracking-wider text-muted-foreground">
-												Per-IDE overrides
+												Per-harness overrides
 											</dt>
-											{modelsByIdeEntries.map(([ide, value]) => (
+											{modelsByHarnessEntries.map(([ide, value]) => (
 												<div key={ide} className="flex items-baseline gap-2">
 													<dd className="font-medium">{ide}</dd>
 													<dd className="font-[family-name:var(--font-mono)] text-muted-foreground">
@@ -800,13 +800,13 @@ function DiffDialogBody({
 							</>
 						)}
 
-						{/* Supported IDEs */}
+						{/* Supported harnesses */}
 						{supportedIdes.length > 0 && (
 							<>
 								<Separator />
 								<div className="space-y-2">
 									<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-										Supported IDEs
+										Supported harnesses
 									</h4>
 									<p className="text-xs font-medium">
 										{supportedIdes.join(", ")}
@@ -1011,10 +1011,10 @@ function DiffDialogBody({
 														description: item.description || undefined,
 														prompt: prompt || undefined,
 														model_name: modelName || undefined,
-														models_by_ide: modelsByIdeEntries.length
-															? Object.fromEntries(modelsByIdeEntries)
+														models_by_harness: modelsByHarnessEntries.length
+															? Object.fromEntries(modelsByHarnessEntries)
 															: undefined,
-														supported_ides: supportedIdes.length
+														supported_harnesses: supportedIdes.length
 															? supportedIdes
 															: undefined,
 														components: components.length

@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useIdes } from "@/hooks/use-ides";
+import { useHarnesses } from "@/hooks/use-harnesses";
 
 interface PullCommandProps {
   agentName: string;
@@ -23,21 +23,21 @@ interface PullCommandProps {
 }
 
 export function PullCommand({ agentName, currentVersion, latestVersion }: PullCommandProps) {
-  const { data: ides, defaultIde } = useIdes();
+  const { data: ides, defaultHarness } = useHarnesses();
   const [ide, setIde] = useState("");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!ides || ides.length === 0) return;
-    const defaultAllowed = defaultIde && ides.some((i) => i.name === defaultIde) ? defaultIde : ides[0].name;
+    const defaultAllowed = defaultHarness && ides.some((i) => i.name === defaultHarness) ? defaultHarness : ides[0].name;
     if (!ide || !ides.some((i) => i.name === ide)) {
       setIde(defaultAllowed);
     }
-  }, [ides, defaultIde, ide]);
+  }, [ides, defaultHarness, ide]);
 
-  const effectiveIde = ide || (defaultIde && ides?.some((i) => i.name === defaultIde) ? defaultIde : ides?.[0]?.name) || "cursor";
+  const effectiveIde = ide || (defaultHarness && ides?.some((i) => i.name === defaultHarness) ? defaultHarness : ides?.[0]?.name) || "cursor";
   const versionFlag = currentVersion && latestVersion && currentVersion !== latestVersion ? ` --version ${currentVersion}` : "";
-  const command = `observal agent pull ${agentName} --ide ${effectiveIde}${versionFlag}`;
+  const command = `observal agent pull ${agentName} --harness ${effectiveIde}${versionFlag}`;
 
   async function handleCopy() {
     try {

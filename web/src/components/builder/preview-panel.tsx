@@ -16,7 +16,7 @@ import {
 	DialogTitle,
 	DialogDescription,
 } from "@/components/ui/dialog";
-import { useIdes } from "@/hooks/use-ides";
+import { useHarnesses } from "@/hooks/use-harnesses";
 import { registry } from "@/lib/api";
 import type { ValidationResult } from "@/lib/types";
 
@@ -94,7 +94,7 @@ export function PreviewPanel({
 	pendingComponentBodies,
 	validationResult,
 }: PreviewPanelProps) {
-	const { data: ideList } = useIdes();
+	const { data: ideList } = useHarnesses();
 	const [ide, setIde] = useState("claude-code");
 	const [modalOpen, setModalOpen] = useState(false);
 	const [modalIde, setModalIde] = useState("claude-code");
@@ -228,7 +228,7 @@ export function PreviewPanel({
 				</div>
 			</div>
 
-			{/* IDE selector */}
+			{/* harness selector */}
 			<div className="flex flex-wrap gap-1">
 				{(ideList ?? []).map((opt) => (
 					<button
@@ -261,7 +261,7 @@ export function PreviewPanel({
 						</div>
 					) : files.length === 0 ? (
 						<div className="flex items-center justify-center py-12 text-muted-foreground">
-							<span className="text-sm">No config generated for this IDE.</span>
+							<span className="text-sm">No config generated for this harness.</span>
 						</div>
 					) : (
 						files.map((file) => (
@@ -301,7 +301,7 @@ export function PreviewPanel({
 						</DialogDescription>
 					</DialogHeader>
 
-					{/* IDE tabs inside modal */}
+					{/* harness tabs inside modal */}
 					<div className="flex flex-wrap gap-1 px-6 pt-3">
 						{(ideList ?? []).map((opt) => (
 							<button
@@ -322,7 +322,7 @@ export function PreviewPanel({
 						))}
 					</div>
 
-					{/* File tabs — sticky below IDE tabs */}
+					{/* File tabs — sticky below harness tabs */}
 					{!fullLoading && !fullError && modalFiles.length > 1 && (
 						<div className="flex flex-wrap gap-1 px-6 pb-2 pt-1 border-b border-border">
 							<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 self-center mr-1">
@@ -363,7 +363,7 @@ export function PreviewPanel({
 						) : modalFiles.length === 0 ? (
 							<div className="flex items-center justify-center py-16 text-muted-foreground">
 								<span className="text-sm">
-									No config generated for this IDE.
+									No config generated for this harness.
 								</span>
 							</div>
 						) : (

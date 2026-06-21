@@ -1,57 +1,36 @@
 // SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useIdes } from "@/hooks/use-ides";
+import { useHarnesses } from "@/hooks/use-harnesses";
 
 interface ModelPickerProps {
   modelName: string;
   onModelNameChange: (value: string) => void;
-  modelsByIde: Record<string, string>;
-  onModelsByIdeChange: (value: Record<string, string>) => void;
+  modelsByHarness: Record<string, string>;
+  onModelsByHarnessChange: (value: Record<string, string>) => void;
 }
 
 export function ModelPicker({
   modelName,
   onModelNameChange,
-  modelsByIde,
-  onModelsByIdeChange,
+  modelsByHarness,
+  onModelsByHarnessChange,
 }: ModelPickerProps) {
-  const { data: ides, defaultIde } = useIdes();
-  const allIdes = useMemo(() => ides ?? [], [ides]);
-  const [selectedIde, setSelectedIde] = useState("");
+  const { data: harnesses } = useHarnesses();
+  const allHarnesses = useMemo(() => harnesses ?? [], [harnesses]);
+  const allModels = Array.from(new Set(allHarnesses.flatMap((harness) => harness.supported_models ?? [])));
+  const overrideCount = Object.keys(modelsByHarness).length;
 
-  useEffect(() => {
-    if (allIdes.length === 0) return;
-    const fallback = defaultIde && allIdes.some((ide) => ide.name === defaultIde)
-      ? defaultIde
-      : allIdes[0].name;
-    if (!selectedIde || !allIdes.some((ide) => ide.name === selectedIde)) {
-      setSelectedIde(fallback);
-    }
-  }, [allIdes, defaultIde, selectedIde]);
-
-  const selectedIdeMeta = allIdes.find((ide) => ide.name === selectedIde);
-  const overrideCount = Object.keys(modelsByIde).length;
-
-  function setOverride(ide: string, value: string) {
-    if (!ide) return;
-    const next = { ...modelsByIde };
+  function setOverride(harness: string, value: string) {
+    const next = { ...modelsByHarness };
     const trimmed = value.trim();
-    if (trimmed) next[ide] = trimmed;
-    else delete next[ide];
-    onModelsByIdeChange(next);
+    if (trimmed) next[harness] = trimmed;
+    else delete next[harness];
+    onModelsByHarnessChange(next);
   }
 
   return (
@@ -64,20 +43,24 @@ export function ModelPicker({
           id="agent-default-model"
           value={modelName}
           onChange={(event) => onModelNameChange(event.target.value)}
-          placeholder="auto (let the IDE pick)"
+          placeholder="auto (let the harness pick)"
+          list="agent-default-models"
         />
+        <datalist id="agent-default-models">
+          {allModels.map((model) => <option key={model} value={model} />)}
+        </datalist>
         <p className="text-xs text-muted-foreground">
-          Type the model value that your target harness accepts. Leave blank to let the IDE choose.
+          Used only when a harness override is blank. Leave blank to let each harness choose.
         </p>
       </div>
 
-      {allIdes.length > 0 ? (
+      {allHarnesses.length > 0 ? (
         <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
-              <Label className="text-sm font-medium">Per harness override</Label>
+              <Label className="text-sm font-medium">Harness override</Label>
               <p className="text-xs text-muted-foreground">
-                Pick any supported harness, then enter the exact model value that harness accepts.
+                Set the exact model value per harness. Suggestions come from the harness registry, but custom values are allowed.
               </p>
             </div>
             {overrideCount > 0 ? (
@@ -87,51 +70,27 @@ export function ModelPicker({
             ) : null}
           </div>
 
-          <div className="grid gap-3 md:grid-cols-[minmax(160px,220px)_1fr]">
-            <Select value={selectedIde} onValueChange={setSelectedIde}>
-              <SelectTrigger className="h-10">
-                <SelectValue placeholder="Select harness" />
-              </SelectTrigger>
-              <SelectContent>
-                {allIdes.map((ide) => (
-                  <SelectItem key={ide.name} value={ide.name}>
-                    {ide.display_name}
-                    {!ide.accepts_model_choice ? " · no model setting" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              value={modelsByIde[selectedIde] ?? ""}
-              onChange={(event) => setOverride(selectedIde, event.target.value)}
-              placeholder={selectedIdeMeta ? `Use default for ${selectedIdeMeta.display_name}` : "Use default"}
-              disabled={!selectedIdeMeta?.accepts_model_choice}
-            />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {allHarnesses.map((harness) => {
+              const models = harness.supported_models ?? [];
+              const listId = `agent-harness-models-${harness.name}`;
+              return (
+                <div key={harness.name} className="space-y-1.5">
+                  <Label className="text-xs font-medium">{harness.display_name}</Label>
+                  <Input
+                    value={modelsByHarness[harness.name] ?? ""}
+                    onChange={(event) => setOverride(harness.name, event.target.value)}
+                    placeholder="Use default"
+                    disabled={models.length === 0}
+                    list={listId}
+                  />
+                  <datalist id={listId}>
+                    {models.map((model) => <option key={model} value={model} />)}
+                  </datalist>
+                </div>
+              );
+            })}
           </div>
-
-          {selectedIdeMeta && !selectedIdeMeta.accepts_model_choice ? (
-            <p className="text-xs text-muted-foreground">
-              {selectedIdeMeta.display_name} does not accept a saved model choice. It is shown here because it is an available harness.
-            </p>
-          ) : null}
-
-          {overrideCount > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {Object.entries(modelsByIde).map(([ide, model]) => {
-                const label = allIdes.find((item) => item.name === ide)?.display_name ?? ide;
-                return (
-                  <button
-                    key={ide}
-                    type="button"
-                    className="rounded bg-primary/10 px-2 py-1 text-left text-xs text-primary hover:bg-primary/15"
-                    onClick={() => setSelectedIde(ide)}
-                  >
-                    {label}: <span className="font-mono">{model}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>
