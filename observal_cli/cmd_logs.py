@@ -95,6 +95,7 @@ def _stream_remote(console: Console, *, level: str, filter_text: str, no_color: 
     import httpx
 
     from observal_cli import config
+    from observal_cli.client import _get_cli_version
 
     cfg = config.get_or_exit()
     base_url = cfg["server_url"].rstrip("/")
@@ -112,7 +113,10 @@ def _stream_remote(console: Console, *, level: str, filter_text: str, no_color: 
             "GET",
             url,
             params=params,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Observal-CLI-Version": _get_cli_version(),
+            },
             timeout=None,
         ) as resp:
             if resp.status_code == 401:
