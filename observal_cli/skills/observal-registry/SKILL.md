@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 name: observal-registry
 command: observal
-description: Submit, browse, install, edit, delete, and version MCPs, skills, hooks, prompts, and sandboxes in the Observal registry. Use when the user wants to submit a component, install one, edit a draft, publish a new version, or browse the component library.
+description: Submit, browse, install, edit, archive, restore, transfer, and version MCPs, skills, hooks, prompts, and sandboxes in the Observal registry. Use when the user wants to submit a component, install one, edit a draft, publish a new version, or browse the component library.
 version: 2.0.0
 owner: observal
 ---
@@ -14,7 +14,7 @@ owner: observal
 
 1. **EXECUTE commands**: run them in your shell. Set timeout to 60 seconds.
 2. **Pass `--output json`** on list/show commands.
-3. **Pass `--yes`** on destructive commands (`delete`, `submit --git`).
+3. **Pass `--yes`** on destructive commands (`archive`, `unarchive`, `delete`, `submit --git`).
 4. **When in doubt about a flag, run `<command> --help` first.**
 5. **`--from-file` does NOT exist on `mcp submit`**: that flag is on `mcp edit`.
 
@@ -161,14 +161,17 @@ observal registry version list mcp NAME --output json
 
 ---
 
-## Procedure: Delete Component
+## Procedure: Archive / Restore Component
 
 ```bash
-observal registry mcp delete NAME --yes
-observal registry skill delete NAME --yes
-observal registry hook delete NAME --yes
-observal registry prompt delete NAME --yes
-observal registry sandbox delete NAME --yes
+observal registry mcp archive NAME --yes
+observal registry skill archive NAME --yes
+observal registry hook archive NAME --yes
+observal registry prompt archive NAME --yes
+observal registry sandbox archive NAME --yes
+
+observal registry mcp unarchive NAME --yes
+observal registry skill unarchive NAME --yes
 observal registry mcp transfer-owner NAME @username -y
 observal registry skill transfer-owner NAME @username -y
 ```

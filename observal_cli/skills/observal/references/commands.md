@@ -121,6 +121,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry hook co-authors add`: Add a co-author.
   - `observal registry hook co-authors list`: List co-authors.
   - `observal registry hook co-authors remove`: Remove a co-author.
+  - `observal registry hook archive`: Archive this component.
   - `observal registry hook delete`: Delete a hook from the registry.
   - `observal registry hook edit`: Edit a draft, rejected, or pending hook submission.
   - `observal registry hook install`: Install a hook for a specific IDE.
@@ -128,6 +129,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry hook show`: Show detailed information for a single hook.
   - `observal registry hook submit`: Submit a new hook for review.
   - `observal registry hook transfer-owner`: Transfer ownership to another username.
+  - `observal registry hook unarchive`: Restore an archived component.
 - `observal registry mcp`: MCP server registry commands
 - `observal registry mcp co-authors`: Manage co-authors for mcps
   - `observal registry mcp co-authors add`: Add a co-author.
@@ -136,11 +138,13 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry mcp submit`: Submit an MCP server to the registry.
   - `observal registry mcp show`: Show full details of an MCP server.
   - `observal registry mcp install`: Generate an install config snippet for an MCP server.
+  - `observal registry mcp archive`: Archive this component.
   - `observal registry mcp delete`: Delete an MCP server from the registry.
   - `observal registry mcp edit`: Edit an MCP server submission.
   - `observal registry mcp list`: List approved MCP servers in the registry.
   - `observal registry mcp my`: List your own MCP servers across all statuses.
   - `observal registry mcp transfer-owner`: Transfer ownership to another username.
+  - `observal registry mcp unarchive`: Restore an archived component.
 - `observal registry models`: Inspect the model catalog (live from models.dev with offline fallback).
   - `observal registry models list`: Show models from the registry.
 - `observal registry prompt`: Prompt registry commands
@@ -148,6 +152,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry prompt co-authors add`: Add a co-author.
   - `observal registry prompt co-authors list`: List co-authors.
   - `observal registry prompt co-authors remove`: Remove a co-author.
+  - `observal registry prompt archive`: Archive this component.
   - `observal registry prompt delete`: Delete a prompt from the registry.
   - `observal registry prompt edit`: Edit a draft, rejected, or pending prompt submission.
   - `observal registry prompt list`: List approved prompts in the registry.
@@ -156,22 +161,26 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry prompt show`: Show detailed information about a prompt.
   - `observal registry prompt submit`: Submit a new prompt template for review.
   - `observal registry prompt transfer-owner`: Transfer ownership to another username.
+  - `observal registry prompt unarchive`: Restore an archived component.
 - `observal registry sandbox`: Sandbox registry commands
 - `observal registry sandbox co-authors`: Manage co-authors for sandboxes
   - `observal registry sandbox co-authors add`: Add a co-author.
   - `observal registry sandbox co-authors list`: List co-authors.
   - `observal registry sandbox co-authors remove`: Remove a co-author.
+  - `observal registry sandbox archive`: Archive this component.
   - `observal registry sandbox delete`: Delete a sandbox from the registry.
   - `observal registry sandbox edit`: Edit a draft, rejected, or pending sandbox submission.
   - `observal registry sandbox list`: List approved sandboxes in the registry.
   - `observal registry sandbox show`: Show detailed information about a sandbox.
   - `observal registry sandbox submit`: Submit a new sandbox environment for review.
   - `observal registry sandbox transfer-owner`: Transfer ownership to another username.
+  - `observal registry sandbox unarchive`: Restore an archived component.
 - `observal registry skill`: Skill registry commands
 - `observal registry skill co-authors`: Manage co-authors for skills
   - `observal registry skill co-authors add`: Add a co-author.
   - `observal registry skill co-authors list`: List co-authors.
   - `observal registry skill co-authors remove`: Remove a co-author.
+  - `observal registry skill archive`: Archive this component.
   - `observal registry skill delete`: Delete a skill from the registry.
   - `observal registry skill edit`: Edit a draft, rejected, or pending skill submission.
   - `observal registry skill install`: Install a skill by fetching the full skill directory from git.
@@ -180,6 +189,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry skill show`: Show detailed information about a skill.
   - `observal registry skill submit`: Submit a new skill for review.
   - `observal registry skill transfer-owner`: Transfer ownership to another username.
+  - `observal registry skill unarchive`: Restore an archived component.
 - `observal registry version`: Manage component versions
   - `observal registry version list`: List version history for a registry component.
   - `observal registry version publish`: Publish a new version for a registry component.

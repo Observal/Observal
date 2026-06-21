@@ -150,6 +150,7 @@ def _try_lockfile_migration() -> None:
 # ── Register command groups ──────────────────────────────
 
 from observal_cli.cmd_agent import agent_app
+from observal_cli.cmd_archive import add_archive_commands
 from observal_cli.cmd_auth import auth_app, register_config
 from observal_cli.cmd_co_authors import make_co_authors_typer
 from observal_cli.cmd_component import version_app
@@ -206,6 +207,11 @@ add_transfer_owner_command(hook_app, "hooks")
 add_transfer_owner_command(prompt_app, "prompts")
 add_transfer_owner_command(sandbox_app, "sandboxes")
 add_transfer_owner_command(agent_app, "agents")
+add_archive_commands(mcp_app, "mcps")
+add_archive_commands(skill_app, "skills")
+add_archive_commands(hook_app, "hooks")
+add_archive_commands(prompt_app, "prompts")
+add_archive_commands(sandbox_app, "sandboxes")
 
 # ── Auth subgroup ────────────────────────────────────────
 app.add_typer(auth_app, name="auth")
