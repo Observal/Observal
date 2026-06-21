@@ -44,6 +44,7 @@ import {
 import { PageHeader } from "@/components/layouts/page-header";
 import { useRegistryItem, useAgentValidation, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
+import { useIdes } from "@/hooks/use-ides";
 import { registry, type RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
 import type { ValidationResult } from "@/lib/types";
@@ -88,6 +89,7 @@ function AgentBuilderInner() {
   const isEditMode = !!editId;
 
   const { data: whoami } = useWhoami();
+  const { data: ideList } = useIdes();
   const { data: existingAgent } = useRegistryItem("agents", editId ?? draftParam ?? undefined);
 
   const [name, setName] = useState("");
@@ -97,7 +99,7 @@ function AgentBuilderInner() {
   const [version, setVersion] = useState("1.0.0");
   const [category, setCategory] = useState("");
   const [modelName, setModelName] = useState("");
-  const [modelsByIde, setModelsByIde] = useState<Record<string, string>>({});
+  const [supportedIdes, setSupportedIdes] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
 
@@ -155,10 +157,8 @@ function AgentBuilderInner() {
     if (typeof agentVersion === "string") setVersion(agentVersion);
     const agentModel = (existingAgent as Record<string, unknown>).model_name;
     if (typeof agentModel === "string") setModelName(agentModel);
-    const agentModelsByIde = (existingAgent as Record<string, unknown>).models_by_ide;
-    if (agentModelsByIde && typeof agentModelsByIde === "object" && !Array.isArray(agentModelsByIde)) {
-      setModelsByIde(agentModelsByIde as Record<string, string>);
-    }
+    const agentSupportedIdes = (existingAgent as Record<string, unknown>).supported_ides;
+    if (Array.isArray(agentSupportedIdes)) setSupportedIdes(agentSupportedIdes as string[]);
     const agentCategory = (existingAgent as Record<string, unknown>).category;
     if (typeof agentCategory === "string") setCategory(agentCategory);
 
@@ -286,6 +286,7 @@ function AgentBuilderInner() {
 
     autoSaveTimerRef.current = setTimeout(() => {
       const hasContent = name || description || modelName || version !== "1.0.0" ||
+        supportedIdes.length > 0 ||
         Object.values(selectedComponents).some((items) => items.length > 0) ||
         systemPrompt.trim().length > 0;
 
@@ -297,7 +298,7 @@ function AgentBuilderInner() {
           description,
           version,
           model_name: modelName,
-          models_by_ide: modelsByIde,
+          supported_ides: supportedIdes,
           components: selectedComponents,
           prompt: systemPrompt,
           draft_id: draftId,
@@ -312,7 +313,7 @@ function AgentBuilderInner() {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [name, description, version, modelName, selectedComponents, systemPrompt, draftId, isEditMode]);
+  }, [name, description, version, modelName, supportedIdes, selectedComponents, systemPrompt, draftId, isEditMode]);
 
   function restoreLocalDraft() {
     try {
@@ -323,9 +324,7 @@ function AgentBuilderInner() {
       if (draft.description) setDescription(draft.description);
       if (draft.version) setVersion(draft.version);
       if (draft.model_name) setModelName(draft.model_name);
-      if (draft.models_by_ide && typeof draft.models_by_ide === "object") {
-        setModelsByIde(draft.models_by_ide);
-      }
+      if (Array.isArray(draft.supported_ides)) setSupportedIdes(draft.supported_ides);
       if (draft.components) setSelectedComponents(draft.components);
       if (typeof draft.prompt === "string") setSystemPrompt(draft.prompt);
       if (draft.draft_id) setDraftId(draft.draft_id);
@@ -407,7 +406,11 @@ function AgentBuilderInner() {
     }));
   }, []);
 
-
+  function toggleTargetIde(ide: string) {
+    setSupportedIdes((prev) =>
+      prev.includes(ide) ? prev.filter((i) => i !== ide) : [...prev, ide],
+    );
+  }
 
   const handleReorder = useCallback(
     (type: string) => (items: { id: string; name: string }[]) => {
@@ -444,7 +447,8 @@ function AgentBuilderInner() {
       owner: whoami?.username || whoami?.email || "unknown",
       prompt: systemPrompt.trim(),
       model_name: modelName,
-      models_by_ide: modelsByIde,
+      models_by_ide: {},
+      supported_ides: supportedIdes,
       components: components.length > 0 ? components : [],
     };
   }
@@ -674,10 +678,31 @@ function AgentBuilderInner() {
                   <ModelPicker
                     modelName={modelName}
                     onModelNameChange={setModelName}
-                    modelsByIde={modelsByIde}
-                    onModelsByIdeChange={setModelsByIde}
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Target IDEs</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(ideList ?? []).map((ide) => (
+                    <button
+                      key={ide.name}
+                      type="button"
+                      onClick={() => toggleTargetIde(ide.name)}
+                      className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                        supportedIdes.includes(ide.name)
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {ide.display_name}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Leave empty for portable agents. Pick Kiro, Claude Code, or
+                  any set when the agent is intentionally harness-specific.
+                </p>
               </div>
             </section>
 
@@ -847,6 +872,7 @@ function AgentBuilderInner() {
                   }).map(([k, v]) => [k, v])
                 )}
                 prompt={systemPrompt}
+                targetIdes={supportedIdes}
                 pendingComponentBodies={Object.fromEntries(pendingComponents.map((pc) => [pc.id, pc.body]))}
                 validationResult={validationResult}
               />
