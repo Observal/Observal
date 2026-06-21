@@ -1240,15 +1240,15 @@ class TestGenerateIdeAgentFiles:
 
     # ── GitHub Copilot ─────────────────────────────────────────
 
-    def test_copilot_generates_instructions_md(self):
+    def test_copilot_generates_agent_md(self):
         from services.agent_builder import generate_ide_agent_files
 
         manifest = self._make_manifest()
         config = generate_ide_agent_files(manifest, "copilot")
         assert config.ide == "copilot"
         paths = [f.path for f in config.files]
-        assert ".github/copilot-instructions.md" in paths
-        md = next(f for f in config.files if f.path == ".github/copilot-instructions.md")
+        assert ".github/agents/test-agent.agent.md" in paths
+        md = next(f for f in config.files if f.path == ".github/agents/test-agent.agent.md")
         assert md.format == "markdown"
         assert "You are a helpful coding assistant." in md.content
 

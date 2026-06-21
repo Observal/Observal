@@ -45,31 +45,15 @@ class CopilotAdapter:
 
         copilot_spec = IDE_REGISTRY["copilot"]
 
-        # Build .agent.md (no hooks in frontmatter - VS Code doesn't support them)
-        agent_desc = getattr(ctx.agent, "description", "") or ""
+        agent_desc = getattr(ctx.agent, "description", "") or safe_name
         frontmatter_lines = [
             "---",
             f"name: {safe_name}",
+            f'description: "{agent_desc}"',
+            "target: vscode",
+            "tools: ['*']",
+            "---",
         ]
-        if agent_desc:
-            frontmatter_lines.append(f'description: "{agent_desc}"')
-        frontmatter_lines.append("tools: ['*']")
-        # Add mcp-servers to frontmatter
-        if copilot_configs:
-            frontmatter_lines.append("mcp-servers:")
-            for mcp_name in copilot_configs:
-                cfg = copilot_configs[mcp_name]
-                frontmatter_lines.append(f"  {mcp_name}:")
-                if cfg.get("type"):
-                    frontmatter_lines.append(f"    type: {cfg['type']}")
-                if cfg.get("command"):
-                    frontmatter_lines.append(f"    command: {cfg['command']}")
-                if cfg.get("args"):
-                    args_str = ", ".join(str(a) for a in cfg["args"])
-                    frontmatter_lines.append(f"    args: [{args_str}]")
-                if cfg.get("url"):
-                    frontmatter_lines.append(f"    url: {cfg['url']}")
-        frontmatter_lines.append("---")
         agent_content = "\n".join(frontmatter_lines) + "\n\n" + rules_content
 
         result: dict = {

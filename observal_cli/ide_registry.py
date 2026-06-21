@@ -178,7 +178,7 @@ IDE_REGISTRY: dict[str, dict] = {
         "default_scope": "project",
         "scope_labels": None,
         "rules_file": {
-            "project": ".github/copilot-instructions.md",
+            "project": ".github/agents/{name}.agent.md",
         },
         "rules_format": "markdown",
         "mcp_config_path": {

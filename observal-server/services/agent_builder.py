@@ -524,14 +524,19 @@ def _generate_codex(manifest: AgentManifest) -> IdeAgentConfig:
 
 
 def _generate_copilot(manifest: AgentManifest) -> IdeAgentConfig:
-    """Generate GitHub Copilot agent config (.github/copilot-instructions.md + .vscode/mcp.json)."""
+    """Generate GitHub Copilot custom agent config."""
+    safe_name = _sanitize_name(manifest.name)
     mcp_entries = _build_mcp_entries(manifest)
     rules_content = _build_rules_markdown(manifest)
+    desc_line = (manifest.description or safe_name).replace("\n", " ").strip()[:200]
+    agent_content = (
+        f"---\nname: {safe_name}\ndescription: \"{desc_line}\"\ntarget: vscode\ntools: ['*']\n---\n\n{rules_content}"
+    )
 
     files = [
         AgentFile(
-            path=".github/copilot-instructions.md",
-            content=rules_content,
+            path=f".github/agents/{safe_name}.agent.md",
+            content=agent_content,
             format="markdown",
         ),
     ]

@@ -724,7 +724,7 @@ class TestBuilderCopilot:
         manifest = _make_manifest()
         result = generate_ide_agent_files(manifest, "copilot")
         paths = [f.path for f in result.files]
-        assert ".github/copilot-instructions.md" in paths
+        assert ".github/agents/test-agent.agent.md" in paths
 
     def test_mcp_json_path(self):
         manifest = _make_manifest(
