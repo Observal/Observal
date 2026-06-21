@@ -22,9 +22,8 @@ export function formatNumber(n: number, decimals = 0): string {
 /**
  * Copy text to the clipboard.
  *
- * Uses the modern Clipboard API when available (secure contexts — HTTPS or
- * localhost). Falls back to a hidden textarea + execCommand("copy") so that
- * copy works on plain HTTP self-hosted deployments too.
+ * Uses the modern Clipboard API when available. Falls back to a hidden textarea
+ * so copy works on plain HTTP self-hosted deployments too.
  */
 export async function copyToClipboard(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -32,19 +31,31 @@ export async function copyToClipboard(text: string): Promise<void> {
       await navigator.clipboard.writeText(text);
       return;
     } catch {
-      // Clipboard API can throw even when present (e.g. permissions denied
-      // in non-secure contexts). Fall through to legacy path.
+      // Clipboard API can throw even when present. Fall back to the legacy path.
     }
   }
 
-  // Legacy fallback for non-secure contexts (plain HTTP)
+  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const parent = activeElement?.closest('[role="dialog"]') ?? document.body;
   const textarea = document.createElement("textarea");
   textarea.value = text;
+  textarea.readOnly = true;
   textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
+  textarea.style.left = "0";
+  textarea.style.top = "0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
   textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
+  textarea.style.pointerEvents = "none";
+  parent.appendChild(textarea);
+  textarea.focus({ preventScroll: true });
   textarea.select();
-  document.execCommand("copy");
-  document.body.removeChild(textarea);
+  textarea.setSelectionRange(0, text.length);
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  activeElement?.focus({ preventScroll: true });
+
+  if (!copied) {
+    throw new Error("Copy failed");
+  }
 }

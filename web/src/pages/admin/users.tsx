@@ -143,12 +143,16 @@ export default function UsersPage() {
     );
   }, [name, email, username, role, createUser]);
 
-  const handleCopyPassword = useCallback(() => {
+  const handleCopyPassword = useCallback(async () => {
     if (!createdPassword) return;
-    copyToClipboard(createdPassword);
-    setCopied(true);
-    toast.success("Password copied");
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await copyToClipboard(createdPassword);
+      setCopied(true);
+      toast.success("Password copied");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy password");
+    }
   }, [createdPassword]);
 
   const handleResetPassword = useCallback((user: AdminUser) => {
@@ -160,12 +164,16 @@ export default function UsersPage() {
     });
   }, [resetPassword]);
 
-  const handleCopyResetPassword = useCallback(() => {
+  const handleCopyResetPassword = useCallback(async () => {
     if (!resetResult) return;
-    copyToClipboard(resetResult);
-    setResetCopied(true);
-    toast.success("Password copied");
-    setTimeout(() => setResetCopied(false), 2000);
+    try {
+      await copyToClipboard(resetResult);
+      setResetCopied(true);
+      toast.success("Password copied");
+      setTimeout(() => setResetCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy password");
+    }
   }, [resetResult]);
 
   const closeDialog = useCallback(() => {

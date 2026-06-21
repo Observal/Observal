@@ -39,11 +39,15 @@ export function PullCommand({ agentName, currentVersion, latestVersion }: PullCo
   const versionFlag = currentVersion && latestVersion && currentVersion !== latestVersion ? ` --version ${currentVersion}` : "";
   const command = `observal agent pull ${agentName} --ide ${effectiveIde}${versionFlag}`;
 
-  function handleCopy() {
-    copyToClipboard(command);
-    setCopied(true);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
+  async function handleCopy() {
+    try {
+      await copyToClipboard(command);
+      setCopied(true);
+      toast.success("Copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy");
+    }
   }
 
   return (

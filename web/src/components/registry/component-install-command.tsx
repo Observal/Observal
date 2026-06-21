@@ -35,11 +35,15 @@ export function ComponentInstallCommand({ componentType, componentName }: Compon
   const effectiveIde = ide || ides?.[0]?.name || "cursor";
   const command = `observal registry ${componentType} install ${componentName} --ide ${effectiveIde}`;
 
-  const handleCopy = useCallback(() => {
-    copyToClipboard(command);
-    setCopied(true);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = useCallback(async () => {
+    try {
+      await copyToClipboard(command);
+      setCopied(true);
+      toast.success("Copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy");
+    }
   }, [command]);
 
   return (
