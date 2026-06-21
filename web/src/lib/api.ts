@@ -417,7 +417,7 @@ export const registry = {
 		prompt: string;
 		model_name: string;
 		components: { component_type: string; component_id: string }[];
-		target_ides?: string[];
+		target_harnesses?: string[];
 	}) =>
 		post<{ configs: Record<string, Record<string, string>> }>(
 			"/agents/preview-config",
@@ -802,16 +802,16 @@ export type VersionConfig = {
 	recommended_cli_version: string;
 };
 
-export interface IdeEntry {
+export interface HarnessEntry {
 	name: string;
 	display_name: string;
-	features: string[];
-	accepts_model_choice: boolean;
+	capabilities: string[];
+	supported_models: string[];
 }
 
-interface IdesResponse {
-	ides: IdeEntry[];
-	default_ide?: string | null;
+interface HarnessesResponse {
+	harnesses: HarnessEntry[];
+	default_harness?: string | null;
 }
 
 export type HealthCheck = {
@@ -872,7 +872,7 @@ export type E2eStatusResult = {
 export const config = {
 	public: () => get<PublicConfig>("/config/public"),
 	version: () => get<VersionConfig>("/config/version"),
-	ides: () => get<IdesResponse>("/config/ides"),
+	harnesses: () => get<HarnessesResponse>("/config/harnesses"),
 	ssoHealth: () => get<SsoHealthResult>("/config/sso-health"),
 };
 

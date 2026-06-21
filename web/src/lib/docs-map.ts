@@ -91,8 +91,8 @@ export const SETTING_DOCS: Record<string, DocRef> = {
 	"observability.enable_metrics": { file: "self-hosting/observability-settings.md", anchor: "enable-metrics", label: "Enable Metrics" },
 
 	// Miscellaneous
-	"misc.ide_allowlist": { file: "self-hosting/miscellaneous.md", anchor: "ide-allowlist", label: "IDE Allowlist" },
-	"misc.default_ide": { file: "self-hosting/miscellaneous.md", anchor: "default-ide", label: "Default IDE" },
+	"misc.harness_allowlist": { file: "self-hosting/miscellaneous.md", anchor: "harness-allowlist", label: "harness Allowlist" },
+	"misc.default_harness": { file: "self-hosting/miscellaneous.md", anchor: "default-harness", label: "Default harness" },
 	"misc.git_mirror_base_path": { file: "self-hosting/miscellaneous.md", anchor: "git-mirror-path", label: "Git Mirror Path" },
 };
 

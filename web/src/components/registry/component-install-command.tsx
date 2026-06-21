@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useIdes } from "@/hooks/use-ides";
+import { useHarnesses } from "@/hooks/use-harnesses";
 
 interface ComponentInstallCommandProps {
   componentType: string;
@@ -21,7 +21,7 @@ interface ComponentInstallCommandProps {
 }
 
 export function ComponentInstallCommand({ componentType, componentName }: ComponentInstallCommandProps) {
-  const { data: ides } = useIdes();
+  const { data: ides } = useHarnesses();
   const [ide, setIde] = useState("");
   useEffect(() => {
     if (!ides || ides.length === 0) return;
@@ -33,7 +33,7 @@ export function ComponentInstallCommand({ componentType, componentName }: Compon
   const [copied, setCopied] = useState(false);
 
   const effectiveIde = ide || ides?.[0]?.name || "cursor";
-  const command = `observal registry ${componentType} install ${componentName} --ide ${effectiveIde}`;
+  const command = `observal registry ${componentType} install ${componentName} --harness ${effectiveIde}`;
 
   const handleCopy = useCallback(async () => {
     try {

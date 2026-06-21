@@ -1774,7 +1774,7 @@ function TurnNode({
 						);
 					})}
 
-					{/* Legacy hook-based agent sub-trees (pre-JSONL IDEs) */}
+					{/* Legacy hook-based agent sub-trees (pre-JSONL harnesses) */}
 					{turn.agents.map((agent, ai) => (
 						<AgentNode
 							key={`turn-${index}-agent-${ai}`}
@@ -2270,7 +2270,7 @@ export default function TraceDetailPage() {
 							{session.service_name && (
 								<div>
 									<span className="text-xs text-muted-foreground block mb-0.5">
-										IDE
+										harness
 									</span>
 									<span className="text-sm">{session.service_name}</span>
 								</div>

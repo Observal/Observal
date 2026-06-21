@@ -58,7 +58,7 @@ export function parseMcpConfigJson(raw: string): { parsed?: ParsedMcpConfig; err
     return { parsed: result };
   }
 
-  // Unwrap IDE config formats
+  // Unwrap harness config formats
   const { inner, serverName } = unwrapMcpConfig(cfg);
   const result: ParsedMcpConfig = { envVars: [] };
   if (serverName) result.serverName = serverName;

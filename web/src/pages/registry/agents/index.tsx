@@ -830,8 +830,8 @@ function AgentListContent() {
                 score={(agent.average_rating as number | null) ?? undefined}
                 status={agent.status}
                 component_count={agent.component_count as number | undefined}
-                supported_ides={agent.supported_ides as string[] | undefined}
-                inferred_supported_ides={agent.inferred_supported_ides as string[] | undefined}
+                supported_harnesses={agent.supported_harnesses as string[] | undefined}
+                inferred_supported_harnesses={agent.inferred_supported_harnesses as string[] | undefined}
                 className={`animate-in stagger-${Math.min(i + 1, 5)}`}
               />
             ))}

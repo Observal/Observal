@@ -54,7 +54,7 @@ import type {
 import { PullCommand } from "@/components/registry/pull-command";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
-import { IdeBadges } from "@/components/registry/ide-badges";
+import { HarnessBadges } from "@/components/registry/harness-badges";
 import { ReviewForm } from "@/components/registry/review-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -167,9 +167,9 @@ interface AgentDetail {
   created_by?: string;
   component_links?: ComponentLink[];
   mcp_links?: ComponentLink[];
-  supported_ides?: string[];
-  required_ide_features?: string[];
-  inferred_supported_ides?: string[];
+  supported_harnesses?: string[];
+  required_capabilities?: string[];
+  inferred_supported_harnesses?: string[];
   [key: string]: unknown;
 }
 
@@ -663,9 +663,9 @@ export default function AgentDetailPage() {
   const versionDescription = vd?.description ?? selectedVersionSummary?.description ?? a?.description;
   const versionPrompt = vd?.prompt ?? (selectedVersion ? undefined : a?.prompt);
   const versionModelName = vd?.model_name ?? (selectedVersion ? undefined : a?.model_name);
-  const versionSupportedIdes = vd?.supported_ides ?? selectedVersionSummary?.supported_ides ?? a?.supported_ides;
-  const versionRequiredFeatures = vd?.required_ide_features ?? (selectedVersion ? undefined : a?.required_ide_features);
-  const versionInferredIdes = vd?.inferred_supported_ides ?? (selectedVersion ? undefined : a?.inferred_supported_ides);
+  const versionSupportedIdes = vd?.supported_harnesses ?? selectedVersionSummary?.supported_harnesses ?? a?.supported_harnesses;
+  const versionRequiredFeatures = vd?.required_capabilities ?? (selectedVersion ? undefined : a?.required_capabilities);
+  const versionInferredIdes = vd?.inferred_supported_harnesses ?? (selectedVersion ? undefined : a?.inferred_supported_harnesses);
   const isOwner = !!(whoami?.id && a?.created_by && whoami.id === String(a.created_by));
   const canTransferOwnership = isOwner;
   const canManageLifecycle = isAdmin || isOwner;
@@ -993,11 +993,11 @@ export default function AgentDetailPage() {
 
               <div className="border border-border rounded-md p-4 space-y-3">
                 <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-                  IDE Compatibility
+                  harness Compatibility
                 </h3>
-                <IdeBadges
-                  supportedIdes={versionSupportedIdes}
-                  inferredSupportedIdes={versionInferredIdes}
+                <HarnessBadges
+                  supportedHarnesses={versionSupportedIdes}
+                  inferredSupportedHarnesses={versionInferredIdes}
                   max={7}
                 />
                 {versionRequiredFeatures && versionRequiredFeatures.length > 0 && (

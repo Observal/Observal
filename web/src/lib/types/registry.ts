@@ -66,7 +66,7 @@ export interface AgentVersionSummary {
 	status: string;
 	is_prerelease: boolean;
 	download_count: number;
-	supported_ides: string[];
+	supported_harnesses: string[];
 	released_by: string;
 	released_at: string | null;
 	created_at: string | null;
@@ -95,12 +95,12 @@ export interface AgentVersionDetail extends AgentVersionSummary {
 	prompt: string;
 	model_name: string;
 	model_config_json?: Record<string, unknown>;
-	models_by_ide?: Record<string, unknown>;
+	models_by_harness?: Record<string, unknown>;
 	external_mcps?: unknown[];
 	yaml_snapshot?: unknown;
-	ide_configs?: Record<string, unknown>;
-	required_ide_features?: string[];
-	inferred_supported_ides?: string[];
+	harness_configs?: Record<string, unknown>;
+	required_capabilities?: string[];
+	inferred_supported_harnesses?: string[];
 	components: AgentComponentReference[];
 }
 
@@ -115,7 +115,7 @@ export interface ComponentVersionSummary {
 	status: string;
 	rejection_reason: string | null;
 	download_count: number;
-	supported_ides: string[];
+	supported_harnesses: string[];
 	released_by: string;
 	released_at: string | null;
 	created_at: string | null;
@@ -252,7 +252,7 @@ export interface ReviewItem {
 	// Common detail fields
 	git_url?: string;
 	git_ref?: string;
-	supported_ides?: string[];
+	supported_harnesses?: string[];
 
 	// MCP-specific
 	transport?: string;
@@ -313,7 +313,7 @@ export interface ReviewItem {
 	model_name?: string;
 	model_config_json?: Record<string, unknown>;
 	external_mcps?: unknown[];
-	required_ide_features?: string[];
+	required_capabilities?: string[];
 	component_count?: number;
 	components?: { component_type: string; component_id: string }[];
 }

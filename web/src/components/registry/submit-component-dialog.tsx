@@ -28,7 +28,7 @@ import { Check, Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import type { RegistryType } from "@/lib/api";
 import { useWhoami } from "@/hooks/use-api";
-import { useIdes } from "@/hooks/use-ides";
+import { useHarnesses } from "@/hooks/use-harnesses";
 import { parseMcpConfigJson, applyParsedConfig } from "@/lib/mcp-parser";
 import type { EnvVar } from "@/lib/mcp-parser";
 
@@ -123,7 +123,7 @@ export function SubmitComponentDialog({
 }: SubmitComponentDialogProps) {
 	const d = editItem as Record<string, unknown> | null;
 	const { data: whoami } = useWhoami();
-	const { data: ideList } = useIdes();
+	const { data: ideList } = useHarnesses();
 	const defaultOwner =
 		(d?.owner as string) ||
 		whoami?.username ||
@@ -138,7 +138,7 @@ export function SubmitComponentDialog({
 	);
 	const owner = defaultOwner;
 	const [supportedIdes, setSupportedIdes] = useState<string[]>(
-		Array.isArray(d?.supported_ides) ? (d.supported_ides as string[]) : [],
+		Array.isArray(d?.supported_harnesses) ? (d.supported_harnesses as string[]) : [],
 	);
 
 	// ── MCP ─────────────────────────────────────────────────
@@ -214,8 +214,8 @@ export function SubmitComponentDialog({
 						return;
 					}
 					const data = await res.json();
-					// Filter: find SKILL.md files, excluding IDE config copies
-					// IDE dirs (.claude/, .kiro/, .agents/, etc.) are installed copies, not sources
+					// Filter: find SKILL.md files, excluding harness config copies
+					// harness dirs (.claude/, .kiro/, .agents/, etc.) are installed copies, not sources
 					const INSTALLED_PREFIX =
 						/^(\.agents|\.(claude|kiro|cursor|gemini|github|opencode|pi|trae|trae-cn|rovodev|qoder|copilot)|plugin)\//;
 					const allSkillFiles = (data.tree || []).filter(
@@ -399,7 +399,7 @@ export function SubmitComponentDialog({
 			description,
 			owner,
 		};
-		if (supportedIdes.length > 0) base.supported_ides = supportedIdes;
+		if (supportedIdes.length > 0) base.supported_harnesses = supportedIdes;
 
 		switch (type) {
 			case "mcps": {
@@ -1205,9 +1205,9 @@ export function SubmitComponentDialog({
 						</>
 					)}
 
-					{/* ── Supported IDEs (all types) ────────────────── */}
+					{/* ── Supported harnesses (all types) ────────────────── */}
 					<div className="space-y-1.5">
-						<Label>Supported IDEs</Label>
+						<Label>Supported harnesses</Label>
 						<div className="flex flex-wrap gap-1.5">
 							{(ideList ?? []).map((ide) => (
 								<button

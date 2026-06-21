@@ -39,7 +39,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { DetailSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
-import { IdeBadges } from "@/components/registry/ide-badges";
+import { HarnessBadges } from "@/components/registry/harness-badges";
 import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
 
 function statusVariant(status?: string) {
@@ -418,13 +418,13 @@ export default function ComponentDetailPage() {
                 </div>
               </div>
 
-              {/* IDE Compatibility */}
-              {Array.isArray(item.supported_ides) && (item.supported_ides as string[]).length > 0 && (
+              {/* harness Compatibility */}
+              {Array.isArray(item.supported_harnesses) && (item.supported_harnesses as string[]).length > 0 && (
                 <div className="border border-border rounded-md p-4 space-y-3">
                   <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-                    IDE Compatibility
+                    harness Compatibility
                   </h3>
-                  <IdeBadges supportedIdes={item.supported_ides as string[]} max={7} />
+                  <HarnessBadges supportedHarnesses={item.supported_harnesses as string[]} max={7} />
                 </div>
               )}
 
