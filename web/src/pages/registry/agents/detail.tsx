@@ -16,6 +16,7 @@ import {
   Loader2,
   Archive,
   ArchiveRestore,
+  Trash2,
   Play,
   CheckCircle2,
   XCircle,
@@ -353,6 +354,46 @@ function AgentVersionContents({
         )}
       </section>
     </div>
+  );
+}
+
+function AgentDeleteButton({ agentId, agentName, onSuccess }: { agentId: string; agentName: string; onSuccess: () => void }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const archiveMutation = useArchiveAgent();
+
+  function submit() {
+    archiveMutation.mutate(agentId, {
+      onSuccess: () => {
+        setConfirmOpen(false);
+        onSuccess();
+      },
+    });
+  }
+
+  return (
+    <>
+      <Button variant="destructive" size="sm" className="h-8" onClick={() => setConfirmOpen(true)} disabled={archiveMutation.isPending}>
+        <Trash2 className="mr-1 h-3.5 w-3.5" />
+        Delete
+      </Button>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {agentName}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This archives the agent and hides it from registry lists. It can be restored later.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={submit} disabled={archiveMutation.isPending}>
+              {archiveMutation.isPending ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Deleting...</> : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -982,40 +1023,35 @@ export default function AgentDetailPage() {
                 </div>
               )}
 
-              {/* Co-Authors: visible to owner/co-authors */}
-              {(a?.user_permission === "owner") && (
-                <div className="border border-border rounded-md p-4 space-y-3">
-                  <CoAuthorInput
-                    entityType="agents"
-                    entityId={id}
-                    coAuthors={coAuthors}
-                    onChange={setCoAuthors}
-                    canManage={true}
-                    canTransferOwnership={canTransferOwnership}
-                    onTransferOwnership={() => refetch()}
-                  />
-                </div>
-              )}
-              {/* Show co-authors read-only to everyone if any exist */}
-              {a?.user_permission !== "owner" && coAuthors.length > 0 && (
-                <div className="border border-border rounded-md p-4 space-y-2">
+              {(a?.user_permission === "owner" || coAuthors.length > 0 || canManageLifecycle) && (
+                <div className="border border-border rounded-md p-4 space-y-4">
                   <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-                    Co-Authors
+                    Danger zone
                   </h3>
-                  <div className="space-y-1">
-                    {coAuthors.map((c) => (
-                      <p key={c.id} className="text-sm text-muted-foreground">{c.username || c.email}</p>
-                    ))}
-                  </div>
-                </div>
-              )}
 
-              {canManageLifecycle && (agentStatus === "approved" || agentStatus === "archived") && (
-                <div className="border border-border rounded-md p-4 space-y-3">
-                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-                    Lifecycle
-                  </h3>
-                  <AgentArchiveButton agentId={id} agentName={agentName} status={agentStatus} onSuccess={() => refetch()} />
+                  {(a?.user_permission === "owner" || coAuthors.length > 0) && (
+                    <CoAuthorInput
+                      entityType="agents"
+                      entityId={id}
+                      coAuthors={coAuthors}
+                      onChange={setCoAuthors}
+                      canManage={a?.user_permission === "owner"}
+                      canTransferOwnership={canTransferOwnership}
+                      onTransferOwnership={() => refetch()}
+                    />
+                  )}
+
+                  {canManageLifecycle && (agentStatus === "approved" || agentStatus === "archived") && (
+                    <div className="border-t border-border pt-3 space-y-2">
+                      <p className="text-sm font-medium">Lifecycle</p>
+                      <div className="flex flex-wrap gap-2">
+                        <AgentArchiveButton agentId={id} agentName={agentName} status={agentStatus} onSuccess={() => refetch()} />
+                        {agentStatus === "approved" && (
+                          <AgentDeleteButton agentId={id} agentName={agentName} onSuccess={() => refetch()} />
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </aside>

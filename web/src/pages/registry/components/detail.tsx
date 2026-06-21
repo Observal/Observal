@@ -438,40 +438,28 @@ export default function ComponentDetailPage() {
                 </div>
               )}
 
-              {/* Co-Authors (manageable by owner/co-author/admin) */}
-              {canEdit && (
-                <div className="border border-border rounded-md p-4 space-y-3">
+              {(canEdit || coAuthors.length > 0) && (
+                <div className="border border-border rounded-md p-4 space-y-4">
+                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+                    Danger zone
+                  </h3>
+
                   <CoAuthorInput
                     entityType={type}
                     entityId={id}
                     coAuthors={coAuthors}
                     onChange={setCoAuthors}
-                    canManage={true}
+                    canManage={canEdit}
                     canTransferOwnership={canTransferOwnership}
                     onTransferOwnership={() => refetch()}
                   />
-                </div>
-              )}
-              {/* Read-only co-authors for non-owners */}
-              {!canEdit && coAuthors.length > 0 && (
-                <div className="border border-border rounded-md p-4 space-y-2">
-                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-                    Co-Authors
-                  </h3>
-                  <div className="space-y-1">
-                    {coAuthors.map((c) => (
-                      <p key={c.id} className="text-sm text-muted-foreground">{c.username || c.email}</p>
-                    ))}
-                  </div>
-                </div>
-              )}
 
-              {canEdit && (
-                <div className="border border-border rounded-md p-4 space-y-3">
-                  <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-                    Lifecycle
-                  </h3>
-                  <ComponentArchiveButton type={type} item={item} onSuccess={() => refetch()} />
+                  {canEdit && (
+                    <div className="border-t border-border pt-3 space-y-2">
+                      <p className="text-sm font-medium">Lifecycle</p>
+                      <ComponentArchiveButton type={type} item={item} onSuccess={() => refetch()} />
+                    </div>
+                  )}
                 </div>
               )}
             </aside>
