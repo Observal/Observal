@@ -23,9 +23,7 @@ class CursorAdapter(BaseAdapter):
 
     home_markers = (".cursor",)
     managed_agent_files = (
-        "user:rules/{name}.mdc",
         "user:agents/{name}.md",
-        "project:.cursor/rules/{name}.mdc",
         "project:.cursor/agents/{name}.md",
     )
     managed_skill_files = ("user:rules/{name}.mdc", "user:skills/{name}/SKILL.md")

@@ -10,7 +10,7 @@
 
 Generates IDE-specific agent files from a ResolvedAgent:
 - Claude Code: .claude/agents/<name>.md (markdown) + MCP JSON config
-- Cursor: .cursor/rules/<name>.md (markdown) + .cursor/mcp.json
+- Cursor: .cursor/agents/<name>.md (subagent markdown) + .cursor/mcp.json
 - Gemini CLI: GEMINI.md (markdown) + MCP JSON config
 - Kiro: ~/.kiro/agents/<name>.json (JSON)
 - Codex: AGENTS.md (markdown)
@@ -372,10 +372,13 @@ def _generate_claude_code(manifest: AgentManifest) -> IdeAgentConfig:
 
 
 def _generate_cursor(manifest: AgentManifest) -> IdeAgentConfig:
-    """Generate Cursor agent config (.cursor/rules/<name>.md + .cursor/mcp.json)."""
+    """Generate Cursor subagent config (.cursor/agents/<name>.md + .cursor/mcp.json)."""
     safe_name = _sanitize_name(manifest.name)
     mcp_entries = _build_mcp_entries(manifest)
     rules_content = _build_rules_markdown(manifest)
+    desc_line = (manifest.description or safe_name).replace("\n", " ").strip()[:200]
+    model = manifest.model_name or "inherit"
+    agent_content = f"---\nname: {safe_name}\ndescription: {desc_line!r}\nmodel: {model}\n---\n\n{rules_content}"
 
     skill_files = _build_skill_files(manifest, "cursor")
 
@@ -383,8 +386,8 @@ def _generate_cursor(manifest: AgentManifest) -> IdeAgentConfig:
         ide="cursor",
         files=[
             AgentFile(
-                path=f".cursor/rules/{safe_name}.md",
-                content=rules_content,
+                path=f".cursor/agents/{safe_name}.md",
+                content=agent_content,
                 format="markdown",
             ),
             AgentFile(

@@ -328,13 +328,14 @@ class TestGenerateCursorVscode:
     def test_cursor_paths(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "cursor")
-        assert cfg["rules_file"]["path"] == ".cursor/rules/test-agent.mdc"
+        assert cfg["agent_file"]["path"] == ".cursor/agents/test-agent.md"
         assert cfg["mcp_config"]["path"] == ".cursor/mcp.json"
+        assert "rules_file" not in cfg
 
-    def test_rules_content_not_empty(self):
+    def test_agent_content_not_empty(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "cursor")
-        assert len(cfg["rules_file"]["content"]) > 0
+        assert len(cfg["agent_file"]["content"]) > 0
 
     def test_mcp_config_has_mcpservers_key(self):
         agent = _make_agent()
@@ -677,11 +678,12 @@ class TestBuilderClaudeCode:
 
 
 class TestBuilderCursor:
-    def test_files_include_rules_and_mcp_json(self):
+    def test_files_include_subagent_and_mcp_json(self):
         manifest = _make_manifest()
         result = generate_ide_agent_files(manifest, "cursor")
         paths = [f.path for f in result.files]
-        assert any(".cursor/rules/" in p for p in paths)
+        assert any(".cursor/agents/" in p for p in paths)
+        assert not any(".cursor/rules/" in p for p in paths)
         assert any("mcp.json" in p for p in paths)
 
 

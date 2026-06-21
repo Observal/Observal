@@ -136,14 +136,17 @@ function generateClaudeCode(
 
 function generateCursor(
 	name: string,
+	description: string,
+	modelName: string,
 	mcps: { id: string; name: string }[],
 	body: string,
 ): PreviewFile[] {
-	const safeName = name || "(untitled)";
+	const safeName = name || "untitled";
+	const desc = description || safeName;
 	const files: PreviewFile[] = [
 		{
-			path: `.cursor/rules/${safeName}.mdc`,
-			content: body || `# ${safeName}`,
+			path: `.cursor/agents/${safeName}.md`,
+			content: `---\nname: ${safeName}\ndescription: ${JSON.stringify(desc)}\nmodel: ${modelName || "inherit"}\n---\n\n${body || `# ${safeName}`}`,
 		},
 	];
 	if (mcps.length > 0) {
@@ -357,7 +360,7 @@ export function PreviewPanel({
 			);
 			break;
 		case "cursor":
-			files = generateCursor(name, mcps, body);
+			files = generateCursor(name, description, modelName ?? "", mcps, body);
 			break;
 		case "kiro":
 			files = generateKiro(name, description, mcps, body);

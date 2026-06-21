@@ -1190,15 +1190,15 @@ class TestGenerateIdeAgentFiles:
 
     # ── Cursor ─────────────────────────────────────────────────
 
-    def test_cursor_generates_rules_and_mcp_json(self):
+    def test_cursor_generates_subagent_and_mcp_json(self):
         from services.agent_builder import generate_ide_agent_files
 
         manifest = self._make_manifest()
         config = generate_ide_agent_files(manifest, "cursor")
         assert config.ide == "cursor"
-        rules = next(f for f in config.files if f.path == ".cursor/rules/test-agent.md")
+        agent = next(f for f in config.files if f.path == ".cursor/agents/test-agent.md")
         mcp_json = next(f for f in config.files if f.format == "json")
-        assert rules.format == "markdown"
+        assert agent.format == "markdown"
         assert mcp_json.path == ".cursor/mcp.json"
         assert "mcpServers" in mcp_json.content
         assert "github-mcp" in mcp_json.content["mcpServers"]

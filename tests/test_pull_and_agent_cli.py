@@ -69,9 +69,9 @@ def _patch_get_agent(detail: dict = _AGENT_DETAIL_NO_ENV):
 def _cursor_snippet() -> dict:
     return {
         "config_snippet": {
-            "rules_file": {
-                "path": ".cursor/rules/my-agent.md",
-                "content": "# My Agent Rules\n\nDo the thing.\n",
+            "agent_file": {
+                "path": ".cursor/agents/my-agent.md",
+                "content": "# My Agent\n\nDo the thing.\n",
             },
             "mcp_config": {
                 "path": ".cursor/mcp.json",
@@ -176,7 +176,7 @@ def _opencode_snippet() -> dict:
 
 
 class TestPullCursor:
-    def test_writes_rules_and_mcp(self, tmp_path: Path):
+    def test_writes_agent_and_mcp(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_cursor_snippet()):
             result = runner.invoke(
                 cli_app, ["agent", "pull", "abc123", "--ide", "cursor", "--dir", str(tmp_path), "--no-prompt"]
@@ -184,9 +184,9 @@ class TestPullCursor:
 
         assert result.exit_code == 0, result.output
 
-        rules = tmp_path / ".cursor" / "rules" / "my-agent.md"
-        assert rules.exists()
-        assert "My Agent Rules" in rules.read_text()
+        agent = tmp_path / ".cursor" / "agents" / "my-agent.md"
+        assert agent.exists()
+        assert "My Agent" in agent.read_text()
 
         mcp = tmp_path / ".cursor" / "mcp.json"
         assert mcp.exists()
@@ -501,7 +501,7 @@ class TestPullDryRun:
         assert "would write" in result.output
 
         # No files should exist
-        assert not (tmp_path / ".cursor" / "rules" / "my-agent.md").exists()
+        assert not (tmp_path / ".cursor" / "agents" / "my-agent.md").exists()
         assert not (tmp_path / ".cursor" / "mcp.json").exists()
 
     def test_dry_run_still_shows_paths(self, tmp_path: Path):

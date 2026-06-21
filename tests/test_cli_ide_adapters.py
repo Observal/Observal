@@ -103,9 +103,7 @@ class TestManagedLayerFiles:
             (
                 "cursor",
                 {
-                    "user:rules/agent-one.mdc",
                     "user:agents/agent-one.md",
-                    "project:.cursor/rules/agent-one.mdc",
                     "project:.cursor/agents/agent-one.md",
                     "user:rules/skill-one.mdc",
                     "user:skills/skill-one/SKILL.md",

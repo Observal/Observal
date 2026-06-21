@@ -35,24 +35,20 @@ class CursorAdapter:
 
         spec = IDE_REGISTRY["cursor"]
         ide_scope = options.get("scope", spec.get("default_scope", "project"))
-        rules_paths = spec.get("rules_file", {})
-        rules_path = rules_paths.get(ide_scope, next(iter(rules_paths.values()), f".rules/{safe_name}.md"))
         mcp_paths = spec.get("mcp_config_path", {})
         mcp_path = mcp_paths.get(ide_scope, next(iter(mcp_paths.values()), ".mcp.json"))
 
-        # Cursor uses .cursor/agents/<name>.md for subagent registration
-        # and .cursor/rules/<name>.mdc for context rules
         desc_line = (ctx.agent.description or safe_name).replace("\n", " ").strip()[:200]
-        cursor_rules_content = f"---\ndescription: {desc_line}\nalwaysApply: false\n---\n\n{rules_content}"
-        cursor_agent_content = f"---\nname: {safe_name}\ndescription: {desc_line}\n---\n\n{rules_content}"
+        model = options.get("_resolved_model") or "inherit"
+        cursor_agent_content = (
+            f"---\nname: {safe_name}\ndescription: {desc_line!r}\nmodel: {model}\n---\n\n{rules_content}"
+        )
 
         result: dict = {
-            "rules_file": {"path": rules_path.format(name=safe_name), "content": cursor_rules_content},
             "mcp_config": {"path": mcp_path, "content": {spec.get("mcp_servers_key", "mcpServers"): mcp_configs}},
             "scope": ide_scope,
         }
 
-        # Agent file for subagent registration
         agent_dir = ".cursor/agents" if ide_scope == "project" else "~/.cursor/agents"
         result["agent_file"] = {"path": f"{agent_dir}/{safe_name}.md", "content": cursor_agent_content}
 
