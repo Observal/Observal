@@ -47,6 +47,8 @@ import type {
   ValidationResult,
 } from "@/lib/types";
 import type { RegistryType } from "@/lib/api";
+import { useIdes } from "@/hooks/use-ides";
+import { ModelPicker } from "@/components/builder/model-picker";
 import { SortableComponentList } from "@/components/builder/sortable-component-list";
 import { ValidationPanel } from "@/components/builder/validation-panel";
 import { COMPONENT_TYPES, REVERSE_TYPE_MAP, TYPE_MAP } from "@/components/registry/agent-component-constants";
@@ -103,10 +105,12 @@ export function AgentEditForm({
   const initialDescription = vd?.description ?? agent.description ?? "";
   const initialModelName = vd?.model_name ?? agent.model_name ?? "";
   const initialPrompt = vd?.prompt ?? agent.prompt ?? "";
+  const initialSupportedIdes = vd?.supported_ides ?? agent.supported_ides ?? [];
 
   // ── Form state ───────────────────────────────────────────────
   const [description, setDescription] = useState(initialDescription);
   const [modelName, setModelName] = useState(initialModelName);
+  const [supportedIdes, setSupportedIdes] = useState<string[]>(initialSupportedIdes);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
   const [selectedComponents, setSelectedComponents] = useState<
     Record<string, RegistryItem[]>
@@ -123,6 +127,7 @@ export function AgentEditForm({
   const initialStateRef = useRef({
     description: initialDescription,
     modelName: initialModelName,
+    supportedIdes: initialSupportedIdes,
     prompt: initialPrompt,
     selectedComponents: {} as Record<string, RegistryItem[]>,
   });
@@ -137,6 +142,7 @@ export function AgentEditForm({
   const createVersion = useCreateAgentVersion();
   const updateAgent = useUpdateAgent();
   const { data: versionSuggestions } = useVersionSuggestions(agentId);
+  const { data: ideList } = useIdes();
 
   // ── Initialize form from agent data ──────────────────────────
   const fingerprint = useMemo(
@@ -147,6 +153,8 @@ export function AgentEditForm({
         versionDetail?.description,
         versionDetail?.model_name,
         versionDetail?.prompt,
+        versionDetail?.supported_ides,
+        agent.supported_ides,
         versionDetail?.components,
       ]),
     [agent.name, currentVersion, versionDetail],
@@ -156,6 +164,7 @@ export function AgentEditForm({
     // Reset description / modelName from latest props
     setDescription(initialDescription);
     setModelName(initialModelName);
+    setSupportedIdes(initialSupportedIdes);
 
     const links: ComponentLink[] = versionDetail?.components
       ? versionDetail.components.map((component) => ({
@@ -188,6 +197,7 @@ export function AgentEditForm({
     initialStateRef.current = {
       description: initialDescription,
       modelName: initialModelName,
+      supportedIdes: initialSupportedIdes,
       prompt: initialPrompt,
       selectedComponents: grouped,
     };
@@ -201,10 +211,11 @@ export function AgentEditForm({
     const dirty =
       description !== init.description ||
       modelName !== init.modelName ||
+      JSON.stringify(supportedIdes) !== JSON.stringify(init.supportedIdes) ||
       prompt !== init.prompt ||
       JSON.stringify(selectedComponents) !== JSON.stringify(init.selectedComponents);
     setIsDirty(dirty);
-  }, [description, modelName, prompt, selectedComponents]);
+  }, [description, modelName, supportedIdes, prompt, selectedComponents]);
 
   // ── Debounced validation ──────────────────────────────────────
   useEffect(() => {
@@ -273,6 +284,12 @@ export function AgentEditForm({
     }));
   }, []);
 
+  function toggleTargetIde(ide: string) {
+    setSupportedIdes((prev) =>
+      prev.includes(ide) ? prev.filter((i) => i !== ide) : [...prev, ide],
+    );
+  }
+
   const handleReorder = useCallback(
     (type: string) => (items: { id: string; name: string }[]) => {
       setSelectedComponents((prev) => {
@@ -306,8 +323,9 @@ export function AgentEditForm({
       prompt: prompt.trim(),
       model_name: modelName,
       model_config_json: {},
+      models_by_ide: {},
       external_mcps: [],
-      supported_ides: agent.supported_ides ?? [],
+      supported_ides: supportedIdes,
       components: components.length > 0 ? components : [],
       yaml_snapshot: null,
       is_prerelease: false,
@@ -324,6 +342,7 @@ export function AgentEditForm({
       initialStateRef.current = {
         description,
         modelName,
+        supportedIdes,
         prompt,
         selectedComponents,
       };
@@ -345,6 +364,7 @@ export function AgentEditForm({
       initialStateRef.current = {
         description,
         modelName,
+        supportedIdes,
         prompt,
         selectedComponents,
       };
@@ -367,6 +387,7 @@ export function AgentEditForm({
     const init = initialStateRef.current;
     setDescription(init.description);
     setModelName(init.modelName);
+    setSupportedIdes(init.supportedIdes);
     setPrompt(init.prompt ?? "");
     setSelectedComponents(
       Object.keys(init.selectedComponents).length > 0
@@ -411,24 +432,35 @@ export function AgentEditForm({
           />
         </div>
 
-        <div className="space-y-2 max-w-xs">
-          <Label htmlFor="agent-model" className="text-sm font-medium">
-            Model
-          </Label>
-          <Input
-            id="agent-model"
-            list="edit-model-suggestions"
-            placeholder="claude-sonnet-4-20250514"
-            value={modelName}
-            onChange={(e) => setModelName(e.target.value)}
+        <div className="max-w-lg">
+          <ModelPicker
+            modelName={modelName}
+            onModelNameChange={setModelName}
           />
-          <datalist id="edit-model-suggestions">
-            <option value="claude-opus-4-6-20250725" />
-            <option value="claude-sonnet-4-6-20250725" />
-            <option value="claude-sonnet-4-20250514" />
-            <option value="claude-opus-4-20250514" />
-            <option value="claude-haiku-4-5-20251001" />
-          </datalist>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Target IDEs</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {(ideList ?? []).map((ide) => (
+              <button
+                key={ide.name}
+                type="button"
+                onClick={() => toggleTargetIde(ide.name)}
+                className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                  supportedIdes.includes(ide.name)
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {ide.display_name}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Leave empty for portable agents. Pick one or more when this agent is
+            meant for specific harnesses.
+          </p>
         </div>
       </section>
 
