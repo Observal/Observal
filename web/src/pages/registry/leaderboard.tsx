@@ -26,6 +26,16 @@ import type { LeaderboardWindow } from "@/lib/types";
 type TopTab = "agents" | "components";
 type SubTab = "leaderboard" | "users";
 
+function componentRouteType(type: string) {
+  return ({
+    mcp: "mcps",
+    skill: "skills",
+    hook: "hooks",
+    prompt: "prompts",
+    sandbox: "sandboxes",
+  } as const)[type] ?? "mcps";
+}
+
 interface UserAggregate {
   email: string;
   username?: string | null;
@@ -315,15 +325,18 @@ export default function LeaderboardPage() {
                     </div>
 
                     {rankedComponents.map((item, i) => (
-                      <div
+                      <Link
                         key={item.id}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40"
+                        to="/components/$componentId"
+                        params={{ componentId: item.id }}
+                        search={{ type: componentRouteType(item.component_type) }}
+                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
                       >
                         <span className={`w-8 text-right font-mono font-semibold ${i < 3 ? "text-foreground" : "text-muted-foreground"}`}>
                           {i + 1}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium truncate block">
+                          <span className="text-sm font-medium truncate block group-hover:underline underline-offset-4">
                             {item.name}
                           </span>
                           <span className="text-xs text-muted-foreground/70 truncate block">
@@ -350,7 +363,7 @@ export default function LeaderboardPage() {
                           <ArrowDownToLine className="h-3 w-3" />
                           {compactNumber(item.download_count)}
                         </span>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 )}
