@@ -300,7 +300,7 @@ IDE_REGISTRY: dict[str, dict] = {
         "rules_format": "markdown",
         "mcp_config_path": {
             "project": ".agents/mcp_config.json",
-            "user": "~/.gemini/antigravity-cli/mcp_config.json",
+            "user": "~/.gemini/config/mcp_config.json",
         },
         "mcp_servers_key": "mcpServers",
         "skill_file": {
@@ -308,7 +308,7 @@ IDE_REGISTRY: dict[str, dict] = {
             "user": "~/.gemini/config/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.gemini/antigravity-cli/mcp_config.json",
+        "home_mcp_config": "~/.gemini/config/mcp_config.json",
         "hook_type": "command",
         "hook_config_path": {
             "project": ".agents/hooks.json",

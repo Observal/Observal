@@ -49,11 +49,6 @@ class AntigravityAdapter:
         if skill_files:
             result["skill_files"] = skill_files
 
-        # Model choice
-        model = options.get("_resolved_model")
-        if model:
-            mcp_content["model"] = model
-
         warnings = list(ctx.compatibility_warnings)
         warnings.extend(options.get("_model_warnings") or [])
         if warnings:
