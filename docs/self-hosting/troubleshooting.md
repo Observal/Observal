@@ -120,7 +120,7 @@ observal ops telemetry status
 observal ops sync
 
 # 3. Is the shim wired in?
-observal doctor --ide <ide>
+observal doctor --harness <harness>
 
 # 4. Is the API reachable from where the shim runs?
 curl http://localhost/health
@@ -130,7 +130,7 @@ If the shim is wrapped but traces aren't arriving, the shim may be silently drop
 
 ### `observal doctor patch` wraps 0 servers
 
-Your IDE's MCP config may be empty or in a non-standard location. Check:
+Your harness's MCP config may be empty or in a non-standard location. Check:
 
 ```bash
 cat .kiro/settings/mcp.json         # Kiro project
@@ -141,7 +141,7 @@ cat .vscode/mcp.json                # VS Code
 cat .gemini/settings.json           # Gemini CLI
 ```
 
-If none exist, configure at least one MCP server in your IDE first, then re-run `doctor patch`.
+If none exist, configure at least one MCP server in your harness first, then re-run `doctor patch`.
 
 ### ClickHouse not receiving data
 

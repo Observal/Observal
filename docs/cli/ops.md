@@ -69,7 +69,7 @@ List recent traces (sessions). By default shows a summary table. Use `--turn` to
 ### Synopsis
 
 ```bash
-observal ops traces [--platform <ide>] [--days N] [--limit N] [--turn] [--span] [--output table|json]
+observal ops traces [--platform <harness>] [--days N] [--limit N] [--turn] [--span] [--output table|json]
 ```
 
 ### Examples

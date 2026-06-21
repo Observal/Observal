@@ -59,7 +59,7 @@ The externally-reachable URL of the Observal API server.
 
 Override the OpenTelemetry HTTP endpoint for telemetry ingestion.
 
-**Affects:** Where the CLI and IDE hooks send telemetry data. Normally this is the same as the public API URL (at `/api/v1/ingest`), but can be split to a dedicated collector for high-volume deployments.
+**Affects:** Where the CLI and harness hooks send telemetry data. Normally this is the same as the public API URL (at `/api/v1/ingest`), but can be split to a dedicated collector for high-volume deployments.
 
 | Value | Effect |
 |-------|--------|

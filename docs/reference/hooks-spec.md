@@ -5,7 +5,7 @@
 
 # Hooks specification
 
-The schema Observal uses for hook definitions -- both the registry hook type (`observal registry hook`) and hooks wired into IDE configs by `observal agent pull` / `observal doctor patch`.
+The schema Observal uses for hook definitions -- both the registry hook type (`observal registry hook`) and hooks wired into harness configs by `observal agent pull` / `observal doctor patch`.
 
 Current version: `HOOKS_SPEC_VERSION = "5"` (see `observal_cli/hooks_spec.py`).
 
@@ -14,7 +14,7 @@ Current version: `HOOKS_SPEC_VERSION = "5"` (see `observal_cli/hooks_spec.py`).
 Two distinct things share the name "hook":
 
 1. **Registry hooks**: packaged, versioned hook definitions in the Observal registry. Install them via `observal registry hook install`.
-2. **IDE hooks** -- entries in `~/.claude/settings.json`, `.kiro/agents/<name>.json`, etc. These are written by `observal agent pull` and `observal doctor patch --hook`.
+2. **harness hooks** -- entries in `~/.claude/settings.json`, `.kiro/agents/<name>.json`, etc. These are written by `observal agent pull` and `observal doctor patch --hook`.
 
 Both use the same event vocabulary.
 
@@ -22,13 +22,13 @@ Both use the same event vocabulary.
 
 | Event | When it fires |
 | --- | --- |
-| `SessionStart` | New IDE session begins |
+| `SessionStart` | New harness session begins |
 | `Stop` | Session ends |
 | `SubagentStop` | Sub-agent session ends (Claude Code only) |
 | `UserPromptSubmit` | User submits a prompt |
 | `PreToolUse` | Before a tool call |
 | `PostToolUse` | After a tool call (with result) |
-| `Notification` | IDE surfaces a notification |
+| `Notification` | harness surfaces a notification |
 
 Source: `observal_cli/constants.py:VALID_HOOK_EVENTS`.
 
@@ -43,8 +43,8 @@ Source: `observal_cli/constants.py:VALID_HOOK_EVENTS`.
 
 | Mode | Semantics |
 | --- | --- |
-| `async` | Fire and forget - IDE doesn't wait |
-| `sync` | IDE waits for handler to return before continuing |
+| `async` | Fire and forget - harness doesn't wait |
+| `sync` | harness waits for handler to return before continuing |
 | `blocking` | Handler can veto the event (e.g. block a tool call) |
 
 Source: `observal_cli/constants.py:VALID_HOOK_EXECUTION_MODES`.

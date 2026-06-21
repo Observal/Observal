@@ -36,7 +36,7 @@ All `{id}` parameters accept a UUID or a name.
 | `POST` | `/{type}` | Submit / create |
 | `GET` | `/{type}` | List approved items |
 | `GET` | `/{type}/{id}` | Get details |
-| `POST` | `/{type}/{id}/install` | Get IDE config snippet |
+| `POST` | `/{type}/{id}/install` | Get harness config snippet |
 | `DELETE` | `/{type}/{id}` | Delete |
 | `GET` | `/{type}/{id}/metrics` | Metrics |
 | `POST` | `/agents/{id}/pull` | Pull agent (installs all components) |
@@ -45,7 +45,7 @@ All `{id}` parameters accept a UUID or a name.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/scan` | Bulk register items from IDE config scan |
+| `POST` | `/scan` | Bulk register items from harness config scan |
 
 ### Review
 

@@ -34,7 +34,7 @@ For production deployment options, see [Self-Hosting](../self-hosting/docker-com
 
 ## Install the CLI
 
-The CLI is what you use to log in, instrument IDE configs, pull agents, and query traces.
+The CLI is what you use to log in, instrument harness configs, pull agents, and query traces.
 
 ## Install (standalone binary)
 
@@ -113,11 +113,11 @@ Four entry points land on your `PATH`:
 | Command                | Purpose                                              |
 | ---------------------- | ---------------------------------------------------- |
 | `observal`             | The main CLI                                         |
-| `observal-shim`        | stdio shim between your IDE and stdio MCP servers    |
-| `observal-proxy`       | HTTP proxy between your IDE and HTTP/SSE MCP servers |
+| `observal-shim`        | stdio shim between your harness and stdio MCP servers    |
+| `observal-proxy`       | HTTP proxy between your harness and HTTP/SSE MCP servers |
 | `observal-sandbox-run` | Sandbox runner invoked by Observal sandboxes         |
 
-You will almost never call the shim, proxy, or sandbox runner directly. The CLI wires them into your IDE config for you.
+You will almost never call the shim, proxy, or sandbox runner directly. The CLI wires them into your harness config for you.
 
 ## Upgrade
 

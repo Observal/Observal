@@ -22,7 +22,7 @@ Every type supports these actions:
 | `list` | List approved components |
 | `my` | List your own components across all statuses |
 | `show` | Show details for one component |
-| `install` | Generate an IDE config snippet |
+| `install` | Generate an harness config snippet |
 | `edit` | Edit a draft, pending, or rejected submission |
 | `delete` | Delete a component |
 | `transfer-owner` | Transfer ownership to another username |
@@ -41,7 +41,7 @@ MCP server registry commands for submitting, browsing, installing, editing, and 
 
 ### `observal registry mcp submit`
 
-Submit an MCP server to the registry. By default, paste your server's JSON config (the same format you use in your IDE). Use `--git` to analyze a git repository instead.
+Submit an MCP server to the registry. By default, paste your server's JSON config (the same format you use in your harness). Use `--git` to analyze a git repository instead.
 
 #### Synopsis
 
@@ -65,7 +65,7 @@ observal registry mcp submit --git <url> [OPTIONS]
 
 1. Prompts you to paste your MCP server JSON config.
 2. Accepts multiple formats:
-   - **IDE config**: `{"mcpServers": {"name": {"command": "...", "args": [...], "env": {...}}}}`
+   - **harness config**: `{"mcpServers": {"name": {"command": "...", "args": [...], "env": {...}}}}`
    - **Bare config**: `{"command": "npx", "args": ["-y", "pkg"]}`
    - **SSE/HTTP**: `{"url": "http://...", "type": "sse", "headers": {...}}`
    - **server.json manifest**: `{"packages": [...], "remotes": [...]}`
@@ -161,7 +161,7 @@ observal registry mcp my --output json
 
 ### `observal registry mcp show`
 
-Show full details of an MCP server including validation results, env vars, and supported IDEs.
+Show full details of an MCP server including validation results, env vars, and supported harnesses.
 
 ```bash
 observal registry mcp show <id-or-name> [--output table|json]
@@ -177,22 +177,22 @@ observal registry mcp show @fav --output json
 
 ### `observal registry mcp install`
 
-Generate an IDE config snippet for an MCP server. Prompts for required environment variables and headers interactively.
+Generate an harness config snippet for an MCP server. Prompts for required environment variables and headers interactively.
 
 ```bash
-observal registry mcp install <id-or-name> --ide <ide> [--raw]
+observal registry mcp install <id-or-name> --harness <harness> [--raw]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
-| `--ide` | `-i` | Target IDE (required) |
+| `--harness` | `-i` | Target harness (required) |
 | `--raw` | | Output bare JSON only, suitable for piping to a file |
 
 ```bash
-observal registry mcp install my-server --ide claude-code
-observal registry mcp install my-server --ide cursor --raw > .cursor/mcp.json
-observal registry mcp install 2 --ide vscode
-observal registry mcp install @db --ide kiro
+observal registry mcp install my-server --harness claude-code
+observal registry mcp install my-server --harness cursor --raw > .cursor/mcp.json
+observal registry mcp install 2 --harness vscode
+observal registry mcp install @db --harness kiro
 ```
 
 ---
@@ -352,28 +352,28 @@ observal registry skill show @refactor-skill --output json
 
 ### `observal registry skill install`
 
-Install a skill by fetching the full skill directory from git. Clones the skill directory via sparse checkout and writes it to the appropriate IDE skill path.
+Install a skill by fetching the full skill directory from git. Clones the skill directory via sparse checkout and writes it to the appropriate harness skill path.
 
 ```bash
-observal registry skill install <id-or-name> --ide <ide> [--scope user|project] [--raw] [--no-write]
+observal registry skill install <id-or-name> --harness <harness> [--scope user|project] [--raw] [--no-write]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
-| `--ide` | `-i` | Target IDE (required) |
+| `--harness` | `-i` | Target harness (required) |
 | `--scope` | `-s` | Install scope: `user` (global, default) or `project` |
 | `--raw` | | Output raw JSON only |
 | `--no-write` | | Print config without writing files |
 
 Scopes:
-- `user` (default): writes to `~/.<ide>/skills/<name>/` (global).
-- `project`: writes to `.agents/skills/<name>/` in cwd, then symlinks into each IDE config dir found in the project.
+- `user` (default): writes to `~/.<harness>/skills/<name>/` (global).
+- `project`: writes to `.agents/skills/<name>/` in cwd, then symlinks into each harness config dir found in the project.
 
 ```bash
-observal registry skill install my-skill --ide claude-code
-observal registry skill install @sk --ide kiro --scope project
-observal registry skill install 2 --ide cursor --raw
-observal registry skill install my-skill --ide gemini-cli --no-write
+observal registry skill install my-skill --harness claude-code
+observal registry skill install @sk --harness kiro --scope project
+observal registry skill install 2 --harness cursor --raw
+observal registry skill install my-skill --harness gemini-cli --no-write
 ```
 
 ---
@@ -423,7 +423,7 @@ observal registry skill delete @old-skill -y
 
 ## Hooks
 
-Hook registry commands. Hooks fire on IDE lifecycle events and run custom logic.
+Hook registry commands. Hooks fire on harness lifecycle events and run custom logic.
 
 Valid events: `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `SubagentStop`, `SessionStart`, `UserPromptSubmit`.
 
@@ -501,24 +501,24 @@ observal registry hook show @guard --output json
 
 ### `observal registry hook install`
 
-Install a hook for a specific IDE. Writes script files and merges hook config into the IDE's settings. Existing hooks are preserved during merge.
+Install a hook for a specific harness. Writes script files and merges hook config into the harness's settings. Existing hooks are preserved during merge.
 
 ```bash
-observal registry hook install <id-or-name> --ide <ide> [--platform PLATFORM] [--raw] [--dir DIR]
+observal registry hook install <id-or-name> --harness <harness> [--platform PLATFORM] [--raw] [--dir DIR]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
-| `--ide` | `-i` | Target IDE (required) |
+| `--harness` | `-i` | Target harness (required) |
 | `--platform` | `-p` | Platform: `win32`, `darwin`, `linux` |
 | `--raw` | | Output raw JSON only (no file writes) |
 | `--dir` | `-d` | Project directory for file writes (default: cwd) |
 
 ```bash
-observal registry hook install my-hook --ide claude-code
-observal registry hook install @guard --ide kiro --dir ./project
-observal registry hook install my-hook --ide cursor --raw
-observal registry hook install my-hook --ide claude-code --platform darwin
+observal registry hook install my-hook --harness claude-code
+observal registry hook install @guard --harness kiro --dir ./project
+observal registry hook install my-hook --harness cursor --raw
+observal registry hook install my-hook --harness claude-code --platform darwin
 ```
 
 ---
@@ -651,20 +651,20 @@ observal registry prompt show @refactor-prompt --output json
 
 ### `observal registry prompt install`
 
-Generate IDE install configuration for a prompt.
+Generate harness install configuration for a prompt.
 
 ```bash
-observal registry prompt install <id-or-name> --ide <ide> [--raw]
+observal registry prompt install <id-or-name> --harness <harness> [--raw]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
-| `--ide` | `-i` | Target IDE (required) |
+| `--harness` | `-i` | Target harness (required) |
 | `--raw` | | Output bare JSON only, suitable for piping |
 
 ```bash
-observal registry prompt install my-prompt --ide claude-code
-observal registry prompt install @tpl --ide cursor --raw > prompt.json
+observal registry prompt install my-prompt --harness claude-code
+observal registry prompt install @tpl --harness cursor --raw > prompt.json
 ```
 
 ---
@@ -801,22 +801,22 @@ observal registry sandbox show @dev-env --output json
 
 ### `observal registry sandbox install`
 
-Generate IDE install configuration for a sandbox.
+Generate harness install configuration for a sandbox.
 
-> **Note:** Standalone sandbox install is deprecated. Sandboxes should be added as agent components instead. Preferred workflow: `observal agent add --type sandbox --id <id>` then `observal pull <agent> --ide <ide>`.
+> **Note:** Standalone sandbox install is deprecated. Sandboxes should be added as agent components instead. Preferred workflow: `observal agent add --type sandbox --id <id>` then `observal pull <agent> --harness <harness>`.
 
 ```bash
-observal registry sandbox install <id-or-name> --ide <ide> [--raw]
+observal registry sandbox install <id-or-name> --harness <harness> [--raw]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
-| `--ide` | `-i` | Target IDE (required) |
+| `--harness` | `-i` | Target harness (required) |
 | `--raw` | | Output bare JSON only |
 
 ```bash
-observal registry sandbox install my-sandbox --ide claude-code
-observal registry sandbox install @env --ide cursor --raw
+observal registry sandbox install my-sandbox --harness claude-code
+observal registry sandbox install @env --harness cursor --raw
 ```
 
 ---

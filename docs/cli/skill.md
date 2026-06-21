@@ -14,7 +14,7 @@ instruction file that agents load on demand to handle a specific task.
 | [`skill list`](#observal-skill-list) | List approved skills |
 | [`skill my`](#observal-skill-my) | List your own skills (all statuses) |
 | [`skill show`](#observal-skill-show) | Show detailed information about a skill |
-| [`skill install`](#observal-skill-install) | Install a skill into an IDE |
+| [`skill install`](#observal-skill-install) | Install a skill into an harness |
 | [`skill edit`](#observal-skill-edit) | Edit a draft, rejected, or pending skill |
 | [`skill delete`](#observal-skill-delete) | Delete a skill from the registry |
 
@@ -121,27 +121,27 @@ observal skill show @refactor-skill --output json
 
 ## `observal skill install`
 
-Install a skill into an IDE. For git_fetch skills, clones the skill directory
+Install a skill into an harness. For git_fetch skills, clones the skill directory
 from the configured `git_url`. For registry_direct skills, writes the stored
 `SKILL.md` (and script, if present) directly. Falls back to cached content if
 git clone fails.
 
 Two scopes are supported:
 
-- `--scope user` (default): writes to `~/.<ide>/skills/<name>/` globally.
+- `--scope user` (default): writes to `~/.<harness>/skills/<name>/` globally.
 - `--scope project`: writes to `.agents/skills/<name>/` in the current
-  directory, then symlinks into each IDE config dir found in the project.
+  directory, then symlinks into each harness config dir found in the project.
 
 ```bash
-observal skill install my-skill --ide claude-code
-observal skill install @sk --ide kiro --scope project
-observal skill install 2 --ide cursor --raw > config.json
-observal skill install my-skill --ide gemini-cli --no-write
+observal skill install my-skill --harness claude-code
+observal skill install @sk --harness kiro --scope project
+observal skill install 2 --harness cursor --raw > config.json
+observal skill install my-skill --harness gemini-cli --no-write
 ```
 
 | Option | Description |
 | --- | --- |
-| `--ide`, `-i` | Target IDE (required) |
+| `--harness`, `-i` | Target harness (required) |
 | `--scope`, `-s` | Install scope: user (default) or project |
 | `--raw` | Output raw JSON only |
 | `--no-write` | Print config without writing files |

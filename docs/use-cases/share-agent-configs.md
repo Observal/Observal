@@ -2,11 +2,11 @@
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
-# Share agent configs across IDEs
+# Share agent configs across harnesses
 
 Your team has a reviewer agent that works great in Claude Code. Now someone wants to use it in Kiro. Then Cursor. Then they want to tweak the skills. Copy-pasting config snippets across tools doesn't scale.
 
-Observal's registry gives you one agent definition that installs cleanly into every supported IDE.
+Observal's registry gives you one agent definition that installs cleanly into every supported harness.
 
 ## The shape of an agent
 
@@ -18,7 +18,7 @@ Every agent is a YAML file that bundles:
 * Prompts (with variables)
 * Sandboxes for code execution
 
-When someone runs `observal agent pull <agent>`, Observal templates that YAML into the right files for their IDE: `~/.claude/agents/*.json`, `.kiro/agents/*.json`, `.cursor/mcp.json`, and so on.
+When someone runs `observal agent pull <agent>`, Observal templates that YAML into the right files for their harness: `~/.claude/agents/*.json`, `.kiro/agents/*.json`, `.cursor/mcp.json`, and so on.
 
 ## Publish an agent
 
@@ -44,7 +44,7 @@ observal agent publish               # submit to registry
 
 The YAML workflow is PR-reviewable. The file lives in your repo; changes flow through your normal review process.
 
-## Install an agent into any IDE
+## Install an agent into any harness
 
 Browse what exists:
 
@@ -54,46 +54,46 @@ observal agent list --search review
 observal agent show <agent-id>
 ```
 
-Install with one command, pick the IDE:
+Install with one command, pick the harness:
 
 ```bash
-observal agent pull <agent-id> --ide claude-code
-observal agent pull <agent-id> --ide kiro
-observal agent pull <agent-id> --ide cursor
-observal agent pull <agent-id> --ide gemini-cli
-observal agent pull <agent-id> --ide vscode
-observal agent pull <agent-id> --ide codex
+observal agent pull <agent-id> --harness claude-code
+observal agent pull <agent-id> --harness kiro
+observal agent pull <agent-id> --harness cursor
+observal agent pull <agent-id> --harness gemini-cli
+observal agent pull <agent-id> --harness vscode
+observal agent pull <agent-id> --harness codex
 ```
 
-The CLI prompts for any environment variables the MCP servers declare as required (GitHub tokens, API keys). These are stored in your IDE config, not uploaded to Observal.
+The CLI prompts for any environment variables the MCP servers declare as required (GitHub tokens, API keys). These are stored in your harness config, not uploaded to Observal.
 
 ### Control what gets installed
 
 ```bash
 # Preview without writing anything
-observal agent pull <agent-id> --ide claude-code --dry-run
+observal agent pull <agent-id> --harness claude-code --dry-run
 
 # Install into a specific directory
-observal agent pull <agent-id> --ide claude-code --dir ./my-project
+observal agent pull <agent-id> --harness claude-code --dir ./my-project
 
 # Claude Code only: scope (project-local vs user-global)
-observal agent pull <agent-id> --ide claude-code --scope project
-observal agent pull <agent-id> --ide claude-code --scope user
+observal agent pull <agent-id> --harness claude-code --scope project
+observal agent pull <agent-id> --harness claude-code --scope user
 
 # Claude Code only: sub-agent model
-observal agent pull <agent-id> --ide claude-code --model sonnet
+observal agent pull <agent-id> --harness claude-code --model sonnet
 
 # Claude Code only: tool allowlist
-observal agent pull <agent-id> --ide claude-code --tools Read,Write,Bash
+observal agent pull <agent-id> --harness claude-code --tools Read,Write,Bash
 ```
 
 ## What portability actually means
 
-The IDE feature matrix (defined in `observal_cli/ide_registry.py`) controls what each IDE supports. If an agent uses skills and the target IDE doesn't have skills, the installer:
+The harness feature matrix (defined in `observal_cli/harness_registry.py`) controls what each harness supports. If an agent uses skills and the target harness doesn't have skills, the installer:
 
 * Installs the compatible parts cleanly
 * Warns about the unsupported parts
-* Exits non-zero if the agent *requires* something the IDE cannot provide
+* Exits non-zero if the agent *requires* something the harness cannot provide
 
 Useful when onboarding a new machine or swapping between "work setup" and "personal setup."
 

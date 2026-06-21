@@ -8,7 +8,7 @@ Observal solves five concrete problems in the AI-agent lifecycle. Each page belo
 | If you need to... | Read |
 | --- | --- |
 | See what your MCP servers are actually doing | [Observe MCP traffic](observe-mcp-traffic.md) |
-| Package an agent once and ship it to any IDE | [Share agent configs across IDEs](share-agent-configs.md) |
+| Package an agent once and ship it to any harness | [Share agent configs across harnesses](share-agent-configs.md) |
 | Figure out why a session went wrong | [Debug agent failures](debug-agent-failures.md) |
 | Give your whole team a source of truth | [Run a team-wide agent registry](team-registry.md) |
 

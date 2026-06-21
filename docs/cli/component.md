@@ -19,7 +19,7 @@ observal component version list <type> <listing> [options]
 Publish a new version for a registry component.
 
 ```bash
-observal component version publish <type> <listing> [--version <semver>] --description <text> [--changelog <text>] [--ide <ide>...] [--extra <json>]
+observal component version publish <type> <listing> [--version <semver>] --description <text> [--changelog <text>] [--harness <harness>...] [--extra <json>]
 ```
 
 | Option | Description |
@@ -29,7 +29,7 @@ observal component version publish <type> <listing> [--version <semver>] --descr
 | `--version, -v` | Semantic version string (e.g. `2.0.0`). If omitted, the CLI fetches suggestions from the server and prompts interactively. |
 | `--description, -d` | **Required.** Short description of this version. |
 | `--changelog` | Changelog or release notes for this version. |
-| `--ide` | Supported IDEs. Repeat the flag for multiple values. |
+| `--harness` | Supported harnesses. Repeat the flag for multiple values. |
 | `--extra` | JSON string with type-specific metadata (e.g. `'{"transport": "http"}'` for MCP servers). |
 
 After publishing, the version enters `pending` status and awaits admin review before becoming publicly visible. Submitters can install their own pending versions immediately.
@@ -40,15 +40,15 @@ After publishing, the version enters `pending` status and awaits admin review be
 # Publish with an explicit version
 observal component version publish mcp my-server -v 2.0.0 -d "Breaking change: new auth flow"
 
-# Include changelog and IDE support
+# Include changelog and harness support
 observal component version publish hook guard-hook -v 1.1.0 \
   -d "Add timeout handling" \
   --changelog "Fixed race condition on slow networks"
 
-# Multiple IDE targets
+# Multiple harness targets
 observal component version publish skill my-skill -v 1.0.0 \
   -d "Initial release" \
-  --ide claude-code --ide cursor
+  --harness claude-code --harness cursor
 
 # Type-specific extra metadata
 observal component version publish mcp analyzer \

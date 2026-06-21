@@ -75,22 +75,22 @@ observal registry hook show <name-or-id> --output json
 
 ```bash
 # Install for Claude Code (writes to .claude/settings.json + script file)
-observal registry hook install <name> --ide claude-code
+observal registry hook install <name> --harness claude-code
 
 # Install for Cursor
-observal registry hook install <name> --ide cursor
+observal registry hook install <name> --harness cursor
 
 # Install for Kiro
-observal registry hook install <name> --ide kiro
+observal registry hook install <name> --harness kiro
 
 # Install for Gemini CLI
-observal registry hook install <name> --ide gemini-cli
+observal registry hook install <name> --harness gemini-cli
 
 # Install into a specific directory
-observal registry hook install <name> --ide claude-code --dir /path/to/project
+observal registry hook install <name> --harness claude-code --dir /path/to/project
 
 # Raw JSON output (no file writes)
-observal registry hook install <name> --ide claude-code --raw
+observal registry hook install <name> --harness claude-code --raw
 ```
 
 ### Edit a hook
@@ -127,7 +127,7 @@ observal registry hook delete <name-or-id> --yes  # skip confirmation
 
 ```bash
 observal registry hook submit --from-file block-rm-rf.json
-observal registry hook install block-rm-rf --ide claude-code
+observal registry hook install block-rm-rf --harness claude-code
 ```
 
 ### Example 2: Script-based hook (protect sensitive files)
@@ -156,7 +156,7 @@ observal registry hook submit --script ./protect-files.sh
 Install (writes both the config AND the script file:
 
 ```bash
-observal registry hook install protect-files --ide claude-code
+observal registry hook install protect-files --harness claude-code
 # Creates: .claude/settings.json (hook config pointing to script)
 # Creates: .claude/hooks/protect-files.sh (the script, chmod +x)
 ```
@@ -200,14 +200,14 @@ EOF
 observal agent create --from-file agent.json
 
 # Pull the agent - hook is auto-installed
-observal agent pull safe-coder --ide claude-code
+observal agent pull safe-coder --harness claude-code
 # Writes: ~/.claude/agents/safe-coder.md (with hook in frontmatter)
 # Writes: .claude/hooks/protect-files.sh (script file)
 ```
 
-## Multi-IDE Support
+## Multi-harness Support
 
-The registry maps canonical event names to each IDE's format:
+The registry maps canonical event names to each harness's format:
 
 | Observal Event | Claude Code | Cursor | Kiro | Gemini CLI | Codex CLI |
 |----------------|-------------|--------|------|-----------|-----------|
@@ -220,11 +220,11 @@ The registry maps canonical event names to each IDE's format:
 Install generates the correct format automatically:
 
 ```bash
-# Same hook, different IDEs
-observal registry hook install my-hook --ide claude-code  # → .claude/settings.json
-observal registry hook install my-hook --ide cursor       # → .cursor/hooks.json
-observal registry hook install my-hook --ide kiro         # → ~/.kiro/agents/my-hook.json
-observal registry hook install my-hook --ide gemini-cli   # → .gemini/settings.json
+# Same hook, different harnesses
+observal registry hook install my-hook --harness claude-code  # → .claude/settings.json
+observal registry hook install my-hook --harness cursor       # → .cursor/hooks.json
+observal registry hook install my-hook --harness kiro         # → ~/.kiro/agents/my-hook.json
+observal registry hook install my-hook --harness gemini-cli   # → .gemini/settings.json
 ```
 
 ## Timeout Enforcement
@@ -233,8 +233,8 @@ Hooks have maximum timeout limits enforced at submit time:
 
 | Execution Mode | Max Timeout | Why |
 |----------------|-------------|-----|
-| `blocking` | 30s | Freezes the IDE until completion |
-| `sync` | 10s | IDE waits for return value |
+| `blocking` | 30s | Freezes the harness until completion |
+| `sync` | 10s | harness waits for return value |
 | `async` | 60s | Prevents zombie processes |
 
 Submitting a hook that exceeds these limits returns HTTP 422:

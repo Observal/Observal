@@ -5,12 +5,12 @@
 
 # observal agent pull
 
-Install a complete agent (MCP servers, skills, hooks, prompts, sandboxes, and IDE-specific config) into an IDE in one command.
+Install a complete agent (MCP servers, skills, hooks, prompts, sandboxes, and harness-specific config) into an harness in one command.
 
 ## Synopsis
 
 ```bash
-observal agent pull <agent-id-or-name> --ide <ide> [OPTIONS]
+observal agent pull <agent-id-or-name> --harness <harness> [OPTIONS]
 ```
 
 ## Required
@@ -18,7 +18,7 @@ observal agent pull <agent-id-or-name> --ide <ide> [OPTIONS]
 | Argument / option | Description |
 | --- | --- |
 | `<agent-id-or-name>` | Agent UUID, name, `@alias`, or row number from last `agent list` |
-| `--ide <ide>` | Target IDE: `claude-code`, `kiro`, `cursor`, `vscode`, `gemini-cli`, `codex`, `copilot` |
+| `--harness <harness>` | Target harness: `claude-code`, `kiro`, `cursor`, `vscode`, `gemini-cli`, `codex`, `copilot` |
 
 ## Options
 
@@ -33,7 +33,7 @@ observal agent pull <agent-id-or-name> --ide <ide> [OPTIONS]
 
 ## What gets installed
 
-Varies by IDE. For Claude Code:
+Varies by harness. For Claude Code:
 
 | File | Contents |
 | --- | --- |
@@ -60,26 +60,26 @@ Every MCP server the agent depends on may declare required env vars (GitHub toke
 MCP github-mcp requires GITHUB_TOKEN: enter value (or leave blank to set later):
 ```
 
-Values are written into your IDE config (not uploaded to Observal).
+Values are written into your harness config (not uploaded to Observal).
 
 ## Examples
 
 ### Basic
 
 ```bash
-observal agent pull code-reviewer --ide claude-code
+observal agent pull code-reviewer --harness claude-code
 ```
 
 ### Preview first
 
 ```bash
-observal agent pull code-reviewer --ide claude-code --dry-run
+observal agent pull code-reviewer --harness claude-code --dry-run
 ```
 
 ### Project-scoped Claude Code install with a specific model and tool allowlist
 
 ```bash
-observal agent pull code-reviewer --ide claude-code \
+observal agent pull code-reviewer --harness claude-code \
   --scope project \
   --model sonnet \
   --tools "Read,Bash,Grep"
@@ -89,12 +89,12 @@ observal agent pull code-reviewer --ide claude-code \
 
 ```bash
 export GITHUB_TOKEN=ghp_...
-observal agent pull code-reviewer --ide claude-code -y
+observal agent pull code-reviewer --harness claude-code -y
 ```
 
-## Restart your IDE
+## Restart your harness
 
-After pull, restart the IDE so it picks up the new config. Telemetry starts flowing immediately after restart.
+After pull, restart the harness so it picks up the new config. Telemetry starts flowing immediately after restart.
 
 ## Exit codes
 
@@ -103,12 +103,12 @@ After pull, restart the IDE so it picks up the new config. Telemetry starts flow
 | 0 | All components installed successfully |
 | 1 | Network / auth / write error |
 | 3 | Agent not found |
-| 4 | Agent requires a feature the target IDE doesn't support |
+| 4 | Agent requires a feature the target harness doesn't support |
 
 ## Related
 
 * [`observal agent`](agent.md): author and publish agents
 * [`observal scan`](scan.md): discover the MCP servers you already have (read-only)
-* [`observal doctor patch`](doctor.md): instrument your IDEs (hooks, shims)
+* [`observal doctor patch`](doctor.md): instrument your harnesses (hooks, shims)
 * [`observal doctor`](doctor.md): verify the pull wired up correctly
-* [Use Cases → Share agent configs across IDEs](../use-cases/share-agent-configs.md)
+* [Use Cases → Share agent configs across harnesses](../use-cases/share-agent-configs.md)

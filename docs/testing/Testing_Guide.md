@@ -348,7 +348,7 @@ class TestScanCommand:
         result = runner.invoke(app, ["scan"])
 
         assert result.exit_code == 1, result.output
-        assert "No IDE configurations found" in result.output
+        assert "No harness configurations found" in result.output
 ```
 
 Always include `result.output` in exit code assertions so failures are easy to diagnose.

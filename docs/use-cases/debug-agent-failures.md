@@ -15,7 +15,7 @@ A user says the agent "didn't work." Without traces, you guess. With traces, you
 
 ## 1. Find the session
 
-Web UI: `http://localhost/traces` → filter by IDE, user, and time range. Click a session to open every trace in it.
+Web UI: `http://localhost/traces` → filter by harness, user, and time range. Click a session to open every trace in it.
 
 CLI:
 
@@ -23,7 +23,7 @@ CLI:
 observal ops traces --limit 50
 ```
 
-Every trace belongs to a `session_id`. Related traces (all from the same IDE session) share it.
+Every trace belongs to a `session_id`. Related traces (all from the same harness session) share it.
 
 ## 2. Find the failing trace
 
@@ -86,8 +86,8 @@ Alerts feed into your on-call channel via webhook.
 * **Enable debug logging on the CLI**: `observal --debug ...`
 * **Tail server logs**: `docker logs -f observal-api`
 * **Check the telemetry buffer**: `observal ops telemetry status`. If the buffer is large, traces may be delayed; the server was unreachable.
-* **Confirm the shim is actually wired up**: `observal doctor --ide claude-code`. Missed instrumentation = missing traces.
+* **Confirm the shim is actually wired up**: `observal doctor --harness claude-code`. Missed instrumentation = missing traces.
 
 ## Next
 
-→ [Share agent configs across IDEs](share-agent-configs.md): package what works and ship it to your team.
+→ [Share agent configs across harnesses](share-agent-configs.md): package what works and ship it to your team.

@@ -3,40 +3,39 @@
 
 # Kiro
 
-Kiro is a first-class Observal IDE integration. Observal can install Kiro agents,
-configure MCP servers, add hooks, expose skills, and collect Kiro session
-telemetry.
+Kiro is a first-class Observal harness integration. Observal can install Kiro agents,
+configure MCP servers, add hooks, expose skills, and collect Kiro session telemetry.
 
 ---
 
 ## Overview
 
-Kiro agents are JSON files. Project agents live in `.kiro/agents/`. User agents
-live in `~/.kiro/agents/`.
+Kiro agent profiles are Markdown files with frontmatter. Project agents live in
+`.kiro/agents/`. User agents live in `~/.kiro/agents/`.
 
-When Observal installs a Kiro agent, it adds two hooks to the agent JSON:
-`userPromptSubmit` and `stop`. Both hooks run
-`observal_cli.hooks.kiro_session_push`.
+When Observal installs a Kiro agent, it also writes standalone hook config under
+`.kiro/hooks/` or `~/.kiro/hooks/`. The default hooks run
+`observal_cli.hooks.kiro_session_push` for `userPromptSubmit` and `stop`.
 
 The hook reads Kiro session JSONL files from `~/.kiro/sessions/cli/`. It reads
 only new lines since the last push and sends them to Observal.
 
 ---
 
-## Supported Features
+## Supported capabilities
 
-| Feature | Support |
+| Capability | Support |
 |---|---|
-| Agents | Project and user scope |
+| Agent profiles | Project and user scope |
 | Hook bridge | `userPromptSubmit` and `stop` by default |
 | Custom hooks | `agentSpawn`, `userPromptSubmit`, `preToolUse`, `postToolUse`, `stop` |
 | MCP servers | `.kiro/settings/mcp.json` and `~/.kiro/settings/mcp.json` |
-| Agent prompt | Registry prompts are embedded in the generated Kiro agent JSON |
-| Resources | Generated agents can reference `AGENTS.md`, `README.md`, and Kiro skills |
+| Agent prompt | Registry prompts are embedded in the generated Kiro agent profile |
+| Guidance files | Scanned from steering files and `AGENTS.md`, not overwritten |
 | Skills | `.kiro/skills/{name}/SKILL.md` and `~/.kiro/skills/{name}/SKILL.md` |
 | Session parsing | Kiro JSONL parser |
 | Telemetry | MCP telemetry through `observal-shim`; session telemetry through hooks |
-| Model selection | Supported |
+| Model selection | Registry-backed Kiro model catalog |
 
 ---
 
@@ -60,40 +59,39 @@ This writes credentials to `~/.observal/config.json`.
 ### 3. Pull an agent into Kiro
 
 ```bash
-observal pull <agent-name> --ide kiro
+observal agent pull <agent-name> --harness kiro
 ```
 
 Kiro's default scope is user scope. By default, the agent is written to
-`~/.kiro/agents/{name}.json`.
+`~/.kiro/agents/{name}.md`.
 
 To install into the current project:
 
 ```bash
-observal pull <agent-name> --ide kiro --scope project
+observal agent pull <agent-name> --harness kiro --scope project
 ```
 
-Project agents are written to `.kiro/agents/{name}.json`.
+Project agents are written to `.kiro/agents/{name}.md`.
 
-### 4. Patch existing Kiro agents
-
-To add or refresh Observal hooks in existing Kiro agents:
+### 4. Patch existing Kiro hooks
 
 ```bash
-observal doctor patch --all --ide kiro
+observal doctor patch --all --harness kiro
 ```
 
 This updates Observal hook entries and keeps other hook entries unchanged.
 
 ---
 
-## Config Paths
+## Config paths
 
 | Purpose | Project scope | User scope |
 |---|---|---|
-| Agent definition | `.kiro/agents/{name}.json` | `~/.kiro/agents/{name}.json` |
+| Agent profile | `.kiro/agents/{name}.md` | `~/.kiro/agents/{name}.md` |
+| Guidance files | `.kiro/steering/*.md`, `AGENTS.md` | `~/.kiro/steering/*.md` |
 | MCP config | `.kiro/settings/mcp.json` | `~/.kiro/settings/mcp.json` |
 | Skill definition | `.kiro/skills/{name}/SKILL.md` | `~/.kiro/skills/{name}/SKILL.md` |
-| Hook config | Inside `.kiro/agents/{name}.json` | Inside `~/.kiro/agents/{name}.json` |
+| Hook config | `.kiro/hooks/{name}.json` | `~/.kiro/hooks/{name}.json` |
 | Hook scripts | `.kiro/hooks/` | `~/.kiro/hooks/` |
 | Session JSONL | `~/.kiro/sessions/cli/{session_id}.jsonl` | `~/.kiro/sessions/cli/{session_id}.jsonl` |
 | Credit metadata | `~/.kiro/sessions/cli/{session_id}.json` | `~/.kiro/sessions/cli/{session_id}.json` |
@@ -104,24 +102,22 @@ Kiro MCP configs use the `mcpServers` key.
 
 ---
 
-## Hook Spec
+## Hook spec
 
-Kiro hooks are stored inside each agent JSON file. Observal adds these default hooks:
+Observal writes standalone hook JSON like this:
 
 ```json
 {
-  "hooks": {
-    "userPromptSubmit": [
-      {
-        "command": "python -m observal_cli.hooks.kiro_session_push"
-      }
-    ],
-    "stop": [
-      {
-        "command": "python -m observal_cli.hooks.kiro_session_push"
-      }
-    ]
-  }
+  "userPromptSubmit": [
+    {
+      "command": "python -m observal_cli.hooks.kiro_session_push"
+    }
+  ],
+  "stop": [
+    {
+      "command": "python -m observal_cli.hooks.kiro_session_push"
+    }
+  ]
 }
 ```
 
@@ -132,7 +128,7 @@ the active Python interpreter.
 When an agent name is available, the hook command sets `OBSERVAL_AGENT_NAME` for
 agent attribution.
 
-### Event Map
+### Event map
 
 | Observal event | Kiro event |
 |---|---|
@@ -147,7 +143,7 @@ when no matcher is set.
 
 ---
 
-## Session Push Behavior
+## Session push behavior
 
 `kiro_session_push` works as follows:
 
@@ -155,61 +151,32 @@ when no matcher is set.
 2. Find `~/.kiro/sessions/cli/{session_id}.jsonl`.
 3. Read the saved byte cursor for the session.
 4. Read only new JSONL lines.
-5. Send the lines to Observal with `ide` set to `kiro`.
+5. Send the lines to Observal with the harness set to `kiro`.
 6. Advance the cursor after a successful push.
 
 On `stop`, the hook finalizes the cursor. It also reads
-`~/.kiro/sessions/cli/{session_id}.json` when present and sends Kiro credit
-usage.
+`~/.kiro/sessions/cli/{session_id}.json` when present and sends Kiro credit usage.
 
 ---
 
-## Agent File Format
+## Agent profile format
 
-Kiro agents are JSON files. Observal generates fields like these:
+Observal generates Markdown agent profiles like this:
 
-```json
-{
-  "name": "my-agent",
-  "prompt": "You are a Kiro agent with the following specialization....",
-  "mcpServers": {
-    "my-mcp-server": {
-      "command": "observal-shim",
-      "args": ["--mcp-id", "example", "--", "npx", "-y", "example-server"]
-    }
-  },
-  "tools": ["*"],
-  "toolAliases": {},
-  "allowedTools": [],
-  "resources": [
-    "file://AGENTS.md",
-    "file://README.md",
-    "skill://.kiro/skills/*/SKILL.md",
-    "skill://~/.kiro/skills/*/SKILL.md"
-  ],
-  "hooks": {
-    "userPromptSubmit": [
-      {
-        "command": "python -m observal_cli.hooks.kiro_session_push"
-      }
-    ],
-    "stop": [
-      {
-        "command": "python -m observal_cli.hooks.kiro_session_push"
-      }
-    ]
-  },
-  "toolsSettings": {},
-  "includeMcpJson": true,
-  "model": "claude-sonnet-4"
-}
+```markdown
+---
+name: my-agent
+model: claude-sonnet-4
+---
+
+You are a Kiro agent with the following specialization...
 ```
 
 The `model` field is present when a model is resolved for the agent.
 
 ---
 
-## Skill File Format
+## Skill file format
 
 Kiro skills live at:
 
@@ -235,14 +202,15 @@ Run `pytest -q` from the project root.
 
 ## Caveats
 
-**Hooks are per agent.** Kiro stores Observal hooks inside each agent JSON file.
+**Guidance files are scan-only.** Observal layers Kiro steering files and
+`AGENTS.md` as context, but does not overwrite them during pull.
 
-**Existing agents need patching.** Pulling a new agent includes hooks
-automatically. Existing agents can be patched with
-`observal doctor patch --all --ide kiro`.
+**Existing hooks need patching.** Pulling a new agent includes hooks
+automatically. Existing hooks can be patched with
+`observal doctor patch --all --harness kiro`.
 
-**Default scope is user.** `observal pull <agent-name> --ide kiro` writes to
-`~/.kiro/agents/` unless `--scope project` is set.
+**Default scope is user.** `observal agent pull <agent-name> --harness kiro`
+writes to `~/.kiro/agents/` unless `--scope project` is set.
 
 **No Claude Code subagent layout.** Kiro reads
 `~/.kiro/sessions/cli/{session_id}.jsonl`. It does not scan Claude Code's

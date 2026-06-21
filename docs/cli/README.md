@@ -17,8 +17,8 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | --- | --- |
 | [`observal auth`](auth.md) | Authentication and account management |
 | [`observal config`](config.md) | Local CLI configuration, aliases |
-| [`observal scan`](scan.md) | Discover what's installed across your IDEs (read-only) |
-| [`observal agent pull`](pull.md) | Install a published agent into an IDE |
+| [`observal scan`](scan.md) | Discover what's installed across your harnesses (read-only) |
+| [`observal agent pull`](pull.md) | Install a published agent into an harness |
 | [`observal registry`](registry.md) | Publish and manage components (MCP / skill / hook / prompt / sandbox) |
 | [`observal component`](component.md) | Manage component versions |
 | [`observal models`](models.md) | Browse and manage model configurations |
@@ -26,7 +26,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal ops`](ops.md) | Observability and operations (traces, spans, metrics, feedback) |
 | [`observal admin`](admin.md) | Admin operations (settings, users, review, security) |
 | [`observal support`](support.md) | Generate and inspect diagnostic support bundles |
-| [`observal doctor`](doctor.md) | Diagnose IDE compatibility; `doctor patch` applies instrumentation |
+| [`observal doctor`](doctor.md) | Diagnose harness compatibility; `doctor patch` applies instrumentation |
 | [`observal migrate`](migrate.md) | Export/import PostgreSQL registry (shallow copy) and ClickHouse telemetry (deep copy) |
 | [`observal self`](self.md) | Upgrade or downgrade the CLI |
 | [`observal prompt`](prompt.md) | Manage reusable prompts in the registry |
