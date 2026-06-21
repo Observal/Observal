@@ -9,14 +9,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from loguru import logger as optic
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from api.deps import get_current_user, get_db
-from api.ratelimit import limiter
 from models.hook import HookListing
 from models.mcp import McpListing
 from models.prompt import PromptListing
@@ -88,17 +87,15 @@ class _TransientAgent:
 
 
 @router.post("/preview-config", response_model=PreviewConfigResponse)
-@limiter.limit("10/minute")
 async def preview_config(
     req: PreviewConfigRequest,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     optic.debug("preview config")
     target_ides = [ide for ide in req.target_ides if ide in _VALID_IDES]
     if not target_ides:
-        target_ides = [ide for ide in IDE_REGISTRY if ide != "copilot-cli"]
+        target_ides = list(IDE_REGISTRY)
 
     components = [
         _TransientComponent(

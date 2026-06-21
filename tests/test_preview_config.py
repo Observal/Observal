@@ -78,7 +78,7 @@ class TestPreviewConfigNoComponents:
         assert "codex" in configs
         assert "copilot" in configs
         assert "opencode" in configs
-        assert "copilot-cli" not in configs
+        assert "copilot-cli" in configs
 
     async def test_claude_code_has_agent_file(self):
         app, db, _user = _app_with()
