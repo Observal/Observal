@@ -128,6 +128,7 @@ class ComponentLinkResponse(BaseModel):
     version_ref: str
     order: int
     config_override: dict | None = None
+    status: str | None = None
     model_config = {"from_attributes": True}
 
 

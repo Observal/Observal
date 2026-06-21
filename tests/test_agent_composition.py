@@ -959,6 +959,7 @@ class TestComponentLinkResponseInAgentResponse:
         assert data["component_type"] == "skill"
         assert data["component_id"] == cid
         assert data["config_override"] == {"key": "val"}
+        assert data["status"] is None
 
     def test_component_link_response_no_override(self):
         from schemas.agent import ComponentLinkResponse
@@ -968,8 +969,10 @@ class TestComponentLinkResponseInAgentResponse:
             component_id=uuid.uuid4(),
             version_ref="1.0",
             order=0,
+            status="archived",
         )
         assert link.config_override is None
+        assert link.status == "archived"
 
 
 class TestPydanticValidation:

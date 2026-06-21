@@ -170,13 +170,16 @@ async def _get_agent_version(
     if not ver:
         raise HTTPException(status_code=404, detail="Version not found")
 
-    from api.routes.agent import _resolve_component_names
+    from api.routes.agent import _resolve_component_names, _resolve_component_statuses
 
-    name_map = await _resolve_component_names(ver.components or [], db)
+    components = ver.components or []
+    name_map = await _resolve_component_names(components, db)
+    status_map = await _resolve_component_statuses(components, db)
     detail = _version_to_detail(ver)
     for comp in detail.get("components", []):
         if not comp.get("name"):
             comp["name"] = name_map.get(comp["component_id"], "")
+        comp["status"] = status_map.get(comp["component_id"])
     return detail
 
 

@@ -74,8 +74,10 @@ def _agent_to_response(
     created_by_email: str = "",
     created_by_username: str | None = None,
     user_permission: str | None = None,
+    status_map: dict[str, str] | None = None,
 ) -> AgentResponse:
     name_map = name_map or {}
+    status_map = status_map or {}
     # Build mcp_links from components with component_type='mcp' (backwards compat)
     mcp_components = [c for c in agent.components if c.component_type == "mcp"]
     mcp_links = [
@@ -95,6 +97,7 @@ def _agent_to_response(
             version_ref=comp.resolved_version,
             order=comp.order_index,
             config_override=comp.config_override,
+            status=status_map.get(str(comp.component_id)),
         )
         for comp in agent.components
     ]
@@ -138,7 +141,6 @@ async def _resolve_component_names(components: list, db: AsyncSession) -> dict[s
         return {}
     from services.agent_resolver import _LISTING_MODELS
 
-    # Group component_ids by type
     by_type: dict[str, list[uuid.UUID]] = {}
     for comp in components:
         by_type.setdefault(comp.component_type, []).append(comp.component_id)
@@ -152,6 +154,47 @@ async def _resolve_component_names(components: list, db: AsyncSession) -> dict[s
         for row in rows:
             name_map[str(row[0])] = row[1]
     return name_map
+
+
+async def _resolve_component_statuses(components: list, db: AsyncSession) -> dict[str, str]:
+    """Batch-resolve component_id to current listing status for all component types."""
+    if not components:
+        return {}
+    from models.hook import HookVersion
+    from models.mcp import McpVersion
+    from models.prompt import PromptVersion
+    from models.sandbox import SandboxVersion
+    from models.skill import SkillVersion
+    from services.agent_resolver import _LISTING_MODELS
+
+    version_models = {
+        "mcp": McpVersion,
+        "skill": SkillVersion,
+        "hook": HookVersion,
+        "prompt": PromptVersion,
+        "sandbox": SandboxVersion,
+    }
+
+    by_type: dict[str, list[uuid.UUID]] = {}
+    for comp in components:
+        by_type.setdefault(comp.component_type, []).append(comp.component_id)
+
+    status_map: dict[str, str] = {}
+    for comp_type, ids in by_type.items():
+        model = _LISTING_MODELS.get(comp_type)
+        version_model = version_models.get(comp_type)
+        if not model or not version_model:
+            continue
+        rows = (
+            await db.execute(
+                select(model.id, version_model.status)
+                .join(version_model, model.latest_version_id == version_model.id)
+                .where(model.id.in_(ids))
+            )
+        ).all()
+        for row in rows:
+            status_map[str(row[0])] = getattr(row[1], "value", str(row[1]))
+    return status_map
 
 
 async def _validate_mcp_ids(mcp_ids: list[uuid.UUID], db: AsyncSession) -> list[McpListing]:

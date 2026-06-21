@@ -8,7 +8,7 @@
 
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
-import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore } from "lucide-react";
+import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
 import {
   useRegistryItem,
   useFeedback,
@@ -45,6 +45,33 @@ function statusVariant(status?: string) {
   if (status === "approved") return "default" as const;
   if (status === "rejected") return "destructive" as const;
   return "secondary" as const;
+}
+
+function formatArchiveDate(item: RegistryItem) {
+  const value = item.updated_at ?? item.created_at;
+  return value ? new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
+}
+
+function ArchivedComponentBanner({ item, type, canRestore }: { item: RegistryItem; type: string; canRestore: boolean }) {
+  const date = formatArchiveDate(item);
+
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-md border border-dark-yellow/30 bg-light-yellow px-4 py-3 text-dark-yellow">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">
+            This {type} was archived{date ? ` on ${date}` : ""}. It is hidden from registry lists.
+          </p>
+          <p className="text-xs text-dark-yellow/80">
+            Installs still work by direct reference, but users will see an archived component warning.
+            {canRestore ? " Restore it from the lifecycle panel when it should be discoverable again." : ""}
+          </p>
+        </div>
+      </div>
+      <Archive className="mt-0.5 h-4 w-4 shrink-0" />
+    </div>
+  );
 }
 
 export default function ComponentDetailPage() {
@@ -130,12 +157,23 @@ export default function ComponentDetailPage() {
           <ErrorState message="Component not found" />
         ) : (
           <div className="animate-in space-y-6">
+            {item.status === "archived" && (
+              <ArchivedComponentBanner item={item} type={singularType} canRestore={canEdit} />
+            )}
+
             {/* Header */}
             <div className="space-y-2">
               <div className="flex items-start gap-3 flex-wrap">
                 <h1 className="text-2xl font-display font-bold tracking-tight">{item.name}</h1>
                 <Badge variant="outline" className="text-xs">{singularType}</Badge>
-                {item.status && <Badge variant={statusVariant(item.status)}>{item.status}</Badge>}
+                {item.status && (
+                  <Badge
+                    variant={statusVariant(item.status)}
+                    className={item.status === "archived" ? "bg-light-yellow text-dark-yellow" : undefined}
+                  >
+                    {item.status}
+                  </Badge>
+                )}
                 {versionsForDropdown.length > 0 ? (
                   <VersionDropdown
                     versions={versionsForDropdown}
@@ -426,7 +464,7 @@ export default function ComponentDetailPage() {
               {canEdit && (
                 <div className="border border-border rounded-md p-4 space-y-3">
                   <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
-                    Danger zone
+                    Lifecycle
                   </h3>
                   <ComponentArchiveButton type={type} item={item} onSuccess={() => refetch()} />
                 </div>
@@ -468,9 +506,9 @@ function ComponentArchiveButton({
   return (
     <>
       <Button
-        variant={isArchived ? "outline" : "destructive"}
+        variant="outline"
         size="sm"
-        className="h-8"
+        className={isArchived ? "h-8" : "h-8 border-dark-yellow/40 bg-light-yellow text-dark-yellow hover:bg-light-yellow/80"}
         onClick={() => setOpen(true)}
         disabled={isBusy}
       >
@@ -490,7 +528,12 @@ function ComponentArchiveButton({
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button variant={isArchived ? "default" : "destructive"} onClick={submit} disabled={isBusy}>
+            <Button
+              variant={isArchived ? "default" : "outline"}
+              className={isArchived ? undefined : "border-dark-yellow/40 bg-light-yellow text-dark-yellow hover:bg-light-yellow/80"}
+              onClick={submit}
+              disabled={isBusy}
+            >
               {isBusy ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Saving...</> : isArchived ? "Restore" : "Archive"}
             </Button>
           </DialogFooter>

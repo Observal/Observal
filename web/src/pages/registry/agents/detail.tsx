@@ -20,6 +20,7 @@ import {
   XCircle,
   Clock,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from "react";
 
@@ -189,6 +190,25 @@ function VersionContentLoading() {
   );
 }
 
+function ArchivedComponentsBanner({ components }: { components: ComponentLink[] }) {
+  const names = components.slice(0, 3).map(getComponentName).join(", ");
+  const extra = components.length > 3 ? ` and ${components.length - 3} more` : "";
+
+  return (
+    <div className="flex items-start gap-3 rounded-md border border-dark-yellow/30 bg-light-yellow px-4 py-3 text-dark-yellow">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="space-y-1 text-sm">
+        <p className="font-medium">
+          This agent includes archived components: {names}{extra}.
+        </p>
+        <p className="text-xs text-dark-yellow/80">
+          Users can still pull the agent, but installs will show archived component warnings.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function AgentVersionContents({
   description,
   modelName,
@@ -296,6 +316,9 @@ function AgentVersionContents({
                               <Badge variant="outline" className="shrink-0 text-[10px]">
                                 {componentType.singular}
                               </Badge>
+                              {component.status === "archived" && (
+                                <StatusBadge status="archived" className="shrink-0" />
+                              )}
                               <span className="truncate text-sm font-medium">{componentName}</span>
                               {component.resolved_version && (
                                 <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -303,7 +326,7 @@ function AgentVersionContents({
                                 </span>
                               )}
                             </div>
-                            {component.status && <StatusBadge status={component.status} />}
+                            {component.status && component.status !== "archived" && <StatusBadge status={component.status} />}
                           </div>
                         );
 
@@ -595,6 +618,7 @@ export default function AgentDetailPage() {
   const agentName = a?.name ?? id.slice(0, 8);
   const totalDownloads = downloadData?.total ?? a?.download_count;
   const uniqueUsers = downloadData?.unique_users;
+  const archivedComponents = components.filter((component) => component.status === "archived");
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;
 
@@ -620,6 +644,10 @@ export default function AgentDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8 items-start">
             {/* Main content */}
             <div className="space-y-6 min-w-0 animate-in">
+              {canEdit && archivedComponents.length > 0 && (
+                <ArchivedComponentsBanner components={archivedComponents} />
+              )}
+
               {/* Header */}
               <div className="space-y-2">
                 <div className="flex items-start gap-3 flex-wrap">
