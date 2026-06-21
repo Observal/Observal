@@ -168,7 +168,7 @@ export function InsightsTab() {
         <div className="rounded-lg border border-border p-5">
           <div className="flex items-center gap-2 mb-1">
             <Users className="h-4 w-4 text-violet-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">IDE Performance</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">harness Performance</span>
             <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 font-semibold">High Impact</span>
           </div>
           <h4 className="text-sm font-semibold mt-2 mb-1">{insights.platform_insight.title}</h4>

@@ -69,7 +69,7 @@ const SENSITIVE_KEYS = new Set([
 
 const REDACTED_VALUE = "**REDACTED**";
 
-const IDE_OPTIONS = [
+const harness_OPTIONS = [
 	{ value: "cursor", label: "Cursor" },
 	{ value: "claude_code", label: "Claude Code" },
 	{ value: "kiro", label: "Kiro" },
@@ -122,12 +122,12 @@ function joinIdeList(values: string[]): string {
 }
 
 function getIdeLabel(value: string): string {
-	return IDE_OPTIONS.find((ide) => ide.value === value)?.label ?? value;
+	return harness_OPTIONS.find((ide) => ide.value === value)?.label ?? value;
 }
 
 function IdeAllowlistEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
 	const selected = splitIdeList(value);
-	const available = IDE_OPTIONS.filter((ide) => !selected.includes(ide.value));
+	const available = harness_OPTIONS.filter((ide) => !selected.includes(ide.value));
 
 	const addIde = (ide: string) => {
 		const next = ide.trim();
@@ -143,7 +143,7 @@ function IdeAllowlistEditor({ value, onChange }: { value: string; onChange: (val
 		<div className="flex-1 space-y-2">
 			<div className="flex min-h-8 flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1">
 				{selected.length === 0 ? (
-					<span className="text-xs text-muted-foreground">All supported IDEs</span>
+					<span className="text-xs text-muted-foreground">All supported harnesses</span>
 				) : (
 					selected.map((ide) => (
 						<span key={ide} className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">
@@ -158,13 +158,13 @@ function IdeAllowlistEditor({ value, onChange }: { value: string; onChange: (val
 			<div className="flex items-center gap-2">
 				<Select value="" onValueChange={addIde}>
 					<SelectTrigger className="h-8 text-sm flex-1">
-						<SelectValue placeholder={selected.length === 0 ? "Restrict to specific IDEs" : "Add IDE"} />
+						<SelectValue placeholder={selected.length === 0 ? "Restrict to specific harnesses" : "Add harness"} />
 					</SelectTrigger>
 					<SelectContent>
 						{available.map((ide) => (
 							<SelectItem key={ide.value} value={ide.value}>{ide.label}</SelectItem>
 						))}
-						{available.length === 0 && <SelectItem value="__none__" disabled>All listed IDEs selected</SelectItem>}
+						{available.length === 0 && <SelectItem value="__none__" disabled>All listed harnesses selected</SelectItem>}
 					</SelectContent>
 				</Select>
 				{selected.length > 0 && (
@@ -582,8 +582,8 @@ export default function SettingsPage() {
 		try {
 			await admin.updateSetting(editingKey, { value: editingValue });
 			toast.success(`Saved ${editingKey}`);
-			if (editingKey === "misc.ide_allowlist" || editingKey === "misc.default_ide") {
-				queryClient.invalidateQueries({ queryKey: ["config", "ides"] });
+			if (editingKey === "misc.harness_allowlist" || editingKey === "misc.default_harness") {
+				queryClient.invalidateQueries({ queryKey: ["config", "harnesses"] });
 			}
 			setEditingKey(null);
 			setEditingValue("");
@@ -596,18 +596,18 @@ export default function SettingsPage() {
 	}, [editingKey, editingValue, queryClient, refetch]);
 
 	const renderSettingEditor = (key: string) => {
-		if (key === "misc.ide_allowlist") {
+		if (key === "misc.harness_allowlist") {
 			return <IdeAllowlistEditor value={editingValue} onChange={setEditingValue} />;
 		}
-		if (key === "misc.default_ide") {
+		if (key === "misc.default_harness") {
 			return (
 				<Select value={editingValue || "__none__"} onValueChange={(value) => setEditingValue(value === "__none__" ? "" : value)}>
 					<SelectTrigger className="h-8 text-sm flex-1">
-						<SelectValue placeholder="Choose default IDE" />
+						<SelectValue placeholder="Choose default harness" />
 					</SelectTrigger>
 					<SelectContent>
-						<SelectItem value="__none__">Use first allowed IDE</SelectItem>
-						{IDE_OPTIONS.map((ide) => (
+						<SelectItem value="__none__">Use first allowed harness</SelectItem>
+						{harness_OPTIONS.map((ide) => (
 							<SelectItem key={ide.value} value={ide.value}>{ide.label}</SelectItem>
 						))}
 					</SelectContent>

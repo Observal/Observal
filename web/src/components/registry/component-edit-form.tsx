@@ -321,7 +321,7 @@ function McpEditForm({
 						Update Server Config
 					</h3>
 					<p className="mt-1 text-xs text-muted-foreground">
-						Paste your updated server JSON config below. Accepts IDE config,
+						Paste your updated server JSON config below. Accepts harness config,
 						bare config, SSE, or server.json formats.
 					</p>
 				</div>

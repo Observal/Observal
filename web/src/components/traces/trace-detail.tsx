@@ -64,7 +64,7 @@ export function TraceDetail({ trace, isLoading }: { trace?: Trace; isLoading: bo
             <div><span className="text-muted-foreground">Trace ID</span><p className="font-mono text-xs">{trace.trace_id}</p></div>
             <div><span className="text-muted-foreground">Type</span><p><Badge variant="outline">{trace.trace_type}</Badge></p></div>
             {trace.user_id && <div><span className="text-muted-foreground">User</span><p className="truncate">{trace.user_id}</p></div>}
-            {trace.ide && <div><span className="text-muted-foreground">IDE</span><p>{trace.ide}</p></div>}
+            {trace.ide && <div><span className="text-muted-foreground">harness</span><p>{trace.ide}</p></div>}
             <div><span className="text-muted-foreground">Start</span><p>{new Date(trace.start_time).toLocaleString()}</p></div>
             {trace.end_time && <div><span className="text-muted-foreground">End</span><p>{new Date(trace.end_time).toLocaleString()}</p></div>}
             {trace.tags && trace.tags.length > 0 && (

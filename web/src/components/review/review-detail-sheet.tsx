@@ -180,8 +180,8 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 			<DetailField label="Model" value={detail.model_name} />
 			<DetailField label="External MCPs" value={detail.external_mcps} />
 			<DetailField
-				label="Required IDE Features"
-				value={detail.required_ide_features}
+				label="Required harness Features"
+				value={detail.required_capabilities}
 			/>
 			<DetailField label="Model Config" value={detail.model_config_json} />
 			{detail.components && detail.components.length > 0 && (
@@ -480,10 +480,10 @@ function SheetBody({
 						}
 					/>
 					<DetailField
-						label="Supported IDEs"
+						label="Supported harnesses"
 						value={
-							merged.supported_ides?.length
-								? merged.supported_ides.join(", ")
+							merged.supported_harnesses?.length
+								? merged.supported_harnesses.join(", ")
 								: undefined
 						}
 					/>

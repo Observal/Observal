@@ -27,7 +27,7 @@ The web UI is one of three ways to interact with Observal (alongside the CLI and
 | API proxy | Next.js rewrites (`/api/v1/*` → backend) | Single origin, no CORS in prod |
 | Fonts | Local files only | No Google Fonts CDN calls |
 | Design tokens | OKLCH in `globals.css` | Perceptually uniform, 5 themes |
-| IDE list | Server-fetched (`/api/v1/config/ides`) | Never hardcoded in frontend |
+| IDE list | Server-fetched (`/api/v1/config/harnesses`) | Never hardcoded in frontend |
 
 ## Design system
 
@@ -110,7 +110,7 @@ src/components/
 
 **Feature gating:** Enterprise features are gated server-side. The API returns 403 for unlicensed features. The frontend reads `useDeploymentConfig()` for display decisions (show/hide sections, upgrade prompts) but never trusts the client to enforce access.
 
-**IDE list:** Fetched from `/api/v1/config/ides` via `useIdes()`. Never hardcode IDE names or capabilities in the frontend. The server is the single source of truth.
+**IDE list:** Fetched from `/api/v1/config/harnesses` via `useIdes()`. Never hardcode IDE names or capabilities in the frontend. The server is the single source of truth.
 
 **Auth state:** Stored in sessionStorage (not localStorage). `useAuth()` hook checks for presence. Three guard components: `AuthGuard` (any logged-in user), `AdminGuard` (admin role), `RoleGuard` (configurable role check).
 

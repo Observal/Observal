@@ -544,8 +544,8 @@ export default function TracesPage() {
 					<EmptyState
 						icon={Activity}
 						title="No traces yet"
-						description="Traces are created automatically when tools are invoked through Observal. Connect an IDE to start collecting traces."
-						actionLabel="Connect your first IDE"
+						description="Traces are created automatically when tools are invoked through Observal. Connect an harness to start collecting traces."
+						actionLabel="Connect your first harness"
 						actionHref={DOCS_QUICKSTART_URL}
 					/>
 				);

@@ -45,7 +45,7 @@ export function InvestmentsTab() {
     return (
       <div className="space-y-6 pt-4">
         <div className="rounded-md border border-border p-8 text-center text-muted-foreground">
-          <p className="text-sm">No platform data yet — traces from different IDEs will populate this view.</p>
+          <p className="text-sm">No platform data yet — traces from different harnesses will populate this view.</p>
         </div>
       </div>
     );

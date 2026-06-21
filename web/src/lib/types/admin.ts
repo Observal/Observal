@@ -291,7 +291,7 @@ export interface CatalogModel {
 	cost_input: number | null;
 	cost_output: number | null;
 	capabilities: string[];
-	supported_ides: string[];
+	supported_harnesses: string[];
 	deprecated: boolean;
 	display: ModelDisplay | null;
 }

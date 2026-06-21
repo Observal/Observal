@@ -97,7 +97,7 @@ function AgentBuilderInner() {
   const [version, setVersion] = useState("1.0.0");
   const [category, setCategory] = useState("");
   const [modelName, setModelName] = useState("");
-  const [modelsByIde, setModelsByIde] = useState<Record<string, string>>({});
+  const [modelsByHarness, setModelsByIde] = useState<Record<string, string>>({});
   const [publishing, setPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
 
@@ -155,7 +155,7 @@ function AgentBuilderInner() {
     if (typeof agentVersion === "string") setVersion(agentVersion);
     const agentModel = (existingAgent as Record<string, unknown>).model_name;
     if (typeof agentModel === "string") setModelName(agentModel);
-    const agentModelsByIde = (existingAgent as Record<string, unknown>).models_by_ide;
+    const agentModelsByIde = (existingAgent as Record<string, unknown>).models_by_harness;
     if (agentModelsByIde && typeof agentModelsByIde === "object" && !Array.isArray(agentModelsByIde)) {
       setModelsByIde(agentModelsByIde as Record<string, string>);
     }
@@ -286,7 +286,7 @@ function AgentBuilderInner() {
 
     autoSaveTimerRef.current = setTimeout(() => {
       const hasContent = name || description || modelName || version !== "1.0.0" ||
-        Object.keys(modelsByIde).length > 0 ||
+        Object.keys(modelsByHarness).length > 0 ||
         Object.values(selectedComponents).some((items) => items.length > 0) ||
         systemPrompt.trim().length > 0;
 
@@ -298,7 +298,7 @@ function AgentBuilderInner() {
           description,
           version,
           model_name: modelName,
-          models_by_ide: modelsByIde,
+          models_by_harness: modelsByHarness,
           components: selectedComponents,
           prompt: systemPrompt,
           draft_id: draftId,
@@ -313,7 +313,7 @@ function AgentBuilderInner() {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [name, description, version, modelName, modelsByIde, selectedComponents, systemPrompt, draftId, isEditMode]);
+  }, [name, description, version, modelName, modelsByHarness, selectedComponents, systemPrompt, draftId, isEditMode]);
 
   function restoreLocalDraft() {
     try {
@@ -324,8 +324,8 @@ function AgentBuilderInner() {
       if (draft.description) setDescription(draft.description);
       if (draft.version) setVersion(draft.version);
       if (draft.model_name) setModelName(draft.model_name);
-      if (draft.models_by_ide && typeof draft.models_by_ide === "object") {
-        setModelsByIde(draft.models_by_ide);
+      if (draft.models_by_harness && typeof draft.models_by_harness === "object") {
+        setModelsByIde(draft.models_by_harness);
       }
       if (draft.components) setSelectedComponents(draft.components);
       if (typeof draft.prompt === "string") setSystemPrompt(draft.prompt);
@@ -443,7 +443,7 @@ function AgentBuilderInner() {
       owner: whoami?.username || whoami?.email || "unknown",
       prompt: systemPrompt.trim(),
       model_name: modelName,
-      models_by_ide: modelsByIde,
+      models_by_harness: modelsByHarness,
       components: components.length > 0 ? components : [],
     };
   }
@@ -674,8 +674,8 @@ function AgentBuilderInner() {
                 <ModelPicker
                   modelName={modelName}
                   onModelNameChange={setModelName}
-                  modelsByIde={modelsByIde}
-                  onModelsByIdeChange={setModelsByIde}
+                  modelsByHarness={modelsByHarness}
+                  onModelsByHarnessChange={setModelsByIde}
                 />
               </div>
             </section>
