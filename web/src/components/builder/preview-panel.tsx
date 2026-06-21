@@ -232,11 +232,27 @@ function generateGemini(
 	return files;
 }
 
+function tomlString(value: string): string {
+	return JSON.stringify(value);
+}
+
 function generateCodex(
+	name: string,
+	description: string,
+	modelName: string,
 	mcps: { id: string; name: string }[],
 	body: string,
 ): PreviewFile[] {
-	const files: PreviewFile[] = [{ path: "AGENTS.md", content: body || "" }];
+	const safeName = name || "untitled";
+	const lines = [
+		`name = ${tomlString(safeName)}`,
+		`description = ${tomlString(description || safeName)}`,
+		`developer_instructions = ${tomlString(body || `# ${safeName}`)}`,
+	];
+	if (modelName) lines.push(`model = ${tomlString(modelName)}`);
+	const files: PreviewFile[] = [
+		{ path: `~/.codex/agents/${safeName}.toml`, content: lines.join("\n") + "\n" },
+	];
 	if (mcps.length > 0) {
 		const tomlLines = ["[mcp.servers]"];
 		for (const mcp of mcps) {
@@ -271,6 +287,34 @@ function generateCopilot(
 		files.push({
 			path: ".vscode/mcp.json",
 			content: buildMcpJson(mcps, "servers"),
+		});
+	}
+	return files;
+}
+
+function generateAntigravity(
+	mcps: { id: string; name: string }[],
+	body: string,
+): PreviewFile[] {
+	const files: PreviewFile[] = [{ path: "AGENTS.md", content: body || "" }];
+	if (mcps.length > 0) {
+		files.push({
+			path: ".agents/mcp_config.json",
+			content: buildMcpJson(mcps, "mcpServers"),
+		});
+	}
+	return files;
+}
+
+function generatePi(
+	mcps: { id: string; name: string }[],
+	body: string,
+): PreviewFile[] {
+	const files: PreviewFile[] = [{ path: "~/.pi/agent/AGENTS.md", content: body || "" }];
+	if (mcps.length > 0) {
+		files.push({
+			path: "~/.pi/agent/mcp.json",
+			content: buildMcpJson(mcps, "mcpServers"),
 		});
 	}
 	return files;
@@ -369,13 +413,19 @@ export function PreviewPanel({
 			files = generateGemini(mcps, body);
 			break;
 		case "codex":
-			files = generateCodex(mcps, body);
+			files = generateCodex(name, description, modelName ?? "", mcps, body);
 			break;
 		case "copilot":
 			files = generateCopilot(name, mcps, body);
 			break;
 		case "opencode":
 			files = generateOpenCode(mcps, body);
+			break;
+		case "antigravity":
+			files = generateAntigravity(mcps, body);
+			break;
+		case "pi":
+			files = generatePi(mcps, body);
 			break;
 		default:
 			files = generateClaudeCode(name, description, modelName ?? "", mcps, body);
