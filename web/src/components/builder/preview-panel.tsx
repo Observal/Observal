@@ -79,274 +79,9 @@ function buildMarkdownBody(
 	return lines.join("\n");
 }
 
-function buildMcpJson(
-	mcps: { id: string; name: string }[],
-	key: string = "mcpServers",
-): string {
-	if (mcps.length === 0) return "";
-	const servers: Record<string, object> = {};
-	for (const mcp of mcps) {
-		servers[mcp.name] = {
-			command: "observal-shim",
-			args: ["--mcp-id", mcp.id, "--", "python", "-m", mcp.name],
-		};
-	}
-	return JSON.stringify({ [key]: servers }, null, 2);
-}
-
-// ── Per-IDE preview generators (simplified mode) ─────────────
-
 interface PreviewFile {
 	path: string;
 	content: string;
-}
-
-function generateClaudeCode(
-	name: string,
-	description: string,
-	modelName: string,
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const safeName = name || "(untitled)";
-	const lines: string[] = [];
-
-	lines.push("---");
-	lines.push(`name: ${safeName}`);
-	if (modelName) {
-		lines.push(`model: ${modelName}`);
-	}
-	if (mcps.length > 0) {
-		lines.push("mcpServers:");
-		mcps.forEach((m) => lines.push(`  - ${m.name}`));
-	}
-	lines.push("---");
-	if (body) {
-		lines.push("");
-		lines.push(body);
-	}
-
-	return [
-		{
-			path: `.claude/agents/${safeName}.md`,
-			content: lines.join("\n"),
-		},
-	];
-}
-
-function generateCursor(
-	name: string,
-	description: string,
-	modelName: string,
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const safeName = name || "untitled";
-	const desc = description || safeName;
-	const files: PreviewFile[] = [
-		{
-			path: `.cursor/agents/${safeName}.md`,
-			content: `---\nname: ${safeName}\ndescription: ${JSON.stringify(desc)}\nmodel: ${modelName || "inherit"}\n---\n\n${body || `# ${safeName}`}`,
-		},
-	];
-	if (mcps.length > 0) {
-		files.push({
-			path: ".cursor/mcp.json",
-			content: buildMcpJson(mcps, "mcpServers"),
-		});
-	}
-	return files;
-}
-
-function generateKiro(
-	name: string,
-	description: string,
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const safeName = name || "(untitled)";
-	const servers: Record<string, object> = {};
-	for (const mcp of mcps) {
-		servers[mcp.name] = {
-			command: "observal-shim",
-			args: ["--mcp-id", mcp.id, "--", "python", "-m", mcp.name],
-		};
-	}
-
-	const wrappedPrompt = body
-		? `# ${safeName} — Agent Specialization\n\nYou are a Kiro agent with the following specialization.\n\n## Instructions\n\n${body}`
-		: "";
-
-	const agent: Record<string, unknown> = {
-		name: safeName,
-		description: (description || "").slice(0, 200),
-		prompt: wrappedPrompt,
-		mcpServers: servers,
-		tools: ["*"],
-		toolAliases: {},
-		allowedTools: [],
-		resources: [
-			"file://AGENTS.md",
-			"file://README.md",
-			"skill://.kiro/skills/*/SKILL.md",
-			"skill://~/.kiro/skills/*/SKILL.md",
-		],
-		hooks: {
-			agentSpawn: [{ command: "..." }],
-			userPromptSubmit: [{ command: "..." }],
-			preToolUse: [{ matcher: "*", command: "..." }],
-			postToolUse: [{ matcher: "*", command: "..." }],
-			stop: [{ command: "..." }],
-		},
-		toolsSettings: {},
-		includeMcpJson: true,
-		model: null,
-	};
-
-	return [
-		{
-			path: `~/.kiro/agents/${safeName}.json`,
-			content: JSON.stringify(agent, null, 2),
-		},
-	];
-}
-
-function generateGemini(
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const files: PreviewFile[] = [{ path: "GEMINI.md", content: body || "" }];
-	if (mcps.length > 0) {
-		const servers: Record<string, object> = {};
-		for (const mcp of mcps) {
-			servers[mcp.name] = {
-				command: "observal-shim",
-				args: ["--mcp-id", mcp.id, "--", "python", "-m", mcp.name],
-			};
-		}
-		files.push({
-			path: ".gemini/settings.json",
-			content: JSON.stringify({ mcpServers: servers }, null, 2),
-		});
-	}
-	return files;
-}
-
-function tomlString(value: string): string {
-	return JSON.stringify(value);
-}
-
-function generateCodex(
-	name: string,
-	description: string,
-	modelName: string,
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const safeName = name || "untitled";
-	const lines = [
-		`name = ${tomlString(safeName)}`,
-		`description = ${tomlString(description || safeName)}`,
-		`developer_instructions = ${tomlString(body || `# ${safeName}`)}`,
-	];
-	if (modelName) lines.push(`model = ${tomlString(modelName)}`);
-	const files: PreviewFile[] = [
-		{ path: `~/.codex/agents/${safeName}.toml`, content: lines.join("\n") + "\n" },
-	];
-	if (mcps.length > 0) {
-		const tomlLines = ["[mcp.servers]"];
-		for (const mcp of mcps) {
-			tomlLines.push("");
-			tomlLines.push(`[mcp.servers.${mcp.name}]`);
-			tomlLines.push(`command = "observal-shim"`);
-			tomlLines.push(
-				`args = ["--mcp-id", "${mcp.id}", "--", "python", "-m", "${mcp.name}"]`,
-			);
-		}
-		files.push({
-			path: "~/.codex/config.toml",
-			content: tomlLines.join("\n"),
-		});
-	}
-	return files;
-}
-
-function generateCopilot(
-	name: string,
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const safeName = name || "(untitled)";
-	const files: PreviewFile[] = [
-		{
-			path: `.github/agents/${safeName}.agent.md`,
-			content: body || "",
-		},
-	];
-	if (mcps.length > 0) {
-		files.push({
-			path: ".vscode/mcp.json",
-			content: buildMcpJson(mcps, "servers"),
-		});
-	}
-	return files;
-}
-
-function generateAntigravity(
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const files: PreviewFile[] = [{ path: "AGENTS.md", content: body || "" }];
-	if (mcps.length > 0) {
-		files.push({
-			path: ".agents/mcp_config.json",
-			content: buildMcpJson(mcps, "mcpServers"),
-		});
-	}
-	return files;
-}
-
-function generatePi(
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const files: PreviewFile[] = [{ path: "~/.pi/agent/AGENTS.md", content: body || "" }];
-	if (mcps.length > 0) {
-		files.push({
-			path: "~/.pi/agent/mcp.json",
-			content: buildMcpJson(mcps, "mcpServers"),
-		});
-	}
-	return files;
-}
-
-function generateOpenCode(
-	mcps: { id: string; name: string }[],
-	body: string,
-): PreviewFile[] {
-	const files: PreviewFile[] = [{ path: "AGENTS.md", content: body || "" }];
-	if (mcps.length > 0) {
-		const mcp: Record<string, object> = {};
-		for (const m of mcps) {
-			mcp[m.name] = {
-				type: "local",
-				command: [
-					"observal-shim",
-					"--mcp-id",
-					m.id,
-					"--",
-					"python",
-					"-m",
-					m.name,
-				],
-			};
-		}
-		files.push({
-			path: "~/.config/opencode/opencode.json",
-			content: JSON.stringify({ mcp }, null, 2),
-		});
-	}
-	return files;
 }
 
 // ── Main component ────────────────────────────────────────────
@@ -383,7 +118,6 @@ export function PreviewPanel({
 		if (!visibleIdes.some((opt) => opt.name === modalIde)) setModalIde(visibleIdes[0].name);
 	}, [visibleIdes, ide, modalIde]);
 
-	const mcps = selectedComponents.mcps ?? [];
 	const body = buildMarkdownBody(
 		description,
 		selectedComponents,
@@ -391,46 +125,9 @@ export function PreviewPanel({
 		pendingComponentBodies,
 	);
 
-	// Simplified mode: client-side generators
-	let files: PreviewFile[];
-	switch (ide) {
-		case "claude-code":
-			files = generateClaudeCode(
-				name,
-				description,
-				modelName ?? "",
-				mcps,
-				body,
-			);
-			break;
-		case "cursor":
-			files = generateCursor(name, description, modelName ?? "", mcps, body);
-			break;
-		case "kiro":
-			files = generateKiro(name, description, mcps, body);
-			break;
-		case "gemini-cli":
-			files = generateGemini(mcps, body);
-			break;
-		case "codex":
-			files = generateCodex(name, description, modelName ?? "", mcps, body);
-			break;
-		case "copilot":
-			files = generateCopilot(name, mcps, body);
-			break;
-		case "opencode":
-			files = generateOpenCode(mcps, body);
-			break;
-		case "antigravity":
-			files = generateAntigravity(mcps, body);
-			break;
-		case "pi":
-			files = generatePi(mcps, body);
-			break;
-		default:
-			files = generateClaudeCode(name, description, modelName ?? "", mcps, body);
-			break;
-	}
+	const files: PreviewFile[] = fullConfigs?.[ide]
+		? Object.entries(fullConfigs[ide]).map(([path, content]) => ({ path, content }))
+		: [];
 
 	const fetchFullConfig = useCallback(async () => {
 		const components: { component_type: string; component_id: string }[] = [];
@@ -476,11 +173,17 @@ export function PreviewPanel({
 		}
 	}, [name, description, body, modelName, selectedComponents, targetIdes]);
 
+	useEffect(() => {
+		const timer = window.setTimeout(() => {
+			void fetchFullConfig();
+		}, 300);
+		return () => window.clearTimeout(timer);
+	}, [fetchFullConfig]);
+
 	const handleOpenFullPreview = useCallback(() => {
 		setModalIde(ide);
 		setModalOpen(true);
-		fetchFullConfig();
-	}, [ide, fetchFullConfig]);
+	}, [ide]);
 
 	// Files for the modal view
 	const modalFiles: PreviewFile[] =
@@ -550,19 +253,35 @@ export function PreviewPanel({
 				))}
 			</div>
 
-			{/* Simplified file previews */}
+			{/* Server-generated file previews */}
 			<Card>
 				<CardContent className="p-0 divide-y">
-					{files.map((file) => (
-						<div key={file.path}>
-							<div className="px-4 py-2 text-[11px] font-medium text-muted-foreground bg-muted/40 font-[family-name:var(--font-mono)]">
-								{file.path}
-							</div>
-							<pre className="overflow-x-auto min-h-[100px] whitespace-pre p-4 text-sm leading-relaxed font-[family-name:var(--font-mono)] text-foreground/80">
-								{file.content}
-							</pre>
+					{fullLoading ? (
+						<div className="flex items-center justify-center py-12 text-muted-foreground">
+							<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+							<span className="text-sm">Generating preview...</span>
 						</div>
-					))}
+					) : fullError ? (
+						<div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+							<XCircle className="mb-2 h-5 w-5 text-destructive" />
+							<span className="text-sm">{fullError}</span>
+						</div>
+					) : files.length === 0 ? (
+						<div className="flex items-center justify-center py-12 text-muted-foreground">
+							<span className="text-sm">No config generated for this IDE.</span>
+						</div>
+					) : (
+						files.map((file) => (
+							<div key={file.path}>
+								<div className="px-4 py-2 text-[11px] font-medium text-muted-foreground bg-muted/40 font-[family-name:var(--font-mono)]">
+									{file.path}
+								</div>
+								<pre className="overflow-x-auto min-h-[100px] whitespace-pre p-4 text-sm leading-relaxed font-[family-name:var(--font-mono)] text-foreground/80">
+									{file.content}
+								</pre>
+							</div>
+						))
+					)}
 				</CardContent>
 			</Card>
 
