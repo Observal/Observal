@@ -48,11 +48,11 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal agent co-authors list`: List co-authors.
   - `observal agent co-authors remove`: Remove a co-author.
   - `observal agent add`: Add a component reference to observal-agent.yaml.
+  - `observal agent archive`: Archive an agent.
   - `observal agent build`: Validate agent definition against the server (dry-run).
   - `observal agent bulk-create`: Bulk-create agents from a JSON file.
   - `observal agent create`: Create a new agent (interactive wizard, from file, or via flags).
-  - `observal agent archive`: Archive an agent.
-  - `observal agent delete`: Archive an agent (soft delete).
+  - `observal agent delete`: Archive an agent. Prefer the archive command.
   - `observal agent init`: Scaffold an observal-agent.yaml definition file.
   - `observal agent install`: Get install config for an agent.
   - `observal agent list`: List active agents (paginated).
