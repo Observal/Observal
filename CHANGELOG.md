@@ -10,7 +10,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.7.0] - 2026-06-21
+## [1.8.0] - 2026-06-21
 
 ### Added
 
@@ -882,6 +882,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- bundle shared CLI package (**release**) ([994d6ed](https://github.com/BlazeUp-AI/Observal/commit/994d6ed2d97917a516e7895a2f02d9a3c1194b52))
 - improve facet coverage (**insights**) ([2c2fffb](https://github.com/BlazeUp-AI/Observal/commit/2c2fffb3ec958c38e070cc105190b9cc7b123b9d))
 - link component leaderboard rows (**web**) ([807f317](https://github.com/BlazeUp-AI/Observal/commit/807f317bf0b79ad8d12a6b5d3215ac286de51341))
 - consolidate management sidebar (**web**) ([f58ed0e](https://github.com/BlazeUp-AI/Observal/commit/f58ed0ec541bced18f5b1f777cd1e3ec09bf5456))
