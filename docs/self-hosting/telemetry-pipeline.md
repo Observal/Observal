@@ -14,7 +14,7 @@ flowchart TB
     ide["AI coding agent"]
     sessionFiles["Local session files - JSONL transcripts / SQLite buffers"]
     reconcile["observal reconcile - session parser"]
-    hooks["IDE hooks - session lifecycle events"]
+    hooks["harness hooks - session lifecycle events"]
     shim["observal-shim / proxy - MCP requests + responses"]
     api["Observal API"]
     ch["ClickHouse - traces, turns, spans, events"]
@@ -45,15 +45,15 @@ This is the primary path for full-session reconstruction. Coding agents write lo
 
 This path gives Observal the full conversation shape needed for insight reports: prompts, assistant messages, tool calls, timing, and ordering.
 
-## Path 2: IDE hooks
+## Path 2: harness hooks
 
 Hooks capture lifecycle events as they happen:
 
 - `SessionStart` / `Stop`: session boundaries
 - `UserPromptSubmit`: user prompt boundaries
-- `PreToolUse` / `PostToolUse`: tool calls when the IDE exposes them
+- `PreToolUse` / `PostToolUse`: tool calls when the harness exposes them
 - `SubagentStop`: Claude Code sub-agent lifecycle
-- `Notification`: IDE notifications
+- `Notification`: harness notifications
 
 Full schema and handler types: [Hooks specification](../reference/hooks-spec.md).
 

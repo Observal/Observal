@@ -11,7 +11,7 @@ Every command available in the installed CLI. This block is generated from the T
 **Root commands**
 
 - `observal outdated`: Show installed components that have newer versions available.
-- `observal scan`: Show a read-only inventory of your local IDE setup.
+- `observal scan`: Show a read-only inventory of your local harness setup.
 
 **`observal admin`**: Admin commands
 
@@ -58,7 +58,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal agent list`: List active agents (paginated).
   - `observal agent my`: List your own agents (all statuses).
   - `observal agent publish`: Publish the agent definition to the server.
-  - `observal agent pull`: Fetch agent config and write IDE files to disk.
+  - `observal agent pull`: Fetch agent config and write harness files to disk.
   - `observal agent release`: Bump version and push a versioned release to the registry.
   - `observal agent show`: Show full agent details.
   - `observal agent transfer-owner`: Transfer ownership to another username.
@@ -82,13 +82,13 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal config set`: Set a CLI config value.
   - `observal config show`: Show current CLI configuration.
 
-**`observal doctor`**: Diagnose and patch IDE settings for Observal telemetry
+**`observal doctor`**: Diagnose and patch harness settings for Observal telemetry
 
 - `observal doctor support`: Generate and inspect diagnostic support bundles. Bundles contain no customer data or row contents.
   - `observal doctor support bundle`: Generate a diagnostic support bundle. No customer data or row contents included.
   - `observal doctor support inspect`: Inspect a support bundle.
   - `observal doctor cleanup`: Remove ALL Observal hooks, env vars, and legacy telemetry config.
-  - `observal doctor patch`: Instrument IDEs with Observal telemetry hooks and shims.
+  - `observal doctor patch`: Instrument harnesses with Observal telemetry hooks and shims.
 
 **`observal ops`**: Observability and operational commands (traces, telemetry, dashboard, feedback)
 
@@ -124,7 +124,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry hook archive`: Archive this component.
   - `observal registry hook delete`: Delete a hook from the registry.
   - `observal registry hook edit`: Edit a draft, rejected, or pending hook submission.
-  - `observal registry hook install`: Install a hook for a specific IDE.
+  - `observal registry hook install`: Install a hook for a specific harness.
   - `observal registry hook list`: List approved hooks from the registry.
   - `observal registry hook show`: Show detailed information for a single hook.
   - `observal registry hook submit`: Submit a new hook for review.
@@ -145,8 +145,9 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry mcp my`: List your own MCP servers across all statuses.
   - `observal registry mcp transfer-owner`: Transfer ownership to another username.
   - `observal registry mcp unarchive`: Restore an archived component.
-- `observal registry models`: Inspect the model catalog (live from models.dev with offline fallback).
-  - `observal registry models list`: Show models from the registry.
+- `observal registry models`: Inspect registry-backed harness model data.
+  - `observal registry models --harness <name>`: Show available models for one harness.
+  - `observal registry models list --harness <name>`: Same list subcommand with harness filtering.
 - `observal registry prompt`: Prompt registry commands
 - `observal registry prompt co-authors`: Manage co-authors for prompts
   - `observal registry prompt co-authors add`: Add a co-author.

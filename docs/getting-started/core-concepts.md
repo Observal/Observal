@@ -12,7 +12,7 @@ The vocabulary you need to be productive with Observal. Read once; every other p
 flowchart TB
     ide["AI coding agent - Claude Code, Kiro, Cursor, Pi"]
     sessions["Local session store - JSONL transcripts / SQLite buffers"]
-    hooks["IDE hooks - session + lifecycle events"]
+    hooks["harness hooks - session + lifecycle events"]
     shim["observal-shim / proxy - MCP request + response capture"]
     mcp[MCP servers]
     cli["observal CLI - reconcile + push"]
@@ -35,7 +35,7 @@ flowchart TB
 Observal collects agent activity through three complementary paths:
 
 * **Session capture** reads the coding agent's local session files or SQLite buffers and reconciles them into normalized traces.
-* **IDE hooks** capture lifecycle events such as session start, user prompt, tool use, stop, and notifications when the IDE exposes them.
+* **harness hooks** capture lifecycle events such as session start, user prompt, tool use, stop, and notifications when the harness exposes them.
 * **MCP shims and proxies** capture MCP requests and responses without modifying the traffic.
 
 Two data stores, two concerns:
@@ -70,7 +70,7 @@ A top-level operation that can contain many spans. Most traces are a single agen
 
 ### Session
 
-A logical grouping of related traces, typically one IDE session or one user task. Identified by `session_id` in trace metadata. A long Claude Code session produces many traces that all share a `session_id`.
+A logical grouping of related traces, typically one harness session or one user task. Identified by `session_id` in trace metadata. A long Claude Code session produces many traces that all share a `session_id`.
 
 ## The shim and the proxy
 
@@ -81,7 +81,7 @@ Observal intercepts MCP traffic without modifying it. Two flavors:
 | `observal-shim` | stdio | The default for most MCP servers. Wraps the MCP server process and forwards stdin/stdout. |
 | `observal-proxy` | HTTP / SSE / streamable-HTTP | Used when an MCP server speaks HTTP instead of stdio. |
 
-You rarely call either one directly. `observal doctor patch --shim` (or `--all`) rewrites your IDE config to route MCP servers through the appropriate one.
+You rarely call either one directly. `observal doctor patch --shim` (or `--all`) rewrites your harness config to route MCP servers through the appropriate one.
 
 Interception is **transparent**: nothing is changed on the wire. If Observal is unreachable, the tool call still succeeds, and the telemetry is queued locally (see [Telemetry buffer](#telemetry-buffer) below) and flushed later.
 

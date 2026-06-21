@@ -22,7 +22,7 @@ A sandbox has these properties:
 When a sandbox is added as an agent component:
 
 ```
-observal agent pull my-agent --ide claude-code
+observal agent pull my-agent --harness claude-code
     │
     ├── Registers "observal-sandbox" MCP server
     │   └── Exposes run_sandbox_<name> as a callable tool
@@ -68,7 +68,7 @@ observal registry sandbox show <name-or-id> --output json
 ### Install (deprecated - use agent components instead)
 
 ```bash
-observal registry sandbox install <name> --ide claude-code
+observal registry sandbox install <name> --harness claude-code
 # ⚠ Prints deprecation warning - sandboxes work best as agent components
 ```
 
@@ -161,7 +161,7 @@ EOF
 observal agent create --from-file agent.json
 
 # 3. Pull the agent - sandbox becomes a callable tool
-observal agent pull test-runner --ide claude-code
+observal agent pull test-runner --harness claude-code
 # Registers: observal-sandbox MCP server
 # Tool available: run_sandbox_python_pytest
 

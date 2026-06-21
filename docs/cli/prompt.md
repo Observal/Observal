@@ -5,7 +5,7 @@
 
 Manage reusable prompts in the registry.
 
-Prompts are reusable templates that can be rendered with variables, installed into supported IDEs, and shared through the Observal registry.
+Prompts are reusable templates that can be rendered with variables, installed into supported harnesses, and shared through the Observal registry.
 
 ## Subcommands
 
@@ -40,7 +40,7 @@ observal prompt submit
 | `--draft` | Save prompt as draft |
 | `--submit` | Submit prompt directly for review |
 
-Prompts can include template variables and metadata that allow them to be reused across agents and IDE integrations.
+Prompts can include template variables and metadata that allow them to be reused across agents and harness integrations.
 
 ---
 
@@ -127,17 +127,17 @@ Get installation configuration for a prompt.
 ### Synopsis
 
 ```bash
-observal prompt install <id-or-name> --ide vscode [--raw]
+observal prompt install <id-or-name> --harness vscode [--raw]
 ```
 
 ### Options
 
 | Option | Description |
 | --- | --- |
-| `--ide`, `-i` | Target IDE for installation |
+| `--harness`, `-i` | Target harness for installation |
 | `--raw` | Output raw configuration |
 
-This command outputs configuration snippets that can be used in supported IDEs and agent workflows.
+This command outputs configuration snippets that can be used in supported harnesses and agent workflows.
 
 ---
 

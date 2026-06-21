@@ -15,7 +15,7 @@
 
 * [Overview](use-cases/README.md)
 * [Observe MCP traffic](use-cases/observe-mcp-traffic.md)
-* [Share agent configs across IDEs](use-cases/share-agent-configs.md)
+* [Share agent configs across harnesses](use-cases/share-agent-configs.md)
 * [Debug agent failures](use-cases/debug-agent-failures.md)
 * [Run a team-wide agent registry](use-cases/team-registry.md)
 

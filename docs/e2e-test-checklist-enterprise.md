@@ -255,10 +255,10 @@ Perform the following actions and verify each generates an audit log entry:
 - [ ] SCIM token create → `admin.scim_token.create`
 - [ ] SCIM user create → `scim.user.create`
 
-## 14. Multi-IDE Traces in Enterprise
+## 14. Multi-harness Traces in Enterprise
 
-- [ ] As SSO User A, configure Observal hooks for at least 2 IDEs
-- [ ] Run a multi-step prompt in each IDE
+- [ ] As SSO User A, configure Observal hooks for at least 2 harnesses
+- [ ] Run a multi-step prompt in each harness
 - [ ] Verify traces appear in the session list with correct platform labels
 - [ ] Verify agent attribution shows in traces (agent_name, agent_type, skill_name)
 - [ ] Verify trace privacy setting applies (admin vs user visibility)
@@ -268,8 +268,8 @@ Perform the following actions and verify each generates an audit log entry:
 - [ ] `observal auth login`; verify it opens browser for SSO (not password prompt)
 - [ ] After SSO login, verify CLI is authenticated
 - [ ] `observal self doctor`; verify diagnostics pass
-- [ ] `observal scan` -- verify IDE discovery works (read-only)
-- [ ] `observal doctor patch --all --all-ides` -- verify instrumentation works
+- [ ] `observal scan` -- verify harness discovery works (read-only)
+- [ ] `observal doctor patch --all --all-harnesses` -- verify instrumentation works
 - [ ] `observal agent pull <agent>`; verify agent pull works with SSO auth token
 - [ ] `observal admin review list`; verify review list works (admin only)
 

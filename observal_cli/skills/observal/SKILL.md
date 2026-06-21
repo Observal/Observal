@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 name: observal
 command: observal
-description: "Core Observal CLI operations: pull agents into your IDE, scan installed components, diagnose and patch IDE configs, authenticate, manage CLI settings, and discuss agent insights. Use when the user wants to install an agent, check setup, login, configure the CLI, or ask how an agent is doing."
+description: "Core Observal CLI operations: pull agents into your harness, scan installed components, diagnose and patch harness configs, authenticate, manage CLI settings, and discuss agent insights. Use when the user wants to install an agent, check setup, login, configure the CLI, or ask how an agent is doing."
 version: 2.1.0
 owner: observal
 ---
@@ -28,27 +28,27 @@ owner: observal
 
 ## Procedure: Pull Agent
 
-Install an agent's full config (rules, MCP servers, hooks, skills) into a local IDE.
+Install an agent's full config (rules, MCP servers, hooks, skills) into a local harness.
 
 ```bash
-observal agent pull AGENT_NAME --ide kiro --no-prompt --dir .
+observal agent pull AGENT_NAME --harness kiro --no-prompt --dir .
 ```
 
 **Flags:**
-- `--ide` (required): `claude-code`, `kiro`, `cursor`, `gemini-cli`, `vscode`, `codex`, `copilot`, `copilot-cli`, `opencode`
+- `--harness` (required): `claude-code`, `kiro`, `cursor`, `gemini-cli`, `vscode`, `codex`, `copilot`, `copilot-cli`, `opencode`
 - `--version <semver>`: install a specific version (e.g. `1.2.0`). Omit for latest.
 - `--scope user|project`: install scope (Claude Code, Kiro, Gemini only)
-- `--model <name>` or `--model <ide>=<name>`: override saved model (repeatable)
+- `--model <name>` or `--model <harness>=<name>`: override saved model (repeatable)
 - `--tools t1,t2`: Claude Code tool whitelist
 - `--dry-run`: preview file writes without touching disk
 - `--no-prompt`: skip interactive confirmation
 - `--dir <path>`: target directory (default: current)
 
-**Merge behavior:** MCP configs are merged with existing IDE config files, not overwritten. Existing user entries are preserved.
+**Merge behavior:** MCP configs are merged with existing harness config files, not overwritten. Existing user entries are preserved.
 
 **Version pinning:** When `--version` is specified, the exact content from that version is installed. The lockfile (`~/.observal/lockfile.json`) records the pin. If another agent depends on the same component at a different version, a warning is displayed.
 
-If the user did not specify an IDE, ask which one before running.
+If the user did not specify an harness, ask which one before running.
 
 ---
 
@@ -58,7 +58,7 @@ Check for newer versions of installed agents and components.
 
 ```bash
 observal outdated
-observal outdated --ide claude-code
+observal outdated --harness claude-code
 observal outdated --output json
 ```
 
@@ -66,17 +66,17 @@ Reads `~/.observal/lockfile.json` and compares each pinned version against the r
 
 ---
 
-## Procedure: Scan IDEs
+## Procedure: Scan harnesses
 
-Read-only inventory of installed components across all detected IDEs. **Never modifies any file.**
+Read-only inventory of installed components across all detected harnesses. **Never modifies any file.**
 
 ```bash
 observal scan
-observal scan --ide kiro
-observal scan --ide claude-code
+observal scan --harness kiro
+observal scan --harness claude-code
 ```
 
-Reports: detected IDEs, MCP servers (with shimmed status), skills, hooks, agents, and unregistered components.
+Reports: detected harnesses, MCP servers (with shimmed status), skills, hooks, agents, and unregistered components.
 
 ---
 
@@ -88,7 +88,7 @@ Diagnose only. Does not fix anything.
 observal doctor
 ```
 
-Reports: Observal config validity, server reachability, hook installation status per IDE, skill presence. Exits non-zero if issues found.
+Reports: Observal config validity, server reachability, hook installation status per harness, skill presence. Exits non-zero if issues found.
 
 ---
 
@@ -97,26 +97,26 @@ Reports: Observal config validity, server reachability, hook installation status
 Apply instrumentation. Run with `--dry-run` first when the user is unsure.
 
 ```bash
-observal doctor patch --all --all-ides --dry-run
-observal doctor patch --all --all-ides
-observal doctor patch --hook --shim --ide kiro
-observal doctor patch --all --ide claude-code
-observal doctor patch --hook --all-ides
-observal doctor patch --shim --all-ides
+observal doctor patch --all --all-harnesses --dry-run
+observal doctor patch --all --all-harnesses
+observal doctor patch --hook --shim --harness kiro
+observal doctor patch --all --harness claude-code
+observal doctor patch --hook --all-harnesses
+observal doctor patch --shim --all-harnesses
 ```
 
-**Required:** at least one of `--hook` / `--shim` / `--all`, AND at least one of `--all-ides` / `--ide`. Creates timestamped backups before modifying any file.
+**Required:** at least one of `--hook` / `--shim` / `--all`, AND at least one of `--all-harnesses` / `--harness`. Creates timestamped backups before modifying any file.
 
 ---
 
 ## Procedure: Doctor Cleanup
 
-Remove Observal-managed hooks and env vars from IDE configs. Leaves user content untouched.
+Remove Observal-managed hooks and env vars from harness configs. Leaves user content untouched.
 
 ```bash
 observal doctor cleanup --dry-run
 observal doctor cleanup
-observal doctor cleanup --ide kiro
+observal doctor cleanup --harness kiro
 ```
 
 ---

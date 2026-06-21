@@ -5,19 +5,19 @@
 
 # AGENTS.md
 
-Internal context for contributors and AI coding agents. Use `README.md` for the public API reference, `SETUP.md` for environment setup, and `docs/adding-an-ide.md` for IDE integration.
+Internal context for contributors and AI coding agents. Use `README.md` for the public API reference, `SETUP.md` for environment setup, and `docs/adding-a-harness.md` for harness integration.
 
 ## What Observal is
 
 Observal is an agent-centric registry and observability platform for AI coding agents. Users interact with it three ways:
 
-1. **CLI** (`observal`): pull agents, scan IDEs, submit components, manage the server
+1. **CLI** (`observal`): pull agents, scan harnesses, submit components, manage the server
 2. **Web UI** (`web/`): browse the registry, view traces, manage users, admin dashboard
-3. **Observal skill** (bundled, auto-installed on login): lets the LLM inside any IDE drive Observal commands directly (e.g. "create an agent that uses the github MCP")
+3. **Observal skill** (bundled, auto-installed on login): lets the LLM inside any harness drive Observal commands directly (e.g. "create an agent that uses the github MCP")
 
-Agents are the primary entity. Each agent bundles 5 component types: MCP servers, skills, hooks, prompts, and sandboxes. When a user runs `observal pull <agent>`, the platform resolves all components and writes IDE-specific config files.
+Agents are the primary entity. Each agent bundles 5 component types: MCP servers, skills, hooks, prompts, and sandboxes. When a user runs `observal pull <agent>`, the platform resolves all components and writes harness-specific config files.
 
-## IDE support tiers
+## harness support tiers
 
 **First-class** (full session parsing, hooks, scanning, config gen, tested e2e):
 - Claude Code
@@ -28,14 +28,14 @@ Agents are the primary entity. Each agent bundles 5 component types: MCP servers
 **Functional** (config gen and scanning work, but no session parser or hook spec):
 - Gemini CLI, Codex CLI, Copilot, Copilot CLI, OpenCode
 
-See `docs/adding-an-ide.md` for the complete guide to adding or promoting an IDE.
+See `docs/adding-a-harness.md` for the complete guide to adding or promoting an harness.
 
 ## Architecture at a glance
 
 ```
 observal_cli/          Python CLI (Typer)
-  ide/                 CLI-side IDE adapters (protocol.py, base.py, 9 adapters)
-  ide_specs/           Hook specs (claude_code, kiro, pi only)
+  ide/                 CLI-side harness adapters (protocol.py, base.py, 9 adapters)
+  harness_specs/           Hook specs (claude_code, kiro, pi only)
   skills/              Bundled skills installed on login (observal, observal-admin, etc.)
 
 observal-server/       FastAPI server
@@ -45,8 +45,8 @@ observal-server/       FastAPI server
   schemas/             Pydantic request/response schemas
   services/            Business logic
     clickhouse/        ClickHouse subpackage (client, schema, insert, query)
-    ide/               Server-side IDE adapters (config generation)
-    session_parsers/   Per-IDE JSONL parsers (claude_code, kiro, cursor, pi)
+    ide/               Server-side harness adapters (config generation)
+    session_parsers/   Per-harness JSONL parsers (claude_code, kiro, cursor, pi)
     audit/             Compliance audit system (loguru-based)
     config/            Config generation helpers (mcp_builder, skill_builder)
     insights/          Insight engine (report generation, facets, sections, HTML export)
@@ -66,25 +66,25 @@ tests/e2e/             Playwright (19 specs)
 
 ## How the modularisation works
 
-The codebase follows a strict adapter pattern for IDE-specific logic. This is the most important architectural decision:
+The codebase follows a strict adapter pattern for harness-specific logic. This is the most important architectural decision:
 
-**One adapter per IDE, on both sides.** CLI adapters handle scanning and hook detection (`observal_cli/ide/<name>.py`). Server adapters handle config file generation (`observal-server/services/ide/<name>.py`). The IDE registry (`ide_registry.py`, mirrored on both sides) defines paths, keys, features, and event maps.
+**One adapter per harness, on both sides.** CLI adapters handle scanning and hook detection (`observal_cli/harness/<name>.py`). Server adapters handle config file generation (`observal-server/services/harness/<name>.py`). The harness registry (`harness_registry.py`, mirrored on both sides) defines paths, keys, features, and event maps.
 
-**No if/elif chains for IDE logic.** If you need IDE-specific behavior, it goes in the adapter. The orchestrators (`cmd_scan.py`, `agent_builder.py`, `cmd_doctor.py`) call adapters via the registry, never with conditionals.
+**No if/elif chains for harness logic.** If you need harness-specific behavior, it goes in the adapter. The orchestrators (`cmd_scan.py`, `agent_builder.py`, `cmd_doctor.py`) call adapters via the registry, never with conditionals.
 
-**Feature-flag gating.** Each adapter method maps to a feature (`hooks`, `mcp_servers`, `skills`). The `BaseAdapter` raises `NotSupportedError` if the IDE's registry entry lacks the required feature. This means stubs are safe: they exist but can't be called for unsupported operations.
+**Feature-flag gating.** Each adapter method maps to a feature (`hooks`, `mcp_servers`, `skills`). The `BaseAdapter` raises `NotSupportedError` if the harness's registry entry lacks the required feature. This means stubs are safe: they exist but can't be called for unsupported operations.
 
-**Session parsers are separate from adapters.** They live in `services/session_parsers/` (server-side) and handle converting raw JSONL into normalized trace events. Only first-class IDEs have parsers.
+**Session parsers are separate from adapters.** They live in `services/session_parsers/` (server-side) and handle converting raw JSONL into normalized trace events. Only first-class harnesses have parsers.
 
 ### What "first-class" means concretely
 
-A first-class IDE has all of:
-- A hook spec in `ide_specs/` (defines what `doctor patch --hook` installs)
+A first-class harness has all of:
+- A hook spec in `harness_specs/` (defines what `doctor patch --hook` installs)
 - A session parser in `services/session_parsers/` (enables `observal reconcile`)
 - Full scanning implementation in its CLI adapter (discovers MCPs, skills, hooks, agents)
 - E2E test coverage in `tests/e2e/`
 
-A stub IDE has:
+A stub harness has:
 - A registry entry with correct paths
 - A CLI adapter that handles basic MCP scanning
 - A server adapter that generates config files
@@ -109,7 +109,7 @@ A stub IDE has:
 - **TanStack Query hooks** from `use-api.ts` for all data fetching. No raw `fetch` in components.
 - **Types centralized** in `src/lib/types.ts`. No inline API response types.
 - **Feature gating** is server-side: API returns 403 for unlicensed features. Frontend shows upgrade prompts.
-- **IDE list from server** (`/api/v1/config/ides`), never hardcoded in frontend.
+- **harness list from server** (`/api/v1/config/harnesses`), never hardcoded in frontend.
 - **OKLCH color tokens** in `globals.css`. No raw hex/rgb in components.
 
 ### General
@@ -124,10 +124,10 @@ A stub IDE has:
 
 ```
 observal
-├── pull                     # install agent into IDE (primary workflow)
+├── pull                     # install agent into harness (primary workflow)
 ├── scan                     # read-only discovery of what's installed
 ├── reconcile                # push local session JSONL to server for rich traces
-├── use / profile            # swap IDE configs from git-hosted profiles
+├── use / profile            # swap harness configs from git-hosted profiles
 ├── uninstall                # tear down Docker stack and config
 ├── auth                     # login, register, reset-password, logout, whoami, status
 ├── config                   # show, set, path, alias, aliases
@@ -146,7 +146,7 @@ observal
 ├── server                   # start, stop, restart, status, logs, install, reset, config
 ├── self                     # upgrade, downgrade, rollback, status
 ├── support                  # bundle (diagnostic tarball with redaction)
-├── doctor                   # diagnose + patch IDE settings for all 9 IDEs
+├── doctor                   # diagnose + patch harness settings for all 9 harnesses
 ├── migrate                  # ClickHouse migration tools
 └── logs                     # live dev log viewer
 ```
@@ -168,8 +168,8 @@ Sub-packages: `agent/` (crud, install, draft), `admin/` (enterprise_settings, us
 ## Telemetry pipeline
 
 ```
-IDE ──→ observal-shim (stdio proxy) ──→ POST /ingest ──→ ClickHouse
-IDE ──→ session push hooks ──→ POST /hooks ──→ ClickHouse
+harness ──→ observal-shim (stdio proxy) ──→ POST /ingest ──→ ClickHouse
+harness ──→ session push hooks ──→ POST /hooks ──→ ClickHouse
 CLI ──→ observal reconcile ──→ POST /reconcile ──→ ClickHouse (enrichment)
 ```
 

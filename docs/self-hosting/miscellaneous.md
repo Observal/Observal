@@ -5,37 +5,37 @@ SPDX-License-Identifier: AGPL-3.0-only
 
 # Miscellaneous Settings
 
-Settings that control platform-wide behavior, IDE restrictions, and display preferences.
+Settings that control platform-wide behavior, harness restrictions, and display preferences.
 
-## IDE Allowlist {#ide-allowlist}
+## harness Allowlist {#harness-allowlist}
 
-Restrict which IDEs are available in the platform. When set, only the listed IDEs appear in install dropdowns, agent compatibility tags, and the `observal pull` target selection.
+Restrict which harnesses are available in the platform. When set, only the listed harnesses appear in install dropdowns, agent compatibility tags, and the `observal pull` target selection.
 
-**Affects:** The IDE dropdown on agent detail pages, component install commands, agent builder IDE selection, and `observal pull --ide` validation. IDEs not in the allowlist are hidden from all users.
+**Affects:** The harness dropdown on agent detail pages, component install commands, agent builder harness selection, and `observal pull --harness` validation. harnesses not in the allowlist are hidden from all users.
 
 | Value | Effect |
 |-------|--------|
-| _(empty)_ (default) | All supported IDEs are available |
+| _(empty)_ (default) | All supported harnesses are available |
 | `cursor,claude_code,pi` | Only Cursor, Claude Code, and Pi appear in dropdowns |
 | `kiro,cursor` | Only Kiro and Cursor are available |
 
-**Format:** Comma-separated IDE identifiers. Valid identifiers: `cursor`, `claude_code`, `kiro`, `pi`, `copilot`, `copilot_cli`, `codex`, `opencode`, `gemini_cli`, `antigravity`
+**Format:** Comma-separated harness identifiers. Valid identifiers: `cursor`, `claude_code`, `kiro`, `pi`, `copilot`, `copilot_cli`, `codex`, `opencode`, `gemini_cli`, `antigravity`
 
-**When to set:** Your organization standardizes on specific IDEs and you don't want users confused by irrelevant options. Also useful for reducing noise in the registry when agents only need to support a subset of IDEs.
+**When to set:** Your organization standardizes on specific harnesses and you don't want users confused by irrelevant options. Also useful for reducing noise in the registry when agents only need to support a subset of harnesses.
 
-**CLI behavior:** When set, `observal pull <agent>` without `--ide` defaults to the first IDE in the allowlist (the "default IDE"). Users can still specify any allowed IDE explicitly.
+**CLI behavior:** When set, `observal pull <agent>` without `--harness` defaults to the first harness in the allowlist (the "default harness"). Users can still specify any allowed harness explicitly.
 
-## Default IDE {#default-ide}
+## Default harness {#default-harness}
 
-The IDE pre-selected in install dropdowns and used as the default for `observal pull` when no `--ide` flag is provided.
+The harness pre-selected in install dropdowns and used as the default for `observal pull` when no `--harness` flag is provided.
 
 | Value | Effect |
 |-------|--------|
-| _(empty)_ (default) | First IDE in the allowlist, or `cursor` if no allowlist is set |
-| `claude_code` | Claude Code is pre-selected in all IDE dropdowns |
+| _(empty)_ (default) | First harness in the allowlist, or `cursor` if no allowlist is set |
+| `claude_code` | Claude Code is pre-selected in all harness dropdowns |
 | `pi` | Pi is the default target |
 
-**Affects:** UI dropdown default selection, CLI default when `--ide` is omitted, and the install command shown on agent detail pages.
+**Affects:** UI dropdown default selection, CLI default when `--harness` is omitted, and the install command shown on agent detail pages.
 
 ## Git Mirror Path {#git-mirror-path}
 

@@ -293,6 +293,6 @@ If your server does not have the support endpoint (older version), rebuild the s
 
 ## Related
 
-* [`observal doctor`](doctor.md): diagnose IDE compatibility
+* [`observal doctor`](doctor.md): diagnose harness compatibility
 * [`observal ops telemetry status`](ops.md#observal-ops-telemetry-status): check telemetry pipeline health
 * [Troubleshooting](../self-hosting/troubleshooting.md): common deployment issues

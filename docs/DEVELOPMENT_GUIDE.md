@@ -54,7 +54,7 @@
 - [Working on the CLI](#working-on-the-cli)
     - [Reinstalling after changes](#reinstalling-after-changes)
     - [Testing the shim](#testing-the-shim)
-- [IDE Recommendations](#ide-recommendations)
+- [harness Recommendations](#ide-recommendations)
     - [VS Code](#vs-code)
     - [PyCharm / IntelliJ](#pycharm--intellij)
 - [Pre-commit Hooks](#pre-commit-hooks)
@@ -577,7 +577,7 @@ uv tool install --editable . --reinstall
 
 ### Testing the shim
 
-The shim (`observal-shim`) is a transparent stdio JSON-RPC proxy that sits between an IDE and an MCP server. To test it manually:
+The shim (`observal-shim`) is a transparent stdio JSON-RPC proxy that sits between an harness and an MCP server. To test it manually:
 
 ```bash
 # Wrap a real MCP server command
@@ -588,7 +588,7 @@ Telemetry will be buffered to `~/.observal/telemetry_buffer.db` if the server is
 
 ---
 
-## IDE Recommendations
+## harness Recommendations
 
 ### VS Code
 

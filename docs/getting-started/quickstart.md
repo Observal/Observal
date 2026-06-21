@@ -90,7 +90,7 @@ observal auth whoami
 # → super@demo.example (super_admin)
 ```
 
-## 4. Discover and instrument your IDE
+## 4. Discover and instrument your harness
 
 If you already have MCP servers configured in Claude Code, Kiro, Cursor, VS Code, or Gemini CLI, first see what's there:
 
@@ -108,13 +108,13 @@ Claude Code (~/.claude/settings.json)
 Kiro (.kiro/settings/mcp.json)
   mcp-obsidian      mcp-obsidian                                  not wrapped
 
-2 IDE(s) found, 3 MCP server(s) total, 0 wrapped.
+2 harness(s) found, 3 MCP server(s) total, 0 wrapped.
 ```
 
 `scan` is read-only -- it shows what you have without modifying anything. Now instrument everything:
 
 ```bash
-observal doctor patch --all --all-ides
+observal doctor patch --all --all-harnesses
 ```
 
 Expected output:
@@ -133,7 +133,7 @@ Backups saved:
   ~/.claude/settings.json.20260421_143055.bak
   .kiro/settings/mcp.json.20260421_143055.bak
 
-3 server(s) instrumented, hooks installed across 2 IDE(s).
+3 server(s) instrumented, hooks installed across 2 harness(s).
 ```
 
 What `doctor patch --all` did:
@@ -145,11 +145,11 @@ What `doctor patch --all` did:
 
 Nothing broke. Your agents still work exactly as before. The only difference: every tool call now generates a span.
 
-Restart your IDE to pick up the new config. The next MCP call will produce a trace.
+Restart your harness to pick up the new config. The next MCP call will produce a trace.
 
 ## 5. See your first trace
 
-Open `http://localhost/traces` in your browser. Trigger anything in your IDE that uses an MCP tool (ask Claude to list files, read a GitHub issue, whatever). Refresh, and you'll see the trace appear.
+Open `http://localhost/traces` in your browser. Trigger anything in your harness that uses an MCP tool (ask Claude to list files, read a GitHub issue, whatever). Refresh, and you'll see the trace appear.
 
 Or use the CLI:
 
@@ -172,19 +172,19 @@ observal agent list
 observal agent show <agent-name>
 ```
 
-Install one into your IDE:
+Install one into your harness:
 
 ```bash
-observal agent pull <agent-name> --ide <ide-name>
+observal agent pull <agent-name> --harness <harness-name>
 ```
 
-This drops agent files, skills, hooks, and MCP configs into the right places for your IDE and wires up telemetry automatically.
+This drops agent files, skills, hooks, and MCP configs into the right places for your harness and wires up telemetry automatically.
 
 ## What you just built
 
 ```mermaid
 flowchart LR
-    ide[Your IDE]
+    ide[Your harness]
     shim[observal-shim]
     mcp[MCP server]
     api[Observal API]

@@ -220,7 +220,7 @@ observal server migrate export-telemetry \
 | `traces` | ReplacingMergeTree | `start_time` | Top-level trace records |
 | `spans` | ReplacingMergeTree | `start_time` | Individual span records |
 | `scores` | ReplacingMergeTree | `timestamp` | Feedback and rating scores |
-| `session_events` | MergeTree | `timestamp` | IDE session transcript events (powers the sessions UI) |
+| `session_events` | MergeTree | `timestamp` | harness session transcript events (powers the sessions UI) |
 | `audit_log` | MergeTree | `timestamp` | Audit trail entries |
 | `otel_logs` | MergeTree | `Timestamp` | OpenTelemetry log records |
 | `security_events` | MergeTree | `timestamp` | Security event records |

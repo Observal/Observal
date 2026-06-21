@@ -5,7 +5,7 @@
 
 # Config files
 
-Every file Observal reads or writes on the client (`~/.observal/`) and in each IDE's config directory.
+Every file Observal reads or writes on the client (`~/.observal/`) and in each harness's config directory.
 
 ## Client-side: `~/.observal/`
 
@@ -45,7 +45,7 @@ Override any field at runtime with `observal config set <key> <value>` or with a
 
 Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
 
-## IDE-side
+## harness-side
 
 ### Claude Code
 

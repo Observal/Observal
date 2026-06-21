@@ -17,7 +17,7 @@ Create, author, and publish agents. An agent bundles registry components (MCPs, 
 | [`agent my`](#observal-agent-my) | List your own agents (all statuses) |
 | [`agent show`](#observal-agent-show) | Show an agent's details and components |
 | [`agent install`](#observal-agent-install) | Get install config for an agent |
-| [`agent pull`](#observal-agent-pull) | Write agent config to IDE files |
+| [`agent pull`](#observal-agent-pull) | Write agent config to harness files |
 | [`agent delete`](#observal-agent-delete) | Delete an agent |
 | [`agent transfer-owner`](#observal-agent-transfer-owner) | Transfer ownership to another user |
 | [`agent unarchive`](#observal-agent-unarchive) | Restore an archived agent |
@@ -40,7 +40,7 @@ Three modes are supported: load from a JSON file, pass flags for non-interactive
 observal agent create
 observal agent create --from-file agent.json
 observal agent create --name my-agent --prompt "You are..." --model claude-sonnet-4
-observal agent create --name my-agent --prompt-file ./PROMPT.md --ide kiro --ide claude-code
+observal agent create --name my-agent --prompt-file ./PROMPT.md --harness kiro --harness claude-code
 ```
 
 | Option | Description |
@@ -52,7 +52,7 @@ observal agent create --name my-agent --prompt-file ./PROMPT.md --ide kiro --ide
 | `--prompt`, `-p` | System prompt text |
 | `--prompt-file` | Read system prompt from a file |
 | `--model`, `-m` | Model name (e.g. claude-sonnet-4) |
-| `--ide` | Supported IDEs (repeat for multiple) |
+| `--harness` | Supported harnesses (repeat for multiple) |
 
 ---
 
@@ -130,17 +130,17 @@ Prints the agent's metadata and every bundled component.
 Get install config for an agent.
 
 ```bash
-observal agent install <id-or-name> --ide <ide>
+observal agent install <id-or-name> --harness <harness>
 ```
 
 ---
 
 ## `observal agent pull`
 
-Fetch agent config and write IDE files to disk.
+Fetch agent config and write harness files to disk.
 
 ```bash
-observal agent pull <id-or-name> --ide <ide>
+observal agent pull <id-or-name> --harness <harness>
 ```
 
 ---

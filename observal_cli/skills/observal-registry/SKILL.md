@@ -53,7 +53,7 @@ After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--intera
 observal registry mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
 ```
 
-Without `--git`, opens interactive JSON paste (accepts IDE config block, named config, bare config, or HTTP transport JSON). Press Enter on empty line to submit.
+Without `--git`, opens interactive JSON paste (accepts harness config block, named config, bare config, or HTTP transport JSON). Press Enter on empty line to submit.
 
 ### Skill
 
@@ -71,7 +71,7 @@ observal registry skill submit --skill-md ./SKILL.md --script ./run.sh --deliver
 observal registry skill submit --skill-md ./SKILL.md --script ./scripts/lint.sh --script ./scripts/test.sh --delivery-mode registry_direct
 ```
 
-On install, registry_direct skills write `<skill-name>/SKILL.md` and `<skill-name>/scripts/<filename>` into the IDE skills directory.
+On install, registry_direct skills write `<skill-name>/SKILL.md` and `<skill-name>/scripts/<filename>` into the harness skills directory.
 
 **Decision guide:**
 - Use git-based when: you have a public repo, want CI on updates, need multi-file skills
@@ -114,18 +114,18 @@ All types support `--draft` (save without review) and `--submit NAME` (submit ex
 ## Procedure: Install Component
 
 ```bash
-observal registry mcp install NAME --ide kiro
-observal registry mcp install NAME --ide claude-code --raw
-observal registry mcp install NAME --ide cursor --version 2.1.0
-observal registry skill install NAME --ide kiro --scope user
-observal registry skill install NAME --ide claude-code --scope project
-observal registry skill install NAME --ide claude-code --version 1.2.0
-observal registry hook install NAME --ide kiro
-observal registry hook install NAME --ide claude-code --platform darwin --dir .
+observal registry mcp install NAME --harness kiro
+observal registry mcp install NAME --harness claude-code --raw
+observal registry mcp install NAME --harness cursor --version 2.1.0
+observal registry skill install NAME --harness kiro --scope user
+observal registry skill install NAME --harness claude-code --scope project
+observal registry skill install NAME --harness claude-code --version 1.2.0
+observal registry hook install NAME --harness kiro
+observal registry hook install NAME --harness claude-code --platform darwin --dir .
 ```
 
 **Flags (all install commands):**
-- `--ide` (required): target IDE
+- `--harness` (required): target harness
 - `--version <semver>`: install a specific version instead of latest
 - `--raw`: output JSON only (MCP)
 - `--scope user|project`: install scope (skill)

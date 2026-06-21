@@ -57,7 +57,7 @@ Requires typing `confirm` (not `--yes`). Selective flags:
 
 Use **only** when a command exits with `Connection failed` or `Not configured`.
 
-| IDE | User-scope path | Project-scope path |
+| harness | User-scope path | Project-scope path |
 |---|---|---|
 | Claude Code | `~/.claude/agents/<name>.md` | `.claude/agents/<name>.md` |
 | Kiro | `~/.kiro/agents/<name>.json` | `.kiro/agents/<name>.json` |

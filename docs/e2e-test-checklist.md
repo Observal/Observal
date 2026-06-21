@@ -15,7 +15,7 @@
 | 3 | Reviewer A | `reviewer` | Reviews components + agents via CLI |
 | 4 | Reviewer B | `reviewer` | Reviews components + agents via UI |
 | 5 | User A | `user` | Submits components, creates agents |
-| 6 | User B | `user` | Pulls agents, tests in IDEs, leaves ratings |
+| 6 | User B | `user` | Pulls agents, tests in harnesses, leaves ratings |
 | 7 | User C | `user` | Also pulls agents (verifies download count increments), verifies registry visibility |
 
 ---
@@ -113,15 +113,15 @@
 
 ## 11. User B - Agent Pull & Downloads
 - [ ] Log in as User B via CLI (`observal auth login`)
-- [ ] Pull/install an agent via CLI (`observal agent pull <agent> --ide <ide>`)
+- [ ] Pull/install an agent via CLI (`observal agent pull <agent> --harness <harness>`)
 - [ ] Verify download count increases (0 → 1)
 
 ## 12. User C - Agent Pull & Downloads
 - [ ] Log in as User C via CLI (`observal auth login`)
-- [ ] Pull/install the same agent via CLI (`observal agent pull <agent> --ide <ide>`)
+- [ ] Pull/install the same agent via CLI (`observal agent pull <agent> --harness <harness>`)
 - [ ] Verify download count increases (1 → 2)
 
-## 13. User B - Multi-IDE Long Prompt Test
+## 13. User B - Multi-harness Long Prompt Test
 - [ ] Test a long prompt involving multiple steps and tool calls in:
   - [ ] Cursor
   - [ ] Kiro
@@ -133,7 +133,7 @@
 
 ## 14. User B - Self Traces
 - [ ] Check that User B can see their own traces
-- [ ] Verify traces appear for each IDE tested
+- [ ] Verify traces appear for each harness tested
 
 ## 15. Admin - Multi-User Traces
 - [ ] Log in as Admin
@@ -149,10 +149,10 @@
 - [ ] Verify aggregate rating summary displays correctly
 
 ## 17. CLI -- Scan, Doctor & Patch
-- [ ] Run `observal scan` to discover IDE configs (read-only)
-- [ ] Run `observal doctor patch --all --all-ides --dry-run` to preview instrumentation
-- [ ] Run `observal doctor patch --all --all-ides` to instrument IDEs
-- [ ] Run `observal self doctor` to check IDE compatibility
+- [ ] Run `observal scan` to discover harness configs (read-only)
+- [ ] Run `observal doctor patch --all --all-harnesses --dry-run` to preview instrumentation
+- [ ] Run `observal doctor patch --all --all-harnesses` to instrument harnesses
+- [ ] Run `observal self doctor` to check harness compatibility
 
 ## 18. Admin - Agent Registry Management
 - [ ] Log in as Admin
@@ -254,11 +254,11 @@ Run sections 20–30 once with Case A, then reset and repeat with Case B.
 ## 25. User B - Pull Updated Agent & Verify New Version
 
 - [ ] Log in as User B via CLI (`observal auth login`)
-- [ ] Run `observal agent pull <agent-slug> --ide <ide>` (note: command moved from `observal pull`)
+- [ ] Run `observal agent pull <agent-slug> --harness <harness>` (note: command moved from `observal pull`)
 - [ ] Verify the pulled config reflects the NEW version's changes (updated model, components, etc.)
-- [ ] Verify per-agent hooks are installed correctly for the chosen IDE
+- [ ] Verify per-agent hooks are installed correctly for the chosen harness
 - [ ] Verify download count increments
-- [ ] Use the pulled agent in an IDE → generate a trace
+- [ ] Use the pulled agent in an harness → generate a trace
 - [ ] Verify the trace shows the correct agent version (agent name should reflect the new version)
 - [ ] Switch to Admin → verify the trace's agent_version matches what was pulled
 
@@ -281,12 +281,12 @@ Run sections 20–30 once with Case A, then reset and repeat with Case B.
 
 - [ ] Log in as Admin → Settings → enable "Registered Agents Only"
 - [ ] Switch to User B
-- [ ] Use an IDE with a **registered** agent → generate a trace
+- [ ] Use an harness with a **registered** agent → generate a trace
 - [ ] Verify the trace appears in User B's trace list
-- [ ] Use an IDE with an **unregistered** agent (any agent not in the registry) → generate activity
+- [ ] Use an harness with an **unregistered** agent (any agent not in the registry) → generate activity
 - [ ] Verify **no trace** is ingested for the unregistered agent
 - [ ] Run `observal scan` → verify it warns/skips unregistered agents
-- [ ] Run `observal doctor patch --all --all-ides` → verify it only instruments registered agents
+- [ ] Run `observal doctor patch --all --all-harnesses` → verify it only instruments registered agents
 - [ ] Switch to Admin → verify traces only exist for registered agent activity
 
 ---
@@ -332,9 +332,9 @@ Run sections 20–30 once with Case A, then reset and repeat with Case B.
 ## 29. Auth - Token Revocation Stops Traces
 
 - [ ] Log in as User B via CLI (`observal auth login`)
-- [ ] Use an IDE with an agent → verify traces are being captured
+- [ ] Use an harness with an agent → verify traces are being captured
 - [ ] Run `observal auth logout`
-- [ ] Use the same IDE with the same agent → generate activity
+- [ ] Use the same harness with the same agent → generate activity
 - [ ] Verify **no new traces** appear (token revoked server-side, telemetry rejected)
 
 ---

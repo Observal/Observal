@@ -48,7 +48,7 @@ The API applies pending Alembic migrations automatically on startup. Watch the A
 ```bash
 docker logs -f observal-api
 # INFO - Running migrations...
-# INFO - Migration 0015_* -> 0016_add_ide_feature_fields.py applied.
+# INFO - Migration 0015_* -> 0016_add_harness_capability_fields.py applied.
 # INFO - Database up to date.
 ```
 

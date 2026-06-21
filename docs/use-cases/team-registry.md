@@ -76,9 +76,9 @@ After logging in, they can:
 
 ```bash
 observal agent list                           # see every agent the team has published
-observal agent pull team-reviewer --ide claude-code # install one
+observal agent pull team-reviewer --harness claude-code # install one
 observal scan                                 # discover what they have installed
-observal doctor patch --all --all-ides        # instrument everything
+observal doctor patch --all --all-harnesses        # instrument everything
 ```
 
 ## Review workflow
@@ -111,7 +111,7 @@ observal ops top --type mcp             # hottest MCP servers
 observal ops overview                   # summary stats
 ```
 
-Filters in the web UI let you slice by user, agent, IDE, and time range.
+Filters in the web UI let you slice by user, agent, harness, and time range.
 
 ## Enterprise concerns
 

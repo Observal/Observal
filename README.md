@@ -40,7 +40,7 @@
 
 ## What Observal is for
 
-Observal is for teams doing context engineering across AI coding tools. If your organization maintains Skills, AGENTS files, MCP servers, hooks, prompts, sandboxes, or subagent definitions, Observal gives you one place to package them into versioned agents, publish them to a registry, and install them into the IDE or harness your developers use.
+Observal is for teams doing context engineering across AI coding tools. If your organization maintains Skills, AGENTS files, MCP servers, hooks, prompts, sandboxes, or subagent definitions, Observal gives you one place to package them into versioned agents, publish them to a registry, and install them into the harness or harness your developers use.
 
 Define an agent once. Observal renders the right configuration for Claude Code, Cursor, Kiro, Pi, Copilot, Codex, OpenCode, and other supported tools. As teams use those agents, Observal turns real usage into insights about which prompts, skills, tools, and policies are helping.
 
@@ -48,15 +48,15 @@ Define an agent once. Observal renders the right configuration for Claude Code, 
 
 - **Package context into reusable agents:** Bundle Skills, MCP servers, hooks, prompts, sandboxes, and policy into one versioned unit.
 - **Run a governed registry:** Review submissions, approve internal agents, inspect version diffs, and give developers one trusted place to install from.
-- **Render across coding tools:** Generate the correct config for each supported IDE instead of maintaining separate setup instructions for every harness.
+- **Render across coding tools:** Generate the correct config for each supported harness instead of maintaining separate setup instructions for every harness.
 - **Learn what works:** Use real adoption and session data to find which agents, tools, prompts, and workflows are helping teams.
 - **Replay sessions when needed:** Use traces as evidence for debugging, review, audits, and deeper analysis without making observability the main workflow.
 
 ---
 
-## Supported IDEs
+## Supported harnesses
 
-| IDE |
+| harness |
 |-----|
 | Claude Code |
 | Kiro |
@@ -67,7 +67,7 @@ Define an agent once. Observal renders the right configuration for Claude Code, 
 | OpenCode |
 | Antigravity CLI |
 
-One command to install any agent into any supported IDE. The config files are generated per-IDE automatically.
+One command to install any agent into any supported harness. The config files are generated per-harness automatically.
 
 ---
 
@@ -108,16 +108,16 @@ uv tool install observal-cli
 # or: pipx install observal-cli
 ```
 
-### 3. Connect your IDE
+### 3. Connect your harness
 
 ```bash
 observal auth login
 observal doctor --patch
 ```
 
-This authenticates with your server, detects your IDE, installs telemetry hooks, starts capturing sessions automatically, and prepares it for agent installs and registry commands.
+This authenticates with your server, detects your harness, installs telemetry hooks, starts capturing sessions automatically, and prepares it for agent installs and registry commands.
 
-Once logged in, run `/observal` inside your IDE and it takes the wheel. Pull agents, submit components, browse the registry, run diagnostics:
+Once logged in, run `/observal` inside your harness and it takes the wheel. Pull agents, submit components, browse the registry, run diagnostics:
 
 ```
 /observal pull security-auditor
@@ -133,15 +133,15 @@ Or just tell your agent what you want and it figures out the right commands.
 
 ### Agents are portable context packages
 
-An agent bundles 5 component types into a single installable package: **MCP servers**, **skills**, **hooks**, **prompts**, and **sandboxes**. You define the agent once, publish it to the registry, and Observal generates the right config files for whichever supported IDE or harness the user runs.
+An agent bundles 5 component types into a single installable package: **MCP servers**, **skills**, **hooks**, **prompts**, and **sandboxes**. You define the agent once, publish it to the registry, and Observal generates the right config files for whichever supported harness or harness the user runs.
 
 ```bash
-observal pull security-auditor --ide pi
+observal pull security-auditor --harness pi
 ```
 
 ### The registry is the distribution layer
 
-Browse published agents, see which IDEs they support, check download counts and ratings, and install with one command. Admins review submissions before they go live. Version diffs show exactly what changed between releases, so teams can safely evolve shared context.
+Browse published agents, see which harnesses they support, check download counts and ratings, and install with one command. Admins review submissions before they go live. Version diffs show exactly what changed between releases, so teams can safely evolve shared context.
 
 ### Insights show what is helping
 
@@ -155,11 +155,11 @@ When you need to debug, audit, or understand a result, Observal can replay the f
 
 ## Agent Registry
 
-**Browse, search, and install agents with IDE compatibility badges:**
+**Browse, search, and install agents with harness compatibility badges:**
 
 ![Agent registry with grid view](docs/img/registry.png)
 
-**Build agents visually with live config preview for every IDE:**
+**Build agents visually with live config preview for every harness:**
 
 ![Agent Builder with preview panel](docs/img/builder.png)
 

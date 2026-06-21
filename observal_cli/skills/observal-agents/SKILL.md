@@ -23,7 +23,14 @@ owner: observal
 
 ## Procedure: Create Agent
 
-Required: `--name`, `--description`, `--prompt`. Optional: `--model` (default: `claude-sonnet-4`), `--ide` (repeatable), `--prompt-file`, `--from-file`.
+Required: `--name`, `--description`, `--prompt`. Optional: `--model`, `--harness` (repeatable), `--prompt-file`, `--from-file`.
+
+Before choosing a model, query the registry for every selected harness and pick an available exact model:
+
+```bash
+observal registry models --harness kiro --output plain
+observal registry models --harness claude-code --output plain
+```
 
 > **WARNING:** Without `--name` and `--prompt`, the command launches an interactive wizard. Always pass at least `--name`, `--description`, and `--prompt`.
 
@@ -32,8 +39,8 @@ observal agent create \
   --name AGENT_NAME \
   --description 'Short description' \
   --prompt 'System prompt content' \
-  --model claude-sonnet-4 \
-  --ide kiro --ide claude-code
+  --model claude-sonnet-4-6 \
+  --harness kiro --harness claude-code
 ```
 
 Error branching:
@@ -53,13 +60,13 @@ Skips review queue. Overwrites in place.
    name: existing-agent-name
    version: "1.0.0"
    description: "Updated description"
-   model_name: claude-sonnet-4
+   model_name: claude-sonnet-4-6
    model_config_json: {}
-   models_by_ide: {}
+   models_by_harness: {}
    external_mcps: []
    prompt: |
      Updated system prompt here.
-   supported_ides:
+   supported_harnesses:
      - kiro
      - claude-code
    components: []
