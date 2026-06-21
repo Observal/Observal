@@ -65,6 +65,7 @@ def _agent_mock(status=AgentStatus.pending, **extra):
     m.rejection_reason = None
     m.created_by = extra.get("created_by", uuid.uuid4())
     m.created_at = datetime.now(UTC)
+    m.deleted_at = None
     m.updated_at = datetime.now(UTC)
     m.components = extra.get("components", [])
     m.latest_version = extra.get("latest_version")

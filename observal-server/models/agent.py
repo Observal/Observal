@@ -80,7 +80,6 @@ class AgentVersion(Base):
 
 class Agent(Base):
     __tablename__ = "agents"
-    __table_args__ = (UniqueConstraint("name", name="uq_agents_name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -97,10 +96,21 @@ class Agent(Base):
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_agents_active_name",
+            "name",
+            unique=True,
+            postgresql_where=deleted_at.is_(None),
+            sqlite_where=deleted_at.is_(None),
+        ),
     )
 
     versions: Mapped[list["AgentVersion"]] = relationship(

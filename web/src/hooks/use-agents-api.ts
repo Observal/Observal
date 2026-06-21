@@ -41,6 +41,14 @@ export function useArchivedAgents(enabled = true) {
   });
 }
 
+export function useDeletedAgents(enabled = true) {
+  return useQuery({
+    queryKey: ["registry", "agents", "deleted"],
+    queryFn: () => registry.deletedAgents(),
+    enabled,
+  });
+}
+
 export function useAgentResolve(id: string) {
   return useQuery({
     queryKey: ["agent-resolve", id],
@@ -110,6 +118,34 @@ export function useUnarchiveAgent() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to restore agent");
+    },
+  });
+}
+
+export function useRestoreDeletedAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; name?: string }) => registry.restoreDeletedAgent(vars.id, vars.name ? { name: vars.name } : undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["registry", "agents"] });
+      toast.success("Agent restored");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to restore agent");
+    },
+  });
+}
+
+export function useDeleteAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => registry.delete("agents", id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["registry", "agents"] });
+      toast.success("Agent deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to delete agent");
     },
   });
 }

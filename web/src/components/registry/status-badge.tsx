@@ -16,6 +16,7 @@ const statusConfig: Record<string, { bg: string; text: string; dot?: string; pin
   completed: { bg: "bg-light-green",  text: "text-dark-green" },
   success:   { bg: "bg-light-green",  text: "text-dark-green" },
   archived:  { bg: "bg-light-yellow", text: "text-dark-yellow" },
+  deleted:   { bg: "bg-light-red",    text: "text-dark-red" },
 };
 
 const fallback = { bg: "bg-muted", text: "text-muted-foreground" };

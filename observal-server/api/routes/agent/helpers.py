@@ -27,6 +27,7 @@ async def _load_agent(
     prefer_user_id: uuid.UUID | None = None,
     org_id: uuid.UUID | None = None,
     include_all_statuses: bool = False,
+    include_deleted: bool = False,
 ) -> Agent | None:
     """Load an agent by UUID, prefix, or name with eager loading.
 
@@ -38,16 +39,20 @@ async def _load_agent(
     Set *include_all_statuses* to find agents regardless of version status
     (needed for unarchive, delete, etc.).
     """
+    conditions = list(extra_conditions or [])
+    if not include_deleted:
+        conditions.append(Agent.deleted_at.is_(None))
+
     try:
-        return await resolve_prefix_id(Agent, agent_id, db, extra_conditions=extra_conditions)
+        return await resolve_prefix_id(Agent, agent_id, db, extra_conditions=conditions)
     except HTTPException:
         pass
 
     # Try the caller's own agent first
     if prefer_user_id is not None:
         stmt = select(Agent).where(Agent.name == agent_id, Agent.created_by == prefer_user_id)
-        if extra_conditions:
-            stmt = stmt.where(*extra_conditions)
+        if conditions:
+            stmt = stmt.where(*conditions)
         mine = (await db.execute(stmt)).scalar_one_or_none()
         if mine:
             return mine
@@ -56,8 +61,8 @@ async def _load_agent(
     stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(Agent.name == agent_id)
     if not include_all_statuses:
         stmt = stmt.where(AgentVersion.status == AgentStatus.approved)
-    if extra_conditions:
-        stmt = stmt.where(*extra_conditions)
+    if conditions:
+        stmt = stmt.where(*conditions)
     if org_id is not None:
         stmt = stmt.where(Agent.owner_org_id == org_id)
     results = (await db.execute(stmt)).scalars().all()

@@ -425,8 +425,10 @@ export const registry = {
 		),
 	my: (type?: RegistryType) => get<RegistryItem[]>(`/${type ?? "agents"}/my`),
 	archived: () => get<RegistryItem[]>("/agents/archived"),
+	deletedAgents: () => get<RegistryItem[]>("/agents/deleted"),
 	archive: (id: string) => patch(`/agents/${id}/archive`),
 	unarchive: (id: string) => patch(`/agents/${id}/unarchive`),
+	restoreDeletedAgent: (id: string, body?: { name?: string }) => patch(`/agents/${id}/restore`, body ?? {}),
 	archiveComponent: (type: RegistryType, id: string) => patch(`/${type}/${id}/archive`),
 	unarchiveComponent: (type: RegistryType, id: string) => patch(`/${type}/${id}/unarchive`),
 	draft: (body: unknown, type?: RegistryType) =>

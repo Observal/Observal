@@ -71,6 +71,7 @@ def _agent_mock(status=AgentStatus.pending, created_by=None, **extra):
     m.git_url = None
     m.created_by = created_by or uuid.uuid4()
     m.created_at = datetime.now(UTC)
+    m.deleted_at = None
     m.updated_at = datetime.now(UTC)
     m.components = extra.get("components", [])
     m.latest_version = MagicMock()
@@ -97,6 +98,7 @@ def _agent_mock(status=AgentStatus.pending, created_by=None, **extra):
         "unique_users",
         "created_by",
         "created_at",
+        "deleted_at",
         "updated_at",
     ]
     cols = []

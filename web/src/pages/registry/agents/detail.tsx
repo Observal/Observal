@@ -7,7 +7,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowDownToLine,
   Puzzle,
@@ -40,6 +40,7 @@ import {
   useGenerateInsight,
   useInsightsStatus,
   useArchiveAgent,
+  useDeleteAgent,
   useUnarchiveAgent,
 } from "@/hooks/use-api";
 import { getUserRole } from "@/lib/api";
@@ -359,10 +360,10 @@ function AgentVersionContents({
 
 function AgentDeleteButton({ agentId, agentName, onSuccess }: { agentId: string; agentName: string; onSuccess: () => void }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const archiveMutation = useArchiveAgent();
+  const deleteMutation = useDeleteAgent();
 
   function submit() {
-    archiveMutation.mutate(agentId, {
+    deleteMutation.mutate(agentId, {
       onSuccess: () => {
         setConfirmOpen(false);
         onSuccess();
@@ -372,7 +373,7 @@ function AgentDeleteButton({ agentId, agentName, onSuccess }: { agentId: string;
 
   return (
     <>
-      <Button variant="destructive" size="sm" className="h-8" onClick={() => setConfirmOpen(true)} disabled={archiveMutation.isPending}>
+      <Button variant="destructive" size="sm" className="h-8" onClick={() => setConfirmOpen(true)} disabled={deleteMutation.isPending}>
         <Trash2 className="mr-1 h-3.5 w-3.5" />
         Delete
       </Button>
@@ -383,12 +384,12 @@ function AgentDeleteButton({ agentId, agentName, onSuccess }: { agentId: string;
             <DialogTitle>Delete {agentName}?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            This archives the agent and hides it from registry lists. It can be restored later.
+            This soft deletes the agent, hides it from registry lists, and frees the name for reuse.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={submit} disabled={archiveMutation.isPending}>
-              {archiveMutation.isPending ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Deleting...</> : "Delete"}
+            <Button variant="destructive" onClick={submit} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Deleting...</> : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -597,6 +598,7 @@ function InsightsTab({ agentId, agentVersion }: { agentId: string; agentVersion?
 
 export default function AgentDetailPage() {
   const { agentId: id } = useParams({ from: "/_authed/agents/$agentId" });
+  const navigate = useNavigate();
   const {
     data: agent,
     isLoading,
@@ -1047,7 +1049,7 @@ export default function AgentDetailPage() {
                       <div className="flex flex-wrap gap-2">
                         <AgentArchiveButton agentId={id} agentName={agentName} status={agentStatus} onSuccess={() => refetch()} />
                         {agentStatus === "approved" && (
-                          <AgentDeleteButton agentId={id} agentName={agentName} onSuccess={() => refetch()} />
+                          <AgentDeleteButton agentId={id} agentName={agentName} onSuccess={() => navigate({ to: "/agents" })} />
                         )}
                       </div>
                     </div>

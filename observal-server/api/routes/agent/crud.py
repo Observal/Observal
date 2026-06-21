@@ -4,6 +4,7 @@
 """Agent CRUD routes: create, list, get, update, delete, archive, unarchive."""
 
 import uuid  # noqa: TC003
+from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, Query, Response
 from loguru import logger as optic
@@ -24,12 +25,12 @@ from models.agent import (
     AgentVersion,
 )
 from models.agent_component import AgentComponent
-from models.download import AgentDownloadRecord
 from models.skill import SkillListing
 from models.user import User, UserRole
 from schemas.agent import (
     AgentCreateRequest,
     AgentResponse,
+    AgentRestoreRequest,
     AgentSummary,
     AgentUpdateRequest,
 )
@@ -95,7 +96,7 @@ async def create_agent(
     # Pre-check uniqueness before insert for a clean 409 (the DB constraint
     # remains the source of truth, but checking first avoids triggering an
     # IntegrityError mid-flush which would corrupt the savepoint state).
-    existing = await db.execute(select(Agent.id).where(Agent.name == req.name))
+    existing = await db.execute(select(Agent.id).where(Agent.name == req.name, Agent.deleted_at.is_(None)))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=409,
@@ -190,7 +191,7 @@ async def create_agent(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        if "uq_agents_name" in str(exc.orig) or "uq_agents_name_created_by" in str(exc.orig):
+        if "uq_agents_active_name" in str(exc.orig) or "uq_agents_name" in str(exc.orig):
             raise HTTPException(
                 status_code=409,
                 detail=f"An agent named '{req.name}' already exists. Pick a different name.",
@@ -227,7 +228,7 @@ async def list_agents(
     optic.debug("listing agents")
     from models.feedback import Feedback
 
-    base_filter = AgentVersion.status == AgentStatus.approved
+    base_filter = (AgentVersion.status == AgentStatus.approved) & (Agent.deleted_at.is_(None))
     search_filter = None
     if search:
         safe = escape_like(search)
@@ -311,7 +312,11 @@ async def my_agents(
     optic.debug("my_agents called")
     from models.feedback import Feedback
 
-    stmt = select(Agent).where(Agent.created_by == current_user.id).order_by(Agent.created_at.desc())
+    stmt = (
+        select(Agent)
+        .where(Agent.created_by == current_user.id, Agent.deleted_at.is_(None))
+        .order_by(Agent.created_at.desc())
+    )
     agents = (await db.execute(stmt)).scalars().all()
 
     agent_ids = [a.id for a in agents]
@@ -359,7 +364,7 @@ async def archived_agents(
     stmt = (
         select(Agent)
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-        .where(AgentVersion.status == AgentStatus.archived)
+        .where(AgentVersion.status == AgentStatus.archived, Agent.deleted_at.is_(None))
         .order_by(Agent.created_at.desc())
     )
     if current_user.org_id is not None:
@@ -404,6 +409,68 @@ async def archived_agents(
             created_by_email=email_map.get(a.created_by, ""),
             created_by_username=username_map.get(a.created_by),
             created_at=a.created_at,
+            updated_at=a.updated_at,
+        )
+        for a in agents
+    ]
+
+
+@router.get("/deleted", response_model=list[AgentSummary])
+async def deleted_agents(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    optic.debug("deleted_agents called")
+    from models.feedback import Feedback
+
+    is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
+    stmt = select(Agent).where(Agent.deleted_at.is_not(None)).order_by(Agent.deleted_at.desc())
+    if is_admin:
+        if current_user.org_id is not None:
+            stmt = stmt.where(Agent.owner_org_id == current_user.org_id)
+    else:
+        stmt = stmt.where(Agent.created_by == current_user.id)
+
+    agents = (await db.execute(stmt)).scalars().all()
+
+    agent_ids = [a.id for a in agents]
+    rating_map: dict[uuid.UUID, float] = {}
+    if agent_ids:
+        rows = await db.execute(
+            select(Feedback.listing_id, func.avg(Feedback.rating))
+            .where(Feedback.listing_id.in_(agent_ids), Feedback.listing_type == "agent")
+            .group_by(Feedback.listing_id)
+        )
+        rating_map = {r[0]: round(float(r[1]), 2) for r in rows.all()}
+
+    user_ids = {a.created_by for a in agents}
+    email_map: dict[uuid.UUID, str] = {}
+    username_map: dict[uuid.UUID, str | None] = {}
+    if user_ids:
+        rows = await db.execute(select(User.id, User.email, User.username).where(User.id.in_(user_ids)))
+        for r in rows.all():
+            email_map[r[0]] = r[1]
+            username_map[r[0]] = r[2]
+
+    return [
+        AgentSummary(
+            id=a.id,
+            name=a.name,
+            version=a.version,
+            description=a.description,
+            owner=a.owner,
+            model_name=a.model_name,
+            supported_ides=a.supported_ides,
+            status=a.status,
+            rejection_reason=a.rejection_reason,
+            download_count=a.download_count,
+            average_rating=rating_map.get(a.id),
+            component_count=len(a.components),
+            created_by=a.created_by,
+            created_by_email=email_map.get(a.created_by, ""),
+            created_by_username=username_map.get(a.created_by),
+            created_at=a.created_at,
+            deleted_at=a.deleted_at,
             updated_at=a.updated_at,
         )
         for a in agents
@@ -507,6 +574,13 @@ async def update_agent(
         from services.versioning import bump_version
 
         req.version = bump_version(agent.version, req.version_bump_type)
+
+    if req.name is not None and req.name != agent.name:
+        existing = await db.execute(
+            select(Agent.id).where(Agent.name == req.name, Agent.deleted_at.is_(None), Agent.id != agent.id)
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise HTTPException(status_code=409, detail=f"An active agent named '{req.name}' already exists.")
 
     for field in (
         "name",
@@ -654,8 +728,7 @@ async def delete_agent(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.debug("deleting agent")
-    from models.feedback import Feedback
+    optic.debug("soft deleting agent")
 
     agent = await _load_agent(
         db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id, include_all_statuses=True
@@ -668,35 +741,8 @@ async def delete_agent(
     perm = get_effective_agent_permission(agent, current_user)
     if perm != "owner" and not is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    if agent.status == AgentStatus.approved and not is_admin:
-        raise HTTPException(status_code=400, detail="Cannot delete an approved listing. Contact an admin.")
 
-    # Delete related records with correct type filters
-    for r in (
-        (await db.execute(select(Feedback).where(Feedback.listing_id == agent.id, Feedback.listing_type == "agent")))
-        .scalars()
-        .all()
-    ):
-        await db.delete(r)
-    for r in (
-        (await db.execute(select(AgentDownloadRecord).where(AgentDownloadRecord.agent_id == agent.id))).scalars().all()
-    ):
-        await db.delete(r)
-    # Break circular FK (Agent.latest_version_id ↔ AgentVersion.agent_id)
-    # then delete via raw SQL to avoid ORM cascade circular dependency.
-    from sqlalchemy import delete as sql_delete
-
-    agent_id_str = str(agent.id)
-    agent_name = agent.name
-
-    # Null out the self-referential FK first
-    agent.latest_version_id = None
-    await db.flush()
-
-    # Delete versions via SQL (DB-level CASCADE handles children: components, goals)
-    await db.execute(sql_delete(AgentVersion).where(AgentVersion.agent_id == agent.id))
-    # Delete agent via SQL (avoids ORM cascade re-triggering on stale identity map)
-    await db.execute(sql_delete(Agent).where(Agent.id == agent.id))
+    agent.deleted_at = datetime.now(UTC)
     await db.commit()
 
     emit_registry_event(
@@ -704,11 +750,59 @@ async def delete_agent(
         user_id=str(current_user.id),
         user_email=current_user.email,
         user_role=current_user.role.value,
-        agent_id=agent_id_str,
-        resource_name=agent_name,
+        agent_id=str(agent.id),
+        resource_name=agent.name,
     )
 
-    return {"deleted": agent_id_str}
+    return {"deleted": str(agent.id), "name": agent.name, "deleted_at": agent.deleted_at.isoformat()}
+
+
+@router.patch("/{agent_id}/restore")
+async def restore_deleted_agent(
+    agent_id: str,
+    req: AgentRestoreRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    optic.trace("agent_id={}", agent_id)
+    agent = await _load_agent(
+        db,
+        agent_id,
+        prefer_user_id=current_user.id,
+        org_id=current_user.org_id,
+        include_all_statuses=True,
+        include_deleted=True,
+    )
+    if not agent or agent.deleted_at is None:
+        raise HTTPException(status_code=404, detail="Deleted agent not found")
+    is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
+    if not is_admin and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
+        raise HTTPException(status_code=404, detail="Deleted agent not found")
+    perm = get_effective_agent_permission(agent, current_user)
+    if perm != "owner" and not is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    restore_name = req.name if req and req.name else agent.name
+    existing = await db.execute(
+        select(Agent.id).where(Agent.name == restore_name, Agent.deleted_at.is_(None), Agent.id != agent.id)
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="An active agent already uses this name. Restore with a new name.")
+
+    agent.name = restore_name
+    agent.deleted_at = None
+    await db.commit()
+
+    emit_registry_event(
+        action="agent.restore",
+        user_id=str(current_user.id),
+        user_email=current_user.email,
+        user_role=current_user.role.value,
+        agent_id=str(agent.id),
+        resource_name=agent.name,
+    )
+
+    return {"id": str(agent.id), "name": agent.name, "status": agent.status}
 
 
 @router.patch("/{agent_id}/archive")

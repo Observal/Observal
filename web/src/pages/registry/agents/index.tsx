@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRegistryList, useMyAgents, useArchivedAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useSubmitDraft } from "@/hooks/use-api";
+import { useRegistryList, useMyAgents, useArchivedAgents, useDeletedAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useDeleteAgent, useRestoreDeletedAgent, useSubmitDraft } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import {
@@ -68,24 +68,16 @@ const roleSub = (cb: () => void) => {
 
 function DeleteAgentButton({ agent }: { agent: RegistryItem }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const qc = useQueryClient();
+  const deleteMutation = useDeleteAgent();
   const { data: whoami } = useWhoami();
   const isAdmin = useSyncExternalStore(roleSub, () => hasMinRole(getUserRole(), "admin"), () => false);
   const canDelete = isAdmin || (whoami?.id && agent.created_by && whoami.id === String(agent.created_by));
 
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation();
-    setDeleting(true);
-    try {
-      await registry.delete("agents", agent.id);
-      qc.invalidateQueries({ queryKey: ["registry", "agents"] });
-      toast.success("Agent deleted");
-      setConfirmOpen(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete");
-      setDeleting(false);
-    }
+    deleteMutation.mutate(agent.id, {
+      onSuccess: () => setConfirmOpen(false),
+    });
   }
 
   if (!canDelete) return null;
@@ -117,12 +109,12 @@ function DeleteAgentButton({ agent }: { agent: RegistryItem }) {
             <DialogTitle>Delete {agent.name}?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            This will permanently delete this agent. This action cannot be undone.
+            This soft deletes the agent, hides it from registry lists, and frees the name for reuse.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Deleting..." : "Delete"}
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -188,6 +180,23 @@ function ArchiveAgentButton({ agent }: { agent: RegistryItem }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function RestoreDeletedAgentButton({ agent }: { agent: RegistryItem }) {
+  const restoreMutation = useRestoreDeletedAgent();
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 text-xs"
+      onClick={() => restoreMutation.mutate({ id: agent.id })}
+      disabled={restoreMutation.isPending}
+    >
+      <ArchiveRestore className="mr-1 h-3 w-3" />
+      {restoreMutation.isPending ? "Restoring..." : "Restore"}
+    </Button>
   );
 }
 
@@ -429,9 +438,11 @@ function AgentListContent() {
   const { data: myAgents } = useMyAgents();
   const isAdmin = useSyncExternalStore(roleSub, () => hasMinRole(getUserRole(), "admin"), () => false);
   const { data: allArchivedAgents } = useArchivedAgents(isAdmin);
+  const { data: deletedAgents = [] } = useDeletedAgents();
   const submitDraft = useSubmitDraft();
   const [draftsExpanded, setDraftsExpanded] = useState(true);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [deletedExpanded, setDeletedExpanded] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const qc = useQueryClient();
 
@@ -665,6 +676,62 @@ function AgentListContent() {
                     <div className="flex items-center gap-2 shrink-0">
                       <UnarchiveAgentButton agent={agent} />
                       <DeleteAgentButton agent={agent} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Deleted */}
+        {deletedAgents.length > 0 && (
+          <div className="rounded-lg border border-border bg-card">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-accent/40 transition-colors rounded-t-lg"
+              onClick={() => setDeletedExpanded((prev) => !prev)}
+            >
+              {deletedExpanded ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+              <Trash2 className="h-4 w-4 text-muted-foreground" />
+              Deleted
+              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+                {deletedAgents.length}
+              </span>
+            </button>
+            {deletedExpanded && (
+              <div className="divide-y divide-border border-t">
+                {deletedAgents.map((agent) => (
+                  <div key={agent.id} className="flex items-center gap-4 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-medium">{agent.name}</p>
+                        <StatusBadge status="deleted" />
+                      </div>
+                      {agent.description && (
+                        <p className="truncate text-xs text-muted-foreground mt-0.5">
+                          {agent.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        {isAdmin && ((agent.created_by_email as string) || (agent.created_by_username as string)) && (
+                          <p className="text-[11px] text-muted-foreground">
+                            by {(agent.created_by_username as string) || (agent.created_by_email as string)}
+                          </p>
+                        )}
+                        {typeof agent.deleted_at === "string" && (
+                          <p className="text-[11px] text-muted-foreground">
+                            deleted {new Date(agent.deleted_at).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <RestoreDeletedAgentButton agent={agent} />
                     </div>
                   </div>
                 ))}

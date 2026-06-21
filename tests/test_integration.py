@@ -286,7 +286,7 @@ class TestAgentLifecycle:
     @pytest.mark.asyncio
     async def test_delete_agent(self, client, admin_headers):
         # Create
-        await client.post(
+        created = await client.post(
             "/api/v1/agents",
             headers=admin_headers,
             json={
@@ -298,11 +298,33 @@ class TestAgentLifecycle:
                 "prompt": "You are a test agent.",
             },
         )
+        agent_id = created.json()["id"]
         r = await client.delete(f"/api/v1/agents/{self.agent_name}", headers=admin_headers)
         assert r.status_code == 200
 
         r2 = await client.get(f"/api/v1/agents/{self.agent_name}", headers=admin_headers)
         assert r2.status_code == 404
+
+        deleted = await client.get("/api/v1/agents/deleted", headers=admin_headers)
+        assert deleted.status_code == 200
+        assert self.agent_name in {a["name"] for a in deleted.json()}
+
+        recreated = await client.post(
+            "/api/v1/agents",
+            headers=admin_headers,
+            json={
+                "name": self.agent_name,
+                "description": "Reused name",
+                "version": "1.0.0",
+                "owner": "admin",
+                "model_name": "claude-sonnet-4-20250514",
+                "prompt": "You are a test agent.",
+            },
+        )
+        assert recreated.status_code == 200, recreated.text
+
+        restore = await client.patch(f"/api/v1/agents/{agent_id}/restore", headers=admin_headers, json={})
+        assert restore.status_code == 409
 
 
 # ── Prompt CRUD ──────────────────────────────────────────────────────────────

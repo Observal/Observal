@@ -152,6 +152,7 @@ class AgentResponse(BaseModel):
     created_by_email: str = ""
     created_by_username: str | None = None
     created_at: datetime
+    deleted_at: datetime | None = None
     updated_at: datetime
     mcp_links: list[McpLinkResponse] = []
     component_links: list[ComponentLinkResponse] = []
@@ -181,6 +182,7 @@ class AgentSummary(BaseModel):
     created_by_email: str = ""
     created_by_username: str | None = None
     created_at: datetime | None = None
+    deleted_at: datetime | None = None
     updated_at: datetime | None = None
     components_ready: bool = True
     blocking_components: list = []
@@ -238,6 +240,24 @@ class AgentVersionCreateRequest(BaseModel):
     def _validate_version(cls, v: str) -> str:
         if not validate_semver(v):
             raise ValueError(f"Invalid version '{v}'. Must be semver format: x.y.z (e.g. 1.0.0)")
+        return v
+
+
+class AgentRestoreRequest(BaseModel):
+    name: str | None = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if len(v) > 64:
+            raise ValueError("name must be at most 64 characters")
+        if not AGENT_NAME_REGEX.match(v):
+            raise ValueError(
+                f"Invalid name '{v}'. "
+                "Must start with a letter or digit and contain only lowercase letters, digits, hyphens, and underscores."
+            )
         return v
 
 
