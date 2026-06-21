@@ -1,91 +1,52 @@
-# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
-
-"""``observal registry models list`` - list the known model catalog."""
+"""``observal registry models`` - list registry-backed harness models."""
 
 from __future__ import annotations
 
 import json
 
 import typer
-from loguru import logger as optic
 from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import model_catalog
-from observal_cli.render import format_model
 
-models_app = typer.Typer(
-    name="models",
-    help="Inspect the model catalog (live from models.dev with offline fallback).",
-    no_args_is_help=True,
-)
+models_app = typer.Typer(name="models", help="Inspect registry-backed harness model data.", no_args_is_help=False)
+
+
+def _emit(harness: str | None, output: str) -> None:
+    rows = model_catalog.fetch_catalog(harness=harness).get("models") or []
+    if output == "json":
+        rprint(json.dumps(rows, indent=2))
+        return
+    if output == "plain":
+        for row in rows:
+            rprint(f"{row['harness']}\t{row['model_id']}\t{row.get('kind','exact')}\t{row.get('display_name','')}")
+        return
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("harness")
+    table.add_column("model_id", overflow="fold")
+    table.add_column("kind")
+    table.add_column("display")
+    for row in rows:
+        table.add_row(row["harness"], row["model_id"], row.get("kind", "exact"), row.get("display_name", ""))
+    rprint(table)
+    rprint(f"[dim]source: harness-registry, count: {len(rows)}[/dim]")
+
+
+@models_app.callback(invoke_without_command=True)
+def models(
+    ctx: typer.Context,
+    harness: str | None = typer.Option(None, "--harness", help="Filter to one harness."),
+    output: str = typer.Option("table", "--output", "-o", help="Output format: table | json | plain"),
+):
+    if ctx.invoked_subcommand is None:
+        _emit(harness, output)
 
 
 @models_app.command("list")
 def list_models(
-    ide: str | None = typer.Option(None, "--ide", help="Filter to models supported by this IDE."),
+    harness: str | None = typer.Option(None, "--harness", help="Filter to one harness."),
     output: str = typer.Option("table", "--output", "-o", help="Output format: table | json | plain"),
-    refresh: bool = typer.Option(False, "--refresh", help="Bypass the local 1h file cache and re-fetch."),
 ):
-    """Show models from the registry.
-
-    Source order: file cache (1h TTL), then GET /api/v1/models, then stale
-    file cache, then vendored offline mirror. The output footer shows
-    which source was used.
-
-    \b
-    Examples:
-      observal registry models list
-      observal registry models list --ide claude-code
-      observal registry models list --output json
-      observal registry models list --refresh          # Bypass local cache
-      observal registry models list --ide cursor -o plain
-    """
-    optic.trace("ide={}", ide)
-    catalog = model_catalog.fetch_catalog(refresh=refresh)
-    rows = catalog.get("models") or []
-    if ide:
-        rows = [m for m in rows if ide in (m.get("supported_ides") or [])]
-
-    if output == "json":
-        rprint(json.dumps(rows, indent=2, default=str))
-        return
-
-    if not rows:
-        rprint("[yellow]No models found.[/yellow]")
-        return
-
-    if output == "plain":
-        for m in rows:
-            primary, secondary, _ = format_model(m, disambiguate=True)
-            label = f"{primary} ({secondary})" if secondary else primary
-            ides = ",".join(m.get("supported_ides") or [])
-            rprint(f"{m.get('model_id', '')}\t{m.get('provider', '')}\t{label}\t{ides}")
-        return
-
-    table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("model_id", overflow="fold")
-    table.add_column("provider")
-    table.add_column("display")
-    table.add_column("ides")
-    table.add_column("released")
-
-    for m in rows:
-        primary, secondary, _ = format_model(m, disambiguate=True)
-        label = f"{primary} ({secondary})" if secondary else primary
-        ides = ", ".join(m.get("supported_ides") or [])
-        released = str(m.get("release_date") or "-")
-        deprecated = " [red](deprecated)[/red]" if m.get("deprecated") else ""
-        table.add_row(
-            m.get("model_id", "") + deprecated,
-            m.get("provider", ""),
-            label,
-            ides,
-            released,
-        )
-
-    rprint(table)
-    src = catalog.get("_source") or catalog.get("source") or "?"
-    degraded = " [yellow](degraded - using snapshot)[/yellow]" if catalog.get("degraded") else ""
-    rprint(f"[dim]source: {src}{degraded}, count: {len(rows)}[/dim]")
+    _emit(harness, output)

@@ -1,0 +1,72 @@
+{
+  "harness": "antigravity",
+  "models": [
+    {
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "id": "gemini-3.5-flash",
+      "kind": "exact",
+      "label": "Gemini 3.5 Flash",
+      "provider": "google"
+    },
+    {
+      "efforts": [
+        "low",
+        "high"
+      ],
+      "id": "gemini-3.1-pro",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro",
+      "provider": "google"
+    },
+    {
+      "id": "gemini-3-flash",
+      "kind": "exact",
+      "label": "Gemini 3 Flash",
+      "provider": "google"
+    },
+    {
+      "efforts": [
+        "thinking"
+      ],
+      "id": "claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6",
+      "provider": "anthropic"
+    },
+    {
+      "efforts": [
+        "thinking"
+      ],
+      "id": "claude-opus-4-6",
+      "kind": "exact",
+      "label": "Claude Opus 4.6",
+      "provider": "anthropic"
+    },
+    {
+      "efforts": [
+        "medium"
+      ],
+      "id": "gpt-oss-120b-maas",
+      "kind": "exact",
+      "label": "GPT-OSS 120B",
+      "provider": "openai"
+    },
+    {
+      "id": "antigravity-preview-05-2026",
+      "kind": "exact",
+      "label": "Antigravity Agent API",
+      "provider": "google"
+    },
+    {
+      "id": "gemini-enterprise:<model-id>",
+      "kind": "provider_source",
+      "label": "Gemini Enterprise Agent Platform model",
+      "provider": "google-cloud"
+    }
+  ],
+  "updated_at": "2026-06-21"
+}

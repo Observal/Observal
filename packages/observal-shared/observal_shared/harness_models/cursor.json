@@ -1,0 +1,120 @@
+{
+  "harness": "cursor",
+  "models": [
+    {
+      "id": "auto",
+      "kind": "exact",
+      "label": "auto",
+      "provider": "cursor"
+    },
+    {
+      "id": "composer-2.5",
+      "kind": "exact",
+      "label": "composer-2.5",
+      "provider": "cursor"
+    },
+    {
+      "id": "composer-2",
+      "kind": "exact",
+      "label": "composer-2",
+      "provider": "cursor"
+    },
+    {
+      "id": "gpt-5.5",
+      "kind": "exact",
+      "label": "gpt-5.5",
+      "provider": "cursor"
+    },
+    {
+      "id": "gpt-5.5-fast",
+      "kind": "exact",
+      "label": "gpt-5.5-fast",
+      "provider": "cursor"
+    },
+    {
+      "id": "gpt-5.4",
+      "kind": "exact",
+      "label": "gpt-5.4",
+      "provider": "cursor"
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "kind": "exact",
+      "label": "gpt-5.4-mini",
+      "provider": "cursor"
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "kind": "exact",
+      "label": "gpt-5.4-nano",
+      "provider": "cursor"
+    },
+    {
+      "id": "gpt-5.3-codex",
+      "kind": "exact",
+      "label": "gpt-5.3-codex",
+      "provider": "cursor"
+    },
+    {
+      "id": "gpt-5.3-codex-high",
+      "kind": "exact",
+      "label": "gpt-5.3-codex-high",
+      "provider": "cursor"
+    },
+    {
+      "id": "claude-fable-5",
+      "kind": "exact",
+      "label": "claude-fable-5",
+      "provider": "cursor"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "kind": "exact",
+      "label": "claude-opus-4-8",
+      "provider": "cursor"
+    },
+    {
+      "id": "claude-opus-4-8-fast",
+      "kind": "exact",
+      "label": "claude-opus-4-8-fast",
+      "provider": "cursor"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "claude-sonnet-4-6",
+      "provider": "cursor"
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "kind": "exact",
+      "label": "gemini-3.5-flash",
+      "provider": "cursor"
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "kind": "exact",
+      "label": "gemini-3.1-pro",
+      "provider": "cursor"
+    },
+    {
+      "id": "gemini-3-flash",
+      "kind": "exact",
+      "label": "gemini-3-flash",
+      "provider": "cursor"
+    },
+    {
+      "id": "grok-build-0.1",
+      "kind": "exact",
+      "label": "grok-build-0.1",
+      "provider": "cursor"
+    },
+    {
+      "id": "inherit",
+      "kind": "exact",
+      "label": "inherit",
+      "provider": "cursor"
+    }
+  ],
+  "updated_at": "2026-06-21"
+}

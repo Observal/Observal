@@ -1,0 +1,102 @@
+{
+  "harness": "codex",
+  "models": [
+    {
+      "id": "gpt-5.5",
+      "kind": "exact",
+      "label": "gpt-5.5",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.4",
+      "kind": "exact",
+      "label": "gpt-5.4",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "kind": "exact",
+      "label": "gpt-5.4-mini",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "kind": "exact",
+      "label": "gpt-5.4-nano",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.3-codex",
+      "kind": "exact",
+      "label": "gpt-5.3-codex",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.3-codex-spark",
+      "kind": "exact",
+      "label": "gpt-5.3-codex-spark",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.2",
+      "kind": "exact",
+      "label": "gpt-5.2",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.2-codex",
+      "kind": "exact",
+      "label": "gpt-5.2-codex",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.1",
+      "kind": "exact",
+      "label": "gpt-5.1",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.1-codex",
+      "kind": "exact",
+      "label": "gpt-5.1-codex",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.1-codex-max",
+      "kind": "exact",
+      "label": "gpt-5.1-codex-max",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.1-codex-mini",
+      "kind": "exact",
+      "label": "gpt-5.1-codex-mini",
+      "provider": "openai"
+    },
+    {
+      "id": "model_providers.<id>:<model>",
+      "kind": "provider_source",
+      "label": "Custom Codex model provider",
+      "provider": "custom"
+    },
+    {
+      "id": "amazon-bedrock:<bedrock-model-id>",
+      "kind": "provider_source",
+      "label": "Amazon Bedrock model",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "ollama:<model>",
+      "kind": "provider_source",
+      "label": "Ollama model",
+      "provider": "ollama"
+    },
+    {
+      "id": "lmstudio:<model>",
+      "kind": "provider_source",
+      "label": "LM Studio model",
+      "provider": "lmstudio"
+    }
+  ],
+  "updated_at": "2026-06-21"
+}

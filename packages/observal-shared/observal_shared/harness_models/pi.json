@@ -1,0 +1,5894 @@
+{
+  "harness": "pi",
+  "models": [
+    {
+      "id": "amazon-bedrock/amazon.nova-2-lite-v1:0",
+      "kind": "exact",
+      "label": "Nova 2 Lite",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/amazon.nova-lite-v1:0",
+      "kind": "exact",
+      "label": "Nova Lite",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/amazon.nova-micro-v1:0",
+      "kind": "exact",
+      "label": "Nova Micro",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/amazon.nova-pro-v1:0",
+      "kind": "exact",
+      "label": "Nova Pro",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/anthropic.claude-opus-4-1-20250805-v1:0",
+      "kind": "exact",
+      "label": "Claude Opus 4.1",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/anthropic.claude-opus-4-5-20251101-v1:0",
+      "kind": "exact",
+      "label": "Claude Opus 4.5",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/anthropic.claude-opus-4-6-v1",
+      "kind": "exact",
+      "label": "Claude Opus 4.6",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/anthropic.claude-opus-4-7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/anthropic.claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/anthropic.claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/au.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5 (AU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/au.anthropic.claude-opus-4-6-v1",
+      "kind": "exact",
+      "label": "AU Anthropic Claude Opus 4.6",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/au.anthropic.claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8 (AU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/au.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5 (AU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/au.anthropic.claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "AU Anthropic Claude Sonnet 4.6",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/deepseek.r1-v1:0",
+      "kind": "exact",
+      "label": "DeepSeek-R1",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/deepseek.v3-v1:0",
+      "kind": "exact",
+      "label": "DeepSeek-V3.1",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/deepseek.v3.2",
+      "kind": "exact",
+      "label": "DeepSeek-V3.2",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/eu.anthropic.claude-fable-5",
+      "kind": "exact",
+      "label": "Claude Fable 5 (EU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5 (EU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0",
+      "kind": "exact",
+      "label": "Claude Opus 4.5 (EU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/eu.anthropic.claude-opus-4-6-v1",
+      "kind": "exact",
+      "label": "Claude Opus 4.6 (EU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/eu.anthropic.claude-opus-4-7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7 (EU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/eu.anthropic.claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8 (EU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5 (EU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/eu.anthropic.claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6 (EU)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/global.anthropic.claude-fable-5",
+      "kind": "exact",
+      "label": "Claude Fable 5 (Global)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5 (Global)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/global.anthropic.claude-opus-4-5-20251101-v1:0",
+      "kind": "exact",
+      "label": "Claude Opus 4.5 (Global)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/global.anthropic.claude-opus-4-6-v1",
+      "kind": "exact",
+      "label": "Claude Opus 4.6 (Global)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/global.anthropic.claude-opus-4-7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7 (Global)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/global.anthropic.claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8 (Global)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5 (Global)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/global.anthropic.claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6 (Global)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/google.gemma-3-27b-it",
+      "kind": "exact",
+      "label": "Google Gemma 3 27B Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/google.gemma-3-4b-it",
+      "kind": "exact",
+      "label": "Gemma 3 4B IT",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/jp.anthropic.claude-opus-4-7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7 (JP)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/jp.anthropic.claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8 (JP)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5 (JP)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/jp.anthropic.claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6 (JP)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/meta.llama3-1-70b-instruct-v1:0",
+      "kind": "exact",
+      "label": "Llama 3.1 70B Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/meta.llama3-1-8b-instruct-v1:0",
+      "kind": "exact",
+      "label": "Llama 3.1 8B Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/meta.llama3-3-70b-instruct-v1:0",
+      "kind": "exact",
+      "label": "Llama 3.3 70B Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/meta.llama4-maverick-17b-instruct-v1:0",
+      "kind": "exact",
+      "label": "Llama 4 Maverick 17B Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/meta.llama4-scout-17b-instruct-v1:0",
+      "kind": "exact",
+      "label": "Llama 4 Scout 17B Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/minimax.minimax-m2",
+      "kind": "exact",
+      "label": "MiniMax M2",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/minimax.minimax-m2.1",
+      "kind": "exact",
+      "label": "MiniMax M2.1",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/minimax.minimax-m2.5",
+      "kind": "exact",
+      "label": "MiniMax M2.5",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.devstral-2-123b",
+      "kind": "exact",
+      "label": "Devstral 2 123B",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.magistral-small-2509",
+      "kind": "exact",
+      "label": "Magistral Small 1.2",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.ministral-3-14b-instruct",
+      "kind": "exact",
+      "label": "Ministral 14B 3.0",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.ministral-3-3b-instruct",
+      "kind": "exact",
+      "label": "Ministral 3 3B",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.ministral-3-8b-instruct",
+      "kind": "exact",
+      "label": "Ministral 3 8B",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.mistral-large-3-675b-instruct",
+      "kind": "exact",
+      "label": "Mistral Large 3",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.pixtral-large-2502-v1:0",
+      "kind": "exact",
+      "label": "Pixtral Large (25.02)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.voxtral-mini-3b-2507",
+      "kind": "exact",
+      "label": "Voxtral Mini 3B 2507",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/mistral.voxtral-small-24b-2507",
+      "kind": "exact",
+      "label": "Voxtral Small 24B 2507",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/moonshot.kimi-k2-thinking",
+      "kind": "exact",
+      "label": "Kimi K2 Thinking",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/moonshotai.kimi-k2.5",
+      "kind": "exact",
+      "label": "Kimi K2.5",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/nvidia.nemotron-nano-12b-v2",
+      "kind": "exact",
+      "label": "NVIDIA Nemotron Nano 12B v2 VL BF16",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/nvidia.nemotron-nano-3-30b",
+      "kind": "exact",
+      "label": "NVIDIA Nemotron Nano 3 30B",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/nvidia.nemotron-nano-9b-v2",
+      "kind": "exact",
+      "label": "NVIDIA Nemotron Nano 9B v2",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/nvidia.nemotron-super-3-120b",
+      "kind": "exact",
+      "label": "NVIDIA Nemotron 3 Super 120B A12B",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/openai.gpt-5.4",
+      "kind": "exact",
+      "label": "GPT-5.4",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/openai.gpt-5.5",
+      "kind": "exact",
+      "label": "GPT-5.5",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/openai.gpt-oss-120b",
+      "kind": "exact",
+      "label": "gpt-oss-120b",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/openai.gpt-oss-120b-1:0",
+      "kind": "exact",
+      "label": "gpt-oss-120b",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/openai.gpt-oss-20b",
+      "kind": "exact",
+      "label": "gpt-oss-20b",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/openai.gpt-oss-20b-1:0",
+      "kind": "exact",
+      "label": "gpt-oss-20b",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/openai.gpt-oss-safeguard-120b",
+      "kind": "exact",
+      "label": "GPT OSS Safeguard 120B",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/openai.gpt-oss-safeguard-20b",
+      "kind": "exact",
+      "label": "GPT OSS Safeguard 20B",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/qwen.qwen3-235b-a22b-2507-v1:0",
+      "kind": "exact",
+      "label": "Qwen3 235B A22B 2507",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/qwen.qwen3-32b-v1:0",
+      "kind": "exact",
+      "label": "Qwen3 32B (dense)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/qwen.qwen3-coder-30b-a3b-v1:0",
+      "kind": "exact",
+      "label": "Qwen3 Coder 30B A3B Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/qwen.qwen3-coder-480b-a35b-v1:0",
+      "kind": "exact",
+      "label": "Qwen3 Coder 480B A35B Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/qwen.qwen3-coder-next",
+      "kind": "exact",
+      "label": "Qwen3 Coder Next",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/qwen.qwen3-next-80b-a3b",
+      "kind": "exact",
+      "label": "Qwen/Qwen3-Next-80B-A3B-Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/qwen.qwen3-vl-235b-a22b",
+      "kind": "exact",
+      "label": "Qwen/Qwen3-VL-235B-A22B-Instruct",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-fable-5",
+      "kind": "exact",
+      "label": "Claude Fable 5 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-opus-4-1-20250805-v1:0",
+      "kind": "exact",
+      "label": "Claude Opus 4.1 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-opus-4-5-20251101-v1:0",
+      "kind": "exact",
+      "label": "Claude Opus 4.5 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
+      "kind": "exact",
+      "label": "Claude Opus 4.6 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-opus-4-7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.anthropic.claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.deepseek.r1-v1:0",
+      "kind": "exact",
+      "label": "DeepSeek-R1 (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.meta.llama4-maverick-17b-instruct-v1:0",
+      "kind": "exact",
+      "label": "Llama 4 Maverick 17B Instruct (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/us.meta.llama4-scout-17b-instruct-v1:0",
+      "kind": "exact",
+      "label": "Llama 4 Scout 17B Instruct (US)",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/writer.palmyra-x4-v1:0",
+      "kind": "exact",
+      "label": "Palmyra X4",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/writer.palmyra-x5-v1:0",
+      "kind": "exact",
+      "label": "Palmyra X5",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/zai.glm-4.7",
+      "kind": "exact",
+      "label": "GLM-4.7",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/zai.glm-4.7-flash",
+      "kind": "exact",
+      "label": "GLM-4.7-Flash",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "amazon-bedrock/zai.glm-5",
+      "kind": "exact",
+      "label": "GLM-5",
+      "provider": "amazon-bedrock"
+    },
+    {
+      "id": "ant-ling/Ling-2.6-1T",
+      "kind": "exact",
+      "label": "Ling 2.6 1T",
+      "provider": "ant-ling"
+    },
+    {
+      "id": "ant-ling/Ling-2.6-flash",
+      "kind": "exact",
+      "label": "Ling 2.6 Flash",
+      "provider": "ant-ling"
+    },
+    {
+      "id": "ant-ling/Ring-2.6-1T",
+      "kind": "exact",
+      "label": "Ring 2.6 1T",
+      "provider": "ant-ling"
+    },
+    {
+      "id": "anthropic/claude-3-5-haiku-20241022",
+      "kind": "exact",
+      "label": "Claude Haiku 3.5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-3-5-haiku-latest",
+      "kind": "exact",
+      "label": "Claude Haiku 3.5 (latest)",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-3-5-sonnet-20240620",
+      "kind": "exact",
+      "label": "Claude Sonnet 3.5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-3-5-sonnet-20241022",
+      "kind": "exact",
+      "label": "Claude Sonnet 3.5 v2",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-3-7-sonnet-20250219",
+      "kind": "exact",
+      "label": "Claude Sonnet 3.7",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-3-haiku-20240307",
+      "kind": "exact",
+      "label": "Claude Haiku 3",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-3-opus-20240229",
+      "kind": "exact",
+      "label": "Claude Opus 3",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-3-sonnet-20240229",
+      "kind": "exact",
+      "label": "Claude Sonnet 3",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-fable-5",
+      "kind": "exact",
+      "label": "Claude Fable 5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-haiku-4-5",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5 (latest)",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-haiku-4-5-20251001",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-0",
+      "kind": "exact",
+      "label": "Claude Opus 4 (latest)",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-1",
+      "kind": "exact",
+      "label": "Claude Opus 4.1 (latest)",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-1-20250805",
+      "kind": "exact",
+      "label": "Claude Opus 4.1",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-20250514",
+      "kind": "exact",
+      "label": "Claude Opus 4",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-5",
+      "kind": "exact",
+      "label": "Claude Opus 4.5 (latest)",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-5-20251101",
+      "kind": "exact",
+      "label": "Claude Opus 4.5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-6",
+      "kind": "exact",
+      "label": "Claude Opus 4.6",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-sonnet-4-0",
+      "kind": "exact",
+      "label": "Claude Sonnet 4 (latest)",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-sonnet-4-20250514",
+      "kind": "exact",
+      "label": "Claude Sonnet 4",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-sonnet-4-5",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5 (latest)",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-sonnet-4-5-20250929",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "anthropic/claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6",
+      "provider": "anthropic"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4",
+      "kind": "exact",
+      "label": "GPT-4",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4-turbo",
+      "kind": "exact",
+      "label": "GPT-4 Turbo",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4.1",
+      "kind": "exact",
+      "label": "GPT-4.1",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4.1-mini",
+      "kind": "exact",
+      "label": "GPT-4.1 mini",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4.1-nano",
+      "kind": "exact",
+      "label": "GPT-4.1 nano",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4o",
+      "kind": "exact",
+      "label": "GPT-4o",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4o-2024-05-13",
+      "kind": "exact",
+      "label": "GPT-4o (2024-05-13)",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4o-2024-08-06",
+      "kind": "exact",
+      "label": "GPT-4o (2024-08-06)",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4o-2024-11-20",
+      "kind": "exact",
+      "label": "GPT-4o (2024-11-20)",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-4o-mini",
+      "kind": "exact",
+      "label": "GPT-4o mini",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5",
+      "kind": "exact",
+      "label": "GPT-5",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5-chat-latest",
+      "kind": "exact",
+      "label": "GPT-5 Chat Latest",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5-codex",
+      "kind": "exact",
+      "label": "GPT-5-Codex",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5-mini",
+      "kind": "exact",
+      "label": "GPT-5 Mini",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5-nano",
+      "kind": "exact",
+      "label": "GPT-5 Nano",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5-pro",
+      "kind": "exact",
+      "label": "GPT-5 Pro",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.1",
+      "kind": "exact",
+      "label": "GPT-5.1",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.1-chat-latest",
+      "kind": "exact",
+      "label": "GPT-5.1 Chat",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.1-codex",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.1-codex-max",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex Max",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.1-codex-mini",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex mini",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.2",
+      "kind": "exact",
+      "label": "GPT-5.2",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.2-chat-latest",
+      "kind": "exact",
+      "label": "GPT-5.2 Chat",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.2-codex",
+      "kind": "exact",
+      "label": "GPT-5.2 Codex",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.2-pro",
+      "kind": "exact",
+      "label": "GPT-5.2 Pro",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.3-chat-latest",
+      "kind": "exact",
+      "label": "GPT-5.3 Chat (latest)",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.3-codex",
+      "kind": "exact",
+      "label": "GPT-5.3 Codex",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.3-codex-spark",
+      "kind": "exact",
+      "label": "GPT-5.3 Codex Spark",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.4",
+      "kind": "exact",
+      "label": "GPT-5.4",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.4-mini",
+      "kind": "exact",
+      "label": "GPT-5.4 mini",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.4-nano",
+      "kind": "exact",
+      "label": "GPT-5.4 nano",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.4-pro",
+      "kind": "exact",
+      "label": "GPT-5.4 Pro",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.5",
+      "kind": "exact",
+      "label": "GPT-5.5",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/gpt-5.5-pro",
+      "kind": "exact",
+      "label": "GPT-5.5 Pro",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/o1",
+      "kind": "exact",
+      "label": "o1",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/o1-pro",
+      "kind": "exact",
+      "label": "o1-pro",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/o3",
+      "kind": "exact",
+      "label": "o3",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/o3-deep-research",
+      "kind": "exact",
+      "label": "o3-deep-research",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/o3-mini",
+      "kind": "exact",
+      "label": "o3-mini",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/o3-pro",
+      "kind": "exact",
+      "label": "o3-pro",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/o4-mini",
+      "kind": "exact",
+      "label": "o4-mini",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "azure-openai-responses/o4-mini-deep-research",
+      "kind": "exact",
+      "label": "o4-mini-deep-research",
+      "provider": "azure-openai-responses"
+    },
+    {
+      "id": "cerebras/gpt-oss-120b",
+      "kind": "exact",
+      "label": "GPT OSS 120B",
+      "provider": "cerebras"
+    },
+    {
+      "id": "cerebras/zai-glm-4.7",
+      "kind": "exact",
+      "label": "Z.AI GLM-4.7",
+      "provider": "cerebras"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-3-5-haiku",
+      "kind": "exact",
+      "label": "Claude Haiku 3.5 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-3-haiku",
+      "kind": "exact",
+      "label": "Claude Haiku 3",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-3-opus",
+      "kind": "exact",
+      "label": "Claude Opus 3",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-3-sonnet",
+      "kind": "exact",
+      "label": "Claude Sonnet 3",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-3.5-haiku",
+      "kind": "exact",
+      "label": "Claude Haiku 3.5 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-3.5-sonnet",
+      "kind": "exact",
+      "label": "Claude Sonnet 3.5 v2",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-fable-5",
+      "kind": "exact",
+      "label": "Claude Fable 5",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-haiku-4-5",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-opus-4",
+      "kind": "exact",
+      "label": "Claude Opus 4 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-opus-4-1",
+      "kind": "exact",
+      "label": "Claude Opus 4.1 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-opus-4-5",
+      "kind": "exact",
+      "label": "Claude Opus 4.5 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-opus-4-6",
+      "kind": "exact",
+      "label": "Claude Opus 4.6 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-opus-4-7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-sonnet-4",
+      "kind": "exact",
+      "label": "Claude Sonnet 4 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-sonnet-4-5",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5 (latest)",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-4",
+      "kind": "exact",
+      "label": "GPT-4",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-4-turbo",
+      "kind": "exact",
+      "label": "GPT-4 Turbo",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-4o",
+      "kind": "exact",
+      "label": "GPT-4o",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-4o-mini",
+      "kind": "exact",
+      "label": "GPT-4o mini",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-5.1",
+      "kind": "exact",
+      "label": "GPT-5.1",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-5.1-codex",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-5.2",
+      "kind": "exact",
+      "label": "GPT-5.2",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-5.2-codex",
+      "kind": "exact",
+      "label": "GPT-5.2 Codex",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-5.3-codex",
+      "kind": "exact",
+      "label": "GPT-5.3 Codex",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-5.4",
+      "kind": "exact",
+      "label": "GPT-5.4",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/gpt-5.5",
+      "kind": "exact",
+      "label": "GPT-5.5",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/o1",
+      "kind": "exact",
+      "label": "o1",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/o3",
+      "kind": "exact",
+      "label": "o3",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/o3-mini",
+      "kind": "exact",
+      "label": "o3-mini",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/o3-pro",
+      "kind": "exact",
+      "label": "o3-pro",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/o4-mini",
+      "kind": "exact",
+      "label": "o4-mini",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/workers-ai/@cf/moonshotai/kimi-k2.5",
+      "kind": "exact",
+      "label": "Kimi K2.5",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/workers-ai/@cf/moonshotai/kimi-k2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/workers-ai/@cf/nvidia/nemotron-3-120b-a12b",
+      "kind": "exact",
+      "label": "Nemotron 3 Super 120B",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-ai-gateway/workers-ai/@cf/zai-org/glm-4.7-flash",
+      "kind": "exact",
+      "label": "GLM-4.7-Flash",
+      "provider": "cloudflare-ai-gateway"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/google/gemma-4-26b-a4b-it",
+      "kind": "exact",
+      "label": "Gemma 4 26B A4B IT",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/ibm-granite/granite-4.0-h-micro",
+      "kind": "exact",
+      "label": "Granite 4.0 H Micro",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "kind": "exact",
+      "label": "Llama 3.3 70B Instruct fp8 Fast",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct",
+      "kind": "exact",
+      "label": "Llama 4 Scout 17B 16E Instruct",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/mistralai/mistral-small-3.1-24b-instruct",
+      "kind": "exact",
+      "label": "Mistral Small 3.1 24B Instruct",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/moonshotai/kimi-k2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/moonshotai/kimi-k2.7-code",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/nvidia/nemotron-3-120b-a12b",
+      "kind": "exact",
+      "label": "Nemotron 3 Super 120B",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/openai/gpt-oss-120b",
+      "kind": "exact",
+      "label": "GPT OSS 120B",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/openai/gpt-oss-20b",
+      "kind": "exact",
+      "label": "GPT OSS 20B",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/qwen/qwen3-30b-a3b-fp8",
+      "kind": "exact",
+      "label": "Qwen3 30B A3b fp8",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/zai-org/glm-4.7-flash",
+      "kind": "exact",
+      "label": "GLM-4.7-Flash",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "cloudflare-workers-ai/@cf/zai-org/glm-5.2",
+      "kind": "exact",
+      "label": "Glm 5.2",
+      "provider": "cloudflare-workers-ai"
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "kind": "exact",
+      "label": "DeepSeek V4 Flash",
+      "provider": "deepseek"
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro",
+      "kind": "exact",
+      "label": "DeepSeek V4 Pro",
+      "provider": "deepseek"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/deepseek-v4-flash",
+      "kind": "exact",
+      "label": "DeepSeek V4 Flash",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/deepseek-v4-pro",
+      "kind": "exact",
+      "label": "DeepSeek V4 Pro",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/glm-5p1",
+      "kind": "exact",
+      "label": "GLM 5.1",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/glm-5p2",
+      "kind": "exact",
+      "label": "GLM 5.2",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/gpt-oss-120b",
+      "kind": "exact",
+      "label": "GPT OSS 120B",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/gpt-oss-20b",
+      "kind": "exact",
+      "label": "GPT OSS 20B",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/kimi-k2p6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/kimi-k2p7-code",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/minimax-m2p7",
+      "kind": "exact",
+      "label": "MiniMax-M2.7",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/minimax-m3",
+      "kind": "exact",
+      "label": "MiniMax-M3",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/models/qwen3p7-plus",
+      "kind": "exact",
+      "label": "Qwen 3.7 Plus",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/routers/glm-5p1-fast",
+      "kind": "exact",
+      "label": "GLM 5.1 Fast",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/routers/kimi-k2p6-fast",
+      "kind": "exact",
+      "label": "Kimi K2.6 Fast",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/routers/kimi-k2p6-turbo",
+      "kind": "exact",
+      "label": "Kimi K2.6 Turbo",
+      "provider": "fireworks"
+    },
+    {
+      "id": "fireworks/accounts/fireworks/routers/kimi-k2p7-code-fast",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code Fast",
+      "provider": "fireworks"
+    },
+    {
+      "id": "github-copilot/claude-fable-5",
+      "kind": "exact",
+      "label": "Claude Fable 5",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/claude-haiku-4.5",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5 (latest)",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/claude-opus-4.5",
+      "kind": "exact",
+      "label": "Claude Opus 4.5 (latest)",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/claude-opus-4.6",
+      "kind": "exact",
+      "label": "Claude Opus 4.6",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/claude-opus-4.7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/claude-opus-4.8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/claude-sonnet-4",
+      "kind": "exact",
+      "label": "Claude Sonnet 4 (latest)",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/claude-sonnet-4.5",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5 (latest)",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/claude-sonnet-4.6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gemini-2.5-pro",
+      "kind": "exact",
+      "label": "Gemini 2.5 Pro",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gemini-3-flash-preview",
+      "kind": "exact",
+      "label": "Gemini 3 Flash Preview",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gemini-3.1-pro-preview",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro Preview",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gemini-3.5-flash",
+      "kind": "exact",
+      "label": "Gemini 3.5 Flash",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-4.1",
+      "kind": "exact",
+      "label": "GPT-4.1",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-5-mini",
+      "kind": "exact",
+      "label": "GPT-5 Mini",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-5.2",
+      "kind": "exact",
+      "label": "GPT-5.2",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-5.2-codex",
+      "kind": "exact",
+      "label": "GPT-5.2 Codex",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-5.3-codex",
+      "kind": "exact",
+      "label": "GPT-5.3 Codex",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-5.4",
+      "kind": "exact",
+      "label": "GPT-5.4",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-5.4-mini",
+      "kind": "exact",
+      "label": "GPT-5.4 mini",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-5.4-nano",
+      "kind": "exact",
+      "label": "GPT-5.4 nano",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "github-copilot/gpt-5.5",
+      "kind": "exact",
+      "label": "GPT-5.5",
+      "provider": "github-copilot"
+    },
+    {
+      "id": "google/gemini-2.0-flash",
+      "kind": "exact",
+      "label": "Gemini 2.0 Flash",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-2.0-flash-lite",
+      "kind": "exact",
+      "label": "Gemini 2.0 Flash-Lite",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "kind": "exact",
+      "label": "Gemini 2.5 Flash",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "kind": "exact",
+      "label": "Gemini 2.5 Flash-Lite",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "kind": "exact",
+      "label": "Gemini 2.5 Pro",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-3-flash-preview",
+      "kind": "exact",
+      "label": "Gemini 3 Flash Preview",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-3-pro-preview",
+      "kind": "exact",
+      "label": "Gemini 3 Pro Preview",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite",
+      "kind": "exact",
+      "label": "Gemini 3.1 Flash Lite",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite-preview",
+      "kind": "exact",
+      "label": "Gemini 3.1 Flash Lite Preview",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro Preview",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview-customtools",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro Preview Custom Tools",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-3.5-flash",
+      "kind": "exact",
+      "label": "Gemini 3.5 Flash",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-flash-latest",
+      "kind": "exact",
+      "label": "Gemini Flash Latest",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemini-flash-lite-latest",
+      "kind": "exact",
+      "label": "Gemini Flash-Lite Latest",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it",
+      "kind": "exact",
+      "label": "Gemma 4 26B A4B IT",
+      "provider": "google"
+    },
+    {
+      "id": "google/gemma-4-31b-it",
+      "kind": "exact",
+      "label": "Gemma 4 31B IT",
+      "provider": "google"
+    },
+    {
+      "id": "google-vertex/gemini-2.5-flash",
+      "kind": "exact",
+      "label": "Gemini 2.5 Flash",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-2.5-flash-lite",
+      "kind": "exact",
+      "label": "Gemini 2.5 Flash-Lite",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-2.5-pro",
+      "kind": "exact",
+      "label": "Gemini 2.5 Pro",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-3-flash-preview",
+      "kind": "exact",
+      "label": "Gemini 3 Flash Preview",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-3.1-flash-lite",
+      "kind": "exact",
+      "label": "Gemini 3.1 Flash Lite",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-3.1-pro-preview",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro Preview",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-3.1-pro-preview-customtools",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro Preview Custom Tools",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-3.5-flash",
+      "kind": "exact",
+      "label": "Gemini 3.5 Flash",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-flash-latest",
+      "kind": "exact",
+      "label": "Gemini Flash Latest",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "google-vertex/gemini-flash-lite-latest",
+      "kind": "exact",
+      "label": "Gemini Flash-Lite Latest",
+      "provider": "google-vertex"
+    },
+    {
+      "id": "groq/llama-3.1-8b-instant",
+      "kind": "exact",
+      "label": "Llama 3.1 8B",
+      "provider": "groq"
+    },
+    {
+      "id": "groq/llama-3.3-70b-versatile",
+      "kind": "exact",
+      "label": "Llama 3.3 70B",
+      "provider": "groq"
+    },
+    {
+      "id": "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+      "kind": "exact",
+      "label": "Llama 4 Scout 17B 16E",
+      "provider": "groq"
+    },
+    {
+      "id": "groq/openai/gpt-oss-120b",
+      "kind": "exact",
+      "label": "GPT OSS 120B",
+      "provider": "groq"
+    },
+    {
+      "id": "groq/openai/gpt-oss-20b",
+      "kind": "exact",
+      "label": "GPT OSS 20B",
+      "provider": "groq"
+    },
+    {
+      "id": "groq/openai/gpt-oss-safeguard-20b",
+      "kind": "exact",
+      "label": "Safety GPT OSS 20B",
+      "provider": "groq"
+    },
+    {
+      "id": "groq/qwen/qwen3-32b",
+      "kind": "exact",
+      "label": "Qwen3-32B",
+      "provider": "groq"
+    },
+    {
+      "id": "huggingface/MiniMaxAI/MiniMax-M2.1",
+      "kind": "exact",
+      "label": "MiniMax-M2.1",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/MiniMaxAI/MiniMax-M2.5",
+      "kind": "exact",
+      "label": "MiniMax-M2.5",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/MiniMaxAI/MiniMax-M2.7",
+      "kind": "exact",
+      "label": "MiniMax-M2.7",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/Qwen/Qwen3-235B-A22B-Thinking-2507",
+      "kind": "exact",
+      "label": "Qwen3-235B-A22B-Thinking-2507",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/Qwen/Qwen3-Coder-480B-A35B-Instruct",
+      "kind": "exact",
+      "label": "Qwen3-Coder-480B-A35B-Instruct",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/Qwen/Qwen3-Coder-Next",
+      "kind": "exact",
+      "label": "Qwen3-Coder-Next",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/Qwen/Qwen3-Next-80B-A3B-Instruct",
+      "kind": "exact",
+      "label": "Qwen3-Next-80B-A3B-Instruct",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/Qwen/Qwen3-Next-80B-A3B-Thinking",
+      "kind": "exact",
+      "label": "Qwen3-Next-80B-A3B-Thinking",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/Qwen/Qwen3.5-397B-A17B",
+      "kind": "exact",
+      "label": "Qwen3.5-397B-A17B",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/XiaomiMiMo/MiMo-V2-Flash",
+      "kind": "exact",
+      "label": "MiMo-V2-Flash",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/deepseek-ai/DeepSeek-R1-0528",
+      "kind": "exact",
+      "label": "DeepSeek-R1-0528",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/deepseek-ai/DeepSeek-V3.2",
+      "kind": "exact",
+      "label": "DeepSeek-V3.2",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/deepseek-ai/DeepSeek-V4-Pro",
+      "kind": "exact",
+      "label": "DeepSeek V4 Pro",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/moonshotai/Kimi-K2-Instruct",
+      "kind": "exact",
+      "label": "Kimi-K2-Instruct",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/moonshotai/Kimi-K2-Instruct-0905",
+      "kind": "exact",
+      "label": "Kimi-K2-Instruct-0905",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/moonshotai/Kimi-K2-Thinking",
+      "kind": "exact",
+      "label": "Kimi-K2-Thinking",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/moonshotai/Kimi-K2.5",
+      "kind": "exact",
+      "label": "Kimi-K2.5",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/moonshotai/Kimi-K2.6",
+      "kind": "exact",
+      "label": "Kimi-K2.6",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/zai-org/GLM-4.7",
+      "kind": "exact",
+      "label": "GLM-4.7",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/zai-org/GLM-4.7-Flash",
+      "kind": "exact",
+      "label": "GLM-4.7-Flash",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/zai-org/GLM-5",
+      "kind": "exact",
+      "label": "GLM-5",
+      "provider": "huggingface"
+    },
+    {
+      "id": "huggingface/zai-org/GLM-5.1",
+      "kind": "exact",
+      "label": "GLM-5.1",
+      "provider": "huggingface"
+    },
+    {
+      "id": "kimi-coding/k2p7",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code",
+      "provider": "kimi-coding"
+    },
+    {
+      "id": "kimi-coding/kimi-for-coding",
+      "kind": "exact",
+      "label": "Kimi For Coding",
+      "provider": "kimi-coding"
+    },
+    {
+      "id": "kimi-coding/kimi-k2-thinking",
+      "kind": "exact",
+      "label": "Kimi K2 Thinking",
+      "provider": "kimi-coding"
+    },
+    {
+      "id": "minimax/MiniMax-M2.7",
+      "kind": "exact",
+      "label": "MiniMax-M2.7",
+      "provider": "minimax"
+    },
+    {
+      "id": "minimax/MiniMax-M2.7-highspeed",
+      "kind": "exact",
+      "label": "MiniMax-M2.7-highspeed",
+      "provider": "minimax"
+    },
+    {
+      "id": "minimax/MiniMax-M3",
+      "kind": "exact",
+      "label": "MiniMax-M3",
+      "provider": "minimax"
+    },
+    {
+      "id": "minimax-cn/MiniMax-M2.7",
+      "kind": "exact",
+      "label": "MiniMax-M2.7",
+      "provider": "minimax-cn"
+    },
+    {
+      "id": "minimax-cn/MiniMax-M2.7-highspeed",
+      "kind": "exact",
+      "label": "MiniMax-M2.7-highspeed",
+      "provider": "minimax-cn"
+    },
+    {
+      "id": "minimax-cn/MiniMax-M3",
+      "kind": "exact",
+      "label": "MiniMax-M3",
+      "provider": "minimax-cn"
+    },
+    {
+      "id": "mistral/codestral-latest",
+      "kind": "exact",
+      "label": "Codestral (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/devstral-2512",
+      "kind": "exact",
+      "label": "Devstral 2",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/devstral-latest",
+      "kind": "exact",
+      "label": "Devstral 2",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/devstral-medium-2507",
+      "kind": "exact",
+      "label": "Devstral Medium",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/devstral-medium-latest",
+      "kind": "exact",
+      "label": "Devstral 2 (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/devstral-small-2505",
+      "kind": "exact",
+      "label": "Devstral Small 2505",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/devstral-small-2507",
+      "kind": "exact",
+      "label": "Devstral Small",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/labs-devstral-small-2512",
+      "kind": "exact",
+      "label": "Devstral Small 2",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/magistral-medium-latest",
+      "kind": "exact",
+      "label": "Magistral Medium (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/magistral-small",
+      "kind": "exact",
+      "label": "Magistral Small",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/ministral-3b-latest",
+      "kind": "exact",
+      "label": "Ministral 3B (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/ministral-8b-latest",
+      "kind": "exact",
+      "label": "Ministral 8B (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-large-2411",
+      "kind": "exact",
+      "label": "Mistral Large 2.1",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-large-2512",
+      "kind": "exact",
+      "label": "Mistral Large 3",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-large-latest",
+      "kind": "exact",
+      "label": "Mistral Large (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-medium-2505",
+      "kind": "exact",
+      "label": "Mistral Medium 3",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-medium-2508",
+      "kind": "exact",
+      "label": "Mistral Medium 3.1",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-medium-2604",
+      "kind": "exact",
+      "label": "Mistral Medium 3.5",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-medium-3.5",
+      "kind": "exact",
+      "label": "Mistral Medium 3.5",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-medium-latest",
+      "kind": "exact",
+      "label": "Mistral Medium (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-nemo",
+      "kind": "exact",
+      "label": "Mistral Nemo",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-small-2506",
+      "kind": "exact",
+      "label": "Mistral Small 3.2",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-small-2603",
+      "kind": "exact",
+      "label": "Mistral Small 4",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/mistral-small-latest",
+      "kind": "exact",
+      "label": "Mistral Small (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/open-mistral-7b",
+      "kind": "exact",
+      "label": "Mistral 7B",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/open-mistral-nemo",
+      "kind": "exact",
+      "label": "Open Mistral Nemo",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/open-mixtral-8x22b",
+      "kind": "exact",
+      "label": "Mixtral 8x22B",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/open-mixtral-8x7b",
+      "kind": "exact",
+      "label": "Mixtral 8x7B",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/pixtral-12b",
+      "kind": "exact",
+      "label": "Pixtral 12B",
+      "provider": "mistral"
+    },
+    {
+      "id": "mistral/pixtral-large-latest",
+      "kind": "exact",
+      "label": "Pixtral Large (latest)",
+      "provider": "mistral"
+    },
+    {
+      "id": "moonshotai/kimi-k2-0711-preview",
+      "kind": "exact",
+      "label": "Kimi K2 0711",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai/kimi-k2-0905-preview",
+      "kind": "exact",
+      "label": "Kimi K2 0905",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking",
+      "kind": "exact",
+      "label": "Kimi K2 Thinking",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking-turbo",
+      "kind": "exact",
+      "label": "Kimi K2 Thinking Turbo",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai/kimi-k2-turbo-preview",
+      "kind": "exact",
+      "label": "Kimi K2 Turbo",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai/kimi-k2.5",
+      "kind": "exact",
+      "label": "Kimi K2.5",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai/kimi-k2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai/kimi-k2.7-code",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai/kimi-k2.7-code-highspeed",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code HighSpeed",
+      "provider": "moonshotai"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2-0711-preview",
+      "kind": "exact",
+      "label": "Kimi K2 0711",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2-0905-preview",
+      "kind": "exact",
+      "label": "Kimi K2 0905",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2-thinking",
+      "kind": "exact",
+      "label": "Kimi K2 Thinking",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2-thinking-turbo",
+      "kind": "exact",
+      "label": "Kimi K2 Thinking Turbo",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2-turbo-preview",
+      "kind": "exact",
+      "label": "Kimi K2 Turbo",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2.5",
+      "kind": "exact",
+      "label": "Kimi K2.5",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2.7-code",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "moonshotai-cn/kimi-k2.7-code-highspeed",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code HighSpeed",
+      "provider": "moonshotai-cn"
+    },
+    {
+      "id": "nvidia/meta/llama-3.1-70b-instruct",
+      "kind": "exact",
+      "label": "Llama 3.1 70b Instruct",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/meta/llama-3.1-8b-instruct",
+      "kind": "exact",
+      "label": "Llama 3.1 8B Instruct",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/meta/llama-3.2-11b-vision-instruct",
+      "kind": "exact",
+      "label": "Llama 3.2 11b Vision Instruct",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/meta/llama-3.2-90b-vision-instruct",
+      "kind": "exact",
+      "label": "Llama-3.2-90B-Vision-Instruct",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/meta/llama-3.3-70b-instruct",
+      "kind": "exact",
+      "label": "Llama 3.3 70b Instruct",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/mistralai/mistral-large-3-675b-instruct-2512",
+      "kind": "exact",
+      "label": "Mistral Large 3 675B Instruct 2512",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/mistralai/mistral-small-4-119b-2603",
+      "kind": "exact",
+      "label": "mistral-small-4-119b-2603",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/moonshotai/kimi-k2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/nvidia/nemotron-3-nano-30b-a3b",
+      "kind": "exact",
+      "label": "nemotron-3-nano-30b-a3b",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "kind": "exact",
+      "label": "Nemotron 3 Nano Omni",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/nvidia/nemotron-3-super-120b-a12b",
+      "kind": "exact",
+      "label": "Nemotron 3 Super",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+      "kind": "exact",
+      "label": "Nemotron 3 Ultra 550B A55B",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/nvidia/nvidia-nemotron-nano-9b-v2",
+      "kind": "exact",
+      "label": "nvidia-nemotron-nano-9b-v2",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/openai/gpt-oss-120b",
+      "kind": "exact",
+      "label": "GPT-OSS-120B",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/openai/gpt-oss-20b",
+      "kind": "exact",
+      "label": "GPT OSS 20B",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/qwen/qwen3.5-122b-a10b",
+      "kind": "exact",
+      "label": "Qwen3.5 122B-A10B",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/stepfun-ai/step-3.5-flash",
+      "kind": "exact",
+      "label": "Step 3.5 Flash",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/stepfun-ai/step-3.7-flash",
+      "kind": "exact",
+      "label": "Step 3.7 Flash",
+      "provider": "nvidia"
+    },
+    {
+      "id": "nvidia/z-ai/glm-5.1",
+      "kind": "exact",
+      "label": "GLM-5.1",
+      "provider": "nvidia"
+    },
+    {
+      "id": "openai/gpt-4",
+      "kind": "exact",
+      "label": "GPT-4",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4-turbo",
+      "kind": "exact",
+      "label": "GPT-4 Turbo",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4.1",
+      "kind": "exact",
+      "label": "GPT-4.1",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4.1-mini",
+      "kind": "exact",
+      "label": "GPT-4.1 mini",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4.1-nano",
+      "kind": "exact",
+      "label": "GPT-4.1 nano",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4o",
+      "kind": "exact",
+      "label": "GPT-4o",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4o-2024-05-13",
+      "kind": "exact",
+      "label": "GPT-4o (2024-05-13)",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4o-2024-08-06",
+      "kind": "exact",
+      "label": "GPT-4o (2024-08-06)",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4o-2024-11-20",
+      "kind": "exact",
+      "label": "GPT-4o (2024-11-20)",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "kind": "exact",
+      "label": "GPT-4o mini",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5",
+      "kind": "exact",
+      "label": "GPT-5",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5-chat-latest",
+      "kind": "exact",
+      "label": "GPT-5 Chat Latest",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5-codex",
+      "kind": "exact",
+      "label": "GPT-5-Codex",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "kind": "exact",
+      "label": "GPT-5 Mini",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "kind": "exact",
+      "label": "GPT-5 Nano",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5-pro",
+      "kind": "exact",
+      "label": "GPT-5 Pro",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.1",
+      "kind": "exact",
+      "label": "GPT-5.1",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.1-chat-latest",
+      "kind": "exact",
+      "label": "GPT-5.1 Chat",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.1-codex",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.1-codex-max",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex Max",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.1-codex-mini",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex mini",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.2",
+      "kind": "exact",
+      "label": "GPT-5.2",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.2-chat-latest",
+      "kind": "exact",
+      "label": "GPT-5.2 Chat",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.2-codex",
+      "kind": "exact",
+      "label": "GPT-5.2 Codex",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.2-pro",
+      "kind": "exact",
+      "label": "GPT-5.2 Pro",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.3-chat-latest",
+      "kind": "exact",
+      "label": "GPT-5.3 Chat (latest)",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.3-codex",
+      "kind": "exact",
+      "label": "GPT-5.3 Codex",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.3-codex-spark",
+      "kind": "exact",
+      "label": "GPT-5.3 Codex Spark",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.4",
+      "kind": "exact",
+      "label": "GPT-5.4",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.4-mini",
+      "kind": "exact",
+      "label": "GPT-5.4 mini",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.4-nano",
+      "kind": "exact",
+      "label": "GPT-5.4 nano",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.4-pro",
+      "kind": "exact",
+      "label": "GPT-5.4 Pro",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.5",
+      "kind": "exact",
+      "label": "GPT-5.5",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/gpt-5.5-pro",
+      "kind": "exact",
+      "label": "GPT-5.5 Pro",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/o1",
+      "kind": "exact",
+      "label": "o1",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/o1-pro",
+      "kind": "exact",
+      "label": "o1-pro",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/o3",
+      "kind": "exact",
+      "label": "o3",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/o3-deep-research",
+      "kind": "exact",
+      "label": "o3-deep-research",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/o3-mini",
+      "kind": "exact",
+      "label": "o3-mini",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/o3-pro",
+      "kind": "exact",
+      "label": "o3-pro",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/o4-mini",
+      "kind": "exact",
+      "label": "o4-mini",
+      "provider": "openai"
+    },
+    {
+      "id": "openai/o4-mini-deep-research",
+      "kind": "exact",
+      "label": "o4-mini-deep-research",
+      "provider": "openai"
+    },
+    {
+      "id": "openai-codex/gpt-5.3-codex-spark",
+      "kind": "exact",
+      "label": "GPT-5.3 Codex Spark",
+      "provider": "openai-codex"
+    },
+    {
+      "id": "openai-codex/gpt-5.4",
+      "kind": "exact",
+      "label": "GPT-5.4",
+      "provider": "openai-codex"
+    },
+    {
+      "id": "openai-codex/gpt-5.4-mini",
+      "kind": "exact",
+      "label": "GPT-5.4 mini",
+      "provider": "openai-codex"
+    },
+    {
+      "id": "openai-codex/gpt-5.5",
+      "kind": "exact",
+      "label": "GPT-5.5",
+      "provider": "openai-codex"
+    },
+    {
+      "id": "opencode/big-pickle",
+      "kind": "exact",
+      "label": "Big Pickle",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-haiku-4-5",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-1",
+      "kind": "exact",
+      "label": "Claude Opus 4.1",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-5",
+      "kind": "exact",
+      "label": "Claude Opus 4.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-6",
+      "kind": "exact",
+      "label": "Claude Opus 4.6",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-sonnet-4",
+      "kind": "exact",
+      "label": "Claude Sonnet 4",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-sonnet-4-5",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/deepseek-v4-flash",
+      "kind": "exact",
+      "label": "DeepSeek V4 Flash",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/deepseek-v4-flash-free",
+      "kind": "exact",
+      "label": "DeepSeek V4 Flash Free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/deepseek-v4-pro",
+      "kind": "exact",
+      "label": "DeepSeek V4 Pro",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gemini-3-flash",
+      "kind": "exact",
+      "label": "Gemini 3 Flash",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gemini-3.1-pro",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro Preview",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gemini-3.5-flash",
+      "kind": "exact",
+      "label": "Gemini 3.5 Flash",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/glm-5",
+      "kind": "exact",
+      "label": "GLM-5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/glm-5.1",
+      "kind": "exact",
+      "label": "GLM-5.1",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5",
+      "kind": "exact",
+      "label": "GPT-5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5-codex",
+      "kind": "exact",
+      "label": "GPT-5 Codex",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5-nano",
+      "kind": "exact",
+      "label": "GPT-5 Nano",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.1",
+      "kind": "exact",
+      "label": "GPT-5.1",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.1-codex",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.1-codex-max",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex Max",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.1-codex-mini",
+      "kind": "exact",
+      "label": "GPT-5.1 Codex Mini",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.2",
+      "kind": "exact",
+      "label": "GPT-5.2",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.2-codex",
+      "kind": "exact",
+      "label": "GPT-5.2 Codex",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.3-codex",
+      "kind": "exact",
+      "label": "GPT-5.3 Codex",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.4",
+      "kind": "exact",
+      "label": "GPT-5.4",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.4-mini",
+      "kind": "exact",
+      "label": "GPT-5.4 Mini",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.4-nano",
+      "kind": "exact",
+      "label": "GPT-5.4 Nano",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.4-pro",
+      "kind": "exact",
+      "label": "GPT-5.4 Pro",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.5",
+      "kind": "exact",
+      "label": "GPT-5.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.5-pro",
+      "kind": "exact",
+      "label": "GPT-5.5 Pro",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/grok-build-0.1",
+      "kind": "exact",
+      "label": "Grok Build 0.1",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/kimi-k2.5",
+      "kind": "exact",
+      "label": "Kimi K2.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/kimi-k2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/mimo-v2.5-free",
+      "kind": "exact",
+      "label": "MiMo V2.5 Free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/minimax-m2.5",
+      "kind": "exact",
+      "label": "MiniMax M2.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/minimax-m2.7",
+      "kind": "exact",
+      "label": "MiniMax M2.7",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/nemotron-3-ultra-free",
+      "kind": "exact",
+      "label": "Nemotron 3 Ultra Free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/north-mini-code-free",
+      "kind": "exact",
+      "label": "North Mini Code Free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/qwen3.5-plus",
+      "kind": "exact",
+      "label": "Qwen3.5 Plus",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/qwen3.6-plus",
+      "kind": "exact",
+      "label": "Qwen3.6 Plus",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode-go/deepseek-v4-flash",
+      "kind": "exact",
+      "label": "DeepSeek V4 Flash",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/deepseek-v4-pro",
+      "kind": "exact",
+      "label": "DeepSeek V4 Pro",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/glm-5.1",
+      "kind": "exact",
+      "label": "GLM-5.1",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/glm-5.2",
+      "kind": "exact",
+      "label": "GLM-5.2",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/kimi-k2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/kimi-k2.7-code",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/mimo-v2.5",
+      "kind": "exact",
+      "label": "MiMo V2.5",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/mimo-v2.5-pro",
+      "kind": "exact",
+      "label": "MiMo V2.5 Pro",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/minimax-m2.7",
+      "kind": "exact",
+      "label": "MiniMax M2.7",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/minimax-m3",
+      "kind": "exact",
+      "label": "MiniMax M3 (3x usage)",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/qwen3.6-plus",
+      "kind": "exact",
+      "label": "Qwen3.6 Plus",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/qwen3.7-max",
+      "kind": "exact",
+      "label": "Qwen3.7 Max",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "opencode-go/qwen3.7-plus",
+      "kind": "exact",
+      "label": "Qwen3.7 Plus",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "openrouter/ai21/jamba-large-1.7",
+      "kind": "exact",
+      "label": "AI21: Jamba Large 1.7",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/amazon/nova-2-lite-v1",
+      "kind": "exact",
+      "label": "Amazon: Nova 2 Lite",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/amazon/nova-lite-v1",
+      "kind": "exact",
+      "label": "Amazon: Nova Lite 1.0",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/amazon/nova-micro-v1",
+      "kind": "exact",
+      "label": "Amazon: Nova Micro 1.0",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/amazon/nova-premier-v1",
+      "kind": "exact",
+      "label": "Amazon: Nova Premier 1.0",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/amazon/nova-pro-v1",
+      "kind": "exact",
+      "label": "Amazon: Nova Pro 1.0",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-3-haiku",
+      "kind": "exact",
+      "label": "Anthropic: Claude 3 Haiku",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-3.5-haiku",
+      "kind": "exact",
+      "label": "Anthropic: Claude 3.5 Haiku",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-fable-5",
+      "kind": "exact",
+      "label": "Anthropic: Claude Fable 5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-haiku-4.5",
+      "kind": "exact",
+      "label": "Anthropic: Claude Haiku 4.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4.1",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4.5",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4.6",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4.6",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4.6-fast",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4.6 (Fast)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4.7",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4.7",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4.7-fast",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4.7 (Fast)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4.8",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4.8",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-opus-4.8-fast",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus 4.8 (Fast)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-sonnet-4",
+      "kind": "exact",
+      "label": "Anthropic: Claude Sonnet 4",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-sonnet-4.5",
+      "kind": "exact",
+      "label": "Anthropic: Claude Sonnet 4.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/anthropic/claude-sonnet-4.6",
+      "kind": "exact",
+      "label": "Anthropic: Claude Sonnet 4.6",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/arcee-ai/trinity-large-thinking",
+      "kind": "exact",
+      "label": "Arcee AI: Trinity Large Thinking",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/arcee-ai/trinity-mini",
+      "kind": "exact",
+      "label": "Arcee AI: Trinity Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/arcee-ai/virtuoso-large",
+      "kind": "exact",
+      "label": "Arcee AI: Virtuoso Large",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/auto",
+      "kind": "exact",
+      "label": "Auto",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/bytedance-seed/seed-1.6",
+      "kind": "exact",
+      "label": "ByteDance Seed: Seed 1.6",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/bytedance-seed/seed-1.6-flash",
+      "kind": "exact",
+      "label": "ByteDance Seed: Seed 1.6 Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/bytedance-seed/seed-2.0-lite",
+      "kind": "exact",
+      "label": "ByteDance Seed: Seed-2.0-Lite",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/bytedance-seed/seed-2.0-mini",
+      "kind": "exact",
+      "label": "ByteDance Seed: Seed-2.0-Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/cohere/command-r-08-2024",
+      "kind": "exact",
+      "label": "Cohere: Command R (08-2024)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/cohere/command-r-plus-08-2024",
+      "kind": "exact",
+      "label": "Cohere: Command R+ (08-2024)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/cohere/north-mini-code:free",
+      "kind": "exact",
+      "label": "Cohere: North Mini Code (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-chat",
+      "kind": "exact",
+      "label": "DeepSeek: DeepSeek V3",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-chat-v3-0324",
+      "kind": "exact",
+      "label": "DeepSeek: DeepSeek V3 0324",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-chat-v3.1",
+      "kind": "exact",
+      "label": "DeepSeek: DeepSeek V3.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-r1",
+      "kind": "exact",
+      "label": "DeepSeek: R1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-r1-0528",
+      "kind": "exact",
+      "label": "DeepSeek: R1 0528",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v3.1-terminus",
+      "kind": "exact",
+      "label": "DeepSeek: DeepSeek V3.1 Terminus",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v3.2",
+      "kind": "exact",
+      "label": "DeepSeek: DeepSeek V3.2",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v3.2-exp",
+      "kind": "exact",
+      "label": "DeepSeek: DeepSeek V3.2 Exp",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-flash",
+      "kind": "exact",
+      "label": "DeepSeek: DeepSeek V4 Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-pro",
+      "kind": "exact",
+      "label": "DeepSeek: DeepSeek V4 Pro",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/essentialai/rnj-1-instruct",
+      "kind": "exact",
+      "label": "EssentialAI: Rnj 1 Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-2.5-flash",
+      "kind": "exact",
+      "label": "Google: Gemini 2.5 Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-2.5-flash-lite",
+      "kind": "exact",
+      "label": "Google: Gemini 2.5 Flash Lite",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-2.5-flash-lite-preview-09-2025",
+      "kind": "exact",
+      "label": "Google: Gemini 2.5 Flash Lite Preview 09-2025",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-2.5-pro",
+      "kind": "exact",
+      "label": "Google: Gemini 2.5 Pro",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-2.5-pro-preview",
+      "kind": "exact",
+      "label": "Google: Gemini 2.5 Pro Preview 06-05",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-2.5-pro-preview-05-06",
+      "kind": "exact",
+      "label": "Google: Gemini 2.5 Pro Preview 05-06",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-3-flash-preview",
+      "kind": "exact",
+      "label": "Google: Gemini 3 Flash Preview",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-3-pro-image",
+      "kind": "exact",
+      "label": "Google: Nano Banana Pro (Gemini 3 Pro Image)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-3.1-flash-lite",
+      "kind": "exact",
+      "label": "Google: Gemini 3.1 Flash Lite",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-3.1-flash-lite-preview",
+      "kind": "exact",
+      "label": "Google: Gemini 3.1 Flash Lite Preview",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-3.1-pro-preview",
+      "kind": "exact",
+      "label": "Google: Gemini 3.1 Pro Preview",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-3.1-pro-preview-customtools",
+      "kind": "exact",
+      "label": "Google: Gemini 3.1 Pro Preview Custom Tools",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemini-3.5-flash",
+      "kind": "exact",
+      "label": "Google: Gemini 3.5 Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemma-3-12b-it",
+      "kind": "exact",
+      "label": "Google: Gemma 3 12B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemma-3-27b-it",
+      "kind": "exact",
+      "label": "Google: Gemma 3 27B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemma-4-26b-a4b-it",
+      "kind": "exact",
+      "label": "Google: Gemma 4 26B A4B ",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemma-4-26b-a4b-it:free",
+      "kind": "exact",
+      "label": "Google: Gemma 4 26B A4B  (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemma-4-31b-it",
+      "kind": "exact",
+      "label": "Google: Gemma 4 31B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/google/gemma-4-31b-it:free",
+      "kind": "exact",
+      "label": "Google: Gemma 4 31B (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/ibm-granite/granite-4.1-8b",
+      "kind": "exact",
+      "label": "IBM: Granite 4.1 8B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/inception/mercury-2",
+      "kind": "exact",
+      "label": "Inception: Mercury 2",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/inclusionai/ling-2.6-1t",
+      "kind": "exact",
+      "label": "inclusionAI: Ling-2.6-1T",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/inclusionai/ling-2.6-flash",
+      "kind": "exact",
+      "label": "inclusionAI: Ling-2.6-flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/inclusionai/ring-2.6-1t",
+      "kind": "exact",
+      "label": "inclusionAI: Ring-2.6-1T",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/kwaipilot/kat-coder-pro-v2",
+      "kind": "exact",
+      "label": "Kwaipilot: KAT-Coder-Pro V2",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/liquid/lfm-2.5-1.2b-thinking:free",
+      "kind": "exact",
+      "label": "LiquidAI: LFM2.5-1.2B-Thinking (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/meta-llama/llama-3.1-70b-instruct",
+      "kind": "exact",
+      "label": "Meta: Llama 3.1 70B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/meta-llama/llama-3.1-8b-instruct",
+      "kind": "exact",
+      "label": "Meta: Llama 3.1 8B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/meta-llama/llama-3.3-70b-instruct",
+      "kind": "exact",
+      "label": "Meta: Llama 3.3 70B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+      "kind": "exact",
+      "label": "Meta: Llama 3.3 70B Instruct (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/meta-llama/llama-4-maverick",
+      "kind": "exact",
+      "label": "Meta: Llama 4 Maverick",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/meta-llama/llama-4-scout",
+      "kind": "exact",
+      "label": "Meta: Llama 4 Scout",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/minimax/minimax-m1",
+      "kind": "exact",
+      "label": "MiniMax: MiniMax M1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/minimax/minimax-m2",
+      "kind": "exact",
+      "label": "MiniMax: MiniMax M2",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/minimax/minimax-m2.1",
+      "kind": "exact",
+      "label": "MiniMax: MiniMax M2.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/minimax/minimax-m2.5",
+      "kind": "exact",
+      "label": "MiniMax: MiniMax M2.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/minimax/minimax-m2.7",
+      "kind": "exact",
+      "label": "MiniMax: MiniMax M2.7",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/minimax/minimax-m3",
+      "kind": "exact",
+      "label": "MiniMax: MiniMax M3",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/codestral-2508",
+      "kind": "exact",
+      "label": "Mistral: Codestral 2508",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/devstral-2512",
+      "kind": "exact",
+      "label": "Mistral: Devstral 2 2512",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/ministral-14b-2512",
+      "kind": "exact",
+      "label": "Mistral: Ministral 3 14B 2512",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/ministral-3b-2512",
+      "kind": "exact",
+      "label": "Mistral: Ministral 3 3B 2512",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/ministral-8b-2512",
+      "kind": "exact",
+      "label": "Mistral: Ministral 3 8B 2512",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-large",
+      "kind": "exact",
+      "label": "Mistral Large",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-large-2407",
+      "kind": "exact",
+      "label": "Mistral Large 2407",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-large-2512",
+      "kind": "exact",
+      "label": "Mistral: Mistral Large 3 2512",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-medium-3",
+      "kind": "exact",
+      "label": "Mistral: Mistral Medium 3",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-medium-3-5",
+      "kind": "exact",
+      "label": "Mistral: Mistral Medium 3.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-medium-3.1",
+      "kind": "exact",
+      "label": "Mistral: Mistral Medium 3.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-nemo",
+      "kind": "exact",
+      "label": "Mistral: Mistral Nemo",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-saba",
+      "kind": "exact",
+      "label": "Mistral: Saba",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-small-2603",
+      "kind": "exact",
+      "label": "Mistral: Mistral Small 4",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mistral-small-3.2-24b-instruct",
+      "kind": "exact",
+      "label": "Mistral: Mistral Small 3.2 24B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/mixtral-8x22b-instruct",
+      "kind": "exact",
+      "label": "Mistral: Mixtral 8x22B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/mistralai/voxtral-small-24b-2507",
+      "kind": "exact",
+      "label": "Mistral: Voxtral Small 24B 2507",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k2",
+      "kind": "exact",
+      "label": "MoonshotAI: Kimi K2 0711",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k2-0905",
+      "kind": "exact",
+      "label": "MoonshotAI: Kimi K2 0905",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k2-thinking",
+      "kind": "exact",
+      "label": "MoonshotAI: Kimi K2 Thinking",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k2.5",
+      "kind": "exact",
+      "label": "MoonshotAI: Kimi K2.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k2.6",
+      "kind": "exact",
+      "label": "MoonshotAI: Kimi K2.6",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k2.7-code",
+      "kind": "exact",
+      "label": "MoonshotAI: Kimi K2.7 Code",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nex-agi/nex-n2-pro:free",
+      "kind": "exact",
+      "label": "Nex AGI: Nex-N2-Pro (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1.5",
+      "kind": "exact",
+      "label": "NVIDIA: Llama 3.3 Nemotron Super 49B V1.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-nano-30b-a3b",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron 3 Nano 30B A3B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron 3 Nano 30B A3B (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron 3 Nano Omni (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-super-120b-a12b",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron 3 Super",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron 3 Super (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron 3 Ultra",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron 3 Ultra (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-nano-12b-v2-vl:free",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron Nano 12B 2 VL (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-nano-9b-v2:free",
+      "kind": "exact",
+      "label": "NVIDIA: Nemotron Nano 9B V2 (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-3.5-turbo",
+      "kind": "exact",
+      "label": "OpenAI: GPT-3.5 Turbo",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-3.5-turbo-0613",
+      "kind": "exact",
+      "label": "OpenAI: GPT-3.5 Turbo (older v0613)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-3.5-turbo-16k",
+      "kind": "exact",
+      "label": "OpenAI: GPT-3.5 Turbo 16k",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4-turbo",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4 Turbo",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4-turbo-preview",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4 Turbo Preview",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4.1",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4.1-mini",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4.1 Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4.1-nano",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4.1 Nano",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4o",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4o",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4o-2024-05-13",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4o (2024-05-13)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4o-2024-08-06",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4o (2024-08-06)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4o-2024-11-20",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4o (2024-11-20)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4o-mini",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4o-mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-4o-mini-2024-07-18",
+      "kind": "exact",
+      "label": "OpenAI: GPT-4o-mini (2024-07-18)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5-codex",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5 Codex",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5-mini",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5 Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5-nano",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5 Nano",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5-pro",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5 Pro",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.1",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.1-chat",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.1 Chat",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.1-codex",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.1-Codex",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.1-codex-max",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.1-Codex-Max",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.1-codex-mini",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.1-Codex-Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.2",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.2",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.2-chat",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.2 Chat",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.2-codex",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.2-Codex",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.2-pro",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.2 Pro",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.3-chat",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.3 Chat",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.3-codex",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.3-Codex",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.4",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.4",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.4-mini",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.4 Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.4-nano",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.4 Nano",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.4-pro",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.4 Pro",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.5",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-5.5-pro",
+      "kind": "exact",
+      "label": "OpenAI: GPT-5.5 Pro",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-audio",
+      "kind": "exact",
+      "label": "OpenAI: GPT Audio",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-audio-mini",
+      "kind": "exact",
+      "label": "OpenAI: GPT Audio Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-chat-latest",
+      "kind": "exact",
+      "label": "OpenAI: GPT Chat Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-oss-120b",
+      "kind": "exact",
+      "label": "OpenAI: gpt-oss-120b",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-oss-120b:free",
+      "kind": "exact",
+      "label": "OpenAI: gpt-oss-120b (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-oss-20b",
+      "kind": "exact",
+      "label": "OpenAI: gpt-oss-20b",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-oss-20b:free",
+      "kind": "exact",
+      "label": "OpenAI: gpt-oss-20b (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/gpt-oss-safeguard-20b",
+      "kind": "exact",
+      "label": "OpenAI: gpt-oss-safeguard-20b",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o1",
+      "kind": "exact",
+      "label": "OpenAI: o1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o3",
+      "kind": "exact",
+      "label": "OpenAI: o3",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o3-deep-research",
+      "kind": "exact",
+      "label": "OpenAI: o3 Deep Research",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o3-mini",
+      "kind": "exact",
+      "label": "OpenAI: o3 Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o3-mini-high",
+      "kind": "exact",
+      "label": "OpenAI: o3 Mini High",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o3-pro",
+      "kind": "exact",
+      "label": "OpenAI: o3 Pro",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o4-mini",
+      "kind": "exact",
+      "label": "OpenAI: o4 Mini",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o4-mini-deep-research",
+      "kind": "exact",
+      "label": "OpenAI: o4 Mini Deep Research",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openai/o4-mini-high",
+      "kind": "exact",
+      "label": "OpenAI: o4 Mini High",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openrouter/auto",
+      "kind": "exact",
+      "label": "Auto Router",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openrouter/free",
+      "kind": "exact",
+      "label": "Free Models Router",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openrouter/fusion",
+      "kind": "exact",
+      "label": "OpenRouter: Fusion",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/openrouter/owl-alpha",
+      "kind": "exact",
+      "label": "Owl Alpha",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/poolside/laguna-m.1",
+      "kind": "exact",
+      "label": "Poolside: Laguna M.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/poolside/laguna-m.1:free",
+      "kind": "exact",
+      "label": "Poolside: Laguna M.1 (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/poolside/laguna-xs.2",
+      "kind": "exact",
+      "label": "Poolside: Laguna XS.2",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/poolside/laguna-xs.2:free",
+      "kind": "exact",
+      "label": "Poolside: Laguna XS.2 (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/prime-intellect/intellect-3",
+      "kind": "exact",
+      "label": "Prime Intellect: INTELLECT-3",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen-2.5-72b-instruct",
+      "kind": "exact",
+      "label": "Qwen2.5 72B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen-2.5-7b-instruct",
+      "kind": "exact",
+      "label": "Qwen: Qwen2.5 7B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen-plus",
+      "kind": "exact",
+      "label": "Qwen: Qwen-Plus",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen-plus-2025-07-28",
+      "kind": "exact",
+      "label": "Qwen: Qwen Plus 0728",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen-plus-2025-07-28:thinking",
+      "kind": "exact",
+      "label": "Qwen: Qwen Plus 0728 (thinking)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-14b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 14B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-235b-a22b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 235B A22B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-235b-a22b-2507",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 235B A22B Instruct 2507",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-235b-a22b-thinking-2507",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 235B A22B Thinking 2507",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-30b-a3b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 30B A3B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-30b-a3b-instruct-2507",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 30B A3B Instruct 2507",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-30b-a3b-thinking-2507",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 30B A3B Thinking 2507",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-32b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 32B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-8b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 8B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-coder",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Coder 480B A35B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-coder-30b-a3b-instruct",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Coder 30B A3B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-coder-flash",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Coder Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-coder-next",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Coder Next",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-coder-plus",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Coder Plus",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-coder:free",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Coder 480B A35B (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-max",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Max",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-max-thinking",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Max Thinking",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-next-80b-a3b-instruct",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Next 80B A3B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Next 80B A3B Instruct (free)",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-next-80b-a3b-thinking",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 Next 80B A3B Thinking",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-vl-235b-a22b-instruct",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 VL 235B A22B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-vl-235b-a22b-thinking",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 VL 235B A22B Thinking",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-vl-30b-a3b-instruct",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 VL 30B A3B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-vl-30b-a3b-thinking",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 VL 30B A3B Thinking",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-vl-32b-instruct",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 VL 32B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-vl-8b-instruct",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 VL 8B Instruct",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-vl-8b-thinking",
+      "kind": "exact",
+      "label": "Qwen: Qwen3 VL 8B Thinking",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-122b-a10b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.5-122B-A10B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-27b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.5-27B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-35b-a3b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.5-35B-A3B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-397b-a17b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.5 397B A17B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-9b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.5-9B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-flash-02-23",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.5-Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-plus-02-15",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.5 Plus 2026-02-15",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-plus-20260420",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.5 Plus 2026-04-20",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.6-27b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.6 27B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.6-35b-a3b",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.6 35B A3B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.6-flash",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.6 Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.6-max-preview",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.6 Max Preview",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.6-plus",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.6 Plus",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.7-max",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.7 Max",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.7-plus",
+      "kind": "exact",
+      "label": "Qwen: Qwen3.7 Plus",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/rekaai/reka-edge",
+      "kind": "exact",
+      "label": "Reka Edge",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/relace/relace-search",
+      "kind": "exact",
+      "label": "Relace: Relace Search",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/sao10k/l3.1-euryale-70b",
+      "kind": "exact",
+      "label": "Sao10K: Llama 3.1 Euryale 70B v2.2",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/stepfun/step-3.5-flash",
+      "kind": "exact",
+      "label": "StepFun: Step 3.5 Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/stepfun/step-3.7-flash",
+      "kind": "exact",
+      "label": "StepFun: Step 3.7 Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/tencent/hy3-preview",
+      "kind": "exact",
+      "label": "Tencent: Hy3 preview",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/thedrummer/rocinante-12b",
+      "kind": "exact",
+      "label": "TheDrummer: Rocinante 12B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/thedrummer/unslopnemo-12b",
+      "kind": "exact",
+      "label": "TheDrummer: UnslopNemo 12B",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/upstage/solar-pro-3",
+      "kind": "exact",
+      "label": "Upstage: Solar Pro 3",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/x-ai/grok-4.20",
+      "kind": "exact",
+      "label": "xAI: Grok 4.20",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/x-ai/grok-4.3",
+      "kind": "exact",
+      "label": "xAI: Grok 4.3",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/x-ai/grok-build-0.1",
+      "kind": "exact",
+      "label": "xAI: Grok Build 0.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/xiaomi/mimo-v2.5",
+      "kind": "exact",
+      "label": "Xiaomi: MiMo-V2.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/xiaomi/mimo-v2.5-pro",
+      "kind": "exact",
+      "label": "Xiaomi: MiMo-V2.5-Pro",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-4.5",
+      "kind": "exact",
+      "label": "Z.ai: GLM 4.5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-4.5-air",
+      "kind": "exact",
+      "label": "Z.ai: GLM 4.5 Air",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-4.5v",
+      "kind": "exact",
+      "label": "Z.ai: GLM 4.5V",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-4.6",
+      "kind": "exact",
+      "label": "Z.ai: GLM 4.6",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-4.6v",
+      "kind": "exact",
+      "label": "Z.ai: GLM 4.6V",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-4.7",
+      "kind": "exact",
+      "label": "Z.ai: GLM 4.7",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-4.7-flash",
+      "kind": "exact",
+      "label": "Z.ai: GLM 4.7 Flash",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-5",
+      "kind": "exact",
+      "label": "Z.ai: GLM 5",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-5-turbo",
+      "kind": "exact",
+      "label": "Z.ai: GLM 5 Turbo",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-5.1",
+      "kind": "exact",
+      "label": "Z.ai: GLM 5.1",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/z-ai/glm-5.2",
+      "kind": "exact",
+      "label": "Z.ai: GLM 5.2",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~anthropic/claude-fable-latest",
+      "kind": "exact",
+      "label": "Anthropic: Claude Fable Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~anthropic/claude-haiku-latest",
+      "kind": "exact",
+      "label": "Anthropic Claude Haiku Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~anthropic/claude-opus-latest",
+      "kind": "exact",
+      "label": "Anthropic: Claude Opus Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~anthropic/claude-sonnet-latest",
+      "kind": "exact",
+      "label": "Anthropic Claude Sonnet Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~google/gemini-flash-latest",
+      "kind": "exact",
+      "label": "Google Gemini Flash Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~google/gemini-pro-latest",
+      "kind": "exact",
+      "label": "Google Gemini Pro Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest",
+      "kind": "exact",
+      "label": "MoonshotAI Kimi Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~openai/gpt-latest",
+      "kind": "exact",
+      "label": "OpenAI GPT Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "openrouter/~openai/gpt-mini-latest",
+      "kind": "exact",
+      "label": "OpenAI GPT Mini Latest",
+      "provider": "openrouter"
+    },
+    {
+      "id": "together/MiniMaxAI/MiniMax-M2.7",
+      "kind": "exact",
+      "label": "MiniMax-M2.7",
+      "provider": "together"
+    },
+    {
+      "id": "together/MiniMaxAI/MiniMax-M3",
+      "kind": "exact",
+      "label": "MiniMax-M3",
+      "provider": "together"
+    },
+    {
+      "id": "together/Qwen/Qwen2.5-7B-Instruct-Turbo",
+      "kind": "exact",
+      "label": "Qwen 2.5 7B Instruct Turbo",
+      "provider": "together"
+    },
+    {
+      "id": "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+      "kind": "exact",
+      "label": "Qwen3 235B A22B Instruct 2507 FP8",
+      "provider": "together"
+    },
+    {
+      "id": "together/Qwen/Qwen3.5-397B-A17B",
+      "kind": "exact",
+      "label": "Qwen3.5 397B A17B",
+      "provider": "together"
+    },
+    {
+      "id": "together/Qwen/Qwen3.5-9B",
+      "kind": "exact",
+      "label": "Qwen3.5 9B",
+      "provider": "together"
+    },
+    {
+      "id": "together/Qwen/Qwen3.6-Plus",
+      "kind": "exact",
+      "label": "Qwen3.6 Plus",
+      "provider": "together"
+    },
+    {
+      "id": "together/Qwen/Qwen3.7-Max",
+      "kind": "exact",
+      "label": "Qwen3.7 Max",
+      "provider": "together"
+    },
+    {
+      "id": "together/deepseek-ai/DeepSeek-V4-Pro",
+      "kind": "exact",
+      "label": "DeepSeek V4 Pro",
+      "provider": "together"
+    },
+    {
+      "id": "together/essentialai/Rnj-1-Instruct",
+      "kind": "exact",
+      "label": "Rnj-1 Instruct",
+      "provider": "together"
+    },
+    {
+      "id": "together/google/gemma-4-31B-it",
+      "kind": "exact",
+      "label": "Gemma 4 31B Instruct",
+      "provider": "together"
+    },
+    {
+      "id": "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "kind": "exact",
+      "label": "Llama 3.3 70B",
+      "provider": "together"
+    },
+    {
+      "id": "together/moonshotai/Kimi-K2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "together"
+    },
+    {
+      "id": "together/moonshotai/Kimi-K2.7-Code",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code",
+      "provider": "together"
+    },
+    {
+      "id": "together/nvidia/nemotron-3-ultra-550b-a55b",
+      "kind": "exact",
+      "label": "Nemotron 3 Ultra 550B A55B",
+      "provider": "together"
+    },
+    {
+      "id": "together/openai/gpt-oss-120b",
+      "kind": "exact",
+      "label": "GPT OSS 120B",
+      "provider": "together"
+    },
+    {
+      "id": "together/openai/gpt-oss-20b",
+      "kind": "exact",
+      "label": "GPT OSS 20B",
+      "provider": "together"
+    },
+    {
+      "id": "together/zai-org/GLM-5",
+      "kind": "exact",
+      "label": "GLM-5",
+      "provider": "together"
+    },
+    {
+      "id": "together/zai-org/GLM-5.1",
+      "kind": "exact",
+      "label": "GLM-5.1",
+      "provider": "together"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen-3-14b",
+      "kind": "exact",
+      "label": "Qwen3-14B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen-3-235b",
+      "kind": "exact",
+      "label": "Qwen3 235B A22B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen-3-30b",
+      "kind": "exact",
+      "label": "Qwen3-30B-A3B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen-3-32b",
+      "kind": "exact",
+      "label": "Qwen 3 32B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen-3.6-max-preview",
+      "kind": "exact",
+      "label": "Qwen 3.6 Max Preview",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-235b-a22b-thinking",
+      "kind": "exact",
+      "label": "Qwen3 VL 235B A22B Thinking",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-coder",
+      "kind": "exact",
+      "label": "Qwen3 Coder 480B A35B Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-coder-30b-a3b",
+      "kind": "exact",
+      "label": "Qwen 3 Coder 30B A3B Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-coder-next",
+      "kind": "exact",
+      "label": "Qwen3 Coder Next",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-coder-plus",
+      "kind": "exact",
+      "label": "Qwen3 Coder Plus",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-max",
+      "kind": "exact",
+      "label": "Qwen3 Max",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-max-preview",
+      "kind": "exact",
+      "label": "Qwen3 Max Preview",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-max-thinking",
+      "kind": "exact",
+      "label": "Qwen 3 Max Thinking",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-next-80b-a3b-instruct",
+      "kind": "exact",
+      "label": "Qwen3 Next 80B A3B Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-next-80b-a3b-thinking",
+      "kind": "exact",
+      "label": "Qwen3 Next 80B A3B Thinking",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3-vl-thinking",
+      "kind": "exact",
+      "label": "Qwen3 VL 235B A22B Thinking",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3.5-flash",
+      "kind": "exact",
+      "label": "Qwen 3.5 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3.5-plus",
+      "kind": "exact",
+      "label": "Qwen 3.5 Plus",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3.6-27b",
+      "kind": "exact",
+      "label": "Qwen 3.6 27B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3.6-plus",
+      "kind": "exact",
+      "label": "Qwen 3.6 Plus",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3.7-max",
+      "kind": "exact",
+      "label": "Qwen 3.7 Max",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/alibaba/qwen3.7-plus",
+      "kind": "exact",
+      "label": "Qwen 3.7 Plus",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-3-haiku",
+      "kind": "exact",
+      "label": "Claude 3 Haiku",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-3.5-haiku",
+      "kind": "exact",
+      "label": "Claude 3.5 Haiku",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-haiku-4.5",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-opus-4",
+      "kind": "exact",
+      "label": "Claude Opus 4",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-opus-4.1",
+      "kind": "exact",
+      "label": "Claude Opus 4.1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-opus-4.5",
+      "kind": "exact",
+      "label": "Claude Opus 4.5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-opus-4.6",
+      "kind": "exact",
+      "label": "Claude Opus 4.6",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-opus-4.7",
+      "kind": "exact",
+      "label": "Claude Opus 4.7",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-opus-4.8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-sonnet-4",
+      "kind": "exact",
+      "label": "Claude Sonnet 4",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-sonnet-4.5",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/anthropic/claude-sonnet-4.6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/arcee-ai/trinity-large-preview",
+      "kind": "exact",
+      "label": "Trinity Large Preview",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/arcee-ai/trinity-large-thinking",
+      "kind": "exact",
+      "label": "Trinity Large Thinking",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/bytedance/seed-1.6",
+      "kind": "exact",
+      "label": "Seed 1.6",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/cohere/command-a",
+      "kind": "exact",
+      "label": "Command A",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/deepseek/deepseek-r1",
+      "kind": "exact",
+      "label": "DeepSeek-R1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/deepseek/deepseek-v3",
+      "kind": "exact",
+      "label": "DeepSeek V3 0324",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/deepseek/deepseek-v3.1",
+      "kind": "exact",
+      "label": "DeepSeek V3.1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/deepseek/deepseek-v3.1-terminus",
+      "kind": "exact",
+      "label": "DeepSeek V3.1 Terminus",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/deepseek/deepseek-v3.2",
+      "kind": "exact",
+      "label": "DeepSeek V3.2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/deepseek/deepseek-v3.2-thinking",
+      "kind": "exact",
+      "label": "DeepSeek V3.2 Thinking",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/deepseek/deepseek-v4-flash",
+      "kind": "exact",
+      "label": "DeepSeek V4 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/deepseek/deepseek-v4-pro",
+      "kind": "exact",
+      "label": "DeepSeek V4 Pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-2.5-flash",
+      "kind": "exact",
+      "label": "Gemini 2.5 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-2.5-flash-lite",
+      "kind": "exact",
+      "label": "Gemini 2.5 Flash Lite",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-2.5-pro",
+      "kind": "exact",
+      "label": "Gemini 2.5 Pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-3-flash",
+      "kind": "exact",
+      "label": "Gemini 3 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-3-pro-preview",
+      "kind": "exact",
+      "label": "Gemini 3 Pro Preview",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-3.1-flash-lite",
+      "kind": "exact",
+      "label": "Gemini 3.1 Flash Lite",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-3.1-flash-lite-preview",
+      "kind": "exact",
+      "label": "Gemini 3.1 Flash Lite Preview",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-3.1-pro-preview",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro Preview",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemini-3.5-flash",
+      "kind": "exact",
+      "label": "Gemini 3.5 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemma-4-26b-a4b-it",
+      "kind": "exact",
+      "label": "Gemma 4 26B A4B IT",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/google/gemma-4-31b-it",
+      "kind": "exact",
+      "label": "Gemma 4 31B IT",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/inception/mercury-2",
+      "kind": "exact",
+      "label": "Mercury 2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/inception/mercury-coder-small",
+      "kind": "exact",
+      "label": "Mercury Coder Small Beta",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/kwaipilot/kat-coder-pro-v2",
+      "kind": "exact",
+      "label": "Kat Coder Pro V2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/meituan/longcat-flash-chat",
+      "kind": "exact",
+      "label": "LongCat Flash Chat",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/meta/llama-3.1-70b",
+      "kind": "exact",
+      "label": "Llama 3.1 70B Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/meta/llama-3.1-8b",
+      "kind": "exact",
+      "label": "Llama 3.1 8B Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/meta/llama-3.2-11b",
+      "kind": "exact",
+      "label": "Llama 3.2 11B Vision Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/meta/llama-3.2-90b",
+      "kind": "exact",
+      "label": "Llama 3.2 90B Vision Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/meta/llama-3.3-70b",
+      "kind": "exact",
+      "label": "Llama 3.3 70B Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/meta/llama-4-maverick",
+      "kind": "exact",
+      "label": "Llama 4 Maverick 17B Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/meta/llama-4-scout",
+      "kind": "exact",
+      "label": "Llama 4 Scout 17B Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/minimax/minimax-m2",
+      "kind": "exact",
+      "label": "MiniMax M2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/minimax/minimax-m2.1",
+      "kind": "exact",
+      "label": "MiniMax M2.1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/minimax/minimax-m2.1-lightning",
+      "kind": "exact",
+      "label": "MiniMax M2.1 Lightning",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/minimax/minimax-m2.5",
+      "kind": "exact",
+      "label": "MiniMax M2.5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/minimax/minimax-m2.5-highspeed",
+      "kind": "exact",
+      "label": "MiniMax M2.5 High Speed",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/minimax/minimax-m2.7",
+      "kind": "exact",
+      "label": "MiniMax M2.7",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/minimax/minimax-m2.7-highspeed",
+      "kind": "exact",
+      "label": "MiniMax M2.7 High Speed",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/minimax/minimax-m3",
+      "kind": "exact",
+      "label": "MiniMax M3",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/codestral",
+      "kind": "exact",
+      "label": "Mistral Codestral",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/devstral-2",
+      "kind": "exact",
+      "label": "Devstral 2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/devstral-small",
+      "kind": "exact",
+      "label": "Devstral Small 1.1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/devstral-small-2",
+      "kind": "exact",
+      "label": "Devstral Small 2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/ministral-3b",
+      "kind": "exact",
+      "label": "Ministral 3B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/ministral-8b",
+      "kind": "exact",
+      "label": "Ministral 8B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/mistral-medium",
+      "kind": "exact",
+      "label": "Mistral Medium 3.1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/mistral-medium-3.5",
+      "kind": "exact",
+      "label": "Mistral Medium Latest",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/mistral-nemo",
+      "kind": "exact",
+      "label": "Mistral Nemo 12B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/mistral-small",
+      "kind": "exact",
+      "label": "Mistral Small",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/pixtral-12b",
+      "kind": "exact",
+      "label": "Pixtral 12B 2409",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/mistral/pixtral-large",
+      "kind": "exact",
+      "label": "Pixtral Large",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/moonshotai/kimi-k2",
+      "kind": "exact",
+      "label": "Kimi K2 Instruct",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/moonshotai/kimi-k2-thinking",
+      "kind": "exact",
+      "label": "Kimi K2 Thinking",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/moonshotai/kimi-k2.5",
+      "kind": "exact",
+      "label": "Kimi K2.5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/moonshotai/kimi-k2.6",
+      "kind": "exact",
+      "label": "Kimi K2.6",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/moonshotai/kimi-k2.7-code",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/moonshotai/kimi-k2.7-code-highspeed",
+      "kind": "exact",
+      "label": "Kimi K2.7 Code High Speed",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/nvidia/nemotron-3-super-120b-a12b",
+      "kind": "exact",
+      "label": "NVIDIA Nemotron 3 Super 120B A12B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/nvidia/nemotron-3-ultra-550b-a55b",
+      "kind": "exact",
+      "label": "Nemotron 3 Ultra",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/nvidia/nemotron-nano-12b-v2-vl",
+      "kind": "exact",
+      "label": "Nvidia Nemotron Nano 12B V2 VL",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/nvidia/nemotron-nano-9b-v2",
+      "kind": "exact",
+      "label": "Nvidia Nemotron Nano 9B V2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-4-turbo",
+      "kind": "exact",
+      "label": "GPT-4 Turbo",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-4.1",
+      "kind": "exact",
+      "label": "GPT-4.1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-4.1-mini",
+      "kind": "exact",
+      "label": "GPT-4.1 mini",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-4.1-nano",
+      "kind": "exact",
+      "label": "GPT-4.1 nano",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-4o",
+      "kind": "exact",
+      "label": "GPT-4o",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-4o-mini",
+      "kind": "exact",
+      "label": "GPT-4o mini",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5",
+      "kind": "exact",
+      "label": "GPT-5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5-chat",
+      "kind": "exact",
+      "label": "GPT 5 Chat",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5-codex",
+      "kind": "exact",
+      "label": "GPT-5-Codex",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5-mini",
+      "kind": "exact",
+      "label": "GPT-5 mini",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5-nano",
+      "kind": "exact",
+      "label": "GPT-5 nano",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5-pro",
+      "kind": "exact",
+      "label": "GPT-5 pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.1-codex",
+      "kind": "exact",
+      "label": "GPT-5.1-Codex",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.1-codex-max",
+      "kind": "exact",
+      "label": "GPT 5.1 Codex Max",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.1-codex-mini",
+      "kind": "exact",
+      "label": "GPT 5.1 Codex Mini",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.1-instant",
+      "kind": "exact",
+      "label": "GPT-5.1 Instant",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.1-thinking",
+      "kind": "exact",
+      "label": "GPT 5.1 Thinking",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.2",
+      "kind": "exact",
+      "label": "GPT 5.2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.2-chat",
+      "kind": "exact",
+      "label": "GPT 5.2 Chat",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.2-codex",
+      "kind": "exact",
+      "label": "GPT 5.2 Codex",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.2-pro",
+      "kind": "exact",
+      "label": "GPT 5.2 ",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.3-chat",
+      "kind": "exact",
+      "label": "GPT-5.3 Chat",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.3-codex",
+      "kind": "exact",
+      "label": "GPT 5.3 Codex",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.4",
+      "kind": "exact",
+      "label": "GPT 5.4",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.4-mini",
+      "kind": "exact",
+      "label": "GPT 5.4 Mini",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.4-nano",
+      "kind": "exact",
+      "label": "GPT 5.4 Nano",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.4-pro",
+      "kind": "exact",
+      "label": "GPT 5.4 Pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.5",
+      "kind": "exact",
+      "label": "GPT 5.5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-5.5-pro",
+      "kind": "exact",
+      "label": "GPT 5.5 Pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-oss-120b",
+      "kind": "exact",
+      "label": "GPT OSS 120B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-oss-20b",
+      "kind": "exact",
+      "label": "GPT OSS 20B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/gpt-oss-safeguard-20b",
+      "kind": "exact",
+      "label": "GPT OSS Safeguard 20B",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/o1",
+      "kind": "exact",
+      "label": "o1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/o3",
+      "kind": "exact",
+      "label": "o3",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/o3-deep-research",
+      "kind": "exact",
+      "label": "o3-deep-research",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/o3-mini",
+      "kind": "exact",
+      "label": "o3-mini",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/o3-pro",
+      "kind": "exact",
+      "label": "o3 Pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/openai/o4-mini",
+      "kind": "exact",
+      "label": "o4-mini",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/perplexity/sonar",
+      "kind": "exact",
+      "label": "Sonar",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/perplexity/sonar-pro",
+      "kind": "exact",
+      "label": "Sonar Pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/stepfun/step-3.5-flash",
+      "kind": "exact",
+      "label": "StepFun 3.5 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/stepfun/step-3.7-flash",
+      "kind": "exact",
+      "label": "Step 3.7 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.1-fast-non-reasoning",
+      "kind": "exact",
+      "label": "Grok 4.1 Fast Non-Reasoning",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.1-fast-reasoning",
+      "kind": "exact",
+      "label": "Grok 4.1 Fast Reasoning",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.20-multi-agent",
+      "kind": "exact",
+      "label": "Grok 4.20 Multi-Agent",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.20-multi-agent-beta",
+      "kind": "exact",
+      "label": "Grok 4.20 Multi Agent Beta",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.20-non-reasoning",
+      "kind": "exact",
+      "label": "Grok 4.20 Non-Reasoning",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.20-non-reasoning-beta",
+      "kind": "exact",
+      "label": "Grok 4.20 Beta Non-Reasoning",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.20-reasoning",
+      "kind": "exact",
+      "label": "Grok 4.20 Reasoning",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.20-reasoning-beta",
+      "kind": "exact",
+      "label": "Grok 4.20 Beta Reasoning",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-4.3",
+      "kind": "exact",
+      "label": "Grok 4.3",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xai/grok-build-0.1",
+      "kind": "exact",
+      "label": "Grok Build 0.1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xiaomi/mimo-v2-flash",
+      "kind": "exact",
+      "label": "MiMo V2 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xiaomi/mimo-v2-pro",
+      "kind": "exact",
+      "label": "MiMo V2 Pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xiaomi/mimo-v2.5",
+      "kind": "exact",
+      "label": "MiMo M2.5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/xiaomi/mimo-v2.5-pro",
+      "kind": "exact",
+      "label": "MiMo V2.5 Pro",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.5",
+      "kind": "exact",
+      "label": "GLM-4.5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.5-air",
+      "kind": "exact",
+      "label": "GLM 4.5 Air",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.5v",
+      "kind": "exact",
+      "label": "GLM 4.5V",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.6",
+      "kind": "exact",
+      "label": "GLM 4.6",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.6v",
+      "kind": "exact",
+      "label": "GLM-4.6V",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.6v-flash",
+      "kind": "exact",
+      "label": "GLM-4.6V-Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.7",
+      "kind": "exact",
+      "label": "GLM 4.7",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.7-flash",
+      "kind": "exact",
+      "label": "GLM 4.7 Flash",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-4.7-flashx",
+      "kind": "exact",
+      "label": "GLM 4.7 FlashX",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-5",
+      "kind": "exact",
+      "label": "GLM 5",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-5-turbo",
+      "kind": "exact",
+      "label": "GLM 5 Turbo",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-5.1",
+      "kind": "exact",
+      "label": "GLM 5.1",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-5.2",
+      "kind": "exact",
+      "label": "GLM 5.2",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "vercel-ai-gateway/zai/glm-5v-turbo",
+      "kind": "exact",
+      "label": "GLM 5V Turbo",
+      "provider": "vercel-ai-gateway"
+    },
+    {
+      "id": "xai/grok-3",
+      "kind": "exact",
+      "label": "Grok 3",
+      "provider": "xai"
+    },
+    {
+      "id": "xai/grok-3-fast",
+      "kind": "exact",
+      "label": "Grok 3 Fast",
+      "provider": "xai"
+    },
+    {
+      "id": "xai/grok-4.20-0309-non-reasoning",
+      "kind": "exact",
+      "label": "Grok 4.20 (Non-Reasoning)",
+      "provider": "xai"
+    },
+    {
+      "id": "xai/grok-4.20-0309-reasoning",
+      "kind": "exact",
+      "label": "Grok 4.20 (Reasoning)",
+      "provider": "xai"
+    },
+    {
+      "id": "xai/grok-4.3",
+      "kind": "exact",
+      "label": "Grok 4.3",
+      "provider": "xai"
+    },
+    {
+      "id": "xai/grok-build-0.1",
+      "kind": "exact",
+      "label": "Grok Build 0.1",
+      "provider": "xai"
+    },
+    {
+      "id": "xai/grok-code-fast-1",
+      "kind": "exact",
+      "label": "Grok Code Fast 1",
+      "provider": "xai"
+    },
+    {
+      "id": "xiaomi/mimo-v2-flash",
+      "kind": "exact",
+      "label": "MiMo-V2-Flash",
+      "provider": "xiaomi"
+    },
+    {
+      "id": "xiaomi/mimo-v2-omni",
+      "kind": "exact",
+      "label": "MiMo-V2-Omni",
+      "provider": "xiaomi"
+    },
+    {
+      "id": "xiaomi/mimo-v2-pro",
+      "kind": "exact",
+      "label": "MiMo-V2-Pro",
+      "provider": "xiaomi"
+    },
+    {
+      "id": "xiaomi/mimo-v2.5",
+      "kind": "exact",
+      "label": "MiMo-V2.5",
+      "provider": "xiaomi"
+    },
+    {
+      "id": "xiaomi/mimo-v2.5-pro",
+      "kind": "exact",
+      "label": "MiMo-V2.5-Pro",
+      "provider": "xiaomi"
+    },
+    {
+      "id": "xiaomi/mimo-v2.5-pro-ultraspeed",
+      "kind": "exact",
+      "label": "MiMo-V2.5-Pro-UltraSpeed",
+      "provider": "xiaomi"
+    },
+    {
+      "id": "xiaomi-token-plan-ams/mimo-v2-omni",
+      "kind": "exact",
+      "label": "MiMo-V2-Omni",
+      "provider": "xiaomi-token-plan-ams"
+    },
+    {
+      "id": "xiaomi-token-plan-ams/mimo-v2-pro",
+      "kind": "exact",
+      "label": "MiMo-V2-Pro",
+      "provider": "xiaomi-token-plan-ams"
+    },
+    {
+      "id": "xiaomi-token-plan-ams/mimo-v2.5",
+      "kind": "exact",
+      "label": "MiMo-V2.5",
+      "provider": "xiaomi-token-plan-ams"
+    },
+    {
+      "id": "xiaomi-token-plan-ams/mimo-v2.5-pro",
+      "kind": "exact",
+      "label": "MiMo-V2.5-Pro",
+      "provider": "xiaomi-token-plan-ams"
+    },
+    {
+      "id": "xiaomi-token-plan-ams/mimo-v2.5-pro-ultraspeed",
+      "kind": "exact",
+      "label": "MiMo-V2.5-Pro-UltraSpeed",
+      "provider": "xiaomi-token-plan-ams"
+    },
+    {
+      "id": "xiaomi-token-plan-cn/mimo-v2-omni",
+      "kind": "exact",
+      "label": "MiMo-V2-Omni",
+      "provider": "xiaomi-token-plan-cn"
+    },
+    {
+      "id": "xiaomi-token-plan-cn/mimo-v2-pro",
+      "kind": "exact",
+      "label": "MiMo-V2-Pro",
+      "provider": "xiaomi-token-plan-cn"
+    },
+    {
+      "id": "xiaomi-token-plan-cn/mimo-v2.5",
+      "kind": "exact",
+      "label": "MiMo-V2.5",
+      "provider": "xiaomi-token-plan-cn"
+    },
+    {
+      "id": "xiaomi-token-plan-cn/mimo-v2.5-pro",
+      "kind": "exact",
+      "label": "MiMo-V2.5-Pro",
+      "provider": "xiaomi-token-plan-cn"
+    },
+    {
+      "id": "xiaomi-token-plan-cn/mimo-v2.5-pro-ultraspeed",
+      "kind": "exact",
+      "label": "MiMo-V2.5-Pro-UltraSpeed",
+      "provider": "xiaomi-token-plan-cn"
+    },
+    {
+      "id": "xiaomi-token-plan-sgp/mimo-v2-omni",
+      "kind": "exact",
+      "label": "MiMo-V2-Omni",
+      "provider": "xiaomi-token-plan-sgp"
+    },
+    {
+      "id": "xiaomi-token-plan-sgp/mimo-v2-pro",
+      "kind": "exact",
+      "label": "MiMo-V2-Pro",
+      "provider": "xiaomi-token-plan-sgp"
+    },
+    {
+      "id": "xiaomi-token-plan-sgp/mimo-v2.5",
+      "kind": "exact",
+      "label": "MiMo-V2.5",
+      "provider": "xiaomi-token-plan-sgp"
+    },
+    {
+      "id": "xiaomi-token-plan-sgp/mimo-v2.5-pro",
+      "kind": "exact",
+      "label": "MiMo-V2.5-Pro",
+      "provider": "xiaomi-token-plan-sgp"
+    },
+    {
+      "id": "xiaomi-token-plan-sgp/mimo-v2.5-pro-ultraspeed",
+      "kind": "exact",
+      "label": "MiMo-V2.5-Pro-UltraSpeed",
+      "provider": "xiaomi-token-plan-sgp"
+    },
+    {
+      "id": "zai/glm-4.5-air",
+      "kind": "exact",
+      "label": "GLM-4.5-Air",
+      "provider": "zai"
+    },
+    {
+      "id": "zai/glm-4.7",
+      "kind": "exact",
+      "label": "GLM-4.7",
+      "provider": "zai"
+    },
+    {
+      "id": "zai/glm-5-turbo",
+      "kind": "exact",
+      "label": "GLM-5-Turbo",
+      "provider": "zai"
+    },
+    {
+      "id": "zai/glm-5.1",
+      "kind": "exact",
+      "label": "GLM-5.1",
+      "provider": "zai"
+    },
+    {
+      "id": "zai/glm-5.2",
+      "kind": "exact",
+      "label": "GLM-5.2",
+      "provider": "zai"
+    },
+    {
+      "id": "zai/glm-5v-turbo",
+      "kind": "exact",
+      "label": "GLM-5V-Turbo",
+      "provider": "zai"
+    },
+    {
+      "id": "zai-coding-cn/glm-4.5-air",
+      "kind": "exact",
+      "label": "GLM-4.5-Air",
+      "provider": "zai-coding-cn"
+    },
+    {
+      "id": "zai-coding-cn/glm-4.7",
+      "kind": "exact",
+      "label": "GLM-4.7",
+      "provider": "zai-coding-cn"
+    },
+    {
+      "id": "zai-coding-cn/glm-5-turbo",
+      "kind": "exact",
+      "label": "GLM-5-Turbo",
+      "provider": "zai-coding-cn"
+    },
+    {
+      "id": "zai-coding-cn/glm-5.1",
+      "kind": "exact",
+      "label": "GLM-5.1",
+      "provider": "zai-coding-cn"
+    },
+    {
+      "id": "zai-coding-cn/glm-5.2",
+      "kind": "exact",
+      "label": "GLM-5.2",
+      "provider": "zai-coding-cn"
+    },
+    {
+      "id": "zai-coding-cn/glm-5v-turbo",
+      "kind": "exact",
+      "label": "GLM-5V-Turbo",
+      "provider": "zai-coding-cn"
+    },
+    {
+      "id": "models-json:<provider>/<model-id>",
+      "kind": "provider_source",
+      "label": "Custom provider model from ~/.pi/agent/models.json",
+      "provider": "custom"
+    },
+    {
+      "id": "litellm:<model-id>",
+      "kind": "provider_source",
+      "label": "LiteLLM-discovered model",
+      "provider": "litellm"
+    }
+  ],
+  "provider_count": 35,
+  "source": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/ai/src/models.generated.ts",
+  "updated_at": "2026-06-21"
+}

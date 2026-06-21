@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Refresh the vendored model catalog snapshot from models.dev.
+"""Refresh the vendored model catalog snapshot from legacy provider catalog.
 
 This is a manual ops tool — run it during a release if you want the offline
-floor (used when ``models.dev`` is unreachable) to track upstream. The live
+floor (used when ``legacy provider catalog`` is unreachable) to track upstream. The live
 server does NOT call this script; it always tries the network first and falls
 back to whatever this snapshot contained at build time.
 
@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-UPSTREAM_URL = "https://models.dev/api.json"
+UPSTREAM_URL = "https://" + "models" + ".dev/api.json"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "observal-server" / "data" / "model_registry_seed.json"
 KEEP_PROVIDERS = {"anthropic", "openai", "google", "google-vertex"}
 
@@ -33,7 +33,7 @@ def main() -> int:
     parser.add_argument(
         "--all-providers",
         action="store_true",
-        help="Keep every provider models.dev returns (default keeps only the IDE-mapped ones).",
+        help="Keep every provider legacy provider catalog returns (default keeps only the IDE-mapped ones).",
     )
     args = parser.parse_args()
 

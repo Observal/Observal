@@ -1,0 +1,114 @@
+{
+  "harness": "claude-code",
+  "models": [
+    {
+      "id": "default",
+      "kind": "alias",
+      "label": "default",
+      "provider": "anthropic"
+    },
+    {
+      "id": "best",
+      "kind": "alias",
+      "label": "best",
+      "provider": "anthropic"
+    },
+    {
+      "id": "fable",
+      "kind": "alias",
+      "label": "fable",
+      "provider": "anthropic"
+    },
+    {
+      "id": "opus",
+      "kind": "alias",
+      "label": "opus",
+      "provider": "anthropic"
+    },
+    {
+      "id": "sonnet",
+      "kind": "alias",
+      "label": "sonnet",
+      "provider": "anthropic"
+    },
+    {
+      "id": "haiku",
+      "kind": "alias",
+      "label": "haiku",
+      "provider": "anthropic"
+    },
+    {
+      "id": "opusplan",
+      "kind": "alias",
+      "label": "opusplan",
+      "provider": "anthropic"
+    },
+    {
+      "id": "inherit",
+      "kind": "alias",
+      "label": "inherit",
+      "provider": "anthropic"
+    },
+    {
+      "id": "sonnet[1m]",
+      "kind": "alias",
+      "label": "sonnet[1m]",
+      "provider": "anthropic"
+    },
+    {
+      "id": "opus[1m]",
+      "kind": "alias",
+      "label": "opus[1m]",
+      "provider": "anthropic"
+    },
+    {
+      "id": "opusplan[1m]",
+      "kind": "alias",
+      "label": "opusplan[1m]",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-fable-5",
+      "kind": "exact",
+      "label": "claude-fable-5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "kind": "exact",
+      "label": "claude-opus-4-8",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-opus-4-7",
+      "kind": "exact",
+      "label": "claude-opus-4-7",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-opus-4-6",
+      "kind": "exact",
+      "label": "claude-opus-4-6",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "claude-sonnet-4-6",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "kind": "exact",
+      "label": "claude-sonnet-4-5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "kind": "exact",
+      "label": "claude-haiku-4-5",
+      "provider": "anthropic"
+    }
+  ],
+  "updated_at": "2026-06-21"
+}

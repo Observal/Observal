@@ -1,0 +1,48 @@
+{
+  "harness": "copilot",
+  "models": [
+    {
+      "id": "auto",
+      "kind": "exact",
+      "label": "auto",
+      "provider": "github"
+    },
+    {
+      "id": "claude-sonnet-4.5",
+      "kind": "exact",
+      "label": "claude-sonnet-4.5",
+      "provider": "github"
+    },
+    {
+      "id": "claude-opus-4.7",
+      "kind": "exact",
+      "label": "claude-opus-4.7",
+      "provider": "github"
+    },
+    {
+      "id": "claude-haiku-4.5",
+      "kind": "exact",
+      "label": "claude-haiku-4.5",
+      "provider": "github"
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "kind": "exact",
+      "label": "gemini-3.1-pro",
+      "provider": "github"
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "kind": "exact",
+      "label": "gemini-3.5-flash",
+      "provider": "github"
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "kind": "exact",
+      "label": "gpt-5.4-mini",
+      "provider": "github"
+    }
+  ],
+  "updated_at": "2026-06-21"
+}

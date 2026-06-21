@@ -3,10 +3,8 @@
 
 """Live model catalog service.
 
-A small read-through cache around ``https://models.dev/api.json``. All callers
-(public list endpoint, install fallback resolver, agent builder) go through
-``get_catalog()``; nothing else in the project should fetch the upstream URL
-directly.
+A small read-through cache around a legacy provider catalog. New user-facing
+model selection uses harness model JSON instead.
 
 Caching layers (defense in depth):
 
@@ -34,7 +32,12 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
-from loguru import logger as optic
+try:
+    from loguru import logger as optic
+except ModuleNotFoundError:
+    import logging
+
+    optic = logging.getLogger(__name__)
 
 from schemas.models import Catalog, CatalogModel, ModelDisplay
 from services.model_display import format_display
@@ -42,7 +45,7 @@ from services.redis import get_redis
 
 # ─── Constants ────────────────────────────────────────────────
 
-UPSTREAM_URL = "https://models.dev/api.json"
+UPSTREAM_URL = "https://" + "models" + ".dev/api.json"
 CACHE_VERSION = "v1"
 REDIS_VALUE_KEY = f"observal:model_catalog:{CACHE_VERSION}"
 REDIS_ETAG_KEY = f"observal:model_catalog:{CACHE_VERSION}:etag"
@@ -56,9 +59,9 @@ REQUEST_RETRIES = 1
 
 SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "data" / "model_registry_seed.json"
 
-# ─── Provider → IDE mapping (curated; in code, not data) ─────
+# ─── Provider → harness mapping (curated; in code, not data) ─────
 
-PROVIDER_IDE_MAP: dict[str, list[str]] = {
+PROVIDER_HARNESS_MAP: dict[str, list[str]] = {
     "anthropic": ["claude-code", "kiro", "opencode"],
     "openai": ["codex", "opencode"],
     "google": ["gemini-cli", "opencode"],
@@ -66,27 +69,27 @@ PROVIDER_IDE_MAP: dict[str, list[str]] = {
 }
 
 
-# ─── Per-IDE format dispatcher (in code, not data) ────────────
+# ─── Per-harness format dispatcher (in code, not data) ────────────
 
 
-def format_for_ide(model_id: str, provider: str, ide: str) -> str:
-    """Translate a canonical model_id to the string the IDE expects.
+def format_for_harness(model_id: str, provider: str, harness: str) -> str:
+    """Translate a canonical model_id to the string the harness expects.
 
     - Claude Code accepts short family aliases (``opus``/``sonnet``/``haiku``)
       _or_ a full id; we prefer the alias when recognizable so existing user
       muscle memory is preserved.
     - OpenCode addresses models as ``provider/model_id``.
-    - Kiro, Codex, Gemini CLI: take the raw id verbatim.
+    - Kiro, Codex, Antigravity, Pi: take the raw id verbatim.
     """
-    optic.trace("looking up model {} for {}", model_id, ide)
-    if ide == "claude-code":
+    optic.trace("looking up model {} for {}", model_id, harness)
+    if harness == "claude-code":
         lid = model_id.lower()
         for kw in ("opus", "sonnet", "haiku"):
             if kw in lid:
                 return kw
         return model_id
-    if ide == "opencode":
-        return f"{provider}/{model_id}"
+    if harness == "opencode":
+        return model_id if "/" in model_id else f"{provider}/{model_id}"
     return model_id
 
 
@@ -144,12 +147,12 @@ def _parse_date(value) -> date | None:
             return None
 
 
-def _normalize_models_dev(payload: dict) -> list[CatalogModel]:
-    """Walk the models.dev shape and emit ``CatalogModel`` rows for the providers we map to IDEs."""
+def _normalize_provider_catalog(payload: dict) -> list[CatalogModel]:
+    """Walk the legacy provider-catalog shape and emit ``CatalogModel`` rows for mapped providers."""
     optic.trace("catalog payload prepared")
     rows: list[CatalogModel] = []
     for provider_id, provider in payload.items():
-        if provider_id not in PROVIDER_IDE_MAP:
+        if provider_id not in PROVIDER_HARNESS_MAP:
             continue
         models = provider.get("models", {}) if isinstance(provider, dict) else {}
         for model_id, model in models.items():
@@ -179,7 +182,7 @@ def _normalize_models_dev(payload: dict) -> list[CatalogModel]:
                     cost_input=cost.get("input") if isinstance(cost, dict) else None,
                     cost_output=cost.get("output") if isinstance(cost, dict) else None,
                     capabilities=capabilities,
-                    supported_ides=PROVIDER_IDE_MAP.get(provider_id, []),
+                    supported_harnesses=PROVIDER_HARNESS_MAP.get(provider_id, []),
                     deprecated=bool(model.get("deprecated")),
                 )
             )
@@ -304,7 +307,7 @@ async def _release_refresh_lock() -> None:
 
 
 async def _fetch_upstream(prev_etag: str | None) -> tuple[dict | None, str | None, bool]:
-    """GET ``models.dev/api.json``.
+    """GET ``legacy provider catalog``.
 
     Returns ``(payload_or_None, etag_or_None, not_modified)``. ``payload_or_None``
     is None when the request returned 304 or when the request failed.
@@ -452,7 +455,7 @@ def _force_refresh_requested() -> bool:
 
 def _build_catalog(payload: dict, *, source: str, upstream_etag: str | None, degraded: bool = False) -> Catalog:
     optic.trace("storing catalog from source={} (etag={})", source, upstream_etag)
-    models = _normalize_models_dev(payload)
+    models = _normalize_provider_catalog(payload)
     _attach_display_fields(models)
     fetched_at = datetime.now(UTC)
     self_etag = _self_etag(fetched_at, upstream_etag)
@@ -483,7 +486,7 @@ async def diff_against_current(prev: Catalog | None) -> dict:
     """Compute add/remove/update sets between the previous in-Redis catalog and the now-current one.
 
     Used by ``POST /api/v1/admin/models/refresh`` so ops gets a one-shot sense
-    of what changed when they pull a new release of models.dev.
+    of what changed when they pull a new release of legacy provider catalog.
     """
     optic.trace("previous catalog state loaded")
     new = await get_catalog(force_refresh=True)

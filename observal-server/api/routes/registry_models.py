@@ -68,9 +68,9 @@ async def refresh_models(
     request: Request,
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Force a fresh fetch of models.dev and report what changed.
+    """Refresh the legacy admin model catalog and report what changed.
 
-    Heavy, rate-limited (4/min/IP) so it can't be used to hammer the upstream.
+    Heavy and rate-limited.
     """
     optic.trace("user_id={}", current_user.id)
     prev = await get_catalog()

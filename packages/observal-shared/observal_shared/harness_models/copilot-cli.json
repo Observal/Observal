@@ -1,0 +1,30 @@
+{
+  "harness": "copilot-cli",
+  "models": [
+    {
+      "id": "auto",
+      "kind": "exact",
+      "label": "Auto",
+      "provider": "github"
+    },
+    {
+      "id": "COPILOT_PROVIDER_TYPE=openai;COPILOT_MODEL=<model>",
+      "kind": "provider_source",
+      "label": "OpenAI-compatible BYOK model",
+      "provider": "openai"
+    },
+    {
+      "id": "COPILOT_PROVIDER_TYPE=azure;COPILOT_MODEL=<deployment>",
+      "kind": "provider_source",
+      "label": "Azure OpenAI deployment",
+      "provider": "azure"
+    },
+    {
+      "id": "COPILOT_PROVIDER_TYPE=anthropic;COPILOT_MODEL=<claude-model>",
+      "kind": "provider_source",
+      "label": "Anthropic BYOK model",
+      "provider": "anthropic"
+    }
+  ],
+  "updated_at": "2026-06-21"
+}

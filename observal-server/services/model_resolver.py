@@ -1,148 +1,76 @@
-# SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
-
-"""Single source of truth for "what model should this IDE config use?".
-
-Two entry points:
-
-- ``resolve_model_for_ide(ide, agent_version, override=None)``
-    Async. Validates the candidate against the live catalog and falls back
-    to the IDE's auto sentinel with a warning when the model is unknown or
-    the IDE doesn't support it. When the catalog is degraded (no upstream
-    and no snapshot) we trust the saved value verbatim and emit a soft
-    warning rather than overwriting the user's choice.
-- ``resolve_saved_value(ide, model_name, models_by_ide)``
-    Sync. Pure lookup that returns the IDE-formatted string the user asked
-    for, or ``None`` (meaning "emit auto sentinel"). Used by the offline
-    manifest builder, which doesn't have a Redis context.
-
-Both go through ``services.model_catalog.format_for_ide`` so the per-IDE
-format rules (Claude Code aliases, OpenCode provider prefix, …) live in one
-place.
-"""
+"""Resolve the model value a harness config should emit."""
 
 from __future__ import annotations
 
-from loguru import logger as optic
-
-from schemas.ide_registry import accepts_model_choice
-from services.model_catalog import (
-    PROVIDER_IDE_MAP,
-    Catalog,
-    format_for_ide,
-    get_catalog,
-)
+from schemas.harness_registry import HARNESS_REGISTRY, has_model_selection
 
 
-def _candidate_for_ide(ide: str, models_by_ide: dict | None, model_name: str | None) -> str | None:
-    """Pick the saved model the user wants for ``ide``.
+def _format_for_harness(model: str, provider: str, harness: str) -> str:
+    if harness == "claude-code":
+        lowered = model.lower()
+        for alias in ("opus", "sonnet", "haiku"):
+            if alias in lowered:
+                return alias
+    if harness == "opencode":
+        return model if "/" in model else f"{provider}/{model}"
+    return model
 
-    Precedence:
-        1. Per-IDE override from ``models_by_ide``.
-        2. ``model_name`` - but only for Claude Code (legacy default).
-    Other IDEs default to None (= emit auto sentinel) when no override exists.
-    """
-    optic.trace("resolving model for ide={}", ide)
-    if models_by_ide and ide in models_by_ide and models_by_ide[ide]:
-        return models_by_ide[ide]
-    if ide == "claude-code" and model_name:
+
+def _candidate_for_harness(harness: str, models_by_harness: dict | None, model_name: str | None) -> str | None:
+    if models_by_harness and models_by_harness.get(harness):
+        return models_by_harness[harness]
+    if harness == "claude-code" and model_name:
         return model_name
     return None
 
 
-def _format(ide: str, candidate: str | None, catalog: Catalog | None) -> str | None:
-    optic.trace("candidate model for {}: {}", ide, candidate)
+def _provider_for(harness: str, model: str) -> str:
+    for row_id in HARNESS_REGISTRY[harness].get("supported_models", []):
+        if row_id == model:
+            if model.startswith("opencode/"):
+                return "opencode"
+            if model.startswith("gemini"):
+                return "google"
+            if model.startswith("gpt"):
+                return "openai"
+            if model.startswith("claude") or model in {"sonnet", "opus", "haiku", "fable", "best", "default"}:
+                return "anthropic"
+    return "anthropic"
+
+
+def _supported(harness: str, candidate: str) -> bool:
+    rows = HARNESS_REGISTRY[harness].get("supported_models", [])
+    if candidate in rows:
+        return True
+    return any("<" in row and candidate.startswith(row.split("<", 1)[0]) for row in rows)
+
+
+def resolve_saved_value(harness: str, model_name: str, models_by_harness: dict | None) -> str | None:
+    if not has_model_selection(harness):
+        return None
+    candidate = _candidate_for_harness(harness, models_by_harness, model_name)
     if not candidate:
         return None
-    provider = "anthropic"  # safe default for the legacy claude-code path
-    if catalog is not None:
-        for entry in catalog.models:
-            if entry.model_id == candidate:
-                provider = entry.provider
-                break
-    return format_for_ide(candidate, provider, ide)
+    return _format_for_harness(candidate, _provider_for(harness, candidate), harness)
 
 
-def resolve_saved_value(ide: str, model_name: str, models_by_ide: dict | None) -> str | None:
-    """Sync resolver - no catalog lookup. Used by the offline manifest builder.
-
-    Returns the IDE-formatted string for the saved value, or ``None`` if no
-    saved value exists (caller must emit the auto sentinel).
-    """
-    optic.trace("resolving model {} for {}", model_name, ide)
-    if not accepts_model_choice(ide):
-        return None
-    candidate = _candidate_for_ide(ide, models_by_ide, model_name)
-    return _format(ide, candidate, None) if candidate else None
-
-
-async def resolve_model_for_ide(
-    ide: str,
+async def resolve_model_for_harness(
+    harness: str,
     *,
     model_name: str = "",
-    models_by_ide: dict | None = None,
+    models_by_harness: dict | None = None,
     override: str | None = None,
 ) -> tuple[str | None, list[str]]:
-    """Resolve the effective model for an online install.
-
-    Returns ``(emitted_value_or_None, warnings)``. ``None`` means the caller
-    should emit the IDE's auto sentinel (e.g. drop the ``model:`` line for
-    Claude Code, write ``"model": null`` for Kiro).
-    """
-    optic.trace("no model configured, checking catalog for {}", ide)
     warnings: list[str] = []
-
-    if not accepts_model_choice(ide):
+    if not has_model_selection(harness):
         if override:
-            warnings.append(f"{ide} does not accept a model choice; ignoring --model {override}.")
+            warnings.append(f"{harness} does not accept a model choice; ignoring --model {override}.")
         return None, warnings
-
-    candidate = override or _candidate_for_ide(ide, models_by_ide, model_name)
-    if not candidate:
-        optic.debug("no model configured for {}, using auto-select", ide)
+    candidate = override or _candidate_for_harness(harness, models_by_harness, model_name)
+    if not candidate or candidate == "inherit":
         return None, warnings
-
-    # Claude Code short aliases ("sonnet", "opus", "haiku") and the literal
-    # "inherit" sentinel are passed through verbatim - they don't appear in the
-    # catalog and the IDE itself accepts them.
-    if ide == "claude-code" and candidate.lower() in ("sonnet", "opus", "haiku", "inherit"):
-        if candidate.lower() == "inherit":
-            return None, warnings
-        optic.debug("model resolve: using Claude Code alias '{}'", candidate.lower())
-        return candidate.lower(), warnings
-
-    try:
-        catalog = await get_catalog()
-    except Exception as e:
-        optic.warning("model_resolver_catalog_error", error=str(e))
-        optic.warning("model catalog unavailable: {}", e)
-        catalog = None
-
-    if catalog is None or catalog.degraded:
-        warnings.append(
-            "Model catalog is unavailable; using the saved selection verbatim. "
-            "Re-run after the catalog refreshes if the IDE rejects the model."
-        )
-        optic.warning("catalog degraded, passing through '{}' verbatim for ide={}", candidate, ide)
-        return _format(ide, candidate, catalog), warnings
-
-    # Look up the candidate in the catalog
-    matches = [m for m in catalog.models if m.model_id == candidate]
-    if not matches:
-        warnings.append(f"Model '{candidate}' is not in the catalog. Falling back to {ide}'s auto/default.")
-        optic.info("model '{}' not in catalog, falling back to auto for ide={}", candidate, ide)
+    if not _supported(harness, candidate):
+        warnings.append(f"Model '{candidate}' is not in the {harness} harness registry. Falling back to auto/default.")
         return None, warnings
-
-    entry = matches[0]
-    if ide not in entry.supported_ides:
-        provider_ides = PROVIDER_IDE_MAP.get(entry.provider, [])
-        warnings.append(
-            f"Model '{candidate}' (provider {entry.provider}) is not supported by {ide}. "
-            f"Provider routes to: {', '.join(provider_ides) or 'no IDE'}. Falling back to auto."
-        )
-        return None, warnings
-
-    if entry.deprecated:
-        warnings.append(f"Model '{candidate}' is marked deprecated by the upstream catalog.")
-
-    return format_for_ide(entry.model_id, entry.provider, ide), warnings
+    return _format_for_harness(candidate, _provider_for(harness, candidate), harness), warnings

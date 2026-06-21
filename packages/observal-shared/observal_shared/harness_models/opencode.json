@@ -1,0 +1,301 @@
+{
+  "harness": "opencode",
+  "models": [
+    {
+      "id": "opencode/claude-fable-5",
+      "kind": "exact",
+      "label": "claude-fable-5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-8",
+      "kind": "exact",
+      "label": "claude-opus-4-8",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-7",
+      "kind": "exact",
+      "label": "claude-opus-4-7",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-6",
+      "kind": "exact",
+      "label": "claude-opus-4-6",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-5",
+      "kind": "exact",
+      "label": "claude-opus-4-5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-opus-4-1",
+      "kind": "exact",
+      "label": "claude-opus-4-1",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "claude-sonnet-4-6",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-sonnet-4-5",
+      "kind": "exact",
+      "label": "claude-sonnet-4-5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-sonnet-4",
+      "kind": "exact",
+      "label": "claude-sonnet-4",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/claude-haiku-4-5",
+      "kind": "exact",
+      "label": "claude-haiku-4-5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gemini-3.5-flash",
+      "kind": "exact",
+      "label": "gemini-3.5-flash",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gemini-3.1-pro",
+      "kind": "exact",
+      "label": "gemini-3.1-pro",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gemini-3-flash",
+      "kind": "exact",
+      "label": "gemini-3-flash",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.5",
+      "kind": "exact",
+      "label": "gpt-5.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.5-pro",
+      "kind": "exact",
+      "label": "gpt-5.5-pro",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.4",
+      "kind": "exact",
+      "label": "gpt-5.4",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.4-pro",
+      "kind": "exact",
+      "label": "gpt-5.4-pro",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.4-mini",
+      "kind": "exact",
+      "label": "gpt-5.4-mini",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.4-nano",
+      "kind": "exact",
+      "label": "gpt-5.4-nano",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.3-codex-spark",
+      "kind": "exact",
+      "label": "gpt-5.3-codex-spark",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.3-codex",
+      "kind": "exact",
+      "label": "gpt-5.3-codex",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.2",
+      "kind": "exact",
+      "label": "gpt-5.2",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.2-codex",
+      "kind": "exact",
+      "label": "gpt-5.2-codex",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.1",
+      "kind": "exact",
+      "label": "gpt-5.1",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.1-codex-max",
+      "kind": "exact",
+      "label": "gpt-5.1-codex-max",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.1-codex",
+      "kind": "exact",
+      "label": "gpt-5.1-codex",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5.1-codex-mini",
+      "kind": "exact",
+      "label": "gpt-5.1-codex-mini",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5",
+      "kind": "exact",
+      "label": "gpt-5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5-codex",
+      "kind": "exact",
+      "label": "gpt-5-codex",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/gpt-5-nano",
+      "kind": "exact",
+      "label": "gpt-5-nano",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/grok-build-0.1",
+      "kind": "exact",
+      "label": "grok-build-0.1",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/deepseek-v4-pro",
+      "kind": "exact",
+      "label": "deepseek-v4-pro",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/deepseek-v4-flash",
+      "kind": "exact",
+      "label": "deepseek-v4-flash",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/glm-5.1",
+      "kind": "exact",
+      "label": "glm-5.1",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/glm-5",
+      "kind": "exact",
+      "label": "glm-5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/minimax-m2.7",
+      "kind": "exact",
+      "label": "minimax-m2.7",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/minimax-m2.5",
+      "kind": "exact",
+      "label": "minimax-m2.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/kimi-k2.6",
+      "kind": "exact",
+      "label": "kimi-k2.6",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/kimi-k2.5",
+      "kind": "exact",
+      "label": "kimi-k2.5",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/qwen3.6-plus",
+      "kind": "exact",
+      "label": "qwen3.6-plus",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/qwen3.5-plus",
+      "kind": "exact",
+      "label": "qwen3.5-plus",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/big-pickle",
+      "kind": "exact",
+      "label": "big-pickle",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/deepseek-v4-flash-free",
+      "kind": "exact",
+      "label": "deepseek-v4-flash-free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/mimo-v2.5-free",
+      "kind": "exact",
+      "label": "mimo-v2.5-free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/qwen3.6-plus-free",
+      "kind": "exact",
+      "label": "qwen3.6-plus-free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/minimax-m3-free",
+      "kind": "exact",
+      "label": "minimax-m3-free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/nemotron-3-ultra-free",
+      "kind": "exact",
+      "label": "nemotron-3-ultra-free",
+      "provider": "opencode"
+    },
+    {
+      "id": "opencode/north-mini-code-free",
+      "kind": "exact",
+      "label": "north-mini-code-free",
+      "provider": "opencode"
+    },
+    {
+      "id": "<provider>/<model-id>",
+      "kind": "provider_source",
+      "label": "Configured OpenCode provider model",
+      "provider": "custom"
+    }
+  ],
+  "source": "https://opencode.ai/zen/v1/models",
+  "updated_at": "2026-06-21"
+}

@@ -1,0 +1,90 @@
+{
+  "harness": "kiro",
+  "models": [
+    {
+      "id": "auto",
+      "kind": "exact",
+      "label": "auto",
+      "provider": "kiro"
+    },
+    {
+      "id": "claude-sonnet-4",
+      "kind": "exact",
+      "label": "claude-sonnet-4",
+      "provider": "kiro"
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "kind": "exact",
+      "label": "claude-sonnet-4-5",
+      "provider": "kiro"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "claude-sonnet-4-6",
+      "provider": "kiro"
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "kind": "exact",
+      "label": "claude-haiku-4-5",
+      "provider": "kiro"
+    },
+    {
+      "id": "claude-opus-4-5",
+      "kind": "exact",
+      "label": "claude-opus-4-5",
+      "provider": "kiro"
+    },
+    {
+      "id": "claude-opus-4-6",
+      "kind": "exact",
+      "label": "claude-opus-4-6",
+      "provider": "kiro"
+    },
+    {
+      "id": "claude-opus-4-7",
+      "kind": "exact",
+      "label": "claude-opus-4-7",
+      "provider": "kiro"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "kind": "exact",
+      "label": "claude-opus-4-8",
+      "provider": "kiro"
+    },
+    {
+      "id": "minimax-m2.5",
+      "kind": "exact",
+      "label": "minimax-m2.5",
+      "provider": "kiro"
+    },
+    {
+      "id": "minimax-m2.1",
+      "kind": "exact",
+      "label": "minimax-m2.1",
+      "provider": "kiro"
+    },
+    {
+      "id": "glm-5",
+      "kind": "exact",
+      "label": "glm-5",
+      "provider": "kiro"
+    },
+    {
+      "id": "deepseek-3.2",
+      "kind": "exact",
+      "label": "deepseek-3.2",
+      "provider": "kiro"
+    },
+    {
+      "id": "qwen3-coder-next",
+      "kind": "exact",
+      "label": "qwen3-coder-next",
+      "provider": "kiro"
+    }
+  ],
+  "updated_at": "2026-06-21"
+}
