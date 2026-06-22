@@ -301,7 +301,7 @@ def hook_install(
     """
     resolved = config.resolve_alias(hook_id)
     with spinner(f"Generating {ide} config..."):
-        result = client.post(f"/api/v1/hooks/{resolved}/install", {"ide": ide, "platform": platform})
+        result = client.post(f"/api/v1/hooks/{resolved}/install", {"harness": ide, "platform": platform})
 
     config_snippet = result.get("config_snippet", {})
     files = result.get("files", [])

@@ -136,13 +136,13 @@ class SkillListingSummary(BaseModel):
 
 
 class SkillInstallRequest(BaseModel):
-    ide: str
+    harness: str
     scope: str = "project"
     version: str | None = None  # Specific version to install (None = latest)
 
 
 class SkillInstallResponse(BaseModel):
     listing_id: uuid.UUID
-    ide: str
+    harness: str
     config_snippet: dict
     warnings: list[str] = []

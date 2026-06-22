@@ -290,7 +290,7 @@ async def install_skill(
                 detail=f"Version {req.version!r} not found for this skill",
             )
 
-    db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
+    db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
     latest_version = getattr(listing, "latest_version", None)
     if latest_version:
         latest_version.download_count += 1
@@ -302,12 +302,12 @@ async def install_skill(
     endpoints = await derive_endpoints(request)
     config = generate_skill_config(
         listing,
-        req.ide,
+        req.harness,
         server_url=endpoints["api"],
         scope=req.scope,
         version_override=version_override,
     )
-    return SkillInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=config, warnings=warnings)
+    return SkillInstallResponse(listing_id=listing.id, harness=req.harness, config_snippet=config, warnings=warnings)
 
 
 @router.post("/draft", response_model=SkillListingResponse)

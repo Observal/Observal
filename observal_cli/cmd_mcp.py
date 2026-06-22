@@ -1100,7 +1100,7 @@ def _install_impl(
                 header_values[h["name"]] = f"<{h['name']}>"
 
     with spinner(f"Generating {ide} config..."):
-        install_body = {"ide": ide, "env_values": env_values, "header_values": header_values}
+        install_body = {"harness": ide, "env_values": env_values, "header_values": header_values}
         if version:
             install_body["version"] = version
         result = client.post(
@@ -1128,18 +1128,17 @@ def _install_impl(
     except Exception:
         pass  # Never block install on lockfile failure
 
-    ide_config_paths = {
+    harness_config_paths = {
         "kiro": ".kiro/settings/mcp.json",
         "cursor": ".cursor/mcp.json",
         "claude-code": "(run the command below)",
-        "claude_code": "(run the command below)",
         "opencode": ".config/opencode/opencode.json",
         "codex": "~/.codex/config.toml",
     }
 
     rprint(f"\n[bold]Config for {ide}:[/bold]\n")
     console.print_json(_json.dumps(snippet, indent=2))
-    config_path = ide_config_paths.get(ide, "")
+    config_path = harness_config_paths.get(ide, "")
     if config_path and not config_path.startswith("("):
         rprint(f"\n[dim]Add to:[/dim] [bold]{config_path}[/bold]")
         rprint(f"[dim]Or pipe:[/dim] observal install {mcp_id} --harness {ide} --raw > {config_path}")

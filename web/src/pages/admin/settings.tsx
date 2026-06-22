@@ -32,6 +32,7 @@ import { useHelp } from "@/components/wiki/help-context";
 import { SETTING_DOCS, SECTION_DOCS } from "@/lib/docs-map";
 import { useAdminSettings, useAdminSettingsSchema, useSystemWarnings } from "@/hooks/use-api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
+import { useHarnesses } from "@/hooks/use-harnesses";
 import { useRoleGuard, hasMinRole } from "@/hooks/use-role-guard";
 import type { AdminSetting, AdminSettingDef, AdminSettingSection, SystemWarning } from "@/lib/types";
 import { admin, getUserRole } from "@/lib/api";
@@ -69,19 +70,6 @@ const SENSITIVE_KEYS = new Set([
 
 const REDACTED_VALUE = "**REDACTED**";
 
-const harness_OPTIONS = [
-	{ value: "cursor", label: "Cursor" },
-	{ value: "claude_code", label: "Claude Code" },
-	{ value: "kiro", label: "Kiro" },
-	{ value: "pi", label: "Pi" },
-	{ value: "copilot", label: "Copilot" },
-	{ value: "copilot_cli", label: "Copilot CLI" },
-	{ value: "codex", label: "Codex" },
-	{ value: "opencode", label: "OpenCode" },
-	{ value: "gemini_cli", label: "Gemini CLI" },
-	{ value: "antigravity", label: "Antigravity" },
-];
-
 const ALLOWED_LOGO_TYPES = [
 	"image/png",
 	"image/svg+xml",
@@ -110,33 +98,41 @@ function sectionIcon(section: AdminSettingSection) {
 }
 
 
-function splitIdeList(value: string): string[] {
+function splitHarnessList(value: string): string[] {
 	return value
 		.split(",")
 		.map((item) => item.trim())
 		.filter(Boolean);
 }
 
-function joinIdeList(values: string[]): string {
+function joinHarnessList(values: string[]): string {
 	return Array.from(new Set(values)).join(",");
 }
 
-function getIdeLabel(value: string): string {
-	return harness_OPTIONS.find((ide) => ide.value === value)?.label ?? value;
+function getHarnessLabel(harnesses: { name: string; display_name: string }[], value: string): string {
+	return harnesses.find((harness) => harness.name === value)?.display_name ?? value;
 }
 
-function IdeAllowlistEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-	const selected = splitIdeList(value);
-	const available = harness_OPTIONS.filter((ide) => !selected.includes(ide.value));
+function HarnessAllowlistEditor({
+	value,
+	onChange,
+	harnesses,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	harnesses: { name: string; display_name: string }[];
+}) {
+	const selected = splitHarnessList(value);
+	const available = harnesses.filter((harness) => !selected.includes(harness.name));
 
-	const addIde = (ide: string) => {
-		const next = ide.trim();
+	const addHarness = (harness: string) => {
+		const next = harness.trim();
 		if (!next) return;
-		onChange(joinIdeList([...selected, next]));
+		onChange(joinHarnessList([...selected, next]));
 	};
 
-	const removeIde = (ide: string) => {
-		onChange(joinIdeList(selected.filter((item) => item !== ide)));
+	const removeHarness = (harness: string) => {
+		onChange(joinHarnessList(selected.filter((item) => item !== harness)));
 	};
 
 	return (
@@ -145,10 +141,10 @@ function IdeAllowlistEditor({ value, onChange }: { value: string; onChange: (val
 				{selected.length === 0 ? (
 					<span className="text-xs text-muted-foreground">All supported harnesses</span>
 				) : (
-					selected.map((ide) => (
-						<span key={ide} className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">
-							{getIdeLabel(ide)}
-							<button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => removeIde(ide)}>
+					selected.map((harness) => (
+						<span key={harness} className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">
+							{getHarnessLabel(harnesses, harness)}
+							<button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => removeHarness(harness)}>
 								<X className="h-3 w-3" />
 							</button>
 						</span>
@@ -156,13 +152,13 @@ function IdeAllowlistEditor({ value, onChange }: { value: string; onChange: (val
 				)}
 			</div>
 			<div className="flex items-center gap-2">
-				<Select value="" onValueChange={addIde}>
+				<Select value="" onValueChange={addHarness}>
 					<SelectTrigger className="h-8 text-sm flex-1">
 						<SelectValue placeholder={selected.length === 0 ? "Restrict to specific harnesses" : "Add harness"} />
 					</SelectTrigger>
 					<SelectContent>
-						{available.map((ide) => (
-							<SelectItem key={ide.value} value={ide.value}>{ide.label}</SelectItem>
+						{available.map((harness) => (
+							<SelectItem key={harness.name} value={harness.name}>{harness.display_name}</SelectItem>
 						))}
 						{available.length === 0 && <SelectItem value="__none__" disabled>All listed harnesses selected</SelectItem>}
 					</SelectContent>
@@ -205,6 +201,7 @@ export default function SettingsPage() {
 	} = useAdminSettings();
 	const { data: settingsSchema = [] } = useAdminSettingsSchema();
 	const { data: systemWarnings } = useSystemWarnings();
+	const { data: harnesses = [] } = useHarnesses();
 	const {
 		licensed,
 		ssoEnabled,
@@ -597,7 +594,7 @@ export default function SettingsPage() {
 
 	const renderSettingEditor = (key: string) => {
 		if (key === "misc.harness_allowlist") {
-			return <IdeAllowlistEditor value={editingValue} onChange={setEditingValue} />;
+			return <HarnessAllowlistEditor value={editingValue} onChange={setEditingValue} harnesses={harnesses} />;
 		}
 		if (key === "misc.default_harness") {
 			return (
@@ -607,8 +604,8 @@ export default function SettingsPage() {
 					</SelectTrigger>
 					<SelectContent>
 						<SelectItem value="__none__">Use first allowed harness</SelectItem>
-						{harness_OPTIONS.map((ide) => (
-							<SelectItem key={ide.value} value={ide.value}>{ide.label}</SelectItem>
+						{harnesses.map((harness) => (
+							<SelectItem key={harness.name} value={harness.name}>{harness.display_name}</SelectItem>
 						))}
 					</SelectContent>
 				</Select>

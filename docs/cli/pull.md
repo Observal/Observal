@@ -5,7 +5,7 @@
 
 # observal agent pull
 
-Install a complete agent (MCP servers, skills, hooks, prompts, sandboxes, and harness-specific config) into an harness in one command.
+Install a complete agent (MCP servers, skills, hooks, prompts, sandboxes, and harness-specific config) into a harness in one command.
 
 ## Synopsis
 
@@ -18,7 +18,7 @@ observal agent pull <agent-id-or-name> --harness <harness> [OPTIONS]
 | Argument / option | Description |
 | --- | --- |
 | `<agent-id-or-name>` | Agent UUID, name, `@alias`, or row number from last `agent list` |
-| `--harness <harness>` | Target harness: `claude-code`, `kiro`, `cursor`, `vscode`, `gemini-cli`, `codex`, `copilot` |
+| `--harness <harness>` | Target harness: `cursor`, `kiro`, `claude-code`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `pi` |
 
 ## Options
 

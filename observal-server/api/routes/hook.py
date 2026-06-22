@@ -193,7 +193,7 @@ async def install_hook(
     if listing.status == ListingStatus.archived:
         warnings.append(archived_install_warning("hook", listing.name))
 
-    db.add(HookDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
+    db.add(HookDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
     latest_version = getattr(listing, "latest_version", None)
     if latest_version:
         latest_version.download_count += 1
@@ -201,10 +201,10 @@ async def install_hook(
 
     from services.hook_install_generator import generate_hook_install_config
 
-    result = generate_hook_install_config(listing, req.ide)
+    result = generate_hook_install_config(listing, req.harness)
     return HookInstallResponse(
         listing_id=listing.id,
-        ide=req.ide,
+        harness=req.harness,
         config_snippet=result.get("config_snippet", {}),
         config_path=result.get("config_path", ""),
         files=[HookFileEntry(**f) for f in result.get("files", [])],

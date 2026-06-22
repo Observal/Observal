@@ -22,7 +22,7 @@ Every type supports these actions:
 | `list` | List approved components |
 | `my` | List your own components across all statuses |
 | `show` | Show details for one component |
-| `install` | Generate an harness config snippet |
+| `install` | Generate a harness config snippet |
 | `edit` | Edit a draft, pending, or rejected submission |
 | `delete` | Delete a component |
 | `transfer-owner` | Transfer ownership to another username |
@@ -177,7 +177,7 @@ observal registry mcp show @fav --output json
 
 ### `observal registry mcp install`
 
-Generate an harness config snippet for an MCP server. Prompts for required environment variables and headers interactively.
+Generate a harness config snippet for an MCP server. Prompts for required environment variables and headers interactively.
 
 ```bash
 observal registry mcp install <id-or-name> --harness <harness> [--raw]
@@ -191,7 +191,7 @@ observal registry mcp install <id-or-name> --harness <harness> [--raw]
 ```bash
 observal registry mcp install my-server --harness claude-code
 observal registry mcp install my-server --harness cursor --raw > .cursor/mcp.json
-observal registry mcp install 2 --harness vscode
+observal registry mcp install 2 --harness copilot
 observal registry mcp install @db --harness kiro
 ```
 
@@ -373,7 +373,7 @@ Scopes:
 observal registry skill install my-skill --harness claude-code
 observal registry skill install @sk --harness kiro --scope project
 observal registry skill install 2 --harness cursor --raw
-observal registry skill install my-skill --harness gemini-cli --no-write
+observal registry skill install my-skill --harness antigravity --no-write
 ```
 
 ---

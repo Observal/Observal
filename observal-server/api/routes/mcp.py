@@ -276,7 +276,7 @@ async def install_mcp(
     if listing.status == ListingStatus.archived:
         warnings.append(archived_install_warning("MCP", listing.name))
 
-    db.add(McpDownload(listing_id=listing.id, user_id=current_user.id, ide=req.ide))
+    db.add(McpDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
     latest_version = getattr(listing, "latest_version", None)
     if latest_version:
         latest_version.download_count += 1
@@ -287,12 +287,12 @@ async def install_mcp(
     endpoints = await derive_endpoints(request)
     snippet = generate_config(
         listing,
-        req.ide,
+        req.harness,
         observal_url=endpoints["api"],
         env_values=req.env_values,
         header_values=req.header_values,
     )
-    return McpInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=snippet, warnings=warnings)
+    return McpInstallResponse(listing_id=listing.id, harness=req.harness, config_snippet=snippet, warnings=warnings)
 
 
 @router.post("/draft", response_model=McpListingResponse)

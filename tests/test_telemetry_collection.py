@@ -228,7 +228,7 @@ class TestInstallRouteWiring:
         mock_user = MagicMock()
         mock_user.id = uuid.uuid4()
 
-        req = SkillInstallRequest(ide="claude-code")
+        req = SkillInstallRequest(harness="claude-code")
         with patch(
             "api.routes.config.derive_endpoints",
             return_value={

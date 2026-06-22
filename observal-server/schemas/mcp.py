@@ -200,7 +200,7 @@ class McpListingSummary(BaseModel):
 
 
 class McpInstallRequest(BaseModel):
-    ide: str
+    harness: str
     env_values: dict[str, str] = {}
     header_values: dict[str, str] = {}
     version: str | None = None  # Specific version to install (None = latest)
@@ -208,7 +208,7 @@ class McpInstallRequest(BaseModel):
 
 class McpInstallResponse(BaseModel):
     listing_id: uuid.UUID
-    ide: str
+    harness: str
     config_snippet: dict
     warnings: list[str] = []
 

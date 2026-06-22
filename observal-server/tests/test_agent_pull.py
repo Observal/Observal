@@ -231,7 +231,7 @@ async def test_install_agent_no_latest_version_returns_400():
     user = _make_user()
     user.id = agent.created_by  # owner, so auth passes
 
-    req = AgentInstallRequest(ide="claude-code")
+    req = AgentInstallRequest(harness="claude-code")
     request = MagicMock()
     request.url = MagicMock()
     request.url.scheme = "http"
@@ -269,7 +269,7 @@ async def test_install_agent_with_approved_version_succeeds():
     user = _make_user()
     agent = _make_agent(owner_id=user.id, with_approved_version=True)
 
-    req = AgentInstallRequest(ide="claude-code")
+    req = AgentInstallRequest(harness="claude-code")
     request = MagicMock()
     request.url = MagicMock()
     request.url.scheme = "http"
@@ -302,5 +302,5 @@ async def test_install_agent_with_approved_version_succeeds():
         )
 
     assert result.agent_id == agent.id
-    assert result.ide == "claude-code"
+    assert result.harness == "claude-code"
     assert isinstance(result.config_snippet, dict)

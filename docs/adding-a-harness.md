@@ -1,14 +1,14 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
-# Adding a New harness to Observal
+# Adding a New Harness to Observal
 
 This guide covers everything needed to add full harness support. Observal manages
 four component types per harness: **MCP servers**, **skills**, **hooks**, and
 **sandboxes**. Each harness needs scanning (discovery), config generation (install),
 hook instrumentation (telemetry), and session parsing (reconciliation).
 
-## Overview: What "Supporting an harness" Means
+## Overview: What "Supporting a harness" Means
 
 When a user runs `observal pull <agent>`, Observal writes harness-specific files:
 
@@ -27,18 +27,18 @@ When a user runs `observal scan`, Observal reads those same locations to discove
 |---|------|-------------|
 | 1 | `observal-server/schemas/harness_registry.py` | harness metadata: paths, keys, event maps, formats |
 | 2 | `observal_cli/harness_registry.py` | CLI mirror (must be identical, enforced by test) |
-| 3 | `observal_cli/harness/<ide_name>.py` | CLI adapter: scanning, hook detection, shim status, managed file attribution |
+| 3 | `observal_cli/harness/<harness_name>.py` | CLI adapter: scanning, hook detection, shim status, managed file attribution |
 | 4 | `observal_cli/harness/load_all.py` | Add import line for auto-registration |
 | 5 | `observal_cli/harness/__init__.py` | Adapter registry and protocol validation |
-| 6 | `observal-server/services/harness/<ide_name>.py` | Server adapter: config generation for install |
+| 6 | `observal-server/services/harness/<harness_name>.py` | Server adapter: config generation for install |
 | 7 | `observal-server/services/harness/load_all.py` | Add import line for server adapter |
-| 8 | `observal_cli/harness_specs/<ide_name>_hooks_spec.py` | Hook spec: what hooks to install, event names |
-| 9 | `observal_cli/sessions/<ide_name>.py` | Session parser (if harness writes JSONL sessions) |
-| 10 | `observal_cli/hooks/<ide_name>_session_push.py` | Session push hook script |
+| 8 | `observal_cli/harness_specs/<harness_name>_hooks_spec.py` | Hook spec: what hooks to install, event names |
+| 9 | `observal_cli/sessions/<harness_name>.py` | Session parser (if harness writes JSONL sessions) |
+| 10 | `observal_cli/hooks/<harness_name>_session_push.py` | Session push hook script |
 | 11 | `observal_cli/cmd_doctor.py` | Doctor diagnose/patch/cleanup coverage for the new harness |
 | 12 | `observal_cli/layer.py` | Layer scanning globs (`HARNESS_LAYER_CONFIGS`) and active harness detection |
 | 13 | `tests/test_cli_ide_adapters.py` | Adapter unit tests |
-| 14 | `/api/v1/config/harnesses` consumers | Frontend uses server harness metadata through `useIdes()` |
+| 14 | `/api/v1/config/harnesses` consumers | Frontend uses server harness metadata through `useHarnesses()` |
 
 ## Step 1: Research the harness
 
@@ -79,7 +79,7 @@ The test `tests/test_constants_sync.py` enforces they're identical.
 "my-harness": {
     "display_name": "My harness",
     "capabilities": {"hooks", "mcp_servers", "skills"},
-    "session_parser": "my_ide",       # or None
+    "session_parser": "my_harness",       # or None
     "scopes": ["project", "user"],
     "default_scope": "project",
     "scope_labels": ("project (.my-harness/)", "user (~/.my-harness/)"),
@@ -135,7 +135,7 @@ Before moving on, always wire the new harness into these shared paths:
   - Add `_cleanup_<harness>()` support in `doctor cleanup`
 - `observal_cli/layer.py`:
   - Add user/project file globs under `HARNESS_LAYER_CONFIGS`
-- `observal_cli/harness/<ide_name>.py`:
+- `observal_cli/harness/<harness_name>.py`:
   - Add `home_markers` for active harness detection when the harness has a reliable home config marker. Glob patterns are supported.
   - Add `managed_agent_profiles`, `managed_skills`, and `managed_mcp_files` patterns for layer source attribution
   - Override `get_observal_managed_files()` only if simple `{name}` patterns are not enough
@@ -144,7 +144,7 @@ If these are skipped, the harness can appear supported in pull/scan while doctor
 
 ## Step 3: Create CLI Adapter (Scanning)
 
-Create `observal_cli/harness/my_ide.py`. This handles local discovery:
+Create `observal_cli/harness/my_harness.py`. This handles local discovery:
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
@@ -176,14 +176,14 @@ from observal_cli.shared.utils import (
 )
 
 
-class MyIdeAdapter(BaseAdapter):
+class MyHarnessAdapter(BaseAdapter):
     home_markers = (".my-harness",)
     managed_agent_profiles = ("user:agents/{name}.md", "project:.my-harness/agents/{name}.md")
     managed_skills = ("user:skills/{name}/SKILL.md", "project:.my-harness/skills/{name}/SKILL.md")
     managed_mcp_files = ("user:mcp.json", "project:.my-harness/mcp.json")
 
     @property
-    def ide_name(self) -> str:
+    def harness_name(self) -> str:
         return "my-harness"
 
     # ── Scanning ──────────────────────────────────────────────
@@ -191,25 +191,25 @@ class MyIdeAdapter(BaseAdapter):
     def scan_home(self, home: Path | None = None) -> ScanResult:
         """Discover MCPs, skills, hooks, agents from ~/.my-harness/"""
         home = home or Path.home()
-        ide_dir = home / ".my-harness"
-        if not ide_dir.exists():
+        harness_dir = home / ".my-harness"
+        if not harness_dir.exists():
             return ScanResult()
 
-        mcps = self._scan_mcps(ide_dir / "mcp.json", "my-harness:global")
-        skills = self._scan_skills(ide_dir / "skills")
-        hooks = self._scan_hooks(ide_dir / "settings.json")
-        agents = self._scan_agents(ide_dir / "agents")
+        mcps = self._scan_mcps(harness_dir / "mcp.json", "my-harness:global")
+        skills = self._scan_skills(harness_dir / "skills")
+        hooks = self._scan_hooks(harness_dir / "settings.json")
+        agents = self._scan_agents(harness_dir / "agents")
 
         return ScanResult(mcps=mcps, skills=skills, hooks=hooks, agents=agents)
 
     def scan_project(self, project_dir: Path) -> ScanResult:
         """Discover MCPs, skills from .my-harness/ in a project."""
-        ide_dir = project_dir / ".my-harness"
-        if not ide_dir.exists():
+        harness_dir = project_dir / ".my-harness"
+        if not harness_dir.exists():
             return ScanResult()
 
-        mcps = self._scan_mcps(ide_dir / "mcp.json", "my-harness:project")
-        skills = self._scan_skills(ide_dir / "skills")
+        mcps = self._scan_mcps(harness_dir / "mcp.json", "my-harness:project")
+        skills = self._scan_skills(harness_dir / "skills")
         return ScanResult(mcps=mcps, skills=skills)
 
     # ── Hook detection ────────────────────────────────────────
@@ -229,7 +229,7 @@ class MyIdeAdapter(BaseAdapter):
     ) -> dict[str, Any]:
         """Generate the hooks config dict to write into settings."""
         # Import from your hook spec module
-        from observal_cli.harness_specs.my_ide_hooks_spec import build_hooks
+        from observal_cli.harness_specs.my_harness_hooks_spec import build_hooks
         return build_hooks()
 
     def detect_hooks(self, config_dir: Path) -> str:
@@ -314,12 +314,12 @@ class MyIdeAdapter(BaseAdapter):
         return []
 
 
-register_adapter(MyIdeAdapter())
+register_adapter(MyHarnessAdapter())
 ```
 
 ## Step 4: Create Server-Side Config Generator (Install)
 
-Create `observal-server/services/harness/my_ide.py`. This generates files when
+Create `observal-server/services/harness/my_harness.py`. This generates files when
 users run `observal pull` or install an agent:
 
 ```python
@@ -335,7 +335,7 @@ from services.harness import ConfigContext, register_adapter
 
 class MyIdeServerAdapter:
     @property
-    def ide_name(self) -> str:
+    def harness_name(self) -> str:
         return "my-harness"
 
     def generate_config(self, ctx: ConfigContext) -> dict:
@@ -369,7 +369,7 @@ register_adapter(MyIdeServerAdapter())
 
 ## Step 5: Create Hook Spec
 
-Create `observal_cli/harness_specs/my_ide_hooks_spec.py`. This defines what
+Create `observal_cli/harness_specs/my_harness_hooks_spec.py`. This defines what
 hooks `observal doctor patch --hook` installs:
 
 ```python
@@ -416,10 +416,10 @@ push conversation context (assistant messages, tool results, thinking blocks)
 to the server, making rich trace logs impossible. You only get bare hook
 metadata without this.
 
-**CLI side:** `observal_cli/sessions/my_ide.py` (reads local session files,
+**CLI side:** `observal_cli/sessions/my_harness.py` (reads local session files,
 normalizes into records for upload)
 
-**Server side:** `observal-server/services/session_parsers/my_ide.py` (reads
+**Server side:** `observal-server/services/session_parsers/my_harness.py` (reads
 raw ClickHouse rows, normalizes into frontend-displayable events)
 
 Both must produce the same normalized format so the trace viewer shows
@@ -437,11 +437,11 @@ implementations. Key things to handle:
 Register the parser in `observal-server/services/session_parsers/__init__.py`:
 
 ```python
-from .my_ide import parse_rows as _parse_my_ide
+from .my_harness import parse_rows as _parse_my_harness
 
 _PARSERS: dict[str, Callable] = {
     ...
-    "my_ide": _parse_my_ide,
+    "my_harness": _parse_my_harness,
 }
 ```
 
@@ -449,21 +449,21 @@ The `session_parser` key in the harness registry entry must match this ID.
 
 ## Step 7: Create Session Push Hook
 
-Create `observal_cli/hooks/my_ide_session_push.py` if the harness needs a
+Create `observal_cli/hooks/my_harness_session_push.py` if the harness needs a
 custom session push script (most can reuse `session_push.py`).
 
 ## Step 8: Register Everything
 
 1. `observal_cli/harness/load_all.py`:
    ```python
-   from observal_cli.harness import my_ide as _my_ide  # noqa: F401
+   from observal_cli.harness import my_harness as _my_harness  # noqa: F401
    ```
 
-2. `observal_cli/harness/<ide_name>.py`: set `home_markers` and managed file attribution patterns used by layer snapshots.
+2. `observal_cli/harness/<harness_name>.py`: set `home_markers` and managed file attribution patterns used by layer snapshots.
 
 3. `observal-server/services/harness/load_all.py`:
    ```python
-   from services.harness import my_ide as _my_ide  # noqa: F401
+   from services.harness import my_harness as _my_harness  # noqa: F401
    ```
 
 4. `observal_cli/cmd_scan.py`: add to `_HARNESS_HOME_DIRS`:
@@ -476,24 +476,24 @@ custom session push script (most can reuse `session_push.py`).
 Minimum test coverage required:
 
 ```python
-class TestMyIdeAdapter:
+class TestMyHarnessAdapter:
     def test_scan_home_empty(self, tmp_path):
-        adapter = MyIdeAdapter()
+        adapter = MyHarnessAdapter()
         result = adapter.scan_home(tmp_path)
         assert result.mcps == []
         assert result.skills == []
 
     def test_is_installed_uses_home_marker(self, tmp_path):
-        adapter = MyIdeAdapter()
+        adapter = MyHarnessAdapter()
         assert adapter.is_installed(tmp_path) is False
         (tmp_path / ".my-harness").mkdir()
         assert adapter.is_installed(tmp_path) is True
 
     def test_scan_home_discovers_mcps(self, tmp_path):
-        ide_dir = tmp_path / ".my-harness"
-        ide_dir.mkdir()
-        (ide_dir / "mcp.json").write_text('{"mcpServers": {"srv": {"command": "npx"}}}')
-        adapter = MyIdeAdapter()
+        harness_dir = tmp_path / ".my-harness"
+        harness_dir.mkdir()
+        (harness_dir / "mcp.json").write_text('{"mcpServers": {"srv": {"command": "npx"}}}')
+        adapter = MyHarnessAdapter()
         result = adapter.scan_home(tmp_path)
         assert len(result.mcps) == 1
         assert result.mcps[0].name == "srv"
@@ -502,19 +502,19 @@ class TestMyIdeAdapter:
         skill_dir = tmp_path / ".my-harness" / "skills" / "my-skill"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("---\ndescription: Does stuff\n---\n")
-        adapter = MyIdeAdapter()
+        adapter = MyHarnessAdapter()
         result = adapter.scan_home(tmp_path)
         assert len(result.skills) == 1
 
     def test_scan_project_discovers_mcps(self, tmp_path):
         (tmp_path / ".my-harness").mkdir()
         (tmp_path / ".my-harness" / "mcp.json").write_text('{"mcpServers": {"p": {"command": "node"}}}')
-        adapter = MyIdeAdapter()
+        adapter = MyHarnessAdapter()
         result = adapter.scan_project(tmp_path)
         assert len(result.mcps) == 1
 
     def test_detect_hooks_missing(self, tmp_path):
-        adapter = MyIdeAdapter()
+        adapter = MyHarnessAdapter()
         assert adapter.detect_hooks(tmp_path) == "missing"
 
     def test_detect_hooks_installed(self, tmp_path):
@@ -525,18 +525,18 @@ class TestMyIdeAdapter:
                 "sessionEnd": [{"command": "python -m observal_cli.hooks.session_push"}],
             }
         }))
-        adapter = MyIdeAdapter()
+        adapter = MyHarnessAdapter()
         assert adapter.detect_hooks(tmp_path) == "installed"
 
     def test_managed_files_for_layer_source_attribution(self):
         lockfile = {
-            "ides": {
+            "harnesses": {
                 "my-harness": {
                     "agents": [{"name": "agent-one", "components": [{"type": "skill", "name": "helper"}]}],
                 }
             }
         }
-        adapter = MyIdeAdapter()
+        adapter = MyHarnessAdapter()
         assert adapter.get_observal_managed_files(lockfile) == {
             "user:agents/agent-one.md",
             "project:.my-harness/agents/agent-one.md",

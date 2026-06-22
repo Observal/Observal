@@ -44,6 +44,14 @@ def upgrade() -> None:
         "skill_versions",
     ):
         _rename(table, "supported_ides", "supported_harnesses")
+    for table in (
+        "hook_downloads",
+        "mcp_downloads",
+        "prompt_downloads",
+        "sandbox_downloads",
+        "skill_downloads",
+    ):
+        _rename(table, "ide", "harness")
 
 
 def downgrade() -> None:
@@ -62,3 +70,11 @@ def downgrade() -> None:
         "skill_versions",
     ):
         _rename(table, "supported_harnesses", "supported_ides")
+    for table in (
+        "hook_downloads",
+        "mcp_downloads",
+        "prompt_downloads",
+        "sandbox_downloads",
+        "skill_downloads",
+    ):
+        _rename(table, "harness", "ide")

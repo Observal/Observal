@@ -431,7 +431,7 @@ def skill_install(
     """
     resolved = config.resolve_alias(skill_id)
     with spinner(f"Generating {ide} config..."):
-        install_body = {"ide": ide, "scope": scope}
+        install_body = {"harness": ide, "scope": scope}
         if version:
             install_body["version"] = version
         result = client.post(f"/api/v1/skills/{resolved}/install", install_body)

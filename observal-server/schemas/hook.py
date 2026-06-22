@@ -142,7 +142,7 @@ class HookListingSummary(BaseModel):
 
 
 class HookInstallRequest(BaseModel):
-    ide: str
+    harness: str
     platform: str = ""  # e.g. "win32", "darwin", "linux" - empty = Unix default
 
 
@@ -154,7 +154,7 @@ class HookFileEntry(BaseModel):
 
 class HookInstallResponse(BaseModel):
     listing_id: uuid.UUID
-    ide: str
+    harness: str
     config_snippet: dict
     config_path: str = ""
     files: list[HookFileEntry] = []

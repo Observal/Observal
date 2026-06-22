@@ -17,7 +17,7 @@ observal doctor [--harness <harness>] [--fix]
 
 | Option | Description |
 | --- | --- |
-| `--harness <harness>` | Scope to one harness: `claude-code`, `kiro`, `cursor`, `vscode`, `gemini-cli`, `codex`, `copilot` |
+| `--harness <harness>` | Scope to one harness: `cursor`, `kiro`, `claude-code`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `pi` |
 | `--fix` | Auto-apply suggested fixes |
 
 ## What it checks
@@ -157,7 +157,7 @@ Prints what would change without touching any files. Useful for reviewing unfami
 ### Multiple harnesses
 
 ```bash
-observal doctor patch --all --harness kiro --harness gemini-cli
+observal doctor patch --all --harness kiro --harness copilot-cli
 ```
 
 ## Re-running is safe
