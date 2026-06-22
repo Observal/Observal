@@ -34,10 +34,14 @@ class ClaudeCodeAdapter:
         setup_commands = []
         claude_mcps = {}
         for name, cfg in mcp_configs.items():
-            cmd = cfg.get("command", "observal-shim")
-            args = cfg.get("args", [])
-            setup_commands.append(["claude", "mcp", "add", name, "--", cmd, *args])
-            claude_mcps[name] = {"command": cmd, "args": args, "env": cfg.get("env", {})}
+            if cfg.get("url") or cfg.get("type") in ("sse", "streamable-http"):
+                # SSE/streamable-http entry: preserve as-is (url, headers, env)
+                claude_mcps[name] = cfg
+            else:
+                cmd = cfg.get("command", "observal-shim")
+                args = cfg.get("args", [])
+                setup_commands.append(["claude", "mcp", "add", name, "--", cmd, *args])
+                claude_mcps[name] = {"command": cmd, "args": args, "env": cfg.get("env", {})}
 
         scope = options.get("scope", HARNESS_REGISTRY["claude-code"]["default_scope"])
         tools = options.get("tools", "")

@@ -191,6 +191,7 @@ async def install_agent(
         mcp_listings=mcp_listings_map,
         component_names=name_map,
         env_values=req.env_values,
+        header_values=req.header_values,
         options=install_options,
         platform=req.platform,
         skill_listings=skill_listings_map,

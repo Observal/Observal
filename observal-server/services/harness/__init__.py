@@ -75,6 +75,7 @@ def generate_agent_config(
     mcp_listings: dict | None = None,
     component_names: dict | None = None,
     env_values: dict | None = None,
+    header_values: dict | None = None,
     options: dict | None = None,
     platform: str = "",
     skill_listings: dict | None = None,
@@ -99,7 +100,9 @@ def generate_agent_config(
     )
 
     safe_name = _sanitize_name(agent.name)
-    mcp_configs = _build_mcp_configs(agent, harness, observal_url, mcp_listings=mcp_listings, env_values=env_values)
+    mcp_configs = _build_mcp_configs(
+        agent, harness, observal_url, mcp_listings=mcp_listings, env_values=env_values, header_values=header_values
+    )
 
     if sandbox_listings:
         sandbox_mcp = _build_sandbox_mcp_entry(sandbox_listings, harness)

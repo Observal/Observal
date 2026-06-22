@@ -1220,3 +1220,88 @@ class TestCodexInstallCliPathHint:
         # Find the harness_config_paths dict in the install function's source
         source = inspect.getsource(cmd_mcp_module)
         assert '"codex": "~/.codex/config.toml"' in source or "'codex': '~/.codex/config.toml'" in source
+
+
+class TestMcpAuthHeadersInAgentPull:
+    """Verify that MCP header_values propagate through generate_agent_config."""
+
+    def _make_sse_listing(self, listing_id):
+        listing = MagicMock()
+        listing.id = listing_id
+        listing.name = "auth-mcp"
+        listing.url = "https://api.example.com/mcp"
+        listing.transport = "sse"
+        listing.command = None
+        listing.args = None
+        listing.framework = None
+        listing.docker_image = None
+        listing.auto_approve = None
+        listing.environment_variables = []
+        return listing
+
+    def test_header_values_included_in_cursor_config(self):
+        """header_values should appear in mcpServers config for Cursor."""
+        listing_id = uuid.uuid4()
+        agent = _make_agent(
+            components=[_make_component("mcp", listing_id)],
+        )
+        listing = self._make_sse_listing(listing_id)
+        header_vals = {str(listing_id): {"Authorization": "Bearer sk-test-123"}}
+
+        config = generate_agent_config(
+            agent,
+            "cursor",
+            mcp_listings={listing_id: listing},
+            header_values=header_vals,
+        )
+
+        mcp_content = config["mcp_config"]["content"]
+        servers = mcp_content.get("mcpServers", {})
+        assert "auth-mcp" in servers
+        entry = servers["auth-mcp"]
+        assert entry.get("headers") == {"Authorization": "Bearer sk-test-123"}
+
+    def test_header_values_included_in_claude_code_config(self):
+        """header_values should appear in mcpServers config for Claude Code."""
+        listing_id = uuid.uuid4()
+        agent = _make_agent(
+            components=[_make_component("mcp", listing_id)],
+        )
+        listing = self._make_sse_listing(listing_id)
+        header_vals = {str(listing_id): {"Authorization": "Bearer sk-test-456"}}
+
+        config = generate_agent_config(
+            agent,
+            "claude-code",
+            mcp_listings={listing_id: listing},
+            header_values=header_vals,
+        )
+
+        # Claude Code SSE MCPs go in mcp_config directly
+        mcp_servers = config["mcp_config"]
+        assert "auth-mcp" in mcp_servers
+        entry = mcp_servers["auth-mcp"]
+        assert entry.get("headers") == {"Authorization": "Bearer sk-test-456"}
+        assert entry.get("type") == "sse"
+        assert entry.get("url") == "https://api.example.com/mcp"
+
+    def test_no_headers_when_header_values_empty(self):
+        """No headers key emitted when header_values is empty."""
+        listing_id = uuid.uuid4()
+        agent = _make_agent(
+            components=[_make_component("mcp", listing_id)],
+        )
+        listing = self._make_sse_listing(listing_id)
+
+        config = generate_agent_config(
+            agent,
+            "cursor",
+            mcp_listings={listing_id: listing},
+            header_values={},
+        )
+
+        mcp_content = config["mcp_config"]["content"]
+        servers = mcp_content.get("mcpServers", {})
+        assert "auth-mcp" in servers
+        entry = servers["auth-mcp"]
+        assert "headers" not in entry

@@ -572,6 +572,13 @@ class TestMcpListingClaudeCodeFallback:
         listing = MagicMock()
         listing.name = "my-mcp"
         listing.id = comp_id
+        listing.url = None
+        listing.command = "npx"
+        listing.args = ["-y", "my-mcp"]
+        listing.framework = None
+        listing.docker_image = None
+        listing.auto_approve = None
+        listing.environment_variables = []
 
         comp = _make_component("mcp", comp_id)
         agent = _make_agent(components=[comp])

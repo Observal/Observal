@@ -192,6 +192,82 @@ def _collect_mcp_env_vars(
     return env_values
 
 
+def _collect_mcp_headers(
+    agent_detail: dict, *, no_prompt: bool = False, header_overrides: dict[str, str] | None = None
+) -> dict[str, dict[str, str]]:
+    """Discover MCP headers from agent components and prompt the user for values.
+
+    When *no_prompt* is True, uses values from *header_overrides* for known headers
+    and skips prompting entirely. Missing headers are omitted.
+
+    Returns {mcp_listing_id: {Header-Name: value}} for all MCPs that have headers.
+    """
+    optic.trace("agent_detail={}", agent_detail)
+    header_values: dict[str, dict[str, str]] = {}
+    _overrides = header_overrides or {}
+
+    # Collect MCP component IDs from both mcp_links and component_links
+    mcp_ids: list[tuple[str, str]] = []
+    for link in agent_detail.get("mcp_links", []):
+        mcp_ids.append((str(link["mcp_listing_id"]), link.get("mcp_name", "")))
+    for link in agent_detail.get("component_links", []):
+        if link.get("component_type") == "mcp":
+            cid = str(link["component_id"])
+            if not any(mid == cid for mid, _ in mcp_ids):
+                mcp_ids.append((cid, link.get("component_name", "")))
+
+    if not mcp_ids:
+        return header_values
+
+    for listing_id, display_name in mcp_ids:
+        try:
+            listing = client.get(f"/api/v1/mcps/{listing_id}")
+        except (Exception, SystemExit):
+            continue
+
+        header_list = listing.get("headers") or []
+        if not header_list:
+            continue
+
+        required = [h for h in header_list if h.get("required", True)]
+        optional = [h for h in header_list if not h.get("required", True)]
+        mcp_name = display_name or listing.get("name", listing_id[:8])
+        mcp_hdrs: dict[str, str] = {}
+
+        if no_prompt:
+            for h in required + optional:
+                if h["name"] in _overrides:
+                    mcp_hdrs[h["name"]] = _overrides[h["name"]]
+        else:
+            if required:
+                rprint(f"\n[bold]{mcp_name}[/bold] requires {len(required)} header(s):")
+                for h in required:
+                    if h["name"] in _overrides:
+                        mcp_hdrs[h["name"]] = _overrides[h["name"]]
+                        rprint(f"  [green]\u2713[/green] {h['name']} [dim](from --header)[/dim]")
+                    else:
+                        desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
+                        val = text_input(f"  {h['name']}{desc}")
+                        mcp_hdrs[h["name"]] = val
+
+            if optional:
+                rprint(f"\n[dim]{mcp_name}: {len(optional)} optional header(s):[/dim]")
+                for h in optional:
+                    if h["name"] in _overrides:
+                        mcp_hdrs[h["name"]] = _overrides[h["name"]]
+                        rprint(f"  [green]\u2713[/green] {h['name']} [dim](from --header)[/dim]")
+                    else:
+                        desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
+                        val = text_input(f"  {h['name']}{desc} (press Enter to skip)", default="")
+                        if val:
+                            mcp_hdrs[h["name"]] = val
+
+        if mcp_hdrs:
+            header_values[listing_id] = mcp_hdrs
+
+    return header_values
+
+
 def _dict_to_toml(d: dict) -> str:
     """Very basic TOML serializer for MCP configs."""
     optic.trace("d={}", d)
@@ -478,6 +554,9 @@ def register_pull(app: typer.Typer):
         env: list[str] | None = typer.Option(
             None, "--env", "-e", help="MCP environment variable (KEY=VALUE, repeatable)"
         ),
+        header: list[str] | None = typer.Option(
+            None, "--header", "-H", help="MCP header value (Header-Name=value, repeatable)"
+        ),
         version: str | None = typer.Option(
             None, "--version", "-V", help="Install a specific version (e.g. '1.2.0'). Defaults to latest."
         ),
@@ -489,8 +568,9 @@ def register_pull(app: typer.Typer):
         directory.  Use --dry-run to preview without writing.
 
         Use --env KEY=VALUE to pass MCP environment variables non-interactively
-        (repeatable). When --no-prompt is set, env var prompts are skipped and
-        only values from --env flags are used.
+        (repeatable). Use --header Header-Name=value to pass MCP auth headers
+        non-interactively (repeatable). When --no-prompt is set, env var and
+        header prompts are skipped and only values from flags are used.
 
         Examples:
           observal agent pull my-agent --harness claude-code --no-prompt
@@ -498,6 +578,7 @@ def register_pull(app: typer.Typer):
           observal agent pull my-agent --harness kiro --no-prompt --scope user
           observal agent pull my-agent --harness cursor --no-prompt --dry-run
           observal agent pull my-agent --harness kiro --no-prompt --env API_KEY=sk-123 --env SECRET=abc
+          observal agent pull my-agent --harness cursor --header Authorization="Bearer sk-123"
         """
         resolved = config.resolve_alias(agent_id)
         target_dir = Path(directory).resolve()
@@ -509,11 +590,21 @@ def register_pull(app: typer.Typer):
             if k:
                 env_overrides[k.strip()] = v
 
+        # Parse --header flags into overrides dict
+        header_overrides: dict[str, str] = {}
+        for item in header or []:
+            k, _, v = item.partition("=")
+            if k:
+                header_overrides[k.strip()] = v
+
         # Fetch agent details to discover MCP env vars
         with spinner("Fetching agent details..."):
             agent_detail = client.get(f"/api/v1/agents/{resolved}")
 
         env_values = _collect_mcp_env_vars(agent_detail, no_prompt=no_prompt, env_overrides=env_overrides or None)
+        header_values = _collect_mcp_headers(
+            agent_detail, no_prompt=no_prompt, header_overrides=header_overrides or None
+        )
 
         rprint(f"\n[bold]Install options for [cyan]{harness}[/cyan]:[/bold]")
         if refresh_models:
@@ -539,6 +630,7 @@ def register_pull(app: typer.Typer):
             install_body: dict = {
                 "harness": harness,
                 "env_values": env_values,
+                "header_values": header_values,
                 "options": options,
                 "platform": sys.platform,
             }

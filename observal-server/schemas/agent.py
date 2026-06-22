@@ -208,6 +208,7 @@ class ValidationResult(BaseModel):
 class AgentInstallRequest(BaseModel):
     harness: str
     env_values: dict[str, dict[str, str]] = {}  # {mcp_listing_id: {VAR: value}}
+    header_values: dict[str, dict[str, str]] = {}  # {mcp_listing_id: {Header-Name: value}}
     # harness-specific install options (e.g. scope, model, tools, color for Claude Code)
     options: dict = {}
     platform: str = ""  # e.g. "win32", "darwin", "linux" - empty = Unix default

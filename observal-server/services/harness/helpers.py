@@ -482,6 +482,7 @@ def _build_mcp_configs(
     observal_url: str,
     mcp_listings: dict | None = None,
     env_values: dict | None = None,
+    header_values: dict | None = None,
 ) -> dict:
     """Build MCP server configs from registry components + external MCPs.
 
@@ -491,10 +492,13 @@ def _build_mcp_configs(
             pre-loads these to avoid N+1 queries in a sync context.
         env_values: optional {mcp_listing_id_str: {VAR: value}} map of user-supplied
             environment variable values for each MCP.
+        header_values: optional {mcp_listing_id_str: {Header-Name: value}} map of
+            user-supplied header values for each MCP (e.g. Authorization tokens).
     """
     mcp_configs = {}
     mcp_listings = mcp_listings or {}
     env_values = env_values or {}
+    header_values = header_values or {}
 
     optic.debug(
         "building MCP configs for agent '{}' (ide={}, {} components)",
@@ -510,7 +514,10 @@ def _build_mcp_configs(
         if not listing:
             continue
         mcp_env = env_values.get(str(listing.id), {})
-        cfg = generate_config(listing, harness, observal_url=observal_url, env_values=mcp_env)
+        mcp_headers = header_values.get(str(listing.id), {})
+        cfg = generate_config(
+            listing, harness, observal_url=observal_url, env_values=mcp_env, header_values=mcp_headers
+        )
         if "mcpServers" in cfg:
             mcp_configs.update(cfg["mcpServers"])
         elif "mcp" in cfg:
@@ -524,6 +531,8 @@ def _build_mcp_configs(
             if listing.url:
                 # SSE/streamable-http listing - no shim needed
                 entry: dict = {"type": (listing.transport or "sse").lower(), "url": listing.url}
+                if mcp_headers:
+                    entry["headers"] = mcp_headers
                 if mcp_env:
                     entry["env"] = mcp_env
                 if listing.auto_approve:
