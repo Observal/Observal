@@ -1,6 +1,6 @@
 {
   "name": "web",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",

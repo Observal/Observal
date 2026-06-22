@@ -10,7 +10,7 @@
 
 [project]
 name = "observal-cli"
-version = "1.8.0"
+version = "1.9.0"
 description = "Observal MCP Server Registry & Agent Registry CLI"
 readme = "README.md"
 requires-python = ">=3.11"
