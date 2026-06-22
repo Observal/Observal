@@ -14,6 +14,7 @@ import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedLeaderboardRouteImport } from './routes/_authed/leaderboard'
 import { Route as AuthedUserRouteImport } from './routes/_authed/_user'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/_admin'
+import { Route as authRegisterRouteImport } from './routes/(auth)/register'
 import { Route as authLoginRouteImport } from './routes/(auth)/login'
 import { Route as authDeviceRouteImport } from './routes/(auth)/device'
 import { Route as AuthedWikiIndexRouteImport } from './routes/_authed/wiki/index'
@@ -57,6 +58,11 @@ const AuthedUserRoute = AuthedUserRouteImport.update({
 const AuthedAdminRoute = AuthedAdminRouteImport.update({
   id: '/_admin',
   getParentRoute: () => AuthedRoute,
+} as any)
+const authRegisterRoute = authRegisterRouteImport.update({
+  id: '/(auth)/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const authLoginRoute = authLoginRouteImport.update({
   id: '/(auth)/login',
@@ -171,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/device': typeof authDeviceRoute
   '/login': typeof authLoginRoute
+  '/register': typeof authRegisterRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
@@ -195,6 +202,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/device': typeof authDeviceRoute
   '/login': typeof authLoginRoute
+  '/register': typeof authRegisterRoute
   '/': typeof AuthedIndexRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
   '/audit-log': typeof AuthedAdminAuditLogRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/(auth)/device': typeof authDeviceRoute
   '/(auth)/login': typeof authLoginRoute
+  '/(auth)/register': typeof authRegisterRoute
   '/_authed/_admin': typeof AuthedAdminRouteWithChildren
   '/_authed/_user': typeof AuthedUserRouteWithChildren
   '/_authed/leaderboard': typeof AuthedLeaderboardRoute
@@ -252,6 +261,7 @@ export interface FileRouteTypes {
     | '/'
     | '/device'
     | '/login'
+    | '/register'
     | '/leaderboard'
     | '/audit-log'
     | '/dashboard'
@@ -276,6 +286,7 @@ export interface FileRouteTypes {
   to:
     | '/device'
     | '/login'
+    | '/register'
     | '/'
     | '/leaderboard'
     | '/audit-log'
@@ -302,6 +313,7 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/(auth)/device'
     | '/(auth)/login'
+    | '/(auth)/register'
     | '/_authed/_admin'
     | '/_authed/_user'
     | '/_authed/leaderboard'
@@ -331,6 +343,7 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   authDeviceRoute: typeof authDeviceRoute
   authLoginRoute: typeof authLoginRoute
+  authRegisterRoute: typeof authRegisterRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -369,6 +382,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthedAdminRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/(auth)/register': {
+      id: '/(auth)/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof authRegisterRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/(auth)/login': {
       id: '/(auth)/login'
@@ -609,6 +629,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   authDeviceRoute: authDeviceRoute,
   authLoginRoute: authLoginRoute,
+  authRegisterRoute: authRegisterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

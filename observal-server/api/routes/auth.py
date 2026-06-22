@@ -40,6 +40,7 @@ from schemas.auth import (
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
+    RegisterRequest,
     RevokeRequest,
     TokenRequest,
     TokenResponse,
@@ -89,8 +90,8 @@ _COMMON_WEAK_PASSWORDS = frozenset(
 
 def _validate_password_strength(password: str) -> None:
     optic.debug("_validate_password_strength called")
-    if len(password) < 12:
-        raise HTTPException(status_code=422, detail="Password must be at least 12 characters")
+    if len(password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
     if not re.search(r"[A-Z]", password):
         raise HTTPException(status_code=422, detail="Password must contain at least one uppercase letter")
     if not re.search(r"[0-9]", password):
@@ -203,6 +204,55 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=409, detail="System already initialized")
     await db.refresh(user)
 
+    access_token, refresh_token, expires_in = await _issue_tokens(user)
+    return InitResponse(
+        user=UserResponse.model_validate(user),
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+    )
+
+
+@router.post("/register", response_model=InitResponse, dependencies=[Depends(require_password_auth)])
+@limiter.limit(ds.get_sync("security.rate_limit_auth_strict", "5/minute"))
+async def register(request: Request, req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    """Create a self-registered user when public registration is enabled."""
+    optic.debug("auth register attempt")
+    if not await ds.get_bool("auth.self_registration_enabled"):
+        raise HTTPException(status_code=403, detail="Registration is disabled")
+
+    _validate_password_strength(req.password)
+    source_ip, user_agent = _extract_request_info(request)
+    default_org = await get_or_create_default_org(db)
+    username = req.username or await generate_unique_username(req.email, db)
+    user = User(
+        email=req.email,
+        username=username,
+        name=req.name,
+        role=UserRole.user,
+        org_id=default_org.id,
+    )
+    user.set_password(req.password)
+    db.add(user)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Email or username already exists")
+    await db.refresh(user)
+
+    await emit_security_event(
+        SecurityEvent(
+            event_type=EventType.REGISTRATION,
+            severity=Severity.INFO,
+            outcome="success",
+            actor_id=str(user.id),
+            actor_email=user.email,
+            actor_role=user.role.value,
+            source_ip=source_ip,
+            user_agent=user_agent,
+        )
+    )
     access_token, refresh_token, expires_in = await _issue_tokens(user)
     return InitResponse(
         user=UserResponse.model_validate(user),

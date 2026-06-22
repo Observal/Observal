@@ -7,7 +7,7 @@
 
 
 import { Suspense, useState, useEffect } from "react";
-import { useRouter, useSearch } from "@tanstack/react-router";
+import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { auth, config as configApi, setTokens, clearSession, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
@@ -21,7 +21,15 @@ import { Label } from "@/components/ui/label";
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearch({ from: "/(auth)/login" });
-  const { ssoEnabled, ssoOnly, samlEnabled, brandingAppName, brandingLogo, brandingWordmark } = useDeploymentConfig();
+  const {
+    ssoEnabled,
+    ssoOnly,
+    selfRegistrationEnabled,
+    samlEnabled,
+    brandingAppName,
+    brandingLogo,
+    brandingWordmark,
+  } = useDeploymentConfig();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -465,11 +473,11 @@ function LoginContent() {
                 )}
 
                 {(ssoOnly || ssoEnabled) && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center">
                     <Button
                       type="button"
                       variant={ssoOnly ? "default" : "outline"}
-                      className="flex-1"
+                      className="relative flex-1 pr-10"
                       onClick={handleSsoLogin}
                       disabled={loading || ssoLoading}
                     >
@@ -479,38 +487,38 @@ function LoginContent() {
                         <RefreshCw className="mr-2 h-4 w-4" />
                       )}
                       Sign in with SSO
+                      {ssoHealthLoading ? (
+                        <Loader2 className="absolute right-3 h-5 w-5 animate-spin text-muted-foreground" />
+                      ) : ssoHealth?.oidc && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="absolute right-3">
+                                {ssoHealth.oidc.ok ? (
+                                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                                ) : (
+                                  <XCircle className="h-5 w-5 text-destructive" />
+                                )}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs text-xs">
+                              {ssoHealth.oidc.ok
+                                ? `OIDC config verified (${ssoHealth.oidc.latency_ms}ms), does not test a full user login`
+                                : ssoHealth.oidc.error}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </Button>
-                    {ssoHealthLoading ? (
-                      <Loader2 className="h-5 w-5 shrink-0 animate-spin text-muted-foreground" />
-                    ) : ssoHealth?.oidc && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="shrink-0">
-                              {ssoHealth.oidc.ok ? (
-                                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                              ) : (
-                                <XCircle className="h-5 w-5 text-destructive" />
-                              )}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="right" className="max-w-xs text-xs">
-                            {ssoHealth.oidc.ok
-                              ? `OIDC config verified (${ssoHealth.oidc.latency_ms}ms) — does not test a full user login`
-                              : ssoHealth.oidc.error}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    )}
                   </div>
                 )}
 
                 {samlEnabled && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center">
                     <Button
                       type="button"
                       variant={ssoOnly ? "default" : "outline"}
-                      className="flex-1"
+                      className="relative flex-1 pr-10"
                       onClick={() => {
                         const nextParam = searchParams.next;
                         const samlUrl = nextParam && nextParam.startsWith("/")
@@ -521,35 +529,42 @@ function LoginContent() {
                       disabled={loading || ssoLoading}
                     >
                       Sign in with SAML SSO
+                      {ssoHealthLoading ? (
+                        <Loader2 className="absolute right-3 h-5 w-5 animate-spin text-muted-foreground" />
+                      ) : ssoHealth?.saml && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="absolute right-3">
+                                {ssoHealth.saml.ok ? (
+                                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                                ) : (
+                                  <XCircle className="h-5 w-5 text-destructive" />
+                                )}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs text-xs">
+                              {ssoHealth.saml.ok
+                                ? `SAML config verified (${ssoHealth.saml.latency_ms}ms), does not test a full user login`
+                                : ssoHealth.saml.error}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </Button>
-                    {ssoHealthLoading ? (
-                      <Loader2 className="h-5 w-5 shrink-0 animate-spin text-muted-foreground" />
-                    ) : ssoHealth?.saml && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="shrink-0">
-                              {ssoHealth.saml.ok ? (
-                                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                              ) : (
-                                <XCircle className="h-5 w-5 text-destructive" />
-                              )}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="right" className="max-w-xs text-xs">
-                            {ssoHealth.saml.ok
-                              ? `SAML config verified (${ssoHealth.saml.latency_ms}ms) — does not test a full user login`
-                              : ssoHealth.saml.error}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    )}
                   </div>
                 )}
               </div>
 
               {!ssoOnly && (
-                <div className="animate-in stagger-3 text-center">
+                <div className="animate-in stagger-3 space-y-3 text-center">
+                  {selfRegistrationEnabled && (
+                    <Button asChild variant="outline" className="w-full">
+                      <Link to="/register" search={searchParams.next ? { next: searchParams.next } : undefined}>
+                        Register
+                      </Link>
+                    </Button>
+                  )}
                   <p className="text-sm text-muted-foreground/60">
                     Forgot password? Contact your admin.
                   </p>

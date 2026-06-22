@@ -167,6 +167,8 @@ DEFAULTS: dict[str, str] = {
     "insights.min_sessions": "5",
     "insights.facet_max_calls": "100",
     "insights.facet_concurrency": "25",
+    # Auth
+    "auth.self_registration_enabled": "false",
     # Deployment (runtime-tunable, mode itself is boot-time env var)
     "deployment.sso_only": "false",
     "deployment.frontend_url": "http://localhost",
@@ -271,6 +273,14 @@ def settings_schema() -> list[dict[str, Any]]:
 
 
 SECTIONS: list[dict[str, Any]] = [
+    {
+        "id": "auth",
+        "title": "Authentication",
+        "description": "Authentication policy for public entry points.",
+        "icon": "key",
+        "danger": True,
+        "keys": [k for k in DEFAULTS if k.startswith("auth.")],
+    },
     {
         "id": "insights",
         "title": "Agent Insights",
