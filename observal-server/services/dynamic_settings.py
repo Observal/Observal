@@ -220,6 +220,8 @@ DEFAULTS: dict[str, str] = {
     "observability.enable_openapi": "false",
     "observability.enable_metrics": "false",
     # Misc
+    "misc.harness_allowlist": "",
+    "misc.default_harness": "",
     "misc.git_mirror_base_path": "",
 }
 
