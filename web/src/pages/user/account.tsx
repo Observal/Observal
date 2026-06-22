@@ -323,8 +323,8 @@ function ChangeUsernameSection() {
 const PASSWORD_RULES = [
 	{
 		id: "len",
-		label: "At least 12 characters",
-		test: (p: string) => p.length >= 12,
+		label: "At least 8 characters",
+		test: (p: string) => p.length >= 8,
 	},
 	{
 		id: "upper",
@@ -419,7 +419,7 @@ function ChangePasswordSection() {
 										: "border-destructive focus-visible:ring-destructive"
 									: ""
 							}`}
-							placeholder="At least 12 characters"
+							placeholder="At least 8 characters"
 						/>
 						{/* Requirements checklist — shown once user starts typing */}
 						{touched && newPassword && (

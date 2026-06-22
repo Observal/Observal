@@ -355,6 +355,8 @@ export const auth = {
 			"/auth/login",
 			body,
 		),
+	register: (body: { email: string; name: string; username?: string; password: string }) =>
+		post<AuthResponse>("/auth/register", body),
 	whoami: () =>
 		get<{
 			id: string;
@@ -786,6 +788,7 @@ export type PublicConfig = {
 	licensed: boolean;
 	sso_enabled: boolean;
 	sso_only: boolean;
+	self_registration_enabled: boolean;
 	saml_enabled: boolean;
 	exec_dashboard_available: boolean;
 	licensed_features: string[];

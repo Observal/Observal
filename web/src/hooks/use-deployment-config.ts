@@ -19,6 +19,7 @@ export function useDeploymentConfig() {
 		licensed: data?.licensed ?? false,
 		ssoEnabled: data?.sso_enabled ?? false,
 		ssoOnly: data?.sso_only ?? false,
+		selfRegistrationEnabled: data?.self_registration_enabled ?? false,
 		samlEnabled: data?.saml_enabled ?? false,
 		licensedFeatures: data?.licensed_features ?? [],
 		brandingLogo: data?.branding_logo ?? null,

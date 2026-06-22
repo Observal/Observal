@@ -27,7 +27,7 @@ def test_password_too_short_raises_422():
     with pytest.raises(HTTPException) as exc_info:
         validator("Short1!")
     assert exc_info.value.status_code == 422
-    assert "12 characters" in exc_info.value.detail
+    assert "8 characters" in exc_info.value.detail
 
 
 def test_password_no_uppercase_raises_422():
