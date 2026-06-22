@@ -10,12 +10,12 @@ configure MCP servers, add hooks, expose skills, and collect Kiro session teleme
 
 ## Overview
 
-Kiro agent profiles are Markdown files with frontmatter. Project agents live in
-`.kiro/agents/`. User agents live in `~/.kiro/agents/`.
+Kiro agent profiles are JSON files. Project agents live in `.kiro/agents/`.
+User agents live in `~/.kiro/agents/`.
 
-When Observal installs a Kiro agent, it also writes standalone hook config under
-`.kiro/hooks/` or `~/.kiro/hooks/`. The default hooks run
-`observal_cli.hooks.kiro_session_push` for `userPromptSubmit` and `stop`.
+When Observal installs a Kiro agent, it writes hook commands into that agent JSON.
+The default hooks run `observal_cli.hooks.kiro_session_push` for `userPromptSubmit`
+and `stop`.
 
 The hook reads Kiro session JSONL files from `~/.kiro/sessions/cli/`. It reads
 only new lines since the last push and sends them to Observal.
@@ -63,7 +63,7 @@ observal agent pull <agent-name> --harness kiro
 ```
 
 Kiro's default scope is user scope. By default, the agent is written to
-`~/.kiro/agents/{name}.md`.
+`~/.kiro/agents/{name}.json`.
 
 To install into the current project:
 
@@ -71,7 +71,7 @@ To install into the current project:
 observal agent pull <agent-name> --harness kiro --scope project
 ```
 
-Project agents are written to `.kiro/agents/{name}.md`.
+Project agents are written to `.kiro/agents/{name}.json`.
 
 ### 4. Patch existing Kiro hooks
 
@@ -87,7 +87,7 @@ This updates Observal hook entries and keeps other hook entries unchanged.
 
 | Purpose | Project scope | User scope |
 |---|---|---|
-| Agent profile | `.kiro/agents/{name}.md` | `~/.kiro/agents/{name}.md` |
+| Agent profile | `.kiro/agents/{name}.json` | `~/.kiro/agents/{name}.json` |
 | Guidance files | `.kiro/steering/*.md`, `AGENTS.md` | `~/.kiro/steering/*.md` |
 | MCP config | `.kiro/settings/mcp.json` | `~/.kiro/settings/mcp.json` |
 | Skill definition | `.kiro/skills/{name}/SKILL.md` | `~/.kiro/skills/{name}/SKILL.md` |

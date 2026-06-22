@@ -226,9 +226,10 @@ class TestAntigravityServerAdapter:
         )
         result = adapter.format_config(ctx)
         assert result["scope"] == "project"
+        assert result["agent_profile"]["path"] == ".agents/agents/test-agent/agent.json"
+        assert result["agent_profile"]["content"]["system_prompt"] == "# Test rules"
         assert "mcp_config" in result
         assert result["mcp_config"]["content"]["mcpServers"]["my-mcp"]["command"] == "node"
-        assert "agent_profile" not in result
         assert len(result["skills"]) == 1
 
     def test_format_config_user_scope(self):
@@ -247,7 +248,8 @@ class TestAntigravityServerAdapter:
             options={"scope": "user"},
         )
         result = adapter.format_config(ctx)
-        assert result == {"scope": "user"}
+        assert result["scope"] == "user"
+        assert result["agent_profile"]["path"] == "~/.gemini/antigravity-cli/agents/test-agent/agent.json"
 
     def test_format_config_with_model(self):
         import sys

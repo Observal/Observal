@@ -23,7 +23,22 @@ class AntigravityAdapter:
         spec = HARNESS_REGISTRY["antigravity"]
         options = ctx.options
         scope = options.get("scope", spec["default_scope"])
-        result: dict = {"scope": scope}
+        agent_path = spec["agent_profile"][scope].format(name=ctx.safe_name)
+        description = (getattr(ctx.agent, "description", "") or ctx.safe_name).replace("\n", " ").strip()[:200]
+        result: dict = {
+            "agent_profile": {
+                "path": agent_path,
+                "content": {
+                    "name": ctx.safe_name,
+                    "description": description,
+                    "system_prompt": ctx.rules_content,
+                    "mcpServers": ctx.mcp_configs,
+                    "tools": ["*"],
+                    "model": options.get("_resolved_model"),
+                },
+            },
+            "scope": scope,
+        }
 
         if ctx.mcp_configs:
             mcp_path = spec["mcp_config"].get(scope, spec["mcp_config"]["user"])

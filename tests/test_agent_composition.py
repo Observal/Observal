@@ -1209,17 +1209,17 @@ class TestGenerateIdeAgentFiles:
 
     # ── Kiro ───────────────────────────────────────────────────
 
-    def test_kiro_generates_agent_markdown(self):
+    def test_kiro_generates_agent_json(self):
         from services.agent_builder import generate_harness_agent_profiles
 
         manifest = self._make_manifest()
         config = generate_harness_agent_profiles(manifest, "kiro")
         assert config.harness == "kiro"
-        agent_profile = next(f for f in config.files if f.path == "~/.kiro/agents/test-agent.md")
-        assert agent_profile.format == "markdown"
-        assert "name: test-agent" in agent_profile.content
-        assert "You are a helpful coding assistant." in agent_profile.content
-        assert "Agent Specialization" in agent_profile.content
+        agent_profile = next(f for f in config.files if f.path == "~/.kiro/agents/test-agent.json")
+        assert agent_profile.format == "json"
+        assert agent_profile.content["name"] == "test-agent"
+        assert "You are a helpful coding assistant." in agent_profile.content["prompt"]
+        assert "Agent Specialization" in agent_profile.content["prompt"]
 
     # ── Codex ──────────────────────────────────────────────────
 

@@ -453,20 +453,34 @@ def _generate_kiro(manifest: AgentManifest) -> HarnessAgentConfig:
     platform = getattr(manifest, "_platform", "") or ""
     hooks = _build_kiro_hooks(safe_name, observal_url, platform)
     _materialize_kiro_hook_components(hooks, manifest)
-    content = f"---\nname: {safe_name}\n---\n\n{_wrap_kiro_prompt(manifest.prompt, safe_name)}"
+    saved_model = _saved_model_for(manifest, "kiro")
+    content = {
+        "name": safe_name,
+        "description": manifest.description[:200] if manifest.description else "",
+        "prompt": _wrap_kiro_prompt(manifest.prompt, safe_name),
+        "mcpServers": mcp_entries,
+        "tools": ["*"],
+        "toolAliases": {},
+        "allowedTools": [],
+        "resources": [
+            "file://AGENTS.md",
+            "file://README.md",
+            "skill://.kiro/skills/**/SKILL.md",
+            "skill://~/.kiro/skills/**/SKILL.md",
+        ],
+        "hooks": hooks,
+        "toolsSettings": {},
+        "includeMcpJson": True,
+        "model": saved_model,
+    }
     skills = _build_skills(manifest, "kiro")
 
     return HarnessAgentConfig(
         harness="kiro",
         files=[
             AgentFile(
-                path=f"~/.kiro/agents/{safe_name}.md",
+                path=f"~/.kiro/agents/{safe_name}.json",
                 content=content,
-                format="markdown",
-            ),
-            AgentFile(
-                path=f"~/.kiro/hooks/{safe_name}.json",
-                content=hooks,
                 format="json",
             ),
             *skills,

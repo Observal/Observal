@@ -117,11 +117,16 @@ class TestPreviewConfigNoComponents:
             )
 
         assert res.status_code == 200
+        import json
+
         files = res.json()["configs"]["kiro"]
-        kiro_path = "~/.kiro/agents/kiro-test.md"
+        kiro_path = "~/.kiro/agents/kiro-test.json"
         assert kiro_path in files
-        assert "name: kiro-test" in files[kiro_path]
-        assert "Agent Specialization" in files[kiro_path]
+        agent_json = json.loads(files[kiro_path])
+        assert agent_json["name"] == "kiro-test"
+        assert agent_json["tools"] == ["*"]
+        assert agent_json["includeMcpJson"] is True
+        assert "Agent Specialization" in agent_json["prompt"]
 
     async def test_copilot_uses_agent_md_path(self):
         app, db, _user = _app_with()

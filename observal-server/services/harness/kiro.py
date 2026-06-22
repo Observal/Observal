@@ -81,24 +81,29 @@ class KiroAdapter:
         agent_path = kiro_spec["agent_profile"][kiro_scope].format(name=safe_name)
         kiro_model = options.get("_resolved_model", None)
 
-        frontmatter = [f"name: {safe_name}"]
-        if kiro_model:
-            frontmatter.append(f"model: {kiro_model}")
-        content = "---\n" + "\n".join(frontmatter) + "\n---\n\n" + _wrap_kiro_prompt(ctx.agent.prompt, safe_name)
+        content = {
+            "name": safe_name,
+            "description": (ctx.agent.description or safe_name).replace("\n", " ").strip()[:200],
+            "prompt": _wrap_kiro_prompt(ctx.agent.prompt, safe_name),
+            "mcpServers": mcp_configs,
+            "tools": ["*"],
+            "toolAliases": {},
+            "allowedTools": [],
+            "resources": [
+                "file://AGENTS.md",
+                "file://README.md",
+                "skill://.kiro/skills/**/SKILL.md",
+                "skill://~/.kiro/skills/**/SKILL.md",
+            ],
+            "hooks": hooks,
+            "toolsSettings": {},
+            "includeMcpJson": True,
+            "model": kiro_model,
+        }
         result: dict = {
             "agent_profile": {"path": agent_path, "content": content},
-            "hooks_config": {
-                "path": kiro_spec["hooks"][kiro_scope].format(name=safe_name),
-                "content": hooks,
-                "merge": True,
-            },
             "scope": kiro_scope,
         }
-        if mcp_configs:
-            result["mcp_config"] = {
-                "path": kiro_spec["mcp_config"][kiro_scope],
-                "content": {kiro_spec.get("mcp_servers_key", "mcpServers"): mcp_configs},
-            }
 
         if skill_configs:
             result["skill_components"] = skill_configs

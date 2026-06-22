@@ -89,10 +89,10 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "default_scope": "user",
         "scope_labels": ("project (.kiro/agents/)", "user (~/.kiro/agents/)"),
         "agent_profile": {
-            "project": ".kiro/agents/{name}.md",
-            "user": "~/.kiro/agents/{name}.md",
+            "project": ".kiro/agents/{name}.json",
+            "user": "~/.kiro/agents/{name}.json",
         },
-        "agent_profile_format": "markdown_frontmatter",
+        "agent_profile_format": "json",
         "mcp_config": {
             "project": ".kiro/settings/mcp.json",
             "user": "~/.kiro/settings/mcp.json",
@@ -314,10 +314,10 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "default_scope": "user",
         "scope_labels": ("project (.agents/)", "user (~/.gemini/antigravity-cli/)"),
         "agent_profile": {
-            "project": None,
-            "user": None,
+            "project": ".agents/agents/{name}/agent.json",
+            "user": "~/.gemini/antigravity-cli/agents/{name}/agent.json",
         },
-        "agent_profile_format": None,
+        "agent_profile_format": "json",
         "mcp_config": {
             "project": ".agents/mcp_config.json",
             "user": "~/.gemini/antigravity-cli/mcp_config.json",

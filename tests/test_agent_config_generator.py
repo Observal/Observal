@@ -380,21 +380,24 @@ class TestGenerateKiro:
     def test_agent_profile_path(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro")
-        assert cfg["agent_profile"]["path"] == "~/.kiro/agents/test-agent.md"
+        assert cfg["agent_profile"]["path"] == "~/.kiro/agents/test-agent.json"
 
     def test_agent_content_structure(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro")
         content = cfg["agent_profile"]["content"]
-        assert "name: test-agent" in content
-        assert "You are helpful." in content
-        assert "Agent Specialization" in content
-        assert "hooks_config" in cfg
+        assert content["name"] == "test-agent"
+        assert content["description"] == "A test agent"
+        assert "You are helpful." in content["prompt"]
+        assert "Agent Specialization" in content["prompt"]
+        assert content["tools"] == ["*"]
+        assert content["includeMcpJson"] is True
+        assert "hooks" in content
 
     def test_hooks_contain_required_events(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro")
-        hooks = cfg["hooks_config"]["content"]
+        hooks = cfg["agent_profile"]["content"]["hooks"]
         for event in ("userPromptSubmit", "stop"):
             assert event in hooks
         for event in ("agentSpawn", "preToolUse", "postToolUse"):
@@ -405,10 +408,10 @@ class TestGenerateKiro:
         cfg = generate_agent_config(agent, "kiro")
         assert "steering_file" not in cfg
 
-    def test_kiro_agent_profile_has_no_description(self):
+    def test_kiro_agent_profile_truncates_description(self):
         agent = _make_agent(description="x" * 300)
         cfg = generate_agent_config(agent, "kiro")
-        assert "description:" not in cfg["agent_profile"]["content"]
+        assert cfg["agent_profile"]["content"]["description"] == "x" * 200
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -667,12 +670,12 @@ class TestBuilderCursor:
 
 
 class TestBuilderKiro:
-    def test_markdown_agent_profile(self):
+    def test_json_agent_profile(self):
         manifest = _make_manifest()
         result = generate_harness_agent_profiles(manifest, "kiro")
-        md_file = next(f for f in result.files if f.format == "markdown")
-        assert "~/.kiro/agents/" in md_file.path
-        assert "name: test-agent" in md_file.content
+        json_file = next(f for f in result.files if f.format == "json")
+        assert "~/.kiro/agents/" in json_file.path
+        assert json_file.content["name"] == "test-agent"
 
 
 class TestBuilderCodex:
@@ -773,7 +776,7 @@ class TestGenerateKiroWin32:
 
     def _all_hook_commands(self, cfg: dict) -> list[str]:
         """Extract all hook command strings from a Kiro agent config."""
-        hooks = cfg["hooks_config"]["content"]
+        hooks = cfg["agent_profile"]["content"]["hooks"]
         cmds = []
         for _event, entries in hooks.items():
             for entry in entries:
@@ -816,7 +819,7 @@ class TestGenerateKiroWin32:
     def test_win32_has_session_push_events_only(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro", platform="win32")
-        hooks = cfg["hooks_config"]["content"]
+        hooks = cfg["agent_profile"]["content"]["hooks"]
         for event in ("userPromptSubmit", "stop"):
             assert event in hooks
         for event in ("agentSpawn", "preToolUse", "postToolUse"):
@@ -825,7 +828,7 @@ class TestGenerateKiroWin32:
     def test_win32_agent_profile_path_unchanged(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro", platform="win32")
-        assert cfg["agent_profile"]["path"] == "~/.kiro/agents/test-agent.md"
+        assert cfg["agent_profile"]["path"] == "~/.kiro/agents/test-agent.json"
 
 
 class TestGenerateKiroPreservation:
@@ -852,7 +855,7 @@ class TestGenerateKiroPreservation:
     def test_unix_hooks_use_kiro_session_push(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro", platform="linux")
-        hooks = cfg["hooks_config"]["content"]
+        hooks = cfg["agent_profile"]["content"]["hooks"]
         cmd = hooks["userPromptSubmit"][0]["command"]
         assert "python3 -m observal_cli.hooks.kiro_session_push" in cmd
         assert "cat |" not in cmd
