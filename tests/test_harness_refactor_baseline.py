@@ -193,7 +193,10 @@ class TestGenerateAgentConfigBaseline:
         )
         assert isinstance(result, dict)
         mcp_config = result.get("mcp_config", {})
-        if harness != "opencode":
+        if harness == "kiro":
+            agent_content = result["agent_profile"]["content"]
+            assert agent_content.get("mcpServers"), f"No MCP config for {harness}"
+        elif harness != "opencode":
             assert mcp_config or "mcp_servers" in str(result), f"No MCP config for {harness}"
 
     @pytest.mark.parametrize("harness", ALL_HARNESSES)
