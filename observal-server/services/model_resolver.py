@@ -7,7 +7,13 @@
 
 from __future__ import annotations
 
+import re
+
 from schemas.harness_registry import HARNESS_REGISTRY, has_model_selection
+
+# Pre-compiled pattern: claude-<family>-<major>-<minor><optional-date-suffix>
+# All digit groups are bounded to prevent polynomial backtracking on adversarial input.
+_KIRO_MODEL_RE = re.compile(r"^(claude-[a-z]+-\d{1,3})-(\d{1,3})(-\d{8})?$")
 
 
 def _format_for_harness(model: str, provider: str, harness: str) -> str:
@@ -18,6 +24,22 @@ def _format_for_harness(model: str, provider: str, harness: str) -> str:
                 return alias
     if harness == "opencode":
         return model if "/" in model else f"{provider}/{model}"
+    if harness == "kiro":
+        return kiro_model_format(model)
+    return model
+
+
+def kiro_model_format(model: str) -> str:
+    """Convert canonical dash-version model IDs to kiro's dot-version format.
+
+    Kiro uses dots for minor versions (e.g. claude-sonnet-4.5) while the
+    canonical catalog uses dashes (claude-sonnet-4-5). This handles any
+    Claude family name (sonnet, opus, haiku, fable, mythos, etc.).
+    """
+    m = _KIRO_MODEL_RE.match(model)
+    if m:
+        suffix = m.group(3) or ""
+        return f"{m.group(1)}.{m.group(2)}{suffix}"
     return model
 
 
@@ -74,7 +96,9 @@ async def resolve_model_for_harness(
     candidate = override or _candidate_for_harness(harness, models_by_harness, model_name)
     if not candidate or candidate == "inherit":
         return None, warnings
-    if not _supported(harness, candidate):
+    # Normalize the candidate to the harness-expected format before checking support
+    formatted = _format_for_harness(candidate, _provider_for(harness, candidate), harness)
+    if not _supported(harness, formatted):
         warnings.append(f"Model '{candidate}' is not in the {harness} harness registry. Falling back to auto/default.")
         return None, warnings
-    return _format_for_harness(candidate, _provider_for(harness, candidate), harness), warnings
+    return formatted, warnings

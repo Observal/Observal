@@ -91,6 +91,10 @@ def format_for_harness(model_id: str, provider: str, harness: str) -> str:
         return model_id
     if harness == "opencode":
         return model_id if "/" in model_id else f"{provider}/{model_id}"
+    if harness == "kiro":
+        from services.model_resolver import kiro_model_format
+
+        return kiro_model_format(model_id)
     return model_id
 
 
