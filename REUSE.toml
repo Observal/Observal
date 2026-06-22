@@ -85,8 +85,8 @@ SPDX-FileCopyrightText = [
 SPDX-License-Identifier = "AGPL-3.0-only"
 
 [[annotations]]
-path = "observal-server/data/model_registry_seed.json"
-SPDX-FileCopyrightText = "2026 Aryan Iyappan <aryaniyappan2006@gmail.com>"
+path = "observal-server/data/litellm_model_catalog.json"
+SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-only"
 
 [[annotations]]

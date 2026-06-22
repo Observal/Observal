@@ -157,6 +157,7 @@ DEFAULTS: dict[str, str] = {
     # Insights: LLM provider credentials (via LiteLLM)
     "insights.api_key": "",
     "insights.api_base": "",
+    "insights.api_version": "",
     # Insights: per-stage models (LiteLLM format: provider/model-name)
     "insights.model_sections": "",
     "insights.model_synthesis": "",

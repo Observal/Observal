@@ -464,6 +464,7 @@ async def test_insights_connection(
     """Test LLM connectivity with a minimal prompt."""
     api_key = await ds.get("insights.api_key")
     api_base = await ds.get("insights.api_base")
+    api_version = await ds.get("insights.api_version")
     aws_region = await ds.get("insights.aws_region")
     model = req.model or await ds.get("insights.model_sections")
 
@@ -487,6 +488,8 @@ async def test_insights_connection(
         kwargs["api_key"] = api_key
     if api_base:
         kwargs["api_base"] = api_base
+    if api_version and model.startswith("azure/"):
+        kwargs["api_version"] = api_version
     if aws_region and "bedrock" in model:
         kwargs["aws_region_name"] = aws_region
 

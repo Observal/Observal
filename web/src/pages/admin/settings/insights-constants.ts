@@ -1,18 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-export type ProviderId =
-	| "anthropic"
-	| "openai"
-	| "bedrock"
-	| "gemini"
-	| "azure"
-	| "ollama"
-	| "groq"
-	| "mistral"
-	| "together"
-	| "deepseek"
-	| "other";
+export type ProviderId = string;
 
 export interface ProviderOption {
 	id: ProviderId;
@@ -25,7 +14,7 @@ export interface ProviderOption {
 export interface ModelSuggestion {
 	id: string;
 	label: string;
-	tier: "primary" | "fast";
+	tier: "primary" | "fast" | "catalog";
 }
 
 export type InsightsStatus = "not_configured" | "partial" | "ready";
@@ -83,7 +72,7 @@ export const PROVIDERS: ProviderOption[] = [
 		hasRecommendations: false,
 	},
 	{
-		id: "together",
+		id: "together_ai",
 		label: "Together AI",
 		requiresBaseUrl: false,
 		hasRecommendations: false,
@@ -103,79 +92,81 @@ export const PROVIDERS: ProviderOption[] = [
 	},
 ];
 
-export const PROVIDER_MODELS: Record<string, ModelSuggestion[]> = {
-	anthropic: [
-		{ id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", tier: "primary" },
-		{ id: "anthropic/claude-opus-4-7", label: "Claude Opus 4.7", tier: "primary" },
-		{ id: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet 4.5", tier: "primary" },
-		{ id: "anthropic/claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", tier: "fast" },
-	],
-	openai: [
-		{ id: "openai/gpt-4o", label: "GPT-4o", tier: "primary" },
-		{ id: "openai/o3", label: "O3", tier: "primary" },
-		{ id: "openai/gpt-4o-mini", label: "GPT-4o Mini", tier: "fast" },
-		{ id: "openai/o4-mini", label: "O4 Mini", tier: "fast" },
-	],
-	bedrock: [
-		{ id: "bedrock/global.anthropic.claude-opus-4-6-v1", label: "Claude Opus 4.6 (Global)", tier: "primary" },
-		{ id: "bedrock/global.anthropic.claude-opus-4-5-20251101-v1:0", label: "Claude Opus 4.5 (Global)", tier: "primary" },
-		{ id: "bedrock/us.anthropic.claude-sonnet-4-6-v1", label: "Claude Sonnet 4.6 (US only)", tier: "primary" },
-		{ id: "bedrock/us.anthropic.claude-opus-4-6-v1", label: "Claude Opus 4.6 (US only)", tier: "primary" },
-		{ id: "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0", label: "Claude Haiku 4.5 (Global)", tier: "fast" },
-		{ id: "bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0", label: "Claude Haiku 4.5 (US only)", tier: "fast" },
-		{ id: "bedrock/us.amazon.nova-pro-v1:0", label: "Amazon Nova Pro (US only)", tier: "primary" },
-		{ id: "bedrock/us.amazon.nova-lite-v1:0", label: "Amazon Nova Lite (US only)", tier: "fast" },
-	],
-	gemini: [
-		{ id: "gemini/gemini-2.5-pro", label: "Gemini 2.5 Pro", tier: "primary" },
-		{ id: "gemini/gemini-2.5-flash", label: "Gemini 2.5 Flash", tier: "fast" },
-		{ id: "gemini/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", tier: "fast" },
-	],
-	azure: [
-		{ id: "azure/my-gpt4o-deployment", label: "GPT-4o (example)", tier: "primary" },
-		{ id: "azure/my-gpt4o-mini-deployment", label: "GPT-4o Mini (example)", tier: "fast" },
-	],
-	ollama: [
-		{ id: "ollama/llama3", label: "Llama 3", tier: "primary" },
-		{ id: "ollama/mistral", label: "Mistral", tier: "primary" },
-		{ id: "ollama/qwen2.5", label: "Qwen 2.5", tier: "fast" },
-	],
-	groq: [
-		{ id: "groq/llama-3.3-70b-versatile", label: "Llama 3.3 70B", tier: "primary" },
-		{ id: "groq/llama-3.1-8b-instant", label: "Llama 3.1 8B", tier: "fast" },
-	],
-	mistral: [
-		{ id: "mistral/mistral-large-latest", label: "Mistral Large", tier: "primary" },
-		{ id: "mistral/mistral-small-latest", label: "Mistral Small", tier: "fast" },
-	],
-	together: [
-		{ id: "together_ai/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", label: "Llama 3.1 70B Turbo", tier: "primary" },
-	],
-	deepseek: [
-		{ id: "deepseek/deepseek-chat", label: "Deepseek Chat", tier: "primary" },
-	],
-};
-
 export const RECOMMENDED_MODELS: Record<string, { sections: string; synthesis: string; facets: string }> = {
 	anthropic: {
-		sections: "anthropic/claude-sonnet-4-6",
-		synthesis: "anthropic/claude-sonnet-4-6",
+		sections: "anthropic/claude-opus-4-6",
+		synthesis: "anthropic/claude-opus-4-6",
 		facets: "anthropic/claude-haiku-4-5-20251001",
 	},
 	openai: {
-		sections: "openai/gpt-4o",
-		synthesis: "openai/gpt-4o",
-		facets: "openai/gpt-4o-mini",
+		sections: "openai/gpt-5.2",
+		synthesis: "openai/gpt-5.2",
+		facets: "openai/gpt-5-mini",
 	},
 	bedrock: {
-		sections: "bedrock/global.anthropic.claude-opus-4-6-v1",
-		synthesis: "bedrock/global.anthropic.claude-opus-4-6-v1",
-		facets: "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+		sections: "bedrock/converse/global.anthropic.claude-opus-4-6-v1",
+		synthesis: "bedrock/converse/global.anthropic.claude-opus-4-6-v1",
+		facets: "bedrock/converse/global.anthropic.claude-haiku-4-5-20251001-v1:0",
 	},
 	gemini: {
-		sections: "gemini/gemini-2.5-pro",
-		synthesis: "gemini/gemini-2.5-pro",
-		facets: "gemini/gemini-2.5-flash",
+		sections: "gemini/gemini-3-pro-preview",
+		synthesis: "gemini/gemini-3-pro-preview",
+		facets: "gemini/gemini-3-flash-preview",
+	},
+	vertex_ai: {
+		sections: "vertex_ai/gemini-3-pro-preview",
+		synthesis: "vertex_ai/gemini-3-pro-preview",
+		facets: "vertex_ai/gemini-3-flash-preview",
+	},
+	azure: {
+		sections: "azure/gpt-5.2",
+		synthesis: "azure/gpt-5.2",
+		facets: "azure/gpt-5-mini",
+	},
+	azure_ai: {
+		sections: "azure_ai/claude-opus-4-6",
+		synthesis: "azure_ai/claude-opus-4-6",
+		facets: "azure_ai/claude-haiku-4-5",
+	},
+	mistral: {
+		sections: "mistral/mistral-large-latest",
+		synthesis: "mistral/mistral-large-latest",
+		facets: "mistral/mistral-small-latest",
+	},
+	groq: {
+		sections: "groq/llama-3.3-70b-versatile",
+		synthesis: "groq/llama-3.3-70b-versatile",
+		facets: "groq/llama-3.1-8b-instant",
+	},
+	deepseek: {
+		sections: "deepseek/deepseek-v4-pro",
+		synthesis: "deepseek/deepseek-v4-pro",
+		facets: "deepseek/deepseek-v4-flash",
+	},
+	xai: {
+		sections: "xai/grok-4.3",
+		synthesis: "xai/grok-4.3",
+		facets: "xai/grok-4-1-fast-non-reasoning",
+	},
+	together_ai: {
+		sections: "together_ai/zai-org/GLM-4.7",
+		synthesis: "together_ai/zai-org/GLM-4.7",
+		facets: "together_ai/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+	},
+	openrouter: {
+		sections: "openrouter/anthropic/claude-opus-4.6",
+		synthesis: "openrouter/anthropic/claude-opus-4.6",
+		facets: "openrouter/anthropic/claude-haiku-4.5",
+	},
+	fireworks_ai: {
+		sections: "fireworks_ai/deepseek-v4-pro",
+		synthesis: "fireworks_ai/deepseek-v4-pro",
+		facets: "fireworks_ai/deepseek-v4-flash",
+	},
+	perplexity: {
+		sections: "perplexity/anthropic/claude-opus-4-6",
+		synthesis: "perplexity/anthropic/claude-opus-4-6",
+		facets: "perplexity/sonar",
 	},
 };
 
@@ -190,12 +181,8 @@ export function detectProviderFromKey(apiKey: string): ProviderId | "" {
 }
 
 export function detectProvider(modelValue: string): ProviderId | "" {
-	if (!modelValue) return "";
-	const prefix = modelValue.split("/")[0];
-	const match = PROVIDERS.find((p) => p.id === prefix);
-	if (match) return match.id;
-	if (prefix === "together_ai") return "together";
-	return "other";
+	if (!modelValue || !modelValue.includes("/")) return "";
+	return modelValue.split("/")[0] || "";
 }
 
 export function getInsightsStatus(

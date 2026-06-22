@@ -47,6 +47,7 @@ export function ModelCombobox({
 
 	const primaryModels = suggestions.filter((s) => s.tier === "primary");
 	const fastModels = suggestions.filter((s) => s.tier === "fast");
+	const catalogModels = suggestions.filter((s) => s.tier === "catalog");
 
 	const filteredPrimary = primaryModels.filter(
 		(s) =>
@@ -55,6 +56,12 @@ export function ModelCombobox({
 			s.label.toLowerCase().includes(inputValue.toLowerCase()),
 	);
 	const filteredFast = fastModels.filter(
+		(s) =>
+			!inputValue ||
+			s.id.toLowerCase().includes(inputValue.toLowerCase()) ||
+			s.label.toLowerCase().includes(inputValue.toLowerCase()),
+	);
+	const filteredCatalog = catalogModels.filter(
 		(s) =>
 			!inputValue ||
 			s.id.toLowerCase().includes(inputValue.toLowerCase()) ||
@@ -154,7 +161,7 @@ export function ModelCombobox({
 				>
 					<Command shouldFilter={false}>
 						<CommandList>
-							{filteredPrimary.length === 0 && filteredFast.length === 0 && (
+							{filteredPrimary.length === 0 && filteredFast.length === 0 && filteredCatalog.length === 0 && (
 								<CommandEmpty>
 									{inputValue ? (
 										<span className="text-xs text-muted-foreground">
@@ -168,6 +175,31 @@ export function ModelCombobox({
 							{filteredPrimary.length > 0 && (
 								<CommandGroup heading="Recommended">
 									{filteredPrimary.map((model) => (
+										<CommandItem
+											key={model.id}
+											value={model.id}
+											onSelect={() => handleSelect(model.id)}
+											onMouseDown={(e) => e.preventDefault()}
+										>
+											<Check
+												className={cn(
+													"mr-2 h-3.5 w-3.5 shrink-0",
+													value === model.id ? "opacity-100" : "opacity-0",
+												)}
+											/>
+											<div className="flex flex-col min-w-0">
+												<span className="text-sm truncate">{model.label}</span>
+												<span className="text-xs text-muted-foreground font-mono truncate">
+													{model.id}
+												</span>
+											</div>
+										</CommandItem>
+									))}
+								</CommandGroup>
+							)}
+							{filteredCatalog.length > 0 && (
+								<CommandGroup heading="Models">
+									{filteredCatalog.map((model) => (
 										<CommandItem
 											key={model.id}
 											value={model.id}

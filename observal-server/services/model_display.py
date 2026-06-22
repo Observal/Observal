@@ -10,7 +10,7 @@ Mirrored at:
 
 Behavioural rules (kept in sync with ``tests/fixtures/model_display_cases.json``):
 
-1. The **primary label** is ``display_name`` from legacy provider catalog with any trailing
+1. The **primary label** is ``display_name`` with any trailing
    date stripped (``-YYYYMMDD``, ``-YYYY-MM-DD``, ``(YYYY-MM-DD)``,
    `` (latest)``).  If ``display_name`` is empty we fall back to
    ``humanize(model_id)``.
@@ -88,9 +88,9 @@ def format_display(
     """Compute (primary, secondary, is_rolling) for a model row.
 
     Args:
-        display_name: ``CatalogModel.display_name`` (``legacy provider catalog`` curated name).
-        model_id: ``CatalogModel.model_id`` (canonical id).
-        release_date: ``CatalogModel.release_date`` if known.
+        display_name: Human-readable name from the catalog row.
+        model_id: Canonical model id.
+        release_date: Release date if known.
         disambiguate: True when another row produces the same primary label.
             When True, dated rows render their date as secondary text and
             rolling rows render ``"latest"``.

@@ -616,6 +616,9 @@ export const admin = {
 			error?: string;
 			hint?: string;
 		}>("/admin/insights/test-connection", body ?? {}),
+	insightsModelProviders: () => get<import("./types").LiteLLMProviderList>("/admin/insights/models/providers"),
+	insightsModels: (provider: string) =>
+		get<import("./types").LiteLLMModelList>(`/admin/insights/models?provider=${encodeURIComponent(provider)}`),
 	purgeTracesAndInsights: () =>
 		post<{
 			project_id: string;
@@ -877,13 +880,6 @@ export const config = {
 	version: () => get<VersionConfig>("/config/version"),
 	harnesses: () => get<HarnessesResponse>("/config/harnesses"),
 	ssoHealth: () => get<SsoHealthResult>("/config/sso-health"),
-};
-
-// ── Models ─────────────────────────────────────────────────────────
-export const models = {
-	list: () => get<import("./types").ModelCatalog>("/models"),
-	refresh: () =>
-		post<import("./types").ModelRefreshResult>("/admin/models/refresh"),
 };
 
 // ── Bulk ───────────────────────────────────────────────────────────

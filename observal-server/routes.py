@@ -30,7 +30,6 @@ from api.routes.mcp import router as mcp_router
 from api.routes.preview import router as preview_router
 from api.routes.prompt import router as prompt_router
 from api.routes.reconcile import router as reconcile_router
-from api.routes.registry_models import router as registry_models_router
 from api.routes.review import router as review_router
 from api.routes.sandbox import router as sandbox_router
 from api.routes.sessions import router as sessions_router
@@ -64,7 +63,6 @@ REST_ROUTERS = (
     bulk_router,
     co_authors_router,
     config_router,
-    registry_models_router,
     support_router,
     layer_snapshot_router,
     logs_stream_router,

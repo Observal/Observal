@@ -4,7 +4,7 @@
 
 
 import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, Database, KeyRound, Building2, BookOpen } from "lucide-react";
-import { useDiagnostics, useModels, useRefreshModels } from "@/hooks/use-api";
+import { useDiagnostics } from "@/hooks/use-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,60 +32,21 @@ function statusBadge(status: string) {
 }
 
 function CatalogStatusCard() {
-  const { data, isLoading, isError, error } = useModels();
-  const refresh = useRefreshModels();
-
-  let badgeStatus = "ok";
-  if (isError) badgeStatus = "error";
-  else if (data?.degraded) badgeStatus = "degraded";
-
   return (
     <Card className="md:col-span-2">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-muted-foreground" />
           <CardTitle className="text-sm">Model Catalog</CardTitle>
-          <div className="ml-auto flex items-center gap-2">
-            {statusBadge(badgeStatus)}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={refresh.isPending || isLoading}
-              onClick={() => refresh.mutate()}
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 mr-1.5 ${refresh.isPending ? "animate-spin" : ""}`}
-              />
-              Refresh now
-            </Button>
+          <div className="ml-auto">
+            <Badge variant="secondary">disabled</Badge>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-1.5">
-        {isError ? (
-          <p className="text-xs text-destructive">{(error as Error)?.message}</p>
-        ) : (
-          <>
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Source</span>
-              <span className="font-mono font-medium">{data?.source ?? "—"}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Models</span>
-              <span className="font-medium">{data?.model_count ?? 0}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Fetched at</span>
-              <span className="font-medium">
-                {data?.fetched_at ? new Date(data.fetched_at).toLocaleString() : "—"}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Degraded</span>
-              <span className="font-medium">{data?.degraded ? "yes" : "no"}</span>
-            </div>
-          </>
-        )}
+      <CardContent>
+        <p className="text-xs text-muted-foreground">
+          Disabled while the Insights model picker moves to the LiteLLM catalog.
+        </p>
       </CardContent>
     </Card>
   );
