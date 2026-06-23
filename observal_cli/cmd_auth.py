@@ -1074,10 +1074,12 @@ def _configure_opencode(server_url: str):
     """Check for OpenCode and configure telemetry via doctor patch."""
     optic.trace("server_url={}", server_url)
     try:
-        # The opencode binary is the strongest signal.
-        # ~/.config/opencode/opencode.json can be created by a previous observal
-        # doctor patch, so also accept it only if the binary is present.
-        if not shutil.which("opencode"):
+        # The opencode binary is the strongest signal. The official installer
+        # commonly places it at ~/.opencode/bin/opencode without adding it to PATH.
+        # ~/.config/opencode/opencode.json can be created by a previous Observal
+        # doctor patch, so accept config only when a binary is present.
+        opencode_bin = Path.home() / ".opencode" / "bin" / "opencode"
+        if not shutil.which("opencode") and not opencode_bin.exists():
             return
 
         if not typer.confirm(

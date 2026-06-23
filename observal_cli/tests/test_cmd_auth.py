@@ -346,5 +346,31 @@ class TestAuthStatus:
         assert "not set" in result.output
 
 
+# ── post-login harness detection ───────────────────────────────
+
+
+class TestPostLoginHarnessDetection:
+    """Best-effort harness setup after login."""
+
+    def test_opencode_detects_off_path_installer_binary(self, tmp_path, monkeypatch) -> None:
+        """OpenCode's installer writes ~/.opencode/bin/opencode without always updating PATH."""
+        from observal_cli.cmd_auth import _configure_opencode
+
+        opencode_bin = tmp_path / ".opencode" / "bin" / "opencode"
+        opencode_bin.parent.mkdir(parents=True)
+        opencode_bin.write_text("")
+
+        monkeypatch.setattr("observal_cli.cmd_auth.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("observal_cli.cmd_auth.shutil.which", lambda _name: None)
+
+        with (
+            patch("observal_cli.cmd_auth.typer.confirm", return_value=True),
+            patch("observal_cli.cmd_auth._run_doctor_patch") as patch_doctor,
+        ):
+            _configure_opencode("http://localhost")
+
+        patch_doctor.assert_called_once_with("opencode")
+
+
 if __name__ == "__main__":  # pragma: no cover - manual debug entry point
     pytest.main([__file__, "-v"])

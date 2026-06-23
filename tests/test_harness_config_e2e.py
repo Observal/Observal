@@ -337,6 +337,12 @@ class TestGenerateOpenCodeConfig:
         cfg = generate_agent_config(agent, "opencode")
         assert cfg["mcp_config"]["path"] == "~/.config/opencode/opencode.json"
 
+    def test_plugin_not_in_agent_config(self):
+        agent = _make_agent()
+        cfg = generate_agent_config(agent, "opencode")
+
+        assert "hooks_config" not in cfg
+
     def test_mcp_config_root_key_is_mcp(self):
         ext = [{"name": "my-server", "command": "npx", "args": ["-y", "my-server"]}]
         agent = _make_agent(external_mcps=ext)
@@ -402,15 +408,20 @@ class TestGenerateOpenCodeConfig:
         assert isinstance(entry["command"], list), "OpenCode 'command' should be a flat array"
 
     def test_hooks_plugin_is_valid_javascript_source(self):
-        agent = _make_agent()
-        cfg = generate_agent_config(agent, "opencode")
-        plugin = cfg["hooks_config"]["content"]
-        assert 'import { request as httpRequest } from "http";' in plugin
+        from observal_shared.opencode_plugin_source import OPENCODE_PLUGIN_SOURCE
+
+        plugin = OPENCODE_PLUGIN_SOURCE
+        assert "fetch(`${config.server_url}/api/v1/ingest/session`" in plugin
         assert "from loguru import logger" not in plugin
         assert "export const ObservalPlugin" in plugin
         assert '"session.created"' in plugin
         assert '"session.idle"' in plugin
         assert '"message.updated"' in plugin
+        assert '"session.next.agent.switched"' in plugin
+        assert 'harness: "opencode"' in plugin
+        assert "LOCKFILE_PATH" in plugin
+        assert "agent_version: agent.version" in plugin
+        assert "client.app.log" in plugin
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -6,9 +6,9 @@
 Generates full config when a user installs an agent for OpenCode, including:
 - Rules file (agent markdown at .opencode/agents/ or ~/.config/opencode/agents/)
 - MCP config (opencode.json with "mcp" key)
-- Plugin-based hooks (observal-plugin.ts in .opencode/plugins/)
+- Agent profile and MCP config
 - Custom hook plugins (one .ts file per hook component)
-- Skills (SKILL.md files in .opencode/skills/)
+- Skills (SKILL.md files in .opencode/skills/ or ~/.config/opencode/skills/)
 """
 
 from __future__ import annotations
@@ -63,24 +63,14 @@ class OpenCodeAdapter:
 
         rules_path = opencode_spec["agent_profile"][opencode_scope].format(name=safe_name)
         mcp_path = opencode_spec["mcp_config"].get(opencode_scope, next(iter(opencode_spec["mcp_config"].values())))
-
         opencode_content: dict = {opencode_spec["mcp_servers_key"]: opencode_mcp}
         opencode_model = options.get("_resolved_model")
         if opencode_model:
             opencode_content["model"] = opencode_model
 
-        # Generate plugin source for telemetry hooks
-        from services.harness.helpers import _opencode_plugin_js
-
-        plugin_source = _opencode_plugin_js()
-
         result: dict = {
             "agent_profile": {"path": rules_path, "content": rules_content},
             "mcp_config": {"path": mcp_path, "content": opencode_content},
-            "hooks_config": {
-                "path": ".opencode/plugins/observal-plugin.ts",
-                "content": plugin_source,
-            },
             "scope": opencode_scope,
         }
 

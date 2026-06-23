@@ -13,7 +13,7 @@ Bump HOOKS_SPEC_VERSION whenever the plugin definition changes.
 
 from __future__ import annotations
 
-HOOKS_SPEC_VERSION = "2"
+HOOKS_SPEC_VERSION = "3"
 
 # OpenCode plugin events used for telemetry:
 # - session.created: session started (initialization)
@@ -40,23 +40,7 @@ def build_hooks() -> dict:
 
 
 def get_plugin_source() -> str:
-    """Return the TypeScript plugin source for OpenCode telemetry.
+    """Return the TypeScript plugin source for OpenCode telemetry."""
+    from observal_shared.opencode_plugin_source import OPENCODE_PLUGIN_SOURCE
 
-    NOTE: The canonical plugin source lives in
-    observal-server/services/harness/helpers.py (_OPENCODE_PLUGIN_SOURCE).
-    The server delivers the plugin via the API during `observal pull`.
-    This function exists only for offline/fallback use by `observal doctor patch`
-    when the server is unreachable — it should NOT be maintained as a
-    separate copy. If you need to update the plugin, update helpers.py.
-    """
-    try:
-        from services.harness.helpers import _opencode_plugin_js
-
-        return _opencode_plugin_js()
-    except ImportError:
-        pass
-    # Fallback: minimal plugin that signals the need for a server-side refresh
-    return """// Observal telemetry plugin for OpenCode (offline stub)
-// Run `observal pull` to install the full plugin from the server.
-export const ObservalPlugin = async () => ({ event: async () => {} });
-"""
+    return OPENCODE_PLUGIN_SOURCE

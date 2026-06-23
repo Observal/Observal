@@ -14,6 +14,7 @@ Supports Claude Code and Kiro.  Injects 2 hooks (UserPromptSubmit + Stop) that
 push session JSONL incrementally to the server.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -499,6 +500,29 @@ def _check_opencode(issues: list, warnings: list):
         warnings.append(
             "OpenCode observal plugin not installed. Run `observal doctor patch --all --harness opencode` to inject it."
         )
+        return
+
+    try:
+        from observal_shared.opencode_plugin_source import OPENCODE_PLUGIN_SOURCE, OPENCODE_PLUGIN_VERSION
+
+        current = plugin_path.read_text(errors="ignore")
+        desired_hash = hashlib.sha256(OPENCODE_PLUGIN_SOURCE.encode()).hexdigest()
+        current_hash = hashlib.sha256(current.encode()).hexdigest()
+        if current_hash == desired_hash:
+            return
+        if "offline stub" in current or "event: async () => {}" in current:
+            warnings.append(
+                "OpenCode observal plugin is an offline stub. "
+                "Run `observal doctor patch --all --harness opencode` to update it."
+            )
+            return
+        if f'OBSERVAL_PLUGIN_VERSION = "{OPENCODE_PLUGIN_VERSION}"' not in current or current_hash != desired_hash:
+            warnings.append(
+                "OpenCode observal plugin is stale or modified. "
+                "Run `observal doctor patch --all --harness opencode` to update it."
+            )
+    except OSError as e:
+        issues.append(f"{plugin_path}: failed to read OpenCode plugin: {e}")
 
 
 def _check_antigravity(issues: list, warnings: list):
@@ -1554,19 +1578,27 @@ def _patch_opencode(dry_run: bool) -> bool:
     plugins_dir = Path.home() / ".config" / "opencode" / "plugins"
     plugin_path = plugins_dir / "observal-plugin.ts"
 
-    # Check if already installed
+    plugin_source = get_plugin_source()
+    desired_hash = hashlib.sha256(plugin_source.encode()).hexdigest()
+    existing_hash = None
     if plugin_path.exists():
-        existing = plugin_path.read_text()
-        if "observal" in existing.lower() and "offline stub" not in existing:
+        existing_hash = hashlib.sha256(plugin_path.read_bytes()).hexdigest()
+        if existing_hash == desired_hash:
             rprint("  [dim]Already installed[/dim]")
             return False
-
-    plugin_source = get_plugin_source()
 
     if not dry_run:
         plugins_dir.mkdir(parents=True, exist_ok=True)
         plugin_path.write_text(plugin_source)
 
-    verb = "Would install" if dry_run else "Installed"
+    verb = (
+        "Would update"
+        if dry_run and existing_hash
+        else "Would install"
+        if dry_run
+        else "Updated"
+        if existing_hash
+        else "Installed"
+    )
     rprint(f"  {verb} plugin at {plugin_path}")
     return True
