@@ -331,7 +331,7 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
     return "updated" if existed else "created"
 
 
-def _rewrite_kiro_hooks(content: dict) -> dict:
+def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
     """Rewrite Kiro hook commands to use the current Python interpreter.
 
     The server generates commands with bare 'python3' which won't find
@@ -339,15 +339,14 @@ def _rewrite_kiro_hooks(content: dict) -> dict:
     """
     optic.trace("content={}", content)
     hooks = content.get("hooks")
-    agent_name = content.get("name")
-    if not hooks or not agent_name:
+    if not hooks:
         return content
 
     from observal_cli.harness_specs.kiro_hooks_spec import build_kiro_hooks
 
     cfg = config.get_or_exit()
     hooks_url = f"{cfg['server_url'].rstrip('/')}/api/v1/telemetry/hooks"
-    desired_hooks = build_kiro_hooks(hooks_url, agent_name)
+    desired_hooks = build_kiro_hooks(hooks_url, agent_id=agent_id or "")
 
     # Replace only Observal hooks, preserve any user-added hooks
     for event, desired_entries in desired_hooks.items():
@@ -689,7 +688,10 @@ def register_pull(app: typer.Typer):
             # Rewrite hook commands to use the current Python interpreter
             # so they work regardless of which directory Kiro is launched from.
             if isinstance(agent_profile.get("content"), dict):
-                agent_profile["content"] = _rewrite_kiro_hooks(agent_profile["content"])
+                agent_profile["content"] = _rewrite_kiro_hooks(
+                    agent_profile["content"],
+                    agent_id=str(agent_detail.get("id", resolved)),
+                )
             elif isinstance(agent_profile.get("content"), str):
                 agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
             # Cursor only reads .cursor/agents/ from the project directory,

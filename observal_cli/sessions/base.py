@@ -273,6 +273,7 @@ def post_lines_chunked(
             cwd=cwd,
             parent_session_id=parent_session_id,
             session_jsonl=session_jsonl,
+            harness=harness,
         )
         payload["harness"] = harness
         # Only mark final on the last chunk if the hook_event warrants it
@@ -321,13 +322,14 @@ def build_payload(
     cwd: str = "",
     parent_session_id: str | None = None,
     session_jsonl: Path | None = None,
+    harness: str = "claude-code",
 ) -> dict:
     """Construct the JSON body for the ingest endpoint.
 
     Defaults harness telemetry to ``claude-code``; callers override ``payload["harness"]``
     for other harnesses.
     """
-    agent_id, agent_version = _resolve_agent(cwd, lines, session_jsonl)
+    agent_id, agent_version = _resolve_agent(cwd, lines, session_jsonl, harness=harness)
     layer_hash = _get_cached_layer_hash(session_id, cwd)
     payload: dict = {
         "session_id": session_id,
@@ -446,24 +448,35 @@ def _maybe_upload_layer_snapshot(
         optic.debug("layer snapshot upload skipped: {}", e)
 
 
-def _resolve_agent(cwd: str, lines: list[str], session_jsonl: Path | None) -> tuple[str | None, str | None]:
-    """Resolve agent identity from multiple sources.
+def _resolve_agent(
+    cwd: str,
+    lines: list[str],
+    session_jsonl: Path | None,
+    harness: str = "claude-code",
+) -> tuple[str | None, str | None]:
+    """Resolve agent identity from explicit metadata and the lockfile.
 
-    Name resolution (first match wins):
-      1. OBSERVAL_AGENT_NAME env var (Kiro per-agent hook commands)
-      2. agent-setting line in JSONL (Claude Code embeds active agent)
-      3. Lock file lookup by cwd + harness
-
-    Version resolution always comes from the lockfile. Steps 1 and 2 only
-    provide the agent name; the lockfile is the authoritative source for
-    the installed version.
+    Kiro attribution is UUID-only via OBSERVAL_AGENT_ID. The lockfile is the
+    source of truth for the installed version; cwd must not guess Kiro agents.
     """
     import os
+
+    env_agent_id = os.environ.get("OBSERVAL_AGENT_ID", "")
+    if env_agent_id:
+        lockfile_entry = _lookup_lockfile_agent_by_id(env_agent_id, harness=harness)
+        if lockfile_entry:
+            return lockfile_entry.get("id"), lockfile_entry.get("version")
+        optic.warning("OBSERVAL_AGENT_ID={} not found in lockfile for harness={}", env_agent_id, harness)
+        return None, None
+
+    if harness == "kiro":
+        optic.debug("Kiro session has no OBSERVAL_AGENT_ID; leaving unattributed")
+        return None, None
 
     # Resolve agent name from env var or JSONL
     agent_name: str | None = None
 
-    # 1. Env var (Kiro per-agent hooks embed this)
+    # 1. Env var for legacy/non-Kiro hooks
     env_agent = os.environ.get("OBSERVAL_AGENT_NAME", "")
     if env_agent:
         agent_name = env_agent
@@ -492,6 +505,17 @@ def _resolve_agent(cwd: str, lines: list[str], session_jsonl: Path | None) -> tu
         return lockfile_entry.get("id") or lockfile_entry.get("name"), lockfile_entry.get("version")
 
     return None, None
+
+
+def _lookup_lockfile_agent_by_id(agent_id: str, harness: str | None = None) -> dict | None:
+    """Find a lockfile agent by UUID."""
+    try:
+        from observal_cli.lockfile import get_agent_by_id
+
+        return get_agent_by_id(agent_id, harness=harness)
+    except Exception as e:
+        optic.debug("lockfile agent id lookup failed: {}", e)
+    return None
 
 
 def _lookup_lockfile_agent(cwd: str, agent_name: str | None = None) -> dict | None:

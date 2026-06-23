@@ -277,6 +277,18 @@ def get_agent_for_directory(harness: str, directory: str) -> dict | None:
     return None
 
 
+def get_agent_by_id(agent_id: str, harness: str | None = None) -> dict | None:
+    """Find a lockfile agent by UUID, optionally scoped to one harness."""
+    data = read_lockfile()
+    for harness_name, harness_section in data.get("harnesses", {}).items():
+        if harness and harness_name != harness:
+            continue
+        for agent in harness_section.get("agents", []):
+            if agent.get("id") == agent_id:
+                return agent
+    return None
+
+
 def get_all_entries(harness: str | None = None) -> list[dict]:
     """Get all lock file entries, optionally filtered by harness.
 

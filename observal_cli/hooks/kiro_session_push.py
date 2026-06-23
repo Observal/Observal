@@ -119,6 +119,7 @@ def _run(home: Path | None = None) -> None:
                     line_count_before=line_count,
                     new_offset=offset,
                     cwd=cwd,
+                    harness="kiro",
                 )
                 payload_credits["harness"] = "kiro"
                 payload_credits["total_credits"] = credits

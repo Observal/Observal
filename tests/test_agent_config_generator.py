@@ -814,6 +814,8 @@ class TestGenerateKiroWin32:
         cmds = self._all_hook_commands(cfg)
         for cmd in cmds:
             assert "kiro_session_push" in cmd
+            assert f"OBSERVAL_AGENT_ID={agent.id}" in cmd
+            assert "OBSERVAL_AGENT_NAME" not in cmd
 
     def test_hooks_omit_model_flag(self):
         """Model is detected from Kiro SQLite at runtime, not baked into hook commands."""
@@ -865,6 +867,8 @@ class TestGenerateKiroPreservation:
         hooks = cfg["agent_profile"]["content"]["hooks"]
         cmd = hooks["userPromptSubmit"][0]["command"]
         assert "python3 -m observal_cli.hooks.kiro_session_push" in cmd
+        assert f"OBSERVAL_AGENT_ID={agent.id}" in cmd
+        assert "OBSERVAL_AGENT_NAME" not in cmd
         assert "cat |" not in cmd
         assert "sed " not in cmd
         assert "curl" not in cmd

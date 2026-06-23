@@ -33,6 +33,44 @@ def _make_lockfile_entry(
 class TestResolveAgentVersionFromLockfile:
     """Verify that _resolve_agent enriches agent name with version from lockfile."""
 
+    def test_env_agent_id_gets_version_from_lockfile(self):
+        """Kiro per-agent hooks pass only the Observal agent UUID."""
+        entry = _make_lockfile_entry(name="my-agent", agent_id="uuid-123", version="1.2.0")
+
+        with (
+            patch.dict("os.environ", {"OBSERVAL_AGENT_ID": "uuid-123"}, clear=True),
+            patch("observal_cli.sessions.base._lookup_lockfile_agent_by_id", return_value=entry),
+        ):
+            agent_id, agent_version = _resolve_agent("", [], None, harness="kiro")
+
+        assert agent_id == "uuid-123"
+        assert agent_version == "1.2.0"
+
+    def test_env_agent_id_missing_lockfile_returns_unattributed(self, tmp_path):
+        """Unknown Kiro UUIDs must not fall back to cwd guesses."""
+        with (
+            patch.dict("os.environ", {"OBSERVAL_AGENT_ID": "missing-uuid"}, clear=True),
+            patch("observal_cli.sessions.base._lookup_lockfile_agent_by_id", return_value=None),
+            patch("observal_cli.sessions.base._lookup_lockfile_agent") as cwd_lookup,
+        ):
+            agent_id, agent_version = _resolve_agent(str(tmp_path), [], None, harness="kiro")
+
+        assert agent_id is None
+        assert agent_version is None
+        cwd_lookup.assert_not_called()
+
+    def test_kiro_without_env_agent_id_returns_unattributed(self, tmp_path):
+        """Kiro has no JSONL agent field, so missing UUID means no attribution."""
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch("observal_cli.sessions.base._lookup_lockfile_agent") as cwd_lookup,
+        ):
+            agent_id, agent_version = _resolve_agent(str(tmp_path), [], None, harness="kiro")
+
+        assert agent_id is None
+        assert agent_version is None
+        cwd_lookup.assert_not_called()
+
     def test_env_var_gets_version_from_lockfile(self, tmp_path):
         """When OBSERVAL_AGENT_NAME is set, version should come from lockfile."""
         entry = _make_lockfile_entry(name="my-agent", agent_id="uuid-123", version="1.2.0", directory=str(tmp_path))

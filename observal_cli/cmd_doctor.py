@@ -1113,56 +1113,11 @@ def _patch_claude_code(dry_run: bool) -> bool:
 
 
 def _patch_kiro(dry_run: bool) -> bool:
-    """Install session push hooks into Kiro agent configs."""
+    """Kiro hooks are installed per pulled agent so they can carry the agent UUID."""
     optic.trace("dry_run={}", dry_run)
-    from observal_cli.harness_specs.kiro_hooks_spec import build_kiro_hooks
-
     rprint("[cyan]Kiro - session push hooks[/cyan]")
-
-    agents_dir = Path.home() / ".kiro" / "agents"
-    if not agents_dir.is_dir():
-        rprint("  [dim]No ~/.kiro/agents/ directory - skipping[/dim]")
-        return False
-
-    agent_profiles = list(agents_dir.glob("*.json"))
-    if not agent_profiles:
-        rprint("  [dim]No agent configs found[/dim]")
-        return False
-
-    desired_hooks = build_kiro_hooks()
-    changed = False
-
-    for af in agent_profiles:
-        agent_name = af.stem
-        try:
-            data = json.loads(af.read_text())
-        except (json.JSONDecodeError, OSError):
-            rprint(f"  [yellow]⚠ {agent_name}: could not parse, skipped[/yellow]")
-            continue
-
-        current_hooks = data.get("hooks", {})
-        updated = False
-
-        for event, desired_entries in desired_hooks.items():
-            existing = current_hooks.get(event, [])
-            # Remove old Observal hooks, keep non-Observal ones
-            cleaned = [h for h in existing if not _is_observal_hook_entry(h)]
-            new_list = cleaned + desired_entries
-            if new_list != existing:
-                current_hooks[event] = new_list
-                updated = True
-
-        if updated:
-            data["hooks"] = current_hooks
-            if not dry_run:
-                af.write_text(json.dumps(data, indent=2) + "\n")
-            verb = "Would update" if dry_run else "Updated"
-            rprint(f"  {verb} {agent_name}")
-            changed = True
-        else:
-            rprint(f"  [dim]{agent_name}: already up to date[/dim]")
-
-    return changed
+    rprint("  [dim]Skipped: Kiro telemetry hooks are installed by `observal agent pull` per agent.[/dim]")
+    return False
 
 
 def _patch_cursor(dry_run: bool) -> bool:

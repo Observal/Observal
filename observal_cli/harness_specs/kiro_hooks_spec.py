@@ -38,15 +38,15 @@ def build_kiro_hooks(*args, **kwargs) -> dict:
     """Build the complete hooks dict for a Kiro agent config.
 
     Only 2 events: userPromptSubmit and stop.
-    Accepts optional (hooks_url, agent_name) for per-agent attribution.
+    Accepts optional agent_id for per-agent attribution.
     """
-    agent_name = args[1] if len(args) > 1 else kwargs.get("agent_name", "")
+    agent_id = kwargs.get("agent_id", "") or (args[2] if len(args) > 2 else "")
     cmd = f"{_python_cmd()} -m observal_cli.hooks.kiro_session_push"
-    if agent_name:
+    if agent_id:
         if sys.platform == "win32":
-            cmd = f'set "OBSERVAL_AGENT_NAME={agent_name}" && {cmd}'
+            cmd = f'set "OBSERVAL_AGENT_ID={agent_id}" && {cmd}'
         else:
-            cmd = f"OBSERVAL_AGENT_NAME={agent_name} {cmd}"
+            cmd = f"OBSERVAL_AGENT_ID={agent_id} {cmd}"
     return {
         "userPromptSubmit": [{"command": cmd}],
         "stop": [{"command": cmd}],

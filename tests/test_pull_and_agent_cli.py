@@ -353,10 +353,12 @@ class TestPullKiro:
         assert result.exit_code == 0, result.output
         agent = tmp_path / ".kiro" / "agents" / "my-agent.json"
         data = json.loads(agent.read_text())
-        # All hook commands should use sys.executable, not bare python3
+        # All hook commands should use sys.executable and the pulled agent UUID.
         for event, entries in data["hooks"].items():
             for h in entries:
                 assert sys.executable in h["command"], f"{event} hook missing sys.executable: {h['command']}"
+                assert "OBSERVAL_AGENT_ID=abc123" in h["command"]
+                assert "OBSERVAL_AGENT_NAME" not in h["command"]
                 assert not h["command"].startswith("python3 ")
 
 
