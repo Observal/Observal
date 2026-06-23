@@ -10,10 +10,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.9.1] - 2026-06-22
+## [1.9.2] - 2026-06-23
 
 ### Added
 
+- use LiteLLM models (**insights**) ([204b88a](https://github.com/BlazeUp-AI/Observal/commit/204b88abc735d83677716a004011669b3f9970d4))
 - add self registration (**auth**) ([c1d07a0](https://github.com/BlazeUp-AI/Observal/commit/c1d07a00a297712639706a53869d8ada4d069787))
 - show harness model overrides (**web**) ([d38492d](https://github.com/BlazeUp-AI/Observal/commit/d38492db29b7b95446ccfba94fbcf42a06f1eb61))
 - add harness model catalogs (**models**) ([d07d5ca](https://github.com/BlazeUp-AI/Observal/commit/d07d5ca42f3b31588b5ba70087b7649a8eb1cf08))
@@ -640,6 +641,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- unify dropdown pickers (**web**) ([1b9b7d9](https://github.com/BlazeUp-AI/Observal/commit/1b9b7d959b90e9b4de947ddceb953d29b09b06ab))
 - rename ide fields to harness (**telemetry**) ([4412a67](https://github.com/BlazeUp-AI/Observal/commit/4412a67b8f323c19e3904f2387c421cc7f154577))
 - trim unused registry and UI code ([f0b7adf](https://github.com/BlazeUp-AI/Observal/commit/f0b7adfea44330dfe723a79983af81f34c235178))
 - split app startup (**server**) ([5a91e55](https://github.com/BlazeUp-AI/Observal/commit/5a91e5544da6926c6175845f52f117b68a19bfb3))
@@ -772,6 +774,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+- remove gemini cli references (**harnesses**) ([b985688](https://github.com/BlazeUp-AI/Observal/commit/b985688077fa54c9851d6039a09922154adbcd6c))
 - add authentication help (**auth**) ([1950d68](https://github.com/BlazeUp-AI/Observal/commit/1950d68e1aa73392924fc156d03f26e34c22bd56))
 - update harness guidance (**harness**) ([fe408e7](https://github.com/BlazeUp-AI/Observal/commit/fe408e75a4b68994da7981989873d6908c5be5e1))
 - add Kiro integration guide ([7121bbb](https://github.com/BlazeUp-AI/Observal/commit/7121bbb14bf1d4f28f455526f6c6282d5d5d2ed1))
@@ -895,6 +898,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- attribute sessions by agent id (**opencode**) ([38c5ddc](https://github.com/BlazeUp-AI/Observal/commit/38c5ddc986eb6931effc89d560e133e8c0a30340))
+- attribute sessions by agent id (**kiro**) ([be5c85a](https://github.com/BlazeUp-AI/Observal/commit/be5c85acb74c75f4ba58a59be0f9ab665274de37))
+- improve frontend error handling (**web**) ([8b8e8b1](https://github.com/BlazeUp-AI/Observal/commit/8b8e8b180969b4c394878dd9a3f84038aab28544))
+- resolve agent version lookup (**sessions**) ([418f06d](https://github.com/BlazeUp-AI/Observal/commit/418f06d41e578bbb61c14753657b34d693d0df9a))
+- convert dash-version model IDs to dot format for kiro harness ([7dfaa8d](https://github.com/BlazeUp-AI/Observal/commit/7dfaa8dcee8f84e23d4cb6d73336d6a7652ef34f))
+- use dots instead of dashes for Claude model versions in kiro harness ([854e682](https://github.com/BlazeUp-AI/Observal/commit/854e6826edd0380667127f6b2b50a37d6ac6b0ae))
+- restore harness defaults (**settings**) ([ff9e2be](https://github.com/BlazeUp-AI/Observal/commit/ff9e2beabbe4f900f205647dc4dba844480f7783))
+- remove misleading active time per-day rate (**insights**) ([128a8ee](https://github.com/BlazeUp-AI/Observal/commit/128a8eebbfab5e99bbec3fbea312580a28660e80))
 - select pnpm binary by arch (**docker**) ([9b3345b](https://github.com/BlazeUp-AI/Observal/commit/9b3345b2ea2c5f6f975a7a327a354f107fd4e085))
 - propagate MCP auth headers during agent pull (**pull**) ([7de9cb0](https://github.com/BlazeUp-AI/Observal/commit/7de9cb0e6d93f80f925f75fcce0e4492f0357cdc))
 - finish install terminology (**harness**) ([1aa0c0f](https://github.com/BlazeUp-AI/Observal/commit/1aa0c0faa4ec1aff36ef392bf4643f61b505e4f5))
