@@ -41,6 +41,9 @@ export interface SessionData {
 	events: RawSessionEvent[];
 	traces: unknown[];
 	service_name: string;
+	agent_id?: string | null;
+	agent_name?: string | null;
+	agent_version?: string | null;
 	subagent_sessions?: SubagentSession[];
 	max_offset?: number;
 }
@@ -78,6 +81,7 @@ export interface Session {
 	tools_used?: string;
 	agent_id?: string | null;
 	agent_name?: string | null;
+	agent_version?: string | null;
 }
 
 export interface SessionsSummary {

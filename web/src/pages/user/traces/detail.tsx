@@ -2069,10 +2069,16 @@ const isRealTs = (ts: string | undefined): ts is string =>
 function SessionInfoTab({
 	events,
 	serviceName,
+	agentName,
+	agentId,
+	agentVersion,
 }: {
 	events: RawSessionEvent[];
 	sessionId: string;
 	serviceName: string;
+	agentName?: string | null;
+	agentId?: string | null;
+	agentVersion?: string | null;
 }) {
 	// Uses isRealTs to skip 1970-epoch sentinel timestamps from Kiro lines
 	// that don't carry a real timestamp (AssistantMessage/ToolResults).
@@ -2117,6 +2123,18 @@ function SessionInfoTab({
 				<div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm bg-surface-sunken rounded-lg p-4">
 					<span className="text-muted-foreground">Service</span>
 					<span>{serviceName || "unknown"}</span>
+					{(agentName || agentId) && (
+						<>
+							<span className="text-muted-foreground">Agent</span>
+							<span>{agentName || agentId}</span>
+						</>
+					)}
+					{agentVersion && (
+						<>
+							<span className="text-muted-foreground">Agent Version</span>
+							<span>v{agentVersion}</span>
+						</>
+					)}
 					<span className="text-muted-foreground">Source</span>
 					<span className="capitalize">
 						{sessionMeta.source}
@@ -2466,6 +2484,9 @@ export default function TraceDetailPage() {
 										events={events}
 										sessionId={id}
 										serviceName={session.service_name}
+										agentName={session.agent_name}
+										agentId={session.agent_id}
+										agentVersion={session.agent_version}
 									/>
 								</TabsContent>
 							</Tabs>

@@ -6,7 +6,7 @@
 import json
 from unittest.mock import patch
 
-from observal_cli.sessions.base import _resolve_agent
+from observal_cli.sessions.base import _lookup_lockfile_agent, _resolve_agent
 
 
 def _make_lockfile_entry(
@@ -126,10 +126,69 @@ class TestResolveAgentVersionFromLockfile:
         # Version is None because lockfile entry doesn't match this agent
         assert agent_version is None
 
-    def test_empty_cwd_skips_lockfile(self):
-        """When cwd is empty, lockfile lookup is skipped."""
-        with patch.dict("os.environ", {"OBSERVAL_AGENT_NAME": "my-agent"}):
+    def test_empty_cwd_uses_agent_name_lockfile_lookup(self):
+        """When cwd is empty, per-agent hooks can still resolve the version by name."""
+        entry = _make_lockfile_entry(name="my-agent", agent_id="uuid-123", version="1.2.0")
+
+        with (
+            patch.dict("os.environ", {"OBSERVAL_AGENT_NAME": "my-agent"}),
+            patch("observal_cli.sessions.base._lookup_lockfile_agent", return_value=entry),
+        ):
             agent_id, agent_version = _resolve_agent("", [], None)
 
-        assert agent_id == "my-agent"
-        assert agent_version is None
+        assert agent_id == "uuid-123"
+        assert agent_version == "1.2.0"
+
+    def test_lockfile_lookup_prefers_named_agent_over_first_directory_match(self, tmp_path):
+        """Multiple agents can share a directory, so name must disambiguate."""
+        data = {
+            "harnesses": {
+                "kiro": {
+                    "agents": [
+                        _make_lockfile_entry(
+                            name="old-agent", agent_id="old-uuid", version="1.0.0", directory=str(tmp_path)
+                        ),
+                        _make_lockfile_entry(
+                            name="my-agent", agent_id="new-uuid", version="1.2.0", directory=str(tmp_path)
+                        ),
+                    ]
+                }
+            }
+        }
+
+        with (
+            patch("observal_cli.harness_registry.get_valid_harnesses", return_value=["kiro"]),
+            patch("observal_cli.lockfile.read_lockfile", return_value=data),
+        ):
+            entry = _lookup_lockfile_agent(str(tmp_path), agent_name="my-agent")
+
+        assert entry is not None
+        assert entry["id"] == "new-uuid"
+        assert entry["version"] == "1.2.0"
+
+    def test_lockfile_lookup_uses_agent_name_when_cwd_does_not_match(self, tmp_path):
+        """Kiro hook cwd can differ from the user-scoped lockfile directory."""
+        data = {
+            "harnesses": {
+                "kiro": {
+                    "agents": [
+                        _make_lockfile_entry(
+                            name="my-agent",
+                            agent_id="uuid-123",
+                            version="1.2.0",
+                            directory=str(tmp_path / ".observal"),
+                            scope="user",
+                        )
+                    ]
+                }
+            }
+        }
+
+        with (
+            patch("observal_cli.harness_registry.get_valid_harnesses", return_value=["kiro"]),
+            patch("observal_cli.lockfile.read_lockfile", return_value=data),
+        ):
+            entry = _lookup_lockfile_agent(str(tmp_path / "repo"), agent_name="my-agent")
+
+        assert entry is not None
+        assert entry["version"] == "1.2.0"

@@ -173,6 +173,7 @@ async def list_sessions(
         agent_id = row.get("agent_id") or None
         row["agent_id"] = agent_id if agent_id else None
         row["agent_name"] = agent_id_to_name.get(agent_id) if agent_id else None
+        row["agent_version"] = row.get("agent_version") or None
 
     if status == "active":
         rows = [r for r in rows if r["is_active"]]
@@ -228,6 +229,7 @@ async def _list_sessions_query(
         "model, "
         "harness, "
         "agent_id, "
+        "agent_version, "
         "user_id "
         "FROM session_stats_agg FINAL " + where_clause + "ORDER BY last_event_time DESC "
         f"LIMIT {int(limit)} OFFSET {int(offset)}",
@@ -335,7 +337,7 @@ async def get_session(
     _main_sql = (
         "SELECT "
         "line_offset, timestamp, event_type, content_preview, tool_name, tool_id, "
-        "uuid, parent_uuid, content_length, harness, raw_line, raw_line_truncated, "
+        "uuid, parent_uuid, content_length, harness, agent_id, agent_version, raw_line, raw_line_truncated, "
         "credits, ingested_at "
         "FROM session_events FINAL "
         "WHERE session_id = {sid:String} " + _offset_filter + "ORDER BY line_offset ASC "
@@ -366,6 +368,18 @@ async def get_session(
         return {"session_id": session_id, "service_name": "", "events": [], "traces": []}
 
     harness = rows[0].get("harness", "claude-code")
+    agent_id = next((r.get("agent_id") for r in rows if r.get("agent_id")), None)
+    agent_version = next((r.get("agent_version") for r in rows if r.get("agent_version")), None)
+    agent_name = None
+    if agent_id:
+        try:
+            from models.agent import Agent
+
+            async with async_session() as db:
+                result = await db.execute(select(Agent.name).where(Agent.id == _uuid.UUID(agent_id)))
+                agent_name = result.scalar_one_or_none()
+        except Exception:
+            optic.warning("Agent name resolution failed", exc_info=True)
 
     # Track max line_offset for incremental fetch cursor
     max_offset = max(int(r.get("line_offset", 0)) for r in rows) if rows else (after_offset or 0)
@@ -400,6 +414,9 @@ async def get_session(
     return {
         "session_id": session_id,
         "service_name": harness,
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "agent_version": agent_version,
         "events": events,
         "traces": [],
         "subagent_sessions": subagent_sessions,

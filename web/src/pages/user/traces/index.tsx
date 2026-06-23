@@ -280,7 +280,8 @@ function sessionLabel(row: Session): string {
 	const model = shortModel(row.model);
 	const count = row.prompt_count ?? 0;
 	const suffix = count === 1 ? "prompt" : "prompts";
-	const agent = row.agent_name ? `${row.agent_name} \u00b7 ` : "";
+	const version = row.agent_version ? ` v${row.agent_version}` : "";
+	const agent = row.agent_name ? `${row.agent_name}${version} \u00b7 ` : "";
 	if (model) return `${agent}${model} \u00b7 ${count} ${suffix}`;
 	return `${agent}${count} ${suffix}`;
 }
