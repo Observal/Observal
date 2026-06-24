@@ -13,7 +13,18 @@ import json
 
 from .base import basic_event, pick_timestamp, strip_ansi
 
-_META_TYPES = {"agent-setting", "permission-mode", "debug", "meta"}
+_META_TYPES = {
+    "agent-setting",
+    "debug",
+    "file-history-snapshot",
+    "last-prompt",
+    "meta",
+    "mode",
+    "permission-mode",
+    "pr-link",
+    "queue-operation",
+    "worktree-state",
+}
 
 
 def parse_rows(rows: list[dict]) -> list[dict]:

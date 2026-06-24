@@ -12,29 +12,45 @@ from services.session_parsers.claude_code import parse_rows
 
 # ── Sample Claude Code JSONL lines ────────────────────────────────────────────
 
-USER_SIMPLE = '{"type":"user","message":{"content":"Hello world"},"timestamp":"2026-06-01T10:00:00.000Z"}'
-USER_LIST_TEXT = '{"type":"user","message":{"content":[{"type":"text","text":"Hello"},{"type":"text","text":"world"}]},"timestamp":"2026-06-01T10:00:01.000Z"}'
-USER_TOOL_RESULT = '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool_123","content":"file contents here"}]},"timestamp":"2026-06-01T10:00:02.000Z"}'
-USER_TOOL_RESULT_LIST = '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool_123","content":[{"type":"text","text":"file contents"}]}]},"timestamp":"2026-06-01T10:00:02.000Z"}'
+# Sanitized excerpt from a real Claude Code JSONL session.
+# Paths, identifiers, and file contents have been anonymized.
+REAL_SESSION_FIXTURE = """
+{"type":"last-prompt","leafUuid":"leaf-1","sessionId":"session-real"}
+{"type":"agent-setting","agentSetting":"coordinator","sessionId":"session-real"}
+{"type":"permission-mode","permissionMode":"bypassPermissions","sessionId":"session-real"}
+{"type":"file-history-snapshot","messageId":"user-1","snapshot":{"messageId":"user-1","trackedFileBackups":{},"timestamp":"2026-05-24T11:50:02.925Z"},"isSnapshotUpdate":false}
+{"parentUuid":"leaf-1","isSidechain":false,"promptId":"prompt-1","type":"user","message":{"role":"user","content":"summarize this repo"},"uuid":"user-1","timestamp":"2026-05-24T11:50:02.905Z","permissionMode":"bypassPermissions","userType":"external","entrypoint":"cli","cwd":"/home/user/project","sessionId":"session-real","version":"2.1.150","gitBranch":"feature/example"}
+{"parentUuid":"user-1","isSidechain":false,"message":{"model":"claude-opus-4-6","id":"msg-1","type":"message","role":"assistant","content":[{"type":"thinking","thinking":"I should inspect the repository first.","signature":"redacted"}],"stop_reason":"tool_use","stop_sequence":null,"stop_details":null,"usage":{"input_tokens":3,"cache_creation_input_tokens":16743,"cache_read_input_tokens":0,"output_tokens":344,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":16743},"inference_geo":"","iterations":[],"speed":"standard"}},"type":"assistant","uuid":"assistant-1","timestamp":"2026-05-24T11:50:06.336Z","userType":"external","entrypoint":"cli","cwd":"/home/user/project","sessionId":"session-real","version":"2.1.150","gitBranch":"feature/example"}
+{"parentUuid":"assistant-1","isSidechain":false,"message":{"model":"claude-opus-4-6","id":"msg-1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Agent","input":{"description":"Recursive repo exploration","subagent_type":"scout","prompt":"Explore this repository recursively and summarize it."}}],"stop_reason":"tool_use","stop_sequence":null,"stop_details":null,"usage":{"input_tokens":3,"cache_creation_input_tokens":16743,"cache_read_input_tokens":0,"output_tokens":344,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":16743},"inference_geo":"","iterations":[],"speed":"standard"}},"type":"assistant","uuid":"assistant-2","timestamp":"2026-05-24T11:50:11.555Z","userType":"external","entrypoint":"cli","cwd":"/home/user/project","sessionId":"session-real","version":"2.1.150","gitBranch":"feature/example"}
+{"parentUuid":"assistant-2","isSidechain":false,"promptId":"prompt-1","type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_1","type":"tool_result","content":[{"type":"text","text":"Repository summary"}]}]},"uuid":"user-2","timestamp":"2026-05-24T11:51:15.290Z","toolUseResult":{"stdout":"","stderr":"","interrupted":false},"sourceToolAssistantUUID":"assistant-2","userType":"external","entrypoint":"cli","cwd":"/home/user/project","sessionId":"session-real","version":"2.1.150","gitBranch":"feature/example"}
+{"parentUuid":"user-2","isSidechain":false,"message":{"model":"claude-opus-4-6","id":"msg-2","type":"message","role":"assistant","content":[{"type":"text","text":"Observal is an agent registry and observability platform."}],"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1,"cache_creation_input_tokens":4847,"cache_read_input_tokens":16743,"output_tokens":680,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":4847},"inference_geo":"","iterations":[],"speed":"standard"}},"type":"assistant","uuid":"assistant-3","timestamp":"2026-05-24T11:51:28.966Z","userType":"external","entrypoint":"cli","cwd":"/home/user/project","sessionId":"session-real","version":"2.1.150","gitBranch":"feature/example"}
+"""
 
-ASSISTANT_TEXT = '{"type":"assistant","message":{"content":[{"type":"text","text":"I am Claude."}],"model":"claude-3","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":5,"cache_creation_input_tokens":2}},"timestamp":"2026-06-01T10:00:05.000Z"}'
-ASSISTANT_THINKING = '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Hmm, I should use a tool."},{"type":"text","text":"Okay!"}]},"timestamp":"2026-06-01T10:00:06.000Z"}'
-ASSISTANT_TOOL_USE = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_123","name":"read_file","input":{"path":"/tmp/foo.txt"}}]},"timestamp":"2026-06-01T10:00:07.000Z"}'
-ASSISTANT_TOOL_USAGE_ONLY = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_123","name":"read_file","input":{}}],"usage":{"input_tokens":5}},"timestamp":"2026-06-01T10:00:08.000Z"}'
+USER_SIMPLE = '{"uuid":"123","cwd":"/home/user/project","type":"user","message":{"role":"user","content":"Hello world"},"timestamp":"2026-06-01T10:00:00.000Z"}'
+USER_LIST_TEXT = '{"uuid":"123","cwd":"/home/user/project","type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"},{"type":"text","text":"world"}]},"timestamp":"2026-06-01T10:00:01.000Z"}'
+USER_TOOL_RESULT = '{"uuid":"123","cwd":"/home/user/project","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool_123","content":"file contents here"}]},"timestamp":"2026-06-01T10:00:02.000Z"}'
+USER_TOOL_RESULT_LIST = '{"uuid":"123","cwd":"/home/user/project","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool_123","content":[{"type":"text","text":"file contents"}]}]},"timestamp":"2026-06-01T10:00:02.000Z"}'
 
-SYSTEM_EVENT = '{"type":"system","content":"Initializing system...","timestamp":"2026-06-01T09:59:59.000Z"}'
-ATTACHMENT_EVENT = '{"type":"attachment","attachment":{"name":"config.json","type":"application/json"},"timestamp":"2026-06-01T10:00:00.000Z"}'
+ASSISTANT_TEXT = '{"uuid":"124","cwd":"/home/user/project","type":"assistant","message":{"model":"claude-3-5-sonnet-20241022","role":"assistant","content":[{"type":"text","text":"I am Claude."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":5,"cache_creation_input_tokens":2}},"timestamp":"2026-06-01T10:00:05.000Z"}'
+ASSISTANT_THINKING = '{"uuid":"125","cwd":"/home/user/project","type":"assistant","message":{"model":"claude-3","role":"assistant","content":[{"type":"thinking","thinking":"Hmm, I should use a tool.","signature":"sig123"},{"type":"text","text":"Okay!"}]},"timestamp":"2026-06-01T10:00:06.000Z"}'
+ASSISTANT_TOOL_USE = '{"uuid":"126","cwd":"/home/user/project","type":"assistant","message":{"model":"claude-3","role":"assistant","content":[{"type":"tool_use","id":"tool_123","name":"read_file","input":{"path":"/tmp/foo.txt"}}]},"timestamp":"2026-06-01T10:00:07.000Z"}'
+ASSISTANT_TOOL_USAGE_ONLY = '{"uuid":"127","cwd":"/home/user/project","type":"assistant","message":{"model":"claude-3","role":"assistant","content":[{"type":"tool_use","id":"tool_123","name":"read_file","input":{}}],"usage":{"input_tokens":5}},"timestamp":"2026-06-01T10:00:08.000Z"}'
 
-META_EVENT = '{"type":"meta","foo":"bar"}'
-AGENT_SETTING_EVENT = '{"type":"agent-setting","setting":"value"}'
+SYSTEM_EVENT = '{"uuid":"128","cwd":"/home/user/project","type":"system","content":"Initializing system...","timestamp":"2026-06-01T09:59:59.000Z"}'
+ATTACHMENT_EVENT = '{"uuid":"129","cwd":"/home/user/project","type":"attachment","attachment":{"name":"config.json","type":"application/json"},"timestamp":"2026-06-01T10:00:00.000Z"}'
 
-ASSISTANT_MULTIPLE_TEXT = '{"type":"assistant","message":{"content":[{"type":"text","text":"Part 1"},{"type":"text","text":"Part 2"}]},"timestamp":"2026-06-01T10:00:09.000Z"}'
-ASSISTANT_MULTIPLE_TOOLS = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_1","name":"read"},{"type":"tool_use","id":"tool_2","name":"write"}]},"timestamp":"2026-06-01T10:00:10.000Z"}'
-ASSISTANT_THINK_TOOL_TEXT = '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Hmm"},{"type":"tool_use","id":"tool_1","name":"read"},{"type":"text","text":"Done"}]},"timestamp":"2026-06-01T10:00:11.000Z"}'
-MISSING_MESSAGE = '{"type":"assistant","timestamp":"2026-06-01T10:00:12.000Z"}'
-MALFORMED_CONTENT = '{"type":"user","message":{"content":123},"timestamp":"2026-06-01T10:00:13.000Z"}'
-MISSING_TIMESTAMP = '{"type":"user","message":{"content":"No time"}}'
-USER_UNKNOWN_TOOL_RESULT = '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"unknown_tool","content":"missing"}]},"timestamp":"2026-06-01T10:00:14.000Z"}'
+META_EVENT = '{"uuid":"130","type":"meta","foo":"bar"}'
+AGENT_SETTING_EVENT = '{"uuid":"131","type":"agent-setting","setting":"value"}'
+
+ASSISTANT_MULTIPLE_TEXT = '{"uuid":"132","cwd":"/home/user/project","type":"assistant","message":{"model":"claude-3","role":"assistant","content":[{"type":"text","text":"Part 1"},{"type":"text","text":"Part 2"}]},"timestamp":"2026-06-01T10:00:09.000Z"}'
+ASSISTANT_MULTIPLE_TOOLS = '{"uuid":"133","cwd":"/home/user/project","type":"assistant","message":{"model":"claude-3","role":"assistant","content":[{"type":"tool_use","id":"tool_1","name":"read"},{"type":"tool_use","id":"tool_2","name":"write"}]},"timestamp":"2026-06-01T10:00:10.000Z"}'
+ASSISTANT_THINK_TOOL_TEXT = '{"uuid":"134","cwd":"/home/user/project","type":"assistant","message":{"model":"claude-3","role":"assistant","content":[{"type":"thinking","thinking":"Hmm"},{"type":"tool_use","id":"tool_1","name":"read"},{"type":"text","text":"Done"}]},"timestamp":"2026-06-01T10:00:11.000Z"}'
+MISSING_MESSAGE = '{"uuid":"135","cwd":"/home/user/project","type":"assistant","timestamp":"2026-06-01T10:00:12.000Z"}'
+MALFORMED_CONTENT = '{"uuid":"136","cwd":"/home/user/project","type":"user","message":{"role":"user","content":123},"timestamp":"2026-06-01T10:00:13.000Z"}'
+MISSING_TIMESTAMP = (
+    '{"uuid":"137","cwd":"/home/user/project","type":"user","message":{"role":"user","content":"No time"}}'
+)
+USER_UNKNOWN_TOOL_RESULT = '{"uuid":"138","cwd":"/home/user/project","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"unknown_tool","content":"missing"}]},"timestamp":"2026-06-01T10:00:14.000Z"}'
 
 
 class TestClaudeCodeSessionParser:
@@ -54,7 +70,13 @@ class TestClaudeCodeSessionParser:
         assert events[0]["event_name"] == ""
 
     def test_meta_event_skipped(self):
-        rows = [{"raw_line": META_EVENT}, {"raw_line": AGENT_SETTING_EVENT}]
+        rows = [
+            {"raw_line": META_EVENT},
+            {"raw_line": AGENT_SETTING_EVENT},
+            {"raw_line": '{"type":"last-prompt","leafUuid":"abc"}'},
+            {"raw_line": '{"type":"file-history-snapshot","messageId":"abc"}'},
+            {"raw_line": '{"type":"queue-operation","operation":"enqueue"}'},
+        ]
         events = parse_rows(rows)
         assert events == []
 
@@ -85,7 +107,7 @@ class TestClaudeCodeSessionParser:
         assert attrs["output_tokens"] == "20"
         assert attrs["cache_read_tokens"] == "5"
         assert attrs["cache_creation_tokens"] == "2"
-        assert attrs["model"] == "claude-3"
+        assert attrs["model"] == "claude-3-5-sonnet-20241022"
         assert attrs["stop_reason"] == "end_turn"
 
     def test_assistant_thinking(self):
@@ -216,3 +238,28 @@ class TestClaudeCodeSessionParser:
         assert events[0]["event_name"] == "hook_assistant_thinking"
         assert events[1]["event_name"] == "hook_posttooluse"
         assert events[2]["event_name"] == "hook_assistant_response"
+
+    # Tests for parsing a real-world Claude Code session fixture.
+    def test_real_world_session_fixture(self):
+        lines = [line for line in REAL_SESSION_FIXTURE.strip().split("\n") if line]
+        rows = [{"raw_line": line, "ide": "claude-code"} for line in lines]
+        events = parse_rows(rows)
+
+        assert [event["event_name"] for event in events] == [
+            "hook_userpromptsubmit",
+            "hook_assistant_thinking",
+            "hook_token_usage",
+            "hook_posttooluse",
+            "hook_token_usage",
+            "hook_assistant_response",
+        ]
+
+        assert events[0]["body"] == "summarize this repo"
+        assert events[1]["body"] == "I should inspect the repository first."
+        assert events[2]["attributes"]["input_tokens"] == "3"
+        assert events[2]["attributes"]["cache_creation_tokens"] == "16743"
+        assert events[3]["body"] == "Agent"
+        assert events[3]["attributes"]["tool_response"] == "Repository summary"
+        assert events[4]["attributes"]["input_tokens"] == "3"
+        assert events[5]["body"] == "Observal is an agent registry and observability platform."
+        assert events[5]["attributes"]["cache_read_tokens"] == "16743"
