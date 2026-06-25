@@ -16,7 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CodeEditor } from "@/components/ui/code-editor";
+import {
+	CodeEditor,
+	codeLanguageFromFilename,
+	codeLanguageLabel,
+} from "@/components/ui/code-editor";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, Info, Loader2, Plus, X } from "lucide-react";
@@ -570,6 +574,8 @@ export function SubmitComponentDialog({
 
 	const submitError = validateForSubmit();
 	const jsonExample = mcpExampleConfig(isEditMode, name);
+	const skillScriptLanguage = codeLanguageFromFilename(skillScriptFilename);
+	const skillScriptLanguageName = codeLanguageLabel(skillScriptLanguage);
 
 	return (
 		<Dialog
@@ -967,17 +973,18 @@ export function SubmitComponentDialog({
 										</p>
 									</div>
 									<div className="space-y-1.5">
-										<Label htmlFor="skill-script-content">Script (optional)</Label>
-										<Textarea
+										<Label htmlFor="skill-script-content">
+											Script (optional, {skillScriptLanguageName})
+										</Label>
+										<CodeEditor
 											id="skill-script-content"
 											value={skillScriptContent}
-											onChange={(e) => setSkillScriptContent(e.target.value)}
-											placeholder={"#!/bin/bash\n# Script that the skill can invoke\n# Stored in the registry and delivered on install"}
-											rows={8}
-											className="font-mono text-xs"
+											onChange={setSkillScriptContent}
+											language={skillScriptLanguage}
+											placeholder="Paste or type the skill script here."
 										/>
 										<p className="text-xs text-muted-foreground">
-											Script content stored in the registry and delivered on install. Similar to hook scripts.
+											Detected from filename. Use .sh for Bash, .py for Python, or .mjs/.js for JavaScript.
 										</p>
 									</div>
 								</TabsContent>

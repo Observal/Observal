@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { python } from "@codemirror/lang-python";
+import { HighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
+import { shell } from "@codemirror/legacy-modes/mode/shell";
 import type { Extension } from "@codemirror/state";
 import { highlightActiveLine, keymap, lineNumbers, placeholder } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
@@ -11,11 +14,13 @@ import { EditorView, minimalSetup } from "codemirror";
 import { useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
 
+export type CodeEditorLanguage = "bash" | "javascript" | "json" | "plain" | "python";
+
 interface CodeEditorProps {
 	id?: string;
 	value: string;
 	onChange: (value: string) => void;
-	language?: "json";
+	language?: CodeEditorLanguage;
 	placeholder?: string;
 	minHeightClassName?: string;
 	className?: string;
@@ -75,13 +80,50 @@ const theme = EditorView.theme({
 });
 
 const highlightStyle = HighlightStyle.define([
+	{ tag: tags.keyword, color: "oklch(var(--primary-accent))" },
 	{ tag: tags.propertyName, color: "oklch(var(--info))" },
+	{ tag: tags.variableName, color: "oklch(var(--info))" },
 	{ tag: tags.string, color: "oklch(var(--success))" },
 	{ tag: tags.number, color: "oklch(var(--primary-accent))" },
 	{ tag: tags.bool, color: "oklch(var(--warning))" },
 	{ tag: tags.null, color: "oklch(var(--muted-foreground))" },
+	{ tag: tags.comment, color: "oklch(var(--muted-foreground))", fontStyle: "italic" },
 	{ tag: tags.punctuation, color: "oklch(var(--foreground) / 0.7)" },
 ]);
+
+export function codeLanguageFromFilename(filename: string): CodeEditorLanguage {
+	const lower = filename.toLowerCase().trim();
+	if (/\.(bash|sh|zsh)$/.test(lower)) return "bash";
+	if (/\.py$/.test(lower)) return "python";
+	if (/\.(cjs|js|jsx|mjs|ts|tsx)$/.test(lower)) return "javascript";
+	if (/\.json$/.test(lower)) return "json";
+	return "plain";
+}
+
+export function codeLanguageLabel(language: CodeEditorLanguage) {
+	return {
+		bash: "Bash",
+		javascript: "JavaScript",
+		json: "JSON",
+		plain: "plain text",
+		python: "Python",
+	}[language];
+}
+
+function languageExtension(language: CodeEditorLanguage): Extension | null {
+	switch (language) {
+		case "bash":
+			return StreamLanguage.define(shell);
+		case "javascript":
+			return javascript({ jsx: true, typescript: true });
+		case "json":
+			return json();
+		case "python":
+			return python();
+		case "plain":
+			return null;
+	}
+}
 
 export function CodeEditor({
 	id,
@@ -111,7 +153,8 @@ export function CodeEditor({
 				if (update.docChanged) onChangeRef.current(update.state.doc.toString());
 			}),
 		];
-		if (language === "json") items.push(json());
+		const languageSupport = languageExtension(language);
+		if (languageSupport) items.push(languageSupport);
 		if (placeholderText) items.push(placeholder(placeholderText));
 		return items;
 	}, [language, placeholderText]);
