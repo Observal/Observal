@@ -29,7 +29,6 @@ from api.routes.logs_stream import router as logs_stream_router
 from api.routes.mcp import router as mcp_router
 from api.routes.preview import router as preview_router
 from api.routes.prompt import router as prompt_router
-from api.routes.reconcile import router as reconcile_router
 from api.routes.review import router as review_router
 from api.routes.sandbox import router as sandbox_router
 from api.routes.sessions import router as sessions_router
@@ -54,7 +53,6 @@ REST_ROUTERS = (
     dashboard_router,
     feedback_router,
     insights_router,
-    reconcile_router,
     ingest_router,
     admin_router,
     alert_router,

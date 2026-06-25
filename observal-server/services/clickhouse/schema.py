@@ -15,154 +15,11 @@ import services.clickhouse.client as _client
 # ── DDL ───────────────────────────────────────────────────────────────────────
 
 INIT_SQL = [
+    """DROP TABLE IF EXISTS traces""",
+    """DROP TABLE IF EXISTS spans""",
+    """DROP TABLE IF EXISTS scores""",
+    """DROP TABLE IF EXISTS otel_logs""",
     # New telemetry tables (Phase 1)
-    """CREATE TABLE IF NOT EXISTS traces (
-        trace_id        String,
-        parent_trace_id Nullable(String),
-        project_id      String,
-        mcp_id          Nullable(String),
-        agent_id        Nullable(String),
-        user_id         String,
-        session_id      Nullable(String),
-        harness             LowCardinality(String),
-        environment     LowCardinality(String) DEFAULT 'default',
-        start_time      DateTime64(3),
-        end_time        Nullable(DateTime64(3)),
-        trace_type      LowCardinality(String) DEFAULT 'mcp',
-        name            String DEFAULT '',
-        metadata        Map(LowCardinality(String), String),
-        tags            Array(String),
-        input           Nullable(String) CODEC(ZSTD(3)),
-        output          Nullable(String) CODEC(ZSTD(3)),
-        created_at      DateTime64(3) DEFAULT now(),
-        event_ts        DateTime64(3),
-        is_deleted      UInt8 DEFAULT 0,
-        INDEX idx_trace_id trace_id TYPE bloom_filter(0.001) GRANULARITY 1,
-        INDEX idx_parent_trace_id parent_trace_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_project_id project_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_mcp_id mcp_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_agent_id agent_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_user_id user_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_session_id session_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_trace_type trace_type TYPE bloom_filter(0.01) GRANULARITY 1
-    ) ENGINE = ReplacingMergeTree(event_ts, is_deleted)
-    PARTITION BY toYYYYMM(start_time)
-    PRIMARY KEY (project_id, user_id, toDate(start_time))
-    ORDER BY (project_id, user_id, toDate(start_time), trace_id)""",
-    """CREATE TABLE IF NOT EXISTS spans (
-        span_id                 String,
-        trace_id                String,
-        parent_span_id          Nullable(String),
-        project_id              String,
-        mcp_id                  Nullable(String),
-        agent_id                Nullable(String),
-        user_id                 String,
-        type                    LowCardinality(String),
-        name                    String,
-        method                  String DEFAULT '',
-        input                   Nullable(String) CODEC(ZSTD(3)),
-        output                  Nullable(String) CODEC(ZSTD(3)),
-        error                   Nullable(String) CODEC(ZSTD(3)),
-        start_time              DateTime64(3),
-        end_time                Nullable(DateTime64(3)),
-        latency_ms              Nullable(UInt32),
-        status                  LowCardinality(String) DEFAULT 'success',
-        level                   LowCardinality(String) DEFAULT 'DEFAULT',
-        token_count_input       Nullable(UInt32),
-        token_count_output      Nullable(UInt32),
-        token_count_total       Nullable(UInt32),
-        cost                    Nullable(Float64),
-        cpu_ms                  Nullable(UInt32),
-        memory_mb               Nullable(Float32),
-        hop_count               Nullable(UInt8),
-        entities_retrieved      Nullable(UInt16),
-        relationships_used      Nullable(UInt16),
-        retry_count             Nullable(UInt8),
-        tools_available         Nullable(UInt16),
-        tool_schema_valid       Nullable(UInt8),
-        harness                     LowCardinality(String) DEFAULT '',
-        environment             LowCardinality(String) DEFAULT 'default',
-        metadata                Map(LowCardinality(String), String),
-        created_at              DateTime64(3) DEFAULT now(),
-        event_ts                DateTime64(3),
-        is_deleted              UInt8 DEFAULT 0,
-        INDEX idx_span_id span_id TYPE bloom_filter(0.001) GRANULARITY 1,
-        INDEX idx_trace_id trace_id TYPE bloom_filter(0.001) GRANULARITY 1,
-        INDEX idx_project_id project_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_name name TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_type type TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_status status TYPE bloom_filter(0.01) GRANULARITY 1
-    ) ENGINE = ReplacingMergeTree(event_ts, is_deleted)
-    PARTITION BY toYYYYMM(start_time)
-    PRIMARY KEY (project_id, user_id, type, toDate(start_time))
-    ORDER BY (project_id, user_id, type, toDate(start_time), span_id)""",
-    """CREATE TABLE IF NOT EXISTS scores (
-        score_id        String,
-        trace_id        Nullable(String),
-        span_id         Nullable(String),
-        project_id      String,
-        mcp_id          Nullable(String),
-        agent_id        Nullable(String),
-        user_id         String,
-        name            String,
-        source          LowCardinality(String),
-        data_type       LowCardinality(String),
-        value           Float64,
-        string_value    Nullable(String),
-        comment         Nullable(String) CODEC(ZSTD(1)),
-        eval_template_id Nullable(String),
-        eval_config_id  Nullable(String),
-        eval_run_id     Nullable(String),
-        environment     LowCardinality(String) DEFAULT 'default',
-        metadata        Map(LowCardinality(String), String),
-        timestamp       DateTime64(3),
-        created_at      DateTime64(3) DEFAULT now(),
-        event_ts        DateTime64(3),
-        is_deleted      UInt8 DEFAULT 0,
-        INDEX idx_score_id score_id TYPE bloom_filter(0.001) GRANULARITY 1,
-        INDEX idx_trace_id trace_id TYPE bloom_filter(0.001) GRANULARITY 1,
-        INDEX idx_span_id span_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_project_id project_id TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_name name TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_source source TYPE bloom_filter(0.01) GRANULARITY 1
-    ) ENGINE = ReplacingMergeTree(event_ts, is_deleted)
-    PARTITION BY toYYYYMM(timestamp)
-    PRIMARY KEY (project_id, user_id, toDate(timestamp), name)
-    ORDER BY (project_id, user_id, toDate(timestamp), name, score_id)""",
-    # Registry expansion: new span columns
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS container_id Nullable(String)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS exit_code Nullable(Int16)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS network_bytes_in Nullable(UInt64)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS network_bytes_out Nullable(UInt64)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS disk_read_bytes Nullable(UInt64)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS disk_write_bytes Nullable(UInt64)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS oom_killed Nullable(UInt8)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS query_interface Nullable(String)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS relevance_score Nullable(Float32)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS chunks_returned Nullable(UInt16)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS embedding_latency_ms Nullable(UInt32)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS hook_event Nullable(String)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS hook_scope Nullable(String)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS hook_action Nullable(String)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS hook_blocked Nullable(UInt8)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS variables_provided Nullable(UInt8)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS template_tokens Nullable(UInt32)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS rendered_tokens Nullable(UInt32)""",
-    # Registry expansion: new trace columns
-    """ALTER TABLE traces ADD COLUMN IF NOT EXISTS tool_id Nullable(String)""",
-    """ALTER TABLE traces ADD COLUMN IF NOT EXISTS sandbox_id Nullable(String)""",
-    """ALTER TABLE traces ADD COLUMN IF NOT EXISTS graphrag_id Nullable(String)""",
-    """ALTER TABLE traces ADD COLUMN IF NOT EXISTS hook_id Nullable(String)""",
-    """ALTER TABLE traces ADD COLUMN IF NOT EXISTS skill_id Nullable(String)""",
-    """ALTER TABLE traces ADD COLUMN IF NOT EXISTS prompt_id Nullable(String)""",
-    # Agent versioning: track which version produced telemetry
-    """ALTER TABLE traces ADD COLUMN IF NOT EXISTS agent_version Nullable(String)""",
-    """ALTER TABLE spans ADD COLUMN IF NOT EXISTS agent_version Nullable(String)""",
-    """ALTER TABLE scores ADD COLUMN IF NOT EXISTS agent_version Nullable(String)""",
-    # Bloom filter indexes for agent_version point lookups
-    """ALTER TABLE traces ADD INDEX IF NOT EXISTS idx_agent_version agent_version TYPE bloom_filter(0.01) GRANULARITY 1""",
-    """ALTER TABLE spans ADD INDEX IF NOT EXISTS idx_agent_version agent_version TYPE bloom_filter(0.01) GRANULARITY 1""",
-    """ALTER TABLE scores ADD INDEX IF NOT EXISTS idx_agent_version agent_version TYPE bloom_filter(0.01) GRANULARITY 1""",
     # Security events table (SIEM integration - SOC 2 / ISO 27001)
     """CREATE TABLE IF NOT EXISTS security_events (
         event_id    UUID,
@@ -272,33 +129,6 @@ INIT_SQL = [
     ) ENGINE = ReplacingMergeTree(ingested_at)
     PARTITION BY toYYYYMM(timestamp)
     ORDER BY (project_id, session_id, line_offset)""",
-    # otel_logs: previously created by the OTEL collector.
-    # Now managed by the API since the collector is removed.
-    """CREATE TABLE IF NOT EXISTS otel_logs (
-        Timestamp       DateTime64(9) CODEC(Delta, ZSTD(1)),
-        TraceId         String CODEC(ZSTD(1)),
-        SpanId          String CODEC(ZSTD(1)),
-        TraceFlags      UInt32 CODEC(ZSTD(1)),
-        SeverityText    LowCardinality(String) CODEC(ZSTD(1)),
-        SeverityNumber  Int32 CODEC(ZSTD(1)),
-        ServiceName     LowCardinality(String) CODEC(ZSTD(1)),
-        Body            String CODEC(ZSTD(1)),
-        ResourceSchemaUrl   String CODEC(ZSTD(1)),
-        ResourceAttributes  Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        ScopeSchemaUrl  String CODEC(ZSTD(1)),
-        ScopeName       String CODEC(ZSTD(1)),
-        ScopeVersion    String CODEC(ZSTD(1)),
-        ScopeAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        LogAttributes   Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
-        INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_log_attr_value mapValues(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
-        INDEX idx_body Body TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1
-    ) ENGINE = MergeTree()
-    PARTITION BY toDate(Timestamp)
-    ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)""",
     # Subagent attribution: link subagent sessions to their parent session
     """ALTER TABLE session_events ADD COLUMN IF NOT EXISTS parent_session_id Nullable(String)""",
     # set(0) on parent_session_id: the column is sparse (most rows NULL) and queried
@@ -640,7 +470,7 @@ async def _migrate_ide_to_harness() -> None:
     if await _clickhouse_columns("session_events"):
         await _client._query("ALTER TABLE session_events DROP PROJECTION IF EXISTS proj_session_view")
 
-    for table in ("traces", "spans", "session_events", "session_stats_agg", "layer_snapshots"):
+    for table in ("session_events", "session_stats_agg", "layer_snapshots"):
         columns = await _clickhouse_columns(table)
         if not columns or "ide" not in columns:
             continue
@@ -821,10 +651,6 @@ async def init_clickhouse():
     retention_days = await ds.get_int("data.retention_days")
     if retention_days > 0:
         ttl_stmts = [
-            f"ALTER TABLE traces MODIFY TTL toDate(start_time) + INTERVAL {retention_days} DAY",
-            f"ALTER TABLE spans MODIFY TTL toDate(start_time) + INTERVAL {retention_days} DAY",
-            f"ALTER TABLE scores MODIFY TTL toDate(timestamp) + INTERVAL {retention_days} DAY",
-            f"ALTER TABLE otel_logs MODIFY TTL toDate(Timestamp) + INTERVAL {retention_days} DAY",
             f"ALTER TABLE session_events MODIFY TTL toDate(timestamp) + INTERVAL {retention_days} DAY",
         ]
         applied = 0
