@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CodeEditor } from "@/components/ui/code-editor";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, Info, Loader2, Plus, X } from "lucide-react";
@@ -51,6 +52,28 @@ const MCP_CATEGORIES = [
 const MCP_FRAMEWORKS = ["python", "docker", "typescript", "go"];
 
 const MCP_TRANSPORTS = ["stdio", "sse", "streamable-http"];
+
+function mcpExampleConfig(isEditMode: boolean, name: string) {
+	return isEditMode
+		? `{
+  "mcpServers": {
+    "${name || "my-server"}": {
+      "command": "npx",
+      "args": ["-y", "@example/mcp-server@latest"],
+      "env": { "API_KEY": "$API_KEY" }
+    }
+  }
+}`
+		: `{
+  "mcpServers": {
+    "my-server": {
+      "command": "npx",
+      "args": ["-y", "@example/mcp-server"],
+      "env": { "API_KEY": "$API_KEY" }
+    }
+  }
+}`;
+}
 
 const SKILL_TASK_TYPES = [
 	"code-review",
@@ -546,6 +569,7 @@ export function SubmitComponentDialog({
 				: type.charAt(0).toUpperCase() + type.slice(1, -1);
 
 	const submitError = validateForSubmit();
+	const jsonExample = mcpExampleConfig(isEditMode, name);
 
 	return (
 		<Dialog
@@ -620,23 +644,32 @@ export function SubmitComponentDialog({
 							{mcpMode === "json" && (
 								<>
 									<div className="space-y-1.5">
-										<Label htmlFor="mcp-json">
-											{isEditMode
-												? "Paste Updated Config (JSON)"
-												: "Server Config (JSON)"}
-										</Label>
-										<Textarea
+										<div className="flex items-center justify-between gap-3">
+											<Label htmlFor="mcp-json">
+												{isEditMode
+													? "Paste Updated Config (JSON)"
+													: "Server Config (JSON)"}
+											</Label>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												onClick={() => handleJsonInput(jsonExample)}
+												className="h-7 text-xs"
+											>
+												{jsonInput ? "Replace example" : "Insert example"}
+											</Button>
+										</div>
+										<CodeEditor
 											id="mcp-json"
 											value={jsonInput}
-											onChange={(e) => handleJsonInput(e.target.value)}
-											placeholder={
-												isEditMode
-													? `Paste the new server config to update this MCP:\n{\n  "mcpServers": {\n    "${name || "my-server"}": {\n      "command": "npx",\n      "args": ["-y", "@example/mcp-server@latest"],\n      "env": { "API_KEY": "$API_KEY" }\n    }\n  }\n}`
-													: `Paste your MCP server config, e.g.:\n{\n  "mcpServers": {\n    "my-server": {\n      "command": "npx",\n      "args": ["-y", "@example/mcp-server"],\n      "env": { "API_KEY": "$API_KEY" }\n    }\n  }\n}`
-											}
-											rows={8}
-											className="text-xs font-mono"
+											onChange={handleJsonInput}
+											language="json"
+											placeholder="Paste MCP JSON here, or insert the example."
 										/>
+										<p className="text-xs text-muted-foreground">
+											Paste directly or type JSON. Brackets and quotes auto-close.
+										</p>
 										{jsonError && (
 											<p className="text-xs text-destructive">{jsonError}</p>
 										)}

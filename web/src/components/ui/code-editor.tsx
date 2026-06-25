@@ -1,0 +1,145 @@
+// SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-only
+
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { json } from "@codemirror/lang-json";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import type { Extension } from "@codemirror/state";
+import { highlightActiveLine, keymap, lineNumbers, placeholder } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { EditorView, minimalSetup } from "codemirror";
+import { useEffect, useMemo, useRef } from "react";
+import { cn } from "@/lib/utils";
+
+interface CodeEditorProps {
+	id?: string;
+	value: string;
+	onChange: (value: string) => void;
+	language?: "json";
+	placeholder?: string;
+	minHeightClassName?: string;
+	className?: string;
+}
+
+const theme = EditorView.theme({
+	"&": {
+		backgroundColor: "oklch(var(--surface-sunken))",
+		border: "1px solid oklch(var(--input))",
+		borderRadius: "var(--radius-md)",
+		color: "oklch(var(--foreground))",
+		fontSize: "0.8125rem",
+	},
+	"&.cm-focused": {
+		borderColor: "oklch(var(--ring))",
+		outline: "2px solid oklch(var(--ring) / 0.2)",
+		outlineOffset: "0",
+	},
+	".cm-content": {
+		caretColor: "oklch(var(--foreground))",
+		fontFamily: "var(--font-mono)",
+		lineHeight: "1.65",
+		padding: "0.625rem 0.875rem",
+	},
+	".cm-cursor": {
+		borderLeftColor: "oklch(var(--foreground))",
+		borderLeftWidth: "2px",
+	},
+	".cm-scroller": {
+		fontFamily: "var(--font-mono)",
+	},
+	".cm-gutters": {
+		backgroundColor: "oklch(var(--surface-sunken))",
+		borderRight: "1px solid oklch(var(--border) / 0.7)",
+		color: "oklch(var(--muted-foreground) / 0.72)",
+		fontFamily: "var(--font-mono)",
+		fontSize: "0.75rem",
+	},
+	".cm-lineNumbers .cm-gutterElement": {
+		minWidth: "2.35rem",
+		padding: "0 0.75rem 0 0.625rem",
+		textAlign: "right",
+	},
+	".cm-activeLine, .cm-activeLineGutter": {
+		backgroundColor: "oklch(var(--muted) / 0.38)",
+	},
+	".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+		backgroundColor: "oklch(var(--primary) / 0.2)",
+	},
+	".cm-placeholder": {
+		color: "oklch(var(--muted-foreground) / 0.7)",
+	},
+	".cm-matchingBracket": {
+		backgroundColor: "oklch(var(--primary-accent) / 0.16)",
+		color: "oklch(var(--foreground))",
+	},
+});
+
+const highlightStyle = HighlightStyle.define([
+	{ tag: tags.propertyName, color: "oklch(var(--info))" },
+	{ tag: tags.string, color: "oklch(var(--success))" },
+	{ tag: tags.number, color: "oklch(var(--primary-accent))" },
+	{ tag: tags.bool, color: "oklch(var(--warning))" },
+	{ tag: tags.null, color: "oklch(var(--muted-foreground))" },
+	{ tag: tags.punctuation, color: "oklch(var(--foreground) / 0.7)" },
+]);
+
+export function CodeEditor({
+	id,
+	value,
+	onChange,
+	language = "json",
+	placeholder: placeholderText,
+	minHeightClassName = "min-h-56",
+	className,
+}: CodeEditorProps) {
+	const parentRef = useRef<HTMLDivElement>(null);
+	const viewRef = useRef<EditorView>(null);
+	const onChangeRef = useRef(onChange);
+	onChangeRef.current = onChange;
+
+	const extensions = useMemo(() => {
+		const items: Extension[] = [
+			minimalSetup,
+			lineNumbers(),
+			highlightActiveLine(),
+			closeBrackets(),
+			keymap.of(closeBracketsKeymap),
+			theme,
+			syntaxHighlighting(highlightStyle),
+			EditorView.lineWrapping,
+			EditorView.updateListener.of((update) => {
+				if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+			}),
+		];
+		if (language === "json") items.push(json());
+		if (placeholderText) items.push(placeholder(placeholderText));
+		return items;
+	}, [language, placeholderText]);
+
+	useEffect(() => {
+		if (!parentRef.current) return;
+		const view = new EditorView({ doc: value, extensions, parent: parentRef.current });
+		viewRef.current = view;
+		return () => view.destroy();
+	}, [extensions]);
+
+	useEffect(() => {
+		const view = viewRef.current;
+		if (!view || view.state.doc.toString() === value) return;
+		view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+	}, [value]);
+
+	return (
+		<div
+			aria-label={id}
+			id={id}
+			onClick={() => viewRef.current?.focus()}
+			ref={parentRef}
+			className={cn(
+				"cursor-text overflow-hidden rounded-md [&_.cm-editor]:min-h-56 [&_.cm-scroller]:min-h-56",
+				minHeightClassName,
+				className,
+			)}
+		/>
+	);
+}
