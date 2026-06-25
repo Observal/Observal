@@ -57,6 +57,11 @@
 * [Backup and restore](self-hosting/backup-and-restore.md)
 * [Troubleshooting](self-hosting/troubleshooting.md)
 
+## Integrations
+
+* [Kiro](integrations/kiro.md)
+* [OpenCode](integrations/opencode.md)
+
 ## Reference
 
 * [Environment variables](reference/environment-variables.md)

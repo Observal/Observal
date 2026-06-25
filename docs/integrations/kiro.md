@@ -73,13 +73,12 @@ observal agent pull <agent-name> --harness kiro --scope project
 
 Project agents are written to `.kiro/agents/{name}.json`.
 
-### 4. Patch existing Kiro hooks
+### 4. Refresh Kiro hooks
 
-```bash
-observal doctor patch --all --harness kiro
-```
+Pull the agent again to refresh its Observal hook commands.
 
-This updates Observal hook entries and keeps other hook entries unchanged.
+Kiro attribution is installed per pulled agent because each hook command carries
+that agent's Observal UUID. `doctor patch` does not install generic Kiro hooks.
 
 ---
 
@@ -91,8 +90,8 @@ This updates Observal hook entries and keeps other hook entries unchanged.
 | Guidance files | `.kiro/steering/*.md`, `AGENTS.md` | `~/.kiro/steering/*.md` |
 | MCP config | `.kiro/settings/mcp.json` | `~/.kiro/settings/mcp.json` |
 | Skill definition | `.kiro/skills/{name}/SKILL.md` | `~/.kiro/skills/{name}/SKILL.md` |
-| Hook config | `.kiro/hooks/{name}.json` | `~/.kiro/hooks/{name}.json` |
-| Hook scripts | `.kiro/hooks/` | `~/.kiro/hooks/` |
+| Hook config | Embedded in `.kiro/agents/{name}.json` | Embedded in `~/.kiro/agents/{name}.json` |
+| Custom hook scripts | `.kiro/hooks/` | `~/.kiro/hooks/` |
 | Session JSONL | `~/.kiro/sessions/cli/{session_id}.jsonl` | `~/.kiro/sessions/cli/{session_id}.jsonl` |
 | Credit metadata | `~/.kiro/sessions/cli/{session_id}.json` | `~/.kiro/sessions/cli/{session_id}.json` |
 | Observal credentials | `~/.observal/config.json` | `~/.observal/config.json` |
@@ -104,20 +103,22 @@ Kiro MCP configs use the `mcpServers` key.
 
 ## Hook spec
 
-Observal writes standalone hook JSON like this:
+Observal writes the telemetry hooks inside each Kiro agent JSON:
 
 ```json
 {
-  "userPromptSubmit": [
-    {
-      "command": "python -m observal_cli.hooks.kiro_session_push"
-    }
-  ],
-  "stop": [
-    {
-      "command": "python -m observal_cli.hooks.kiro_session_push"
-    }
-  ]
+  "hooks": {
+    "userPromptSubmit": [
+      {
+        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.kiro_session_push"
+      }
+    ],
+    "stop": [
+      {
+        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.kiro_session_push"
+      }
+    ]
+  }
 }
 ```
 
@@ -125,8 +126,20 @@ On non-Windows platforms, generated server config may use `python3` instead of
 `python`. During `observal pull`, the CLI rewrites Observal hook commands to use
 the active Python interpreter.
 
-When an agent name is available, the hook command sets `OBSERVAL_AGENT_NAME` for
-agent attribution.
+### Attribution
+
+Kiro does not expose a reliable active Observal agent in its session JSONL. The
+per-agent hook command is the source of truth.
+
+1. `observal agent pull` writes the agent UUID into the Kiro hook command as
+   `OBSERVAL_AGENT_ID`.
+2. `kiro_session_push` reads that UUID when Kiro fires `userPromptSubmit` or
+   `stop`.
+3. The CLI looks up the UUID in `~/.observal/lockfile.json` under the `kiro`
+   harness.
+4. The session payload is sent with the lockfile agent id and version.
+5. If the UUID is missing or no lockfile entry exists, the session is left
+   unattributed instead of guessing from the current directory.
 
 ### Event map
 
@@ -205,9 +218,9 @@ Run `pytest -q` from the project root.
 **Guidance files are scan-only.** Observal layers Kiro steering files and
 `AGENTS.md` as context, but does not overwrite them during pull.
 
-**Existing hooks need patching.** Pulling a new agent includes hooks
-automatically. Existing hooks can be patched with
-`observal doctor patch --all --harness kiro`.
+**Hooks are per agent.** Pulling a new agent includes telemetry hooks
+automatically. Pull the agent again to refresh its Observal hook command.
+`doctor patch` does not install generic Kiro attribution hooks.
 
 **Default scope is user.** `observal agent pull <agent-name> --harness kiro`
 writes to `~/.kiro/agents/` unless `--scope project` is set.
