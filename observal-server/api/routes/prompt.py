@@ -5,7 +5,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import re
-import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -178,32 +177,6 @@ async def render_prompt(
     for key, value in req.variables.items():
         rendered = re.sub(r"\{\{\s*" + re.escape(key) + r"\s*\}\}", value, rendered)
 
-    from services.clickhouse import insert_spans
-
-    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-    try:
-        await insert_spans(
-            [
-                {
-                    "span_id": str(uuid.uuid4()),
-                    "trace_id": str(uuid.uuid4()),
-                    "type": "prompt_render",
-                    "name": f"render:{listing.name}",
-                    "start_time": now,
-                    "end_time": now,
-                    "latency_ms": 0,
-                    "status": "success",
-                    "project_id": "default",
-                    "user_id": str(current_user.id),
-                    "variables_provided": len(req.variables),
-                    "template_tokens": len(listing.template.split()),
-                    "rendered_tokens": len(rendered.split()),
-                    "metadata": {},
-                }
-            ]
-        )
-    except Exception:
-        pass
     return PromptRenderResponse(listing_id=listing.id, rendered=rendered)
 
 

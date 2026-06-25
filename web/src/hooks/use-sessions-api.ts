@@ -64,12 +64,6 @@ export function useSessionDetail(id: string | undefined) {
     staleTime: 1_000,
   });
 }
-export function useSessionTraces() {
-  return useQuery({ queryKey: ['sessions', 'traces'], queryFn: dashboard.traces });
-}
-export function useSessionTrace(id: string | undefined) {
-  return useQuery({ queryKey: ['sessions', 'trace', id], queryFn: () => dashboard.trace(id!), enabled: !!id });
-}
 export function useSessionsStats() {
   return useQuery({ queryKey: ['sessions', 'stats'], queryFn: dashboard.sessionsStats });
 }

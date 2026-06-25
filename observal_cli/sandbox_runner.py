@@ -4,11 +4,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""observal-sandbox-run: Docker sandbox executor with telemetry.
-
-Runs a Docker container, captures stdout/stderr via container.logs(),
-collects exit code and OOM status, and POSTs a sandbox_exec span to Observal.
-"""
+"""observal-sandbox-run: Docker sandbox executor."""
 
 import json
 import os
@@ -16,8 +12,6 @@ import sys
 import time
 import uuid
 from datetime import UTC, datetime
-
-import httpx
 
 from observal_cli.config import load as load_config
 
@@ -29,18 +23,8 @@ def _now_iso() -> str:
 
 
 def _send_span(server_url: str, access_token: str, span: dict):
-    """Fire-and-forget POST span to ingest endpoint."""
-    if not server_url or not access_token:
-        return
-    try:
-        httpx.post(
-            f"{server_url.rstrip('/')}/api/v1/telemetry/ingest",
-            json={"traces": [], "spans": [span], "scores": []},
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=5,
-        )
-    except Exception:
-        pass  # fire-and-forget
+    """No-op: structured span telemetry was removed in favor of JSONL sessions."""
+    return
 
 
 def run_sandbox(sandbox_id: str, image: str, command: str | None = None, timeout: int = 300, env: dict | None = None):

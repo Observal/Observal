@@ -21,12 +21,7 @@ from models.organization import Organization
 
 INTER_ORG_DELAY = 2.0
 
-TIME_PURGE_TABLES = {
-    "spans": "start_time",
-    "session_events": "timestamp",
-}
-
-SCORE_TABLE = {"scores": "timestamp"}
+TIME_PURGE_TABLES = {"session_events": "timestamp"}
 
 
 async def _delete_batch(table: str, time_col: str, project_id: str, cutoff_str: str) -> int:
@@ -52,7 +47,7 @@ async def _has_data(project_id: str) -> bool:
     from services.clickhouse import _query
 
     resp = await _query(
-        "SELECT 1 FROM traces WHERE project_id = {pid:String} LIMIT 1 FORMAT JSON",
+        "SELECT 1 FROM session_events WHERE project_id = {pid:String} LIMIT 1 FORMAT JSON",
         {"param_pid": project_id},
     )
     if resp.status_code == 200:
@@ -159,13 +154,10 @@ async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
     optic.trace("enforcing max trace count ({}) for project", max_trace_count)
     from services.clickhouse import _query
 
-    # Get daily trace counts, capped at 2 years to bound query cost.
-    # Count-based purge only needs to find the cutoff day; scanning beyond
-    # 730 days offers no benefit and risks hitting the cron timeout on large orgs.
     sql = (
-        "SELECT toDate(start_time) as day, count() as cnt "
-        "FROM traces WHERE project_id = {pid:String} "
-        "AND start_time >= now() - INTERVAL 730 DAY "
+        "SELECT toDate(timestamp) as day, count(DISTINCT session_id) as cnt "
+        "FROM session_events WHERE project_id = {pid:String} "
+        "AND timestamp >= now() - INTERVAL 730 DAY "
         "GROUP BY day ORDER BY day DESC LIMIT 730 FORMAT JSON"
     )
     resp = await _query(sql, {"param_pid": project_id})
@@ -190,11 +182,8 @@ async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
 
     # Purge everything older than cutoff_day (children first)
     cutoff_str = f"{cutoff_day} 00:00:00.000"
-    for table, time_col in [("spans", "start_time"), ("session_events", "timestamp")]:
-        await _delete_batch(table, time_col, project_id, cutoff_str)
+    await _delete_batch("session_events", "timestamp", project_id, cutoff_str)
     await _purge_session_stats_orphans(project_id)
-    await _delete_batch("scores", "timestamp", project_id, cutoff_str)
-    await _delete_batch("traces", "start_time", project_id, cutoff_str)
     return 1
 
 
@@ -228,29 +217,23 @@ async def run_retention_purge(ctx: dict | None = None):
         org_stats: dict = {}
         now = datetime.now(UTC)
 
-        # Time-based purge (traces, spans, session_events)
+        # Time-based purge for JSONL session events
         if org.data_retention_days:
             data_cutoff = now - timedelta(days=org.data_retention_days)
             data_cutoff_str = data_cutoff.strftime("%Y-%m-%d %H:%M:%S.000")
             org_stats["time"] = await _purge_time_based(project_id, data_cutoff_str, TIME_PURGE_TABLES)
             await _purge_session_stats_orphans(project_id)
 
-        # Score + insight purge (separate retention period)
+        # Insight purge (separate retention period)
         score_days = org.score_retention_days or ((org.data_retention_days * 2) if org.data_retention_days else None)
         if score_days:
             score_days = max(score_days, 30)
             score_cutoff = now - timedelta(days=score_days)
-            score_cutoff_str = score_cutoff.strftime("%Y-%m-%d %H:%M:%S.000")
-            org_stats["scores"] = await _purge_time_based(project_id, score_cutoff_str, SCORE_TABLE)
             org_stats["insight_reports"] = await _purge_insight_reports(org.id, score_cutoff)
 
         # Count-based purge
         if org.max_trace_count:
             org_stats["count_purge"] = await _purge_count_based(project_id, org.max_trace_count)
-
-        # Delete traces last (time-based) - children already deleted above
-        if org.data_retention_days:
-            await _delete_batch("traces", "start_time", project_id, data_cutoff_str)
 
         optic.info("retention purge complete for org {}: {}", org.slug, org_stats)
         await asyncio.sleep(INTER_ORG_DELAY)

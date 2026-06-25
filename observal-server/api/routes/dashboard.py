@@ -6,8 +6,10 @@
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-License-Identifier: AGPL-3.0-only
 
+from __future__ import annotations
+
 import asyncio
-import uuid
+import uuid  # noqa: TC003
 from datetime import UTC, timedelta
 from datetime import datetime as dt
 
@@ -15,7 +17,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi_cache.decorator import cache
 from loguru import logger as optic
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
 import services.dynamic_settings as ds
 from api.deps import get_db, require_role
@@ -32,20 +34,13 @@ from models.skill import SkillListing, SkillVersion
 from models.user import User, UserRole
 from schemas.dashboard import (
     ComponentLeaderboardItem,
-    DateAvg,
-    GraphRagQuery,
     GraphRagStats,
-    HarnessBreakdown,
     HarnessUsage,
     LatencyCell,
     LeaderboardItem,
     OverviewStats,
-    RelevanceBucket,
-    SandboxRun,
     SandboxStats,
-    TokenByEntity,
     TokenStats,
-    TokenTimePoint,
     TopAgentItem,
     TopItem,
     TrendPoint,
@@ -120,11 +115,11 @@ async def overview_stats(
     )
     total_users_coro = db.scalar(select(func.count(User.id)))
     tool_rows_coro = _ch_json(
-        "SELECT count() as cnt FROM spans WHERE start_time > now() - INTERVAL {days:UInt32} DAY AND is_deleted = 0",
+        "SELECT sum(tool_call_count) as cnt FROM session_stats_agg WHERE last_event_time > now() - INTERVAL {days:UInt32} DAY",
         {"param_days": str(days)},
     )
     agent_rows_coro = _ch_json(
-        "SELECT count() as cnt FROM traces WHERE start_time > now() - INTERVAL {days:UInt32} DAY AND is_deleted = 0",
+        "SELECT count() as cnt FROM session_stats_agg WHERE last_event_time > now() - INTERVAL {days:UInt32} DAY",
         {"param_days": str(days)},
     )
 
@@ -505,402 +500,56 @@ async def trends(
 
 
 @router.get("/dashboard/tokens", response_model=TokenStats)
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
-async def token_stats(
-    range_: str | None = Query(None, alias="range"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-
-    days = _range_days(range_)
-    days_param = {"param_days": str(days)}
-
-    # Fan out all 5 independent ClickHouse queries in parallel
-    totals_coro = _ch_json_scoped(
-        "SELECT "
-        "sumIf(token_count_input, token_count_input IS NOT NULL) AS total_input, "
-        "sumIf(token_count_output, token_count_output IS NOT NULL) AS total_output, "
-        "sumIf(token_count_total, token_count_total IS NOT NULL) AS total_tokens "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 "
-        "AND start_time >= now() - INTERVAL {days:UInt32} DAY",
-        current_user,
-        days_param,
-    )
-    avg_coro = _ch_json_scoped(
-        "SELECT round(avg(s), 2) AS avg_per_trace FROM ("
-        "SELECT trace_id, sum(token_count_total) AS s "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND token_count_total IS NOT NULL "
-        "AND start_time >= now() - INTERVAL {days:UInt32} DAY "
-        "GROUP BY trace_id"
-        ")",
-        current_user,
-        days_param,
-    )
-    by_agent_coro = _ch_json_scoped(
-        "SELECT t.agent_id AS agent_id, "
-        "sumIf(s.token_count_input, s.token_count_input IS NOT NULL) AS input, "
-        "sumIf(s.token_count_output, s.token_count_output IS NOT NULL) AS output, "
-        "sumIf(s.token_count_total, s.token_count_total IS NOT NULL) AS total, "
-        "count(DISTINCT t.trace_id) AS traces "
-        "FROM spans AS s FINAL "
-        "INNER JOIN traces AS t FINAL ON s.trace_id = t.trace_id AND t.project_id = 'default' AND t.is_deleted = 0 "
-        "WHERE s.project_id = 'default' AND s.is_deleted = 0 AND t.agent_id != '' "
-        "AND s.start_time >= now() - INTERVAL {days:UInt32} DAY "
-        "GROUP BY t.agent_id ORDER BY total DESC LIMIT 20",
-        current_user,
-        days_param,
-    )
-    by_mcp_coro = _ch_json_scoped(
-        "SELECT t.mcp_id AS mcp_id, "
-        "sumIf(s.token_count_input, s.token_count_input IS NOT NULL) AS input, "
-        "sumIf(s.token_count_output, s.token_count_output IS NOT NULL) AS output, "
-        "sumIf(s.token_count_total, s.token_count_total IS NOT NULL) AS total, "
-        "count(DISTINCT t.trace_id) AS traces "
-        "FROM spans AS s FINAL "
-        "INNER JOIN traces AS t FINAL ON s.trace_id = t.trace_id AND t.project_id = 'default' AND t.is_deleted = 0 "
-        "WHERE s.project_id = 'default' AND s.is_deleted = 0 AND t.mcp_id != '' "
-        "AND s.start_time >= now() - INTERVAL {days:UInt32} DAY "
-        "GROUP BY t.mcp_id ORDER BY total DESC LIMIT 20",
-        current_user,
-        days_param,
-    )
-    over_time_coro = _ch_json_scoped(
-        "SELECT toDate(start_time) AS date, "
-        "sumIf(token_count_input, token_count_input IS NOT NULL) AS input, "
-        "sumIf(token_count_output, token_count_output IS NOT NULL) AS output "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 "
-        "AND start_time >= now() - INTERVAL {days:UInt32} DAY "
-        "GROUP BY date ORDER BY date",
-        current_user,
-        days_param,
-    )
-
-    totals, avg_rows, by_agent_rows, by_mcp_rows, over_time_rows = await asyncio.gather(
-        totals_coro,
-        avg_coro,
-        by_agent_coro,
-        by_mcp_coro,
-        over_time_coro,
-    )
-
-    t = totals[0] if totals else {}
-    total_input = int(t.get("total_input", 0))
-    total_output = int(t.get("total_output", 0))
-    total_tokens = int(t.get("total_tokens", 0))
-    avg_per_trace = float((avg_rows[0] if avg_rows else {}).get("avg_per_trace", 0))
-
-    # Resolve agent names from Postgres
-    agent_ids = [r["agent_id"] for r in by_agent_rows if r.get("agent_id")]
-    agent_names: dict[str, str] = {}
-    if agent_ids:
-        rows = (
-            await db.execute(select(Agent.id, Agent.name).where(Agent.id.in_([uuid.UUID(a) for a in agent_ids])))
-        ).all()
-        agent_names = {str(r.id): r.name for r in rows}
-    by_agent = [
-        TokenByEntity(
-            id=r["agent_id"],
-            name=agent_names.get(r["agent_id"], ""),
-            input=int(r["input"]),
-            output=int(r["output"]),
-            total=int(r["total"]),
-            traces=int(r["traces"]),
-        )
-        for r in by_agent_rows
-    ]
-
-    # Resolve MCP names from Postgres
-    mcp_ids = [r["mcp_id"] for r in by_mcp_rows if r.get("mcp_id")]
-    mcp_names: dict[str, str] = {}
-    if mcp_ids:
-        uuid_ids = []
-        name_ids = []
-        for m in mcp_ids:
-            try:
-                uuid_ids.append(uuid.UUID(m))
-            except (ValueError, AttributeError):
-                name_ids.append(m)
-        if uuid_ids:
-            rows = (await db.execute(select(McpListing.id, McpListing.name).where(McpListing.id.in_(uuid_ids)))).all()
-            mcp_names.update({str(r.id): r.name for r in rows})
-        if name_ids:
-            rows = (await db.execute(select(McpListing.id, McpListing.name).where(McpListing.name.in_(name_ids)))).all()
-            mcp_names.update({r.name: r.name for r in rows})
-            for n in name_ids:
-                mcp_names.setdefault(n, n)
-    by_mcp = [
-        TokenByEntity(
-            id=r["mcp_id"],
-            name=mcp_names.get(r["mcp_id"], r["mcp_id"]),
-            input=int(r["input"]),
-            output=int(r["output"]),
-            total=int(r["total"]),
-            traces=int(r["traces"]),
-        )
-        for r in by_mcp_rows
-    ]
-
-    # Over time (already fetched in parallel above)
-    over_time = [
-        TokenTimePoint(date=str(r["date"]), input=int(r["input"]), output=int(r["output"])) for r in over_time_rows
-    ]
+async def token_stats(range_: str | None = Query(None, alias="range")):
+    optic.trace("range={}", range_)
     return TokenStats(
-        total_input=total_input,
-        total_output=total_output,
-        total_tokens=total_tokens,
-        avg_per_trace=avg_per_trace,
-        by_agent=by_agent,
-        by_mcp=by_mcp,
-        over_time=over_time,
+        total_input=0, total_output=0, total_tokens=0, avg_per_trace=0, by_agent=[], by_mcp=[], over_time=[]
     )
-
-
-# ---------------------------------------------------------------------------
-# harness usage
-# ---------------------------------------------------------------------------
 
 
 @router.get("/dashboard/harness-usage", response_model=HarnessUsage)
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
-async def ide_usage(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-    rows = await _ch_json_scoped(
-        "SELECT t.harness AS harness, "
-        "count(DISTINCT t.trace_id) AS traces, "
-        "round(avg(s.latency_ms), 1) AS avg_latency_ms, "
-        "countIf(s.status = 'error') AS error_count, "
-        "count(s.span_id) AS total_spans "
-        "FROM traces AS t FINAL "
-        "INNER JOIN spans AS s FINAL ON t.trace_id = s.trace_id AND s.project_id = 'default' AND s.is_deleted = 0 "
-        "WHERE t.project_id = 'default' AND t.is_deleted = 0 "
-        "GROUP BY t.harness ORDER BY traces DESC",
-        current_user,
-    )
-    harnesses = [
-        HarnessBreakdown(
-            harness=r["harness"],
-            traces=int(r["traces"]),
-            avg_latency_ms=float(r.get("avg_latency_ms") or 0),
-            error_count=int(r["error_count"]),
-            error_rate=round(int(r["error_count"]) / int(r["total_spans"]), 4) if int(r.get("total_spans", 0)) else 0,
-        )
-        for r in rows
-    ]
-    return HarnessUsage(harnesses=harnesses)
-
-
-# ---------------------------------------------------------------------------
-# Sandbox metrics
-# ---------------------------------------------------------------------------
+async def harness_usage(current_user: User = Depends(require_role(UserRole.admin))):
+    optic.trace("user_id={}", current_user.id)
+    return HarnessUsage(harnesses=[])
 
 
 @router.get("/dashboard/sandbox-metrics", response_model=SandboxStats)
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
-async def sandbox_metrics(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-    agg = await _ch_json_scoped(
-        "SELECT count() AS total_runs, "
-        "countIf(metadata['oom'] = '1' OR metadata['oom'] = 'true') AS oom_count, "
-        "countIf(metadata['timeout'] = '1' OR metadata['timeout'] = 'true') AS timeout_count, "
-        "avg(toFloat64OrNull(metadata['exit_code'])) AS avg_exit_code "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec'",
-        current_user,
-    )
-    a = agg[0] if agg else {}
-    total_runs = int(a.get("total_runs", 0))
-    oom_count = int(a.get("oom_count", 0))
-    timeout_count = int(a.get("timeout_count", 0))
-
-    recent = await _ch_json_scoped(
-        "SELECT span_id, name, "
-        "metadata['exit_code'] AS exit_code, "
-        "latency_ms AS duration_ms, memory_mb, cpu_ms, "
-        "metadata['oom'] AS oom, "
-        "start_time "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec' "
-        "ORDER BY start_time DESC LIMIT 20",
-        current_user,
-    )
-    recent_runs = [
-        SandboxRun(
-            span_id=r["span_id"],
-            name=r.get("name", ""),
-            exit_code=int(r["exit_code"]) if r.get("exit_code") else None,
-            duration_ms=int(r["duration_ms"]) if r.get("duration_ms") else None,
-            memory_mb=float(r["memory_mb"]) if r.get("memory_mb") else None,
-            cpu_ms=int(r["cpu_ms"]) if r.get("cpu_ms") else None,
-            oom=r.get("oom") in ("1", "true"),
-            timestamp=str(r.get("start_time", "")),
-        )
-        for r in recent
-    ]
-
-    cpu_rows = await _ch_json_scoped(
-        "SELECT toDate(start_time) AS date, round(avg(cpu_ms), 1) AS avg_cpu "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec' AND cpu_ms IS NOT NULL "
-        "GROUP BY date ORDER BY date",
-        current_user,
-    )
-    mem_rows = await _ch_json_scoped(
-        "SELECT toDate(start_time) AS date, round(avg(memory_mb), 2) AS avg_memory "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'sandbox_exec' AND memory_mb IS NOT NULL "
-        "GROUP BY date ORDER BY date",
-        current_user,
-    )
+async def sandbox_metrics(current_user: User = Depends(require_role(UserRole.admin))):
+    optic.trace("user_id={}", current_user.id)
     return SandboxStats(
-        total_runs=total_runs,
-        oom_count=oom_count,
-        oom_rate=round(oom_count / total_runs, 4) if total_runs else 0,
-        timeout_count=timeout_count,
-        timeout_rate=round(timeout_count / total_runs, 4) if total_runs else 0,
-        avg_exit_code=float(a["avg_exit_code"]) if a.get("avg_exit_code") else None,
-        recent_runs=recent_runs,
-        cpu_over_time=[DateAvg(date=str(r["date"]), avg_cpu=float(r["avg_cpu"])) for r in cpu_rows],
-        memory_over_time=[DateAvg(date=str(r["date"]), avg_memory=float(r["avg_memory"])) for r in mem_rows],
+        total_runs=0,
+        oom_count=0,
+        oom_rate=0,
+        timeout_count=0,
+        timeout_rate=0,
+        avg_exit_code=None,
+        recent_runs=[],
+        cpu_over_time=[],
+        memory_over_time=[],
     )
-
-
-# ---------------------------------------------------------------------------
-# GraphRAG metrics
-# ---------------------------------------------------------------------------
 
 
 @router.get("/dashboard/graphrag-metrics", response_model=GraphRagStats)
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
-async def graphrag_metrics(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-    agg = await _ch_json_scoped(
-        "SELECT count() AS total_queries, "
-        "round(avg(entities_retrieved), 2) AS avg_entities, "
-        "round(avg(relationships_used), 2) AS avg_relationships, "
-        "round(avg(toFloat64OrNull(metadata['relevance_score'])), 4) AS avg_relevance_score, "
-        "round(avg(toFloat64OrNull(metadata['embedding_latency_ms'])), 1) AS avg_embedding_latency_ms "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'retrieval'",
-        current_user,
-    )
-    a = agg[0] if agg else {}
-
-    dist = await _ch_json_scoped(
-        "SELECT multiIf("
-        "toFloat64OrNull(metadata['relevance_score']) < 0.2, '0.0-0.2', "
-        "toFloat64OrNull(metadata['relevance_score']) < 0.4, '0.2-0.4', "
-        "toFloat64OrNull(metadata['relevance_score']) < 0.6, '0.4-0.6', "
-        "toFloat64OrNull(metadata['relevance_score']) < 0.8, '0.6-0.8', "
-        "'0.8-1.0') AS bucket, "
-        "count() AS count "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'retrieval' "
-        "AND metadata['relevance_score'] != '' "
-        "GROUP BY bucket ORDER BY bucket",
-        current_user,
-    )
-
-    recent = await _ch_json_scoped(
-        "SELECT span_id, name, "
-        "metadata['query_interface'] AS query_interface, "
-        "entities_retrieved, relationships_used, "
-        "metadata['relevance_score'] AS relevance_score, "
-        "latency_ms, start_time "
-        "FROM spans FINAL WHERE project_id = 'default' AND is_deleted = 0 AND type = 'retrieval' "
-        "ORDER BY start_time DESC LIMIT 20",
-        current_user,
-    )
+async def graphrag_metrics(current_user: User = Depends(require_role(UserRole.admin))):
+    optic.trace("user_id={}", current_user.id)
     return GraphRagStats(
-        total_queries=int(a.get("total_queries", 0)),
-        avg_entities=float(a["avg_entities"]) if a.get("avg_entities") else None,
-        avg_relationships=float(a["avg_relationships"]) if a.get("avg_relationships") else None,
-        avg_relevance_score=float(a["avg_relevance_score"]) if a.get("avg_relevance_score") else None,
-        avg_embedding_latency_ms=float(a["avg_embedding_latency_ms"]) if a.get("avg_embedding_latency_ms") else None,
-        relevance_distribution=[RelevanceBucket(bucket=r["bucket"], count=int(r["count"])) for r in dist],
-        recent_queries=[
-            GraphRagQuery(
-                span_id=r["span_id"],
-                name=r.get("name", ""),
-                query_interface=r.get("query_interface") or None,
-                entities=int(r["entities_retrieved"]) if r.get("entities_retrieved") else None,
-                relationships=int(r["relationships_used"]) if r.get("relationships_used") else None,
-                relevance_score=float(r["relevance_score"]) if r.get("relevance_score") else None,
-                latency_ms=int(r["latency_ms"]) if r.get("latency_ms") else None,
-                timestamp=str(r.get("start_time", "")),
-            )
-            for r in recent
-        ],
+        total_queries=0,
+        avg_entities=None,
+        avg_relationships=None,
+        avg_relevance_score=None,
+        avg_embedding_latency_ms=None,
+        relevance_distribution=[],
+        recent_queries=[],
     )
-
-
-# ---------------------------------------------------------------------------
-# Latency heatmap
-# ---------------------------------------------------------------------------
 
 
 @router.get("/dashboard/latency-heatmap", response_model=list[LatencyCell])
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
-async def latency_heatmap(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-    rows = await _ch_json_scoped(
-        "SELECT name, toStartOfHour(start_time) AS hour, "
-        "round(quantile(0.5)(latency_ms), 1) AS p50, "
-        "round(quantile(0.9)(latency_ms), 1) AS p90, "
-        "round(quantile(0.99)(latency_ms), 1) AS p99 "
-        "FROM spans FINAL "
-        "WHERE project_id = 'default' AND is_deleted = 0 "
-        "AND start_time >= now() - INTERVAL 24 HOUR "
-        "AND latency_ms IS NOT NULL "
-        "AND name IN ("
-        "SELECT name FROM spans FINAL "
-        "WHERE project_id = 'default' AND is_deleted = 0 "
-        "AND start_time >= now() - INTERVAL 24 HOUR "
-        "AND latency_ms IS NOT NULL "
-        "GROUP BY name ORDER BY count() DESC LIMIT 20"
-        ") "
-        "GROUP BY name, hour ORDER BY name, hour",
-        current_user,
-    )
-    cells = [
-        LatencyCell(name=r["name"], hour=str(r["hour"]), p50=float(r["p50"]), p90=float(r["p90"]), p99=float(r["p99"]))
-        for r in rows
-    ]
-    return cells
-
-
-# ---------------------------------------------------------------------------
-# Unannotated traces
-# ---------------------------------------------------------------------------
+async def latency_heatmap(current_user: User = Depends(require_role(UserRole.admin))):
+    optic.trace("user_id={}", current_user.id)
+    return []
 
 
 @router.get("/dashboard/unannotated-traces", response_model=list[UnannotatedTrace])
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
-async def unannotated_traces(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-    rows = await _ch_json_scoped(
-        "SELECT trace_id, name, session_id, harness, trace_type, start_time "
-        "FROM traces FINAL "
-        "WHERE project_id = 'default' AND is_deleted = 0 "
-        "AND trace_id NOT IN ("
-        "SELECT DISTINCT trace_id FROM scores FINAL "
-        "WHERE project_id = 'default' AND is_deleted = 0 AND source = 'human'"
-        ") "
-        "ORDER BY start_time DESC LIMIT 50",
-        current_user,
-    )
-    traces = [
-        UnannotatedTrace(
-            trace_id=r["trace_id"],
-            name=r.get("name") or None,
-            session_id=r.get("session_id") or None,
-            harness=r.get("harness") or None,
-            trace_type=r.get("trace_type") or None,
-            start_time=str(r.get("start_time", "")),
-        )
-        for r in rows
-    ]
-    return traces
+async def unannotated_traces(current_user: User = Depends(require_role(UserRole.admin))):
+    optic.trace("user_id={}", current_user.id)
+    return []

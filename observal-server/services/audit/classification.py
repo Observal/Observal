@@ -17,7 +17,6 @@ _PATTERNS: list[tuple[str, str]] = [
     ("/openapi.json", "skip"),
     ("/api/v1/sessions", "phi_adjacent"),
     ("/api/v1/ingest", "phi_adjacent"),
-    ("/api/v1/reconcile", "phi_adjacent"),
     ("/api/v1/telemetry", "phi_adjacent"),
     ("/api/v1/admin", "admin"),
     ("/api/v1/agents", "high"),

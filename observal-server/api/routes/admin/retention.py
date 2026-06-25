@@ -103,9 +103,6 @@ async def preview_retention(
 
     counts = {}
     tables = {
-        "traces": "SELECT count() as cnt FROM traces WHERE project_id = {pid:String} AND start_time < now() - INTERVAL {days:UInt32} DAY",
-        "spans": "SELECT count() as cnt FROM spans WHERE project_id = {pid:String} AND start_time < now() - INTERVAL {days:UInt32} DAY",
-        "scores": "SELECT count() as cnt FROM scores WHERE project_id = {pid:String} AND timestamp < now() - INTERVAL {days:UInt32} DAY",
         "session_events": "SELECT count() as cnt FROM session_events WHERE project_id = {pid:String} AND timestamp < now() - INTERVAL {days:UInt32} DAY",
     }
 
@@ -171,14 +168,14 @@ async def get_retention_stats(
 
     project_id = str(org.id)
 
-    # Get total traces and oldest trace
     total_traces = 0
     oldest_age_days = 0
+    traces_expiring = 0
     try:
         resp = await _query(
-            "SELECT count() as cnt, "
-            "if(cnt > 0, dateDiff('day', min(start_time), now()), 0) as age "
-            "FROM traces WHERE project_id = {pid:String} FORMAT JSON",
+            "SELECT count(DISTINCT session_id) as cnt, "
+            "if(cnt > 0, dateDiff('day', min(timestamp), now()), 0) as age "
+            "FROM session_events WHERE project_id = {pid:String} FORMAT JSON",
             {"param_pid": project_id},
         )
         if resp.status_code == 200:
@@ -189,16 +186,14 @@ async def get_retention_stats(
     except Exception:
         pass
 
-    # Get traces expiring in 7 days
-    traces_expiring = 0
     if org.data_retention_days:
         try:
             cutoff_soon = org.data_retention_days - 7
             if cutoff_soon > 0:
                 resp = await _query(
-                    "SELECT count() as cnt FROM traces "
+                    "SELECT count(DISTINCT session_id) as cnt FROM session_events "
                     "WHERE project_id = {pid:String} "
-                    "AND start_time < now() - INTERVAL {days:UInt32} DAY "
+                    "AND timestamp < now() - INTERVAL {days:UInt32} DAY "
                     "FORMAT JSON",
                     {"param_pid": project_id, "param_days": str(cutoff_soon)},
                 )

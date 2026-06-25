@@ -2,11 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Fire-and-forget telemetry for registry actions (agent create/update/delete/install).
-
-Writes a trace + span to the existing ClickHouse tables and an audit_log entry.
-Uses asyncio.create_task so the API response is never blocked.
-"""
+"""Fire-and-forget audit logging for registry actions."""
 
 from __future__ import annotations
 
@@ -16,21 +12,19 @@ from datetime import UTC, datetime
 
 from loguru import logger as optic
 
-from services.clickhouse import insert_audit_log, insert_spans, insert_traces
+from services.clickhouse import insert_audit_log
 
 # prevent GC of fire-and-forget tasks (same pattern as telemetry.py)
 _background_tasks: set[asyncio.Task] = set()
 
 
-async def _emit(trace: dict, span: dict, audit: dict):
-    """Insert a trace + span + audit_log entry. Swallows errors."""
-    optic.trace("recording telemetry event (trace={}, span={}, audit={})", trace, span, audit)
+async def _emit(audit: dict):
+    """Insert an audit_log entry. Swallows errors."""
+    optic.trace("recording registry audit event: {}", audit)
     try:
-        await insert_traces([trace])
-        await insert_spans([span])
         await insert_audit_log([audit])
     except Exception:
-        optic.error("Registry telemetry write failed")
+        optic.error("Registry audit write failed")
 
 
 def emit_registry_event(
@@ -43,56 +37,10 @@ def emit_registry_event(
     resource_name: str = "",
     metadata: dict[str, str] | None = None,
 ) -> None:
-    """Fire-and-forget a registry trace + span + audit_log entry into ClickHouse."""
+    """Fire-and-forget a registry audit_log entry into ClickHouse."""
     optic.trace("recording registry action: {}", action)
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-    trace_id = str(uuid.uuid4())
-    span_id = str(uuid.uuid4())
     meta = metadata or {}
-
-    trace = {
-        "trace_id": trace_id,
-        "parent_trace_id": None,
-        "project_id": "default",
-        "mcp_id": None,
-        "agent_id": agent_id,
-        "user_id": user_id,
-        "session_id": None,
-        "ide": "",
-        "environment": "default",
-        "start_time": now,
-        "end_time": now,
-        "trace_type": "registry",
-        "name": action,
-        "metadata": meta,
-        "tags": ["registry", action.split(".")[0]],
-        "input": None,
-        "output": None,
-    }
-
-    span = {
-        "span_id": span_id,
-        "trace_id": trace_id,
-        "parent_span_id": None,
-        "project_id": "default",
-        "mcp_id": None,
-        "agent_id": agent_id,
-        "user_id": user_id,
-        "type": "registry",
-        "name": action,
-        "method": "",
-        "input": None,
-        "output": None,
-        "error": None,
-        "start_time": now,
-        "end_time": now,
-        "latency_ms": None,
-        "status": "success",
-        "ide": "",
-        "environment": "default",
-        "metadata": meta,
-    }
-
     audit = {
         "event_id": str(uuid.uuid4()),
         "timestamp": now,
@@ -106,6 +54,6 @@ def emit_registry_event(
         "detail": ", ".join(f"{k}={v}" for k, v in meta.items()) if meta else "",
     }
 
-    task = asyncio.create_task(_emit(trace, span, audit))
+    task = asyncio.create_task(_emit(audit))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)

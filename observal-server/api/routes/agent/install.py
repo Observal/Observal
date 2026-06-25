@@ -279,19 +279,7 @@ async def get_agent_traces(
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
-    from services.clickhouse import query_traces
-
-    uid = None
-    if current_user and current_user.role not in (UserRole.admin, UserRole.super_admin):
-        uid = str(current_user.id)
-    traces = await query_traces(
-        project_id="default",
-        agent_id=str(agent.id),
-        user_id=uid,
-        limit=limit,
-        offset=offset,
-    )
-    return {"agent_id": str(agent.id), "traces": traces, "count": len(traces)}
+    return {"agent_id": str(agent.id), "traces": [], "count": 0}
 
 
 @router.get("/{agent_id}/resolve")

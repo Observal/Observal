@@ -60,7 +60,7 @@ async def maintain_clickhouse(ctx: dict):
     optic.debug("maintain_clickhouse")
     from services.clickhouse.client import _query
 
-    tables = ["traces", "spans", "scores", "session_events", "session_stats_agg"]
+    tables = ["session_events", "session_stats_agg"]
     for table in tables:
         try:
             await _query(f"OPTIMIZE TABLE {table}")

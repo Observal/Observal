@@ -13,7 +13,6 @@ collector succeeds.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 import re
 import time
@@ -328,55 +327,6 @@ async def _collect_errors(db: AsyncSession) -> dict:
     """
     optic.debug("_collect_errors called")
     result: dict[str, Any] = {"fingerprints": []}
-
-    try:
-        resp = await _query(
-            "SELECT error, start_time FROM spans "
-            "WHERE error IS NOT NULL AND error != '' "
-            "AND start_time >= now() - INTERVAL 24 HOUR "
-            "ORDER BY start_time DESC "
-            "LIMIT 500 "
-            "FORMAT JSON"
-        )
-        if resp.status_code != 200:
-            result["error"] = f"ClickHouse query failed: HTTP {resp.status_code}"
-            return result
-
-        rows = resp.json().get("data", [])
-        if not rows:
-            return result
-
-        # Group errors by their stack template fingerprint
-        fingerprint_groups: dict[str, dict] = {}
-        for row in rows:
-            error_text = row.get("error", "")
-            start_time = row.get("start_time", "")
-
-            template = _extract_stack_template(error_text)
-            fp_hash = hashlib.sha256(template.encode("utf-8")).hexdigest()
-
-            if fp_hash not in fingerprint_groups:
-                fingerprint_groups[fp_hash] = {
-                    "fingerprint": fp_hash,
-                    "count": 0,
-                    "first_seen": start_time,
-                    "last_seen": start_time,
-                    "stack_template": template,
-                }
-
-            group = fingerprint_groups[fp_hash]
-            group["count"] += 1
-            if start_time < group["first_seen"]:
-                group["first_seen"] = start_time
-            if start_time > group["last_seen"]:
-                group["last_seen"] = start_time
-
-        # Sort by count descending, take top 50
-        sorted_fps = sorted(fingerprint_groups.values(), key=lambda x: x["count"], reverse=True)
-        result["fingerprints"] = sorted_fps[:50]
-
-    except Exception as exc:
-        result["error"] = type(exc).__name__
 
     return result
 

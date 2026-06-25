@@ -21,20 +21,14 @@ WEBHOOK_TIMEOUT = 5
 
 
 async def _query_error_rate(target_type: str, target_id: str, lookback_minutes: int) -> float | None:
-    """Query the error rate from ClickHouse spans table."""
+    """Query JSONL alert error rate.
+
+    Session JSONL does not maintain a normalized error counter yet, so this is
+    intentionally zero until an event-type based error metric is added.
+    """
     optic.trace("querying error rate for {} {}", target_type, target_id)
-    sql = (
-        "SELECT countIf(status='error') / count(*) AS error_rate "
-        "FROM spans "
-        "WHERE start_time > now() - INTERVAL {lookback:UInt32} MINUTE"
-    )
+    sql = "SELECT 0 AS error_rate"
     params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
-    if target_type == "agent":
-        sql += " AND agent_id = {target_id:String}"
-        params["param_target_id"] = target_id
-    elif target_type == "mcp":
-        sql += " AND mcp_id = {target_id:String}"
-        params["param_target_id"] = target_id
     try:
         r = await _query(sql, params)
         r.raise_for_status()
@@ -48,20 +42,13 @@ async def _query_error_rate(target_type: str, target_id: str, lookback_minutes: 
 
 
 async def _query_latency_p99(target_type: str, target_id: str, lookback_minutes: int) -> float | None:
-    """Query the p99 latency from ClickHouse spans table."""
+    """Query JSONL alert p99 latency.
+
+    Session JSONL no longer stores span latency, so this is intentionally zero.
+    """
     optic.trace("querying p99 latency for {} {}", target_type, target_id)
-    sql = (
-        "SELECT quantile(0.99)(latency_ms) AS latency_p99 "
-        "FROM spans "
-        "WHERE start_time > now() - INTERVAL {lookback:UInt32} MINUTE"
-    )
+    sql = "SELECT 0 AS latency_p99"
     params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
-    if target_type == "agent":
-        sql += " AND agent_id = {target_id:String}"
-        params["param_target_id"] = target_id
-    elif target_type == "mcp":
-        sql += " AND mcp_id = {target_id:String}"
-        params["param_target_id"] = target_id
     try:
         r = await _query(sql, params)
         r.raise_for_status()
@@ -75,19 +62,16 @@ async def _query_latency_p99(target_type: str, target_id: str, lookback_minutes:
 
 
 async def _query_token_usage(target_type: str, target_id: str, lookback_minutes: int) -> float | None:
-    """Query total token usage from ClickHouse spans table."""
-    optic.trace("querying error rate for {} {}", target_type, target_id)
+    """Query total token usage from JSONL session aggregates."""
+    optic.trace("querying token usage for {} {}", target_type, target_id)
     sql = (
-        "SELECT sum(token_count_total) AS token_usage "
-        "FROM spans "
-        "WHERE start_time > now() - INTERVAL {lookback:UInt32} MINUTE"
+        "SELECT sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS token_usage "
+        "FROM session_stats_agg "
+        "WHERE last_event_time > now() - INTERVAL {lookback:UInt32} MINUTE"
     )
     params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
     if target_type == "agent":
         sql += " AND agent_id = {target_id:String}"
-        params["param_target_id"] = target_id
-    elif target_type == "mcp":
-        sql += " AND mcp_id = {target_id:String}"
         params["param_target_id"] = target_id
     try:
         r = await _query(sql, params)

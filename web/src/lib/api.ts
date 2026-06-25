@@ -522,7 +522,6 @@ export const review = {
 // ── Telemetry ───────────────────────────────────────────────────────
 export const telemetry = {
 	status: () => get<TelemetryStatus>("/telemetry/status"),
-	ingest: (body: unknown) => post<unknown>("/telemetry/ingest", body),
 };
 
 // ── Dashboard ───────────────────────────────────────────────────────
@@ -577,9 +576,6 @@ export const dashboard = {
 	sessionsSummary: () => get<SessionsSummary>("/sessions/summary"),
 	session: (id: string) =>
 		get<SessionData>(`/sessions/${encodeURIComponent(id)}`),
-	traces: () => get<SessionTrace[]>("/sessions/traces"),
-	trace: (id: string) =>
-		get<unknown>(`/sessions/traces/${encodeURIComponent(id)}`),
 	sessionsStats: () => get<SessionsStats>("/sessions/stats"),
 	sessionsErrors: () => get<SessionErrorEvent[]>("/sessions/errors"),
 };

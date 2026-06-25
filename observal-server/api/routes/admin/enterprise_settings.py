@@ -364,7 +364,7 @@ async def purge_traces_and_insights(
 
     from services.clickhouse.client import _query as ch_query
 
-    clickhouse_tables = ["traces", "spans", "scores", "session_events", "session_stats_agg"]
+    clickhouse_tables = ["session_events", "session_stats_agg"]
     for table in clickhouse_tables:
         try:
             await ch_query(

@@ -20,7 +20,6 @@ import time
 import uuid
 from datetime import UTC, datetime
 
-import httpx
 from loguru import logger as optic
 
 from observal_cli.config import load as load_config
@@ -210,38 +209,8 @@ class ShimState:
         await self._send(spans)
 
     async def _send(self, spans: list[dict]):
-        """Fire-and-forget send to Observal server."""
-        payload = {
-            "traces": [
-                {
-                    "trace_id": self.trace_id,
-                    "parent_trace_id": self.parent_trace_id,
-                    "trace_type": "mcp",
-                    "mcp_id": self.mcp_id,
-                    "agent_id": self.agent_id,
-                    "session_id": self.session_id,
-                    "harness": self.harness,
-                    "name": f"shim:{self.mcp_id}",
-                    "start_time": self.trace_start.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
-                    "tags": [],
-                    "metadata": {},
-                }
-            ],
-            "spans": spans,
-            "scores": [],
-        }
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                await client.post(
-                    f"{self.server_url}/api/v1/telemetry/ingest",
-                    json=payload,
-                    headers={
-                        "Authorization": f"Bearer {self.access_token}",
-                        "X-Observal-Environment": self.environment,
-                    },
-                )
-        except Exception:
-            pass  # fire-and-forget: never block, never retry
+        """No-op: structured span telemetry was removed in favor of JSONL sessions."""
+        return
 
     async def send_final(self):
         """Flush remaining buffer and send trace end_time."""
