@@ -149,9 +149,13 @@ async def test_purge_time_based_handles_exception():
         return _mock_response()
 
     with patch("services.clickhouse._query", side_effect=_failing_query):
-        from services.retention import TIME_PURGE_TABLES, _purge_time_based
+        from services.retention import _purge_time_based
 
-        stats = await _purge_time_based("pid", "2026-01-01 00:00:00.000", TIME_PURGE_TABLES)
+        stats = await _purge_time_based(
+            "pid",
+            "2026-01-01 00:00:00.000",
+            {"session_events": "timestamp", "session_stats_agg": "first_event_time"},
+        )
 
     assert 0 in stats.values()
     assert 1 in stats.values()
@@ -276,7 +280,7 @@ async def test_purge_count_based_query_failure():
 
 @pytest.mark.asyncio
 async def test_purge_count_based_executes_deletes():
-    """When over limit, deletes children then traces."""
+    """When over limit, deletes JSONL session events and orphan stats."""
     with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
         # First call: daily aggregation exceeds limit
         daily_resp = _mock_response(
@@ -288,15 +292,15 @@ async def test_purge_count_based_executes_deletes():
         )
         # Subsequent calls: delete operations
         delete_resp = _mock_response()
-        mock_query.side_effect = [daily_resp, delete_resp, delete_resp, delete_resp, delete_resp, delete_resp]
+        mock_query.side_effect = [daily_resp, delete_resp, delete_resp]
 
         from services.retention import _purge_count_based
 
         result = await _purge_count_based("pid", 1000)
 
     assert result == 1
-    # 1 query + 5 deletes (spans, session_events, session_stats_orphans, scores, traces)
-    assert mock_query.call_count == 6
+    # 1 query + 2 deletes (session_events, session_stats_orphans)
+    assert mock_query.call_count == 3
 
 
 # ── run_retention_purge ──────────────────────────────────
@@ -384,7 +388,7 @@ async def test_run_retention_purge_skips_inflight_insights():
 
 @pytest.mark.asyncio
 async def test_run_retention_purge_full_run():
-    """Full purge run: time-based, score, and count-based."""
+    """Full purge run: JSONL time-based, insights, and count-based."""
     org = MagicMock()
     org.id = uuid.uuid4()
     org.slug = "full-org"
@@ -402,7 +406,9 @@ async def test_run_retention_purge_full_run():
         patch("services.retention.async_session") as mock_session,
         patch("services.retention._has_data", new_callable=AsyncMock, return_value=True),
         patch("services.retention._has_inflight_insights", new_callable=AsyncMock, return_value=False),
-        patch("services.retention._purge_time_based", new_callable=AsyncMock, return_value={"spans": 1}) as mock_time,
+        patch(
+            "services.retention._purge_time_based", new_callable=AsyncMock, return_value={"session_events": 1}
+        ) as mock_time,
         patch("services.retention._purge_session_stats_orphans", new_callable=AsyncMock, return_value=1),
         patch("services.retention._purge_count_based", new_callable=AsyncMock, return_value=1) as mock_count,
         patch("services.retention._purge_insight_reports", new_callable=AsyncMock, return_value=2) as mock_insights,
@@ -416,10 +422,10 @@ async def test_run_retention_purge_full_run():
 
         await run_retention_purge(None)
 
-    assert mock_time.call_count == 2
+    assert mock_time.call_count == 1
     mock_count.assert_called_once_with(str(org.id), 5000)
     mock_insights.assert_called_once()
-    mock_delete.assert_called_once()
+    mock_delete.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -455,6 +461,5 @@ async def test_run_retention_purge_score_defaults_to_2x_trace():
 
         await run_retention_purge(None)
 
-    # score purge should be called with SCORE_TABLE (2x14=28, but min 30)
-    assert mock_time.call_count == 2
+    assert mock_time.call_count == 1
     mock_insights.assert_called_once()

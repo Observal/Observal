@@ -33,7 +33,7 @@ async def test_retention_ttl_applied():
 
         # Check TTL ALTER statements were called
         ttl_calls = [call for call in mock_query.call_args_list if "MODIFY TTL" in str(call)]
-        assert len(ttl_calls) == 5, f"Expected 5 TTL statements, got {len(ttl_calls)}"
+        assert len(ttl_calls) == 1, f"Expected 1 TTL statement, got {len(ttl_calls)}"
 
         # Verify retention days in the SQL
         for call in ttl_calls:
@@ -62,8 +62,8 @@ async def test_retention_disabled_when_zero():
 
 @pytest.mark.asyncio
 async def test_retention_tables_covered():
-    """All four ClickHouse tables get TTL statements."""
-    expected_tables = {"traces", "spans", "scores", "otel_logs", "session_events"}
+    """The JSONL session table gets a TTL statement."""
+    expected_tables = {"session_events"}
 
     with (
         patch("services.dynamic_settings") as mock_ds,

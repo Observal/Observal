@@ -51,42 +51,6 @@ def _query_bound(default, name: str):
     return None
 
 
-def test_telemetry_ingest_batch_rejects_oversized_lists():
-    from schemas.telemetry import MAX_INGEST_SPANS, MAX_INGEST_TRACES, IngestBatch
-
-    with pytest.raises(ValidationError):
-        IngestBatch(traces=[_trace(str(i)) for i in range(MAX_INGEST_TRACES + 1)])
-
-    with pytest.raises(ValidationError):
-        IngestBatch(spans=[_span(str(i)) for i in range(MAX_INGEST_SPANS + 1)])
-
-
-def test_telemetry_ingest_rejects_oversized_strings_and_metadata_values():
-    from schemas.telemetry import MAX_TEXT_LENGTH, ScoreIngest, SpanIngest, TraceIngest
-
-    with pytest.raises(ValidationError):
-        TraceIngest(**_trace(), input="x" * (MAX_TEXT_LENGTH + 1))
-
-    with pytest.raises(ValidationError):
-        SpanIngest(**_span(), error="x" * (MAX_TEXT_LENGTH + 1))
-
-    with pytest.raises(ValidationError):
-        ScoreIngest(**_score(), metadata={"large": "x" * (MAX_TEXT_LENGTH + 1)})
-
-
-def test_telemetry_ingest_rejects_oversized_tags_and_metadata_maps():
-    from schemas.telemetry import MAX_METADATA_ENTRIES, MAX_SHORT_STRING_LENGTH, MAX_TAGS, TraceIngest
-
-    with pytest.raises(ValidationError):
-        TraceIngest(**_trace(), tags=[str(i) for i in range(MAX_TAGS + 1)])
-
-    with pytest.raises(ValidationError):
-        TraceIngest(**_trace(), tags=["x" * (MAX_SHORT_STRING_LENGTH + 1)])
-
-    with pytest.raises(ValidationError):
-        TraceIngest(**_trace(), metadata={str(i): "v" for i in range(MAX_METADATA_ENTRIES + 1)})
-
-
 def test_session_ingest_rejects_oversized_batches_and_lines():
     from api.routes.ingest import MAX_SESSION_LINES, SessionIngestRequest
     from schemas.telemetry import MAX_TEXT_LENGTH
@@ -99,43 +63,6 @@ def test_session_ingest_rejects_oversized_batches_and_lines():
 
     with pytest.raises(ValidationError):
         SessionIngestRequest(session_id="session-1", lines=["{}"], start_offset=-1)
-
-
-def test_telemetry_ingest_endpoint_keeps_batch_first_and_requires_request():
-    import inspect
-
-    from api.routes.telemetry import ingest
-
-    signature = inspect.signature(ingest)
-    assert list(signature.parameters)[:2] == ["batch", "request"]
-
-
-@pytest.mark.asyncio
-async def test_graphql_trace_limit_is_clamped_to_max_page_size():
-    from api.graphql import MAX_TRACE_PAGE_SIZE, Query
-
-    rows = [
-        {"trace_id": f"trace-{i}", "user_id": "user-1", "start_time": "2026-01-01"}
-        for i in range(MAX_TRACE_PAGE_SIZE + 1)
-    ]
-    query_traces = AsyncMock(return_value=rows)
-
-    with patch("api.graphql.query_traces", query_traces):
-        result = await Query().traces(info=_info(), limit=1_000_000, offset=5)
-
-    assert len(result.items) == MAX_TRACE_PAGE_SIZE
-    assert result.has_more is True
-    query_traces.assert_awaited_once()
-    assert query_traces.call_args.kwargs["limit"] == MAX_TRACE_PAGE_SIZE + 1
-    assert query_traces.call_args.kwargs["offset"] == 5
-
-
-@pytest.mark.asyncio
-async def test_graphql_trace_negative_offset_is_rejected():
-    from api.graphql import Query
-
-    with pytest.raises(ValueError, match="offset"):
-        await Query().traces(info=_info(), offset=-1)
 
 
 def test_alert_history_query_params_are_bounded():
@@ -387,21 +314,6 @@ def test_alert_history_endpoint_rejects_oversized_limit_via_query_validation():
     assert resp.status_code == 404
 
 
-def test_telemetry_and_session_ingest_have_rate_limit_decorators_wired():
-    """Smoke-check that slowapi limits are attached to the abuse-prone endpoints."""
-    import inspect
-
-    from api.routes.ingest import ingest_session
-    from api.routes.telemetry import ingest as ingest_telemetry
-
-    # slowapi stores the limit string on the wrapped function via closure or attribute.
-    # Both routes also require `request: Request` to be in the signature for slowapi to work.
-    telemetry_params = list(inspect.signature(ingest_telemetry).parameters)
-    session_params = list(inspect.signature(ingest_session).parameters)
-    assert "request" in telemetry_params, "slowapi requires `request: Request` in the signature"
-    assert "request" in session_params, "slowapi requires `request: Request` in the signature"
-
-
 def test_rate_limit_key_prefers_identity_then_token_then_ip():
     import hashlib
 
@@ -443,7 +355,7 @@ async def test_get_current_user_stores_identity_for_rate_limit_key():
     user.auth_provider = "password"
 
     request = MagicMock()
-    request.url.path = "/api/v1/telemetry/ingest"
+    request.url.path = "/api/v1/ingest/session"
     request.state = SimpleNamespace()
 
     redis = MagicMock()

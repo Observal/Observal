@@ -33,24 +33,10 @@ class TestSandboxRunner:
         _send_span("http://localhost", "", {"test": True})
         _send_span("", "key", {"test": True})
 
-    @patch("observal_cli.sandbox_runner.httpx.post")
-    def test_send_span_posts(self, mock_post):
+    def test_send_span_noop_after_structured_telemetry_removal(self):
         from observal_cli.sandbox_runner import _send_span
 
-        span = {"span_id": "test", "type": "sandbox_exec"}
-        _send_span("http://localhost:8000", "test-key", span)
-        mock_post.assert_called_once()
-        call_args = mock_post.call_args
-        assert "/api/v1/telemetry/ingest" in call_args[0][0]
-        assert call_args[1]["headers"]["Authorization"] == "Bearer test-key"
-        body = call_args[1]["json"]
-        assert body["spans"] == [span]
-
-    @patch("observal_cli.sandbox_runner.httpx.post", side_effect=Exception("network error"))
-    def test_send_span_swallows_errors(self, mock_post):
-        from observal_cli.sandbox_runner import _send_span
-
-        _send_span("http://localhost:8000", "key", {"test": True})  # should not raise
+        _send_span("http://localhost:8000", "test-key", {"span_id": "test"})
 
     def _run_with_mock_docker(
         self, mock_container, sandbox_id="test-id", image="alpine:latest", command=None, timeout=300

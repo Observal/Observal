@@ -66,12 +66,9 @@ async def test_purge_time_based_correct_columns():
         calls = mock_query.call_args_list
         sqls = [c.args[0] for c in calls]
 
-        # Check that appropriate columns are used
-        for sql in sqls:
-            if "FROM spans" in sql:
-                assert "start_time" in sql
-            elif "FROM session_events" in sql:
-                assert "timestamp" in sql
+        assert len(sqls) == 1
+        assert "FROM session_events" in sqls[0]
+        assert "timestamp" in sqls[0]
 
 
 @pytest.mark.asyncio

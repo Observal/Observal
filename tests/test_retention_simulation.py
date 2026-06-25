@@ -4,7 +4,7 @@
 """Deep simulation tests for data retention purge logic.
 
 These tests mock the entire service layer to verify purge ordering,
-skip behavior, score retention defaults, and error isolation.
+skip behavior, insight retention defaults, and JSONL purge behavior.
 
 NOTE: structlog/database are not installed in the local test env, so we
 pre-mock them before importing the services.retention module.
@@ -48,7 +48,6 @@ sys.modules.setdefault("models.insight_report", MagicMock())
 # Now import the module under test
 import services.retention  # noqa: E402
 from services.retention import (  # noqa: E402
-    SCORE_TABLE,
     TIME_PURGE_TABLES,
     _purge_count_based,
     _purge_time_based,
@@ -96,10 +95,10 @@ async def test_full_purge_flow_ordering():
     score_retention_days=30, max_trace_count=5000:
     - _has_data is called first
     - _has_inflight_insights is checked before any deletes
-    - Children (spans, session_events) are deleted BEFORE traces
+    - session_events are deleted by time-based retention
     - session_stats_agg orphan cleanup runs after session_events deletion
-    - Scores use score_retention_days (30), not data_retention_days (14)
-    - Traces are deleted last
+    - insight reports use score_retention_days (30), not data_retention_days (14)
+    - count-based purge uses session_events instead of legacy traces
     """
     org = _make_org(
         retention_enabled=True,
@@ -130,7 +129,7 @@ async def test_full_purge_flow_ordering():
 
         mock_has_data.return_value = True
         mock_inflight.return_value = False
-        mock_time_purge.return_value = {"spans": 1, "session_events": 1}
+        mock_time_purge.return_value = {"session_events": 1}
         mock_orphan.return_value = 1
         mock_delete_batch.return_value = 1
         mock_count_purge.return_value = 1
@@ -153,19 +152,12 @@ async def test_full_purge_flow_ordering():
         # Verify session_stats orphan cleanup runs
         mock_orphan.assert_called()
 
-        # Verify score purge is called with SCORE_TABLE
-        # The second call to _purge_time_based should be for scores
-        score_call = mock_time_purge.call_args_list[1]
-        assert score_call.args[2] == SCORE_TABLE
+        # Verify insight purge uses the separate retention window.
+        mock_insight_purge.assert_called_once()
 
-        # Verify count-based purge was invoked
+        # Verify count-based purge was invoked.
         mock_count_purge.assert_called_once_with(str(org.id), 5000)
-
-        # Verify traces deletion happens at the end (via _delete_batch)
-        mock_delete_batch.assert_called()
-        trace_delete_call = mock_delete_batch.call_args
-        assert trace_delete_call.args[0] == "traces"
-        assert trace_delete_call.args[1] == "start_time"
+        mock_delete_batch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -258,10 +250,8 @@ async def test_skip_when_inflight_insights():
 
 
 @pytest.mark.asyncio
-async def test_count_based_purge_deletion_order():
-    """When max_trace_count is exceeded, verify spans and session_events
-    are deleted before traces.
-    """
+async def test_count_based_purge_deletes_jsonl_sessions():
+    """When max_trace_count is exceeded, delete old JSONL session rows."""
     # Mock _query at the module level (services.clickhouse._query is used via lazy import)
     mock_query = AsyncMock()
 
@@ -288,28 +278,12 @@ async def test_count_based_purge_deletion_order():
     # First call is the daily count query
     assert "GROUP BY day" in sqls[0]
 
-    # Find delete calls
     delete_sqls = [s for s in sqls[1:] if "DELETE FROM" in s]
-
-    # Find indices of each table's delete
-    spans_idx = None
-    session_events_idx = None
-    traces_idx = None
-
-    for i, sql in enumerate(delete_sqls):
-        if "DELETE FROM spans" in sql:
-            spans_idx = i
-        elif "DELETE FROM session_events" in sql:
-            session_events_idx = i
-        elif "DELETE FROM traces" in sql:
-            traces_idx = i
-
-    # Children before traces
-    assert spans_idx is not None, "spans DELETE not found"
-    assert session_events_idx is not None, "session_events DELETE not found"
-    assert traces_idx is not None, "traces DELETE not found"
-    assert spans_idx < traces_idx, "spans should be deleted before traces"
-    assert session_events_idx < traces_idx, "session_events should be deleted before traces"
+    assert any("DELETE FROM session_events" in sql for sql in delete_sqls)
+    assert any("DELETE FROM session_stats_agg" in sql for sql in delete_sqls)
+    assert not any("DELETE FROM traces" in sql for sql in delete_sqls)
+    assert not any("DELETE FROM spans" in sql for sql in delete_sqls)
+    assert not any("DELETE FROM scores" in sql for sql in delete_sqls)
 
 
 # ---------------------------------------------------------------------------
@@ -318,10 +292,8 @@ async def test_count_based_purge_deletion_order():
 
 
 @pytest.mark.asyncio
-async def test_score_retention_defaults():
-    """When score_retention_days is None and data_retention_days=14,
-    verify scores use 28 days (2x) but floored at 30.
-    """
+async def test_insight_retention_defaults():
+    """When score_retention_days is None, insight purge uses the 30 day floor."""
     org = _make_org(
         retention_enabled=True,
         data_retention_days=14,
@@ -349,29 +321,16 @@ async def test_score_retention_defaults():
 
         mock_has_data.return_value = True
         mock_inflight.return_value = False
-        mock_time_purge.return_value = {"spans": 1, "session_events": 1}
+        mock_time_purge.return_value = {"session_events": 1}
         mock_orphan.return_value = 1
         mock_delete_batch.return_value = 1
         mock_insight_purge.return_value = 0
 
         await run_retention_purge()
 
-        # Score purge call: data_retention_days=14, 2x=28, floor at 30
-        # Should be the second call to _purge_time_based
-        score_call = None
-        for c in mock_time_purge.call_args_list:
-            if len(c.args) >= 3 and c.args[2] == SCORE_TABLE:
-                score_call = c
-                break
-
-        assert score_call is not None, "Score purge not called"
-        # score_days = max(14*2, 30) = max(28, 30) = 30
-        # Second arg is now a cutoff string; verify it's a valid timestamp
-        import re
-
-        assert re.match(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.000$", score_call.args[1]), (
-            f"Expected cutoff string, got {score_call.args[1]}"
-        )
+        mock_insight_purge.assert_called_once()
+        cutoff = mock_insight_purge.call_args.args[1]
+        assert cutoff.tzinfo is not None
 
 
 # ---------------------------------------------------------------------------
@@ -409,22 +368,12 @@ async def test_cutoff_timestamp_format():
 
 
 @pytest.mark.asyncio
-async def test_error_isolation():
-    """If one table's DELETE fails (status 500), other tables still get purged."""
-    mock_query = AsyncMock()
-
-    # spans DELETE fails with 500, session_events succeeds
-    spans_fail = _mock_response(status_code=500)
-    session_ok = _mock_response(status_code=200)
-
-    mock_query.side_effect = [spans_fail, session_ok]
+async def test_jsonl_time_purge_failure_reported():
+    """If session_events DELETE fails, the result reports failure."""
+    mock_query = AsyncMock(return_value=_mock_response(status_code=500))
 
     with patch("services.clickhouse._query", mock_query):
         stats = await _purge_time_based("test-pid", "2026-04-27 00:00:00.000", TIME_PURGE_TABLES)
 
-    # Both tables were attempted
-    assert mock_query.call_count == 2
-
-    # spans failed (HTTP 500 -> _delete_batch returned 0), session_events succeeded
-    assert stats["spans"] == 0, "spans failure should be reflected in stats"
-    assert stats["session_events"] == 1, "session_events should succeed even if spans fails"
+    assert mock_query.call_count == 1
+    assert stats["session_events"] == 0

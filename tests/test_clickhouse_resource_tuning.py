@@ -385,13 +385,7 @@ class TestMaintainClickhouse:
 
         optimize_calls = [c for c in mock_q.call_args_list if "OPTIMIZE TABLE" in str(c)]
         tables = {c.args[0].replace("OPTIMIZE TABLE ", "") for c in optimize_calls}
-        assert tables == {
-            "traces",
-            "spans",
-            "scores",
-            "session_events",
-            "session_stats_agg",
-        }
+        assert tables == {"session_events", "session_stats_agg"}
 
     async def test_optimize_failure_doesnt_stop_other_tables(self):
         """If OPTIMIZE fails on one table, the others still run."""

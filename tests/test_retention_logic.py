@@ -4,8 +4,8 @@
 """Pure-Python unit tests for retention purge algorithms.
 
 No project imports required — verifies algorithmic correctness of the
-count-based cutoff, score retention defaults, timestamp formatting, and
-deletion ordering logic.
+count-based cutoff, insight retention defaults, timestamp formatting, and
+JSONL deletion logic.
 """
 
 import re
@@ -125,17 +125,12 @@ def test_count_based_cutoff_timestamp_format():
 # ── Deletion order ────────────────────────────────────────────────────────────
 
 
-def test_deletion_order_children_before_traces():
-    """Children (spans, session_events) must be deleted before traces."""
-    deletion_order = []
-    for table, _col in [("spans", "start_time"), ("session_events", "timestamp")]:
-        deletion_order.append(f"DELETE FROM {table}")
-    deletion_order.append("DELETE orphan session_stats_agg")
-    deletion_order.append("DELETE FROM scores")
-    deletion_order.append("DELETE FROM traces")
+def test_deletion_targets_jsonl_tables_only():
+    """Count purge deletes JSONL rows and orphan session aggregates only."""
+    deletion_order = ["DELETE FROM session_events", "DELETE orphan session_stats_agg"]
 
-    traces_idx = deletion_order.index("DELETE FROM traces")
-    assert deletion_order.index("DELETE FROM spans") < traces_idx
-    assert deletion_order.index("DELETE FROM session_events") < traces_idx
-    assert deletion_order.index("DELETE orphan session_stats_agg") < traces_idx
-    assert deletion_order.index("DELETE FROM scores") < traces_idx
+    assert "DELETE FROM session_events" in deletion_order
+    assert "DELETE orphan session_stats_agg" in deletion_order
+    assert "DELETE FROM traces" not in deletion_order
+    assert "DELETE FROM spans" not in deletion_order
+    assert "DELETE FROM scores" not in deletion_order

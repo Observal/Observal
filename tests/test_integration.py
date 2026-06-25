@@ -472,42 +472,6 @@ class TestRbac:
         assert r.status_code in (401, 403)
 
 
-# ── Telemetry Ingest ─────────────────────────────────────────────────────────
-
-
-class TestTelemetryIngest:
-    """Ingest spans and verify they land."""
-
-    @pytest.mark.asyncio
-    async def test_ingest_batch(self, client, admin_headers):
-        trace_id = uuid.uuid4().hex
-        r = await client.post(
-            "/api/v1/telemetry/ingest",
-            headers=admin_headers,
-            json={
-                "traces": [
-                    {
-                        "trace_id": trace_id,
-                        "session_id": f"sess-{uuid.uuid4().hex[:8]}",
-                        "agent_id": "test-agent",
-                        "start_time": "2025-01-01T00:00:00Z",
-                    }
-                ],
-                "spans": [
-                    {
-                        "trace_id": trace_id,
-                        "span_id": uuid.uuid4().hex[:16],
-                        "name": "test-span",
-                        "type": "tool",
-                        "start_time": "2025-01-01T00:00:00Z",
-                        "end_time": "2025-01-01T00:00:01Z",
-                    }
-                ],
-            },
-        )
-        assert r.status_code == 200, f"Ingest failed: {r.text}"
-
-
 # ── Error Cases ──────────────────────────────────────────────────────────────
 
 

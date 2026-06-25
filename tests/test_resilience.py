@@ -255,12 +255,3 @@ class TestCliRetry:
 
 class TestShimTimeout:
     """Verify the shim uses an explicit timeout on httpx calls."""
-
-    def test_shim_send_has_explicit_timeout(self):
-        """ShimState._send should use httpx.AsyncClient with a timeout."""
-        import inspect
-
-        from observal_cli.shim import ShimState
-
-        source = inspect.getsource(ShimState._send)
-        assert "timeout=" in source, "ShimState._send must specify an explicit timeout on httpx calls"

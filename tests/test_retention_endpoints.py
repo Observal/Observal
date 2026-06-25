@@ -208,8 +208,9 @@ class TestPreviewRetention:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert "traces" in data
-        assert "spans" in data
+        assert data["session_events"] == 42
+        assert "traces" not in data
+        assert "spans" not in data
 
     @pytest.mark.asyncio
     async def test_preview_rejects_days_below_7(self):
@@ -241,7 +242,7 @@ class TestPreviewRetention:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["traces"] == -1
+        assert data["session_events"] == -1
 
 
 # ── GET /api/v1/admin/org/retention/stats ───────────────────────

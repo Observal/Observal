@@ -47,15 +47,10 @@ class TestClassification:
 
         assert classify_route("POST", "/api/v1/ingest/session") == "phi_adjacent"
 
-    def test_reconcile_is_phi_adjacent(self):
-        from services.audit.classification import classify_route
-
-        assert classify_route("POST", "/api/v1/reconcile") == "phi_adjacent"
-
     def test_telemetry_is_phi_adjacent(self):
         from services.audit.classification import classify_route
 
-        assert classify_route("POST", "/api/v1/telemetry/ingest") == "phi_adjacent"
+        assert classify_route("POST", "/api/v1/ingest/session") == "phi_adjacent"
 
     def test_admin_is_admin(self):
         from services.audit.classification import classify_route
