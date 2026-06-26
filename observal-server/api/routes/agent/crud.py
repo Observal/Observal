@@ -34,6 +34,7 @@ from schemas.agent import (
     AgentSummary,
     AgentUpdateRequest,
 )
+from services.cache import invalidate_namespace
 from services.config_generator import validate_mcp_command
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.registry_telemetry import emit_registry_event
@@ -744,6 +745,7 @@ async def delete_agent(
 
     agent.deleted_at = datetime.now(UTC)
     await db.commit()
+    await invalidate_namespace("dashboard")
 
     emit_registry_event(
         action="agent.delete",
@@ -792,6 +794,7 @@ async def restore_deleted_agent(
     agent.name = restore_name
     agent.deleted_at = None
     await db.commit()
+    await invalidate_namespace("dashboard")
 
     emit_registry_event(
         action="agent.restore",

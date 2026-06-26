@@ -111,7 +111,7 @@ async def overview_stats(
     total_agents_coro = db.scalar(
         select(func.count(Agent.id))
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-        .where(AgentVersion.status == AgentStatus.approved)
+        .where(AgentVersion.status == AgentStatus.approved, Agent.deleted_at.is_(None))
     )
     total_users_coro = db.scalar(select(func.count(User.id)))
     tool_rows_coro = _ch_json(
@@ -171,7 +171,7 @@ async def top_agents(
         )
         .join(Agent, AgentDownloadRecord.agent_id == Agent.id)
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-        .where(AgentVersion.status == AgentStatus.approved)
+        .where(AgentVersion.status == AgentStatus.approved, Agent.deleted_at.is_(None))
         .group_by(AgentDownloadRecord.agent_id, Agent.name, AgentVersion.description, Agent.owner, AgentVersion.version)
         .order_by(func.count(AgentDownloadRecord.id).desc())
         .limit(limit)
@@ -224,7 +224,7 @@ async def agent_leaderboard(
         )
         .join(Agent, AgentDownloadRecord.agent_id == Agent.id)
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-        .where(AgentVersion.status == AgentStatus.approved)
+        .where(AgentVersion.status == AgentStatus.approved, Agent.deleted_at.is_(None))
     )
     if user:
         stmt = stmt.join(User, Agent.created_by == User.id).where(User.email.ilike(f"%{escape_like(user)}%"))
@@ -268,7 +268,11 @@ async def agent_leaderboard(
         extra_stmt = (
             select(Agent)
             .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
-            .where(AgentVersion.status == AgentStatus.approved, Agent.id.notin_(existing_ids))
+            .where(
+                AgentVersion.status == AgentStatus.approved,
+                Agent.deleted_at.is_(None),
+                Agent.id.notin_(existing_ids),
+            )
         )
         if user:
             extra_stmt = extra_stmt.join(User, Agent.created_by == User.id).where(
@@ -354,7 +358,11 @@ async def component_leaderboard(
             .join(AgentDownloadRecord, AgentDownloadRecord.agent_id == Agent.id)
             .join(listing_model, AgentComponent.component_id == listing_model.id)
             .join(version_model, listing_model.latest_version_id == version_model.id)
-            .where(AgentComponent.component_type == type_label, version_model.status == ListingStatus.approved)
+            .where(
+                AgentComponent.component_type == type_label,
+                version_model.status == ListingStatus.approved,
+                Agent.deleted_at.is_(None),
+            )
         )
         if user:
             stmt = stmt.join(User, listing_model.submitted_by == User.id).where(
