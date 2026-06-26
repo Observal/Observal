@@ -59,7 +59,7 @@ observal registry mcp submit --name my-mcp --category developer-tools --yes
 observal registry mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
 ```
 
-The command still expects pasted JSON. If a local image must be built, follow the returned setup instructions, for example `docker build -t name:latest .`.
+The command still expects pasted JSON. If a local image must be built, follow the returned setup instructions, for example `docker build -t name:latest .`. Manual installs also print these setup instructions before the MCP can be used.
 
 ### Skill
 

@@ -152,6 +152,7 @@ async def install_agent(
         sandbox_listings_map = {row.id: row for row in sandbox_rows}
 
     archived_warnings = []
+    setup_warnings = []
     for item_type, rows in (
         ("MCP", mcp_listings_map.values()),
         ("skill", skill_listings_map.values()),
@@ -162,6 +163,8 @@ async def install_agent(
         for row in rows:
             if row.status == ListingStatus.archived:
                 archived_warnings.append(archived_install_warning(item_type, row.name))
+            if item_type == "MCP" and row.setup_instructions:
+                setup_warnings.append(f"MCP '{row.name}' requires local setup before use:\n{row.setup_instructions}")
 
     # Resolve all component names for rules file content
     name_map = await _resolve_component_names(agent.components, db)
@@ -226,7 +229,7 @@ async def install_agent(
         metadata={"harness": req.harness},
     )
 
-    warnings = archived_warnings + snippet.pop("_warnings", [])
+    warnings = archived_warnings + setup_warnings + snippet.pop("_warnings", [])
     return AgentInstallResponse(
         agent_id=resolved_agent_id, harness=req.harness, config_snippet=snippet, warnings=warnings
     )

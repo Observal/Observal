@@ -1171,8 +1171,13 @@ def _install_impl(
         rprint(f"\n[dim]Add to:[/dim] [bold]{config_path}[/bold]")
         rprint(f"[dim]Or pipe:[/dim] observal install {mcp_id} --harness {ide} --raw > {config_path}")
 
-    for warning in result.get("warnings") or []:
+    warnings = result.get("warnings") or []
+    for warning in warnings:
         rprint(f"\n[yellow]Warning:[/yellow] {warning}")
+
+    setup = listing.get("setup_instructions")
+    if setup and not any(setup in warning for warning in warnings):
+        rprint(f"\n[yellow]Setup required before use:[/yellow]\n{setup}")
 
     # Warn about any empty env vars the user skipped
     missing = [k for k, v in env_values.items() if not v or v.startswith("<")]

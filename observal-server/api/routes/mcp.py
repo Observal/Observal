@@ -290,6 +290,10 @@ async def install_mcp(
     warnings = []
     if listing.status == ListingStatus.archived:
         warnings.append(archived_install_warning("MCP", listing.name))
+    if listing.setup_instructions:
+        warnings.append(
+            f"MCP '{listing.name}' requires local setup before use:\n{listing.setup_instructions}"
+        )
 
     db.add(McpDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
     latest_version = getattr(listing, "latest_version", None)
