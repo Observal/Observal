@@ -105,7 +105,7 @@ def _ensure_cli_matches_server(server_url: str) -> None:
     if cli_version == server_version:
         return
 
-    install_command = f"python -m pip install observal-cli=={server_ver}"
+    install_command = f"pipx install --force 'observal-cli=={server_ver}'"
     direction = "ahead of" if cli_version > server_version else "behind"
     rprint(
         f"\n[bold red]CLI version {cli_ver_str} is {direction} server {server_ver}.[/bold red]\n"
@@ -215,29 +215,45 @@ def login(
 
     rprint("[green]Connected.[/green]\n")
 
-    # 3. Check if we should use device flow (SSO)
+    # 3. Check available login methods
     sso_mode = False
+    direct_sso = False
+    sso_only = False
+    sso_available = False
     try:
         config_r = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
         if config_r.status_code == 200:
             pub_config = config_r.json()
             sso_only = pub_config.get("sso_only", False)
+            sso_available = bool(pub_config.get("sso_enabled") or pub_config.get("saml_enabled"))
             # Use device flow if --sso flag passed, or if sso_only mode (no password option)
             if sso or sso_only:
                 sso_mode = True
+                direct_sso = True
     except Exception:
         pass
 
-    # If SSO available but not required, offer a choice (unless flags already decide)
+    # If flags did not decide, offer the smallest useful method menu.
     if not sso_mode and not (email or password):
-        rprint("  [1] Email/username + password")
-        rprint("  [2] Sign in via browser")
-        choice = text_input("Login method")
-        if choice == "2":
+        if sso_only:
+            rprint("  [1] Sign in with SSO")
+            text_input("Login method", default="1")
             sso_mode = True
+            direct_sso = True
+        else:
+            rprint("  [1] CLI email/username + password")
+            rprint("  [2] Web sign-in")
+            if sso_available:
+                rprint("  [3] SSO sign-in")
+            choice = text_input("Login method", default="1")
+            if choice == "2":
+                sso_mode = True
+            elif choice == "3" and sso_available:
+                sso_mode = True
+                direct_sso = True
 
     if sso_mode:
-        _do_device_flow_login(server_url)
+        _do_device_flow_login(server_url, direct_sso=direct_sso)
         return
 
     # 4. Email+password provided via flags -> password login
@@ -559,8 +575,8 @@ def _do_password_login(server_url: str, email: str, password: str):
         raise typer.Exit(1)
 
 
-def _do_device_flow_login(server_url: str):
-    """Authenticate via browser-based SSO using the device authorization flow."""
+def _do_device_flow_login(server_url: str, direct_sso: bool = False):
+    """Authenticate via browser using the device authorization flow."""
     optic.trace("server_url={}", server_url)
     import time
     import webbrowser
@@ -571,7 +587,7 @@ def _do_device_flow_login(server_url: str):
         with spinner("Requesting device authorization..."):
             r = httpx.post(
                 f"{server_url}/api/v1/auth/device/authorize",
-                json={},
+                json={"sso": direct_sso},
                 timeout=10,
             )
             r.raise_for_status()

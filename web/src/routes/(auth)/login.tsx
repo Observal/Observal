@@ -16,6 +16,7 @@ export type LoginSearch = {
   error?: string;
   reason?: string;
   sso_error?: string;
+  sso?: string;
 };
 
 function LoginRoute() {
@@ -39,5 +40,6 @@ export const Route = createFileRoute("/(auth)/login")({
     error: (search.error as string) || undefined,
     reason: (search.reason as string) || undefined,
     sso_error: (search.sso_error as string) || undefined,
+    sso: (search.sso as string) || undefined,
   }),
 });

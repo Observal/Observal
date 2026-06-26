@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 
 function DeviceContent() {
   const router = useRouter();
-  const { code: codeParam } = useSearch({ from: "/(auth)/device" });
+  const { code: codeParam, sso: ssoParam } = useSearch({ from: "/(auth)/device" });
   const [userCode, setUserCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -36,10 +36,13 @@ function DeviceContent() {
     const hasToken = !!sessionStorage.getItem("observal_access_token");
     if (!hasToken) {
       const code = codeParam;
-      const returnPath = code ? `/device?code=${encodeURIComponent(code)}` : "/device";
-      router.navigate({ to: "/login", search: { next: returnPath }, replace: true });
+      const directSso = ssoParam === "1";
+      const returnPath = code
+        ? `/device?code=${encodeURIComponent(code)}${directSso ? "&sso=1" : ""}`
+        : `/device${directSso ? "?sso=1" : ""}`;
+      router.navigate({ to: "/login", search: { next: returnPath, ...(directSso ? { sso: "1" } : {}) }, replace: true });
     }
-  }, [router, codeParam]);
+  }, [router, codeParam, ssoParam]);
 
   // Pre-fill code from query parameter
   useEffect(() => {

@@ -298,7 +298,7 @@ def _show_update_banner() -> None:
             if latest_v.major > current_v.major:
                 _rprint(
                     f"\n[yellow]Major update available: v{update.current} \u2192 v{update.latest}[/yellow]\n"
-                    f"  Run: [bold cyan]observal self upgrade --version {update.latest}[/bold cyan]"
+                    f"  Run: [bold cyan]pipx install --force 'observal-cli=={update.latest}'[/bold cyan]"
                 )
     except Exception:
         pass  # Never crash the CLI for a version check

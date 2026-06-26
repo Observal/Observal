@@ -9,6 +9,7 @@ const DevicePage = lazy(() => import("@/pages/device"));
 
 export type DeviceSearch = {
   code?: string;
+  sso?: string;
 };
 
 function DeviceRoute() {
@@ -26,5 +27,6 @@ export const Route = createFileRoute("/(auth)/device")({
   component: DeviceRoute,
   validateSearch: (search: Record<string, unknown>): DeviceSearch => ({
     code: (search.code as string) || undefined,
+    sso: (search.sso as string) || undefined,
   }),
 });

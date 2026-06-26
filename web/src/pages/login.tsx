@@ -238,6 +238,24 @@ function LoginContent() {
     window.location.href = url;
   }
 
+  function handleSamlLogin() {
+    setSsoLoading(true);
+    const nextParam = searchParams.next;
+    const samlUrl = nextParam && nextParam.startsWith("/")
+      ? `/api/v1/sso/saml/login?next=${encodeURIComponent(nextParam)}`
+      : "/api/v1/sso/saml/login";
+    window.location.href = samlUrl;
+  }
+
+  useEffect(() => {
+    if (searchParams.sso !== "1" || loading || ssoLoading) return;
+    if (ssoEnabled) {
+      handleSsoLogin();
+    } else if (samlEnabled) {
+      handleSamlLogin();
+    }
+  }, [searchParams.sso, ssoEnabled, samlEnabled, loading, ssoLoading]);
+
   if (mustChangePassword) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
@@ -519,13 +537,7 @@ function LoginContent() {
                       type="button"
                       variant={ssoOnly ? "default" : "outline"}
                       className="relative flex-1 pr-10"
-                      onClick={() => {
-                        const nextParam = searchParams.next;
-                        const samlUrl = nextParam && nextParam.startsWith("/")
-                          ? `/api/v1/sso/saml/login?next=${encodeURIComponent(nextParam)}`
-                          : "/api/v1/sso/saml/login";
-                        window.location.href = samlUrl;
-                      }}
+                      onClick={handleSamlLogin}
                       disabled={loading || ssoLoading}
                     >
                       Sign in with SAML SSO

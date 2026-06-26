@@ -104,8 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh
 **Python** (3.11+):
 
 ```bash
-uv tool install observal-cli
-# or: pipx install observal-cli
+pipx install observal-cli
 ```
 
 ### 3. Connect your harness

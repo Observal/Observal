@@ -150,6 +150,7 @@ class UsernameUpdateRequest(BaseModel):
 
 class DeviceAuthRequest(BaseModel):
     client_id: str | None = None
+    sso: bool = False
 
 
 class DeviceAuthResponse(BaseModel):

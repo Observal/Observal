@@ -64,16 +64,16 @@ observal --version
 
 If you prefer to install via Python, use one of these methods. Requires Python 3.11 or newer.
 
-**uv (recommended):**
-
-```bash
-uv tool install observal-cli
-```
-
-**pipx:**
+**pipx (recommended):**
 
 ```bash
 pipx install observal-cli
+```
+
+**uv:**
+
+```bash
+uv tool install observal-cli
 ```
 
 **pip:**

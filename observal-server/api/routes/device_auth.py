@@ -142,11 +142,12 @@ async def device_authorize(request: Request, req: DeviceAuthRequest = None):
     frontend_url = _resolve_frontend_url(request)
 
     optic.info("device_authorize: code issued, user_code={}", user_code)
+    sso_param = "&sso=1" if req and req.sso else ""
     return DeviceAuthResponse(
         device_code=device_code,
         user_code=user_code,
         verification_uri=f"{frontend_url}/device",
-        verification_uri_complete=f"{frontend_url}/device?code={user_code}",
+        verification_uri_complete=f"{frontend_url}/device?code={user_code}{sso_param}",
         expires_in=_DEVICE_AUTH_TTL,
         interval=5,
     )
