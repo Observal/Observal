@@ -22,8 +22,11 @@ owner: observal
 
 ## Procedure: Browse Registry
 
+Use natural-language keywords with `--search`; do not require exact whole-query matches.
+
 ```bash
 observal registry mcp list --category developer-tools --output json
+observal registry skill list --search 'frontend design' --output json
 observal registry skill list --task-type code-review --output json
 observal registry hook list --event UserPromptSubmit --output json
 observal registry prompt list --category coding --output json
@@ -53,7 +56,7 @@ After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--intera
 observal registry mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
 ```
 
-Without `--git`, opens interactive JSON paste (accepts harness config block, named config, bare config, or HTTP transport JSON). Press Enter on empty line to submit.
+`--git` clones locally and detects Python/TS/Go MCPs, env vars, Docker/OCI images, Dockerfile/Containerfile, and compose `build:`. If a local image must be built, follow the returned setup instructions (for example `docker build -t name:latest .`). Without `--git`, paste JSON config.
 
 ### Skill
 
@@ -61,14 +64,13 @@ There are two delivery modes for skills:
 
 **Git-based** (server validates SKILL.md from repo, recommended for open-source):
 ```bash
-observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --git-ref main
+observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --git-ref main --name my-skill --description 'What it does' --task-type general
 ```
 
 **Registry direct** (inline SKILL.md + optional script, no git repo needed):
 ```bash
-observal registry skill submit --skill-md ./SKILL.md --delivery-mode registry_direct
-observal registry skill submit --skill-md ./SKILL.md --script ./run.sh --delivery-mode registry_direct
-observal registry skill submit --skill-md ./SKILL.md --script ./scripts/lint.sh --script ./scripts/test.sh --delivery-mode registry_direct
+observal registry skill submit --skill-md ./SKILL.md --delivery-mode registry_direct --name my-skill --description 'What it does' --task-type general --harness claude-code
+observal registry skill submit --skill-md ./SKILL.md --script ./run.sh --delivery-mode registry_direct --name my-skill --description 'What it does' --task-type general
 ```
 
 On install, registry_direct skills write `<skill-name>/SKILL.md` and `<skill-name>/scripts/<filename>` into the harness skills directory.
@@ -80,16 +82,11 @@ On install, registry_direct skills write `<skill-name>/SKILL.md` and `<skill-nam
 ### Hook
 
 ```bash
-observal registry hook submit --from-file hook.json
-observal registry hook submit   # interactive
-```
-
-**With a script (inline or file):**
-```bash
+observal registry hook submit --name guard --description 'Guard prompts' --event UserPromptSubmit --handler-command './guard.sh' --execution-mode sync --timeout 10 --scope agent --harness claude-code
 observal registry hook submit --from-file hook.json --script ./pre-commit.sh
 ```
 
-Optional: `--script 'code'`, `--source-url URL --source-ref main`, `--requires dep1 --requires dep2`. Timeout caps: blocking 30s, sync 10s, async 60s.
+Optional: `--source-url URL --source-ref main`, `--requires dep1 --requires dep2`. Timeout caps: blocking 30s, sync 10s, async 60s.
 
 **Hook events:** `Start`, `Stop`, `UserPromptSubmit`, `SubagentComplete`, `ToolResult`, `Error`
 **Execution modes:** `blocking` (waits for completion), `sync` (waits, shorter timeout), `async` (fire and forget)
@@ -98,12 +95,14 @@ Optional: `--script 'code'`, `--source-url URL --source-ref main`, `--requires d
 ### Prompt
 
 ```bash
+observal registry prompt submit --name frontend-brief --description 'Frontend design brief' --category general --template 'Design {{component}} accessibly'
 observal registry prompt submit --from-file prompt.json
 ```
 
 ### Sandbox
 
 ```bash
+observal registry sandbox submit --name node-runner --description 'Node sandbox' --runtime-type docker --image node:22-alpine --resource-limits '{"memory_mb":512}' --network-policy none --entrypoint node --harness claude-code
 observal registry sandbox submit --from-file sandbox.json
 ```
 

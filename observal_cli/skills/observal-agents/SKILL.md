@@ -93,12 +93,15 @@ Goes through review queue. Use for "new version", "bump", or "release".
 
 ## Procedure: Author Agent Locally
 
-1. Scaffold (interactive):
+1. Scaffold with flags (no YAML hand-writing):
    ```bash
-   observal agent init --dir ./my-agent
+   observal agent init --dir ./my-agent --name AGENT_NAME --description 'Short description' --prompt 'System prompt' --model claude-sonnet-4 --harness kiro --harness claude-code
    ```
-2. Add components (second arg is UUID, find with `observal registry mcp show NAME --output json`):
+   Use `--prompt-file ./PROMPT.md` for long prompts. Omit flags only when the user wants the wizard.
+2. Find components, then add by UUID:
    ```bash
+   observal registry mcp list --search 'github docker' --output json
+   observal registry skill list --search 'frontend design' --output json
    observal agent add mcp COMPONENT_UUID --dir ./my-agent
    observal agent add skill COMPONENT_UUID --dir ./my-agent
    ```
@@ -132,6 +135,7 @@ observal agent unarchive AGENT_NAME --yes
 
 ```bash
 observal agent list --output json
+observal agent list --search 'incident resolution' --output json
 observal agent list --search keyword --output json
 observal agent list --page 2 --limit 20 --output json
 observal agent my --output json

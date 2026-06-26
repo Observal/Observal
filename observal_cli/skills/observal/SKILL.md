@@ -26,9 +26,21 @@ owner: observal
 
 ---
 
+## Procedure: Natural-Language Registry Search
+
+For requests like "find me an agent for incident resolution" or "what skill helps design good frontends", extract the useful keywords and search JSON first.
+
+```bash
+observal agent list --search 'incident resolution' --output json
+observal registry skill list --search 'frontend design' --output json
+observal registry mcp list --search 'github docker' --output json
+```
+
+Summarize the top matches by name, description, and why they fit. If no results, retry with fewer keywords.
+
 ## Procedure: Pull Agent
 
-Install an agent's full config (rules, MCP servers, hooks, skills) into a local harness.
+Install an agent's full config (rules, MCP servers, hooks, skills, sandboxes, prompts) into a local harness.
 
 ```bash
 observal agent pull AGENT_NAME --harness kiro --no-prompt --dir .
@@ -50,7 +62,13 @@ observal agent pull AGENT_NAME --harness kiro --no-prompt --dir .
 
 **Version pinning:** When `--version` is specified, the exact content from that version is installed. The lockfile (`~/.observal/lockfile.json`) records the pin. If another agent depends on the same component at a different version, a warning is displayed.
 
-If the user did not specify an harness, ask which one before running.
+If the user did not specify an harness, ask which one before running. After install, check local files:
+
+```bash
+observal scan --harness kiro
+```
+
+`scan` verifies MCPs, skills, hooks, and agents. Prompts/sandboxes are injected into rules/MCP config; use the pull output/lockfile for membership.
 
 ---
 
