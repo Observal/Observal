@@ -1269,14 +1269,14 @@ wheels = [
 
 [[package]]
 name = "joserfc"
-version = "1.6.4"
+version = "1.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/de/c6/de8fdbdfa75c8ca04fead38a82d573df8a82906e984c349d58665f459558/joserfc-1.6.4.tar.gz", hash = "sha256:34ce5f499bfcc5e9ad4cc75077f9278ab3227b71da9aaf28f9ab705f8a560d3c", size = 231866, upload-time = "2026-04-13T13:15:40.632Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/90/25cb27518750218e4f850be63d8bbb2343efaad1c01c3571aaa4b3c33bd7/joserfc-1.7.1.tar.gz", hash = "sha256:77d0b76514879c68c6f433bc5b7357a4ab72008ff1e33d8379fd11d72bd8ca81", size = 233181, upload-time = "2026-06-08T07:21:33.412Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b6/f7/210b27752e972edb36d239315b08d3eb6b14824cc4a590da2337d195260b/joserfc-1.6.4-py3-none-any.whl", hash = "sha256:3e4a22b509b41908989237a045e25c8308d5fd47ab96bdae2dd8057c6451003a", size = 70464, upload-time = "2026-04-13T13:15:39.259Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/00/fa62404c3e347f946faa13aa21085205f9cc06ad17671e37f81a51662ae8/joserfc-1.7.1-py3-none-any.whl", hash = "sha256:b3e3d655612e2e1ef67b2600f2f420e12e537b020208fab1761fad647319c164", size = 70423, upload-time = "2026-06-08T07:21:32.001Z" },
 ]
 
 [[package]]
@@ -1701,6 +1701,7 @@ dependencies = [
     { name = "httpx" },
     { name = "idna" },
     { name = "itsdangerous" },
+    { name = "joserfc" },
     { name = "litellm" },
     { name = "loguru" },
     { name = "observal-shared" },
@@ -1750,6 +1751,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "idna", specifier = ">=3.15" },
     { name = "itsdangerous" },
+    { name = "joserfc", specifier = ">=1.6.7" },
     { name = "litellm", specifier = ">=1.80.0,<1.90.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "observal-shared", directory = "../packages/observal-shared" },
