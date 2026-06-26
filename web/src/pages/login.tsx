@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -42,6 +42,7 @@ function LoginContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [ssoHealth, setSsoHealth] = useState<SsoHealthResult | null>(null);
   const [ssoHealthLoading, setSsoHealthLoading] = useState(false);
+  const directSsoStarted = useRef(false);
   const [ssoErrorDiag, setSsoErrorDiag] = useState<E2eStatusResult | null>(null);
   const [ssoErrorDiagExpanded, setSsoErrorDiagExpanded] = useState(true);
 
@@ -248,13 +249,24 @@ function LoginContent() {
   }
 
   useEffect(() => {
-    if (searchParams.sso !== "1" || loading || ssoLoading) return;
-    if (ssoEnabled) {
-      handleSsoLogin();
-    } else if (samlEnabled) {
-      handleSamlLogin();
-    }
-  }, [searchParams.sso, ssoEnabled, samlEnabled, loading, ssoLoading]);
+    if (searchParams.sso !== "1" || directSsoStarted.current) return;
+    directSsoStarted.current = true;
+    configApi.public()
+      .then((publicConfig) => {
+        if (publicConfig.sso_enabled) {
+          handleSsoLogin();
+        } else if (publicConfig.saml_enabled) {
+          handleSamlLogin();
+        } else {
+          directSsoStarted.current = false;
+          setError("SSO is not configured on this server.");
+        }
+      })
+      .catch(() => {
+        directSsoStarted.current = false;
+        setError("Could not load SSO configuration.");
+      });
+  }, [searchParams.sso]);
 
   if (mustChangePassword) {
     return (
