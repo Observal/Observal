@@ -76,6 +76,14 @@ def skill_submit(
     git_ref: str | None = typer.Option(None, "--git-ref", help="Branch or tag (default: main)"),
     script: str | None = typer.Option(None, "--script", help="Path to script file (registry_direct mode)"),
     delivery_mode: str | None = typer.Option(None, "--delivery-mode", help="Delivery: git_fetch or registry_direct"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Skill name"),
+    version: str | None = typer.Option(None, "--version", "-v", help="Version (default: 1.0.0)"),
+    description: str | None = typer.Option(None, "--description", "-d", help="Short description"),
+    task_type: str | None = typer.Option(None, "--task-type", "-t", help="Task type"),
+    target_agent: list[str] | None = typer.Option(None, "--target-agent", help="Target agent (repeatable)"),
+    skill_path: str | None = typer.Option(None, "--skill-path", help="Skill path in repo"),
+    slash_command: str | None = typer.Option(None, "--slash-command", help="Slash command name"),
+    supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (skill ID)"),
 ):
@@ -168,22 +176,49 @@ def skill_submit(
             "registry_direct" if (skill_md_content and not git_url) else "git_fetch"
         )
 
-        agents_input = text_input("Target agents (comma-separated)", default="")
-        payload = {
-            "name": text_input("Skill name", default=prefill.get("name", "")),
-            "version": text_input("Version", default="1.0.0"),
-            "description": text_input("Description", default=prefill.get("description", "")),
-            "owner": config.load().get("username", ""),
-            "task_type": select_one("Task type", VALID_SKILL_TASK_TYPES),
-            "target_agents": [a.strip() for a in agents_input.split(",") if a.strip()],
-            "delivery_mode": effective_delivery_mode,
-        }
+        flag_mode = any(
+            x is not None
+            for x in (name, version, description, task_type, skill_path, slash_command, supported_harnesses)
+        ) or bool(target_agent)
+        if flag_mode:
+            _name = name or prefill.get("name", "")
+            _description = description or prefill.get("description", "")
+            if not _name or not _description:
+                rprint("[red]Error:[/red] --name and --description are required without interactive prompts")
+                raise typer.Exit(1)
+            payload = {
+                "name": _name,
+                "version": version or "1.0.0",
+                "description": _description,
+                "owner": config.load().get("username", ""),
+                "task_type": task_type or "general",
+                "target_agents": target_agent or [],
+                "delivery_mode": effective_delivery_mode,
+                "supported_harnesses": supported_harnesses or [],
+            }
+            if payload["task_type"] not in VALID_SKILL_TASK_TYPES:
+                rprint(f"[red]Error:[/red] Invalid task type: {payload['task_type']}")
+                raise typer.Exit(1)
+        else:
+            agents_input = text_input("Target agents (comma-separated)", default="")
+            payload = {
+                "name": text_input("Skill name", default=prefill.get("name", "")),
+                "version": text_input("Version", default="1.0.0"),
+                "description": text_input("Description", default=prefill.get("description", "")),
+                "owner": config.load().get("username", ""),
+                "task_type": select_one("Task type", VALID_SKILL_TASK_TYPES),
+                "target_agents": [a.strip() for a in agents_input.split(",") if a.strip()],
+                "delivery_mode": effective_delivery_mode,
+            }
         if effective_delivery_mode == "git_fetch":
+            if flag_mode and not git_url:
+                rprint("[red]Error:[/red] --git-url is required for git_fetch skills")
+                raise typer.Exit(1)
             payload["git_url"] = git_url or text_input("Git URL")
-            payload["skill_path"] = text_input("Skill path in repo", default="/")
-            payload["git_ref"] = git_ref or text_input("Git ref (branch/tag)", default="main")
-        if prefill.get("slash_command"):
-            payload["slash_command"] = prefill["slash_command"]
+            payload["skill_path"] = skill_path or ("/" if flag_mode else text_input("Skill path in repo", default="/"))
+            payload["git_ref"] = git_ref or ("main" if flag_mode else text_input("Git ref (branch/tag)", default="main"))
+        if slash_command or prefill.get("slash_command"):
+            payload["slash_command"] = slash_command or prefill["slash_command"]
         if skill_md_content:
             payload["skill_md_content"] = skill_md_content
         if script_content:

@@ -15,7 +15,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
-from observal_cli.constants import VALID_SANDBOX_RUNTIME_TYPES
+from observal_cli.constants import VALID_HARNESSES, VALID_SANDBOX_NETWORK_POLICIES, VALID_SANDBOX_RUNTIME_TYPES
 from observal_cli.prompts import select_one, text_input
 from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
 
@@ -29,6 +29,18 @@ def register_sandbox(app: typer.Typer):
 @sandbox_app.command(name="submit")
 def sandbox_submit(
     from_file: str | None = typer.Option(None, "--from-file", "-f", help="Create from JSON file"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Sandbox name"),
+    version: str | None = typer.Option(None, "--version", "-v", help="Version (default: 1.0.0)"),
+    description: str | None = typer.Option(None, "--description", "-d", help="Short description"),
+    runtime_type: str | None = typer.Option(None, "--runtime-type", "-r", help="Runtime type"),
+    image: str | None = typer.Option(None, "--image", "-i", help="Container image"),
+    resource_limits: str | None = typer.Option(None, "--resource-limits", help="Resource limits JSON"),
+    network_policy: str | None = typer.Option(None, "--network-policy", help="Network policy"),
+    entrypoint: str | None = typer.Option(None, "--entrypoint", help="Default entrypoint"),
+    supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
+    source_url: str | None = typer.Option(None, "--source-url", help="Source repository URL"),
+    source_ref: str | None = typer.Option(None, "--source-ref", help="Source branch/tag"),
+    sandbox_path: str | None = typer.Option(None, "--sandbox-path", help="Path in source repo"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (sandbox ID)"),
 ):
@@ -59,6 +71,23 @@ def sandbox_submit(
         rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
         return
 
+    flag_mode = any(
+        x is not None
+        for x in (
+            name,
+            version,
+            description,
+            runtime_type,
+            image,
+            resource_limits,
+            network_policy,
+            entrypoint,
+            supported_harnesses,
+            source_url,
+            source_ref,
+            sandbox_path,
+        )
+    )
     if from_file:
         try:
             with open(from_file) as f:
@@ -71,6 +100,31 @@ def sandbox_submit(
             raise typer.Exit(code=1)
         if not payload.get("owner"):
             payload["owner"] = config.load().get("username", "")
+    elif flag_mode:
+        try:
+            limits = _json.loads(resource_limits or "{}")
+        except _json.JSONDecodeError as e:
+            rprint(f"[red]Invalid --resource-limits JSON:[/red] {e}")
+            raise typer.Exit(1)
+        payload = {
+            "name": name,
+            "version": version or "1.0.0",
+            "description": description,
+            "owner": config.load().get("username", ""),
+            "runtime_type": runtime_type,
+            "image": image,
+            "resource_limits": limits,
+            "network_policy": network_policy or "none",
+            "supported_harnesses": supported_harnesses or [],
+        }
+        if entrypoint:
+            payload["entrypoint"] = entrypoint
+        if source_url:
+            payload["source_url"] = source_url
+        if source_ref:
+            payload["source_ref"] = source_ref
+        if sandbox_path:
+            payload["sandbox_path"] = sandbox_path
     else:
         payload = {
             "name": text_input("Sandbox name"),
@@ -81,6 +135,20 @@ def sandbox_submit(
             "image": text_input("Image"),
             "resource_limits": _json.loads(text_input("Resource limits (JSON)")),
         }
+    if flag_mode:
+        if not (payload.get("name") and payload.get("description") and payload.get("runtime_type") and payload.get("image")):
+            rprint("[red]Error:[/red] --name, --description, --runtime-type, and --image are required")
+            raise typer.Exit(1)
+        if payload.get("runtime_type") not in VALID_SANDBOX_RUNTIME_TYPES:
+            rprint(f"[red]Error:[/red] Invalid runtime type: {payload.get('runtime_type')}")
+            raise typer.Exit(1)
+        if payload.get("network_policy") not in VALID_SANDBOX_NETWORK_POLICIES:
+            rprint(f"[red]Error:[/red] Invalid network policy: {payload.get('network_policy')}")
+            raise typer.Exit(1)
+        bad_harnesses = [h for h in payload.get("supported_harnesses", []) if h not in VALID_HARNESSES]
+        if bad_harnesses:
+            rprint(f"[red]Error:[/red] Invalid harness: {bad_harnesses[0]}")
+            raise typer.Exit(1)
 
     if draft:
         with spinner("Saving draft..."):
