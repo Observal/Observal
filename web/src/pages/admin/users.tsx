@@ -41,15 +41,23 @@ function useAssignableRoles(): Role[] {
 function RoleSelect({ userId, currentRole }: { userId: string; currentRole: string }) {
   const mutation = useUpdateUserRole();
   const assignable = useAssignableRoles();
+  const currentRoleOption = {
+    value: currentRole,
+    label: ROLE_LABELS[currentRole as Role] ?? currentRole,
+  };
+  const canEdit = assignable.includes(currentRole as Role);
+  const options = canEdit
+    ? assignable.map((r) => ({ value: r, label: ROLE_LABELS[r] }))
+    : [currentRoleOption];
 
   return (
     <PickerSelect
       value={currentRole}
       onValueChange={(value) => mutation.mutate({ id: userId, role: value })}
-      disabled={mutation.isPending}
+      disabled={!canEdit || mutation.isPending}
       className="w-[140px]"
       inputClassName="h-7 text-xs"
-      options={assignable.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+      options={options}
     />
   );
 }
