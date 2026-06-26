@@ -37,7 +37,7 @@ import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
 const PAGE_SIZE = 50;
 
-// Parse Discord-style search: actor:admin@x.com outcome:denied sensitivity:high
+// Parse Discord-style search: actor:ada outcome:denied sensitivity:high
 // Supports quoted values: actor:"John Doe" action:"agent.pull"
 function parseSearchQuery(query: string): Record<string, string> {
   const params: Record<string, string> = {};
@@ -271,7 +271,7 @@ export default function AuditLogPage() {
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search: actor:email action:login outcome:denied sensitivity:phi_adjacent source:cli"
+              placeholder="Search: actor:name action:login outcome:denied sensitivity:phi_adjacent source:cli"
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9 h-9 text-xs font-mono"

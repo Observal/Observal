@@ -11,14 +11,17 @@ import csv
 import io
 import json
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import require_role
+from api.deps import get_db, require_role
 from models.user import User, UserRole
 from services.clickhouse import _query
+from services.user_search import clickhouse_user_conditions, resolve_user_filter_values
 
 router = APIRouter(prefix="/api/v1/admin/audit-log", tags=["audit"])
 
@@ -57,7 +60,7 @@ class AuditLogEntry(BaseModel):
 
 @router.get("", response_model=list[AuditLogEntry])
 async def list_audit_logs(
-    actor: str | None = Query(None, description="Filter by actor email"),
+    actor: str | None = Query(None, description="Filter by actor name, username, or email"),
     action: str | None = Query(None, description="Filter by action"),
     resource_type: str | None = Query(None, description="Filter by resource type"),
     sensitivity: str | None = Query(None, description="Filter by sensitivity level"),
@@ -67,15 +70,31 @@ async def list_audit_logs(
     end_date: datetime | None = Query(None, description="End date filter"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    db: Annotated[AsyncSession | None, Depends(get_db)] = None,
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Query audit log entries with optional filters."""
+    del current_user
     conditions = []
     params = {}
 
     if actor:
-        conditions.append("actor_email = {actor:String}")
-        params["param_actor"] = actor
+        if db is not None:
+            values = await resolve_user_filter_values(db, actor)
+            actor_conditions = clickhouse_user_conditions(
+                id_column="actor_id",
+                email_column="actor_email",
+                values=values,
+                prefix="actor",
+                params=params,
+            )
+        else:
+            actor_conditions = []
+        if actor_conditions:
+            conditions.append("(" + " OR ".join(actor_conditions) + ")")
+        else:
+            conditions.append("actor_email = {actor:String}")
+            params["param_actor"] = actor
     if action:
         conditions.append("action = {action:String}")
         params["param_action"] = action
@@ -133,6 +152,7 @@ async def export_audit_logs(
     start_date: datetime | None = Query(None),
     end_date: datetime | None = Query(None),
     format: str = Query("csv", description="Export format: csv or json"),
+    db: Annotated[AsyncSession | None, Depends(get_db)] = None,
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Export audit log for compliance review.
@@ -140,12 +160,27 @@ async def export_audit_logs(
     Supports CSV (default) and JSON formats. Column headers follow the
     standard audit trail schema.
     """
+    del current_user
     conditions = []
     params = {}
 
     if actor:
-        conditions.append("actor_email = {actor:String}")
-        params["param_actor"] = actor
+        if db is not None:
+            values = await resolve_user_filter_values(db, actor)
+            actor_conditions = clickhouse_user_conditions(
+                id_column="actor_id",
+                email_column="actor_email",
+                values=values,
+                prefix="actor",
+                params=params,
+            )
+        else:
+            actor_conditions = []
+        if actor_conditions:
+            conditions.append("(" + " OR ".join(actor_conditions) + ")")
+        else:
+            conditions.append("actor_email = {actor:String}")
+            params["param_actor"] = actor
     if action:
         conditions.append("action = {action:String}")
         params["param_action"] = action

@@ -67,6 +67,7 @@ import type {
 	ExecInactivityAlerts,
 	ExecTimeToValueResponse,
 	ExecAIInsightsResponse,
+	UserSearchResult,
 } from "./types";
 
 const API = "/api/v1";
@@ -524,6 +525,15 @@ export const telemetry = {
 	status: () => get<TelemetryStatus>("/telemetry/status"),
 };
 
+// ── Users ───────────────────────────────────────────────────────────
+export const users = {
+	search: (params: { q: string; limit?: number }) => {
+		const qs = new URLSearchParams({ q: params.q });
+		if (params.limit) qs.set("limit", String(params.limit));
+		return get<UserSearchResult[]>(`/users/search?${qs}`);
+	},
+};
+
 // ── Dashboard ───────────────────────────────────────────────────────
 export const dashboard = {
 	stats: (range?: string) =>
@@ -558,6 +568,7 @@ export const dashboard = {
 	sessions: (params?: {
 		status?: string;
 		platform?: string;
+		user?: string;
 		days?: number;
 		limit?: number;
 		offset?: number;
@@ -566,6 +577,7 @@ export const dashboard = {
 		const qs = new URLSearchParams();
 		if (params?.status) qs.set("status", params.status);
 		if (params?.platform) qs.set("platform", params.platform);
+		if (params?.user) qs.set("user", params.user);
 		if (params?.days) qs.set("days", String(params.days));
 		if (params?.limit) qs.set("limit", String(params.limit));
 		if (params?.offset) qs.set("offset", String(params.offset));

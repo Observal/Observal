@@ -51,10 +51,13 @@ VERSION_MODELS: dict[str, type] = {
 class AddCoAuthorRequest(BaseModel):
     email: str | None = None
     username: str | None = None
+    user_id: str | None = None
 
 
 class TransferOwnershipRequest(BaseModel):
-    username: str
+    username: str | None = None
+    email: str | None = None
+    user_id: str | None = None
 
 
 class CoAuthorResponse(BaseModel):
@@ -121,6 +124,32 @@ async def _get_entity_for_transfer(entity_type: str, entity_id: str, current_use
     return entity
 
 
+async def _resolve_target_user(
+    db: AsyncSession,
+    *,
+    user_id: str | None = None,
+    email: str | None = None,
+    username: str | None = None,
+) -> User:
+    if user_id:
+        try:
+            parsed_id = _uuid.UUID(user_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Invalid user ID") from exc
+        result = await db.execute(select(User).where(User.id == parsed_id))
+    elif email:
+        result = await db.execute(select(User).where(User.email == email.strip().lower()))
+    elif username:
+        result = await db.execute(select(User).where(User.username == username.strip().lstrip("@")))
+    else:
+        raise HTTPException(status_code=422, detail="Provide a user")
+
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return target_user
+
+
 @router.post("/{entity_type}/{entity_id}/transfer-ownership", response_model=TransferOwnershipResponse)
 async def transfer_ownership(
     entity_type: str,
@@ -129,13 +158,8 @@ async def transfer_ownership(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    username = req.username.strip().lstrip("@")
-    if not username:
-        raise HTTPException(status_code=422, detail="Provide a username")
-
     entity = await _get_entity_for_transfer(entity_type, entity_id, current_user, db)
-    result = await db.execute(select(User).where(User.username == username))
-    target_user = result.scalar_one_or_none()
+    target_user = await _resolve_target_user(db, user_id=req.user_id, email=req.email, username=req.username)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
     if target_user.auth_provider == "deactivated":
@@ -199,21 +223,9 @@ async def add_co_author(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add a co-author by email or username."""
-    if not req.email and not req.username:
-        raise HTTPException(status_code=422, detail="Provide either email or username")
-
+    """Add a co-author by selected user, email, or username."""
     entity = await _get_entity_and_check_permission(entity_type, entity_id, current_user, db)
-
-    # Look up the target user
-    if req.email:
-        result = await db.execute(select(User).where(User.email == req.email.strip().lower()))
-    else:
-        result = await db.execute(select(User).where(User.username == req.username.strip()))
-
-    target_user = result.scalar_one_or_none()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
+    target_user = await _resolve_target_user(db, user_id=req.user_id, email=req.email, username=req.username)
 
     # Can't add yourself
     owner_id = entity.created_by if entity_type == "agents" else entity.submitted_by

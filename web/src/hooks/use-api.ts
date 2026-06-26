@@ -19,3 +19,4 @@ export * from "./use-admin-api";
 export * from "./use-sessions-api";
 export * from "./use-agents-api";
 export * from "./use-registry-api";
+export * from "./use-user-search";

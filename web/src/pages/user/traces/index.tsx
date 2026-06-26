@@ -425,6 +425,13 @@ export default function TracesPage() {
 	const { pathname } = useLocation();
 	const [page, setPage] = useState(0);
 	const PAGE_SIZE = 50;
+	const [sorting, setSorting] = useState<SortingState>([
+		{ id: "first_event_time", desc: true },
+	]);
+	const [searchValue, setSearchValue] = useState(searchParam ?? "");
+	const [globalFilter, setGlobalFilter] = useState(searchParam ?? "");
+	const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+	const serverQuery = useMemo(() => parseSearchQuery(globalFilter), [globalFilter]);
 
 	const {
 		data: sessions,
@@ -434,18 +441,14 @@ export default function TracesPage() {
 		refetch,
 	} = useSessions2({
 		refetchInterval: 5_000,
+		platform: serverQuery.filters.platform,
+		user: serverQuery.filters.user,
+		days: serverQuery.filters.days && !isNaN(parseInt(serverQuery.filters.days, 10)) ? parseInt(serverQuery.filters.days, 10) : undefined,
 		limit: PAGE_SIZE,
 		offset: page * PAGE_SIZE,
 	});
 	const { data: summary } = useSessionsSummary();
 	useSessionSubscription();
-
-	const [sorting, setSorting] = useState<SortingState>([
-		{ id: "first_event_time", desc: true },
-	]);
-	const [searchValue, setSearchValue] = useState(searchParam ?? "");
-	const [globalFilter, setGlobalFilter] = useState(searchParam ?? "");
-	const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
 	const updateURL = useCallback(
 		(value: string) => {
@@ -464,6 +467,7 @@ export default function TracesPage() {
 	const handleSearch = useCallback(
 		(value: string) => {
 			setSearchValue(value);
+			setPage(0);
 			clearTimeout(debounceRef.current);
 			debounceRef.current = setTimeout(() => {
 				setGlobalFilter(value);

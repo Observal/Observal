@@ -29,6 +29,7 @@ from api.deps import require_role
 from database import async_session
 from models.user import User, UserRole
 from services.clickhouse import _query
+from services.user_search import clickhouse_in_condition, resolve_user_filter_values
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 
@@ -74,13 +75,14 @@ async def get_public_key():
 async def list_sessions(
     status: str | None = Query(None),
     platform: str | None = Query(None),
+    user: str | None = Query(None, description="Filter by user name, username, or email"),
     days: int | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     mine: bool = Query(False),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    optic.trace("status={}, platform={}", status, platform)
+    optic.trace("status={}, platform={}, user={}", status, platform, user)
     is_admin = _has_admin_trace_access(current_user)
     uid_str = str(current_user.id)
     capped_days = min(days, 365) if days is not None and days > 0 else days
@@ -94,8 +96,17 @@ async def list_sessions(
         mine,
     )
 
+    user_ids: list[str] | None = None
+    if user:
+        async with async_session() as db:
+            values = await resolve_user_filter_values(db, user)
+        user_ids = values.ids
+        if not user_ids:
+            return []
+
     rows = await _list_sessions_query(
         platform=platform,
+        user_ids=user_ids,
         days=capped_days,
         is_admin=is_admin,
         uid=uid_str,
@@ -183,6 +194,7 @@ async def list_sessions(
 async def _list_sessions_query(
     *,
     platform: str | None,
+    user_ids: list[str] | None,
     days: int | None,
     is_admin: bool,
     uid: str,
@@ -208,6 +220,10 @@ async def _list_sessions_query(
     if platform:
         where_parts.append("harness = {platform:String}")
         params["param_platform"] = platform
+    if user_ids:
+        condition = clickhouse_in_condition("user_id", user_ids, "user", params)
+        if condition:
+            where_parts.append(condition)
 
     where_clause = "WHERE " + " AND ".join(where_parts) + " "
 

@@ -5,8 +5,8 @@ import { useState, useCallback } from "react";
 import { X, Plus, Loader2, ArrowRightLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UserSearchInput } from "@/components/shared/user-search-input";
 import {
 	Dialog,
 	DialogContent,
@@ -57,7 +57,9 @@ export function CoAuthorInput({
 	onTransferOwnership,
 }: CoAuthorInputProps) {
 	const [input, setInput] = useState("");
+	const [selectedAddUserId, setSelectedAddUserId] = useState<string | null>(null);
 	const [transferTarget, setTransferTarget] = useState("");
+	const [selectedTransferUserId, setSelectedTransferUserId] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [addOpen, setAddOpen] = useState(false);
@@ -74,12 +76,14 @@ export function CoAuthorInput({
 	const resetAdd = () => {
 		setAddOpen(false);
 		setInput("");
+		setSelectedAddUserId(null);
 		setError(null);
 	};
 
 	const resetTransfer = () => {
 		setTransferOpen(false);
 		setTransferTarget("");
+		setSelectedTransferUserId(null);
 		setError(null);
 	};
 
@@ -91,9 +95,11 @@ export function CoAuthorInput({
 
 		try {
 			const isEmail = value.includes("@") && !value.startsWith("@") && value.indexOf("@") < value.length - 1;
-			const body = isEmail
-				? { email: value.toLowerCase() }
-				: { username: value.replace(/^@/, "") };
+			const body = selectedAddUserId
+				? { user_id: selectedAddUserId }
+				: isEmail
+					? { email: value.toLowerCase() }
+					: { username: value.replace(/^@/, "") };
 
 			const res = await fetch(`${API}/${entityType}/${entityId}/co-authors`, {
 				method: "POST",
@@ -115,7 +121,7 @@ export function CoAuthorInput({
 		} finally {
 			setLoading(false);
 		}
-	}, [entityType, entityId, coAuthors, onChange, headers, input]);
+	}, [entityType, entityId, coAuthors, onChange, headers, input, selectedAddUserId]);
 
 	const executeRemove = useCallback(
 		async (userId: string) => {
@@ -154,10 +160,16 @@ export function CoAuthorInput({
 		setError(null);
 
 		try {
+			const isEmail = target.includes("@") && target.indexOf("@") < target.length - 1;
+			const body = selectedTransferUserId
+				? { user_id: selectedTransferUserId }
+				: isEmail
+					? { email: target.toLowerCase() }
+					: { username: target };
 			const res = await fetch(`${API}/${entityType}/${entityId}/transfer-ownership`, {
 				method: "POST",
 				headers: headers(),
-				body: JSON.stringify({ username: target }),
+				body: JSON.stringify(body),
 			});
 
 			if (!res.ok) {
@@ -173,7 +185,7 @@ export function CoAuthorInput({
 		} finally {
 			setLoading(false);
 		}
-	}, [entityType, entityId, headers, onTransferOwnership, transferTarget]);
+	}, [entityType, entityId, headers, onTransferOwnership, selectedTransferUserId, transferTarget]);
 
 	return (
 		<div className="space-y-3">
@@ -235,20 +247,20 @@ export function CoAuthorInput({
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-2">
-						<Label htmlFor="co-author-user">Email or username</Label>
-						<Input
+						<Label htmlFor="co-author-user">Name, username, or email</Label>
+						<UserSearchInput
 							id="co-author-user"
-							placeholder="Email or @username"
+							placeholder="Search people"
 							value={input}
-							onChange={(e) => {
-								setInput(e.target.value);
+							onValueChange={(value) => {
+								setInput(value);
+								setSelectedAddUserId(null);
 								setError(null);
 							}}
-							onKeyDown={(e) => {
-								if (e.key === "Enter") {
-									e.preventDefault();
-									executeAdd();
-								}
+							onSelect={(user) => {
+								setInput(user.username ? `@${user.username}` : user.email);
+								setSelectedAddUserId(user.id);
+								setError(null);
 							}}
 							disabled={loading}
 						/>
@@ -291,20 +303,20 @@ export function CoAuthorInput({
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-2">
-						<Label htmlFor="transfer-owner-user">New owner username</Label>
-						<Input
+						<Label htmlFor="transfer-owner-user">New owner</Label>
+						<UserSearchInput
 							id="transfer-owner-user"
-							placeholder="@username"
+							placeholder="Search people"
 							value={transferTarget}
-							onChange={(e) => {
-								setTransferTarget(e.target.value);
+							onValueChange={(value) => {
+								setTransferTarget(value);
+								setSelectedTransferUserId(null);
 								setError(null);
 							}}
-							onKeyDown={(e) => {
-								if (e.key === "Enter") {
-									e.preventDefault();
-									executeTransfer();
-								}
+							onSelect={(user) => {
+								setTransferTarget(user.username ? `@${user.username}` : user.email);
+								setSelectedTransferUserId(user.id);
+								setError(null);
 							}}
 							disabled={loading}
 						/>

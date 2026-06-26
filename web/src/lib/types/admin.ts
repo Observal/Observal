@@ -44,6 +44,16 @@ export interface AdminSettingSection {
 	settings: AdminSettingDef[];
 }
 
+export interface UserSearchResult {
+	id: string;
+	email: string;
+	username?: string | null;
+	name: string;
+	avatar_url?: string | null;
+	role: string;
+	is_active: boolean;
+}
+
 export interface AuditLogEntry {
 	event_id: string;
 	timestamp: string;

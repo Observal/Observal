@@ -35,6 +35,7 @@ from api.routes.sessions import router as sessions_router
 from api.routes.skill import router as skill_router
 from api.routes.support import router as support_router
 from api.routes.telemetry import router as telemetry_router
+from api.routes.users import router as users_router
 from config import HAS_LICENSE, settings
 
 REST_ROUTERS = (
@@ -65,6 +66,7 @@ REST_ROUTERS = (
     layer_snapshot_router,
     logs_stream_router,
     audit_router,
+    users_router,
 )
 
 

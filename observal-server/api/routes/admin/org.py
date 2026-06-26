@@ -12,6 +12,7 @@ from api.deps import get_db, require_role
 from models.organization import Organization
 from models.user import User, UserRole
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
+from services.user_search import clickhouse_user_conditions, resolve_user_filter_values
 
 from ._router import router
 
@@ -23,9 +24,11 @@ async def get_security_events(
     actor_email: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Query the security events audit log from ClickHouse."""
+    del current_user
     optic.debug(
         "org.get_security_events: event_type={}, severity={}, actor_email={}", event_type, severity, actor_email
     )
@@ -40,8 +43,19 @@ async def get_security_events(
         conditions.append("severity = {sev:String}")
         params["param_sev"] = severity
     if actor_email:
-        conditions.append("actor_email = {ae:String}")
-        params["param_ae"] = actor_email
+        values = await resolve_user_filter_values(db, actor_email)
+        actor_conditions = clickhouse_user_conditions(
+            id_column="actor_id",
+            email_column="actor_email",
+            values=values,
+            prefix="actor",
+            params=params,
+        )
+        if actor_conditions:
+            conditions.append("(" + " OR ".join(actor_conditions) + ")")
+        else:
+            conditions.append("actor_email = {ae:String}")
+            params["param_ae"] = actor_email
 
     where = " AND ".join(conditions)
     limit = min(max(int(limit), 1), 1000)

@@ -3,12 +3,12 @@
 
 
 import { useState, useMemo } from "react";
-import { ShieldAlert, Search, ChevronDown, ChevronRight } from "lucide-react";
+import { ShieldAlert, ChevronDown, ChevronRight } from "lucide-react";
 import { useSecurityEvents } from "@/hooks/use-api";
 import type { SecurityEvent } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { UserSearchInput } from "@/components/shared/user-search-input";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -172,15 +172,13 @@ export default function SecurityEventsPage() {
             inputClassName="h-9 text-xs"
             options={SEVERITIES.map((s) => ({ value: s, label: s === "all" ? "All severities" : s }))}
           />
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Actor email..."
-              value={actorEmail}
-              onChange={(e) => { setActorEmail(e.target.value); setPage(0); }}
-              className="pl-8 h-9 w-[200px] text-xs"
-            />
-          </div>
+          <UserSearchInput
+            placeholder="Actor name, username, or email"
+            value={actorEmail}
+            onValueChange={(value) => { setActorEmail(value); setPage(0); }}
+            onSelect={(user) => { setActorEmail(user.email); setPage(0); }}
+            className="h-9 w-[260px] text-xs"
+          />
         </div>
 
         {/* Table */}
