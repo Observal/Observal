@@ -496,19 +496,18 @@ export function SubmitComponentDialog({
 		if (!name) return "Name is required";
 		if (!description) return "Description is required";
 
-		if (type === "mcps" && !gitUrl && !command && !mcpUrl) {
+		if (type === "mcps") {
 			if (mcpMode === "json" && !jsonParsed && !isEditMode) {
 				return "Paste a valid server config JSON";
 			}
 			if (mcpMode === "json" && !jsonParsed && isEditMode) {
-				// Edit mode: existing fields from editItem are still valid
 				const d = editItem as Record<string, unknown> | null;
-				if (!d?.command && !d?.url && !d?.git_url) {
+				if (!d?.command && !d?.url) {
 					return "Paste a new server config JSON to update";
 				}
 			}
-			if (mcpMode === "manual") {
-				return "At least one of Git URL, Command, or Server URL is required";
+			if (mcpMode === "manual" && !command && !mcpUrl) {
+				return "Command or Server URL is required";
 			}
 		}
 		if (type === "prompts" && !template) {
@@ -650,6 +649,23 @@ export function SubmitComponentDialog({
 							{mcpMode === "json" && (
 								<>
 									<div className="space-y-1.5">
+										<Label htmlFor="mcp-git-url-json">
+											Git URL for local OCI setup (optional)
+										</Label>
+										<Input
+											id="mcp-git-url-json"
+											value={gitUrl}
+											onChange={(e) => setGitUrl(e.target.value)}
+											placeholder="https://github.com/user/mcp-server"
+										/>
+										<p className="text-xs text-muted-foreground">
+											Observal still needs pasted MCP JSON. The git repo is only
+											used to detect Dockerfile, Containerfile, or compose build
+											setup instructions.
+										</p>
+									</div>
+
+									<div className="space-y-1.5">
 										<div className="flex items-center justify-between gap-3">
 											<Label htmlFor="mcp-json">
 												{isEditMode
@@ -700,7 +716,7 @@ export function SubmitComponentDialog({
 										onClick={() => setMcpMode("manual")}
 										className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
 									>
-										Switch to manual entry
+										Advanced: enter command or URL manually
 									</button>
 								</>
 							)}
@@ -769,10 +785,9 @@ export function SubmitComponentDialog({
 										/>
 									</div>
 
-									{!gitUrl && !command && !mcpUrl && (
+									{!command && !mcpUrl && (
 										<p className="text-xs text-destructive">
-											At least one of Git URL, Command, or Server URL is
-											required for submission.
+											Command or Server URL is required for manual submission.
 										</p>
 									)}
 

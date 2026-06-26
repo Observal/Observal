@@ -73,7 +73,9 @@ def keyword_tokens(query: str | None) -> list[str]:
     return out
 
 
-def keyword_search(query: str | None, fields: Sequence[Any], *, name_field: Any | None = None) -> tuple[Any | None, Any | None]:
+def keyword_search(
+    query: str | None, fields: Sequence[Any], *, name_field: Any | None = None
+) -> tuple[Any | None, Any | None]:
     """Return ``(where_clause, rank_expr)`` for token OR search.
 
     The rank is intentionally simple: phrase/name hits first, then token hits.

@@ -216,7 +216,9 @@ def skill_submit(
                 raise typer.Exit(1)
             payload["git_url"] = git_url or text_input("Git URL")
             payload["skill_path"] = skill_path or ("/" if flag_mode else text_input("Skill path in repo", default="/"))
-            payload["git_ref"] = git_ref or ("main" if flag_mode else text_input("Git ref (branch/tag)", default="main"))
+            payload["git_ref"] = git_ref or (
+                "main" if flag_mode else text_input("Git ref (branch/tag)", default="main")
+            )
         if slash_command or prefill.get("slash_command"):
             payload["slash_command"] = slash_command or prefill["slash_command"]
         if skill_md_content:
