@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi_cache.decorator import cache
 from loguru import logger as optic
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
@@ -194,15 +194,16 @@ async def list_skills(
     )
     if task_type:
         stmt = stmt.where(SkillVersion.task_type == task_type)
+    target_agents_text = cast(SkillVersion.target_agents, String)
     if target_agent:
-        target_filter, _ = keyword_search(target_agent, [SkillVersion.target_agents.cast(str)])
+        target_filter, _ = keyword_search(target_agent, [target_agents_text])
         if target_filter is not None:
             stmt = stmt.where(target_filter)
     search_rank = None
     if search:
         search_filter, search_rank = keyword_search(
             search,
-            [SkillListing.name, SkillVersion.description, SkillVersion.task_type, SkillVersion.target_agents.cast(str)],
+            [SkillListing.name, SkillVersion.description, SkillVersion.task_type, target_agents_text],
             name_field=SkillListing.name,
         )
         if search_filter is not None:
