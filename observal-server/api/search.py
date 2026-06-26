@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Small keyword search helpers for registry list endpoints."""
@@ -5,8 +6,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 from sqlalchemy import case, literal, or_
 

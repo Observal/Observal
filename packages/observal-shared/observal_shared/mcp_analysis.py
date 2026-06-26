@@ -206,6 +206,23 @@ def _safe_image_name(value: str) -> str:
     return name or "mcp-server"
 
 
+def _github_image(git_url: str) -> tuple[str | None, bool]:
+    safe_name = re.compile(r"^[a-zA-Z0-9._-]+$")
+    try:
+        parts = urlparse(git_url)
+        if parts.hostname != "github.com":
+            return (None, False)
+        path = parts.path.strip("/")
+        if path.endswith(".git"):
+            path = path[:-4]
+        owner_repo = path.split("/")
+        if len(owner_repo) >= 2 and safe_name.match(owner_repo[0]) and safe_name.match(owner_repo[1]):
+            return (f"ghcr.io/{owner_repo[0]}/{owner_repo[1]}", True)
+    except Exception:
+        pass
+    return (None, False)
+
+
 def _repo_image_name(git_url: str, fallback: str | None = None) -> str:
     try:
         path = urlparse(git_url).path.strip("/")
@@ -272,23 +289,16 @@ def detect_container_image(root: Path, git_url: str, name: str | None = None) ->
         if (root / dockerfile).exists():
             tag = f"{repo_name}:latest"
             return (tag, True, [_docker_build_command(tag, ".", dockerfile)])
-    safe_name = re.compile(r"^[a-zA-Z0-9._-]+$")
-    try:
-        parts = urlparse(git_url)
-        if parts.hostname == "github.com":
-            path = parts.path.strip("/")
-            if path.endswith(".git"):
-                path = path[:-4]
-            owner_repo = path.split("/")
-            if len(owner_repo) >= 2 and safe_name.match(owner_repo[0]) and safe_name.match(owner_repo[1]):
-                return (f"ghcr.io/{owner_repo[0]}/{owner_repo[1]}", True, [])
-    except Exception:
-        pass
+    image, suggested = _github_image(git_url)
+    if image:
+        return (image, suggested, [])
     return (None, False, [])
 
 
 def detect_docker_image(root: Path, git_url: str) -> tuple[str | None, bool]:
-    image, suggested, _setup = detect_container_image(root, git_url)
+    image, suggested, setup = detect_container_image(root, git_url)
+    if setup:
+        return _github_image(git_url)
     return (image, suggested)
 
 

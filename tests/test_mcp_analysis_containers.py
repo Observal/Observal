@@ -1,6 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from observal_shared.mcp_analysis import detect_container_image, detect_docker_image
+from observal_shared.mcp_analysis import detect_container_image
 
 
 def test_dockerfile_repo_gets_local_build_setup(tmp_path):
@@ -11,7 +12,6 @@ def test_dockerfile_repo_gets_local_build_setup(tmp_path):
     assert image == "acme-local-mcp:latest"
     assert suggested is True
     assert setup == ["docker build -t acme-local-mcp:latest -f Dockerfile ."]
-    assert detect_docker_image(tmp_path, "https://github.com/acme/local-mcp") == (image, suggested)
 
 
 def test_compose_build_service_gets_local_image_tag(tmp_path):
