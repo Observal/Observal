@@ -14,7 +14,7 @@ The flow:
 import json
 import secrets
 import time
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -142,12 +142,22 @@ async def device_authorize(request: Request, req: DeviceAuthRequest = None):
     frontend_url = _resolve_frontend_url(request)
 
     optic.info("device_authorize: code issued, user_code={}", user_code)
-    sso_param = "&sso=1" if req and req.sso else ""
+    if req and req.sso:
+        next_path = f"/device?code={quote(user_code)}&sso=1"
+        return DeviceAuthResponse(
+            device_code=device_code,
+            user_code=user_code,
+            verification_uri=f"{frontend_url}/login",
+            verification_uri_complete=f"{frontend_url}/login?sso=1&next={quote(next_path, safe='')}",
+            expires_in=_DEVICE_AUTH_TTL,
+            interval=5,
+        )
+
     return DeviceAuthResponse(
         device_code=device_code,
         user_code=user_code,
         verification_uri=f"{frontend_url}/device",
-        verification_uri_complete=f"{frontend_url}/device?code={user_code}{sso_param}",
+        verification_uri_complete=f"{frontend_url}/device?code={user_code}",
         expires_in=_DEVICE_AUTH_TTL,
         interval=5,
     )
