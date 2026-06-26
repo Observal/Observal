@@ -47,6 +47,7 @@ dependencies = [
     "orjson>=3.10.0",
     "xxhash>=3.4.0",
     "observal-shared",
+    "joserfc>=1.6.7",
 ]
 
 [tool.uv.sources]
