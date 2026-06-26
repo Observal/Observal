@@ -800,7 +800,9 @@ def agent_init(
         raise typer.Exit(code=1)
 
     default_version = "0.1.0" if beta else "1.0.0"
-    flag_mode = any(x is not None for x in (name, version, description, model_name, prompt, prompt_file, supported_harnesses))
+    flag_mode = any(
+        x is not None for x in (name, version, description, model_name, prompt, prompt_file, supported_harnesses)
+    )
     if flag_mode:
         if not name or not description or not (prompt or prompt_file):
             rprint("[red]Error:[/red] --name, --description, and --prompt or --prompt-file are required")
