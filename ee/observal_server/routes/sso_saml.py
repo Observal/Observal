@@ -77,18 +77,35 @@ def _safe_redirect_path(value: str | None) -> str:
 
 router = APIRouter(prefix="/api/v1/sso/saml", tags=["enterprise-sso"])
 
-_env_saml_config_cache: object | None = None
-_env_saml_config_lock = asyncio.Lock()
+_dynamic_saml_config_cache: object | None = None
+_dynamic_saml_config_signature: tuple[str, ...] | None = None
+_dynamic_saml_config_lock = asyncio.Lock()
+
+_DYNAMIC_SAML_KEYS = (
+    "saml.idp_entity_id",
+    "saml.idp_sso_url",
+    "saml.idp_slo_url",
+    "saml.idp_x509_cert",
+    "saml.sp_entity_id",
+    "saml.sp_acs_url",
+    "saml.jit_provisioning",
+    "saml.default_role",
+    "saml.sp_key_encryption_password",
+)
+
+
+def _dynamic_saml_signature() -> tuple[str, ...]:
+    return tuple(ds.get_sync(key) for key in _DYNAMIC_SAML_KEYS)
 
 
 async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
-    """Return the active SAML config or build one from env settings.
+    """Return the active SAML config or build one from dynamic settings.
 
-    The env-fallback path generates an SP key pair on first use; serialize via
+    The dynamic-settings path generates an SP key pair on first use; serialize via
     a lock so two concurrent cold-start requests can't each generate a key
     and have one overwrite the other (silent assertion-signature breakage).
     """
-    global _env_saml_config_cache
+    global _dynamic_saml_config_cache, _dynamic_saml_config_signature
 
     result = await db.execute(select(SamlConfig).where(SamlConfig.active.is_(True)).limit(1))
     config = result.scalar_one_or_none()
@@ -96,24 +113,25 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
         return config
     if not (ds.get_sync("saml.idp_entity_id") and ds.get_sync("saml.idp_sso_url")):
         return None
-    if _env_saml_config_cache is not None:
-        return _env_saml_config_cache
-    async with _env_saml_config_lock:
-        if _env_saml_config_cache is not None:
-            return _env_saml_config_cache
+    signature = _dynamic_saml_signature()
+    if _dynamic_saml_config_cache is not None and _dynamic_saml_config_signature == signature:
+        return _dynamic_saml_config_cache
+    async with _dynamic_saml_config_lock:
+        if _dynamic_saml_config_cache is not None and _dynamic_saml_config_signature == signature:
+            return _dynamic_saml_config_cache
         sp_entity_id = ds.get_sync("saml.sp_entity_id") or f"{_get_frontend_url()}/api/v1/sso/saml/metadata"
         sp_acs_url = ds.get_sync("saml.sp_acs_url") or f"{_get_frontend_url()}/api/v1/sso/saml/acs"
         enc_password = ds.get_sync("saml.sp_key_encryption_password")
         if not enc_password:
             optic.warning(
-                "SAML_SP_KEY_ENCRYPTION_PASSWORD is not set -- "
+                "saml.sp_key_encryption_password is not set. "
                 "SP private key will be stored unencrypted. "
-                "Set this variable in production."
+                "Set this value in production."
             )
         private_key_pem, cert_pem = generate_sp_key_pair(common_name=sp_entity_id)
         sp_key_enc = encrypt_private_key(private_key_pem, enc_password)
-        env_config = type(
-            "EnvSamlConfig",
+        dynamic_config = type(
+            "DynamicSamlConfig",
             (),
             {
                 "idp_entity_id": ds.get_sync("saml.idp_entity_id"),
@@ -129,8 +147,9 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
                 "org_id": None,
             },
         )()
-        _env_saml_config_cache = env_config
-        return env_config
+        _dynamic_saml_config_cache = dynamic_config
+        _dynamic_saml_config_signature = signature
+        return dynamic_config
 
 
 def _decrypt_sp_key(config) -> str:
@@ -293,7 +312,7 @@ async def saml_health_probe(db: AsyncSession) -> dict | None:
                 "SP private key decrypts",
                 "fail",
                 "SP private key could not be decrypted.",
-                "Check SAML_SP_KEY_ENCRYPTION_PASSWORD.",
+                "Check saml.sp_key_encryption_password.",
             )
         )
         return {"ok": False, "checks": checks, "latency_ms": round((time.monotonic() - start) * 1000)}
@@ -320,7 +339,7 @@ async def saml_login(
 
     ``e2e`` is an opaque diagnostics session id (no slashes, ≤64 chars). When
     present, RelayState is set to ``__e2e:<id>`` so the ACS handler runs in
-    end-to-end test mode -- assertion is validated but no tokens are issued.
+    end-to-end test mode, assertion is validated but no tokens are issued.
     """
     config = await _get_saml_config(db)
     if not config:
@@ -401,7 +420,7 @@ async def _e2e_done_response(session_id: str, ok: bool) -> Response:
 
     Pulls the finalized diagnostics out of Redis so the page can show the same
     per-step list the admin page polls for. The admin page is still the source
-    of truth -- this is just immediate confirmation in the tab the operator is
+    of truth, this is just immediate confirmation in the tab the operator is
     looking at.
     """
     admin_url = f"{_get_frontend_url().rstrip('/')}/sso"
@@ -449,8 +468,8 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
                 "saml_configured",
                 "SAML SSO is configured on server",
                 "fail",
-                "No SAML config found in DB or environment.",
-                "Configure SAML in the admin panel or via SAML_* env vars.",
+                "No SAML config found in DB or dynamic settings.",
+                "Configure SAML in the SSO tab.",
             )
         )
         corr = await _saml_finalize_diag(diag, "SAML not configured", None, e2e_session_id)
@@ -470,7 +489,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
                 "SP private key decrypts",
                 "fail",
                 str(e),
-                "Check SAML_SP_KEY_ENCRYPTION_PASSWORD or re-import the SP key.",
+                "Check saml.sp_key_encryption_password or re-import the SP key.",
             )
         )
         corr = await _saml_finalize_diag(diag, "SP key decrypt failed", None, e2e_session_id)

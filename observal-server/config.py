@@ -40,11 +40,6 @@ class Settings(BaseSettings):
     JWT_KEY_DIR: str = "~/.observal/keys"
     JWT_KEY_PASSWORD: str | None = None
 
-    # OAuth / OIDC (used in middleware init, move to settings page later)
-    OAUTH_CLIENT_ID: str | None = None
-    OAUTH_CLIENT_SECRET: str | None = None
-    OAUTH_SERVER_METADATA_URL: str | None = None
-
     # Connection pool sizing (boot-time, pool created once at startup)
     DB_POOL_SIZE: int = 30
     DB_MAX_OVERFLOW: int = 50
@@ -99,7 +94,6 @@ _LEGACY_ENV_VARS = [
     "INSIGHT_FACET_MAX_CALLS",
     "INSIGHT_FACET_CONCURRENCY",
     "INSIGHTS_AVAILABLE",
-    "SSO_ONLY",
     "FRONTEND_URL",
     "PUBLIC_URL",
     "CORS_ALLOWED_ORIGINS",
@@ -108,16 +102,6 @@ _LEGACY_ENV_VARS = [
     "RATE_LIMIT_AUTH",
     "RATE_LIMIT_AUTH_STRICT",
     "TRUSTED_PROXY_IPS",
-    "SAML_IDP_ENTITY_ID",
-    "SAML_IDP_SSO_URL",
-    "SAML_IDP_SLO_URL",
-    "SAML_IDP_X509_CERT",
-    "SAML_IDP_METADATA_URL",
-    "SAML_SP_ENTITY_ID",
-    "SAML_SP_ACS_URL",
-    "SAML_JIT_PROVISIONING",
-    "SAML_DEFAULT_ROLE",
-    "SAML_SP_KEY_ENCRYPTION_PASSWORD",
     "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
     "JWT_REFRESH_TOKEN_EXPIRE_DAYS",
     "JWT_HOOKS_TOKEN_EXPIRE_MINUTES",

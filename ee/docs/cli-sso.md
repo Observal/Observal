@@ -71,7 +71,7 @@ observal auth login
 
 ### SSO-Only Deployments
 
-When `SSO_ONLY=true` is set on the server, the CLI automatically uses the
+When `deployment.sso_only=true` is set on the server, the CLI automatically uses the
 device flow. No `--sso` flag or interactive choice is needed:
 
 ```bash

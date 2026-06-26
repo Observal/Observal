@@ -32,6 +32,7 @@ export interface AdminSettingDef {
 	subtitle: string;
 	default: string;
 	requires_feature?: string;
+	restart_required?: boolean;
 }
 
 export interface AdminSettingSection {

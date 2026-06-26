@@ -99,7 +99,7 @@ async def fetch_discovery(
                 label,
                 "fail",
                 "Failed to fetch OIDC metadata.",
-                "Verify OAUTH_SERVER_METADATA_URL is a reachable URL.",
+                "Verify oauth.server_metadata_url is a reachable URL.",
             ),
         )
     if not isinstance(metadata, dict):
@@ -236,7 +236,7 @@ async def probe_client_secret(
             label,
             "fail",
             "IdP rejected our client credentials — the client_secret is wrong or the client is disabled.",
-            "Check that OAUTH_CLIENT_SECRET matches the secret in your IdP application.",
+            "Check that oauth.client_secret matches the secret in your IdP application.",
         )
     return make_check(name, label, "pass")
 
@@ -291,7 +291,7 @@ def check_issuer_consistency(metadata: dict, metadata_url: str) -> dict[str, Any
             label,
             "fail",
             f"Discovery `issuer` host ({issuer_host}) does not match the metadata URL host ({metadata_host}).",
-            "OAUTH_SERVER_METADATA_URL likely points at the wrong tenant or environment.",
+            "oauth.server_metadata_url likely points at the wrong tenant or environment.",
         )
     return make_check(name, label, "pass")
 

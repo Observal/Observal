@@ -46,8 +46,19 @@ async def run_startup_tasks() -> None:
     """Initialize application dependencies used by the FastAPI lifespan."""
     check_legacy_env_vars()
 
+    if not settings.SKIP_DDL_ON_STARTUP:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await ensure_columns(conn)
+        await init_clickhouse()
+
     await ds.load_sync_cache()
+    await ds.import_sso_env_once()
     await ds.reencrypt_on_key_rotation()
+
+    from api.routes.auth import configure_oauth_client
+
+    configure_oauth_client()
 
     if HAS_LICENSE:
         weak_secrets = {"change-me-to-a-random-string", "changeme", "secret", "dev", ""}
@@ -56,12 +67,6 @@ async def run_startup_tasks() -> None:
                 "SECRET_KEY is insecure. Set a random string of at least 32 characters "
                 "before running in non-local mode."
             )
-
-    if not settings.SKIP_DDL_ON_STARTUP:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            await ensure_columns(conn)
-        await init_clickhouse()
 
     await init_cache()
     init_key_manager(

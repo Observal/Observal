@@ -86,10 +86,10 @@ Replace `<OBSERVAL_DOMAIN>` with the customer’s Observal hostname only (no pat
 
 On the application **General** tab, record:
 
-| Okta label | Copy to (Observal `.env`) |
+| Okta label | Copy to (Observal SSO setting) |
 |------------|---------------------------|
-| **Client ID** | `OAUTH_CLIENT_ID` |
-| **Client secret** (click eye icon) | `OAUTH_CLIENT_SECRET` |
+| **Client ID** | `oauth.client_id` |
+| **Client secret** (click eye icon) | `oauth.client_secret` |
 | **Okta domain** (from browser URL, e.g. `acme.okta.com`) | Used in metadata URL below |
 
 **Metadata URL** (use the **default** custom authorization server):
@@ -98,7 +98,7 @@ On the application **General** tab, record:
 https://<OKTA_DOMAIN>/oauth2/default/.well-known/openid-configuration
 ```
 
-Example: `https://acme.okta.com/oauth2/default/.well-known/openid-configuration` → this becomes `OAUTH_SERVER_METADATA_URL`.
+Example: `https://acme.okta.com/oauth2/default/.well-known/openid-configuration` → this becomes `oauth.server_metadata_url`.
 
 6. Open that metadata URL in a browser; confirm it returns JSON with `authorization_endpoint` and `token_endpoint`. If it fails, stop and fix the domain before continuing.
 
@@ -269,7 +269,7 @@ Observal requests scope `groups` and reads `userinfo.groups` from the token. Wit
 1. On the Observal application, open the **General** tab.
 2. Scroll to **Client Credentials** / **Client authentication**:
    - **Client authentication:** **Client secret** (default for web app)
-   - Secret should match what you copied to `OAUTH_CLIENT_SECRET`
+   - Secret should match what you copied to `oauth.client_secret`
 3. Under **Login**, confirm:
    - **Login initiated by:** **App Only** (or equivalent) - users start from Observal, not Okta dashboard tile only
    - **Application visibility:** your choice (hide from Okta dashboard if you only want Observal-initiated login)
@@ -280,23 +280,19 @@ No change needed unless your security team requires PKCE-only public clients (Ob
 
 ## Part B - Observal server configuration
 
-Complete Okta Part A **before** editing the customer `.env`, so redirect URIs and secrets are ready.
+Complete Okta Part A before saving Observal SSO settings, so redirect URIs and secrets are ready.
 
-### Step 11 - Set OAuth and license in `.env`
+### Step 11 - Set OAuth in the SSO tab
 
-Edit the customer instance `.env` (from `docker/server-package/.env` or your deployment template). **OAuth credentials live only in the env file** - they are not configured in the web UI.
+Set the enterprise license in `.env`, then configure OIDC in **Admin → SSO → SSO settings**.
 
-```env
-# OIDC / Okta (from Step 2)
-OAUTH_CLIENT_ID=<client id>
-OAUTH_CLIENT_SECRET=<client secret>
-OAUTH_SERVER_METADATA_URL=https://<OKTA_DOMAIN>/oauth2/default/.well-known/openid-configuration
+| Setting | Value |
+| --- | --- |
+| `oauth.client_id` | `<client id>` |
+| `oauth.client_secret` | `<client secret>` |
+| `oauth.server_metadata_url` | `https://<OKTA_DOMAIN>/oauth2/default/.well-known/openid-configuration` |
 
-# Enterprise features (managed customers)
-OBSERVAL_LICENSE_KEY=<enterprise license key>
-```
-
-Restart the stack after saving:
+Restart the stack after saving OIDC settings:
 
 ```bash
 make down && make up
@@ -308,7 +304,7 @@ make down && make up
 
 ### Step 12 - Set Frontend URL in Settings (must match Okta)
 
-The API builds the OAuth redirect from **`deployment.frontend_url`**, which you set in the **web UI** - not in `.env`.
+The API builds the OAuth redirect from **`deployment.frontend_url`**, which you set in the web UI, not in `.env`.
 
 1. Sign in to Observal as an admin (bootstrap or existing admin account).
 2. Open **Settings** (admin area).
@@ -411,7 +407,7 @@ Only after Steps 14–16 succeed:
 | `Resource not found: AuthenticatorEnrollment` | Broken MFA enrollment | Okta: **Directory** → user → **More Actions** → **Reset Multifactor** |
 | User logs in but no admin pages | Default SSO role is `user` | Step 16 - promote role in Observal |
 | Groups empty in dashboard | No `groups` in ID token | Repeat Step 9; user must log in again |
-| `sso_enabled` is false | Missing `OAUTH_*` env vars | Step 11 - set all three and restart API |
+| `sso_enabled` is false | OIDC settings missing or API not restarted | Step 11, set all three settings and restart API |
 
 ---
 

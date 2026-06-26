@@ -16,7 +16,7 @@ from sqlalchemy import select
 import services.dynamic_settings as ds_mod
 from api.deps import get_db
 from api.ratelimit import limiter
-from config import HAS_LICENSE, settings
+from config import HAS_LICENSE
 from models.enterprise_config import EnterpriseConfig
 from schemas.harness_registry import HARNESS_REGISTRY
 from schemas.sso_health import all_pass
@@ -136,9 +136,11 @@ async def get_public_config(db=Depends(get_db)):
     sso_only = await ds.get_bool("deployment.sso_only")
     self_registration_enabled = await ds.get_bool("auth.self_registration_enabled")
 
+    from api.routes.auth import is_oidc_configured
+
     return {
         "licensed": licensed,
-        "sso_enabled": bool(settings.OAUTH_CLIENT_ID),
+        "sso_enabled": is_oidc_configured(),
         "sso_only": sso_only,
         "self_registration_enabled": self_registration_enabled,
         "saml_enabled": saml_enabled,
@@ -151,7 +153,10 @@ async def get_public_config(db=Depends(get_db)):
 
 
 async def _oidc_health_probe() -> dict | None:
-    if not (settings.OAUTH_CLIENT_ID and settings.OAUTH_SERVER_METADATA_URL):
+    client_id = ds_mod.get_sync("oauth.client_id")
+    client_secret = ds_mod.get_sync("oauth.client_secret")
+    metadata_url = ds_mod.get_sync("oauth.server_metadata_url")
+    if not (client_id and metadata_url):
         return None
     start = time.monotonic()
     redirect_uri = (
@@ -159,9 +164,9 @@ async def _oidc_health_probe() -> dict | None:
     )
     try:
         checks, _metadata = await run_oidc_checks(
-            settings.OAUTH_SERVER_METADATA_URL,
-            settings.OAUTH_CLIENT_ID,
-            settings.OAUTH_CLIENT_SECRET or "",
+            metadata_url,
+            client_id,
+            client_secret,
             redirect_uri,
         )
     except Exception:

@@ -58,6 +58,7 @@ import { ErrorState } from "@/components/shared/error-state";
 // but we keep the set here for UI affordances (revoke button, write-only input).
 const SENSITIVE_KEYS = new Set([
 	"insights.api_key",
+	"oauth.client_secret",
 	"saml.idp_x509_cert",
 	"saml.sp_key_encryption_password",
 ]);
@@ -79,7 +80,7 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
 	danger: <AlertTriangle className="h-3.5 w-3.5" />,
 	deployment: <Shield className="h-3.5 w-3.5" />,
 	security: <ShieldAlert className="h-3.5 w-3.5" />,
-	saml: <Shield className="h-3.5 w-3.5" />,
+	sso: <Shield className="h-3.5 w-3.5" />,
 	jwt: <Shield className="h-3.5 w-3.5" />,
 	resource: <Database className="h-3.5 w-3.5" />,
 	data: <Database className="h-3.5 w-3.5" />,
@@ -555,7 +556,7 @@ export default function SettingsPage() {
 				}))
 	).filter((e) => !e.key.startsWith("branding."));
 
-	const settingSections = settingsSchema;
+	const settingSections = settingsSchema.filter((section) => section.id !== "sso");
 	const settingByKey = useMemo(() => {
 		const map = new Map<string, AdminSettingDef>();
 		for (const section of settingSections) {

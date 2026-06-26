@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 import services.dynamic_settings as ds
 from api.deps import get_db, get_or_create_default_org, require_role
 from api.ratelimit import limiter
-from config import settings
 from ee.observal_server.routes.sso_saml import _get_saml_config, _run_saml_check_suite
 from ee.observal_server.services.saml import (
     decrypt_private_key,
@@ -69,18 +68,18 @@ async def get_saml_config(
     config = result.scalar_one_or_none()
 
     if not config:
-        has_env = bool(ds.get_sync("saml.idp_entity_id") and ds.get_sync("saml.idp_sso_url"))
+        has_dynamic = bool(ds.get_sync("saml.idp_entity_id") and ds.get_sync("saml.idp_sso_url"))
         return {
-            "configured": has_env,
-            "source": "env" if has_env else "none",
-            "idp_entity_id": ds.get_sync("saml.idp_entity_id") if has_env else None,
-            "idp_sso_url": ds.get_sync("saml.idp_sso_url") if has_env else None,
-            "idp_slo_url": ds.get_sync("saml.idp_slo_url") if has_env else None,
-            "sp_entity_id": ds.get_sync("saml.sp_entity_id") if has_env else None,
-            "sp_acs_url": ds.get_sync("saml.sp_acs_url") if has_env else None,
-            "jit_provisioning": ds.get_sync_bool("saml.jit_provisioning", True) if has_env else None,
-            "default_role": ds.get_sync("saml.default_role", "user") if has_env else None,
-            "has_idp_cert": bool(ds.get_sync("saml.idp_x509_cert")) if has_env else False,
+            "configured": has_dynamic,
+            "source": "dynamic" if has_dynamic else "none",
+            "idp_entity_id": ds.get_sync("saml.idp_entity_id") if has_dynamic else None,
+            "idp_sso_url": ds.get_sync("saml.idp_sso_url") if has_dynamic else None,
+            "idp_slo_url": ds.get_sync("saml.idp_slo_url") if has_dynamic else None,
+            "sp_entity_id": ds.get_sync("saml.sp_entity_id") if has_dynamic else None,
+            "sp_acs_url": ds.get_sync("saml.sp_acs_url") if has_dynamic else None,
+            "jit_provisioning": ds.get_sync_bool("saml.jit_provisioning", True) if has_dynamic else None,
+            "default_role": ds.get_sync("saml.default_role", "user") if has_dynamic else None,
+            "has_idp_cert": bool(ds.get_sync("saml.idp_x509_cert")) if has_dynamic else False,
             "has_sp_key": False,
         }
     return {
@@ -252,17 +251,20 @@ async def validate_oidc(
     optic.info("admin.validate_oidc start")
     start = time.monotonic()
 
-    if not settings.OAUTH_CLIENT_ID or not settings.OAUTH_CLIENT_SECRET:
+    client_id = ds.get_sync("oauth.client_id")
+    client_secret = ds.get_sync("oauth.client_secret")
+    metadata_url = ds.get_sync("oauth.server_metadata_url")
+    if not client_id or not client_secret:
         return {
             "success": False,
-            "error": "OAUTH_CLIENT_ID or OAUTH_CLIENT_SECRET not configured",
-            "hint": "Set OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, and OAUTH_SERVER_METADATA_URL.",
+            "error": "oauth.client_id or oauth.client_secret not configured",
+            "hint": "Set OIDC client ID, client secret, and discovery URL in the SSO tab, then restart the API.",
             "checks": [],
         }
-    if not settings.OAUTH_SERVER_METADATA_URL:
+    if not metadata_url:
         return {
             "success": False,
-            "error": "OAUTH_SERVER_METADATA_URL not configured",
+            "error": "oauth.server_metadata_url not configured",
             "hint": "Point this at your IdP's .well-known/openid-configuration URL.",
             "checks": [],
         }
@@ -272,9 +274,9 @@ async def validate_oidc(
     )
 
     checks, metadata = await run_oidc_checks(
-        settings.OAUTH_SERVER_METADATA_URL,
-        settings.OAUTH_CLIENT_ID,
-        settings.OAUTH_CLIENT_SECRET,
+        metadata_url,
+        client_id,
+        client_secret,
         redirect_uri,
     )
     success = all_pass(checks)
@@ -334,7 +336,7 @@ async def validate_saml(
         return {
             "success": False,
             "error": "SAML is not configured",
-            "hint": "Configure SAML via environment variables or the admin API.",
+            "hint": "Configure SAML in the SSO tab or the admin API.",
             "checks": [],
         }
 
@@ -362,14 +364,14 @@ async def validate_saml(
         return {
             "success": False,
             "error": "Failed to decrypt SP private key",
-            "hint": "Check SAML_SP_KEY_ENCRYPTION_PASSWORD is correct.",
+            "hint": "Check saml.sp_key_encryption_password is correct.",
             "checks": [
                 make_check(
                     "sp_key_decrypt",
                     "SP private key decrypts",
                     "fail",
                     "Decryption failed.",
-                    "Check SAML_SP_KEY_ENCRYPTION_PASSWORD.",
+                    "Check saml.sp_key_encryption_password.",
                 )
             ],
             "latency_ms": round((time.monotonic() - start) * 1000),
@@ -394,7 +396,7 @@ async def validate_saml(
 
 # ── SSO End-to-End Test ───────────────────────────────────
 #
-# These endpoints run the real login flow against the real IdP -- the only
+# These endpoints run the real login flow against the real IdP, the only
 # step that isn't automated is the user typing credentials at the IdP. Every
 # other step (token exchange, signature/audience validation, claim extraction,
 # user lookup) is recorded as a pass/fail check so the operator sees exactly
@@ -418,24 +420,27 @@ async def e2e_oidc_start(
 ):
     """Begin an OIDC end-to-end test. Returns the IdP authorize URL.
 
-    Runs the full validator suite first. If any check fails -- discovery
+    Runs the full validator suite first. If any check fails, discovery
     unreachable, client_id wrong, redirect_uri not whitelisted, scope missing,
-    signing alg unsupported -- we abort with the diagnostics *before* sending
+    signing alg unsupported, we abort with the diagnostics *before* sending
     the operator to the IdP. The IdP would just show its own error page and
     never redirect back, leaving the admin tab polling forever.
     """
-    if not settings.OAUTH_CLIENT_ID or not settings.OAUTH_SERVER_METADATA_URL:
+    client_id = ds.get_sync("oauth.client_id")
+    client_secret = ds.get_sync("oauth.client_secret")
+    metadata_url = ds.get_sync("oauth.server_metadata_url")
+    if not client_id or not metadata_url:
         return {
             "success": False,
             "error": "OIDC is not configured on the server",
-            "hint": "Set OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, and OAUTH_SERVER_METADATA_URL.",
+            "hint": "Set OIDC client ID, client secret, and discovery URL in the SSO tab, then restart the API.",
             "checks": [
                 make_check(
                     "oidc_configured",
                     "OIDC client configured on server",
                     "fail",
-                    "OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET / OAUTH_SERVER_METADATA_URL not set.",
-                    "Configure OIDC in environment and restart the API.",
+                    "OIDC client ID, client secret, or discovery URL not set.",
+                    "Configure OIDC in the SSO tab and restart the API.",
                 ),
             ],
         }
@@ -447,17 +452,17 @@ async def e2e_oidc_start(
     # ── Pre-flight: run the full validator suite. ────────────────────────
     # Every check the admin "Validate" button runs, plus a redirect_uri probe
     # against this specific URL, runs here. If anything fails we never send
-    # the operator to the IdP -- we just show them what to fix.
+    # the operator to the IdP, we just show them what to fix.
     preflight_checks, metadata = await run_oidc_checks(
-        settings.OAUTH_SERVER_METADATA_URL,
-        settings.OAUTH_CLIENT_ID,
-        settings.OAUTH_CLIENT_SECRET,
+        metadata_url,
+        client_id,
+        client_secret,
         redirect_uri,
     )
     if not all_pass(preflight_checks):
         first_fail = next((c for c in preflight_checks if c.get("status") == "fail"), None)
         optic.info(
-            "admin.e2e_oidc_start preflight failed -- first={}",
+            "admin.e2e_oidc_start preflight failed, first={}",
             first_fail.get("name") if first_fail else "?",
         )
         return {
@@ -467,7 +472,7 @@ async def e2e_oidc_start(
             "checks": preflight_checks,
         }
     if metadata is None:
-        # All checks passed but metadata is None -- defensive fallback.
+        # All checks passed but metadata is None, defensive fallback.
         return {
             "success": False,
             "error": "OIDC discovery document missing despite passing probes",
@@ -514,7 +519,7 @@ async def e2e_oidc_start(
     state = f"__e2e:{session_id}"
     params = {
         "response_type": "code",
-        "client_id": settings.OAUTH_CLIENT_ID,
+        "client_id": client_id,
         "redirect_uri": redirect_uri,
         "scope": "openid email profile groups",
         "state": state,
@@ -556,14 +561,14 @@ async def e2e_saml_start(
         return {
             "success": False,
             "error": "SAML is not configured",
-            "hint": "Configure SAML via environment variables or the admin API.",
+            "hint": "Configure SAML in the SSO tab or the admin API.",
             "checks": [
                 make_check(
                     "saml_configured",
                     "SAML SSO is configured on server",
                     "fail",
-                    "No SAML config found in DB or environment.",
-                    "Configure SAML in the admin panel or via SAML_* env vars.",
+                    "No SAML config found in DB or dynamic settings.",
+                    "Configure SAML in the SSO tab.",
                 ),
             ],
         }
@@ -590,14 +595,14 @@ async def e2e_saml_start(
         return {
             "success": False,
             "error": "Failed to decrypt SP private key",
-            "hint": "Check SAML_SP_KEY_ENCRYPTION_PASSWORD is correct.",
+            "hint": "Check saml.sp_key_encryption_password is correct.",
             "checks": [
                 make_check(
                     "sp_key_decrypt",
                     "SP private key decrypts",
                     "fail",
                     "Decryption failed.",
-                    "Check SAML_SP_KEY_ENCRYPTION_PASSWORD.",
+                    "Check saml.sp_key_encryption_password.",
                 ),
             ],
         }
@@ -609,7 +614,7 @@ async def e2e_saml_start(
     if not all_pass(preflight_checks):
         first_fail = next((c for c in preflight_checks if c.get("status") == "fail"), None)
         optic.info(
-            "admin.e2e_saml_start preflight failed -- first={}",
+            "admin.e2e_saml_start preflight failed, first={}",
             first_fail.get("name") if first_fail else "?",
         )
         return {

@@ -11,7 +11,7 @@ This guide covers configuring SCIM 2.0 user provisioning between your identity p
 
 Before configuring SCIM, verify the following:
 
-1. **Enterprise mode is enabled.** Your deployment must have `DEPLOYMENT_MODE=enterprise` set in the `.env` file. SCIM endpoints are not registered in `local` mode.
+1. **Enterprise license is active.** Your deployment must have `OBSERVAL_LICENSE_KEY` set in `.env`. SCIM endpoints are not registered without a SCIM-capable license.
 2. **SAML or OIDC SSO is configured.** Users provisioned via SCIM will authenticate through your IdP. Ensure SSO login works before enabling SCIM.
 3. **Admin database access.** You will need `psql` access to the Observal PostgreSQL database to insert a SCIM bearer token.
 4. **Organization exists.** At least one organization must exist in the `organizations` table. The SCIM token is scoped to a specific `org_id`.
@@ -515,7 +515,7 @@ Without SCIM, user accounts are only created via SAML JIT (just-in-time) provisi
 
 - **Check audit logs.** All SCIM operations are recorded in the audit log. Query them at `GET /api/v1/admin/audit-log?action=scim.user.create` (or `scim.user.update`, `scim.user.delete`).
 - **Check application logs.** SCIM operations are logged under the `observal.ee.scim` logger. Set `LOG_LEVEL=DEBUG` for verbose output.
-- **Verify enterprise mode.** Confirm `DEPLOYMENT_MODE=enterprise` is set. In `local` mode, the SCIM router is not mounted and all requests to `/api/v1/scim/*` will return `404`.
+- **Verify the enterprise license.** Confirm `OBSERVAL_LICENSE_KEY` is set and includes SCIM. Without it, the SCIM router is not mounted and all requests to `/api/v1/scim/*` will return `404`.
 
 ### Revoking a SCIM Token
 

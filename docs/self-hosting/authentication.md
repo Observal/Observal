@@ -13,11 +13,22 @@ Observal supports password auth, API keys, OAuth / OIDC, and SAML. The public lo
 | --- | --- | --- |
 | Email + password | Default password auth | Used by bootstrap admins and locally managed users |
 | Self registration | `auth.self_registration_enabled=true` | Creates standard `user` accounts only |
-| OAuth / OIDC | `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OAUTH_SERVER_METADATA_URL` | Uses IdP discovery metadata |
-| SAML | SAML dynamic settings | Enterprise SAML setup |
+| OAuth / OIDC | SSO tab settings: `oauth.client_id`, `oauth.client_secret`, `oauth.server_metadata_url` | Uses IdP discovery metadata. API restart required after changes. |
+| SAML | SSO tab settings: `saml.*` | Enterprise SAML setup |
 | API keys | User generated after login | Inherits the user's role |
 
 Use `deployment.sso_only=true` when password login should be hidden and only SSO should be available.
+
+## SSO-only mode {#sso-only-mode}
+
+`deployment.sso_only` controls whether password-based authentication is available.
+
+| Value | Effect |
+| --- | --- |
+| `false` (default) | Email and password login stays available alongside SSO. |
+| `true` | Password login, password reset, and local user bootstrap are blocked. Users must sign in with OIDC or SAML. |
+
+Set it in **Admin → SSO → Access policy**. Confirm OIDC or SAML works with a real test user before enabling it.
 
 ## Self registration {#self-registration}
 
@@ -71,15 +82,27 @@ To rotate keys, stop the API, delete the files under `$JWT_KEY_DIR`, and restart
 
 ## OAuth / OIDC SSO
 
-Set these three and SSO is enabled:
+Set these three in **Admin → SSO → SSO settings**, then restart the API so the OIDC client is rebuilt:
 
-```
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
-OAUTH_SERVER_METADATA_URL=https://accounts.example.com/.well-known/openid-configuration
-```
+| Setting | Value |
+| --- | --- |
+| `oauth.client_id` {#oauth-client-id} | Client ID from your IdP |
+| `oauth.client_secret` {#oauth-client-secret} | Client secret from your IdP |
+| `oauth.server_metadata_url` {#oauth-server-metadata-url} | OIDC discovery URL, for example `https://accounts.example.com/.well-known/openid-configuration` |
 
 Observal uses [Authlib](https://docs.authlib.org/) and reads the IdP discovery document, so any OIDC-compliant provider works (Auth0, Okta, Azure AD, Google Workspace, Keycloak, Authentik, Dex, etc.).
+
+### OIDC Client ID {#oauth-client-id}
+
+The public client identifier from your IdP application registration.
+
+### OIDC Client Secret {#oauth-client-secret}
+
+The private client secret from your IdP application registration. It is stored encrypted and is never shown again after saving.
+
+### OIDC Discovery URL {#oauth-server-metadata-url}
+
+The `.well-known/openid-configuration` URL for your IdP tenant or authorization server.
 
 ### Redirect URI
 
@@ -165,7 +188,7 @@ An operator reads the log and passes the code to the user out-of-band (Slack, ph
 Enterprise edition adds:
 
 * **Audit logging**: every privileged action lands in ClickHouse's `audit_log`
-* **SSO-only mode** (`DEPLOYMENT_MODE=enterprise`)
+* **SSO-only mode** (`deployment.sso_only=true`)
 
 See `/ee/docs/cli.md` in the repo for enterprise-specific CLI commands.
 

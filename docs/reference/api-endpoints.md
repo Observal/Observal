@@ -13,7 +13,7 @@ Base path: `/api/v1`.
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/auth/bootstrap` | Auto-create admin on fresh server (localhost only) |
-| `POST` | `/auth/register` | Self-registration (email + password; `DEPLOYMENT_MODE=local` only) |
+| `POST` | `/auth/register` | Self-registration (email + password; `deployment.sso_only=false` only) |
 | `POST` | `/auth/login` | Login with API key or email + password |
 | `POST` | `/auth/exchange` | Exchange one-time OAuth code for credentials |
 | `GET` | `/auth/whoami` | Current user info |

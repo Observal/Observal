@@ -3,7 +3,7 @@
 
 # Configuration
 
-Every Observal server setting lives in `.env`. Defaults are sane for local development. This page groups settings by concern; the full table is in [Reference → Environment variables](../reference/environment-variables.md).
+Boot-time infrastructure and secret settings live in `.env`. Runtime settings, including SSO, live in the admin UI as dynamic settings. Defaults are sane for local development.
 
 ## Required for production
 
@@ -11,11 +11,11 @@ Override these before going live:
 
 | Variable               | Default                        | Why change                                                                                                                         |
 | ---------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `SECRET_KEY`           | `change-me-to-a-random-string` | Session signing key. **The server refuses to start with this default when `DEPLOYMENT_MODE` is not `local`.** Generate a real one. |
+| `SECRET_KEY`           | `change-me-to-a-random-string` | Session signing key. **The server refuses to start with this default when a license is configured.** Generate a real one. |
 | `POSTGRES_PASSWORD`    | `postgres`                     | Default password is not secure.                                                                                                    |
 | `CLICKHOUSE_PASSWORD`  | `clickhouse`                   | Same.                                                                                                                              |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000`        | Scope to your real frontend origin(s).                                                                                             |
-| `FRONTEND_URL`         | `http://localhost:3000`        | Used for OAuth redirects and email links.                                                                                          |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000`        | Scope to your real frontend origin(s). Configure as `deployment.cors_origins` in Admin Settings.                                   |
+| `deployment.frontend_url` | `http://localhost:3000`     | Used for OAuth redirects and email links. Configure in Admin Settings.                                                             |
 
 Generate a secret key:
 
@@ -23,18 +23,9 @@ Generate a secret key:
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-## Deployment mode
+## SSO-only mode
 
-```
-DEPLOYMENT_MODE=local
-```
-
-| Mode              | Self-registration | Bootstrap admin | Auth methods                                   |
-| ----------------- | ----------------- | --------------- | ---------------------------------------------- |
-| `local` (default) | Yes               | Yes             | Email + password, API key, SSO (if configured) |
-| `enterprise`      | No                | No              | SSO only                                      |
-
-Switch to `enterprise` when you want IdP-only access.
+Set `deployment.sso_only=true` in **Admin → SSO** when you want IdP-only access. Leave it `false` to keep password login available.
 
 ## Enterprise license key
 
@@ -77,13 +68,7 @@ Inside Docker Compose, hostnames resolve via the `observal-net` bridge (e.g. `ob
 
 ## OAuth / SSO
 
-Optional. Leave unset and SSO is disabled.
-
-```
-OAUTH_CLIENT_ID=...
-OAUTH_CLIENT_SECRET=...
-OAUTH_SERVER_METADATA_URL=https://accounts.example.com/.well-known/openid-configuration
-```
+Optional. Configure OIDC, SAML, and SSO-only mode in **Admin → SSO**. OIDC client changes are stored immediately, then take effect after the API restarts.
 
 Full setup in [Authentication and SSO](authentication.md).
 

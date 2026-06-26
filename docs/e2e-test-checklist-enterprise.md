@@ -4,7 +4,7 @@
 
 # E2E Test Checklist - Enterprise Mode
 
-This checklist covers enterprise-only features (`DEPLOYMENT_MODE=enterprise`). Run the [local checklist](e2e-test-checklist.md) first; it covers all base features (registry, agents, components, reviews, traces, ratings). This checklist layers enterprise-specific tests on top.
+This checklist covers enterprise-only features enabled by `OBSERVAL_LICENSE_KEY`. Run the [local checklist](e2e-test-checklist.md) first; it covers all base features (registry, agents, components, reviews, traces, ratings). This checklist layers enterprise-specific tests on top.
 
 ## Test Accounts
 
@@ -29,28 +29,26 @@ This checklist covers enterprise-only features (`DEPLOYMENT_MODE=enterprise`). R
 ## 1. Enterprise Environment Setup
 
 - [ ] Copy `.env.example` to `.env`
-- [ ] Set `DEPLOYMENT_MODE=enterprise`
-- [ ] Set `SSO_ONLY=true`
-- [ ] Configure SAML env vars (or leave blank to configure via UI later):
-  ```
-  SAML_IDP_ENTITY_ID=
-  SAML_IDP_SSO_URL=
-  SAML_IDP_X509_CERT=
-  SAML_SP_ENTITY_ID=http://localhost:8000
-  SAML_SP_ACS_URL=http://localhost:8000/api/v1/sso/saml/acs
-  SAML_JIT_PROVISIONING=true
-  SAML_DEFAULT_ROLE=user
-  ```
+- [ ] Set `OBSERVAL_LICENSE_KEY` in `.env`
+- [ ] In **Admin → SSO**, set `deployment.sso_only=true` if testing SSO-only mode
+- [ ] In **Admin → SSO**, configure SAML settings if testing SAML:
+  - `saml.idp_entity_id`
+  - `saml.idp_sso_url`
+  - `saml.idp_x509_cert`
+  - `saml.sp_entity_id=http://localhost:8000`
+  - `saml.sp_acs_url=http://localhost:8000/api/v1/sso/saml/acs`
+  - `saml.jit_provisioning=true`
+  - `saml.default_role=user`
 - [ ] Start the stack: `make rebuild-clean`
 - [ ] Verify all containers healthy: `docker compose -f docker/docker-compose.yml ps`
 
 ## 2. Enterprise Guard Validation
 
-- [ ] Hit `GET /api/v1/config`; verify `deployment_mode: "enterprise"`
+- [ ] Hit `GET /api/v1/config/public`; verify `licensed: true`
 - [ ] With incomplete SAML config, verify the enterprise guard middleware returns warnings
 - [ ] Visit the login page; verify SSO login button is shown (not password form)
 - [ ] Attempt `POST /api/v1/auth/register`; verify it is blocked (no self-registration in enterprise mode)
-- [ ] Attempt `POST /api/v1/auth/login` with password; verify it is blocked when `SSO_ONLY=true`
+- [ ] Attempt `POST /api/v1/auth/login` with password; verify it is blocked when `deployment.sso_only=true`
 
 ## 3. Super Admin - SAML SSO Configuration (UI)
 
@@ -82,7 +80,7 @@ This checklist covers enterprise-only features (`DEPLOYMENT_MODE=enterprise`). R
 - [ ] Authenticate at the IdP
 - [ ] Verify redirect back to Observal ACS endpoint
 - [ ] Verify JWT cookie is set and user lands on the dashboard
-- [ ] Verify the user account was JIT-provisioned with `SAML_DEFAULT_ROLE` (user)
+- [ ] Verify the user account was JIT-provisioned with `saml.default_role` (user)
 - [ ] Verify the user appears in the Admin > Users list
 
 ### SSO Edge Cases
@@ -222,8 +220,8 @@ Using the SCIM token from step 4, test the SCIM 2.0 API:
 - [ ] Navigate to **Users** (`/users`)
 - [ ] Verify all users are listed (demo + SCIM + JIT-provisioned)
 - [ ] Change a user's role via UI; verify it persists
-- [ ] Verify password reset is blocked when `SSO_ONLY=true`
-- [ ] Verify manual user creation is blocked when `SSO_ONLY=true`
+- [ ] Verify password reset is blocked when `deployment.sso_only=true`
+- [ ] Verify manual user creation is blocked when `deployment.sso_only=true`
 - [ ] Delete a user via UI; verify they are removed
 
 ## 13. Audit Logging Coverage
@@ -275,7 +273,7 @@ Perform the following actions and verify each generates an audit log entry:
 
 ## 16. Non-Enterprise Zero Overhead
 
-- [ ] Switch back to `DEPLOYMENT_MODE=local` and restart
+- [ ] Remove or replace `OBSERVAL_LICENSE_KEY` and restart if testing community mode
 - [ ] Verify SSO/SCIM endpoints return 404
 - [ ] Verify audit log writes don't happen (no ee handlers registered)
 - [ ] Verify no enterprise config warnings in diagnostics

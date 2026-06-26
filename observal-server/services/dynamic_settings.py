@@ -5,7 +5,8 @@
 
 All non-boot-time settings are stored in the `enterprise_config` table and
 accessed through this module. No env-var fallback; if a setting isn't in the
-DB, the hardcoded default is used.
+DB, the hardcoded default is used. Legacy SSO env vars are imported once at
+startup only when the matching DB setting is absent.
 
 Usage:
     from services.dynamic_settings import get, get_int, get_bool
@@ -145,6 +146,61 @@ async def reencrypt_on_key_rotation() -> int:
         return 0
 
 
+SSO_ENV_IMPORTS: dict[str, str] = {
+    "OAUTH_CLIENT_ID": "oauth.client_id",
+    "OAUTH_CLIENT_SECRET": "oauth.client_secret",
+    "OAUTH_SERVER_METADATA_URL": "oauth.server_metadata_url",
+    "SSO_ONLY": "deployment.sso_only",
+    "SAML_IDP_ENTITY_ID": "saml.idp_entity_id",
+    "SAML_IDP_SSO_URL": "saml.idp_sso_url",
+    "SAML_IDP_SLO_URL": "saml.idp_slo_url",
+    "SAML_IDP_X509_CERT": "saml.idp_x509_cert",
+    "SAML_IDP_METADATA_URL": "saml.idp_metadata_url",
+    "SAML_SP_ENTITY_ID": "saml.sp_entity_id",
+    "SAML_SP_ACS_URL": "saml.sp_acs_url",
+    "SAML_JIT_PROVISIONING": "saml.jit_provisioning",
+    "SAML_DEFAULT_ROLE": "saml.default_role",
+    "SAML_SP_KEY_ENCRYPTION_PASSWORD": "saml.sp_key_encryption_password",
+}
+
+
+async def import_sso_env_once() -> int:
+    """Import legacy SSO env vars into dynamic settings when DB has no value."""
+    import os
+
+    from sqlalchemy import select
+
+    from database import async_session
+    from models.enterprise_config import EnterpriseConfig
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(EnterpriseConfig.key).where(EnterpriseConfig.key.in_(tuple(SSO_ENV_IMPORTS.values())))
+        )
+        existing = set(result.scalars().all())
+        values = {
+            setting_key: os.environ[env_key]
+            for env_key, setting_key in SSO_ENV_IMPORTS.items()
+            if setting_key not in existing and os.environ.get(env_key)
+        }
+        if not values:
+            return 0
+
+        imported = 0
+        for setting_key, value in values.items():
+            if setting_key in existing:
+                continue
+            store_value = encrypt_value(value) if setting_key in SENSITIVE_KEYS else value
+            session.add(EnterpriseConfig(key=setting_key, value=store_value))
+            imported += 1
+        if imported:
+            await session.commit()
+            await invalidate_all()
+            await refresh_sync_cache()
+            optic.info("dynamic_settings_sso_env_imported count={}", imported)
+        return imported
+
+
 # Redis key namespace for settings cache
 _CACHE_PREFIX = "settings:"
 _CACHE_TTL = 30  # seconds, short TTL for consistency, Redis is fast
@@ -170,7 +226,11 @@ DEFAULTS: dict[str, str] = {
     "insights.facet_concurrency": "25",
     # Auth
     "auth.self_registration_enabled": "false",
-    # Deployment (runtime-tunable, mode itself is boot-time env var)
+    # OIDC SSO. Changes require an API restart because the Authlib client is built at startup.
+    "oauth.client_id": "",
+    "oauth.client_secret": "",
+    "oauth.server_metadata_url": "",
+    # Deployment
     "deployment.sso_only": "false",
     "deployment.frontend_url": "http://localhost",
     "deployment.public_url": "",
@@ -229,12 +289,17 @@ DEFAULTS: dict[str, str] = {
 # Sensitive keys: values are masked in API responses unless explicitly revealed
 SENSITIVE_KEYS: set[str] = {
     "insights.api_key",
+    "oauth.client_secret",
     "saml.idp_x509_cert",
     "saml.sp_key_encryption_password",
 }
 
-SETTING_FEATURES: dict[str, str] = {
-    "deployment.sso_only": "saml",
+SETTING_FEATURES: dict[str, str] = {}
+
+RESTART_REQUIRED_KEYS: set[str] = {
+    "oauth.client_id",
+    "oauth.client_secret",
+    "oauth.server_metadata_url",
 }
 
 
@@ -245,11 +310,17 @@ def _setting_label(key: str) -> str:
         label.replace("Api", "API")
         .replace("Url", "URL")
         .replace("Sso", "SSO")
+        .replace("Oauth", "OAuth")
         .replace("Jwt", "JWT")
         .replace("Idp", "IdP")
+        .replace("Jit", "JIT")
+        .replace("Slo", "SLO")
+        .replace("Acs", "ACS")
+        .replace("X509", "X.509")
         .replace("Sp ", "SP ")
         .replace("Db ", "DB ")
         .replace("Ttl", "TTL")
+        .replace(" Id", " ID")
     )
 
 
@@ -266,6 +337,7 @@ def settings_schema() -> list[dict[str, Any]]:
                     "subtitle": "",
                     "default": DEFAULTS.get(key, ""),
                     "requires_feature": SETTING_FEATURES.get(key) or section.get("requires_feature"),
+                    "restart_required": key in RESTART_REQUIRED_KEYS,
                 }
             )
         sections.append({**section, "settings": items})
@@ -302,7 +374,7 @@ SECTIONS: list[dict[str, Any]] = [
         "description": "Core deployment configuration. Changes may affect authentication and access. Proceed with caution.",
         "icon": "server",
         "danger": True,
-        "keys": [k for k in DEFAULTS if k.startswith("deployment.")],
+        "keys": [k for k in DEFAULTS if k.startswith("deployment.") and k != "deployment.sso_only"],
     },
     {
         "id": "security",
@@ -313,13 +385,18 @@ SECTIONS: list[dict[str, Any]] = [
         "keys": [k for k in DEFAULTS if k.startswith("security.")],
     },
     {
-        "id": "saml",
-        "title": "SAML 2.0 SSO",
-        "description": "SAML identity provider configuration. Requires 'saml' license feature.",
+        "id": "sso",
+        "title": "SSO",
+        "description": "OIDC, SAML, and SSO-only authentication settings.",
         "icon": "key",
         "danger": True,
-        "requires_feature": "saml",
-        "keys": [k for k in DEFAULTS if k.startswith("saml.")],
+        "keys": [
+            "deployment.sso_only",
+            "oauth.client_id",
+            "oauth.client_secret",
+            "oauth.server_metadata_url",
+            *[k for k in DEFAULTS if k.startswith("saml.")],
+        ],
     },
     {
         "id": "jwt",

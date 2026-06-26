@@ -3,7 +3,7 @@
 
 # Enterprise Edition
 
-Source-available enterprise features for Observal. This module is loaded only when `DEPLOYMENT_MODE=enterprise` is set.
+Source-available enterprise features for Observal. This module is loaded when `OBSERVAL_LICENSE_KEY` is set.
 
 > **License**: This directory is covered by a separate Enterprise License (see `ee/LICENSE`). A commercial license is required for production use. Community contributions are not accepted for this directory.
 
@@ -20,14 +20,14 @@ Source-available enterprise features for Observal. This module is loaded only wh
 
 ```
 observal-server/main.py
-  if DEPLOYMENT_MODE == "enterprise":
+  if OBSERVAL_LICENSE_KEY is set:
       from ee import register_enterprise
       register_enterprise(app, settings)
 ```
 
 `register_enterprise()` does the following on startup:
 
-1. Validates enterprise config (OAuth credentials, secret key, frontend URL)
+1. Validates enterprise config (SSO settings, secret key, frontend URL)
 2. Mounts enterprise routes under `/api/v1/`
 3. Registers audit event handlers on the event bus
 4. If config validation fails, adds `EnterpriseGuardMiddleware` that returns 503 on SSO/SCIM routes
@@ -39,9 +39,9 @@ Five settings are checked on startup. If any fail, the issues are stored in `app
 | Setting | Requirement |
 |---------|------------|
 | `SECRET_KEY` | Must not be the default `"change-me-to-a-random-string"` |
-| `OAUTH_CLIENT_ID` | Must be set |
-| `OAUTH_CLIENT_SECRET` | Must be set |
-| `OAUTH_SERVER_METADATA_URL` | Must be set (OIDC discovery endpoint) |
+| `oauth.client_id` | Configure in Admin SSO settings |
+| `oauth.client_secret` | Configure in Admin SSO settings |
+| `oauth.server_metadata_url` | Configure in Admin SSO settings, API restart required |
 | `FRONTEND_URL` | Must not be localhost |
 
 ## Audit Logging

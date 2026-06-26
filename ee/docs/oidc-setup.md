@@ -13,9 +13,7 @@ configuration, per-IdP setup instructions, and troubleshooting common issues.
 
 Before you begin, make sure the following requirements are met:
 
-- **Enterprise mode is enabled.** OIDC SSO is only available in enterprise
-  deployments. Set `DEPLOYMENT_MODE=enterprise` in your `.env` file and confirm
-  the enterprise license is active.
+- **Enterprise license is active.** OIDC SSO is only available in enterprise deployments. Set `OBSERVAL_LICENSE_KEY` in `.env`.
 - **HTTPS is required.** The Observal instance must be served over HTTPS.
   OAuth 2.0 redirect URIs must use HTTPS, and IdPs will reject callback URLs
   that use plain HTTP.
@@ -25,18 +23,19 @@ Before you begin, make sure the following requirements are met:
 
 ---
 
-## 2. Environment Variables
+## 2. Observal Settings
 
-Configure OIDC SSO by setting the following environment variables on the
-Observal server.
+Configure OIDC SSO in **Admin → SSO → SSO settings**.
 
-| Variable | Description |
+| Setting | Description |
 |---|---|
-| `OAUTH_CLIENT_ID` | The client ID issued by your IdP when you register the Observal application. |
-| `OAUTH_CLIENT_SECRET` | The client secret issued by your IdP. Treat this as a password and store it securely. |
-| `OAUTH_SERVER_METADATA_URL` | The OIDC discovery URL for your IdP. This is the `.well-known/openid-configuration` endpoint. Observal fetches this URL at startup to auto-configure token and authorization endpoints. |
-| `SSO_ONLY` | When set to `true`, disables password-based authentication entirely. Only SSO login is allowed. See [SSO-Only Mode](#6-sso-only-mode). |
-| `FRONTEND_URL` | The public URL of your Observal instance. Used to construct the OAuth callback URL registered with your IdP. |
+| `oauth.client_id` | The client ID issued by your IdP when you register the Observal application. |
+| `oauth.client_secret` | The client secret issued by your IdP. Treat this as a password and store it securely. |
+| `oauth.server_metadata_url` | The OIDC discovery URL for your IdP. This is the `.well-known/openid-configuration` endpoint. |
+| `deployment.sso_only` | When set to `true`, disables password-based authentication entirely. Only SSO login is allowed. See [SSO-Only Mode](#6-sso-only-mode). |
+| `deployment.frontend_url` | The public URL of your Observal instance. Used to construct the OAuth callback URL registered with your IdP. |
+
+OIDC client changes require an API restart before normal user login uses them. Existing `OAUTH_*` env vars are imported once on startup when the dynamic setting is not already present.
 
 ### Callback URL
 
@@ -57,13 +56,7 @@ This value must match exactly what is configured in your IdP. Any mismatch
 
 ### Minimal Example
 
-With these three variables set and enterprise mode active, OIDC SSO is ready:
-
-```bash
-export OAUTH_CLIENT_ID="..."
-export OAUTH_CLIENT_SECRET="..."
-export OAUTH_SERVER_METADATA_URL="https://..."
-```
+With these three settings saved and the API restarted, OIDC SSO is ready.
 
 ---
 
@@ -83,9 +76,9 @@ export OAUTH_SERVER_METADATA_URL="https://..."
 4. Under **Assignments**, choose to limit access to specific groups or allow
    everyone in your organization, then click **Save**.
 5. On the application's **General** tab, copy:
-   - **Client ID** to `OAUTH_CLIENT_ID`
-   - **Client secret** to `OAUTH_CLIENT_SECRET`
-6. Set `OAUTH_SERVER_METADATA_URL` to your Okta domain's discovery URL:
+   - **Client ID** to `oauth.client_id`
+   - **Client secret** to `oauth.client_secret`
+6. Set `oauth.server_metadata_url` to your Okta domain's discovery URL:
    ```
    https://{your-okta-domain}/.well-known/openid-configuration
    ```
@@ -108,10 +101,10 @@ export OAUTH_SERVER_METADATA_URL="https://..."
 4. Under **Certificates & secrets**, click **New client secret**. Enter a
    description and choose an expiry period, then click **Add**. Copy the
    **Value** immediately (it is only shown once):
-   - Client secret value to `OAUTH_CLIENT_SECRET`
+   - Client secret value to `oauth.client_secret`
 5. On the application **Overview** page, copy:
-   - **Application (client) ID** to `OAUTH_CLIENT_ID`
-6. Set `OAUTH_SERVER_METADATA_URL` using your tenant ID:
+   - **Application (client) ID** to `oauth.client_id`
+6. Set `oauth.server_metadata_url` using your tenant ID:
    ```
    https://login.microsoftonline.com/{tenant-id}/v2.0/.well-known/openid-configuration
    ```
@@ -139,9 +132,9 @@ export OAUTH_SERVER_METADATA_URL="https://..."
    - **Authorized redirect URIs:**
      `https://observal.example.com/api/v1/auth/oauth/callback`
 5. Click **Create**. Copy:
-   - **Client ID** to `OAUTH_CLIENT_ID`
-   - **Client secret** to `OAUTH_CLIENT_SECRET`
-6. Set `OAUTH_SERVER_METADATA_URL` to Google's fixed discovery URL:
+   - **Client ID** to `oauth.client_id`
+   - **Client secret** to `oauth.client_secret`
+6. Set `oauth.server_metadata_url` to Google's fixed discovery URL:
    ```
    https://accounts.google.com/.well-known/openid-configuration
    ```
@@ -178,7 +171,7 @@ The OIDC authorization code flow used by Observal works as follows:
 
 ## 5. SSO-Only Mode
 
-Setting `SSO_ONLY=true` locks down Observal to IdP authentication exclusively:
+Setting `deployment.sso_only=true` locks down Observal to IdP authentication exclusively:
 
 - **Password login is disabled** across the web UI, CLI, and API. Users who
   previously had password-based accounts can no longer use them.
@@ -201,7 +194,7 @@ your organization:
 | Aspect | OIDC / OAuth 2.0 | SAML 2.0 |
 |---|---|---|
 | Protocol | REST / JSON | XML |
-| Setup complexity | Simpler (3 env vars) | More involved (certificates, metadata XML) |
+| Setup complexity | Simpler (3 dynamic settings) | More involved (certificates, metadata XML) |
 | IdP support | All modern IdPs | Older enterprise IdPs, legacy infrastructure |
 | Use when | IdP supports OIDC (Okta, Azure AD, Google) | IdP only supports SAML, or signed assertions are required by policy |
 | Provisioning | JIT only (on first login) | JIT only (combine with SCIM for full lifecycle) |
@@ -222,9 +215,9 @@ with [SCIM provisioning](scim-setup.md) for automated user lifecycle management
 **Fix:** Call `/api/v1/config/public` and check that it returns
 `"sso_enabled": true`. If it does not:
 
-- Verify `DEPLOYMENT_MODE=enterprise` is set.
-- Verify all three OAuth variables (`OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`,
-  `OAUTH_SERVER_METADATA_URL`) are set and the server has been restarted.
+- Verify `OBSERVAL_LICENSE_KEY` is set.
+- Verify all three OAuth variables (`oauth.client_id`, `oauth.client_secret`,
+  `oauth.server_metadata_url`) are set and the server has been restarted.
 
 ### "SSO sign-in failed" after redirect back from IdP
 
@@ -236,7 +229,7 @@ with [SCIM provisioning](scim-setup.md) for automated user lifecycle management
   exactly match `{FRONTEND_URL}/api/v1/auth/oauth/callback`. Check for
   trailing slashes, HTTP vs HTTPS differences, or typos.
 - **Incorrect client secret.** Re-copy the client secret from your IdP and
-  update `OAUTH_CLIENT_SECRET`. Secrets often contain special characters that
+  update `oauth.client_secret`. Secrets often contain special characters that
   can be truncated by shell escaping.
 - **Metadata URL unreachable.** Observal fetches the discovery document at
   startup. If the URL is unreachable from the server (firewall, private IdP),
@@ -258,7 +251,7 @@ permissions.
 
 **Fix:**
 
-- Verify `DEPLOYMENT_MODE=enterprise` is set and the server has been restarted.
+- Verify `OBSERVAL_LICENSE_KEY` is set and the server has been restarted.
 - Check whether the user's account exists and is active in the Observal admin
   panel.
 
@@ -266,7 +259,7 @@ permissions.
 
 - **Check server logs.** Set `LOG_LEVEL=debug` to see the full OAuth exchange,
   including the token endpoint response and ID token claims.
-- **Inspect the discovery document.** Fetch the `OAUTH_SERVER_METADATA_URL`
+- **Inspect the discovery document.** Fetch the `oauth.server_metadata_url`
   directly to confirm it is reachable and returns a valid JSON document with
   `authorization_endpoint` and `token_endpoint` fields.
 - **Verify the IdP application assignment.** Some IdPs (Okta, Azure AD) require

@@ -11,6 +11,9 @@ def _mock_ds(sso_only=False, frontend_url="https://app.example.com", **saml_over
     defaults = {
         "deployment.sso_only": str(sso_only).lower(),
         "deployment.frontend_url": frontend_url,
+        "oauth.client_id": "id",
+        "oauth.client_secret": "secret",
+        "oauth.server_metadata_url": "https://idp.example.com",
         "saml.idp_entity_id": "",
         "saml.idp_sso_url": "",
         "saml.idp_x509_cert": "",
@@ -30,10 +33,6 @@ class TestConfigValidator:
 
         settings = MagicMock()
         settings.SECRET_KEY = "change-me-to-a-random-string"
-        settings.OAUTH_CLIENT_ID = "id"
-        settings.OAUTH_CLIENT_SECRET = "secret"
-        settings.OAUTH_SERVER_METADATA_URL = "https://idp.example.com"
-
         with patch("ee.observal_server.services.config_validator.ds", _mock_ds()):
             issues = validate_enterprise_config(settings)
         assert len(issues) == 1
@@ -44,22 +43,26 @@ class TestConfigValidator:
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
-        settings.OAUTH_CLIENT_ID = None
-        settings.OAUTH_CLIENT_SECRET = None
-        settings.OAUTH_SERVER_METADATA_URL = None
-
-        with patch("ee.observal_server.services.config_validator.ds", _mock_ds(sso_only=True)):
+        with patch(
+            "ee.observal_server.services.config_validator.ds",
+            _mock_ds(
+                sso_only=True,
+                **{
+                    "oauth.client_id": "",
+                    "oauth.client_secret": "",
+                    "oauth.server_metadata_url": "",
+                },
+            ),
+        ):
             issues = validate_enterprise_config(settings)
         assert len(issues) == 3
-        assert any("OAUTH_CLIENT_ID" in i for i in issues)
+        assert any("oauth.client_id" in i for i in issues)
 
     def test_no_oauth_issues_when_sso_not_required(self):
         from ee.observal_server.services.config_validator import validate_enterprise_config
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
-        settings.OAUTH_CLIENT_ID = None
-
         with patch("ee.observal_server.services.config_validator.ds", _mock_ds(sso_only=False)):
             issues = validate_enterprise_config(settings)
         assert len(issues) == 0
@@ -69,8 +72,6 @@ class TestConfigValidator:
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
-        settings.OAUTH_CLIENT_ID = "id"
-
         with patch("ee.observal_server.services.config_validator.ds", _mock_ds(frontend_url="http://localhost:3000")):
             issues = validate_enterprise_config(settings)
         assert any("frontend_url" in i for i in issues)
@@ -80,10 +81,6 @@ class TestConfigValidator:
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
-        settings.OAUTH_CLIENT_ID = "id"
-        settings.OAUTH_CLIENT_SECRET = "secret"
-        settings.OAUTH_SERVER_METADATA_URL = "https://idp.example.com"
-
         with patch("ee.observal_server.services.config_validator.ds", _mock_ds()):
             issues = validate_enterprise_config(settings)
         assert issues == []
@@ -93,8 +90,6 @@ class TestConfigValidator:
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
-        settings.OAUTH_CLIENT_ID = "id"
-
         ds_mock = _mock_ds(
             **{
                 "saml.idp_entity_id": "https://idp.example.com/entity",

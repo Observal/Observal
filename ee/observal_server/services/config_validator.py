@@ -6,8 +6,7 @@
 Checks that required settings are properly configured for enterprise mode.
 Returns a list of human-readable issue descriptions (empty = healthy).
 
-Uses dynamic_settings for runtime-tunable values and config.settings for
-boot-time values (SECRET_KEY, OAUTH_*).
+Uses dynamic_settings for SSO values and config.settings for boot-time values.
 """
 
 from __future__ import annotations
@@ -30,12 +29,12 @@ def validate_enterprise_config(settings: Settings) -> list[str]:
 
     sso_only = ds.get_sync_bool("deployment.sso_only")
     if sso_only:
-        if not settings.OAUTH_CLIENT_ID:
-            issues.append("OAUTH_CLIENT_ID is not set (required when sso_only=true)")
-        if not settings.OAUTH_CLIENT_SECRET:
-            issues.append("OAUTH_CLIENT_SECRET is not set (required when sso_only=true)")
-        if not settings.OAUTH_SERVER_METADATA_URL:
-            issues.append("OAUTH_SERVER_METADATA_URL is not set (required when sso_only=true)")
+        if not ds.get_sync("oauth.client_id"):
+            issues.append("oauth.client_id is not set (required when sso_only=true)")
+        if not ds.get_sync("oauth.client_secret"):
+            issues.append("oauth.client_secret is not set (required when sso_only=true)")
+        if not ds.get_sync("oauth.server_metadata_url"):
+            issues.append("oauth.server_metadata_url is not set (required when sso_only=true)")
 
     saml_entity = ds.get_sync("saml.idp_entity_id")
     saml_sso = ds.get_sync("saml.idp_sso_url")

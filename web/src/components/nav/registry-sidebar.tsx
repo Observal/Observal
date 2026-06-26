@@ -112,7 +112,6 @@ const adminNav: NavItem[] = [
 		href: "/sso",
 		icon: KeyRound,
 		minRole: "admin",
-		requiresFeature: "saml",
 	},
 	{
 		title: "Diagnostics",

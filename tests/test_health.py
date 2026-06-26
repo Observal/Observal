@@ -199,11 +199,11 @@ class TestDiagnostics:
                 patch("api.routes.admin.enterprise_settings.ds") as mock_ds,
             ):
                 mock_settings.SECRET_KEY = "change-me-to-a-random-string"
-                mock_settings.OAUTH_CLIENT_ID = None
-                mock_settings.FRONTEND_URL = "http://localhost:3000"
                 mock_settings.JWT_SIGNING_ALGORITHM = "ES256"
                 mock_ds.get_bool = AsyncMock(return_value=True)
-                mock_ds.get = AsyncMock(return_value="http://localhost:3000")
+                mock_ds.get = AsyncMock(
+                    side_effect=lambda key, *args: "" if key == "oauth.client_id" else "http://localhost:3000"
+                )
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                     r = await ac.get("/api/v1/admin/diagnostics")
             assert r.status_code == 200
@@ -212,7 +212,7 @@ class TestDiagnostics:
             assert "enterprise" in data["checks"]
             issues = data["checks"]["enterprise"]["issues"]
             assert any("SECRET_KEY" in i for i in issues)
-            assert any("OAUTH_CLIENT_ID" in i for i in issues)
+            assert any("oauth.client_id" in i for i in issues)
             assert any("frontend" in i.lower() for i in issues)
         finally:
             app.dependency_overrides.clear()

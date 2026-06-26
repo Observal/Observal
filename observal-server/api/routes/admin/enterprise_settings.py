@@ -83,14 +83,14 @@ async def diagnostics(
             issues.append("SECRET_KEY is using default value")
         sso_only = await ds.get_bool("deployment.sso_only")
         frontend_url = await ds.get("deployment.frontend_url")
-        if sso_only and not settings.OAUTH_CLIENT_ID:
-            issues.append("OAUTH_CLIENT_ID is not set (required for SSO-only mode)")
+        if sso_only and not await ds.get("oauth.client_id"):
+            issues.append("oauth.client_id is not set (required for SSO-only mode)")
         if frontend_url in ("http://localhost:3000", ""):
             issues.append("deployment.frontend_url is localhost")
         diag["checks"]["enterprise"] = {
             "status": "ok" if not issues else "misconfigured",
             "sso_only": sso_only,
-            "sso_configured": bool(settings.OAUTH_CLIENT_ID),
+            "sso_configured": bool(await ds.get("oauth.client_id")),
             "issues": issues,
         }
         if issues:

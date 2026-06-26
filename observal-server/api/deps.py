@@ -314,7 +314,7 @@ async def require_local_mode() -> None:
 
 
 async def require_password_auth() -> None:
-    """FastAPI dependency that blocks the endpoint when SSO_ONLY is enabled."""
+    """FastAPI dependency that blocks the endpoint when deployment.sso_only is enabled."""
     import services.dynamic_settings as ds
 
     sso_only = await ds.get_bool("deployment.sso_only")

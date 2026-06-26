@@ -214,7 +214,7 @@ _DYNAMIC_CONFIG_KEYS = [
 async def _collect_config() -> dict:
     """Return only allowlisted Settings fields plus dynamic settings.
 
-    Secrets like SECRET_KEY, OAUTH_CLIENT_SECRET, etc. are never sent
+    Secrets like SECRET_KEY and oauth.client_secret are never sent
     over the wire.
     """
     optic.debug("_collect_config called")

@@ -100,14 +100,14 @@ Flush happens automatically the next time the server is reachable.
 
 ## Deployment mode
 
-Two server-side modes, controlled by the `DEPLOYMENT_MODE` environment variable:
+Enterprise features are controlled by `OBSERVAL_LICENSE_KEY`; SSO-only access is controlled by `deployment.sso_only`:
 
 | Mode | Self-registration | Bootstrap | Auth |
 | --- | --- | --- | --- |
-| `local` (default) | Yes | Yes (fresh server creates admin on first login) | Email + password or API key |
-| `enterprise` | No | No | SSO / OIDC only |
+| `deployment.sso_only=false` (default) | Yes | Yes (fresh server creates admin on first login) | Email + password or API key |
+| `deployment.sso_only=true` | No | No | SSO only |
 
-You pick this when you set up the server. Most self-hosters use `local`.
+You pick this when you set up the server. Most self-hosters use `deployment.sso_only=false`.
 
 ## Next
 

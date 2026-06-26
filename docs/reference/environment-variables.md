@@ -13,7 +13,6 @@ Complete reference for every environment variable the server and CLI read. Defau
 | Variable                 | Default                        | Description                                                                                                                                                |
 | ------------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SECRET_KEY`             | `change-me-to-a-random-string` | Session signing key. Generate: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`                                                             |
-| `DEPLOYMENT_MODE`        | `local`                        | `local` (self-registration + bootstrap) or `enterprise` (SSO only)                                                                                         |
 | `OBSERVAL_LICENSE_KEY`   | -                              | Ed25519-signed enterprise license key. Enables enterprise features such as SAML and insight reports. Validated at startup; leave unset for community edition. |
 | `FRONTEND_URL`           | `http://localhost:3000`        | External frontend URL (OAuth redirects, email links)                                                                                                       |
 | `CORS_ALLOWED_ORIGINS`   | `http://localhost:3000`        | Comma-separated allowed CORS origins                                                                                                                       |
@@ -34,15 +33,9 @@ Complete reference for every environment variable the server and CLI read. Defau
 | `REDIS_URL`           | `redis://localhost:6379`                                         | Redis connection string                                     |
 | `DATA_RETENTION_DAYS` | `90`                                                             | ClickHouse TTL in days. `0` disables. Minimum non-zero: `7` |
 
-### OAuth / OIDC (SSO)
+### SSO
 
-Leave unset to disable SSO.
-
-| Variable                    | Default | Description                                                                               |
-| --------------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| `OAUTH_CLIENT_ID`           | -       | Client ID from your IdP                                                                   |
-| `OAUTH_CLIENT_SECRET`       | -       | Client secret from your IdP                                                               |
-| `OAUTH_SERVER_METADATA_URL` | -       | OIDC discovery URL (e.g. `https://accounts.example.com/.well-known/openid-configuration`) |
+OIDC, SAML, and SSO-only mode are configured in **Admin → SSO** and stored in dynamic settings. OIDC client changes require an API restart. Existing `OAUTH_*`, `SSO_ONLY`, and `SAML_*` values are imported once on startup when the matching dynamic setting is not already present.
 
 ### JWT signing
 

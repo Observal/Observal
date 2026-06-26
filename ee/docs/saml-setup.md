@@ -27,50 +27,49 @@ Before you begin, make sure the following requirements are met:
 
 ## 2. Quick Start: Environment Variables
 
-Configure SAML by setting environment variables on the Observal server. The
-table below lists every supported variable.
+Configure SAML in **Admin → SSO → SSO settings**. The table below lists every supported dynamic setting.
 
 ### IdP Settings (required)
 
-| Variable | Description |
+| Setting | Description |
 |---|---|
-| `SAML_IDP_ENTITY_ID` | The entity ID of your identity provider. Sometimes called the "Issuer." |
-| `SAML_IDP_SSO_URL` | The IdP's Single Sign-On URL where authentication requests are sent. |
-| `SAML_IDP_X509_CERT` | The PEM-encoded X.509 certificate used to verify IdP signatures. Paste the full certificate including the `BEGIN` and `END` lines. |
+| `saml.idp_entity_id` | The entity ID of your identity provider. Sometimes called the "Issuer." |
+| `saml.idp_sso_url` | The IdP's Single Sign-On URL where authentication requests are sent. |
+| `saml.idp_x509_cert` | The PEM-encoded X.509 certificate used to verify IdP signatures. Paste the full certificate including the `BEGIN` and `END` lines. |
 
 ### IdP Settings (optional)
 
-| Variable | Description |
+| Setting | Description |
 |---|---|
-| `SAML_IDP_SLO_URL` | The IdP's Single Logout URL. If set, Observal will send logout requests to the IdP when users sign out. |
-| `SAML_IDP_METADATA_URL` | A URL pointing to the IdP's SAML metadata XML. When provided, Observal will periodically fetch metadata to keep certificates and endpoints up to date. |
+| `saml.idp_slo_url` | The IdP's Single Logout URL. If set, Observal will send logout requests to the IdP when users sign out. |
+| `saml.idp_metadata_url` | A URL pointing to the IdP's SAML metadata XML. When provided, Observal will periodically fetch metadata to keep certificates and endpoints up to date. |
 
 ### SP Settings
 
-| Variable | Description | Default |
+| Setting | Description | Default |
 |---|---|---|
-| `SAML_SP_ENTITY_ID` | The entity ID that Observal uses to identify itself to the IdP. | Auto-derived from `FRONTEND_URL` (appends `api/v1/sso/saml/metadata`)|
-| `SAML_SP_ACS_URL` | The Assertion Consumer Service URL where the IdP posts SAML responses. | Auto-derived from `FRONTEND_URL` (appends `/api/v1/sso/saml/acs`) |
-| `SAML_SP_KEY_ENCRYPTION_PASSWORD` | Password protecting the SP's private key, used for encrypted assertions. Only required if your IdP sends encrypted SAML assertions. | (none) |
+| `saml.sp_entity_id` | The entity ID that Observal uses to identify itself to the IdP. | Auto-derived from `FRONTEND_URL` (appends `api/v1/sso/saml/metadata`)|
+| `saml.sp_acs_url` | The Assertion Consumer Service URL where the IdP posts SAML responses. | Auto-derived from `FRONTEND_URL` (appends `/api/v1/sso/saml/acs`) |
+| `saml.sp_key_encryption_password` | Password protecting the SP's private key, used for encrypted assertions. Only required if your IdP sends encrypted SAML assertions. | (none) |
 
 ### Provisioning and Roles
 
-| Variable | Description | Default |
+| Setting | Description | Default |
 |---|---|---|
-| `SAML_JIT_PROVISIONING` | Enable Just-In-Time user provisioning. When `true`, users who authenticate via SAML are automatically created in Observal on first login. | `true` |
-| `SAML_DEFAULT_ROLE` | The role assigned to JIT-provisioned users. | `user` |
+| `saml.jit_provisioning` | Enable Just-In-Time user provisioning. When `true`, users who authenticate via SAML are automatically created in Observal on first login. | `true` |
+| `saml.default_role` | The role assigned to JIT-provisioned users. | `user` |
 
 ### Minimal Example
 
-```bash
-export SAML_IDP_ENTITY_ID="https://idp.example.com/saml"
-export SAML_IDP_SSO_URL="https://idp.example.com/saml/sso"
-export SAML_IDP_X509_CERT="-----BEGIN CERTIFICATE-----
-MIICpDCCAYwCCQD...
------END CERTIFICATE-----"
-```
+In **Admin → SSO → SSO settings**, set:
 
-With these three variables set and enterprise mode active, SAML SSO is ready.
+| Setting | Value |
+| --- | --- |
+| `saml.idp_entity_id` | `https://idp.example.com/saml` |
+| `saml.idp_sso_url` | `https://idp.example.com/saml/sso` |
+| `saml.idp_x509_cert` | The PEM certificate from your IdP |
+
+With these three settings saved and enterprise mode active, SAML SSO is ready.
 
 ---
 
@@ -120,9 +119,9 @@ SP configuration on the IdP side.
 6. Click **Next**, then **Finish**.
 7. On the application's **Sign On** tab, copy the following values into your
    Observal environment:
-   - **Identity Provider Issuer** to `SAML_IDP_ENTITY_ID`
-   - **Identity Provider Single Sign-On URL** to `SAML_IDP_SSO_URL`
-   - **X.509 Certificate** to `SAML_IDP_X509_CERT`
+   - **Identity Provider Issuer** to `saml.idp_entity_id`
+   - **Identity Provider Single Sign-On URL** to `saml.idp_sso_url`
+   - **X.509 Certificate** to `saml.idp_x509_cert`
 8. Assign users or groups to the Okta application.
 
 ### 4.2 Azure AD (Entra ID)
@@ -145,13 +144,13 @@ SP configuration on the IdP side.
    - `lastName` mapped to `user.surname`
 7. In **SAML Certificates**, download the **Certificate (Base64)**.
 8. Copy the following from **Set up Observal**:
-   - **Microsoft Entra Identifier** to `SAML_IDP_ENTITY_ID`
-   - **Login URL** to `SAML_IDP_SSO_URL`
-   - **Logout URL** to `SAML_IDP_SLO_URL`
-   - Paste the downloaded certificate contents into `SAML_IDP_X509_CERT`
+   - **Microsoft Entra Identifier** to `saml.idp_entity_id`
+   - **Login URL** to `saml.idp_sso_url`
+   - **Logout URL** to `saml.idp_slo_url`
+   - Paste the downloaded certificate contents into `saml.idp_x509_cert`
 9. Assign users and groups to the enterprise application.
 
-Alternatively, you can set `SAML_IDP_METADATA_URL` to the **App Federation
+Alternatively, you can set `saml.idp_metadata_url` to the **App Federation
 Metadata Url** from the SAML Certificates section. Observal will auto-configure
 from metadata.
 
@@ -161,9 +160,9 @@ from metadata.
 2. Click **Add app > Add custom SAML app**.
 3. Name the application (e.g., "Observal") and click **Continue**.
 4. On the **Google Identity Provider details** page, copy:
-   - **SSO URL** to `SAML_IDP_SSO_URL`
-   - **Entity ID** to `SAML_IDP_ENTITY_ID`
-   - **Certificate** to `SAML_IDP_X509_CERT`
+   - **SSO URL** to `saml.idp_sso_url`
+   - **Entity ID** to `saml.idp_entity_id`
+   - **Certificate** to `saml.idp_x509_cert`
 5. Click **Continue**.
 6. In **Service provider details**, set:
    - **ACS URL:**
@@ -184,8 +183,7 @@ from metadata.
 
 ## 5. Admin API Configuration
 
-As an alternative to environment variables, admins can manage SAML configuration
-through the REST API. This allows runtime changes without restarting the server.
+As an alternative to the SSO tab, admins can manage SAML configuration through the REST API. This allows runtime changes without restarting the server.
 
 ### View Current Config
 
@@ -196,7 +194,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 Returns the current SAML configuration with sensitive fields (private keys,
 certificates) redacted. The `source` field indicates whether config comes from
-`env` (environment variables), `database`, or `none`.
+`dynamic`, `database`, or `none`.
 
 ### Create or Update Config
 
@@ -274,7 +272,7 @@ originating `AuthnRequest`.
 
 ### Single Logout (SLO)
 
-When an IdP SLO URL is configured (via `SAML_IDP_SLO_URL` or the admin API),
+When an IdP SLO URL is configured (via `saml.idp_slo_url` or the admin API),
 Observal supports SP-initiated logout:
 
 ```
@@ -304,7 +302,7 @@ is logged.
 
 ## 7. Just-In-Time (JIT) Provisioning
 
-When `SAML_JIT_PROVISIONING` is set to `true` (the default), Observal
+When `saml.jit_provisioning` is set to `true` (the default), Observal
 automatically creates user accounts on first SAML login. Here is how it works:
 
 1. A user authenticates via their IdP for the first time.
@@ -313,9 +311,9 @@ automatically creates user accounts on first SAML login. Here is how it works:
 3. Observal checks whether a user with that email already exists.
    - If the user exists, their session is created and they are logged in.
    - If the user does not exist, a new account is created with the role
-     specified by `SAML_DEFAULT_ROLE` (default: `user`), and they are logged in.
+     specified by `saml.default_role` (default: `user`), and they are logged in.
 
-To disable JIT provisioning, set `SAML_JIT_PROVISIONING=false`. With JIT
+To disable JIT provisioning, set `saml.jit_provisioning=false`. With JIT
 disabled, only pre-existing users can log in via SAML. Unrecognized users will
 see a 403 Forbidden error.
 
@@ -344,10 +342,10 @@ when the enterprise license is valid.
 **Common causes and fixes:**
 
 - **Mismatched ACS URL.** The ACS URL configured in the IdP must exactly match
-  the value Observal expects. Check `SAML_SP_ACS_URL` or the auto-derived
+  the value Observal expects. Check `saml.sp_acs_url` or the auto-derived
   value at `/api/v1/sso/saml/metadata`.
 - **Invalid or expired IdP certificate.** If the certificate in
-  `SAML_IDP_X509_CERT` does not match the one the IdP used to sign the
+  `saml.idp_x509_cert` does not match the one the IdP used to sign the
   assertion, validation will fail. Re-download the certificate from your IdP
   and update the environment variable.
 - **Clock skew.** SAML assertions include timestamps with a validity window.
@@ -364,7 +362,7 @@ Observal returns a 403.
 
 **Common causes and fixes:**
 
-- **JIT provisioning is disabled.** If `SAML_JIT_PROVISIONING=false` and the
+- **JIT provisioning is disabled.** If `saml.jit_provisioning=false` and the
   user does not have a pre-existing account in Observal, access is denied.
   Either create the user manually or enable JIT provisioning.
 - **User is deactivated.** If the user's account exists but has been

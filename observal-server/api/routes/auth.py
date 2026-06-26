@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import services.dynamic_settings as ds
 from api.deps import get_current_user, get_db, get_or_create_default_org, require_local_mode, require_password_auth
 from api.ratelimit import limiter
-from config import settings
 from models.user import User, UserRole
 from schemas.auth import (
     ChangePasswordRequest,
@@ -102,18 +101,30 @@ def _validate_password_strength(password: str) -> None:
         raise HTTPException(status_code=422, detail="Password is too common")
 
 
-# Configure OAuth client
 oauth = OAuth()
-if settings.OAUTH_CLIENT_ID and settings.OAUTH_CLIENT_SECRET and settings.OAUTH_SERVER_METADATA_URL:
-    oauth.register(
-        name="oidc",
-        client_id=settings.OAUTH_CLIENT_ID,
-        client_secret=settings.OAUTH_CLIENT_SECRET,
-        server_metadata_url=settings.OAUTH_SERVER_METADATA_URL,
-        client_kwargs={
-            "scope": "openid email profile groups",
-        },
-    )
+
+
+def configure_oauth_client() -> None:
+    """Build the OIDC client from dynamic settings at API startup."""
+    global oauth
+    oauth = OAuth()
+    client_id = ds.get_sync("oauth.client_id")
+    client_secret = ds.get_sync("oauth.client_secret")
+    metadata_url = ds.get_sync("oauth.server_metadata_url")
+    if client_id and client_secret and metadata_url:
+        oauth.register(
+            name="oidc",
+            client_id=client_id,
+            client_secret=client_secret,
+            server_metadata_url=metadata_url,
+            client_kwargs={
+                "scope": "openid email profile groups",
+            },
+        )
+
+
+def is_oidc_configured() -> bool:
+    return bool(getattr(oauth, "oidc", None))
 
 
 async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[str, str, int]:
@@ -406,8 +417,8 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     "oidc_configured",
                     "OIDC client configured on server",
                     "fail",
-                    "OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET / OAUTH_SERVER_METADATA_URL not set.",
-                    "Configure OIDC in environment and restart the API.",
+                    "OIDC client ID, client secret, or discovery URL not set.",
+                    "Configure OIDC in the SSO tab and restart the API.",
                 )
             ],
             summary="OIDC not configured",
@@ -428,7 +439,7 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
         if "state" in msg.lower():
             hint = "The 'state' parameter didn't round-trip. Check that cookies/session survive the IdP redirect (SameSite, domain, browser extensions)."
         elif "invalid_client" in msg.lower():
-            hint = "IdP rejected the client credentials. Verify OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET."
+            hint = "IdP rejected the client credentials. Verify oauth.client_id and oauth.client_secret."
         elif "invalid_grant" in msg.lower():
             hint = "Authorization code already used, expired, or for a different client. Try logging in again."
         diag.append(make_check("token_exchange", "Authorization code exchanged for tokens", "fail", msg, hint))
@@ -801,7 +812,9 @@ async def _handle_oidc_e2e_callback(
     # so a tampered state would have failed the lookup above.
     diag.append(make_check("state_match", "State parameter echoed unchanged", "pass"))
 
-    if not settings.OAUTH_CLIENT_ID or not settings.OAUTH_CLIENT_SECRET:
+    client_id = ds.get_sync("oauth.client_id")
+    client_secret = ds.get_sync("oauth.client_secret")
+    if not client_id or not client_secret:
         diag.append(make_check("oidc_configured", "OIDC client credentials configured", "fail"))
         return await _done(ok=False, summary="OIDC creds missing")
 
@@ -831,7 +844,7 @@ async def _handle_oidc_e2e_callback(
                     "code": code,
                     "redirect_uri": redirect_uri,
                 },
-                auth=(settings.OAUTH_CLIENT_ID, settings.OAUTH_CLIENT_SECRET),
+                auth=(client_id, client_secret),
                 headers={"Accept": "application/json"},
             )
     except httpx.TimeoutException:
@@ -858,7 +871,7 @@ async def _handle_oidc_e2e_callback(
         err_desc = body.get("error_description") if isinstance(body, dict) else None
         hint = "IdP rejected the token exchange."
         if err_name == "invalid_client":
-            hint = "OAUTH_CLIENT_SECRET is wrong, or this IdP requires a different auth method."
+            hint = "oauth.client_secret is wrong, or this IdP requires a different auth method."
         elif err_name == "invalid_grant":
             hint = "Authorization code expired or already used. Try the test again."
         elif err_name == "redirect_uri_mismatch":
@@ -935,7 +948,7 @@ async def _handle_oidc_e2e_callback(
                 _decode_id_token_with_jwks,
                 id_token,
                 jwks_uri,
-                settings.OAUTH_CLIENT_ID,
+                client_id,
                 session.get("issuer"),
             )
             diag.append(make_check("id_token_signature", "ID token signature & audience verified", "pass"))
@@ -945,7 +958,7 @@ async def _handle_oidc_e2e_callback(
                     "id_token_signature",
                     "ID token audience matches client_id",
                     "fail",
-                    f"id_token 'aud' is not {settings.OAUTH_CLIENT_ID}.",
+                    f"id_token 'aud' is not {client_id}.",
                     "Configure the OIDC client at the IdP so the issued ID token's aud is exactly our client_id.",
                 )
             )

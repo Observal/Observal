@@ -114,16 +114,15 @@ Filters in the web UI let you slice by user, agent, harness, and time range.
 
 ## Enterprise concerns
 
-For orgs that need SSO and audit logging, enable enterprise mode:
+For orgs that need SSO and audit logging, add an enterprise license, then configure OIDC in **Admin → SSO**:
 
-```
-DEPLOYMENT_MODE=enterprise
-OAUTH_CLIENT_ID=...
-OAUTH_CLIENT_SECRET=...
-OAUTH_SERVER_METADATA_URL=...
-```
+| Setting | Value |
+| --- | --- |
+| `oauth.client_id` | Your IdP client ID |
+| `oauth.client_secret` | Your IdP client secret |
+| `oauth.server_metadata_url` | Your IdP discovery URL |
 
-See [Authentication and SSO](../self-hosting/authentication.md).
+Restart the API after OIDC changes. See [Authentication and SSO](../self-hosting/authentication.md).
 
 ## Next
 

@@ -35,8 +35,13 @@ export const SETTING_DOCS: Record<string, DocRef> = {
 	"insights.facet_max_calls": { file: "insights-config.md", anchor: "max-facet-calls", label: "Max Facet Calls" },
 	"insights.facet_concurrency": { file: "insights-config.md", anchor: "facet-concurrency", label: "Facet Concurrency" },
 
+	// SSO
+	"deployment.sso_only": { file: "self-hosting/authentication.md", anchor: "sso-only-mode", label: "SSO Only Mode" },
+	"oauth.client_id": { file: "self-hosting/authentication.md", anchor: "oauth-client-id", label: "OIDC Client ID" },
+	"oauth.client_secret": { file: "self-hosting/authentication.md", anchor: "oauth-client-secret", label: "OIDC Client Secret" },
+	"oauth.server_metadata_url": { file: "self-hosting/authentication.md", anchor: "oauth-server-metadata-url", label: "OIDC Discovery URL" },
+
 	// Deployment
-	"deployment.sso_only": { file: "self-hosting/deployment-settings.md", anchor: "sso-only-mode", label: "SSO Only Mode" },
 	"deployment.frontend_url": { file: "self-hosting/deployment-settings.md", anchor: "frontend-url", label: "Frontend URL" },
 	"deployment.public_url": { file: "self-hosting/deployment-settings.md", anchor: "public-api-url", label: "Public API URL" },
 	"deployment.otlp_http_url": { file: "self-hosting/deployment-settings.md", anchor: "otlp-endpoint-override", label: "OTLP Endpoint Override" },
@@ -107,7 +112,7 @@ export const SECTION_DOCS: Record<string, DocRef> = {
 	"Agent Insights": { file: "insights-config.md", label: "AI Insights Configuration" },
 	"Deployment": { file: "self-hosting/deployment-settings.md", label: "Deployment Settings" },
 	"Security": { file: "self-hosting/trusted-proxies.md", label: "Trusted Proxies & Network Security" },
-	"SAML 2.0 SSO": { file: "self-hosting/saml-settings.md", label: "SAML 2.0 SSO Configuration" },
+	"SSO": { file: "self-hosting/authentication.md", label: "SSO Configuration" },
 	"JWT Token Expiry": { file: "self-hosting/token-expiry.md", label: "Token Expiry Settings" },
 	"Resource Tuning": { file: "self-hosting/resource-tuning.md", label: "Resource Tuning" },
 	"Data & Retention": { file: "self-hosting/data-retention.md", label: "Data & Retention Settings" },
@@ -132,6 +137,6 @@ export const PAGE_DOCS: Record<string, DocRef> = {
 
 	// Admin
 	"audit-log": { file: "reference/api-endpoints.md", label: "API Reference" },
-	"sso": { file: "self-hosting/saml-settings.md", label: "SAML 2.0 SSO" },
+	"sso": { file: "self-hosting/authentication.md", label: "SSO" },
 	"diagnostics": { file: "self-hosting/troubleshooting.md", label: "Troubleshooting" },
 };
