@@ -108,3 +108,32 @@ class TestPeriodBounds:
     def test_none_uses_7d(self):
         cs, ce, ps, pe = _period_bounds(None)
         assert (ce - cs).days == 7
+
+
+class TestAIInsightsCacheResponse:
+    def test_empty_response_is_not_generated(self):
+        from ee.observal_server.routes.exec_dashboard import _empty_ai_insights_response
+
+        response = _empty_ai_insights_response()
+
+        assert response.generated is False
+        assert response.generated_at is None
+        assert response.platform_insight["title"] == "No cached report"
+
+    def test_legacy_cached_payload_without_generated_at_validates(self):
+        from ee.observal_server.routes.exec_dashboard import AIInsightsResponse
+
+        response = AIInsightsResponse.model_validate(
+            {
+                "quick_wins": [],
+                "adoption_gaps": [],
+                "platform_insight": {},
+                "model_insight": {},
+                "automation_opportunity": {},
+                "usage_pattern": {},
+                "generated": True,
+            }
+        )
+
+        assert response.generated is True
+        assert response.generated_at is None

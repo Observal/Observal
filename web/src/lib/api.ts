@@ -979,6 +979,7 @@ export const exec = {
 	inactivityAlerts: () => get<ExecInactivityAlerts>("/exec/inactivity-alerts"),
 	timeToValue: () => get<ExecTimeToValueResponse>("/exec/time-to-value"),
 	aiInsights: () => get<ExecAIInsightsResponse>("/exec/ai-insights"),
+	generateAiInsights: () => post<ExecAIInsightsResponse>("/exec/ai-insights"),
 	config: () => get<ExecConfig | null>("/exec/config"),
 	updateConfig: (data: Partial<ExecConfig>) =>
 		put<ExecConfig>("/exec/config", data),

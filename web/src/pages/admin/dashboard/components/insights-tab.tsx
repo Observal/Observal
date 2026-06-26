@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
-import { useExecAIInsights, useExecDeveloperBreakdown } from "@/hooks/use-api";
-import { Zap, AlertTriangle, TrendingUp, Users, Cpu, Crown, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useExecAIInsights, useExecDeveloperBreakdown, useGenerateExecAIInsights } from "@/hooks/use-api";
+import { Zap, AlertTriangle, TrendingUp, Users, Cpu, Crown, Loader2, RefreshCw } from "lucide-react";
 
 const effortColors: Record<string, { bg: string; text: string; label: string }> = {
   low: { bg: "bg-emerald-500/10", text: "text-emerald-500", label: "Quick Win" },
@@ -76,6 +77,16 @@ function DeveloperBreakdown() {
 
 export function InsightsTab() {
   const { data: insights, isLoading, isError } = useExecAIInsights();
+  const generateInsights = useGenerateExecAIInsights();
+  const generatedAt = insights?.generated_at
+    ? new Date(insights.generated_at).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    : null;
 
   if (isError) {
     return (
@@ -90,8 +101,8 @@ export function InsightsTab() {
       <div className="space-y-6 pt-4">
         <div className="rounded-lg border border-border p-8 flex flex-col items-center justify-center text-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mb-3" />
-          <p className="text-sm font-medium">Generating AI Insights...</p>
-          <p className="text-xs text-muted-foreground mt-1">Analyzing your organization&apos;s telemetry data</p>
+          <p className="text-sm font-medium">Loading cached AI insights...</p>
+          <p className="text-xs text-muted-foreground mt-1">No new report is generated until you request one.</p>
         </div>
       </div>
     );
@@ -102,8 +113,20 @@ export function InsightsTab() {
       <div className="space-y-6 pt-4">
         <div className="rounded-md border border-border p-8 text-center text-muted-foreground">
           <Cpu className="h-8 w-8 mx-auto mb-3 opacity-50" />
-          <p className="text-sm font-medium mb-1">AI Insights not available</p>
-          <p className="text-xs">Configure insights models in Settings to enable LLM-powered strategic recommendations.</p>
+          <p className="text-sm font-medium mb-1">No cached AI insights report</p>
+          <p className="text-xs mb-4">Generate a report when you want fresh executive recommendations.</p>
+          <Button
+            size="sm"
+            disabled={generateInsights.isPending}
+            onClick={() => generateInsights.mutate()}
+          >
+            {generateInsights.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Generate report
+          </Button>
         </div>
       </div>
     );
@@ -111,15 +134,31 @@ export function InsightsTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* Header */}
       <div className="rounded-lg border border-border p-5">
-        <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-          <h2 className="text-base font-semibold">AI Insights</h2>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              <h2 className="text-base font-semibold">AI Insights</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Showing the cached executive report{generatedAt ? ` generated ${generatedAt}` : ""}.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={generateInsights.isPending}
+            onClick={() => generateInsights.mutate()}
+          >
+            {generateInsights.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Generate new report
+          </Button>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          Strategic recommendations based on usage patterns across your organization. Updated on each refresh.
-        </p>
       </div>
 
       {/* Quick Wins */}

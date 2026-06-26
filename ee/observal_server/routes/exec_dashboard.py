@@ -4,14 +4,15 @@
 
 """Executive Dashboard API endpoints."""
 
+import json
 import uuid
 from datetime import UTC, timedelta
 from datetime import datetime as dt
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi_cache.decorator import cache
 from pydantic import BaseModel
+from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,7 @@ from models.exec_config import ExecDashboardConfig
 from models.feedback import Feedback
 from models.user import User, UserRole
 from models.user_group import UserGroup
+from services.redis import get_redis
 
 logger = structlog.get_logger(__name__)
 
@@ -1886,19 +1888,54 @@ class AIInsightsResponse(BaseModel):
     automation_opportunity: dict
     usage_pattern: dict
     generated: bool
+    generated_at: str | None = None
+
+
+def _ai_insights_cache_key(current_user: User) -> str:
+    owner_id = current_user.org_id or current_user.id
+    return f"exec.ai_insights.{owner_id}"
+
+
+def _empty_ai_insights_response() -> AIInsightsResponse:
+    detail = "Generate an executive insight report to see LLM-powered strategic recommendations."
+    return AIInsightsResponse(
+        quick_wins=[],
+        adoption_gaps=[],
+        platform_insight={"title": "No cached report", "detail": detail},
+        model_insight={"title": "No cached report", "detail": detail},
+        automation_opportunity={"title": "No cached report", "detail": detail},
+        usage_pattern={"title": "No cached report", "detail": detail},
+        generated=False,
+    )
 
 
 @router.get("/ai-insights", response_model=AIInsightsResponse)
-@cache(expire=1800, namespace="ai-insights")
 async def get_ai_insights(
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Return the cached executive AI insight report without generating a new one."""
+    try:
+        cached = await get_redis().get(_ai_insights_cache_key(current_user))
+    except RedisError as e:
+        logger.error("exec_ai_insights_cache_read_failed", error=str(e))
+        raise HTTPException(status_code=503, detail="Executive AI insights cache is unavailable") from e
+
+    if not cached:
+        return _empty_ai_insights_response()
+
+    try:
+        return AIInsightsResponse.model_validate(json.loads(cached))
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        logger.error("exec_ai_insights_cache_invalid", error=str(e))
+        raise HTTPException(status_code=500, detail="Cached executive AI insights report is invalid") from e
+
+
+@router.post("/ai-insights", response_model=AIInsightsResponse)
+async def generate_ai_insights(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Generate LLM-powered strategic insights from org telemetry.
-
-    Collects metrics from multiple sources, sends to the eval model,
-    and returns business-language recommendations.
-    """
+    """Generate and cache LLM-powered strategic insights from org telemetry."""
     from services.strategic_insights import generate_strategic_insights
 
     org_id = current_user.org_id
@@ -2066,29 +2103,12 @@ async def get_ai_insights(
     result = await generate_strategic_insights(metrics_data)
 
     if not result:
-        return AIInsightsResponse(
-            quick_wins=[],
-            adoption_gaps=[],
-            platform_insight={
-                "title": "Insufficient data",
-                "detail": "Configure insights models in Settings to enable AI insights.",
-            },
-            model_insight={
-                "title": "Insufficient data",
-                "detail": "Configure insights models in Settings to enable AI insights.",
-            },
-            automation_opportunity={
-                "title": "Insufficient data",
-                "detail": "Configure insights models in Settings to enable AI insights.",
-            },
-            usage_pattern={
-                "title": "Insufficient data",
-                "detail": "Configure insights models in Settings to enable AI insights.",
-            },
-            generated=False,
+        raise HTTPException(
+            status_code=503,
+            detail="Insights model is not configured or failed to generate a report",
         )
 
-    return AIInsightsResponse(
+    response = AIInsightsResponse(
         quick_wins=result.get("quick_wins", []),
         adoption_gaps=result.get("adoption_gaps", []),
         platform_insight=result.get("platform_insight", {}),
@@ -2096,4 +2116,13 @@ async def get_ai_insights(
         automation_opportunity=result.get("automation_opportunity", {}),
         usage_pattern=result.get("usage_pattern", {}),
         generated=True,
+        generated_at=dt.now(UTC).isoformat(),
     )
+
+    try:
+        await get_redis().set(_ai_insights_cache_key(current_user), json.dumps(response.model_dump(mode="json")))
+    except RedisError as e:
+        logger.error("exec_ai_insights_cache_write_failed", error=str(e))
+        raise HTTPException(status_code=503, detail="Executive AI insights cache is unavailable") from e
+
+    return response

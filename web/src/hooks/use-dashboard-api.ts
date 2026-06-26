@@ -11,8 +11,11 @@
 
 
 import {
+  useMutation,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   dashboard,
   exec,
@@ -111,5 +114,25 @@ export function useExecTimeToValue() {
 }
 
 export function useExecAIInsights() {
-  return useQuery({ queryKey: ["exec", "ai-insights"], queryFn: exec.aiInsights, staleTime: 10 * 60 * 1000 });
+  return useQuery({
+    queryKey: ["exec", "ai-insights"],
+    queryFn: exec.aiInsights,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+}
+
+export function useGenerateExecAIInsights() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: exec.generateAiInsights,
+    onSuccess: (data) => {
+      qc.setQueryData(["exec", "ai-insights"], data);
+      toast.success("Executive insight report generated");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to generate executive insight report");
+    },
+  });
 }

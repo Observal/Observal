@@ -528,4 +528,5 @@ export interface ExecAIInsightsResponse {
 	automation_opportunity: { title: string; detail: string };
 	usage_pattern: { title: string; detail: string };
 	generated: boolean;
+	generated_at?: string | null;
 }
