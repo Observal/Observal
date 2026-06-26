@@ -772,6 +772,13 @@ def agent_unarchive(
 def agent_init(
     directory: str = typer.Option(".", "--dir", "-d", help="Directory to scaffold in"),
     beta: bool = typer.Option(False, "--beta", help="Start at version 0.1.0 (beta)"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Agent name"),
+    version: str | None = typer.Option(None, "--version", "-v", help="Version"),
+    description: str | None = typer.Option(None, "--description", help="Description"),
+    model_name: str | None = typer.Option(None, "--model", "-m", help="Model name"),
+    prompt: str | None = typer.Option(None, "--prompt", "-p", help="System prompt text"),
+    prompt_file: str | None = typer.Option(None, "--prompt-file", help="Read system prompt from a file"),
+    supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
 ):
     """Scaffold an observal-agent.yaml definition file.
 
@@ -792,7 +799,27 @@ def agent_init(
         rprint("[yellow]Aborted.[/yellow]")
         raise typer.Exit(code=1)
 
-    raw_name = text_input("Agent name")
+    default_version = "0.1.0" if beta else "1.0.0"
+    flag_mode = any(x is not None for x in (name, version, description, model_name, prompt, prompt_file, supported_harnesses))
+    if flag_mode:
+        if not name or not description or not (prompt or prompt_file):
+            rprint("[red]Error:[/red] --name, --description, and --prompt or --prompt-file are required")
+            raise typer.Exit(1)
+        raw_name = name
+        prompt_text = prompt or Path(prompt_file).read_text(encoding="utf-8")
+        harnesses = supported_harnesses or list(VALID_HARNESSES)
+        bad_harnesses = [h for h in harnesses if h not in VALID_HARNESSES]
+        if bad_harnesses:
+            rprint(f"[red]Error:[/red] Invalid harness: {bad_harnesses[0]}")
+            raise typer.Exit(1)
+    else:
+        raw_name = text_input("Agent name")
+        version = text_input("Version", default=default_version)
+        description = text_input("Description")
+        model_name = text_input("Model name", default="claude-sonnet-4")
+        prompt_text = text_input("System prompt")
+        harnesses = list(VALID_HARNESSES)
+
     name = _slugify(raw_name)
     if name != raw_name:
         rprint(f"  [dim]→ Slugified to:[/dim] [bold]{name}[/bold]")
@@ -801,24 +828,19 @@ def agent_init(
         rprint(f"[red]Error:[/red] {err}")
         raise typer.Exit(1)
 
-    default_version = "0.1.0" if beta else "1.0.0"
-    version = text_input("Version", default=default_version)
-    description = text_input("Description")
     owner = config.load().get("username", "") or "unknown"
-    model_name = text_input("Model name", default="claude-sonnet-4")
-    prompt_text = text_input("System prompt")
 
     data = {
         "name": name,
-        "version": version,
+        "version": version or default_version,
         "description": description,
         "owner": owner,
-        "model_name": model_name,
+        "model_name": model_name or "claude-sonnet-4",
         # Optional per-harness model overrides, e.g. {"kiro": "claude-haiku-4-5"}.
         # Leave empty to use model_name everywhere that accepts a model choice.
         "models_by_harness": {},
         "prompt": prompt_text,
-        "supported_harnesses": list(VALID_HARNESSES),
+        "supported_harnesses": harnesses,
         "components": [],
     }
 
