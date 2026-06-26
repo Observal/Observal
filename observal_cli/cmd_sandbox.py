@@ -136,7 +136,9 @@ def sandbox_submit(
             "resource_limits": _json.loads(text_input("Resource limits (JSON)")),
         }
     if flag_mode:
-        if not (payload.get("name") and payload.get("description") and payload.get("runtime_type") and payload.get("image")):
+        if not (
+            payload.get("name") and payload.get("description") and payload.get("runtime_type") and payload.get("image")
+        ):
             rprint("[red]Error:[/red] --name, --description, --runtime-type, and --image are required")
             raise typer.Exit(1)
         if payload.get("runtime_type") not in VALID_SANDBOX_RUNTIME_TYPES:

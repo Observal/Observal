@@ -14,7 +14,7 @@ owner: observal
 
 1. **EXECUTE commands**: run them in your shell. Set timeout to 60 seconds.
 2. **Pass `--output json`** on list/show commands.
-3. **Pass `--yes`** on destructive commands (`archive`, `unarchive`, `delete`, `submit --git`).
+3. **Pass `--yes`** on destructive commands (`archive`, `unarchive`, `delete`) and MCP JSON submit when defaults are acceptable.
 4. **When in doubt about a flag, run `<command> --help` first.**
 5. **`--from-file` does NOT exist on `mcp submit`**: that flag is on `mcp edit`.
 
@@ -50,13 +50,16 @@ After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--intera
 
 ## Procedure: Submit Component
 
-### MCP (from git, recommended)
+### MCP
+
+Paste the MCP JSON config. Optionally include `--git` so Observal clones the repo and detects local OCI setup for Dockerfile, Containerfile, or compose `build:`.
 
 ```bash
+observal registry mcp submit --name my-mcp --category developer-tools --yes
 observal registry mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
 ```
 
-`--git` clones locally and detects Python/TS/Go MCPs, env vars, Docker/OCI images, Dockerfile/Containerfile, and compose `build:`. If a local image must be built, follow the returned setup instructions (for example `docker build -t name:latest .`). Without `--git`, paste JSON config.
+The command still expects pasted JSON. If a local image must be built, follow the returned setup instructions, for example `docker build -t name:latest .`.
 
 ### Skill
 
@@ -198,7 +201,7 @@ observal registry hook co-authors remove <id-or-name> <user-uuid>
 
 | Error | Fix |
 |-------|-----|
-| `--from-file` not on `mcp submit` | Use `--git`, `--draft`, or interactive paste |
+| `--from-file` not on `mcp submit` | Paste JSON, optionally with `--git`, or use `--draft` |
 | `412 Edit lock held` | Wait a few minutes, retry |
 | Hook `timeout` | Caps: blocking 30s, sync 10s, async 60s |
 

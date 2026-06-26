@@ -509,6 +509,14 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
 
         # Extract dollar-sign input variables before preview
         dollar_vars = parsed.pop("_dollar_vars_detected", None)
+        git_analysis: dict = {}
+        if git_url:
+            with spinner("Checking git repo for local OCI setup..."):
+                git_analysis = analyze_local(git_url)
+            if git_analysis.get("setup_instructions"):
+                rprint("[green]✓[/green] Found local OCI setup instructions from git repo.")
+            elif git_analysis.get("error"):
+                rprint(f"[yellow]Git analysis skipped:[/yellow] {git_analysis['error']}")
 
         rprint("\n[bold]Config preview:[/bold]")
         console.print_json(json.dumps(_build_config_preview(_name, parsed), indent=2))
@@ -556,6 +564,12 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
             "supported_harnesses": supported_harnesses,
             "environment_variables": parsed.get("environment_variables", []),
         }
+        if git_url:
+            submit_payload["git_url"] = git_url
+        if git_analysis.get("setup_instructions"):
+            submit_payload["setup_instructions"] = git_analysis["setup_instructions"]
+        if git_analysis.get("docker_image") and not parsed.get("docker_image"):
+            submit_payload["docker_image"] = git_analysis["docker_image"]
         if parsed.get("command"):
             submit_payload["command"] = parsed["command"]
         if parsed.get("args") is not None:
@@ -572,6 +586,16 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
             submit_payload["framework"] = parsed["framework"]
         if parsed.get("docker_image"):
             submit_payload["docker_image"] = parsed["docker_image"]
+        if git_analysis and not git_analysis.get("error"):
+            submit_payload["client_analysis"] = {
+                "tools": git_analysis.get("tools", []),
+                "issues": git_analysis.get("issues", []),
+                "framework": git_analysis.get("framework", ""),
+                "entry_point": git_analysis.get("entry_point", ""),
+                "command": git_analysis.get("command"),
+                "args": git_analysis.get("args"),
+                "docker_image": git_analysis.get("docker_image"),
+            }
 
         endpoint = "/api/v1/mcps/draft" if draft else "/api/v1/mcps/submit"
         label = "Saving draft..." if draft else "Submitting..."
@@ -1177,20 +1201,20 @@ def _delete_impl(mcp_id, yes):
 
 @mcp_app.command()
 def submit(
-    git_url: str = typer.Option(None, "--git", "-g", help="Analyze a git repository instead of pasting config"),
+    git_url: str = typer.Option(None, "--git", "-g", help="Optional git repo for local OCI setup detection"),
     name: str = typer.Option(None, "--name", "-n", help="Skip name prompt"),
     category: str = typer.Option(None, "--category", "-c", help="Skip category prompt"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults from repo analysis"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Accept JSON-derived defaults"),
     config: bool = typer.Option(False, "--config", hidden=True, help="(deprecated) JSON paste is now the default"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (MCP ID)"),
 ):
     """Submit an MCP server to the registry.
 
-    By default, opens an interactive JSON paste prompt where you provide
-    the same config format used in your harness (e.g. mcpServers block). Use
-    --git to analyze a git repository instead, which auto-detects tools,
-    env vars, and startup commands.
+    Opens a JSON paste prompt where you provide the same config format used
+    in your harness (e.g. mcpServers block). Optionally pass --git so Observal
+    clones the repo and detects local OCI setup instructions for Dockerfile,
+    Containerfile, or compose build MCPs.
 
     Only submit servers you created or are the point-of-contact for.
     Submissions go into a pending review queue unless saved as a draft.
@@ -1203,11 +1227,11 @@ def submit(
         # Interactive JSON paste (default)
         observal registry mcp submit
 
-        # Analyze a git repo with all defaults accepted
+        # Paste JSON and attach a git repo for local OCI setup hints
         observal registry mcp submit --git https://github.com/org/mcp-server --yes
 
         # Submit with name and category pre-filled
-        observal registry mcp submit --git https://github.com/org/server -n my-server -c ai
+        observal registry mcp submit --git https://github.com/org/server -n my-server -c developer-tools
 
         # Save as draft for later editing
         observal registry mcp submit --draft
@@ -1231,9 +1255,7 @@ def submit(
     if config:
         rprint("[dim]Note: --config is now the default. You can just run `observal mcp submit`.[/dim]")
     rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
-    # Default is JSON paste (direct_config=True), unless --git is provided
-    direct_config = not git_url
-    _submit_impl(git_url, name, category, yes, direct_config, draft=draft)
+    _submit_impl(git_url, name, category, yes, direct_config=True, draft=draft)
 
 
 @mcp_app.command(name="list")
