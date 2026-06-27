@@ -185,7 +185,7 @@ observal server upgrade --skip-backup --force
 2. Verifies the Docker image exists on GHCR
 3. Acquires an upgrade lock (prevents concurrent upgrades)
 4. Creates a database backup (unless `--skip-backup`)
-5. Pulls new images: `ghcr.io/blazeup-ai/observal-{api,web}:<version>`
+5. Pulls new images: `ghcr.io/observal/observal-{api,web}:<version>`
 6. Updates `.env` with the new version
 7. Recreates containers via `docker compose up -d`
 8. Runs health checks for up to 120 seconds

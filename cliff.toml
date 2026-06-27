@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file.\n
 """
 body = """
 {%- macro remote_url() -%}
-  https://github.com/BlazeUp-AI/Observal
+  https://github.com/Observal/Observal
 {%- endmacro -%}
 
 {% if version -%}

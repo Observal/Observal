@@ -116,7 +116,7 @@ docker compose version
 ## Step 3: Clone and configure
 
 ```bash
-git clone https://github.com/BlazeUp-AI/Observal.git
+git clone https://github.com/Observal/Observal.git
 cd Observal
 cp .env.example .env
 ```
@@ -290,7 +290,7 @@ See [Backup and restore](backup-and-restore.md) for detailed restore procedures.
 Install the CLI on your local machine:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh | bash
 ```
 
 Log in:

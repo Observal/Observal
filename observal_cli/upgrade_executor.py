@@ -26,7 +26,7 @@ from observal_cli import config
 from observal_cli.constants import REDIRECT_ALLOWLIST
 from observal_cli.install_detector import InstallInfo, InstallMethod
 
-GITHUB_REPO = "BlazeUp-AI/Observal"
+GITHUB_REPO = "Observal/Observal"
 
 
 def execute(install_info: InstallInfo, target_version: str, direction: str, spinner) -> None:

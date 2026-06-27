@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 
 # Okta SSO Setup for Observal (Managed Customer Instance)
 
-Step-by-step runbook for BlazeUp operators setting up **Okta OIDC** for a **new Observal instance** deployed for another company (managed solution). Follow every step in order; each step assumes the previous one is complete.
+Step-by-step runbook for Observal operators setting up **Okta OIDC** for a **new Observal instance** deployed for another company (managed solution). Follow every step in order; each step assumes the previous one is complete.
 
 This guide matches how Observal’s server is implemented today:
 

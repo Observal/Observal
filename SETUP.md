@@ -27,7 +27,7 @@ Everything you need to get Observal running locally for development or self-host
 ## 1. Clone and configure
 
 ```bash
-git clone https://github.com/BlazeUp-AI/Observal.git
+git clone https://github.com/Observal/Observal.git
 cd Observal
 cp .env.example .env
 ```
@@ -106,7 +106,7 @@ uv tool install observal-cli
 **Via Homebrew** (macOS Apple Silicon, Linux x64/arm64):
 
 ```bash
-brew install BlazeUp-AI/observal/observal-cli
+brew install Observal/observal/observal-cli
 ```
 
 Verify: `observal --version`

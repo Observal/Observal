@@ -32,13 +32,13 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/blazeup-ai/observal
+  IMAGE_PREFIX: ghcr.io/observal/observal
 
 jobs:
   # ── Preflight: detect release commit and create tag ────────
   preflight:
     name: Preflight checks
-    if: github.repository == 'BlazeUp-AI/Observal'
+    if: github.repository == 'Observal/Observal'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}

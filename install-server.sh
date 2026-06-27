@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Observal Server Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash -s -- [OPTIONS]
+# Usage: curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash -s -- [OPTIONS]
 #
 # Options:
 #   --license-key KEY          Enterprise license key (enables enterprise edition)
@@ -20,7 +20,7 @@ set -euo pipefail
 #   OBSERVAL_INSTALL_DIR       Install directory
 #   OBSERVAL_FORCE=1           Skip overwrite confirmation
 
-GITHUB_REPO="BlazeUp-AI/Observal"
+GITHUB_REPO="Observal/Observal"
 
 # Ed25519 public key for license verification (base64-encoded, 32 bytes raw)
 LICENSE_PUBLIC_KEY="X5Ia46wxT2AxZ6nFlvFnT7ZE6vXoVI208Io3TDoX6N8="
@@ -88,7 +88,7 @@ while [ $# -gt 0 ]; do
     -h | --help)
         cat <<'HELP'
 Observal Server Installer
-Usage: curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash -s -- [OPTIONS]
+Usage: curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash -s -- [OPTIONS]
 
 Options:
   --license-key KEY    Enterprise license key (enables enterprise edition)

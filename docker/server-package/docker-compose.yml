@@ -7,7 +7,7 @@
 
 services:
   observal-init:
-    image: ghcr.io/blazeup-ai/observal-api:${OBSERVAL_VERSION:-latest}
+    image: ghcr.io/observal/observal-api:${OBSERVAL_VERSION:-latest}
     command: ["/app/entrypoint.sh"]
     env_file:
       - ./.env
@@ -30,7 +30,7 @@ services:
       - observal-net
 
   observal-api:
-    image: ghcr.io/blazeup-ai/observal-api:${OBSERVAL_VERSION:-latest}
+    image: ghcr.io/observal/observal-api:${OBSERVAL_VERSION:-latest}
     command: ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     env_file:
       - ./.env
@@ -139,7 +139,7 @@ services:
       - observal-net
 
   observal-worker:
-    image: ghcr.io/blazeup-ai/observal-api:${OBSERVAL_VERSION:-latest}
+    image: ghcr.io/observal/observal-api:${OBSERVAL_VERSION:-latest}
     command: ["/app/.venv/bin/python", "-c", "import asyncio; asyncio.set_event_loop(asyncio.new_event_loop()); from arq import run_worker; from worker import WorkerSettings; run_worker(WorkerSettings)"]
     env_file:
       - ./.env
@@ -163,7 +163,7 @@ services:
       - observal-net
 
   observal-web:
-    image: ghcr.io/blazeup-ai/observal-web:${OBSERVAL_VERSION:-latest}
+    image: ghcr.io/observal/observal-web:${OBSERVAL_VERSION:-latest}
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     depends_on:

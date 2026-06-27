@@ -50,7 +50,7 @@ gcloud services enable \
 ## Quickstart
 
 ```bash
-git clone https://github.com/BlazeUp-AI/Observal.git
+git clone https://github.com/Observal/Observal.git
 cd Observal/infra/terraform/gcp
 
 # 1. Authenticate

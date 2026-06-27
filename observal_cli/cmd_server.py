@@ -494,21 +494,21 @@ def server_upgrade(
     # Verify image exists on GHCR before any state changes
     with console.status("Verifying image on GHCR..."):
         if not version_check.verify_server_image_exists(target):
-            console.print(f"[red]Image not found on GHCR: ghcr.io/blazeup-ai/observal-api:{target}[/red]")
+            console.print(f"[red]Image not found on GHCR: ghcr.io/observal/observal-api:{target}[/red]")
             console.print("[dim]Check available versions with: observal server versions[/dim]")
             raise typer.Exit(1)
 
     if dry_run:
         console.print(f"[dim]Dry run: would upgrade v{current} → v{target}[/dim]")
-        console.print(f"[dim]  Pull: ghcr.io/blazeup-ai/observal-api:{target}[/dim]")
-        console.print(f"[dim]  Pull: ghcr.io/blazeup-ai/observal-web:{target}[/dim]")
+        console.print(f"[dim]  Pull: ghcr.io/observal/observal-api:{target}[/dim]")
+        console.print(f"[dim]  Pull: ghcr.io/observal/observal-web:{target}[/dim]")
         console.print(f"[dim]  Compose dir: {compose_dir}[/dim]")
         raise typer.Exit(0)
 
     if not force:
         console.print(f"  Current: [dim]v{current}[/dim]")
         console.print(f"  Target:  [green]v{target}[/green]")
-        console.print(f"  Images:  [dim]ghcr.io/blazeup-ai/observal-{{api,web}}:{target}[/dim]")
+        console.print(f"  Images:  [dim]ghcr.io/observal/observal-{{api,web}}:{target}[/dim]")
         if not typer.confirm("\nProceed with server upgrade?"):
             raise typer.Abort()
 
@@ -751,4 +751,4 @@ def server_versions() -> None:
         shown.add(ver)
 
     console.print(table)
-    console.print(f"\n  Current: v{current} | Images: ghcr.io/blazeup-ai/observal-{{api,web}}")
+    console.print(f"\n  Current: v{current} | Images: ghcr.io/observal/observal-{{api,web}}")

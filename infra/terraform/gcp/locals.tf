@@ -17,8 +17,8 @@ locals {
 
   ar_prefix = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.ghcr_proxy.repository_id}"
 
-  image_repo_api_effective = local.is_enterprise ? "blazeup-ai/observal-api-enterprise" : trimprefix(var.image_repo_api, "ghcr.io/")
-  image_repo_web_effective = local.is_enterprise ? "blazeup-ai/observal-web-enterprise" : trimprefix(var.image_repo_web, "ghcr.io/")
+  image_repo_api_effective = local.is_enterprise ? "observal/observal-api-enterprise" : trimprefix(var.image_repo_api, "ghcr.io/")
+  image_repo_web_effective = local.is_enterprise ? "observal/observal-web-enterprise" : trimprefix(var.image_repo_web, "ghcr.io/")
 
   image_api = "${local.ar_prefix}/${local.image_repo_api_effective}:${var.image_tag}"
   image_web = "${local.ar_prefix}/${local.image_repo_web_effective}:${var.image_tag}"

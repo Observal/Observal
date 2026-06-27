@@ -157,7 +157,7 @@ check_ghcr_image() {
   local image="$1"
   local tag="$2"
   # Use the GitHub container registry API (anonymous, no auth needed for public images)
-  local url="https://ghcr.io/v2/blazeup-ai/$image/manifests/$tag"
+  local url="https://ghcr.io/v2/observal/$image/manifests/$tag"
   local status
   status=$(curl -s -o /dev/null -w "%{http_code}" \
     -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
@@ -168,23 +168,23 @@ check_ghcr_image() {
 TAG="${IMAGE_TAG:-latest}"
 for img in observal-api observal-web; do
   if check_ghcr_image "$img" "$TAG"; then
-    pass "ghcr.io/blazeup-ai/$img:$TAG exists"
+    pass "ghcr.io/observal/$img:$TAG exists"
   else
     # Try with token auth
-    TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:blazeup-ai/$img:pull" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
+    TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:observal/$img:pull" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
     if [ -n "$TOKEN" ]; then
       status=$(curl -s -o /dev/null -w "%{http_code}" \
         -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
         -H "Authorization: Bearer $TOKEN" \
-        "https://ghcr.io/v2/blazeup-ai/$img/manifests/$TAG" 2>/dev/null)
+        "https://ghcr.io/v2/observal/$img/manifests/$TAG" 2>/dev/null)
       if [ "$status" = "200" ]; then
-        pass "ghcr.io/blazeup-ai/$img:$TAG exists"
+        pass "ghcr.io/observal/$img:$TAG exists"
       else
-        fail "ghcr.io/blazeup-ai/$img:$TAG not found (HTTP $status)"
+        fail "ghcr.io/observal/$img:$TAG not found (HTTP $status)"
         info "Check that a release with this tag exists, or use 'latest'"
       fi
     else
-      warn "Cannot verify ghcr.io/blazeup-ai/$img:$TAG (auth required or network issue)"
+      warn "Cannot verify ghcr.io/observal/$img:$TAG (auth required or network issue)"
     fi
   fi
 done
@@ -195,7 +195,7 @@ section "5. Release Tarball"
 if [ "$TAG" = "latest" ]; then
   pass "image_tag=latest: embedded configs used (no tarball needed)"
 else
-  TARBALL_URL="https://github.com/BlazeUp-AI/Observal/releases/download/v${TAG}/observal-server-v${TAG}.tar.gz"
+  TARBALL_URL="https://github.com/Observal/Observal/releases/download/v${TAG}/observal-server-v${TAG}.tar.gz"
   HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L "$TARBALL_URL" 2>/dev/null)
   if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "302" ]; then
     pass "Release tarball v$TAG exists"

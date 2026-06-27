@@ -159,7 +159,7 @@ cd Observal
 3. Add the upstream remote so you can pull in changes from the main repo:
 
 ```bash
-git remote add upstream https://github.com/BlazeUp-AI/Observal.git
+git remote add upstream https://github.com/Observal/Observal.git
 ```
 
 4. Verify your remotes:
@@ -168,8 +168,8 @@ git remote add upstream https://github.com/BlazeUp-AI/Observal.git
 git remote -v
 # origin    git@github.com:YOUR-USERNAME/Observal.git (fetch)
 # origin    git@github.com:YOUR-USERNAME/Observal.git (push)
-# upstream  https://github.com/BlazeUp-AI/Observal.git (fetch)
-# upstream  https://github.com/BlazeUp-AI/Observal.git (push)
+# upstream  https://github.com/Observal/Observal.git (fetch)
+# upstream  https://github.com/Observal/Observal.git (push)
 ```
 
 ---
@@ -387,7 +387,7 @@ git push origin feature/my-feature --force-with-lease
     ```bash
     git push origin feature/my-feature
     ```
-3. GitHub will show a banner on your fork offering to open a PR. Click it, or go to the [Observal repository](https://github.com/BlazeUp-AI/Observal) directly.
+3. GitHub will show a banner on your fork offering to open a PR. Click it, or go to the [Observal repository](https://github.com/Observal/Observal) directly.
 4. Fill in the PR template completely. PRs that do not follow the template will be closed.
 5. Link the related issue if one exists (`Fixes #123` in the PR body closes it automatically on merge).
 

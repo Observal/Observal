@@ -230,9 +230,9 @@ validate_standard() {
   # Check GHCR image accessibility (requires token even for public images)
   local tag="${image_tag:-latest}"
   local token status
-  token=$(curl -s "https://ghcr.io/token?scope=repository:blazeup-ai/observal-api:pull" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
+  token=$(curl -s "https://ghcr.io/token?scope=repository:observal/observal-api:pull" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
   if [ -n "$token" ]; then
-    status=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" -H "Accept: application/vnd.docker.distribution.manifest.v2+json" "https://ghcr.io/v2/blazeup-ai/observal-api/manifests/$tag" 2>/dev/null || echo "000")
+    status=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" -H "Accept: application/vnd.docker.distribution.manifest.v2+json" "https://ghcr.io/v2/observal/observal-api/manifests/$tag" 2>/dev/null || echo "000")
   else
     status="000"
   fi

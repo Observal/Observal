@@ -48,10 +48,10 @@ classifiers = [
 migrate = ["pyarrow>=15.0.0"]
 
 [project.urls]
-Homepage = "https://github.com/BlazeUp-AI/Observal"
-Repository = "https://github.com/BlazeUp-AI/Observal"
-Changelog = "https://github.com/BlazeUp-AI/Observal/blob/main/CHANGELOG.md"
-Issues = "https://github.com/BlazeUp-AI/Observal/issues"
+Homepage = "https://github.com/Observal/Observal"
+Repository = "https://github.com/Observal/Observal"
+Changelog = "https://github.com/Observal/Observal/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Observal/Observal/issues"
 
 [project.scripts]
 observal = "observal_cli.main:app"

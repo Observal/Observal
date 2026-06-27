@@ -12,7 +12,7 @@
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "https://github.com/BlazeUp-AI/Observal.git",
+    "url": "https://github.com/Observal/Observal.git",
     "directory": "packages/pi-extension"
   },
   "pi": {

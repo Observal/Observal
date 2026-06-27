@@ -50,7 +50,7 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and [AI Policy](AI_POLICY.
 ```bash
 git clone https://github.com/YOUR-USERNAME/Observal.git
 cd Observal
-git remote add upstream https://github.com/BlazeUp-AI/Observal.git
+git remote add upstream https://github.com/Observal/Observal.git
 ```
 
 ### Running Locally
@@ -94,7 +94,7 @@ Set `NEXT_PUBLIC_API_URL=http://localhost` in `web/.env.local` if the backend is
 
 ## Finding Work
 
-Check [open issues](https://github.com/BlazeUp-AI/Observal/issues) before starting. Look for **good first issue** if you are new.
+Check [open issues](https://github.com/Observal/Observal/issues) before starting. Look for **good first issue** if you are new.
 
 For larger changes, open an issue or discuss in **#contributing** on Discord before writing code.
 
@@ -195,7 +195,7 @@ Keep PRs focused on a single concern. Smaller PRs are easier to review and faste
 
 ### Bugs
 
-Search [existing issues](https://github.com/BlazeUp-AI/Observal/issues) first. Include:
+Search [existing issues](https://github.com/Observal/Observal/issues) first. Include:
 
 - Steps to reproduce
 - Expected vs actual behaviour

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
-# Updates the BlazeUp-AI/homebrew-observal tap after every published release.
+# Updates the Observal/homebrew-observal tap after every published release.
 #
 # Fires when a GitHub release is published (the release.yml workflow flips a
 # draft to published as its final step). Downloads the just-published binaries
@@ -78,13 +78,13 @@ jobs:
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: BlazeUp-AI
+          owner: Observal
           repositories: homebrew-observal
 
       - name: Checkout homebrew-observal
         uses: actions/checkout@v6
         with:
-          repository: BlazeUp-AI/homebrew-observal
+          repository: Observal/homebrew-observal
           token: ${{ steps.app-token.outputs.token }}
           path: homebrew-observal
 
@@ -123,7 +123,7 @@ jobs:
               return f'{url_line}\n{sha_indent}sha256 "{new_sha}"'
 
           text = re.sub(
-              r'(url "https://github\.com/BlazeUp-AI/Observal/releases/download/v[^"]+")\n(\s*)sha256 "[0-9a-f]{64}"',
+              r'(url "https://github\.com/Observal/Observal/releases/download/v[^"]+")\n(\s*)sha256 "[0-9a-f]{64}"',
               replace_sha,
               text,
           )

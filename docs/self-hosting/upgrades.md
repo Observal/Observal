@@ -22,7 +22,7 @@ See [`observal server upgrade`](../cli/server.md#observal-server-upgrade) for fu
 ## Before a manual upgrade
 
 1. **Back up `pgdata`** and **`apidata`**. See [Backup and restore](backup-and-restore.md). Backing up `chdata` is nice-to-have; losing telemetry is painful but not catastrophic.
-2. **Read the [CHANGELOG](https://github.com/BlazeUp-AI/Observal/blob/main/CHANGELOG.md)** for the releases you're jumping across. Note any breaking changes.
+2. **Read the [CHANGELOG](https://github.com/Observal/Observal/blob/main/CHANGELOG.md)** for the releases you're jumping across. Note any breaking changes.
 3. **Pin the version you're upgrading to**: don't `git pull main` blindly. Check out a release tag or a known-good commit.
 
 ## Standard upgrade

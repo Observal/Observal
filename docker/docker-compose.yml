@@ -14,7 +14,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    image: ghcr.io/blazeup-ai/observal-api:latest
+    image: ghcr.io/observal/observal-api:latest
     command: ["/app/entrypoint.sh"]
     env_file:
       - ../.env
@@ -40,7 +40,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    image: ghcr.io/blazeup-ai/observal-api:latest
+    image: ghcr.io/observal/observal-api:latest
     command:
       [
         "/app/.venv/bin/python",
@@ -181,7 +181,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    image: ghcr.io/blazeup-ai/observal-api:latest
+    image: ghcr.io/observal/observal-api:latest
     command:
       [
         "/app/.venv/bin/python",
@@ -213,7 +213,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.web
-    image: ghcr.io/blazeup-ai/observal-web:latest
+    image: ghcr.io/observal/observal-web:latest
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     depends_on:

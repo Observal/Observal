@@ -50,7 +50,7 @@ import type { Session } from "@/lib/types";
 
 /** Quickstart docs URL shown in the first-time empty state CTA. */
 const DOCS_QUICKSTART_URL =
-	"https://github.com/BlazeUp-AI/Observal/blob/main/docs/getting-started/quickstart.md";
+	"https://github.com/Observal/Observal/blob/main/docs/getting-started/quickstart.md";
 
 function truncateQuery(q: string, max = 50): string {
 	return q.length > max ? `${q.slice(0, max)}…` : q;

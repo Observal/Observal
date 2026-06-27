@@ -78,7 +78,7 @@ class TestShouldCheck:
 
 MOCK_RELEASE_RESPONSE = {
     "tag_name": "v0.8.0",
-    "html_url": "https://github.com/BlazeUp-AI/Observal/releases/tag/v0.8.0",
+    "html_url": "https://github.com/Observal/Observal/releases/tag/v0.8.0",
     "published_at": "2026-05-20T10:00:00Z",
     "prerelease": False,
     "assets": [],

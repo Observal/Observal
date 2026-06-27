@@ -7,7 +7,7 @@ How to cut a release of Observal. This is for maintainers with push access.
 
 ## Prerequisites
 
-- A fork of `BlazeUp-AI/Observal` with `origin` pointing to your fork and `upstream` pointing to the org repo
+- A fork of `Observal/Observal` with `origin` pointing to your fork and `upstream` pointing to the org repo
 - GitHub CLI (`gh`) installed and authenticated
 - `git-cliff` installed (`cargo install git-cliff`) or `uvx` available as a fallback
 
@@ -39,7 +39,7 @@ These jobs run in parallel:
 | Job | What it produces |
 |-----|-----------------|
 | `cli-binaries` | Standalone CLI binaries for 6 platforms (Linux/macOS/Windows, x64/arm64) via PyInstaller |
-| `docker-images` | Multi-arch Docker images pushed to `ghcr.io/blazeup-ai/observal-api` and `ghcr.io/blazeup-ai/observal-web` |
+| `docker-images` | Multi-arch Docker images pushed to `ghcr.io/observal/observal-api` and `ghcr.io/observal/observal-web` |
 | `server-package` | Deployment tarball (`observal-server-vX.Y.Z.tar.gz`) with Docker Compose, configs, and setup script |
 | `pypi` | Python package published to PyPI via Trusted Publishing |
 
@@ -83,7 +83,7 @@ Commits prefixed with `bump(release):` are automatically excluded from the chang
 ### CLI users
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh | bash
 ```
 
 Downloads the right binary for their OS/arch, verifies the checksum, and installs to `/usr/local/bin/observal`. Or `pip install observal` for Python users.
@@ -91,7 +91,7 @@ Downloads the right binary for their OS/arch, verifies the checksum, and install
 ### Server deployers
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash
 ```
 
 Downloads the server tarball, unpacks to `/opt/observal`, and runs an interactive setup that prompts for deployment mode, frontend URL, and auto-generates database passwords. Starts the full Docker Compose stack.
@@ -136,7 +136,7 @@ Ensure the `production` environment exists in GitHub Settings > Environments and
 
 ### PyPI publish fails
 
-Verify that PyPI Trusted Publishing is configured: PyPI > Project > Publishing > Trusted Publisher with `owner=BlazeUp-AI`, `repo=Observal`, `workflow=release.yml`, `environment=pypi`.
+Verify that PyPI Trusted Publishing is configured: PyPI > Project > Publishing > Trusted Publisher with `owner=Observal`, `repo=Observal`, `workflow=release.yml`, `environment=pypi`.
 
 ### Docker push fails
 

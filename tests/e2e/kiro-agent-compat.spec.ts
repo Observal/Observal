@@ -6,11 +6,15 @@ import { test, expect } from "@playwright/test";
 import { execSync } from "child_process";
 import { getApiKey, API_BASE } from "./helpers";
 
+const CWD = execSync("git rev-parse --show-toplevel", {
+  encoding: "utf-8",
+}).trim();
+
 function run(cmd: string): string {
   return execSync(cmd, {
     encoding: "utf-8",
     timeout: 30_000,
-    cwd: "/home/haz3/code/blazeup/Observal",
+    cwd: CWD,
   });
 }
 

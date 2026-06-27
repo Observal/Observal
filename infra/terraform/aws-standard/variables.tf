@@ -37,13 +37,13 @@ variable "sizing" {
 variable "image_repo_api" {
   description = "Container image repository for api + worker + init."
   type        = string
-  default     = "ghcr.io/blazeup-ai/observal-api"
+  default     = "ghcr.io/observal/observal-api"
 }
 
 variable "image_repo_web" {
   description = "Container image repository for the web frontend."
   type        = string
-  default     = "ghcr.io/blazeup-ai/observal-web"
+  default     = "ghcr.io/observal/observal-web"
 }
 
 variable "image_tag" {

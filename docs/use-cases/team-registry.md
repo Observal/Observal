@@ -66,7 +66,7 @@ Two commands to get them productive:
 
 ```bash
 # The new engineer runs:
-curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh | bash
 observal auth login --server https://observal.your-company.internal
 ```
 

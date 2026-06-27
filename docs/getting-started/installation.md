@@ -17,7 +17,7 @@ The server runs as a Docker Compose stack (API, web UI, PostgreSQL, ClickHouse, 
 **One-line install:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash
 ```
 
 This downloads a config package, runs guided setup (domain, secrets, ports), pulls container images from GHCR, and starts the full stack.
@@ -25,7 +25,7 @@ This downloads a config package, runs guided setup (domain, secrets, ports), pul
 **From source** (for contributors):
 
 ```bash
-git clone https://github.com/BlazeUp-AI/Observal.git && cd Observal
+git clone https://github.com/Observal/Observal.git && cd Observal
 cp .env.example .env
 make up
 ```
@@ -41,7 +41,7 @@ The CLI is what you use to log in, instrument harness configs, pull agents, and 
 The standalone binary is the simplest way to install. No Python required.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh | bash
 ```
 
 This downloads the latest release binary for your platform and places it on your `PATH`. The binary is the same for all editions; enterprise features activate at runtime when a valid license key is present.
@@ -49,7 +49,7 @@ This downloads the latest release binary for your platform and places it on your
 To save a license key during install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BlazeUp-AI/Observal/main/install.sh | bash -s -- --license-key YOUR_KEY
+curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh | bash -s -- --license-key YOUR_KEY
 ```
 
 This validates the Ed25519-signed key, installs the CLI, and writes the key to `~/.observal/config.json`. If the key is invalid or expired, the installer exits with an error.
@@ -101,7 +101,7 @@ uv tool install 'observal-cli[sandbox]'
 ## Install from source (for contributors)
 
 ```bash
-git clone https://github.com/BlazeUp-AI/Observal.git
+git clone https://github.com/Observal/Observal.git
 cd Observal
 uv tool install --editable .
 ```

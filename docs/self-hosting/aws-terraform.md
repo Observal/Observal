@@ -43,7 +43,7 @@ ClickHouse runs on EC2 because AWS does not offer a managed ClickHouse service. 
 ## Quickstart
 
 ```bash
-git clone https://github.com/BlazeUp-AI/Observal.git
+git clone https://github.com/Observal/Observal.git
 cd Observal/infra/terraform/aws
 
 # 1. Authenticate to AWS (any of these works)
