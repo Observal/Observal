@@ -1,12 +1,35 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Observal</title>
-    <meta name="description" content="Agent registry with built-in observability" />
+    <meta
+      name="description"
+      content="Agent registry with built-in observability"
+    />
+
+    <!-- #OpenGraph -->
+    <meta property="og:title" content="Observal" />
+    <meta
+      property="og:description"
+      content="Agent registry with built-in observability"
+    />
+    <meta property="og:image" content="/icon.png" />
+    <meta property="og:url" content="https://observal.io/" />
+    <meta property="og:type" content="website" />
+
+    <!-- #Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Observal" />
+    <meta
+      name="twitter:description"
+      content="Agent registry with built-in observability"
+    />
+    <meta name="twitter:image" content="/icon.png" />
+
     <link rel="icon" href="/favicon.ico" />
     <style>
       @font-face {
@@ -30,7 +53,10 @@
     </style>
     <script src="https://d2mvefebd70kbz.cloudfront.net/scripts/019eba61-6a10-76d4-ae9e-a3623efa1378.js" async></script>
   </head>
-  <body class="min-h-svh antialiased" style="font-family: 'Albert Sans', sans-serif;">
+  <body
+    class="min-h-svh antialiased"
+    style="font-family: &quot;Albert Sans&quot;, sans-serif"
+  >
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
