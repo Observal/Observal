@@ -217,6 +217,8 @@ The `ee/` directory is licensed under the [Observal Enterprise License](ee/LICEN
 
 ---
 
+When adding support for a new IDE, follow the step-by-step walkthrough in [docs/concepts/adding-an-ide.md](docs/concepts/adding-an-ide.md).
+
 ## License
 
 All code outside `ee/` is licensed under [AGPL-3.0](LICENSE). The `ee/` directory is licensed under the [Observal Enterprise License](ee/LICENSE).
