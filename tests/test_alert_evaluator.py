@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Tests for alert evaluation engine, SSRF protection, and webhook delivery."""
@@ -390,6 +391,190 @@ class TestAlertRouteSSRF:
 
         with patch("api.routes.alert.is_private_url", return_value=False):
             _validate_webhook_url("https://hooks.slack.com/services/T00/B00/xxx")
+
+
+def _alert_route_user(*, role="admin", org_id=None, user_id=None):
+    from models.user import UserRole
+
+    user = MagicMock()
+    user.id = user_id or uuid.uuid4()
+    user.role = getattr(UserRole, role)
+    user.org_id = org_id
+    return user
+
+
+def _alert_route_rule(*, created_by=None, webhook_url="https://example.com/hook"):
+    rule = MagicMock()
+    rule.id = uuid.uuid4()
+    rule.name = "Latency"
+    rule.metric = "latency_p99"
+    rule.threshold = 1000.0
+    rule.condition = "above"
+    rule.target_type = "all"
+    rule.target_id = ""
+    rule.webhook_url = webhook_url
+    rule.webhook_secret = "old-secret-value"
+    rule.created_by = created_by or uuid.uuid4()
+    rule.status = "active"
+    rule.last_triggered = None
+    rule.created_at = datetime.now(UTC)
+    return rule
+
+
+def _alert_route_db(rule, creator=None):
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = creator
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=rule)
+    db.execute = AsyncMock(return_value=result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    return db
+
+
+class TestAlertOrgScopedRoutes:
+    @pytest.mark.asyncio
+    async def test_missing_alert_update_returns_404(self):
+        from api.routes.alert import update_alert
+        from schemas.alert import AlertRuleUpdate
+
+        current_user = _alert_route_user(org_id=uuid.uuid4())
+        db = _alert_route_db(None)
+
+        with pytest.raises(Exception) as exc_info:
+            await update_alert(uuid.uuid4(), AlertRuleUpdate(status="paused"), db, current_user)
+
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_same_org_owner_can_delete_alert(self):
+        from api.routes.alert import delete_alert
+
+        org_id = uuid.uuid4()
+        owner_id = uuid.uuid4()
+        current_user = _alert_route_user(role="user", org_id=org_id, user_id=owner_id)
+        creator = _alert_route_user(role="user", org_id=org_id, user_id=owner_id)
+        rule = _alert_route_rule(created_by=owner_id)
+        db = _alert_route_db(rule, creator)
+        db.delete = AsyncMock()
+
+        await delete_alert(rule.id, db, current_user)
+
+        db.delete.assert_awaited_once_with(rule)
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_same_org_owner_can_get_alert_history(self):
+        from api.routes.alert import get_alert_history
+
+        org_id = uuid.uuid4()
+        owner_id = uuid.uuid4()
+        current_user = _alert_route_user(role="user", org_id=org_id, user_id=owner_id)
+        creator = _alert_route_user(role="user", org_id=org_id, user_id=owner_id)
+        rule = _alert_route_rule(created_by=owner_id)
+
+        creator_result = MagicMock()
+        creator_result.scalar_one_or_none.return_value = creator
+        history_result = MagicMock()
+        history_result.scalars.return_value.all.return_value = []
+
+        db = AsyncMock()
+        db.get = AsyncMock(return_value=rule)
+        db.execute = AsyncMock(side_effect=[creator_result, history_result])
+
+        history = await get_alert_history(rule.id, db=db, current_user=current_user)
+
+        assert history == []
+        assert db.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_same_org_admin_can_rotate_webhook_secret(self):
+        from api.routes.alert import rotate_webhook_secret
+
+        org_id = uuid.uuid4()
+        creator_id = uuid.uuid4()
+        current_user = _alert_route_user(org_id=org_id)
+        creator = _alert_route_user(role="user", org_id=org_id, user_id=creator_id)
+        rule = _alert_route_rule(created_by=creator_id)
+        db = _alert_route_db(rule, creator)
+
+        response = await rotate_webhook_secret(rule.id, db, current_user)
+
+        assert response.webhook_secret_last4 == rule.webhook_secret[-4:]
+        assert rule.webhook_secret != "old-secret-value"
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_cross_org_admin_cannot_rotate_webhook_secret(self):
+        from api.routes.alert import rotate_webhook_secret
+
+        current_user = _alert_route_user(org_id=uuid.uuid4())
+        creator = _alert_route_user(role="user", org_id=uuid.uuid4())
+        rule = _alert_route_rule(created_by=creator.id)
+        db = _alert_route_db(rule, creator)
+
+        with pytest.raises(Exception) as exc_info:
+            await rotate_webhook_secret(rule.id, db, current_user)
+
+        assert exc_info.value.status_code == 404
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_same_org_admin_can_reveal_webhook_secret(self):
+        from api.routes.alert import reveal_webhook_secret
+
+        org_id = uuid.uuid4()
+        creator_id = uuid.uuid4()
+        current_user = _alert_route_user(org_id=org_id)
+        creator = _alert_route_user(role="user", org_id=org_id, user_id=creator_id)
+        rule = _alert_route_rule(created_by=creator_id)
+        db = _alert_route_db(rule, creator)
+
+        response = await reveal_webhook_secret(rule.id, db, current_user)
+
+        assert response.webhook_secret == rule.webhook_secret
+
+    @pytest.mark.asyncio
+    async def test_cross_org_admin_cannot_reveal_webhook_secret(self):
+        from api.routes.alert import reveal_webhook_secret
+
+        current_user = _alert_route_user(org_id=uuid.uuid4())
+        creator = _alert_route_user(role="user", org_id=uuid.uuid4())
+        rule = _alert_route_rule(created_by=creator.id)
+        db = _alert_route_db(rule, creator)
+
+        with pytest.raises(Exception) as exc_info:
+            await reveal_webhook_secret(rule.id, db, current_user)
+
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_cross_org_admin_cannot_test_webhook(self):
+        from api.routes.alert import test_webhook
+
+        current_user = _alert_route_user(org_id=uuid.uuid4())
+        creator = _alert_route_user(role="user", org_id=uuid.uuid4())
+        rule = _alert_route_rule(created_by=creator.id)
+        db = _alert_route_db(rule, creator)
+
+        with pytest.raises(Exception) as exc_info:
+            await test_webhook(rule.id, db, current_user)
+
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_local_mode_admin_can_reveal_webhook_secret(self):
+        from api.routes.alert import reveal_webhook_secret
+
+        current_user = _alert_route_user(org_id=None)
+        rule = _alert_route_rule()
+        db = _alert_route_db(rule)
+
+        response = await reveal_webhook_secret(rule.id, db, current_user)
+
+        assert response.webhook_secret == rule.webhook_secret
+        db.execute.assert_not_awaited()
 
 
 class TestAlertHistorySchema:

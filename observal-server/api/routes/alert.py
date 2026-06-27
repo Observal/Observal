@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import secrets
@@ -38,6 +39,20 @@ def _validate_webhook_url(url: str) -> None:
         raise HTTPException(400, "webhook_url must use http or https")
     if is_private_url(url):
         raise HTTPException(400, "webhook_url must not point to private/internal networks")
+
+
+async def _get_alert_for_user(db: AsyncSession, alert_id: uuid.UUID, current_user: User) -> AlertRule:
+    """Load an alert and enforce the existing org boundary policy."""
+    rule = await db.get(AlertRule, alert_id)
+    if not rule:
+        raise HTTPException(404, "Alert rule not found")
+
+    if current_user.org_id is not None:
+        creator = (await db.execute(select(User).where(User.id == rule.created_by))).scalar_one_or_none()
+        if not creator or creator.org_id != current_user.org_id:
+            raise HTTPException(404, "Alert rule not found")
+
+    return rule
 
 
 @router.get("", response_model=list[AlertRuleResponse])
@@ -92,14 +107,7 @@ async def update_alert(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("alert update")
-    rule = await db.get(AlertRule, alert_id)
-    if not rule:
-        raise HTTPException(404, "Alert rule not found")
-    # Org-scope check: ensure the alert belongs to the user's org
-    if current_user.org_id is not None:
-        creator = (await db.execute(select(User).where(User.id == rule.created_by))).scalar_one_or_none()
-        if not creator or creator.org_id != current_user.org_id:
-            raise HTTPException(404, "Alert rule not found")
+    rule = await _get_alert_for_user(db, alert_id, current_user)
     is_admin_or_above = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if rule.created_by != current_user.id and not is_admin_or_above:
         raise HTTPException(403, "Not authorized to modify this alert rule")
@@ -120,14 +128,7 @@ async def delete_alert(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("alert delete")
-    rule = await db.get(AlertRule, alert_id)
-    if not rule:
-        raise HTTPException(404, "Alert rule not found")
-    # Org-scope check: ensure the alert belongs to the user's org
-    if current_user.org_id is not None:
-        creator = (await db.execute(select(User).where(User.id == rule.created_by))).scalar_one_or_none()
-        if not creator or creator.org_id != current_user.org_id:
-            raise HTTPException(404, "Alert rule not found")
+    rule = await _get_alert_for_user(db, alert_id, current_user)
     is_admin_or_above = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if rule.created_by != current_user.id and not is_admin_or_above:
         raise HTTPException(403, "Not authorized to delete this alert rule")
@@ -145,14 +146,7 @@ async def get_alert_history(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("fetching alert history for {} (limit={})", alert_id, limit)
-    rule = await db.get(AlertRule, alert_id)
-    if not rule:
-        raise HTTPException(404, "Alert rule not found")
-    # Org-scope check: ensure the alert belongs to the user's org
-    if current_user.org_id is not None:
-        creator = (await db.execute(select(User).where(User.id == rule.created_by))).scalar_one_or_none()
-        if not creator or creator.org_id != current_user.org_id:
-            raise HTTPException(404, "Alert rule not found")
+    rule = await _get_alert_for_user(db, alert_id, current_user)
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if rule.created_by != current_user.id and not is_admin:
         raise HTTPException(403, "Not authorized")
@@ -177,9 +171,7 @@ async def rotate_webhook_secret(
 ):
     """Rotate the webhook signing secret for an alert rule. Admin only."""
     optic.debug("rotating webhook secret for alert {}", alert_id)
-    rule = await db.get(AlertRule, alert_id)
-    if not rule:
-        raise HTTPException(404, "Alert rule not found")
+    rule = await _get_alert_for_user(db, alert_id, current_user)
 
     from datetime import UTC, datetime
 
@@ -204,9 +196,7 @@ async def reveal_webhook_secret(
 
     logger = logging.getLogger(__name__)
 
-    rule = await db.get(AlertRule, alert_id)
-    if not rule:
-        raise HTTPException(404, "Alert rule not found")
+    rule = await _get_alert_for_user(db, alert_id, current_user)
 
     logger.info(
         "Webhook secret revealed: alert_rule_id={} by user_id={}",
@@ -224,9 +214,7 @@ async def test_webhook(
 ):
     """Send a test webhook to the configured URL. Owner or admin."""
     optic.debug("sending test webhook for alert {}", alert_id)
-    rule = await db.get(AlertRule, alert_id)
-    if not rule:
-        raise HTTPException(404, "Alert rule not found")
+    rule = await _get_alert_for_user(db, alert_id, current_user)
 
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if rule.created_by != current_user.id and not is_admin:
