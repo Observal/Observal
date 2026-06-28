@@ -179,3 +179,80 @@ export function useTelemetryStatus() {
     queryFn: telemetry.status,
   });
 }
+
+// ── Migration ────────────────────────────────────────────────────────
+
+export function useStartMigrationExport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (scope: string) => admin.migrateExport(scope),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "migration", "jobs"] });
+      toast.success("Export job started");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to start export");
+    },
+  });
+}
+
+export function useStartMigrationImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (formData: FormData) => admin.migrateImport(formData),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "migration", "jobs"] });
+      toast.success("Import job started");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to start import");
+    },
+  });
+}
+
+export function useStartMigrationValidate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (formData: FormData) => admin.migrateValidate(formData),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "migration", "jobs"] });
+      toast.success("Validation job started");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to start validation");
+    },
+  });
+}
+
+export function useMigrationJob(id: string | null) {
+  return useQuery({
+    queryKey: ["admin", "migration", "job", id],
+    queryFn: () => admin.migrateJob(id!),
+    enabled: !!id,
+    refetchInterval: 1500,
+  });
+}
+
+export function useMigrationJobs() {
+  return useQuery({
+    queryKey: ["admin", "migration", "jobs"],
+    queryFn: admin.migrateJobs,
+  });
+}
+
+export function useCurrentMigrationOrg() {
+  return useQuery({
+    queryKey: ["admin", "migration", "current-org"],
+    queryFn: admin.migrateCurrentOrg,
+  });
+}
+
+export function useMigrationDownloadToken() {
+  return useMutation({
+    mutationFn: (vars: { jobId: string; name: string }) =>
+      admin.migrateDownloadToken(vars.jobId, vars.name),
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to get download token");
+    },
+  });
+}

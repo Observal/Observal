@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
 	Activity,
 	Check,
+	HelpCircle,
 	ChevronsUpDown,
 	Eye,
 	EyeOff,
@@ -29,6 +30,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@/components/ui/popover";
+import { useHelp } from "@/components/wiki/help-context";
 import { admin } from "@/lib/api";
 import { useInsightsModelProviders, useInsightsModels } from "@/hooks/use-api";
 import { ModelCombobox } from "./model-combobox";
@@ -59,6 +61,7 @@ interface TestResult {
 }
 
 export function InsightsSection({ entries, onSave, onRevoke, refetch }: InsightsSectionProps) {
+	const helpCtx = useHelp();
 	const getEntryValue = useCallback(
 		(key: string) => {
 			const entry = entries.find((e) => e.key === key);
@@ -293,9 +296,12 @@ export function InsightsSection({ entries, onSave, onRevoke, refetch }: Insights
 		<section className="mb-6 mt-2">
 			{/* Header */}
 			<div className="flex items-center justify-between mb-1">
-				<h3 className="text-sm font-semibold uppercase tracking-wider text-foreground/80 flex items-center gap-1.5">
+				<h3 className={cn("text-sm font-semibold uppercase tracking-wider text-foreground/80 flex items-center gap-1.5", helpCtx.helpActive && "cursor-help ring-2 ring-primary/60 ring-offset-2 ring-offset-background rounded-sm")} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && helpCtx.openHelp({ sectionTitle: "Agent Insights" })) event.preventDefault(); }}>
 					<Activity className="h-3.5 w-3.5" />
 					Agent Insights
+					<button type="button" className="text-muted-foreground hover:text-primary" onClick={(event) => { event.preventDefault(); event.stopPropagation(); helpCtx.openHelp({ sectionTitle: "Agent Insights" }); }} aria-label="Open Agent Insights documentation">
+						<HelpCircle className="h-3.5 w-3.5" />
+					</button>
 				</h3>
 				<div className="flex items-center gap-1.5">
 					<div className={cn("h-2 w-2 rounded-full", statusConfig[status].color)} />

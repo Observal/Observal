@@ -541,3 +541,69 @@ export interface ExecAIInsightsResponse {
 	generated: boolean;
 	generated_at?: string | null;
 }
+
+// ── Migration ───────────────────────────────────────────────────────
+
+export type MigrationOperation = "export" | "import" | "validate";
+export type MigrationScope = "postgres" | "clickhouse" | "both";
+export type MigrationStatus = "queued" | "running" | "completed" | "failed";
+
+export interface MigrationArtifactMeta {
+	name: string;
+	size_bytes: number;
+	sha256: string;
+	kind: "archive" | "parquet" | "manifest";
+}
+
+export interface MigrationJob {
+	id: string;
+	operation_type: MigrationOperation;
+	data_scope: MigrationScope;
+	status: MigrationStatus;
+	progress_phase: string | null;
+	progress_pct: number;
+	progress_message: string | null;
+	error_message: string | null;
+	created_at: string;
+	finished_at: string | null;
+	artifacts: MigrationArtifactMeta[];
+	result:
+		| MigrationExportResult
+		| MigrationImportResult
+		| MigrationValidateResult
+		| null;
+	schema_version: string | null;
+}
+
+export interface MigrationExportResult {
+	table_counts: Record<string, number>;
+	total_rows: number;
+	archive_size_bytes: number | null;
+	telemetry_size_bytes: number | null;
+	schema_version_diff: string | null;
+}
+
+export interface MigrationImportResult {
+	rows_inserted: Record<string, number>;
+	rows_skipped: Record<string, number>;
+	tables_skipped: string[];
+	schema_version_diff: string | null;
+}
+
+export interface MigrationValidateResult {
+	checksums_valid: boolean;
+	checksum_details: Record<string, boolean>;
+	row_count_comparison: Record<string, [number, number]> | null;
+	orphaned_fk_refs: Record<string, string[]> | null;
+	schema_version_diff: string | null;
+}
+
+export interface MigrationDownloadToken {
+	token: string;
+	expires_at: string;
+}
+
+export interface CurrentOrgInfo {
+	org_id: string;
+	project_id: string;
+}

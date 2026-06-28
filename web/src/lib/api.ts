@@ -759,6 +759,64 @@ export const admin = {
 	getRetentionStats: () => get<RetentionStats>("/admin/org/retention/stats"),
 	getRetentionWarnings: () =>
 		get<RetentionWarnings>("/admin/org/retention/warnings"),
+	// ── Migration ──────────────────────────────────────────────
+	migrateExport: (scope: string) =>
+		post<{ job_id: string }>("/admin/migrate/export", { scope }),
+	migrateImport: async (formData: FormData) => {
+		const token = getAccessToken();
+		const headers: Record<string, string> = {};
+		if (token) headers["Authorization"] = `Bearer ${token}`;
+		const res = await fetch(`${API}/admin/migrate/import`, {
+			method: "POST",
+			headers,
+			body: formData,
+		});
+		if (!res.ok) {
+			const text = await res.text().catch(() => "Import failed");
+			let detail = text;
+			try {
+				const parsed = JSON.parse(text);
+				if (parsed.detail) detail = parsed.detail;
+			} catch {
+				/* raw text */
+			}
+			throw new Error(detail);
+		}
+		return res.json() as Promise<{ job_id: string }>;
+	},
+	migrateValidate: async (formData: FormData) => {
+		const token = getAccessToken();
+		const headers: Record<string, string> = {};
+		if (token) headers["Authorization"] = `Bearer ${token}`;
+		const res = await fetch(`${API}/admin/migrate/validate`, {
+			method: "POST",
+			headers,
+			body: formData,
+		});
+		if (!res.ok) {
+			const text = await res.text().catch(() => "Validate failed");
+			let detail = text;
+			try {
+				const parsed = JSON.parse(text);
+				if (parsed.detail) detail = parsed.detail;
+			} catch {
+				/* raw text */
+			}
+			throw new Error(detail);
+		}
+		return res.json() as Promise<{ job_id: string }>;
+	},
+	migrateJob: (id: string) =>
+		get<import("./types/admin").MigrationJob>(`/admin/migrate/jobs/${id}`),
+	migrateJobs: () =>
+		get<import("./types/admin").MigrationJob[]>("/admin/migrate/jobs"),
+	migrateDownloadToken: (jobId: string, name: string) =>
+		post<import("./types/admin").MigrationDownloadToken>(
+			`/admin/migrate/jobs/${jobId}/artifacts/${name}/token`,
+			{},
+		),
+	migrateCurrentOrg: () =>
+		get<import("./types/admin").CurrentOrgInfo>("/admin/migrate/current-org"),
 };
 
 // ── Retention Types ───────────────────────────────────────────────

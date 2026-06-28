@@ -21,6 +21,7 @@ export function HelpPanel({ file, anchor, title, onClose }: HelpPanelProps) {
 	const [content, setContent] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const panelRef = useRef<HTMLDivElement>(null);
 	const scrollRef = useRef<HTMLDivElement>(null);
 
 	// Load doc content when file changes
@@ -63,7 +64,6 @@ export function HelpPanel({ file, anchor, title, onClose }: HelpPanelProps) {
 		return () => clearTimeout(timer);
 	}, [anchor, content, loading]);
 
-	// Escape key closes the panel
 	const handleKeyDown = useCallback(
 		(e: KeyboardEvent) => {
 			if (e.key === "Escape") onClose();
@@ -71,16 +71,30 @@ export function HelpPanel({ file, anchor, title, onClose }: HelpPanelProps) {
 		[onClose],
 	);
 
+	const handlePointerDown = useCallback(
+		(e: PointerEvent) => {
+			const target = e.target;
+			if (target instanceof Node && !panelRef.current?.contains(target)) {
+				onClose();
+			}
+		},
+		[onClose],
+	);
+
 	useEffect(() => {
 		if (!file) return;
 		document.addEventListener("keydown", handleKeyDown);
-		return () => document.removeEventListener("keydown", handleKeyDown);
-	}, [file, handleKeyDown]);
+		document.addEventListener("pointerdown", handlePointerDown);
+		return () => {
+			document.removeEventListener("keydown", handleKeyDown);
+			document.removeEventListener("pointerdown", handlePointerDown);
+		};
+	}, [file, handleKeyDown, handlePointerDown]);
 
 	if (!file) return null;
 
 	return (
-		<div className="fixed right-0 top-0 w-[min(720px,calc(100vw-260px))] min-w-[560px] border-l border-border bg-card flex flex-col h-screen z-40 shadow-xl">
+		<div ref={panelRef} className="fixed right-0 top-0 w-[min(720px,calc(100vw-260px))] min-w-[560px] border-l border-border bg-card flex flex-col h-screen z-40 shadow-xl">
 			{/* Sticky header */}
 			<div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card z-10 shrink-0">
 				<div className="flex items-center gap-2 min-w-0">

@@ -4,20 +4,20 @@ SPDX-License-Identifier: AGPL-3.0-only
 -->
 
 
-# AI Insights Configuration
+# Agent Insights Configuration
 
-You need to configure an LLM provider so that Observal can generate trace summaries, detect anomalies, and produce natural-language explanations of agent behavior.
+Configure a LiteLLM-compatible provider so Observal can generate trace summaries, detect anomalies, and explain agent behavior in natural language.
 
 ## Get Insights running in 5 minutes
 
-1. Get an API key from your LLM provider (Anthropic, OpenAI-compatible, or Azure).
-2. Go to **Settings > Insights** in the Observal admin panel.
-3. Paste the key into the **API Key** field.
-4. Set **Model ID** to a model (e.g., `anthropic/claude-sonnet-4-20250514` for a good balance of speed and quality).
-5. Leave all other fields at defaults.
+1. Get an API key from any provider supported by LiteLLM.
+2. Go to **Settings > Agent Insights** in the Observal admin panel.
+3. Pick the provider. Observal loads model options from the LiteLLM catalog.
+4. Paste the key into the **API Key** field.
+5. Set the **Sections Model**. Synthesis and Facets fall back to it if left empty.
 6. Save.
 
-**Checkpoint:** Navigate to any trace in the trace viewer. Within 30 seconds, an "Insights" panel should appear with a natural-language summary. If you see "Insights unavailable — no model configured," double-check that the API key and Model ID are saved.
+**Checkpoint:** Navigate to any trace in the trace viewer. Within 30 seconds, an "Insights" panel should appear with a natural-language summary. If you see "Insights unavailable, no model configured," double-check that the API key and model fields are saved.
 
 ## Verify it works
 
@@ -25,27 +25,29 @@ You need to configure an LLM provider so that Observal can generate trace summar
 curl -s http://localhost:8000/readyz
 ```
 
-Expected: `{"status":"ok",...}` or `{"status":"degraded",...}` with component statuses. If insights is configured, the response will include `"initialized": true`.
+Expected: `{"status":"ok",...}` or `{"status":"degraded",...}` with component statuses. If insights is configured, the response includes `"initialized": true`.
 
 
 ## Field Reference
 
 ### API Key {#api-key}
 
-The secret key used to authenticate with your LLM provider.
+The secret key used to authenticate with your selected LiteLLM provider.
 
 **Affects:** All Insights generation (section summaries, synthesis, anomaly detection). Without a valid key, Insights is fully disabled and the "Insights" panel shows "unavailable" on all traces.
 
 **Security notes:**
 - The key is stored AES-256 encrypted at rest and never displayed after initial save.
-- Rotate immediately if you see `401 Unauthorized` errors in the Insights worker logs — it likely means the key was revoked upstream.
+- Rotate immediately if you see `401 Unauthorized` errors in the Insights worker logs. It likely means the key was revoked upstream.
 
 **Values:**
 
 | Value | Effect |
 |-------|--------|
-| `sk-ant-api03-...` (Anthropic) | Enables Insights via the Anthropic Messages API |
-| `sk-proj-...` (OpenAI-compatible) | Routes through OpenAI-compatible providers; set API Base URL accordingly |
+| `sk-ant-api03-...` | Anthropic-compatible provider key |
+| `sk-proj-...` | OpenAI-compatible provider key |
+| Bedrock API key | AWS Bedrock via LiteLLM |
+| Any LiteLLM provider key | Use with the matching provider and optional base URL |
 | _(empty)_ | Insights fully disabled; no LLM calls are made |
 
 **When to set:** On initial setup, or when rotating credentials after a key leak or expiry.
@@ -66,7 +68,7 @@ Override the default provider endpoint. Leave blank to use the provider's standa
 
 | Value | Effect |
 |-------|--------|
-| _(blank)_ (default) | Uses the provider's standard endpoint (e.g., `https://api.anthropic.com`) |
+| _(blank)_ (default) | Uses the selected provider's standard endpoint |
 | `https://llm-gateway.internal.yourcompany.com/v1` | Routes through a corporate proxy or self-hosted gateway |
 | `https://your-resource.openai.azure.com/openai/deployments/gpt-4o` | Azure OpenAI deployment |
 
@@ -76,14 +78,14 @@ Override the default provider endpoint. Leave blank to use the provider's standa
 - You use a regional endpoint for data-residency compliance.
 
 **Common mistakes:**
-- Including a trailing slash — the SDK appends paths like `/messages`, so a trailing slash produces `//messages`.
-- Pointing to an HTML page instead of the API root — the URL should respond to POST, not return a webpage.
+- Including a trailing slash. The SDK appends paths like `/messages`, so a trailing slash produces `//messages`.
+- Pointing to an HTML page instead of the API root. The URL should respond to POST, not return a webpage.
 
 ### Model Configuration {#model-configuration}
 
 | Field | Purpose | Default |
 |-------|---------|---------|
-| Model ID | The model name string sent in API requests | _(empty — must be configured)_ |
+| Sections Model | The main model name string sent through LiteLLM | _(empty, must be configured)_ |
 | Max output tokens | Cap on generated summary length | `16384` (sections model), `4096` (synthesis) |
 | Temperature | Randomness (0 = deterministic, 1 = creative) | `0.1` |
 
@@ -123,7 +125,7 @@ The model that combines all section summaries into a single narrative explanatio
 
 #### Facets Model {#facets-model}
 
-The model used for facet-level analysis. Facets are structured data points extracted from each session by this model — they identify anomalies, extract key attributes, and classify span behavior within each section. For example: "tool_call_failed: true", "response_latency: slow", "user_sentiment: frustrated" — these are then aggregated across sessions to surface patterns in Insight reports.
+The model used for facet-level analysis. Facets are structured data points extracted from each session by this model. They identify anomalies, extract key attributes, and classify span behavior within each section. For example: "tool_call_failed: true", "response_latency: slow", "user_sentiment: frustrated". These are then aggregated across sessions to surface patterns in Insight reports.
 
 **Affects:** Anomaly detection accuracy and the richness of per-facet metadata tags. Runs once per facet (trace section), so cost scales with the number of facets per trace.
 
@@ -224,8 +226,8 @@ Number of parallel LLM requests the Insights worker makes when processing facets
 | `5` | Minimal load; suitable for development/testing environments |
 
 **When to set:**
-- **High latency on Insights** — Increase concurrency (but watch rate limits).
-- **`429 Too Many Requests` errors** — Decrease concurrency.
-- **Out-of-memory on the worker pod** — Decrease concurrency; each facet holds trace payloads in memory during summarization.
+- **High latency on Insights**: Increase concurrency, but watch rate limits.
+- **`429 Too Many Requests` errors**: Decrease concurrency.
+- **Out-of-memory on the worker pod**: Decrease concurrency. Each facet holds trace payloads in memory during summarization.
 
 > **Caution:** Setting concurrency above your provider's per-key rate limit will cause cascading retries. Check your provider dashboard for current limits before increasing.

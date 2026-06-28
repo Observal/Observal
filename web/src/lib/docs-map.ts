@@ -109,13 +109,18 @@ export const SETTING_DOCS: Record<string, DocRef> = {
  */
 export const SECTION_DOCS: Record<string, DocRef> = {
 	"Authentication": { file: "self-hosting/authentication.md", label: "Authentication Settings" },
-	"Agent Insights": { file: "insights-config.md", label: "AI Insights Configuration" },
+	"Agent Insights": { file: "insights-config.md", label: "Agent Insights Configuration" },
 	"Deployment": { file: "self-hosting/deployment-settings.md", label: "Deployment Settings" },
 	"Security": { file: "self-hosting/trusted-proxies.md", label: "Trusted Proxies & Network Security" },
 	"SSO": { file: "self-hosting/authentication.md", label: "SSO Configuration" },
 	"JWT Token Expiry": { file: "self-hosting/token-expiry.md", label: "Token Expiry Settings" },
 	"Resource Tuning": { file: "self-hosting/resource-tuning.md", label: "Resource Tuning" },
 	"Data & Retention": { file: "self-hosting/data-retention.md", label: "Data & Retention Settings" },
+	"Data Retention": { file: "self-hosting/data-retention.md", anchor: "data-retention", label: "Data Retention" },
+	"Data Migration": { file: "self-hosting/data-migration.md", label: "Data Migration" },
+	"Appearance": { file: "self-hosting/miscellaneous.md", anchor: "appearance", label: "Appearance" },
+	"Trace Privacy": { file: "self-hosting/miscellaneous.md", anchor: "trace-privacy", label: "Trace Privacy" },
+	"Registered Agents Only": { file: "self-hosting/miscellaneous.md", anchor: "registered-agents-only", label: "Registered Agents Only" },
 	"Telemetry Purge": { file: "self-hosting/data-retention.md", anchor: "purge-traces-and-insights", label: "Purge Traces & Insights" },
 	"Observability": { file: "self-hosting/observability-settings.md", label: "Observability Settings" },
 	"Miscellaneous": { file: "self-hosting/miscellaneous.md", label: "Miscellaneous Settings" },
@@ -139,4 +144,5 @@ export const PAGE_DOCS: Record<string, DocRef> = {
 	"audit-log": { file: "reference/api-endpoints.md", label: "API Reference" },
 	"sso": { file: "self-hosting/authentication.md", label: "SSO" },
 	"diagnostics": { file: "self-hosting/troubleshooting.md", label: "Troubleshooting" },
+	"migration": { file: "self-hosting/data-migration.md", label: "Data Migration" },
 };

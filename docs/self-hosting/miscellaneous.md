@@ -7,6 +7,20 @@ SPDX-License-Identifier: AGPL-3.0-only
 
 Settings that control platform-wide behavior, harness restrictions, and display preferences.
 
+## Appearance {#appearance}
+
+Controls the product name and images shown in the web UI.
+
+| Field | Effect |
+|-------|--------|
+| Icon | Small logo used in navigation and compact surfaces |
+| Wordmark | Optional full logo image that replaces text branding |
+| App name | Text fallback used when no wordmark is configured |
+
+**Image formats:** PNG, SVG, ICO, JPEG, and WEBP. Keep files under 2 MB. Transparent images work best across light and dark themes.
+
+**When to set:** Self-hosted deployments that need company branding in the admin UI.
+
 ## harness Allowlist {#harness-allowlist}
 
 Restrict which harnesses are available in the platform. When set, only the listed harnesses appear in install dropdowns, agent compatibility tags, and the `observal pull` target selection.
@@ -50,22 +64,24 @@ Directory used for cloned repository mirrors during component analysis and sourc
 
 ## Registered Agents Only {#registered-agents-only}
 
-When enabled, telemetry ingestion only accepts traces from agents that are registered in the Observal registry. Traces from unknown agents are rejected with a 403.
+Limits telemetry to agents that are registered in the Observal registry.
 
 | Value | Effect |
 |-------|--------|
 | `false` (default) | Accept telemetry from any agent, registered or not |
-| `true` | Only registered agents can submit telemetry; unknown agents are rejected |
+| `true` | Only registered agents are traced. Unregistered agent activity may be missing from traces |
 
-**When to enable:** Organizations that want strict control over which agents produce telemetry, for compliance or cost control. Ensure all team agents are registered before enabling.
+**Status:** This control is unstable. Enable it only after confirming all team agents are registered and harness patching is current.
+
+**When to enable:** Organizations that want stricter control over which agents produce telemetry, for compliance or cost control.
 
 ## Trace Privacy {#trace-privacy}
 
-Redact user message content from stored traces, keeping only metadata (timing, tool usage, token counts).
+Restricts trace visibility by user.
 
 | Value | Effect |
 |-------|--------|
-| `false` (default) | Full trace content is stored and visible in the trace viewer |
-| `true` | User messages are redacted; only structural metadata is retained |
+| `false` (default) | Admins can inspect traces across the organization according to their role |
+| `true` | Users and admins see only their own traces. Super admins retain full visibility |
 
-**When to enable:** Organizations with strict data privacy requirements where storing LLM conversation content is not permitted. Note: redaction is irreversible for new traces.
+**When to enable:** Organizations that want trace viewers scoped to each user's own activity while preserving super-admin access for incident response.
