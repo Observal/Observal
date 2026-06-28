@@ -34,7 +34,7 @@ jobs:
       - name: Start Docker stack
         run: |
           cp .env.example .env
-          make up
+          make rebuild
         env:
           DOCKER_BUILDKIT: 1
 
