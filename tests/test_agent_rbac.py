@@ -24,27 +24,32 @@ def _mock_user(user_id=None, role=UserRole.user):
 
 
 class TestGetEffectiveAgentPermission:
-    def test_unauthenticated_returns_view(self):
+    def test_unauthenticated_user_returns_view_permission(self) -> None:
         agent = _mock_agent()
-        assert get_effective_agent_permission(agent, None) == "view"
+        result = get_effective_agent_permission(agent, None)
+        assert result == "view"
 
-    def test_owner_returns_owner(self):
+    def test_owner_returns_owner_permission(self) -> None:
         uid = uuid.uuid4()
         agent = _mock_agent(created_by=uid)
         user = _mock_user(user_id=uid)
-        assert get_effective_agent_permission(agent, user) == "owner"
+        result = get_effective_agent_permission(agent, user)
+        assert result == "owner"
 
-    def test_admin_returns_owner(self):
+    def test_admin_returns_owner_permission(self) -> None:
         agent = _mock_agent()
         user = _mock_user(role=UserRole.admin)
-        assert get_effective_agent_permission(agent, user) == "owner"
+        result = get_effective_agent_permission(agent, user)
+        assert result == "owner"
 
-    def test_super_admin_returns_owner(self):
+    def test_super_admin_returns_owner_permission(self) -> None:
         agent = _mock_agent()
         user = _mock_user(role=UserRole.super_admin)
-        assert get_effective_agent_permission(agent, user) == "owner"
+        result = get_effective_agent_permission(agent, user)
+        assert result == "owner"
 
-    def test_regular_user_returns_view(self):
+    def test_regular_user_returns_view_permission(self) -> None:
         agent = _mock_agent()
         user = _mock_user()
-        assert get_effective_agent_permission(agent, user) == "view"
+        result = get_effective_agent_permission(agent, user)
+        assert result == "view"
