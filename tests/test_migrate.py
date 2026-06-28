@@ -21,22 +21,14 @@ from hypothesis import strategies as st
 from typer.testing import CliRunner
 
 from observal_cli.cmd_migrate import (
-    CHUNK_SIZE,
-    INSERT_ORDER,
-    JSONB_COLUMNS,
-    ChecksumResult,
-    ExportResult,
-    ImportResult,
-    PGEncoder,
-    ValidationResult,
-    _build_insert,
-    _build_select,
-    _coerce_value,
     _require_admin,
     _require_pyarrow,
-    _sha256_file,
 )
 from observal_cli.main import app as cli_app
+from observal_shared.migration.archive import _sha256_file
+from observal_shared.migration.constants import CHUNK_SIZE, INSERT_ORDER, JSONB_COLUMNS
+from observal_shared.migration.encoding import PGEncoder, _build_insert, _build_select, _coerce_value
+from observal_shared.migration.results import ChecksumResult, ExportResult, ImportResult, ValidationResult
 
 runner = CliRunner()
 
@@ -226,11 +218,11 @@ class TestConstants:
 
 class TestBuildSelect:
     def test_table_with_jsonb_columns(self):
-        columns = ["id", "name", "model_config_json", "external_mcps", "supported_harnesses", "created_at"]
+        jsonb_cols = JSONB_COLUMNS.get("agents", [])
+        columns = ["id", "name", *jsonb_cols, "created_at"]
         sql = _build_select("agents", columns)
-        assert '"model_config_json"::text AS "model_config_json"' in sql
-        assert '"external_mcps"::text AS "external_mcps"' in sql
-        assert '"supported_harnesses"::text AS "supported_harnesses"' in sql
+        for col in jsonb_cols:
+            assert f'"{col}"::text AS "{col}"' in sql
         # Non-JSONB columns should not have ::text
         assert "id::text" not in sql
         assert "name::text" not in sql

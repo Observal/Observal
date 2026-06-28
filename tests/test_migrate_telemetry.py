@@ -25,25 +25,19 @@ from hypothesis import strategies as st
 from typer.testing import CliRunner
 
 from observal_cli.cmd_migrate import (
-    _UUID_RE,
-    CLICKHOUSE_TABLES,
-    EPOCH_SENTINELS,
-    FK_PG_TABLE_MAP,
-    TableCfg,
-    TelemetryExportResult,
-    TelemetryImportResult,
-    TelemetryValidationResult,
+    _require_admin,
+)
+from observal_cli.main import app as cli_app
+from observal_shared.migration.archive import _is_empty_parquet, _month_range, _sha256_file
+from observal_shared.migration.ch_export import (
     _build_ch_count_query,
     _build_ch_export_query,
     _build_ch_time_range_query,
-    _is_empty_parquet,
-    _month_range,
-    _parse_clickhouse_url,
     _read_count,
-    _require_admin,
-    _sha256_file,
 )
-from observal_cli.main import app as cli_app
+from observal_shared.migration.connections import parse_clickhouse_url as _parse_clickhouse_url
+from observal_shared.migration.constants import _UUID_RE, CLICKHOUSE_TABLES, EPOCH_SENTINELS, FK_PG_TABLE_MAP, TableCfg
+from observal_shared.migration.results import TelemetryExportResult, TelemetryImportResult, TelemetryValidationResult
 
 runner = CliRunner()
 
@@ -1261,7 +1255,7 @@ class TestParameterizedQuery:
         # by checking the source code uses the right SQL string.
         import inspect
 
-        from observal_cli.cmd_migrate import _ch_existing_tables
+        from observal_shared.migration.ch_import import _ch_existing_tables
 
         source = inspect.getsource(_ch_existing_tables)
         assert "{db:String}" in source

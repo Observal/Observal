@@ -101,7 +101,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["observal_cli", "models", "schemas", "services", "api", "ee"]
+known-first-party = ["observal_cli", "observal_shared", "models", "schemas", "services", "api", "ee"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "ee".msg = "Core must not import from ee/. Only main.py may cross this boundary."
