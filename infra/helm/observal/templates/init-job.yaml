@@ -1,0 +1,102 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "observal.fullname" . }}-init
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: init
+spec:
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "observal.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: init
+    spec:
+      serviceAccountName: {{ include "observal.serviceAccountName" . }}
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: false
+      initContainers:
+        {{- include "observal.initWaitPostgres" . | nindent 8 }}
+        {{- include "observal.initWaitClickhouse" . | nindent 8 }}
+        {{- include "observal.initWaitRedis" . | nindent 8 }}
+      containers:
+        - name: init
+          image: {{ include "observal.image" (dict "global" .Values.global "image" .Values.api.image) }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - bash
+            - -c
+            - |
+              set -e
+              echo "Executing entrypoint script for DB migrations..."
+              /app/entrypoint.sh
+
+              echo "Syncing JWT keys in K8s Secret..."
+              /app/.venv/bin/python -c "
+              import os, ssl, json, urllib.request, urllib.error
+              from cryptography.hazmat.primitives.asymmetric import ec
+              from cryptography.hazmat.primitives import serialization
+
+              secret_name = '{{ include "observal.jwtSecretName" . }}'
+              ns = '{{ .Release.Namespace }}'
+              token_path = '/var/run/secrets/kubernetes.io/serviceaccount/token'
+              ca_path = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+
+              if os.path.exists(token_path):
+                  with open(token_path) as f:
+                      token = f.read().strip()
+                  ctx = ssl.create_default_context(cafile=ca_path)
+                  headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
+                  url = f'https://kubernetes.default.svc/api/v1/namespaces/{ns}/secrets/{secret_name}'
+
+                  exists = False
+                  try:
+                      req = urllib.request.Request(url, headers=headers, method='GET')
+                      with urllib.request.urlopen(req, context=ctx) as resp:
+                          if resp.status == 200:
+                              exists = True
+                  except urllib.error.HTTPError as e:
+                      if e.code != 404:
+                          raise
+
+                  if not exists:
+                      print('Generating new JWT keypair and creating Secret...')
+                      key = ec.generate_private_key(ec.SECP256R1())
+                      priv = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+                      pub = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+
+                      create_url = f'https://kubernetes.default.svc/api/v1/namespaces/{ns}/secrets'
+                      body = {
+                          'apiVersion': 'v1',
+                          'kind': 'Secret',
+                          'metadata': {'name': secret_name, 'namespace': ns},
+                          'stringData': {'signing.pem': priv, 'signing.pub': pub, 'jwt_es256.pem': priv, 'jwt_es256.pub': pub}
+                      }
+                      create_req = urllib.request.Request(create_url, data=json.dumps(body).encode(), headers=headers, method='POST')
+                      with urllib.request.urlopen(create_req, context=ctx) as resp:
+                          print(f'Secret {secret_name} created successfully.')
+                  else:
+                      print(f'Secret {secret_name} already exists.')
+              "
+          envFrom:
+            - configMapRef:
+                name: {{ include "observal.configMapName" . }}
+            - secretRef:
+                name: {{ include "observal.secretName" . }}
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

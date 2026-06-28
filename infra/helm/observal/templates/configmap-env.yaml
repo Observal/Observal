@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observal.configMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+data:
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  JWT_SIGNING_ALGORITHM: {{ .Values.config.jwtSigningAlgorithm | quote }}
+  JWT_KEY_DIR: {{ .Values.config.jwtKeyDir | quote }}
+  SEED_DEMO_ACCOUNTS: {{ .Values.config.seedDemoAccounts | quote }}

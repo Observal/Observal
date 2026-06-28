@@ -50,19 +50,20 @@ All services run on a private `observal-net` bridge network. Named volumes (`pgd
 
 Choose the deployment model that fits your team:
 
-| | [Single-node](single-node-deploy.md) | [Production](production-deploy.md) |
-|---|---|---|
-| **How** | Docker Compose on one VM | Terraform on AWS or GCP |
-| **Best for** | ≤50 users, internal tools, POCs | Enterprise, SLA-bound, 50+ users |
-| **Cost** | $20–150/mo | ~$180–255/mo |
-| **HA** | No | Yes (Multi-AZ databases, autoscaling) |
-| **Time to deploy** | 10 minutes | 20–30 minutes |
+| | [Single-node](single-node-deploy.md) | [Kubernetes](kubernetes-helm.md) | [Production](production-deploy.md) |
+|---|---|---|---|
+| **How** | Docker Compose on one VM | Official Helm chart | Terraform on AWS or GCP |
+| **Best for** | ≤50 users, internal tools, POCs | Cloud-native teams, existing K8s infra | Enterprise, SLA-bound, 50+ users |
+| **Cost** | $20 to $150/mo | Variable | ~$180 to $255/mo |
+| **HA** | No | Pod resilience & horizontal scaling | Yes (Multi-AZ databases, autoscaling) |
+| **Time to deploy** | 10 minutes | 10 to 15 minutes | 20 to 30 minutes |
 
 **Start here:**
 
 | If you want to... | Read |
 | --- | --- |
 | Deploy on a single VM (simplest) | [Single-node deployment](single-node-deploy.md) |
+| Deploy on Kubernetes with Helm | [Kubernetes deployment with Helm](kubernetes-helm.md) |
 | Deploy a production HA stack | [Production deployment](production-deploy.md) |
 | Deploy on AWS specifically | [AWS deployment with Terraform](aws-terraform.md) |
 | Deploy on GCP specifically | [GCP deployment with Terraform](gcp-terraform.md) |

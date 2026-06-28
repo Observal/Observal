@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """Asymmetric key management for JWT signing and verification (ES256 / ECDSA P-256).
@@ -105,8 +106,11 @@ class KeyManager:
         """Load or generate the signing key pair.  Call once at startup."""
         optic.debug("initializing key manager")
         self._key_dir.mkdir(parents=True, exist_ok=True)
-        # Restrict directory to owner-only
-        os.chmod(self._key_dir, 0o700)
+        # Restrict directory to owner-only (ignore on read-only secret mounts)
+        try:
+            os.chmod(self._key_dir, 0o700)
+        except OSError:
+            pass
 
         signing_path = self._key_dir / "signing.pem"
         if signing_path.exists():
@@ -267,7 +271,7 @@ class KeyManager:
             kid = header.get("kid", self.get_kid())
             pub = self.find_public_key(kid)
             if pub is None:
-                raise ValueError(f"Unknown key id: {kid}")
+                raise pyjwt.InvalidTokenError(f"Unknown key id: {kid}")
             return pyjwt.decode(token, pub, algorithms=["ES256"])
         except ImportError:
             pass

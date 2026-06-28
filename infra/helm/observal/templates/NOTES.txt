@@ -1,0 +1,46 @@
+{{/*
+SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+SPDX-License-Identifier: AGPL-3.0-only
+*/}}
+
+Observal has been installed! 🎉
+
+{{- $scheme := "http" }}
+{{- if .Values.ingress.tls.enabled }}
+{{- $scheme = "https" }}
+{{- end }}
+
+  Access URL: {{ $scheme }}://{{ .Values.ingress.host }}
+
+  Health check:
+    curl {{ $scheme }}://{{ .Values.ingress.host }}/health
+
+  CLI login:
+    observal auth login
+    # Server URL: {{ $scheme }}://{{ .Values.ingress.host }}
+
+{{- if .Values.config.seedDemoAccounts }}
+  Demo accounts are ENABLED. Default credentials:
+    super@demo.example / super-changeme
+    admin@demo.example / admin-changeme
+  ⚠️  Remove before real use: set config.seedDemoAccounts=false
+{{- end }}
+
+{{- if .Values.postgresql.enabled }}
+
+⚠️  WARNING: In-cluster PostgreSQL is running.
+   This is for DEV/EVAL only: no replication, no PITR, no automated failover.
+   For production use a managed database (RDS, Cloud SQL, etc.)
+   See: docs/self-hosting/kubernetes-helm.md
+{{- end }}
+
+{{- if .Values.clickhouse.enabled }}
+
+⚠️  WARNING: In-cluster ClickHouse is running (same caveat as above).
+{{- end }}
+
+  Useful commands:
+    kubectl get pods -n {{ .Release.Namespace }}
+    kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=api -f
+    helm upgrade observal infra/helm/observal -n {{ .Release.Namespace }}
+    helm uninstall observal -n {{ .Release.Namespace }}

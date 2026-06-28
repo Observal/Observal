@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observal.fullname" . }}-web-nginx
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen 3000;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
+
+        location /assets/ {
+            expires 1y;
+            add_header Cache-Control "public, immutable" always;
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
+            add_header X-Frame-Options "DENY" always;
+            add_header X-Content-Type-Options "nosniff" always;
+        }
+
+        location /api/ {
+            proxy_pass http://{{ include "observal.fullname" . }}-api:8000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /health {
+            proxy_pass http://{{ include "observal.fullname" . }}-api:8000;
+            proxy_set_header Host $host;
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }

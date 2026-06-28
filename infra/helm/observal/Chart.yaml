@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+apiVersion: v2
+name: observal
+description: >
+  Observal, agent-centric registry and observability platform for AI coding agents.
+  Self-hosted Helm chart for Kubernetes deployments.
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - observal
+  - ai-agents
+  - observability
+  - registry
+home: https://github.com/Observal/Observal
+sources:
+  - https://github.com/Observal/Observal
+maintainers:
+  - name: Observal Contributors
+    url: https://github.com/Observal/Observal

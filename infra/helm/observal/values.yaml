@@ -1,0 +1,142 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# =============================================================================
+# Observal Helm values
+# =============================================================================
+
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+api:
+  image:
+    repository: ghcr.io/observal/observal-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  workers: 2
+  resources:
+    limits:
+      memory: 1536Mi
+    requests:
+      memory: 256Mi
+      cpu: 100m
+
+worker:
+  image:
+    repository: ghcr.io/observal/observal-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    limits:
+      memory: 1536Mi
+    requests:
+      memory: 256Mi
+      cpu: 50m
+
+web:
+  image:
+    repository: ghcr.io/observal/observal-web
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      memory: 64Mi
+      cpu: 50m
+
+postgresql:
+  enabled: true
+  externalUrl: ""
+  image:
+    repository: postgres
+    tag: "16"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      memory: 1Gi
+    requests:
+      memory: 256Mi
+      cpu: 100m
+  storage:
+    size: 10Gi
+    storageClassName: ""
+
+clickhouse:
+  enabled: true
+  externalUrl: ""
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: "26.3"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      memory: 3Gi
+    requests:
+      memory: 512Mi
+      cpu: 250m
+  storage:
+    size: 50Gi
+    storageClassName: ""
+
+redis:
+  enabled: true
+  externalUrl: ""
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 128Mi
+      cpu: 50m
+  maxmemory: "400mb"
+  storage:
+    size: 2Gi
+    storageClassName: ""
+
+ingress:
+  enabled: true
+  className: nginx
+  host: observal.example.com
+  tls:
+    enabled: false
+    secretName: ""
+    certManager:
+      enabled: false
+      issuerName: letsencrypt-prod
+      issuerKind: ClusterIssuer
+  annotations: {}
+
+secrets:
+  # Use a pre-existing Secret instead of creating one. Secret must contain all
+  # keys: SECRET_KEY, POSTGRES_PASSWORD, CLICKHOUSE_PASSWORD, DATABASE_URL,
+  # CLICKHOUSE_URL, REDIS_URL
+  existingSecret: ""
+  secretKey: ""
+  postgresPassword: ""
+  clickhousePassword: ""
+  licenseKey: ""
+
+config:
+  logLevel: INFO
+  logFormat: json
+  jwtSigningAlgorithm: ES256
+  jwtKeyDir: /data/keys
+  seedDemoAccounts: false
+
+apidata:
+  storage:
+    size: 5Gi
+    storageClassName: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}

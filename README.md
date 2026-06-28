@@ -254,7 +254,7 @@ Full docs at **[docs.observal.io](https://docs.observal.io/)**
 | Queue | Redis + arq |
 | CLI | Python, Typer, Rich |
 | Telemetry | Session hooks, stdio shims, push-based ingest |
-| Deployment | Docker Compose (10 services) |
+| Deployment | Docker Compose (10 services), Kubernetes (Helm) |
 
 ## Contributing
 

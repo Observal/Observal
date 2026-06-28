@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "observal.fullname" . }}-apidata
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+spec:
+  accessModes: [ "ReadWriteOnce" ]
+  {{- if .Values.apidata.storage.storageClassName }}
+  storageClassName: {{ .Values.apidata.storage.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.apidata.storage.size | quote }}

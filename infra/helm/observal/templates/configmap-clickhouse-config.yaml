@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+{{- if .Values.clickhouse.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observal.fullname" . }}-clickhouse-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+data:
+  memory.xml: |
+    <clickhouse>
+        <listen_host>::</listen_host>
+        <listen_host>0.0.0.0</listen_host>
+        <listen_try>1</listen_try>
+        <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+        <merge_tree>
+            <parts_to_delay_insert>200</parts_to_delay_insert>
+            <parts_to_throw_insert>500</parts_to_throw_insert>
+            <max_bytes_to_merge_at_max_space_in_pool>5368709120</max_bytes_to_merge_at_max_space_in_pool>
+        </merge_tree>
+        <query_log>
+            <database>system</database>
+            <table>query_log</table>
+            <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+            <partition_by>toYYYYMM(event_date)</partition_by>
+            <ttl>event_date + INTERVAL 3 DAY</ttl>
+        </query_log>
+        <trace_log>
+            <database>system</database>
+            <table>trace_log</table>
+            <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+            <partition_by>toYYYYMM(event_date)</partition_by>
+            <ttl>event_date + INTERVAL 1 DAY</ttl>
+        </trace_log>
+        <text_log>
+            <database>system</database>
+            <table>text_log</table>
+            <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+            <partition_by>toYYYYMM(event_date)</partition_by>
+            <ttl>event_date + INTERVAL 1 DAY</ttl>
+        </text_log>
+        <metric_log>
+            <database>system</database>
+            <table>metric_log</table>
+            <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+            <partition_by>toYYYYMM(event_date)</partition_by>
+            <ttl>event_date + INTERVAL 1 DAY</ttl>
+        </metric_log>
+        <asynchronous_metric_log>
+            <database>system</database>
+            <table>asynchronous_metric_log</table>
+            <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+            <partition_by>toYYYYMM(event_date)</partition_by>
+            <ttl>event_date + INTERVAL 1 DAY</ttl>
+        </asynchronous_metric_log>
+        <part_log>
+            <database>system</database>
+            <table>part_log</table>
+            <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+            <partition_by>toYYYYMM(event_date)</partition_by>
+            <ttl>event_date + INTERVAL 1 DAY</ttl>
+        </part_log>
+    </clickhouse>
+{{- end }}

@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+{{- if .Values.clickhouse.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observal.fullname" . }}-clickhouse-users
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+data:
+  memory.xml: |
+    <clickhouse>
+        <profiles>
+            <default>
+                <max_memory_usage>400000000</max_memory_usage>
+                <max_bytes_before_external_group_by>200000000</max_bytes_before_external_group_by>
+                <max_bytes_before_external_sort>200000000</max_bytes_before_external_sort>
+                <max_bytes_in_join>100000000</max_bytes_in_join>
+                <join_algorithm>auto</join_algorithm>
+                <async_insert>1</async_insert>
+                <wait_for_async_insert>0</wait_for_async_insert>
+                <async_insert_max_data_size>1048576</async_insert_max_data_size>
+                <async_insert_busy_timeout_ms>200</async_insert_busy_timeout_ms>
+            </default>
+        </profiles>
+    </clickhouse>
+{{- end }}

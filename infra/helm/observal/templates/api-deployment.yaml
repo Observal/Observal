@@ -1,0 +1,99 @@
+# SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-only
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observal.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observal.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "observal.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      serviceAccountName: {{ include "observal.serviceAccountName" . }}
+      {{- include "observal.podSecurityContext" . | nindent 6 }}
+      initContainers:
+        {{- include "observal.initWaitPostgres" . | nindent 8 }}
+        {{- include "observal.initWaitClickhouse" . | nindent 8 }}
+        {{- include "observal.initWaitRedis" . | nindent 8 }}
+        {{- include "observal.initWaitInitJob" . | nindent 8 }}
+        - name: prepare-jwt-keys
+          image: busybox:latest
+          command: ['sh', '-c', 'mkdir -p /data/keys && cp -f /data/secret-keys/* /data/keys/ 2>/dev/null || true; chown -R 1001:1001 /data/keys && chmod 700 /data/keys']
+          volumeMounts:
+            - mountPath: /data
+              name: apidata
+            - mountPath: /data/secret-keys
+              name: jwt-keys
+      containers:
+        - name: api
+          image: {{ include "observal.image" (dict "global" .Values.global "image" .Values.api.image) }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          {{- include "observal.securityContext" . | nindent 10 }}
+          command:
+            - /app/.venv/bin/uvicorn
+            - main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --workers
+            - {{ .Values.api.workers | quote }}
+          env:
+            - name: SKIP_DDL_ON_STARTUP
+              value: "true"
+          envFrom:
+            - configMapRef:
+                name: {{ include "observal.configMapName" . }}
+            - secretRef:
+                name: {{ include "observal.secretName" . }}
+          ports:
+            - containerPort: 8000
+              name: http
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /data
+              name: apidata
+            - mountPath: /data/secret-keys
+              name: jwt-keys
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+      volumes:
+        - name: apidata
+          persistentVolumeClaim:
+            claimName: {{ include "observal.fullname" . }}-apidata
+        - name: jwt-keys
+          secret:
+            secretName: {{ include "observal.jwtSecretName" . }}
+        - name: tmp
+          emptyDir: {}
