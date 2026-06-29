@@ -142,142 +142,53 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      function writeFileRewritten(p: string, content: any, agentName: string) {
-        if (!p) return;
-        const piHomeStr = "~/.pi/agent";
-        let finalPath = p;
-        if (p.startsWith(piHomeStr)) {
-          finalPath = p.replace(piHomeStr, `${piHomeStr}/agents/${agentName}`);
-        }
-        
-        const resolved = finalPath.startsWith("~/") ? path.join(os.homedir(), finalPath.slice(2)) : path.resolve(ctx.cwd, finalPath);
-        fs.mkdirSync(path.dirname(resolved), { recursive: true });
-        if (typeof content === "object") {
-          fs.writeFileSync(resolved, JSON.stringify(content, null, 2));
-        } else {
-          fs.writeFileSync(resolved, content);
-        }
+      if (!fs.existsSync(AGENTS_DIR)) {
+        fs.mkdirSync(AGENTS_DIR, { recursive: true });
       }
 
-      if (!agentId) {
-        // TUI Mode
-        if (!fs.existsSync(AGENTS_DIR)) {
-          fs.mkdirSync(AGENTS_DIR, { recursive: true });
-        }
-        backupDefault();
+      // Automatically populate AGENTS_DIR from normal .pi/agent files if it's currently holding an active agent but no profile exists for it
+      // but primarily we rely on observal agent pull populating agents/.
+      backupDefault();
 
+      let choice = agentId;
+
+      if (!choice) {
         const profiles = fs.readdirSync(AGENTS_DIR).filter(d => fs.statSync(path.join(AGENTS_DIR, d)).isDirectory());
         if (profiles.length === 0) {
-          ctx.ui.notify("No agents installed yet. Use /agent <id> to install one.", "info");
+          ctx.ui.notify("No agents installed yet. Use the Observal skill or 'observal agent pull <agent> --harness pi' to install one.", "info");
           return;
         }
 
-        const choice = await ctx.ui.select("Select agent to swap to:", profiles);
-        if (!choice) return;
-
-        try {
-          applyProfile(choice);
-          
-          if (state?.config) {
-            state.config.agent_id = choice === "default" ? undefined : choice;
-            try {
-              const configRaw = fs.readFileSync(CONFIG_PATH, "utf-8");
-              const configJson = JSON.parse(configRaw);
-              if (choice === "default") {
-                delete configJson.active_agent;
-              } else {
-                configJson.active_agent = { id: choice, version: "latest" };
-              }
-              fs.writeFileSync(CONFIG_PATH, JSON.stringify(configJson, null, 2));
-            } catch (err) {
-              // ignore
-            }
-          }
-
-          const ok = await ctx.ui.confirm("Agent Swapped", `Swapped to ${choice}. Reload session now?`);
-          if (ok) {
-            await ctx.reload();
-          }
-        } catch (e: any) {
-          ctx.ui.notify(`Error swapping agent: ${e.message}`, "error");
-        }
-        return;
+        const selected = await ctx.ui.select("Select agent to swap to:", profiles);
+        if (!selected) return;
+        choice = selected;
       }
-
-      // Download Mode
-      if (!state?.config) {
-        ctx.ui.notify("Observal not configured. Run 'observal auth login' first.", "warning");
-        return;
-      }
-
-      ctx.ui.setStatus("observal", "Downloading agent...");
-      
-      const payload = JSON.stringify({ ide: "pi", harness: "pi", options: { scope: "user" } });
-      const res = await postJsonWithTimeout(state.config, `/api/v1/agents/${encodeURIComponent(agentId)}/install`, payload);
-      
-      if (!res || !res.config_snippet) {
-        const errorMsg = res?.detail ? (typeof res.detail === "string" ? res.detail : JSON.stringify(res.detail)) : "Unknown error";
-        ctx.ui.notify(`Failed to install agent '${agentId}': ${errorMsg}`, "error");
-        ctx.ui.setStatus("observal", "● observal");
-        return;
-      }
-
-      const snippet = res.config_snippet;
 
       try {
-        backupDefault(); // Ensure default is backed up before we install new ones
-
-        if (snippet.rules_file) {
-          writeFileRewritten(snippet.rules_file.path, snippet.rules_file.content, agentId);
-        } else if (snippet.agent_profile) {
-          writeFileRewritten(snippet.agent_profile.path, snippet.agent_profile.content, agentId);
-        }
+        applyProfile(choice);
         
-        if (snippet.mcp_config) {
-          writeFileRewritten(snippet.mcp_config.path, snippet.mcp_config.content, agentId);
-        }
-        if (snippet.skill_components) {
-          for (const skill of snippet.skill_components) {
-            const skillPath = `~/.pi/agent/skills/${skill.name}/SKILL.md`;
-            const content = skill.skill_md_content || skill.content;
-            if (content) {
-              writeFileRewritten(skillPath, content, agentId);
+        if (state?.config) {
+          state.config.agent_id = choice === "default" ? undefined : choice;
+          try {
+            const configRaw = fs.readFileSync(CONFIG_PATH, "utf-8");
+            const configJson = JSON.parse(configRaw);
+            if (choice === "default") {
+              delete configJson.active_agent;
+            } else {
+              configJson.active_agent = { id: choice, version: "latest" };
             }
-          }
-        }
-        if (snippet.sandbox_components) {
-          for (const sb of snippet.sandbox_components) {
-            const sbPath = `~/.pi/agent/sandboxes/${sb.name}/sandbox.yaml`;
-            const content = sb.sandbox_yaml_content || sb.content;
-            if (content) {
-              writeFileRewritten(sbPath, content, agentId);
-            }
+            fs.writeFileSync(CONFIG_PATH, JSON.stringify(configJson, null, 2));
+          } catch (err) {
+            // ignore
           }
         }
 
-        applyProfile(agentId);
-
-        // Update config.json to reflect new active agent for telemetry
-        state.config.agent_id = res.agent_id || agentId;
-        state.config.agent_version = "latest";
-        
-        try {
-          const configRaw = fs.readFileSync(CONFIG_PATH, "utf-8");
-          const configJson = JSON.parse(configRaw);
-          configJson.active_agent = { id: state.config.agent_id, version: "latest" };
-          fs.writeFileSync(CONFIG_PATH, JSON.stringify(configJson, null, 2));
-        } catch (err) {
-          // ignore
-        }
-
-        ctx.ui.setStatus("observal", "● observal");
-        const ok = await ctx.ui.confirm("Agent Swapped", `Installed ${agentId}. Reload session now?`);
+        const ok = await ctx.ui.confirm("Agent Swapped", `Swapped to ${choice}. Reload session now?`);
         if (ok) {
           await ctx.reload();
         }
       } catch (e: any) {
-        ctx.ui.notify(`Error writing config: ${e.message}`, "error");
-        ctx.ui.setStatus("observal", "● observal");
+        ctx.ui.notify(`Error swapping agent: ${e.message}`, "error");
       }
     },
   });
