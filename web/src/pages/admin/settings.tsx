@@ -1389,7 +1389,12 @@ export default function SettingsPage() {
 												<details key={section.title} className="group rounded-md border-l-4 border-amber-500/60 border-2 border-border/70 bg-card">
 													<summary className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none hover:bg-muted/30 transition-colors">
 														{sectionIcon(section)}
-														<span className={`text-sm font-semibold text-foreground/80 flex-1 ${SECTION_DOCS[section.title] ? "hover:text-primary transition-colors" : ""}`} onClick={(e) => { if (SECTION_DOCS[section.title]) { e.preventDefault(); e.stopPropagation(); openHelp(undefined, section.title); } }}>{section.title}</span>
+														<span className="text-sm font-semibold text-foreground/80 flex-1">{section.title}</span>
+														{SECTION_DOCS[section.title] && (
+															<button type="button" className="text-muted-foreground hover:text-primary" onClick={(e) => { e.preventDefault(); e.stopPropagation(); openHelp(undefined, section.title); }} aria-label={`Open ${section.title} documentation`}>
+																<HelpCircle className="h-3.5 w-3.5" />
+															</button>
+														)}
 														<span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">CAUTION</span>
 													</summary>
 													<div className="px-4 pb-4 pt-1">
