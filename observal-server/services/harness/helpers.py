@@ -257,6 +257,10 @@ def _inject_agent_id(mcp_config: dict, agent_id: str):
             cfg["env"]["OBSERVAL_AGENT_ID"] = agent_id
 
 
+def _sandbox_str(value, default: str = "") -> str:
+    return value if isinstance(value, str) else default
+
+
 def _build_sandbox_mcp_entry(sandbox_listings: dict, harness: str) -> dict:
     """Build an MCP server entry for sandbox components.
 
@@ -268,14 +272,23 @@ def _build_sandbox_mcp_entry(sandbox_listings: dict, harness: str) -> dict:
 
     sandboxes_json = []
     for _lid, listing in sandbox_listings.items():
+        resource_limits = getattr(listing, "resource_limits", {}) or {}
+        if not isinstance(resource_limits, dict):
+            resource_limits = {}
+        runtime_config = getattr(listing, "runtime_config", {}) or {}
+        if not isinstance(runtime_config, dict):
+            runtime_config = {}
         sandboxes_json.append(
             {
                 "id": str(_lid),
-                "name": getattr(listing, "name", ""),
-                "image": getattr(listing, "image", ""),
-                "timeout": (getattr(listing, "resource_limits", {}) or {}).get("timeout", 300),
-                "entrypoint": getattr(listing, "entrypoint", None) or "bash",
-                "network_policy": getattr(listing, "network_policy", "none"),
+                "name": _sandbox_str(getattr(listing, "name", "")),
+                "runtime_type": _sandbox_str(getattr(listing, "runtime_type", "docker"), "docker") or "docker",
+                "image": _sandbox_str(getattr(listing, "image", "")),
+                "resource_limits": resource_limits,
+                "timeout": resource_limits.get("timeout", 300),
+                "entrypoint": _sandbox_str(getattr(listing, "entrypoint", None), "bash") or "bash",
+                "network_policy": _sandbox_str(getattr(listing, "network_policy", "none"), "none"),
+                "runtime_config": runtime_config,
             }
         )
 

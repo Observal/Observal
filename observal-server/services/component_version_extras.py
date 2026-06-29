@@ -7,11 +7,15 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import HTTPException
 from loguru import logger as optic
 
 from schemas.skill_commands import normalize_slash_command
 from services.skill_validator import SkillValidationError, validate_skill_md_content_frontmatter
+
+_OCI_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,499}$")
 
 # Fields allowed in extra dict per component type
 HOOK_FIELDS = {
@@ -29,6 +33,7 @@ HOOK_FIELDS = {
     "script_content",
     "script_filename",
     "requirements",
+    "file_pattern",
 }
 
 SKILL_FIELDS = {
@@ -39,6 +44,7 @@ SKILL_FIELDS = {
     "target_agents",
     "task_type",
     "slash_command",
+    "has_scripts",
 }
 
 PROMPT_FIELDS = {
@@ -66,6 +72,12 @@ MCP_FIELDS = {
 }
 
 SANDBOX_FIELDS = {
+    "runtime_type",
+    "image",
+    "resource_limits",
+    "network_policy",
+    "entrypoint",
+    "runtime_config",
     "source_url",
     "source_ref",
     "resolved_sha",
@@ -112,6 +124,11 @@ FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
     "command": str,
     "url": str,
     "setup_instructions": str,
+    "runtime_type": str,
+    "image": str,
+    "network_policy": str,
+    "entrypoint": str,
+    "sandbox_path": str,
     # int fields
     "priority": int,
     # bool fields - must come before int since bool is a subclass of int
@@ -124,6 +141,8 @@ FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
     "output_schema": dict,
     "mcp_server_config": dict,
     "model_hints": dict,
+    "resource_limits": dict,
+    "runtime_config": dict,
     # list fields
     "tool_filter": list,
     "file_pattern": list,
@@ -223,4 +242,35 @@ def validate_and_extract(component_type: str, extra: dict | None) -> dict:
         except (SkillValidationError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=f"Invalid skill metadata: {exc}") from exc
 
+    if component_type == "sandbox":
+        _validate_sandbox_extra(clean)
+
     return clean
+
+
+def _validate_sandbox_extra(clean: dict) -> None:
+    runtime_type = clean.get("runtime_type")
+    image = clean.get("image")
+    runtime_config = clean.get("runtime_config") or {}
+    if runtime_type is not None:
+        from schemas.constants import VALID_SANDBOX_RUNTIME_TYPES
+
+        if runtime_type not in VALID_SANDBOX_RUNTIME_TYPES:
+            raise HTTPException(status_code=422, detail=f"Invalid runtime_type {runtime_type!r}")
+    if clean.get("network_policy") is not None:
+        from schemas.constants import VALID_SANDBOX_NETWORK_POLICIES
+
+        if clean["network_policy"] not in VALID_SANDBOX_NETWORK_POLICIES:
+            raise HTTPException(status_code=422, detail=f"Invalid network_policy {clean['network_policy']!r}")
+    if runtime_type == "docker" and image and ("://" in image or not _OCI_REF_RE.match(image)):
+        raise HTTPException(status_code=422, detail="Docker image must be an OCI/Docker image reference")
+    if runtime_type == "firecracker" and not (
+        runtime_config.get("config_path")
+        or (runtime_config.get("kernel_image_path") and runtime_config.get("rootfs_path"))
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Firecracker requires runtime_config.config_path or kernel_image_path/rootfs_path",
+        )
+    if runtime_type == "wasm" and not (image or runtime_config.get("module")):
+        raise HTTPException(status_code=422, detail="WASM requires image or runtime_config.module")

@@ -1188,20 +1188,41 @@ def _install_impl(
         rprint("[dim]Set these in your harness config or shell environment before running the server.[/dim]")
 
 
-def _delete_impl(mcp_id, yes):
-    optic.trace("mcp_id={}, yes={}", mcp_id, yes)
-    resolved = config.resolve_alias(mcp_id)
-    if not yes:
-        with spinner():
-            item = client.get(f"/api/v1/mcps/{resolved}")
-        if not typer.confirm(f"Delete [bold]{item['name']}[/bold] ({resolved})?"):
-            raise typer.Abort()
-    with spinner("Deleting..."):
-        client.delete(f"/api/v1/mcps/{resolved}")
-    rprint(f"[green]✓ Deleted {resolved}[/green]")
-
-
 # ── Canonical commands (on mcp_app) ─────────────────────────
+
+
+def _print_mcp_examples() -> None:
+    console.print_json(
+        json.dumps(
+            {
+                "filesystem": {
+                    "mcpServers": {
+                        "filesystem": {
+                            "command": "npx",
+                            "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/dev/project"],
+                        }
+                    }
+                },
+                "git": {
+                    "mcpServers": {
+                        "git": {
+                            "command": "uvx",
+                            "args": ["mcp-server-git", "--repository", "/home/dev/project"],
+                        }
+                    }
+                },
+                "postgres": {
+                    "mcpServers": {
+                        "postgres": {
+                            "command": "npx",
+                            "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"],
+                        }
+                    }
+                },
+            },
+            indent=2,
+        )
+    )
 
 
 @mcp_app.command()
@@ -1213,6 +1234,7 @@ def submit(
     config: bool = typer.Option(False, "--config", hidden=True, help="(deprecated) JSON paste is now the default"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (MCP ID)"),
+    example: bool = typer.Option(False, "--example", help="Print example MCP configs and exit"),
 ):
     """Submit an MCP server to the registry.
 
@@ -1244,6 +1266,9 @@ def submit(
         # Submit an existing draft for review
         observal registry mcp submit --submit my-server
     """
+    if example:
+        _print_mcp_examples()
+        return
     if draft and submit_draft:
         rprint(
             "[red]Cannot use --draft and --submit together.[/red] Use --draft to save a new draft, or --submit to submit an existing draft."
@@ -1654,31 +1679,3 @@ def edit_mcp(
             except SystemExit:
                 pass
             raise typer.Exit(code=1)
-
-
-@mcp_app.command(name="delete")
-def delete_mcp(
-    mcp_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
-):
-    """Delete an MCP server from the registry.
-
-    Permanently removes the server listing and all associated data.
-    Prompts for confirmation unless --yes is passed. You can only
-    delete servers you own (or any server if you are an admin).
-
-    Examples:
-        # Delete with confirmation prompt
-        observal registry mcp delete my-server
-
-        # Delete by ID without confirmation
-        observal registry mcp delete abc123 --yes
-
-        # Delete by row number from last list
-        observal registry mcp delete 3 --yes
-
-        # Delete by alias
-        observal registry mcp delete @old-server
-    """
-    optic.trace("mcp_id={}, yes={}", mcp_id, yes)
-    _delete_impl(mcp_id, yes)

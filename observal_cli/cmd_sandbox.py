@@ -22,6 +22,57 @@ from observal_cli.render import console, kv_panel, output_json, relative_time, s
 sandbox_app = typer.Typer(help="Sandbox registry commands")
 
 
+def _print_sandbox_examples() -> None:
+    examples = {
+        "python-pytest": {
+            "name": "python-pytest",
+            "version": "1.0.0",
+            "description": "Run Python tests in a reviewed Docker image",
+            "owner": "your-team",
+            "runtime_type": "docker",
+            "image": "python:3.12-slim",
+            "resource_limits": {"timeout": 60, "memory_mb": 512, "cpu_count": 1},
+            "network_policy": "none",
+            "entrypoint": "pytest",
+            "runtime_config": {},
+            "source_url": "https://github.com/docker-library/python",
+            "source_ref": "master",
+            "sandbox_path": "3.12/slim-bookworm",
+        },
+        "node-tests": {
+            "name": "node-tests",
+            "version": "1.0.0",
+            "description": "Run Node test and build commands",
+            "owner": "your-team",
+            "runtime_type": "docker",
+            "image": "node:22-alpine",
+            "resource_limits": {"timeout": 120, "memory_mb": 1024, "cpu_count": 2},
+            "network_policy": "none",
+            "entrypoint": "npm test",
+            "runtime_config": {},
+            "source_url": "https://github.com/nodejs/docker-node",
+            "source_ref": "main",
+            "sandbox_path": "22/alpine3.22",
+        },
+        "go-tests": {
+            "name": "go-tests",
+            "version": "1.0.0",
+            "description": "Run Go tests in an Alpine Go image",
+            "owner": "your-team",
+            "runtime_type": "docker",
+            "image": "golang:1.24-alpine",
+            "resource_limits": {"timeout": 180, "memory_mb": 1024, "cpu_count": 2},
+            "network_policy": "none",
+            "entrypoint": "go test ./...",
+            "runtime_config": {},
+            "source_url": "https://github.com/docker-library/golang",
+            "source_ref": "master",
+            "sandbox_path": "1.24/alpine3.21",
+        },
+    }
+    output_json(examples)
+
+
 def register_sandbox(app: typer.Typer):
     app.add_typer(sandbox_app, name="sandbox")
 
@@ -35,6 +86,7 @@ def sandbox_submit(
     runtime_type: str | None = typer.Option(None, "--runtime-type", "-r", help="Runtime type"),
     image: str | None = typer.Option(None, "--image", "-i", help="Container image"),
     resource_limits: str | None = typer.Option(None, "--resource-limits", help="Resource limits JSON"),
+    runtime_config: str | None = typer.Option(None, "--runtime-config", help="Runtime-specific config JSON"),
     network_policy: str | None = typer.Option(None, "--network-policy", help="Network policy"),
     entrypoint: str | None = typer.Option(None, "--entrypoint", help="Default entrypoint"),
     supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
@@ -43,6 +95,7 @@ def sandbox_submit(
     sandbox_path: str | None = typer.Option(None, "--sandbox-path", help="Path in source repo"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (sandbox ID)"),
+    example: bool = typer.Option(False, "--example", help="Print example sandbox payloads and exit"),
 ):
     """Submit a new sandbox environment for review.
 
@@ -58,6 +111,9 @@ def sandbox_submit(
         observal registry sandbox submit --draft
         observal registry sandbox submit --submit abc123
     """
+    if example:
+        _print_sandbox_examples()
+        return
     rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
     if draft and submit_draft:
         rprint(
@@ -80,6 +136,7 @@ def sandbox_submit(
             runtime_type,
             image,
             resource_limits,
+            runtime_config,
             network_policy,
             entrypoint,
             supported_harnesses,
@@ -103,8 +160,9 @@ def sandbox_submit(
     elif flag_mode:
         try:
             limits = _json.loads(resource_limits or "{}")
+            runtime_cfg = _json.loads(runtime_config or "{}")
         except _json.JSONDecodeError as e:
-            rprint(f"[red]Invalid --resource-limits JSON:[/red] {e}")
+            rprint(f"[red]Invalid JSON option:[/red] {e}")
             raise typer.Exit(1)
         payload = {
             "name": name,
@@ -114,6 +172,7 @@ def sandbox_submit(
             "runtime_type": runtime_type,
             "image": image,
             "resource_limits": limits,
+            "runtime_config": runtime_cfg,
             "network_policy": network_policy or "none",
             "supported_harnesses": supported_harnesses or [],
         }
@@ -134,6 +193,7 @@ def sandbox_submit(
             "runtime_type": select_one("Runtime type", VALID_SANDBOX_RUNTIME_TYPES),
             "image": text_input("Image"),
             "resource_limits": _json.loads(text_input("Resource limits (JSON)")),
+            "runtime_config": _json.loads(text_input("Runtime config (JSON)", default="{}")),
         }
     if flag_mode:
         if not (
@@ -264,6 +324,10 @@ def sandbox_edit(
     version: str | None = typer.Option(None, "--version", "-v", help="New version string"),
     runtime_type: str | None = typer.Option(None, "--runtime-type", "-r", help="New runtime type"),
     image: str | None = typer.Option(None, "--image", "-i", help="New container image"),
+    resource_limits: str | None = typer.Option(None, "--resource-limits", help="Resource limits JSON"),
+    runtime_config: str | None = typer.Option(None, "--runtime-config", help="Runtime config JSON"),
+    network_policy: str | None = typer.Option(None, "--network-policy", help="New network policy"),
+    entrypoint: str | None = typer.Option(None, "--entrypoint", help="New entrypoint"),
 ):
     """Edit a draft, rejected, or pending sandbox submission.
 
@@ -299,6 +363,14 @@ def sandbox_edit(
             updates["runtime_type"] = runtime_type
         if image is not None:
             updates["image"] = image
+        if resource_limits is not None:
+            updates["resource_limits"] = _json.loads(resource_limits)
+        if runtime_config is not None:
+            updates["runtime_config"] = _json.loads(runtime_config)
+        if network_policy is not None:
+            updates["network_policy"] = network_policy
+        if entrypoint is not None:
+            updates["entrypoint"] = entrypoint
 
     if not updates:
         rprint("[yellow]No changes specified.[/yellow] Use --from-file or field options (--name, --description, etc.)")
@@ -321,29 +393,3 @@ def sandbox_edit(
             pass
         rprint(f"[red]Failed to update:[/red] {exc}")
         raise typer.Exit(code=1)
-
-
-@sandbox_app.command(name="delete")
-def sandbox_delete(
-    sandbox_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
-):
-    """Delete a sandbox from the registry.
-
-    Permanently removes the sandbox. Sandboxes you own can be deleted
-    regardless of status. Requires confirmation unless --yes is passed.
-
-    Examples:
-        observal registry sandbox delete my-sandbox
-        observal registry sandbox delete abc123 --yes
-        observal registry sandbox delete @old-env -y
-    """
-    resolved = config.resolve_alias(sandbox_id)
-    if not yes:
-        with spinner():
-            item = client.get(f"/api/v1/sandboxes/{resolved}")
-        if not typer.confirm(f"Delete [bold]{item['name']}[/bold] ({resolved})?"):
-            raise typer.Abort()
-    with spinner("Deleting..."):
-        client.delete(f"/api/v1/sandboxes/{resolved}")
-    rprint(f"[green]✓ Deleted {resolved}[/green]")

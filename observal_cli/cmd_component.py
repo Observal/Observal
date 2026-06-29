@@ -90,6 +90,7 @@ def version_publish(
       observal component version publish hook guard-hook -v 1.1.0 -d "Add timeout" --changelog "Fixed race"
       observal component version publish skill my-skill -v 1.0.0 -d "Initial" --harness claude-code --harness cursor
       observal component version publish mcp analyzer --extra '{"transport": "http"}' -d "HTTP support"
+      observal registry version publish sandbox py -v 1.1.0 -d "Python 3.12" --extra '{"runtime_type":"docker","image":"python:3.12-slim","resource_limits":{"timeout":60}}'
     """
     optic.trace("component_type={}", component_type)
     _require_valid_type(component_type)

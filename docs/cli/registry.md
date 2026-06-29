@@ -24,7 +24,6 @@ Every type supports these actions:
 | `show` | Show details for one component |
 | `install` | Generate a harness config snippet |
 | `edit` | Edit a draft, pending, or rejected submission |
-| `delete` | Delete a component |
 | `transfer-owner` | Transfer ownership to another username |
 
 Notes:
@@ -234,24 +233,6 @@ observal registry mcp edit my-server --version 1.2.0
 
 ---
 
-### `observal registry mcp delete`
-
-Delete an MCP server from the registry. You can only delete servers you own (or any server if you are an admin).
-
-```bash
-observal registry mcp delete <id-or-name> [--yes]
-```
-
-| Option | Short | Description |
-| --- | --- | --- |
-| `--yes` | `-y` | Skip confirmation prompt |
-
-```bash
-observal registry mcp delete my-server
-observal registry mcp delete abc123 --yes
-observal registry mcp delete 3 -y
-```
-
 ### `observal registry mcp transfer-owner`
 
 Transfer ownership to another username. You stop being the owner immediately.
@@ -405,32 +386,6 @@ observal registry skill edit 2 --version 2.0.0 --task-type debugging
 
 ---
 
-### `observal registry skill delete`
-
-Delete a skill from the registry. Only the owner or an admin can delete.
-
-```bash
-observal registry skill delete <id-or-name> [--yes]
-```
-
-```bash
-observal registry skill delete my-skill
-observal registry skill delete abc123 --yes
-observal registry skill delete @old-skill -y
-```
-
----
-
-## Hooks
-
-Hook registry commands. Hooks fire on harness lifecycle events and run custom logic.
-
-Valid events: `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `SubagentStop`, `SessionStart`, `UserPromptSubmit`.
-
-Handler types: `command` (local script), `http` (webhook).
-
-Execution modes: `async`, `sync`, `blocking`.
-
 ### `observal registry hook submit`
 
 Submit a new hook for review. Supports inline script content via `--script`, or git-hosted hooks via `--source-url`.
@@ -547,28 +502,6 @@ observal registry hook edit 1 --name new-name
 ```
 
 ---
-
-### `observal registry hook delete`
-
-Delete a hook from the registry. Only the owner or an admin can delete.
-
-```bash
-observal registry hook delete <id-or-name> [--yes]
-```
-
-```bash
-observal registry hook delete my-hook
-observal registry hook delete @guard --yes
-observal registry hook delete abc12345 -y
-```
-
----
-
-## Prompts
-
-Prompt registry commands. Prompts are reusable templates with `{{ variable }}` placeholders that agents can render at runtime.
-
-Valid categories: `system-prompt`, `code-review`, `code-generation`, `testing`, `documentation`, `debugging`, `general`.
 
 ### `observal registry prompt submit`
 
@@ -714,30 +647,6 @@ observal registry prompt edit 2 --version 2.0.0 --category debugging
 
 ---
 
-### `observal registry prompt delete`
-
-Delete a prompt from the registry. Only the owner or an admin can delete.
-
-```bash
-observal registry prompt delete <id-or-name> [--yes]
-```
-
-```bash
-observal registry prompt delete my-prompt
-observal registry prompt delete abc123 --yes
-observal registry prompt delete @old-template -y
-```
-
----
-
-## Sandboxes
-
-Sandbox registry commands. Sandboxes are containerized execution environments for agent tasks.
-
-Valid runtime types: `docker`, `lxc`, `firecracker`, `wasm`.
-
-Network policies: `none`, `host`, `bridge`, `restricted`.
-
 ### `observal registry sandbox submit`
 
 Submit a new sandbox environment for review.
@@ -846,58 +755,3 @@ observal registry sandbox edit @env --runtime-type docker --version 2.0.0
 
 ---
 
-### `observal registry sandbox delete`
-
-Delete a sandbox from the registry. Only the owner or an admin can delete.
-
-```bash
-observal registry sandbox delete <id-or-name> [--yes]
-```
-
-```bash
-observal registry sandbox delete my-sandbox
-observal registry sandbox delete abc123 --yes
-observal registry sandbox delete @old-env -y
-```
-
----
-
-## Shared behavior
-
-### Names and ID resolution
-
-Component names are globally unique within each component type. Concurrent submissions with the same name are rejected by the database uniqueness constraint.
-
-All commands that take `<id-or-name>` accept four forms:
-
-1. **UUID**: the full component ID.
-2. **Name**: the component's registered name.
-3. **Row number**: the `#` column from the last `list` or `my` output.
-4. **@alias**: a user-defined alias set via `observal config alias`.
-
-### Draft workflow
-
-All component types support a draft workflow:
-
-1. Submit with `--draft` to save without triggering review.
-2. Edit freely with the `edit` command while in draft status.
-3. Submit the draft for review: `observal registry <type> submit --submit <id>`.
-
-### Edit locking
-
-The `edit` command acquires an optimistic lock before saving changes. If another session is editing the same component, the command fails with a 409 conflict. The lock is released automatically on success or cancellation.
-
-### Output formats
-
-All `list`, `my`, and `show` commands support `--output`:
-
-- `table` (default): Rich formatted table.
-- `json`: Raw JSON for scripting and piping.
-- `plain`: Minimal one-line-per-item format.
-
----
-
-## Related
-
-* [`observal agent`](agent.md): bundle registry components into an installable agent
-* [Use Cases: Share agent configs](../use-cases/share-agent-configs.md)

@@ -78,7 +78,7 @@ def main():
                 "name": tool_name,
                 "description": (
                     f"Run a command in the '{sb['name']}' sandbox "
-                    f"(Docker: {sb['image']}, timeout: {sb.get('timeout', 300)}s, "
+                    f"({sb.get('runtime_type', 'docker')}: {sb['image']}, timeout: {sb.get('timeout', 300)}s, "
                     f"network: {sb.get('network_policy', 'none')}). "
                     f"Default command: {sb.get('entrypoint', 'bash')}"
                 ),
@@ -141,6 +141,10 @@ def main():
             timeout = sb.get("timeout", 300)
             image = sb["image"]
             sandbox_id = sb["id"]
+            runtime_type = sb.get("runtime_type", "docker")
+            resource_limits = sb.get("resource_limits", {}) or {}
+            network_policy = sb.get("network_policy", "none")
+            runtime_config = sb.get("runtime_config", {}) or {}
 
             # Run the sandbox
             try:
@@ -151,8 +155,16 @@ def main():
                         sandbox_id,
                         "--image",
                         image,
+                        "--runtime-type",
+                        runtime_type,
                         "--timeout",
                         str(timeout),
+                        "--network-policy",
+                        network_policy,
+                        "--resource-limits",
+                        json.dumps(resource_limits),
+                        "--runtime-config",
+                        json.dumps(runtime_config),
                         "--command",
                         command,
                     ],

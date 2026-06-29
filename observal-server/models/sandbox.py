@@ -123,6 +123,16 @@ class SandboxListing(Base):
         self.latest_version.source_url = value
 
     @property
+    def source_url(self) -> str | None:
+        return self.latest_version.source_url if self.latest_version else None
+
+    @source_url.setter
+    def source_url(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set source_url")
+        self.latest_version.source_url = value
+
+    @property
     def git_ref(self) -> str | None:
         return self.latest_version.source_ref if self.latest_version else None
 
@@ -131,6 +141,26 @@ class SandboxListing(Base):
         if not self.latest_version:
             raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set git_ref")
         self.latest_version.source_ref = value
+
+    @property
+    def source_ref(self) -> str | None:
+        return self.latest_version.source_ref if self.latest_version else None
+
+    @source_ref.setter
+    def source_ref(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set source_ref")
+        self.latest_version.source_ref = value
+
+    @property
+    def resolved_sha(self) -> str | None:
+        return self.latest_version.resolved_sha if self.latest_version else None
+
+    @resolved_sha.setter
+    def resolved_sha(self, value: str | None) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set resolved_sha")
+        self.latest_version.resolved_sha = value
 
     @property
     def runtime_type(self) -> str:
@@ -202,6 +232,16 @@ class SandboxListing(Base):
             raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set entrypoint")
         self.latest_version.entrypoint = value
 
+    @property
+    def runtime_config(self) -> dict:
+        return self.latest_version.runtime_config if self.latest_version else {}
+
+    @runtime_config.setter
+    def runtime_config(self, value: dict) -> None:
+        if not self.latest_version:
+            raise RuntimeError(f"{type(self).__name__} has no latest_version; cannot set runtime_config")
+        self.latest_version.runtime_config = value
+
 
 class SandboxDownload(Base):
     __tablename__ = "sandbox_downloads"
@@ -245,10 +285,7 @@ class SandboxVersion(Base):
     resource_limits: Mapped[dict] = mapped_column(JSON, default=dict)
     network_policy: Mapped[str] = mapped_column(String(20), default="none")
     entrypoint: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # Source tracking (already existed)
-    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    resolved_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    runtime_config: Mapped[dict] = mapped_column(JSON, default=dict)
     # New: monorepo path + validation
     sandbox_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

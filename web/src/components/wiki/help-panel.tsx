@@ -74,9 +74,10 @@ export function HelpPanel({ file, anchor, title, onClose }: HelpPanelProps) {
 	const handlePointerDown = useCallback(
 		(e: PointerEvent) => {
 			const target = e.target;
-			if (target instanceof Node && !panelRef.current?.contains(target)) {
-				onClose();
-			}
+			if (!(target instanceof Node)) return;
+			const modal = document.querySelector('[role="dialog"]');
+			if (panelRef.current?.contains(target) || modal?.contains(target)) return;
+			onClose();
 		},
 		[onClose],
 	);
@@ -84,17 +85,17 @@ export function HelpPanel({ file, anchor, title, onClose }: HelpPanelProps) {
 	useEffect(() => {
 		if (!file) return;
 		document.addEventListener("keydown", handleKeyDown);
-		document.addEventListener("pointerdown", handlePointerDown);
+		document.addEventListener("pointerdown", handlePointerDown, true);
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown);
-			document.removeEventListener("pointerdown", handlePointerDown);
+			document.removeEventListener("pointerdown", handlePointerDown, true);
 		};
 	}, [file, handleKeyDown, handlePointerDown]);
 
 	if (!file) return null;
 
 	return (
-		<div ref={panelRef} className="fixed right-0 top-0 w-[min(720px,calc(100vw-260px))] min-w-[560px] border-l border-border bg-card flex flex-col h-screen z-40 shadow-xl">
+		<div data-help-panel="true" ref={panelRef} className="fixed right-0 top-0 w-[min(720px,calc(100vw-260px))] min-w-[560px] max-w-[100vw] border-l border-border bg-card flex flex-col h-[100dvh] z-[70] shadow-xl pointer-events-auto">
 			{/* Sticky header */}
 			<div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card z-10 shrink-0">
 				<div className="flex items-center gap-2 min-w-0">
@@ -115,7 +116,7 @@ export function HelpPanel({ file, anchor, title, onClose }: HelpPanelProps) {
 			</div>
 
 			{/* Scrollable content */}
-			<div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
+			<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
 				{loading ? (
 					<div className="flex items-center justify-center py-12">
 						<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />

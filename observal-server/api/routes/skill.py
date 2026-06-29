@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
 from api.deps import (
-    ROLE_HIERARCHY,
     apply_visibility_filter,
     check_listing_visibility,
     commit_or_name_conflict,
@@ -533,38 +532,6 @@ async def unarchive_skill(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     return await unarchive_listing(SkillListing, listing_id, db, current_user, "skill")
-
-
-@router.delete("/{listing_id}")
-async def delete_skill(
-    listing_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
-):
-    optic.debug("deleting skill {}", listing_id)
-    listing = await resolve_listing(SkillListing, listing_id, db)
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-    is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
-    if get_effective_component_permission(listing, current_user) != "owner":
-        raise HTTPException(status_code=403, detail="Not authorized")
-    if listing.status == ListingStatus.approved and not is_admin:
-        raise HTTPException(status_code=400, detail="Cannot delete an approved listing. Contact an admin.")
-
-    for r in (await db.execute(select(SkillDownload).where(SkillDownload.listing_id == listing.id))).scalars().all():
-        await db.delete(r)
-
-    # Break the circular FK (listing → latest_version → listing) before delete
-    listing.latest_version_id = None
-    listing.latest_version = None
-    await db.flush()
-    # Delete versions explicitly to avoid SQLAlchemy circular dependency detection
-    for ver in list(listing.versions):
-        await db.delete(ver)
-    await db.flush()
-    await db.delete(listing)
-    await commit_or_name_conflict(db, "skill")
-    return {"deleted": str(listing_id)}
 
 
 # --- Version sub-routes ---

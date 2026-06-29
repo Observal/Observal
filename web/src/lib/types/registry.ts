@@ -150,6 +150,14 @@ export interface ComponentVersionSummary {
 	source_url?: string;
 	source_ref?: string;
 	resolved_sha?: string;
+	// Sandbox fields
+	runtime_type?: string;
+	image?: string;
+	resource_limits?: Record<string, unknown>;
+	network_policy?: string;
+	entrypoint?: string;
+	runtime_config?: Record<string, unknown>;
+	sandbox_path?: string;
 }
 
 export interface ComponentVersionsResponse {

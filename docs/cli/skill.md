@@ -16,7 +16,6 @@ instruction file that agents load on demand to handle a specific task.
 | [`skill show`](#observal-skill-show) | Show detailed information about a skill |
 | [`skill install`](#observal-skill-install) | Install a skill into an harness |
 | [`skill edit`](#observal-skill-edit) | Edit a draft, rejected, or pending skill |
-| [`skill delete`](#observal-skill-delete) | Delete a skill from the registry |
 
 ---
 
@@ -172,24 +171,3 @@ observal skill edit 2 --version 2.0.0 --task-type debugging
 
 ---
 
-## `observal skill delete`
-
-Permanently delete a skill from the registry. Skills you own can be deleted
-regardless of status. Prompts for confirmation unless `--yes` is provided.
-
-```bash
-observal skill delete my-skill
-observal skill delete abc123 --yes
-observal skill delete @old-skill -y
-```
-
-| Option | Description |
-| --- | --- |
-| `--yes`, `-y` | Skip confirmation |
-
----
-
-## Related
-
-* [`observal agent`](agent.md): bundle skills into a full agent config
-* [`observal registry`](registry.md): manage other registry component types

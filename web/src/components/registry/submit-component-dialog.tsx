@@ -23,13 +23,14 @@ import {
 } from "@/components/ui/code-editor";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, Info, Loader2, Plus, X } from "lucide-react";
+import { Check, HelpCircle, Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import type { RegistryType } from "@/lib/api";
 import { useWhoami } from "@/hooks/use-api";
 import { useHarnesses } from "@/hooks/use-harnesses";
 import { parseMcpConfigJson, applyParsedConfig } from "@/lib/mcp-parser";
 import type { EnvVar } from "@/lib/mcp-parser";
+import { useHelp } from "@/components/wiki/help-context";
 
 const MCP_CATEGORIES = [
 	"browser-automation",
@@ -119,6 +120,15 @@ const PROMPT_CATEGORIES = [
 const SANDBOX_RUNTIME_TYPES = ["docker", "lxc", "firecracker", "wasm"];
 const SANDBOX_NETWORK_POLICIES = ["none", "host", "bridge", "restricted"];
 
+const COMPONENT_HELP_DOCS = {
+	mcps: { file: "registry-mcp-helper.md", label: "MCP helper" },
+	skills: { file: "registry-skill-helper.md", label: "Skill helper" },
+	hooks: { file: "registry-hook-helper.md", label: "Hook helper" },
+	sandboxes: { file: "registry-sandbox-helper.md", label: "Sandbox helper" },
+	prompts: { file: "cli/prompt.md", label: "Prompt helper" },
+	agents: { file: "getting-started/core-concepts.md", label: "Agent helper" },
+} as const;
+
 interface SubmitComponentDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -143,6 +153,7 @@ export function SubmitComponentDialog({
 	editItem,
 }: SubmitComponentDialogProps) {
 	const d = editItem as Record<string, unknown> | null;
+	const helpCtx = useHelp();
 	const { data: whoami } = useWhoami();
 	const { data: ideList } = useHarnesses();
 	const defaultOwner =
@@ -259,14 +270,14 @@ export function SubmitComponentDialog({
 					} else if (skillFiles.length > 1) {
 						setSkillPathAuto(false);
 						setSkillPathHint(
-							`${skillFiles.length} SKILL.md files found — pick a path`,
+							`${skillFiles.length} SKILL.md files found, pick a path`,
 						);
 					} else {
 						setSkillPathAuto(false);
 						setSkillPathHint("No SKILL.md found in repo");
 					}
 				} catch {
-					/* network error — user can enter path manually */
+					/* network error, user can enter path manually */
 				}
 				setSkillDiscovering(false);
 			}, 600);
@@ -310,6 +321,15 @@ export function SubmitComponentDialog({
 		(d?.network_policy as string) ?? "none",
 	);
 	const [entrypoint, setEntrypoint] = useState((d?.entrypoint as string) ?? "");
+	const [sandboxResourceLimits, setSandboxResourceLimits] = useState(
+		d?.resource_limits && typeof d.resource_limits === "object" ? JSON.stringify(d.resource_limits, null, 2) : "{}",
+	);
+	const [sandboxRuntimeConfig, setSandboxRuntimeConfig] = useState(
+		d?.runtime_config && typeof d.runtime_config === "object" ? JSON.stringify(d.runtime_config, null, 2) : "{}",
+	);
+	const [sandboxSourceUrl, setSandboxSourceUrl] = useState((d?.source_url as string) ?? "");
+	const [sandboxSourceRef, setSandboxSourceRef] = useState((d?.source_ref as string) ?? "");
+	const [sandboxPath, setSandboxPath] = useState((d?.sandbox_path as string) ?? "");
 
 	function bumpPatchVersion(ver: string): string {
 		const parts = ver.split(".");
@@ -408,6 +428,11 @@ export function SubmitComponentDialog({
 		setImage("");
 		setNetworkPolicy("none");
 		setEntrypoint("");
+		setSandboxResourceLimits("{}");
+		setSandboxRuntimeConfig("{}");
+		setSandboxSourceUrl("");
+		setSandboxSourceRef("");
+		setSandboxPath("");
 	}
 
 	const isEditMode = !!editItem;
@@ -479,14 +504,25 @@ export function SubmitComponentDialog({
 			}
 			case "prompts":
 				return { ...base, category: promptCategory, template };
-			case "sandboxes":
-				return {
+			case "sandboxes": {
+				const body: Record<string, unknown> = {
 					...base,
 					runtime_type: runtimeType,
 					image,
 					network_policy: networkPolicy,
 					entrypoint: entrypoint || undefined,
 				};
+				try {
+					body.resource_limits = JSON.parse(sandboxResourceLimits || "{}");
+					body.runtime_config = JSON.parse(sandboxRuntimeConfig || "{}");
+				} catch {
+					/* validation below reports JSON errors */
+				}
+				if (sandboxSourceUrl) body.source_url = sandboxSourceUrl;
+				if (sandboxSourceRef) body.source_ref = sandboxSourceRef;
+				if (sandboxPath) body.sandbox_path = sandboxPath;
+				return body;
+			}
 			default:
 				return base;
 		}
@@ -515,6 +551,14 @@ export function SubmitComponentDialog({
 		}
 		if (type === "sandboxes" && !image) {
 			return "Image is required";
+		}
+		if (type === "sandboxes") {
+			try {
+				JSON.parse(sandboxResourceLimits || "{}");
+				JSON.parse(sandboxRuntimeConfig || "{}");
+			} catch {
+				return "Sandbox resource limits and runtime config must be valid JSON";
+			}
 		}
 		return null;
 	}
@@ -575,16 +619,43 @@ export function SubmitComponentDialog({
 	const jsonExample = mcpExampleConfig(isEditMode, name);
 	const skillScriptLanguage = codeLanguageFromFilename(skillScriptFilename);
 	const skillScriptLanguageName = codeLanguageLabel(skillScriptLanguage);
+	const helpDoc = COMPONENT_HELP_DOCS[type as keyof typeof COMPONENT_HELP_DOCS];
 
 	return (
 		<Dialog
+			modal={false}
 			open={open}
 			onOpenChange={(v) => {
 				if (!v) reset();
 				onOpenChange(v);
 			}}
 		>
-			<DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+			<DialogContent
+				className="max-w-lg max-h-[85vh] overflow-y-auto"
+				onPointerDownOutside={(event) => {
+					const target = event.target;
+					if (target instanceof Node && document.querySelector('[data-help-panel="true"]')?.contains(target)) {
+						event.preventDefault();
+					}
+				}}
+			>
+				{helpDoc && (
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						className="absolute right-10 top-4 h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+						onClick={(event) => {
+							event.preventDefault();
+							event.stopPropagation();
+							helpCtx.openHelp({ docRef: helpDoc });
+						}}
+						aria-label={`Open ${helpDoc.label}`}
+						title={`Open ${helpDoc.label}`}
+					>
+						<HelpCircle className="h-4 w-4" />
+					</Button>
+				)}
 				<DialogHeader>
 					<DialogTitle>
 						{isEditMode ? `Edit ${typeLabel}` : `Submit ${typeLabel}`}
@@ -705,7 +776,7 @@ export function SubmitComponentDialog({
 													{mcpUrl && `${mcpUrl} `}
 													{envVars.length > 0 &&
 														`(${envVars.length} env var${envVars.length > 1 ? "s" : ""})`}
-													{isEditMode && ` — version bumped to ${version}`}
+													{isEditMode && `, version bumped to ${version}`}
 												</span>
 											</div>
 										)}
@@ -1143,7 +1214,7 @@ export function SubmitComponentDialog({
 							</div>
 							<div className="grid grid-cols-2 gap-3">
 								<div className="space-y-1.5">
-									<Label htmlFor="sandbox-image">Image *</Label>
+									<Label htmlFor="sandbox-image">Image / Artifact Ref *</Label>
 									<Input
 										id="sandbox-image"
 										value={image}
@@ -1160,6 +1231,35 @@ export function SubmitComponentDialog({
 										placeholder="/bin/bash"
 									/>
 								</div>
+							</div>
+							<div className="grid grid-cols-2 gap-3">
+								<div className="space-y-1.5">
+									<Label htmlFor="sandbox-limits">Resource Limits JSON</Label>
+									<CodeEditor
+										id="sandbox-limits"
+										value={sandboxResourceLimits}
+										onChange={setSandboxResourceLimits}
+										language="json"
+										minHeightClassName="min-h-28 [&_.cm-editor]:min-h-28 [&_.cm-scroller]:min-h-28"
+										placeholder='{"timeout": 60, "memory_mb": 512}'
+									/>
+								</div>
+								<div className="space-y-1.5">
+									<Label htmlFor="sandbox-runtime-config">Runtime Config JSON</Label>
+									<CodeEditor
+										id="sandbox-runtime-config"
+										value={sandboxRuntimeConfig}
+										onChange={setSandboxRuntimeConfig}
+										language="json"
+										minHeightClassName="min-h-28 [&_.cm-editor]:min-h-28 [&_.cm-scroller]:min-h-28"
+										placeholder='{"module": "runner.wasm"}'
+									/>
+								</div>
+							</div>
+							<div className="grid grid-cols-3 gap-3">
+								<Input value={sandboxSourceUrl} onChange={(e) => setSandboxSourceUrl(e.target.value)} placeholder="Source URL" />
+								<Input value={sandboxSourceRef} onChange={(e) => setSandboxSourceRef(e.target.value)} placeholder="Source ref" />
+								<Input value={sandboxPath} onChange={(e) => setSandboxPath(e.target.value)} placeholder="Sandbox path" />
 							</div>
 						</>
 					)}

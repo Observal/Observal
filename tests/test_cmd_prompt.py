@@ -42,10 +42,6 @@ def _patch_put(return_value):
     return patch("observal_cli.client.put", return_value=return_value)
 
 
-def _patch_delete(return_value=None):
-    return patch("observal_cli.client.delete", return_value=return_value)
-
-
 class TestPromptSubmit:
     def test_submit_interactive(self):
         """Test prompt submit with interactive inputs, ensuring payload validation (name, category, etc)."""
@@ -200,19 +196,6 @@ class TestPromptEdit:
             url, payload = mock_put.call_args[0]
             assert url == "/api/v1/prompts/p123/draft"
             assert payload["name"] == "edited-prompt"
-
-
-class TestPromptDelete:
-    def test_delete_prompt(self):
-        """Test prompt delete command."""
-        mock_data = {"id": "p123", "name": "prompt-to-delete"}
-        with _patch_resolve_alias(), _patch_get(mock_data), _patch_delete() as mock_delete:
-            result = runner.invoke(cli_app, ["registry", "prompt", "delete", "p123", "--yes"])
-
-            assert result.exit_code == 0
-            assert "Deleted p123" in result.output
-
-            mock_delete.assert_called_once_with("/api/v1/prompts/p123")
 
 
 class TestPromptEdgeCases:

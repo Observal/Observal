@@ -41,6 +41,38 @@ HOOK_TIMEOUT_CAPS: dict[str, int] = {
 }
 
 
+def _print_hook_examples() -> None:
+    output_json(
+        {
+            "command_hook": {
+                "name": "block-rm",
+                "version": "1.0.0",
+                "description": "Block destructive shell commands before they run",
+                "owner": "your-team",
+                "event": "PreToolUse",
+                "handler_type": "command",
+                "handler_config": {"command": "./hooks/block-rm.sh", "timeout": 10},
+                "execution_mode": "blocking",
+                "scope": "agent",
+                "source_url": "https://github.com/acme/agent-hooks",
+                "source_ref": "main",
+                "source_path": "hooks/security",
+            },
+            "http_hook": {
+                "name": "audit-bash",
+                "version": "1.0.0",
+                "description": "Send Bash tool calls to an audit endpoint",
+                "owner": "your-team",
+                "event": "PreToolUse",
+                "handler_type": "http",
+                "handler_config": {"url": "https://hooks.example.com/pre-tool-use", "timeout": 10},
+                "execution_mode": "sync",
+                "scope": "session",
+            },
+        }
+    )
+
+
 def _validate_timeout(execution_mode: str, handler_config: dict) -> None:
     """Fail-fast timeout validation before sending to server."""
     timeout = handler_config.get("timeout")
@@ -76,6 +108,7 @@ def hook_submit(
     execution_mode: str | None = typer.Option(None, "--execution-mode", help="async, sync, or blocking"),
     scope: str | None = typer.Option(None, "--scope", help="agent, session, or global"),
     supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
+    example: bool = typer.Option(False, "--example", help="Print example hook payloads and exit"),
 ):
     """Submit a new hook for review.
 
@@ -87,6 +120,9 @@ def hook_submit(
       observal registry hook submit --source-url https://github.com/org/hooks --source-path hooks/guard/
       observal registry hook submit --from-file hook.json
     """
+    if example:
+        _print_hook_examples()
+        return
     rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
     if draft and submit_draft:
         rprint(
@@ -512,30 +548,3 @@ def hook_edit(
             pass
         rprint(f"[red]Failed to update:[/red] {exc}")
         raise typer.Exit(code=1)
-
-
-@hook_app.command(name="delete")
-def hook_delete(
-    hook_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
-):
-    """Delete a hook from the registry.
-
-    Permanently removes the hook listing. Prompts for confirmation
-    unless --yes is passed. Only the hook owner or an admin can delete.
-
-    \b
-    Examples:
-      observal registry hook delete my-hook
-      observal registry hook delete @guard --yes
-      observal registry hook delete abc12345
-    """
-    resolved = config.resolve_alias(hook_id)
-    if not yes:
-        with spinner():
-            item = client.get(f"/api/v1/hooks/{resolved}")
-        if not typer.confirm(f"Delete [bold]{item['name']}[/bold] ({resolved})?"):
-            raise typer.Abort()
-    with spinner("Deleting..."):
-        client.delete(f"/api/v1/hooks/{resolved}")
-    rprint(f"[green]✓ Deleted {resolved}[/green]")

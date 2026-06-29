@@ -547,7 +547,12 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
   if ("hook_type" in item && item.hook_type != null) fields.push({ label: "Hook Type", value: String(item.hook_type) });
   if ("trigger_event" in item && item.trigger_event != null) fields.push({ label: "Trigger Event", value: String(item.trigger_event) });
   if ("runtime" in item && item.runtime != null) fields.push({ label: "Runtime", value: String(item.runtime) });
-  if ("image" in item && item.image != null) fields.push({ label: "Image", value: String(item.image), mono: true });
+  if ("runtime_type" in item && item.runtime_type != null) fields.push({ label: "Runtime", value: String(item.runtime_type) });
+  if ("image" in item && item.image != null) fields.push({ label: "Image / Artifact", value: String(item.image), mono: true });
+  if ("network_policy" in item && item.network_policy != null) fields.push({ label: "Network Policy", value: String(item.network_policy) });
+  if ("entrypoint" in item && item.entrypoint != null) fields.push({ label: "Entrypoint", value: String(item.entrypoint), mono: true });
+  if ("source_url" in item && item.source_url != null) fields.push({ label: "Source URL", value: String(item.source_url), href: String(item.source_url) });
+  if ("sandbox_path" in item && item.sandbox_path != null) fields.push({ label: "Sandbox Path", value: String(item.sandbox_path), mono: true });
 
   const setupInstructions = "setup_instructions" in item && item.setup_instructions ? String(item.setup_instructions) : null;
   const changelog = "changelog" in item && item.changelog ? String(item.changelog) : null;
@@ -556,8 +561,10 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
   const promptText = "prompt_text" in item && item.prompt_text ? String(item.prompt_text) : null;
   const markdownContent = skillMd || promptTemplate || promptText;
   const envVars = "environment_variables" in item && Array.isArray(item.environment_variables) ? item.environment_variables as { name: string; description?: string; required?: boolean }[] : [];
+  const resourceLimits = "resource_limits" in item && item.resource_limits ? JSON.stringify(item.resource_limits, null, 2) : null;
+  const runtimeConfig = "runtime_config" in item && item.runtime_config ? JSON.stringify(item.runtime_config, null, 2) : null;
 
-  const hasContent = fields.length > 0 || markdownContent || setupInstructions || changelog || envVars.length > 0;
+  const hasContent = fields.length > 0 || markdownContent || setupInstructions || changelog || envVars.length > 0 || resourceLimits || runtimeConfig;
 
   if (!hasContent) {
     return (
@@ -581,6 +588,18 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
               )}
             </div>
           ))}
+        </div>
+      )}
+      {resourceLimits && resourceLimits !== "{}" && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Resource Limits</h3>
+          <pre className="rounded-md border border-border bg-muted/20 p-3 text-xs overflow-auto">{resourceLimits}</pre>
+        </div>
+      )}
+      {runtimeConfig && runtimeConfig !== "{}" && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Runtime Config</h3>
+          <pre className="rounded-md border border-border bg-muted/20 p-3 text-xs overflow-auto">{runtimeConfig}</pre>
         </div>
       )}
       {envVars.length > 0 && (

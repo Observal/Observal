@@ -3,85 +3,81 @@
 
 # Sandboxes
 
-Sandboxes are isolated Docker containers registered in Observal. When an agent has a sandbox component, it gets a callable MCP tool to execute commands inside the container, no prompt engineering needed.
+Sandboxes are versioned execution environments registered in Observal. When an agent has a sandbox component, Observal installs an `observal-sandbox` MCP server that exposes one callable tool per sandbox.
 
-## Concepts
+## Runtime support
 
-A sandbox has these properties:
+| Runtime | Artifact field | Local requirement | Notes |
+|---------|----------------|-------------------|-------|
+| `docker` | `image` | Docker daemon + Python Docker SDK | Supports any Docker/OCI image the local daemon can pull and run, for example `python:3.12-slim` or `ghcr.io/org/runner:1.0.0`. |
+| `lxc` | `image` | local `lxc`/LXD CLI | Uses LXC/LXD image refs, not arbitrary OCI image refs. |
+| `firecracker` | `runtime_config` | local `firecracker` binary | Requires `runtime_config.config_path` or `kernel_image_path` + `rootfs_path`. |
+| `wasm` | `image` or `runtime_config.module` | local `wasmtime` or configured WASI runtime | Runs a WASI module, not a container image. |
 
-| Property | Description |
-|----------|-------------|
-| **Runtime Type** | `docker`, `lxc`, `firecracker`, `wasm` |
-| **Image** | Docker image to run (e.g., `python:3.12-slim`, `node:20-alpine`) |
-| **Resource Limits** | `timeout` (seconds), `memory_mb`, `cpu_count` |
-| **Network Policy** | `none` (isolated), `host`, `bridge`, `restricted` |
-| **Entrypoint** | Default command (e.g., `pytest`, `npm test`, `bash`) |
+Docker is the common path. The other runtimes are local-runtime dispatchers: Observal stores and installs the metadata, but the developer machine must have the corresponding runtime and artifact already available.
 
-## How It Works
+## Versioned fields
 
-When a sandbox is added as an agent component:
+A sandbox version stores:
 
+| Field | Description |
+|-------|-------------|
+| `runtime_type` | `docker`, `lxc`, `firecracker`, or `wasm` |
+| `image` | Docker/OCI image, LXC image ref, or WASM module path/ref |
+| `resource_limits` | JSON object such as `{"timeout": 60, "memory_mb": 512, "cpu_count": 1}` |
+| `network_policy` | `none`, `host`, `bridge`, or `restricted` |
+| `entrypoint` | Default command when the agent does not pass one |
+| `runtime_config` | Runtime-specific JSON for Firecracker/WASM/LXC extras |
+| `source_url`, `source_ref`, `sandbox_path` | Source metadata for humans/reviewers |
+
+`source_url` + `source_ref` + `sandbox_path` can point at a Dockerfile or sandbox source tree, but Observal does not build or publish images from that path today. Publish a built image/artifact ref in `image`.
+
+Local OCI setup example:
+
+```bash
+git clone https://github.com/acme/agent-sandboxes
+cd agent-sandboxes/sandboxes/python-pytest
+docker build -t ghcr.io/acme/python-pytest:1.0.0 .
 ```
+
+Then submit:
+
+```json
+{
+  "runtime_type": "docker",
+  "image": "ghcr.io/acme/python-pytest:1.0.0",
+  "source_url": "https://github.com/acme/agent-sandboxes",
+  "source_ref": "main",
+  "sandbox_path": "sandboxes/python-pytest"
+}
+```
+
+## How it works
+
+```text
 observal agent pull my-agent --harness claude-code
     │
     ├── Registers "observal-sandbox" MCP server
     │   └── Exposes run_sandbox_<name> as a callable tool
     │
-    └── Agent sees the tool in its tool list
-        └── Calls it naturally: run_sandbox_python_pytest(command="pytest tests/")
-            └── MCP server → observal-sandbox-run → Docker container → output
+    └── Agent calls run_sandbox_python_pytest(command="pytest tests/")
+        └── MCP server → observal-sandbox-run → local runtime → output
 ```
 
-The agent doesn't need instructions on how to use it; it's a tool like Read, Write, or Bash.
-
-## CLI Commands
-
-### Submit a sandbox
+## Submit a sandbox
 
 ```bash
-# Interactive
-observal registry sandbox submit
-
-# From JSON file
-observal registry sandbox submit --from-file sandbox.json
-
-# As a draft
-observal registry sandbox submit --draft
+observal registry sandbox submit \
+  --name python-pytest \
+  --version 1.0.0 \
+  --description "Run Python tests" \
+  --runtime-type docker \
+  --image python:3.12-slim \
+  --resource-limits '{"timeout":60,"memory_mb":512}' \
+  --entrypoint "pytest"
 ```
 
-### List sandboxes
-
-```bash
-observal registry sandbox list
-observal registry sandbox list --runtime docker
-observal registry sandbox list --search "python"
-observal registry sandbox list --output json
-```
-
-### Show sandbox details
-
-```bash
-observal registry sandbox show <name-or-id>
-observal registry sandbox show <name-or-id> --output json
-```
-
-### Install (deprecated - use agent components instead)
-
-```bash
-observal registry sandbox install <name> --harness claude-code
-# ⚠ Prints deprecation warning - sandboxes work best as agent components
-```
-
-### Delete a sandbox
-
-```bash
-observal registry sandbox delete <name-or-id>
-observal registry sandbox delete <name-or-id> --yes
-```
-
-## Examples
-
-### Example 1: Python test runner sandbox
+From JSON:
 
 ```json
 {
@@ -91,149 +87,50 @@ observal registry sandbox delete <name-or-id> --yes
   "owner": "your-name",
   "runtime_type": "docker",
   "image": "python:3.12-slim",
-  "resource_limits": {"timeout": 60, "memory_mb": 256},
+  "resource_limits": {"timeout": 60, "memory_mb": 512},
   "network_policy": "none",
   "entrypoint": "pytest"
 }
 ```
 
-```bash
-observal registry sandbox submit --from-file python-pytest.json
-```
-
-### Example 2: Node.js build sandbox
-
-```json
-{
-  "name": "node-builder",
-  "version": "1.0.0",
-  "description": "Build Node.js projects in isolation",
-  "owner": "your-name",
-  "runtime_type": "docker",
-  "image": "node:20-alpine",
-  "resource_limits": {"timeout": 120, "memory_mb": 512},
-  "network_policy": "none",
-  "entrypoint": "npm run build"
-}
-```
-
-### Example 3: Sandbox with custom Dockerfile (monorepo)
-
-```json
-{
-  "name": "custom-runner",
-  "version": "1.0.0",
-  "description": "Custom build environment from monorepo Dockerfile",
-  "owner": "your-name",
-  "runtime_type": "docker",
-  "image": "custom-runner:latest",
-  "resource_limits": {"timeout": 300, "memory_mb": 1024},
-  "network_policy": "none",
-  "source_url": "https://github.com/org/infra",
-  "source_ref": "main",
-  "sandbox_path": "sandboxes/custom-runner"
-}
-```
-
-The `sandbox_path` field specifies where the Dockerfile lives within the repo (for monorepos with multiple sandbox definitions).
-
-### Example 4: Agent with sandbox component (recommended)
+## Publish a new sandbox version
 
 ```bash
-# 1. Submit the sandbox
-observal registry sandbox submit --from-file python-pytest.json
-# ID: 8d37c926-...
-
-# 2. Create an agent that uses it
-cat > agent.json << 'EOF'
-{
-  "name": "test-runner",
-  "version": "1.0.0",
-  "owner": "your-name",
-  "model_name": "claude-sonnet-4-20250514",
-  "description": "Agent that runs tests in isolated containers",
-  "prompt": "You are a test runner. Run tests when asked.",
-  "components": [
-    {"component_type": "sandbox", "component_id": "8d37c926-..."}
-  ]
-}
-EOF
-observal agent create --from-file agent.json
-
-# 3. Pull the agent - sandbox becomes a callable tool
-observal agent pull test-runner --harness claude-code
-# Registers: observal-sandbox MCP server
-# Tool available: run_sandbox_python_pytest
-
-# 4. Use the agent
-# @test-runner run the tests
-# Agent calls: run_sandbox_python_pytest(command="pytest tests/ -v")
-# Output: test results from inside the Docker container
+observal registry version publish sandbox python-pytest \
+  --version 1.1.0 \
+  --description "Move to Python 3.12 slim" \
+  --extra '{"runtime_type":"docker","image":"python:3.12-slim","resource_limits":{"timeout":60}}'
 ```
 
-### Example 5: Running a sandbox manually
+Like skills and MCPs, a new sandbox version is submitted for review. Approval moves the listing's `latest_version_id` to the approved version; older versions remain available for agents that pinned them.
+
+## Manual runner examples
+
+Docker:
 
 ```bash
-# Direct execution (for debugging)
 observal-sandbox-run \
-  --sandbox-id 8d37c926-... \
+  --sandbox-id s-123 \
+  --runtime-type docker \
   --image python:3.12-slim \
   --timeout 60 \
-  --command "python -c 'print(\"hello from sandbox\")'"
-# Output: hello from sandbox
+  --network-policy none \
+  --command "python -c 'print(42)'"
 ```
 
-## How the MCP Integration Works
-
-When an agent has sandbox components, `observal agent pull` injects an `observal-sandbox` MCP server into the agent config:
-
-**Claude Code** (`.claude/agents/<name>.md` frontmatter):
-```yaml
-mcpServers:
-  - observal-sandbox
-```
-
-**Kiro** (`~/.kiro/agents/<name>.json`):
-```json
-{
-  "mcpServers": {
-    "observal-sandbox": {
-      "command": "python3",
-      "args": ["-m", "observal_cli.sandbox_mcp", "--sandboxes", "[...]"]
-    }
-  }
-}
-```
-
-The MCP server exposes one tool per sandbox:
-
-```
-Tool: run_sandbox_python_pytest
-Description: Run a command in the 'python-pytest' sandbox
-             (Docker: python:3.12-slim, timeout: 60s, network: none).
-             Default command: pytest
-Input: {"command": "pytest tests/ -v"}
-```
-
-The agent calls it like any other tool. The MCP server handles Docker execution via `observal-sandbox-run`.
-
-## Security
-
-- **Network isolation**: `network_policy: "none"` means no internet access inside the container
-- **Resource limits**: timeout, memory, CPU are enforced by Docker
-- **No host mounts**: the container runs in isolation (only working directory is mounted)
-- **Subprocess safety**: commands passed via list args (no shell injection)
-
-## Validation
-
-When submitting a sandbox with `source_url`, the server validates that the Dockerfile exists:
+WASM:
 
 ```bash
-# Submitting with source validation
-observal registry sandbox submit --from-file sandbox-with-source.json
-# Server checks: does Dockerfile exist at sandbox_path/ in the repo?
-# If not found: submit succeeds with a validation warning
-# If found: validated_at timestamp is set
+observal-sandbox-run \
+  --sandbox-id s-123 \
+  --runtime-type wasm \
+  --image ./runner.wasm \
+  --command "--help"
 ```
 
-Supported forges for validation: GitHub, GitLab, Bitbucket. Private repos will show a warning (server can't verify) but the submit still succeeds.
+## Security notes
+
+- Docker `network_policy: "none"` maps to Docker's no-network mode.
+- Docker `memory_mb` and `cpu_count` are passed to the local Docker daemon.
+- Non-Docker isolation is only as strong as the local runtime configuration.
+- No registry-side Dockerfile build service exists yet; use prebuilt image/artifact refs.

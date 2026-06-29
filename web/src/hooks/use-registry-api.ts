@@ -115,20 +115,6 @@ export function useCancelEdit(type: RegistryType) {
   });
 }
 
-export function useComponentDelete(type: RegistryType) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => registry.delete(type, id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["registry", type] });
-      toast.success("Deleted");
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || "Failed to delete");
-    },
-  });
-}
-
 export function useComponentArchive(type: RegistryType) {
   const qc = useQueryClient();
   return useMutation({

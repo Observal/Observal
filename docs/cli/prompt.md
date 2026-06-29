@@ -18,7 +18,6 @@ Prompts are reusable templates that can be rendered with variables, installed in
 | [`prompt render`](#observal-prompt-render) | Render a prompt template with variables |
 | [`prompt install`](#observal-prompt-install) | Get install config for a prompt |
 | [`prompt edit`](#observal-prompt-edit) | Edit an existing prompt |
-| [`prompt delete`](#observal-prompt-delete) | Delete a prompt |
 
 ---
 
@@ -166,28 +165,3 @@ Allows updating metadata, variables, descriptions, and prompt content before app
 
 ---
 
-## `observal prompt delete`
-
-Delete a prompt from the registry.
-
-### Synopsis
-
-```bash
-observal prompt delete <id-or-name> [--yes]
-```
-
-### Options
-
-| Option | Description |
-| --- | --- |
-| `--yes` | Skip confirmation prompt |
-
-Use `--yes` to skip the confirmation prompt.
-
----
-
-## Related
-
-* [`observal agent`](agent.md): bundle prompts into installable agents
-* [`observal registry`](registry.md): manage registry resources
-* [Use Cases → Share agent configs](../use-cases/share-agent-configs.md)

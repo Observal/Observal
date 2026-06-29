@@ -202,31 +202,6 @@ class TestMcpCrud:
         assert r2.json()["status"] == "approved"
 
     @pytest.mark.asyncio
-    async def test_delete_mcp(self, client, admin_headers):
-        # Submit
-        await client.post(
-            "/api/v1/mcps/submit",
-            headers=admin_headers,
-            json={
-                "name": self.mcp_name,
-                "version": "1.0.0",
-                "description": "Test delete",
-                "owner": "admin",
-                "category": "developer-tools",
-                "git_url": "https://github.com/example/repo.git",
-                "command": "node",
-                "args": ["index.js"],
-            },
-        )
-        # Delete
-        r = await client.delete(f"/api/v1/mcps/{self.mcp_name}", headers=admin_headers)
-        assert r.status_code == 200
-
-        # Verify gone
-        r2 = await client.get(f"/api/v1/mcps/{self.mcp_name}", headers=admin_headers)
-        assert r2.status_code == 404
-
-    @pytest.mark.asyncio
     async def test_submit_invalid_category(self, client, admin_headers):
         r = await client.post(
             "/api/v1/mcps/submit",

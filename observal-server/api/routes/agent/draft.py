@@ -62,6 +62,11 @@ async def save_draft(
 
     agent.latest_version_id = version.id
 
+    from services.agent_resolver import resolve_component_versions
+
+    version_refs = list(req.components) + [{"component_type": "mcp", "component_id": mid} for mid in req.mcp_server_ids]
+    component_versions = await resolve_component_versions(version_refs, db)
+
     # Legacy: mcp_server_ids -> AgentComponent(type=mcp)
     order = 0
     if not req.components and req.mcp_server_ids:
@@ -72,7 +77,7 @@ async def save_draft(
                     component_type="mcp",
                     component_id=mid,
                     component_name="",
-                    resolved_version="latest",
+                    resolved_version=component_versions.get(("mcp", mid), "latest"),
                     order_index=order,
                 )
             )
@@ -86,7 +91,7 @@ async def save_draft(
                 component_type=cref.component_type,
                 component_id=cref.component_id,
                 component_name="",
-                resolved_version="latest",
+                resolved_version=component_versions.get(("mcp", mid), "latest"),
                 order_index=order,
                 config_override=cref.config_override,
             )
@@ -167,6 +172,9 @@ async def update_draft(
         version.external_mcps = [m.model_dump() for m in req.external_mcps]
 
     if req.components is not None:
+        from services.agent_resolver import resolve_component_versions
+
+        component_versions = await resolve_component_versions(req.components, db)
         version_id = version.id
         old_comps = (
             (await db.execute(select(AgentComponent).where(AgentComponent.agent_version_id == version_id)))
@@ -182,7 +190,7 @@ async def update_draft(
                     component_type=cref.component_type,
                     component_id=cref.component_id,
                     component_name="",
-                    resolved_version="latest",
+                    resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
                     order_index=i,
                     config_override=cref.config_override,
                 )

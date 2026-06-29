@@ -98,12 +98,6 @@ observal registry hook edit <name-or-id> --description "updated"
 observal registry hook edit <name-or-id> --from-file updates.json
 ```
 
-### Delete a hook
-
-```bash
-observal registry hook delete <name-or-id>
-observal registry hook delete <name-or-id> --yes  # skip confirmation
-```
 
 ## Examples
 

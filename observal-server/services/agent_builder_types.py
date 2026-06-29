@@ -42,6 +42,9 @@ class ManifestComponent(BaseModel):
     image: str | None = None
     runtime_type: str | None = None
     resource_limits: dict | None = None
+    network_policy: str | None = None
+    entrypoint: str | None = None
+    runtime_config: dict | None = None
 
     def model_dump_compact(self) -> dict:
         """Dump only non-None fields for clean manifest output."""

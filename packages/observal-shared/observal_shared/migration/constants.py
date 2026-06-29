@@ -87,7 +87,7 @@ JSONB_COLUMNS: dict[str, list[str]] = {
     "prompt_listings": ["variables", "model_hints", "tags", "supported_harnesses"],
     "prompt_versions": ["variables", "model_hints", "tags", "supported_harnesses"],
     "sandbox_listings": ["resource_limits", "allowed_mounts", "env_vars", "supported_harnesses"],
-    "sandbox_versions": ["resource_limits", "allowed_mounts", "env_vars", "supported_harnesses"],
+    "sandbox_versions": ["resource_limits", "runtime_config", "allowed_mounts", "env_vars", "supported_harnesses"],
     "agent_components": ["config_override"],
     "exporter_configs": ["config"],
     "insight_reports": ["metrics", "narrative", "aggregated_data"],

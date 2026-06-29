@@ -35,7 +35,7 @@ from schemas.agent import (  # noqa: TC001
     AgentVersionCreateRequest,
     AgentVersionReviewRequest,
 )
-from services.agent_resolver import validate_component_ids
+from services.agent_resolver import resolve_component_versions, validate_component_ids
 from services.harness import generate_agent_config
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.versioning import parse_semver, validate_semver
@@ -256,6 +256,7 @@ async def _create_agent_version(
     # Create AgentComponent records
     from models.agent_component import AgentComponent
 
+    component_versions = await resolve_component_versions(req.components, db)
     for order, cref in enumerate(req.components):
         db.add(
             AgentComponent(
@@ -263,7 +264,7 @@ async def _create_agent_version(
                 component_type=cref.component_type,
                 component_id=cref.component_id,
                 component_name="",
-                resolved_version="latest",
+                resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
                 order_index=order,
                 config_override=cref.config_override,
             )

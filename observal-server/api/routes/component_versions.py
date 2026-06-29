@@ -29,6 +29,10 @@ from services.component_version_extras import ALLOWED_FIELDS, validate_and_extra
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
 
 
+async def audit(*_args, **_kwargs):
+    return None
+
+
 def _parse_semver(v: str) -> tuple[int, ...]:
     """Parse 'X.Y.Z' or 'X.Y.Z-pre' into (X, Y, Z) for comparison."""
     optic.trace("v={}", v)
@@ -187,7 +191,18 @@ async def _publish_version(
         "hook": ["hook_content", "script_content", "handler_type", "event", "git_url", "git_ref"],
         "prompt": ["template", "category"],
         "mcp": ["git_url", "git_ref", "command", "args", "url", "transport"],
-        "sandbox": ["dockerfile_content", "git_url", "git_ref"],
+        "sandbox": [
+            "runtime_type",
+            "image",
+            "resource_limits",
+            "network_policy",
+            "entrypoint",
+            "runtime_config",
+            "source_url",
+            "source_ref",
+            "resolved_sha",
+            "sandbox_path",
+        ],
     }
     for field in content_fields.get(component_type, []):
         if field not in extra_fields and hasattr(listing, field):

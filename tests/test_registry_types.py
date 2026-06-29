@@ -362,16 +362,6 @@ class TestSkillRoutes:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_delete_missing_returns_404(self):
-        from api.routes.skill import router
-
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.delete(f"/api/v1/skills/{uuid.uuid4()}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
     async def test_install_approved_returns_config(self):
         from api.routes.skill import router
 
@@ -425,16 +415,6 @@ class TestHookRoutes:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_delete_missing_returns_404(self):
-        from api.routes.hook import router
-
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.delete(f"/api/v1/hooks/{uuid.uuid4()}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
     async def test_install_approved_returns_config(self):
         from api.routes.hook import router
 
@@ -485,16 +465,6 @@ class TestPromptRoutes:
         db.execute = AsyncMock(return_value=_scalar_result(None))
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.get(f"/api/v1/prompts/{uuid.uuid4()}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_delete_missing_returns_404(self):
-        from api.routes.prompt import router
-
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.delete(f"/api/v1/prompts/{uuid.uuid4()}")
         assert r.status_code == 404
 
     @pytest.mark.asyncio
@@ -574,16 +544,6 @@ class TestSandboxRoutes:
         db.execute = AsyncMock(return_value=_scalar_result(None))
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.get(f"/api/v1/sandboxes/{uuid.uuid4()}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_delete_missing_returns_404(self):
-        from api.routes.sandbox import router
-
-        app, db, _ = _app_with(router)
-        db.execute = AsyncMock(return_value=_scalar_result(None))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.delete(f"/api/v1/sandboxes/{uuid.uuid4()}")
         assert r.status_code == 404
 
     @pytest.mark.asyncio
@@ -737,5 +697,5 @@ class TestCLICommands:
         from observal_cli.cmd_skill import skill_app
 
         names = self._get_command_names(skill_app)
-        for cmd in ("submit", "list", "show", "install", "delete"):
+        for cmd in ("submit", "list", "show", "install"):
             assert cmd in names, f"skill missing '{cmd}' subcommand"

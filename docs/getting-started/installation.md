@@ -30,7 +30,7 @@ cp .env.example .env
 make up
 ```
 
-For production deployment options, see [Self-Hosting](../self-hosting/docker-compose.md).
+For deployment options, see [Self-Hosting](../self-hosting/docker-compose.md) and [Production deployment](../self-hosting/production-deploy.md).
 
 ## Install the CLI
 

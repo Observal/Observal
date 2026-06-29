@@ -147,6 +147,10 @@ async def create_agent(
         )
         order += 1
 
+    from services.agent_resolver import resolve_component_versions
+
+    component_versions = await resolve_component_versions(req.components, db)
+
     # New: components list with all types
     for cref in req.components:
         db.add(
@@ -155,7 +159,7 @@ async def create_agent(
                 component_type=cref.component_type,
                 component_id=cref.component_id,
                 component_name="",
-                resolved_version="latest",
+                resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
                 order_index=order,
                 config_override=cref.config_override,
             )
@@ -636,6 +640,10 @@ async def update_agent(
                     for e in errors
                 ],
             )
+        from services.agent_resolver import resolve_component_versions
+
+        component_versions = await resolve_component_versions(req.components, db)
+
         # Remove ALL old components on the latest version
         version_id = agent.latest_version.id
         old_comps = (
@@ -652,7 +660,7 @@ async def update_agent(
                     component_type=cref.component_type,
                     component_id=cref.component_id,
                     component_name="",
-                    resolved_version="latest",
+                    resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
                     order_index=i,
                     config_override=cref.config_override,
                 )

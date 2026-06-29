@@ -129,31 +129,6 @@ export function useReviewComponents(typeFilter?: string) {
   });
 }
 
-export function useReviewDelete() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { id: string; type?: string }) => {
-      const typeMap: Record<string, RegistryType> = {
-        mcp: "mcps",
-        skill: "skills",
-        hook: "hooks",
-        prompt: "prompts",
-        sandbox: "sandboxes",
-        agent: "agents",
-      };
-      const registryType = typeMap[vars.type ?? "agent"] ?? "agents";
-      return registry.delete(registryType, vars.id);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["review"] });
-      toast.success("Submission withdrawn");
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || "Failed to delete submission");
-    },
-  });
-}
-
 export function useReviewSubscription() {
   const qc = useQueryClient();
   const listDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);

@@ -306,6 +306,20 @@ class TestSandboxValidation:
         from schemas.constants import VALID_SANDBOX_RUNTIME_TYPES
         from schemas.sandbox import SandboxSubmitRequest
 
+        configs = {
+            "docker": {},
+            "lxc": {},
+            "firecracker": {"config_path": "/tmp/firecracker.json"},
+            "wasm": {"module": "runner.wasm"},
+        }
         for rt in VALID_SANDBOX_RUNTIME_TYPES:
-            r = SandboxSubmitRequest(name="sb", version="1.0", description="d", owner="o", runtime_type=rt, image="img")
+            r = SandboxSubmitRequest(
+                name="sb",
+                version="1.0",
+                description="d",
+                owner="o",
+                runtime_type=rt,
+                image="img",
+                runtime_config=configs.get(rt, {}),
+            )
             assert r.runtime_type == rt

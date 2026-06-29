@@ -21,7 +21,7 @@ from models.agent import AgentStatus
 from models.hook import HookListing
 from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
-from models.sandbox import SandboxListing
+from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing
 from models.user import User, UserRole
 from schemas.agent import (
@@ -80,28 +80,54 @@ async def install_agent(
                 status_code=404,
                 detail=f"Version {req.version!r} not found or not approved for this agent",
             )
-        # Use the target version for config gen without mutating the ORM object
-        # (dirtying agent would persist on db.commit and corrupt latest_version for all users)
-        install_version = target_version  # noqa: F841
+        install_version = target_version
     elif not agent.latest_version:
         raise HTTPException(status_code=400, detail="Agent has no published version available for install")
+    else:
+        install_version = agent.latest_version
+
+    install_components = list(install_version.components or [])
+
+    class _InstallAgentProxy:
+        _version_fields = {
+            "components",
+            "description",
+            "external_mcps",
+            "inferred_supported_harnesses",
+            "model_config_json",
+            "model_name",
+            "models_by_harness",
+            "prompt",
+            "required_capabilities",
+            "supported_harnesses",
+            "version",
+        }
+
+        def __getattr__(self, name):
+            if name == "components":
+                return install_components
+            if name in self._version_fields:
+                return getattr(install_version, name)
+            return getattr(agent, name)
+
+    install_agent_obj = _InstallAgentProxy()
 
     # Pre-load MCP listings for config generation
-    mcp_comp_ids = [c.component_id for c in agent.components if c.component_type == "mcp"]
+    mcp_comp_ids = [c.component_id for c in install_components if c.component_type == "mcp"]
     mcp_listings_map = {}
     if mcp_comp_ids:
         mcp_rows = (await db.execute(select(McpListing).where(McpListing.id.in_(mcp_comp_ids)))).scalars().all()
         mcp_listings_map = {row.id: row for row in mcp_rows}
 
     # Pre-load skill listings for skill file generation
-    skill_comp_ids = [c.component_id for c in agent.components if c.component_type == "skill"]
+    skill_comp_ids = [c.component_id for c in install_components if c.component_type == "skill"]
     skill_listings_map = {}
     if skill_comp_ids:
         skill_rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_comp_ids)))).scalars().all()
         skill_listings_map = {row.id: row for row in skill_rows}
 
     # Pre-load hook listings for hook config generation
-    hook_comp_ids = [c.component_id for c in agent.components if c.component_type == "hook"]
+    hook_comp_ids = [c.component_id for c in install_components if c.component_type == "hook"]
     hook_listings_map = {}
     if hook_comp_ids:
         hook_rows = (
@@ -118,7 +144,7 @@ async def install_agent(
         hook_listings_map = {row.id: row for row in hook_rows}
 
     # Pre-load prompt listings for template injection
-    prompt_comp_ids = [c.component_id for c in agent.components if c.component_type == "prompt"]
+    prompt_comp_ids = [c.component_id for c in install_components if c.component_type == "prompt"]
     prompt_listings_map = {}
     if prompt_comp_ids:
         prompt_rows = (
@@ -135,7 +161,7 @@ async def install_agent(
         prompt_listings_map = {row.id: row for row in prompt_rows}
 
     # Pre-load sandbox listings for rules content injection
-    sandbox_comp_ids = [c.component_id for c in agent.components if c.component_type == "sandbox"]
+    sandbox_comp_ids = [c.component_id for c in install_components if c.component_type == "sandbox"]
     sandbox_listings_map = {}
     if sandbox_comp_ids:
         sandbox_rows = (
@@ -150,6 +176,36 @@ async def install_agent(
             .all()
         )
         sandbox_listings_map = {row.id: row for row in sandbox_rows}
+        sandbox_components = {c.component_id: c for c in install_components if c.component_type == "sandbox"}
+
+        class _VersionedSandboxListing:
+            def __init__(self, listing, version):
+                self._listing = listing
+                self._version = version
+
+            def __getattr__(self, name):
+                if name == "latest_version":
+                    return self._version
+                if hasattr(self._version, name):
+                    return getattr(self._version, name)
+                return getattr(self._listing, name)
+
+        for sid, listing in list(sandbox_listings_map.items()):
+            resolved_version = sandbox_components[sid].resolved_version
+            if resolved_version and resolved_version != "latest" and resolved_version != listing.version:
+                pinned = (
+                    await db.execute(
+                        select(SandboxVersion).where(
+                            SandboxVersion.listing_id == sid,
+                            SandboxVersion.version == resolved_version,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if not pinned:
+                    raise HTTPException(
+                        status_code=404, detail=f"Sandbox {listing.name} version {resolved_version!r} not found"
+                    )
+                sandbox_listings_map[sid] = _VersionedSandboxListing(listing, pinned)
 
     archived_warnings = []
     setup_warnings = []
@@ -167,7 +223,7 @@ async def install_agent(
                 setup_warnings.append(f"MCP '{row.name}' requires local setup before use:\n{row.setup_instructions}")
 
     # Resolve all component names for rules file content
-    name_map = await _resolve_component_names(agent.components, db)
+    name_map = await _resolve_component_names(install_components, db)
 
     from api.routes.config import derive_endpoints
     from services.model_resolver import resolve_model_for_harness
@@ -188,7 +244,7 @@ async def install_agent(
     install_options["_model_warnings"] = model_warnings
 
     snippet = generate_agent_config(
-        agent,
+        install_agent_obj,
         req.harness,
         observal_url=endpoints["api"],
         mcp_listings=mcp_listings_map,

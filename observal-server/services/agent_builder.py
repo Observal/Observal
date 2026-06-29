@@ -101,6 +101,12 @@ def _resolved_to_manifest_component(comp: ResolvedComponent) -> ManifestComponen
         kwargs["runtime_type"] = comp.extra.get("runtime_type", "")
         if comp.extra.get("resource_limits"):
             kwargs["resource_limits"] = comp.extra["resource_limits"]
+        if comp.extra.get("network_policy"):
+            kwargs["network_policy"] = comp.extra["network_policy"]
+        if comp.extra.get("entrypoint"):
+            kwargs["entrypoint"] = comp.extra["entrypoint"]
+        if comp.extra.get("runtime_config"):
+            kwargs["runtime_config"] = comp.extra["runtime_config"]
 
     return ManifestComponent(**kwargs)
 

@@ -361,29 +361,3 @@ def prompt_edit(
             pass
         rprint(f"[red]Failed to update:[/red] {exc}")
         raise typer.Exit(code=1)
-
-
-@prompt_app.command(name="delete")
-def prompt_delete(
-    prompt_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
-):
-    """Delete a prompt from the registry.
-
-    Permanently removes the prompt. Prompts you own can be deleted regardless
-    of status. Requires confirmation unless --yes is passed.
-
-    Examples:
-        observal registry prompt delete my-prompt
-        observal registry prompt delete abc123 --yes
-        observal registry prompt delete @old-template -y
-    """
-    resolved = config.resolve_alias(prompt_id)
-    if not yes:
-        with spinner():
-            item = client.get(f"/api/v1/prompts/{resolved}")
-        if not typer.confirm(f"Delete [bold]{item['name']}[/bold] ({resolved})?"):
-            raise typer.Abort()
-    with spinner("Deleting..."):
-        client.delete(f"/api/v1/prompts/{resolved}")
-    rprint(f"[green]✓ Deleted {resolved}[/green]")

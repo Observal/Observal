@@ -16,7 +16,6 @@ import {
   ArrowDown,
   Plus,
   Send,
-  Trash2,
   FileEdit,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -28,7 +27,6 @@ import {
   useComponentSaveDraft,
   useComponentSubmitDraft,
   useComponentUpdateDraft,
-  useComponentDelete,
   useStartEdit,
   useCancelEdit,
 } from "@/hooks/use-api";
@@ -191,7 +189,6 @@ export default function ComponentsPage() {
   const saveDraftMutation = useComponentSaveDraft(activeType);
   const submitDraftMutation = useComponentSubmitDraft(activeType);
   const updateDraftMutation = useComponentUpdateDraft(activeType);
-  const deleteMutation = useComponentDelete(activeType);
   const startEditMutation = useStartEdit(activeType);
   const cancelEditMutation = useCancelEdit(activeType);
 
@@ -461,15 +458,6 @@ export default function ComponentsPage() {
                         {item.status === "rejected" ? "Resubmit" : "Submit"}
                       </Button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => deleteMutation.mutate(item.id)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
                   </div>
                 </div>
               ))}

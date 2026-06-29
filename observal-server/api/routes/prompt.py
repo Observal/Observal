@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
 from api.deps import (
-    ROLE_HIERARCHY,
     apply_visibility_filter,
     check_listing_visibility,
     commit_or_name_conflict,
@@ -29,7 +28,7 @@ from api.routes._component_archive import archive_listing, unarchive_listing
 from api.routes.component_versions import create_version_router
 from api.search import keyword_search
 from models.mcp import ListingStatus
-from models.prompt import PromptDownload, PromptListing, PromptVersion
+from models.prompt import PromptListing, PromptVersion
 from models.user import User, UserRole
 from schemas.prompt import (
     PromptDraftRequest,
@@ -367,38 +366,6 @@ async def unarchive_prompt(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     return await unarchive_listing(PromptListing, listing_id, db, current_user, "prompt")
-
-
-@router.delete("/{listing_id}")
-async def delete_prompt(
-    listing_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
-):
-    optic.debug("prompt delete: listing_id={}", listing_id)
-    listing = await resolve_listing(PromptListing, listing_id, db)
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-    is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
-    if get_effective_component_permission(listing, current_user) != "owner":
-        raise HTTPException(status_code=403, detail="Not authorized")
-    if listing.status == ListingStatus.approved and not is_admin:
-        raise HTTPException(status_code=400, detail="Cannot delete an approved listing. Contact an admin.")
-
-    for r in (await db.execute(select(PromptDownload).where(PromptDownload.listing_id == listing.id))).scalars().all():
-        await db.delete(r)
-
-    # Break the circular FK (listing → latest_version → listing) before delete
-    listing.latest_version_id = None
-    listing.latest_version = None
-    await db.flush()
-    # Delete versions explicitly to avoid SQLAlchemy circular dependency detection
-    for ver in list(listing.versions):
-        await db.delete(ver)
-    await db.flush()
-    await db.delete(listing)
-    await commit_or_name_conflict(db, "prompt")
-    return {"deleted": str(listing_id)}
 
 
 # --- Version sub-routes ---

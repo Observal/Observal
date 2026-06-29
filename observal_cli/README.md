@@ -66,7 +66,6 @@ observal registry <type> submit      # submit for review
 observal registry <type> list        # list approved items
 observal registry <type> show <id>   # show details
 observal registry <type> install <id> --harness <harness>  # get harness config
-observal registry <type> delete <id> # delete
 ```
 
 Hooks have an extra `sync` subcommand. Prompts have an extra `render` subcommand for variable substitution.

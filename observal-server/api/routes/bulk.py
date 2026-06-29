@@ -57,6 +57,10 @@ async def _create_single_agent(
 
     agent.latest_version_id = version.id
 
+    from services.agent_resolver import resolve_component_versions
+
+    component_versions = await resolve_component_versions(item.components, db)
+
     # Attach components
     for i, comp in enumerate(item.components):
         db.add(
@@ -65,7 +69,9 @@ async def _create_single_agent(
                 component_type=comp.get("component_type", "mcp"),
                 component_id=comp["component_id"],
                 component_name=comp.get("component_name", ""),
-                resolved_version="latest",
+                resolved_version=component_versions.get(
+                    (comp.get("component_type", "mcp"), comp["component_id"]), "latest"
+                ),
                 order_index=i,
                 config_override=comp.get("config_override"),
             )
