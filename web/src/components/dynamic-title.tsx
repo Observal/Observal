@@ -18,7 +18,7 @@ export function DynamicTitle() {
     if (link && brandingLogo) {
       link.href = brandingLogo;
     } else if (link) {
-      link.href = "/favicon.ico";
+      link.href = "/icon.png";
     }
   }, [brandingLogo]);
 
