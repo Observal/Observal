@@ -29,7 +29,7 @@ from rich import print as rprint
 
 from observal_cli import client, config
 from observal_cli.branding import welcome_banner
-from observal_cli.prompts import password_input, text_input
+from observal_cli.prompts import password_input, quick_choice, text_input
 from observal_cli.render import console, kv_panel, spinner, status_badge
 
 # ── Auth subgroup ───────────────────────────────────────────
@@ -251,24 +251,28 @@ def login(
             if oidc_available and saml_available:
                 rprint("  [1] OIDC SSO")
                 rprint("  [2] SAML SSO")
-                choice = text_input("Login method", default="1")
+                choice = quick_choice("Login method", ["1", "2"])
                 sso_provider = "saml" if choice == "2" else "oidc"
             else:
                 rprint(f"  [1] {'SAML SSO' if saml_available else 'SSO'}")
-                text_input("Login method", default="1")
+                quick_choice("Login method", ["1"])
                 sso_provider = "saml" if saml_available else None
             sso_mode = True
             direct_sso = True
         else:
             rprint("  [1] CLI email/username + password")
             rprint("  [2] Web sign-in")
+            valid = ["1", "2"]
             if oidc_available:
                 rprint("  [3] OIDC SSO")
+                valid.append("3")
             elif saml_available:
                 rprint("  [3] SAML SSO")
+                valid.append("3")
             if oidc_available and saml_available:
                 rprint("  [4] SAML SSO")
-            choice = text_input("Login method", default="1")
+                valid.append("4")
+            choice = quick_choice("Login method", valid)
             if choice == "2":
                 sso_mode = True
             elif choice == "3" and sso_available:
