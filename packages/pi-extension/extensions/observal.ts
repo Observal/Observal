@@ -90,6 +90,83 @@ export default function (pi: ExtensionAPI) {
 
   // ─── /obs-sync command ─────────────────────────────────────────────────
 
+  pi.registerCommand("agent", {
+    description: "Swap the active Observal agent",
+    handler: async (args, ctx) => {
+      const agentId = args.trim();
+      if (!agentId) {
+        ctx.ui.notify("Usage: /agent <name>", "warning");
+        return;
+      }
+      if (!state?.config) {
+        ctx.ui.notify("Observal not configured. Run 'observal auth login' first.", "warning");
+        return;
+      }
+
+      ctx.ui.setStatus("observal", "Downloading agent...");
+      
+      const payload = JSON.stringify({ ide: "pi", harness: "pi", options: { scope: "user" } });
+      const res = await postJsonWithTimeout(state.config, `/api/v1/agents/${encodeURIComponent(agentId)}/install`, payload);
+      
+      if (!res || !res.config_snippet) {
+        ctx.ui.notify(`Failed to install agent '${agentId}'`, "error");
+        ctx.ui.setStatus("observal", "● observal");
+        return;
+      }
+
+      const snippet = res.config_snippet;
+
+      function writeFile(p: string, content: any) {
+        if (!p) return;
+        const resolved = p.startsWith("~/") ? path.join(os.homedir(), p.slice(2)) : path.resolve(ctx.cwd, p);
+        fs.mkdirSync(path.dirname(resolved), { recursive: true });
+        if (typeof content === "object") {
+          fs.writeFileSync(resolved, JSON.stringify(content, null, 2));
+        } else {
+          fs.writeFileSync(resolved, content);
+        }
+      }
+
+      try {
+        if (snippet.rules_file) {
+          writeFile(snippet.rules_file.path, snippet.rules_file.content);
+        }
+        if (snippet.mcp_config) {
+          writeFile(snippet.mcp_config.path, snippet.mcp_config.content);
+        }
+        if (snippet.skill_components) {
+          for (const skill of snippet.skill_components) {
+            if (skill.path && skill.content) {
+              writeFile(skill.path, skill.content);
+            }
+          }
+        }
+
+        // Update config.json to reflect new active agent for telemetry
+        state.config.agent_id = res.agent_id || agentId;
+        state.config.agent_version = "latest";
+        
+        try {
+          const configRaw = fs.readFileSync(CONFIG_PATH, "utf-8");
+          const configJson = JSON.parse(configRaw);
+          configJson.active_agent = { id: state.config.agent_id, version: "latest" };
+          fs.writeFileSync(CONFIG_PATH, JSON.stringify(configJson, null, 2));
+        } catch (err) {
+          // ignore
+        }
+
+        ctx.ui.setStatus("observal", "● observal");
+        const ok = await ctx.ui.confirm("Agent Swapped", `Installed ${agentId}. Reload session now?`);
+        if (ok) {
+          await ctx.reload();
+        }
+      } catch (e: any) {
+        ctx.ui.notify(`Error writing config: ${e.message}`, "error");
+        ctx.ui.setStatus("observal", "● observal");
+      }
+    },
+  });
+
   pi.registerCommand("obs-sync", {
     description: "Observal telemetry sync status",
     handler: async (args, ctx) => {
@@ -253,6 +330,57 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
+  function postJsonWithTimeout(config: ObservalConfig, urlPath: string, body: string): Promise<any | null> {
+    return new Promise((resolve) => {
+      try {
+        const url = new URL(urlPath, config.server_url);
+        const mod = url.protocol === "https:" ? https : http;
+        const timer = setTimeout(() => {
+          req.destroy();
+          resolve(null);
+        }, TIMEOUT_MS * 2);
+
+        const req = mod.request(
+          url,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${config.access_token}`,
+              "Content-Length": String(Buffer.byteLength(body)),
+            },
+          },
+          (res) => {
+            clearTimeout(timer);
+            const chunks: Buffer[] = [];
+            res.on("data", (c) => chunks.push(c));
+            res.on("end", () => {
+              if (res.statusCode! >= 200 && res.statusCode! < 300) {
+                try {
+                  resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")));
+                } catch {
+                  resolve(null);
+                }
+              } else {
+                resolve(null);
+              }
+            });
+          },
+        );
+
+        req.on("error", () => {
+          clearTimeout(timer);
+          resolve(null);
+        });
+
+        req.write(body);
+        req.end();
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
   function postWithTimeout(config: ObservalConfig, urlPath: string, body: string): Promise<boolean> {
     return new Promise((resolve) => {
       try {
@@ -302,7 +430,7 @@ export default function (pi: ExtensionAPI) {
 
       // Use sessionManager to resolve session directory when available,
       // falling back to the conventional path layout.
-      const sessionsDir = ctx.sessionManager.getSessionsDir?.()
+      const sessionsDir = (ctx.sessionManager as any).getSessionDir?.()
         ?? path.join(os.homedir(), ".pi", "agent", "sessions");
       const cwd = ctx.cwd;
       const projectKey = cwd.replace(/\//g, "-");
