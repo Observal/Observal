@@ -143,3 +143,36 @@ def password_input(message: str) -> str:
         return result
     except EOFError:
         raise KeyboardInterrupt
+
+
+def quick_choice(message: str, valid_keys: list[str]) -> str:
+    """Single-keypress selection — no Enter required.
+
+    Displays the prompt, waits for one of ``valid_keys`` to be pressed,
+    and returns immediately. Falls back to text_input in non-TTY environments.
+    """
+    if not sys.stdin.isatty():
+        import typer
+
+        return typer.prompt(message, default=valid_keys[0])
+
+    import termios
+    import tty
+
+    from rich import print as rprint
+
+    rprint(f"  {message}: ", end="", flush=True)
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch == "\x03":  # Ctrl+C
+                print()
+                raise KeyboardInterrupt
+            if ch in valid_keys:
+                rprint(ch)
+                return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
