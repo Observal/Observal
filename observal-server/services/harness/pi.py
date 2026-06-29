@@ -27,23 +27,32 @@ class PiAdapter:
     def format_config(self, ctx: ConfigContext) -> dict:
         """Format config for Pi.
 
-        Pi uses:
-        - AGENTS.md (project) or ~/.pi/agent/AGENTS.md (user) for the system prompt
-        - .pi/mcp.json or ~/.pi/agent/mcp.json for MCP servers (pi-mcp-adapter)
-        - .pi/skills/{name}/SKILL.md for skills
+        Pi uses isolated profile directories for agents:
+        - ~/.pi/agent/agents/{agent}/AGENTS.md
+        - ~/.pi/agent/agents/{agent}/mcp.json
+        - ~/.pi/agent/agents/{agent}/skills/{name}/SKILL.md
         """
         optic.debug("PiAdapter.format_config: agent={}", ctx.safe_name)
         options = ctx.options
         scope = options.get("scope", HARNESS_REGISTRY["pi"]["default_scope"])
+        agent_name = ctx.safe_name
 
         result: dict = {}
+
+        def _rewrite_path(p: str) -> str:
+            # Rewrite ~/.pi/agent/... to ~/.pi/agent/agents/{agent_name}/...
+            if p.startswith("~/.pi/agent/"):
+                return p.replace("~/.pi/agent/", f"~/.pi/agent/agents/{agent_name}/", 1)
+            elif p.startswith(".pi/"):
+                return p.replace(".pi/", f".pi/agents/{agent_name}/", 1)
+            return p
 
         # ── Rules / Agent file (AGENTS.md) ──
         if ctx.rules_content:
             rules_spec = HARNESS_REGISTRY["pi"]["agent_profile"]
             rules_path = rules_spec.get(scope, rules_spec.get("user", "AGENTS.md"))
             result["agent_profile"] = {
-                "path": rules_path,
+                "path": _rewrite_path(rules_path),
                 "content": ctx.rules_content,
             }
 
@@ -53,13 +62,19 @@ class PiAdapter:
             mcp_path = mcp_path_spec.get(scope, mcp_path_spec.get("user"))
             if mcp_path:
                 result["mcp_config"] = {
-                    "path": mcp_path,
+                    "path": _rewrite_path(mcp_path),
                     "content": {"mcpServers": ctx.mcp_configs},
                 }
 
         # ── Skills ──
         if ctx.skill_configs:
-            result["skill_components"] = ctx.skill_configs
+            rewritten_skills = []
+            for skill in ctx.skill_configs:
+                skill_copy = dict(skill)
+                if skill_copy.get("path"):
+                    skill_copy["path"] = _rewrite_path(skill_copy["path"])
+                rewritten_skills.append(skill_copy)
+            result["skill_components"] = rewritten_skills
 
         return result
 
