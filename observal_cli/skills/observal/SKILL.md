@@ -46,6 +46,10 @@ Install an agent's full config (rules, MCP servers, hooks, skills, sandboxes, pr
 observal agent pull AGENT_NAME --harness kiro --no-prompt --dir .
 ```
 
+**For Pi (`--harness pi`):**
+When pulling for Pi, the CLI natively downloads the agent's files into isolated profiles at `~/.pi/agent/agents/<AGENT_NAME>`. 
+**Crucial:** After running `observal agent pull <AGENT_NAME> --harness pi`, you MUST run `/agent <AGENT_NAME>` inside Pi to actually swap into the newly downloaded profile!
+
 **Flags:**
 - `--harness` (required): `claude-code`, `kiro`, `cursor`, `vscode`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `pi`
 - `--version <semver>`: install a specific version (e.g. `1.2.0`). Omit for latest.
