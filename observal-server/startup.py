@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 
 import services.dynamic_settings as ds
 from api.deps import get_or_create_default_org
-from config import HAS_LICENSE, check_legacy_env_vars, settings
+from config import HAS_LICENSE, settings
 from database import engine
 from models import Base
 from models.user import User
@@ -44,8 +44,6 @@ async def ensure_columns(conn) -> None:
 
 async def run_startup_tasks() -> None:
     """Initialize application dependencies used by the FastAPI lifespan."""
-    check_legacy_env_vars()
-
     if not settings.SKIP_DDL_ON_STARTUP:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
