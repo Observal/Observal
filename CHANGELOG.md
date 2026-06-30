@@ -10,10 +10,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.9.5] - 2026-06-28
+## [1.9.6] - 2026-06-30
 
 ### Added
 
+- update brand assets (**web**) ([f724abc](https://github.com/Observal/Observal/commit/f724abcc6f7d60b1b617f2e396498098833052f0))
+- add runtime examples and docs (**sandbox**) ([66ff22d](https://github.com/Observal/Observal/commit/66ff22d7866a1126dcd1169e98b73044de87ae51))
+- add admin migration UI (**web**) ([9433f6e](https://github.com/Observal/Observal/commit/9433f6e87c1fb95838003661596034f0b808dd11))
+- add migration commands (**cli**) ([fc4762e](https://github.com/Observal/Observal/commit/fc4762e016b5fc61262f25260d6da928df1f116c))
+- add shared server pipeline (**migration**) ([eb6a417](https://github.com/Observal/Observal/commit/eb6a417b312b21f5575ad295e4d1ca46d59552c1))
 - add Google sign-in as first-class provider (**auth**) ([daadaa0](https://github.com/Observal/Observal/commit/daadaa0b5f3371f142adc0510c48dc25a36eb662))
 - add Kubernetes deployment chart (**helm**) ([5749b21](https://github.com/Observal/Observal/commit/5749b211f1081dcad5bb45141dff5d30d701cecb))
 - add trigram user search (**search**) ([03d4710](https://github.com/Observal/Observal/commit/03d4710329cbaa894161cc82e0d15255ea33a576))
@@ -641,6 +646,7 @@ All notable changes to this project will be documented in this file.
 
 ### CI
 
+- rebuild frontend stack from source (**e2e**) ([5db4526](https://github.com/Observal/Observal/commit/5db45266fef9bc6fb33823fcd311f935e8f179c8))
 - add npm publish step for observal-pi to release workflow ([52d2dbc](https://github.com/Observal/Observal/commit/52d2dbc80d9dc077909419b9c4311dfce245b377))
 - add workflow for backend integration tests ([ba4e741](https://github.com/Observal/Observal/commit/ba4e741feaf813f27eec071c7720ac9451f90866))
 - add deploy-dev workflow for main branch auto-deploy ([40f2203](https://github.com/Observal/Observal/commit/40f22031befc48c38ec3af8c6886ead52ac61cca))
@@ -654,6 +660,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- align agent RBAC tests (**test**) ([058392b](https://github.com/Observal/Observal/commit/058392bc1562652993ec20749f47868e3e15a019))
 - format install warning (**mcp**) ([c88f450](https://github.com/Observal/Observal/commit/c88f45019b953a28c774147bc7caf23ec2cc20cc))
 - route telemetry features through sessions ([fbc7a38](https://github.com/Observal/Observal/commit/fbc7a3820ce483cbb301243c5c024e5835865a6b))
 - remove structured telemetry storage ([25c46a1](https://github.com/Observal/Observal/commit/25c46a1216896e7e409d93b206ac57db6de8b8e0))
@@ -917,6 +924,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- add updated_at to listing summary schemas (**registry**) ([fbf174a](https://github.com/Observal/Observal/commit/fbf174af9863a26016711789f8ee97dbd1c1e5a7))
+- add versioned migrations (**clickhouse**) ([b2c3176](https://github.com/Observal/Observal/commit/b2c317634bf243f9fe80c35e4e6d3ff2668ab3ba))
+- skip Claude Code metadata events (**session-parser**) ([3648756](https://github.com/Observal/Observal/commit/36487565ccc80dc4d9419c52124f4c091b518296))
 - correct frontend_url default and ssoOnly button logic (**auth**) ([b1a69ba](https://github.com/Observal/Observal/commit/b1a69ba19b85adae4794c622ea6d41336129eb53))
 - bump vulnerable joserfc (**deps**) ([fb12ee7](https://github.com/Observal/Observal/commit/fb12ee71c1663fb163e0a9b5ebc80f1fe8a71ca6))
 - bypass login page for direct SSO (**auth**) ([0d45615](https://github.com/Observal/Observal/commit/0d45615e44cb9ea029b4a67ec5f8e4907cd97a21))
@@ -1605,6 +1615,7 @@ All notable changes to this project will be documented in this file.
 
 ### Other
 
+- update docker images (minor/patch) (**deps**) ([c9db9af](https://github.com/Observal/Observal/commit/c9db9af878fec262ed32f24448aca006a64f8f69))
 - update org namespace references ([896e97a](https://github.com/Observal/Observal/commit/896e97a494988806474638f11aab8e4951f7b3af))
 - sync observal command reference (**skill**) ([0a98a82](https://github.com/Observal/Observal/commit/0a98a82a5cd844ddbb6003e931bf2b073f7eb508))
 - update github actions (minor/patch) (**deps**) ([c93091a](https://github.com/Observal/Observal/commit/c93091a244ac5060c91a1e43f980e7fcc0408c63))
@@ -1789,6 +1800,7 @@ All notable changes to this project will be documented in this file.
 
 ### Testing
 
+- add unit tests for services/session_parsers/claude_code.py ([1b8377a](https://github.com/Observal/Observal/commit/1b8377a4de254789f0af90f3ef6b077259527153))
 - update SSO settings expectations (**auth**) ([60a3ba5](https://github.com/Observal/Observal/commit/60a3ba5b8097c61ed9026dbb284f5c158839722e))
 - cover natural keywords (**search**) ([a33f3e0](https://github.com/Observal/Observal/commit/a33f3e06296e5e821d420501430748cf056514f8))
 - update telemetry cleanup coverage ([d06b3d1](https://github.com/Observal/Observal/commit/d06b3d173809e885f5fa4f9492eaf418028b4bd2))
