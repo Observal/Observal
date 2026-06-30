@@ -217,7 +217,6 @@ sed -i.bak \
     -e "s|__SECRET_KEY__|$SECRET_KEY|g" \
     -e "s|__POSTGRES_PASSWORD__|$POSTGRES_PASSWORD|g" \
     -e "s|__CLICKHOUSE_PASSWORD__|$CLICKHOUSE_PASSWORD|g" \
-    -e "s|__FRONTEND_URL__|$FRONTEND_URL|g" \
     "$ENV_FILE"
 rm -f "$ENV_FILE.bak"
 
