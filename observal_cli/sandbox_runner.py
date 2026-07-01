@@ -286,7 +286,7 @@ def main():
             i += 2
         elif args[i] == "--env" and i + 1 < len(args):
             k, _, v = args[i + 1].partition("=")
-            env[k] = v
+            env[k] = v.strip("\"'")
             i += 2
         elif args[i] == "--":
             command = " ".join(args[i + 1 :])

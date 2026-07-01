@@ -1457,12 +1457,12 @@ def install(
     for item in env or []:
         k, _, v = item.partition("=")
         if k:
-            env_overrides[k.strip()] = v
+            env_overrides[k.strip()] = v.strip("\"'")
     header_overrides = {}
     for item in header or []:
         k, _, v = item.partition("=")
         if k:
-            header_overrides[k.strip()] = v
+            header_overrides[k.strip()] = v.strip("\"'")
     _install_impl(
         mcp_id,
         ide,
