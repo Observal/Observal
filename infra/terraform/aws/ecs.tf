@@ -388,6 +388,7 @@ resource "null_resource" "run_init" {
     aws_iam_role_policy_attachment.ecs_execution_managed,
     aws_iam_role_policy_attachment.ecs_execution_secrets,
     aws_instance.data_host,
+    aws_route53_record.clickhouse_internal,
   ]
 }
 

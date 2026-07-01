@@ -21,7 +21,7 @@ data "aws_ami" "al2023" {
   owners      = ["amazon"]
   filter {
     name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    values = ["al2023-ami-2023.*-x86_64"]
   }
   filter {
     name   = "architecture"
@@ -32,12 +32,17 @@ data "aws_ami" "al2023" {
 # tfsec:ignore:aws-ec2-volume-encryption-customer-key AWS-managed aws/ebs key is encrypted at rest; supply a CMK in the production hardening checklist.
 resource "aws_ebs_volume" "data" {
   count             = local.clickhouse_self_hosted ? 1 : 0
-  availability_zone = local.azs[0]
+  availability_zone = data.aws_subnet.data_host[0].availability_zone
   size              = local.effective_data_volume_size_gb
   type              = "gp3"
   encrypted         = true
 
   tags = { Name = "${local.name}-data" }
+}
+
+data "aws_subnet" "data_host" {
+  count = local.clickhouse_self_hosted ? 1 : 0
+  id    = local.private_subnet_ids[0]
 }
 
 # Static private IP via primary ENI — gives the host a stable address that

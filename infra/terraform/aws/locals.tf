@@ -19,7 +19,7 @@ locals {
   vpc_id             = local.should_create_vpc ? aws_vpc.main[0].id : var.vpc_id
   vpc_cidr           = data.aws_vpc.vpc.cidr_block
   private_subnet_ids = local.should_create_vpc ? aws_subnet.private[*].id : var.private_subnet_ids
-  public_subnet_ids  = local.should_create_vpc ? aws_subnet.public[*].id : var.public_subnet_ids
+  public_subnet_ids  = local.should_create_vpc ? aws_subnet.public[*].id : coalesce(var.public_subnet_ids, var.private_subnet_ids)
 
   # BYO Security Groups
   create_alb_sg = var.alb_security_group_id == null
@@ -157,8 +157,12 @@ resource "terraform_data" "byovpc_validation" {
       error_message = "private_subnet_ids must be provided (at least 2) when vpc_id is set."
     }
     precondition {
-      condition     = var.public_subnet_ids != null && length(var.public_subnet_ids) >= 2
-      error_message = "public_subnet_ids must be provided (at least 2) when vpc_id is set."
+      condition     = var.alb_scheme == "internal" || (var.public_subnet_ids != null && length(coalesce(var.public_subnet_ids, [])) >= 2)
+      error_message = "public_subnet_ids must be provided (at least 2) when vpc_id is set and alb_scheme is 'internet-facing'. For private-only VPCs (e.g. TGW-based), set alb_scheme = 'internal'."
+    }
+    precondition {
+      condition     = data.aws_vpc.vpc.enable_dns_hostnames && data.aws_vpc.vpc.enable_dns_support
+      error_message = "BYO VPC must have enable_dns_hostnames and enable_dns_support enabled for private Route53 zone resolution."
     }
   }
 }

@@ -168,7 +168,7 @@ variable "private_subnet_ids" {
 }
 
 variable "public_subnet_ids" {
-  description = "Public subnet IDs (required when vpc_id is set)."
+  description = "Public subnet IDs (required when vpc_id is set and alb_scheme is 'internet-facing'). Not required when alb_scheme = 'internal' (e.g. TGW-based VPCs with no public subnets)."
   type        = list(string)
   default     = null
 }

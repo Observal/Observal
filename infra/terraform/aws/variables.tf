@@ -431,13 +431,13 @@ variable "private_subnet_ids" {
 }
 
 variable "public_subnet_ids" {
-  description = "List of public subnet IDs (required when using existing VPC). At least 2, in different AZs."
+  description = "List of public subnet IDs (required when using existing VPC with internet-facing ALB). Not required when alb_scheme = 'internal' (e.g. TGW-based VPCs with no public subnets)."
   type        = list(string)
   default     = null
 
   validation {
     condition     = var.public_subnet_ids == null || length(coalesce(var.public_subnet_ids, [])) >= 2
-    error_message = "At least 2 public_subnet_ids are required when using an existing VPC."
+    error_message = "At least 2 public_subnet_ids are required when provided."
   }
 }
 

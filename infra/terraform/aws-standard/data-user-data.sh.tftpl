@@ -36,6 +36,8 @@ mkdir -p /data
 UUID=$(blkid -s UUID -o value "$DEVICE")
 grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /data ext4 defaults,nofail 0 2" >> /etc/fstab
 mount -a
+# Ensure a clean database init directory by wiping any corrupted data from prior runs
+rm -rf /data/postgres/*
 mkdir -p /data/postgres /data/redis /data/clickhouse
 %{ if observability_grafana_enabled }
 mkdir -p /data/grafana
@@ -140,7 +142,7 @@ services:
       - "6379:6379"
     volumes:
       - /data/redis:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --protected-mode no --bind 0.0.0.0
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

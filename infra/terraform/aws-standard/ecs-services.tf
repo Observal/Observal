@@ -124,30 +124,8 @@ resource "null_resource" "run_init" {
   }
 
   provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
-      set -euo pipefail
-
-      # Give the data-host EC2 instance time to bootstrap services.
-      echo "Waiting 180s for data-tier bootstrap to complete..."
-      sleep 180
-
-      task_arn=$(aws ecs run-task \
-        --region ${var.region} \
-        --cluster ${aws_ecs_cluster.main.name} \
-        --capacity-provider-strategy capacityProvider=${aws_ecs_capacity_provider.ec2.name},weight=1,base=1 \
-        --task-definition ${aws_ecs_task_definition.init.arn} \
-        --network-configuration "awsvpcConfiguration={subnets=[${join(",", local.private_subnet_ids)}],securityGroups=[${aws_security_group.ecs_instances.id}],assignPublicIp=DISABLED}" \
-        --query 'tasks[0].taskArn' --output text)
-      echo "Init task started: $task_arn"
-      aws ecs wait tasks-stopped --region ${var.region} --cluster ${aws_ecs_cluster.main.name} --tasks "$task_arn"
-      exit_code=$(aws ecs describe-tasks --region ${var.region} --cluster ${aws_ecs_cluster.main.name} --tasks "$task_arn" --query 'tasks[0].containers[0].exitCode' --output text)
-      echo "Init task exit code: $exit_code"
-      if [ "$exit_code" != "0" ]; then
-        echo "Init task failed. See log group ${aws_cloudwatch_log_group.ecs_init.name}." >&2
-        exit 1
-      fi
-    EOT
+    interpreter = local.is_windows ? ["powershell", "-Command"] : ["/bin/bash", "-c"]
+    command     = local.is_windows ? local.windows_command : local.unix_command
   }
 
   depends_on = [
@@ -157,5 +135,8 @@ resource "null_resource" "run_init" {
     aws_iam_role_policy_attachment.ecs_execution_managed,
     aws_iam_role_policy_attachment.ecs_execution_secrets,
     aws_instance.data_host,
+    aws_route53_record.postgres_internal,
+    aws_route53_record.redis_internal,
+    aws_route53_record.clickhouse_internal,
   ]
 }
