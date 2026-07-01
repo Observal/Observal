@@ -17,6 +17,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as https from "node:https";
@@ -39,6 +40,22 @@ interface CursorEntry {
   last_pushed_at?: number;
 }
 
+interface LayerFileEntry {
+  path: string;
+  hash: string;
+  size: number;
+  source: string;
+  content?: string;
+}
+
+interface LayerSnapshot {
+  hash: string;
+  harnesses: Record<string, LayerFileEntry[]>;
+  lockfile_hash: string;
+  pinned_versions: Record<string, unknown>;
+  drift: Record<string, unknown>;
+}
+
 interface ObservalState {
   config: ObservalConfig | null;
   sessionFile: string | null;
@@ -46,6 +63,8 @@ interface ObservalState {
   byteOffset: number;
   lineCount: number;
   generation: number;
+  layerHash: string | null;
+  layerSnapshot: LayerSnapshot | null;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -53,10 +72,13 @@ interface ObservalState {
 const OBSERVAL_DIR = path.join(os.homedir(), ".observal");
 const CONFIG_PATH = path.join(OBSERVAL_DIR, "config.json");
 const SYNC_STATE_PATH = path.join(OBSERVAL_DIR, "sync_state.json");
+const LAYER_SNAPSHOT_PATH = path.join(OBSERVAL_DIR, "layer_snapshot.json");
+const LOCKFILE_PATH = path.join(OBSERVAL_DIR, "lockfile.json");
 const TIMEOUT_MS = 5_000;
 const MAX_LINES_PER_CHUNK = 500;
 const RECOVERY_MAX_SESSIONS = 5;
 const RECOVERY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_LAYER_FILE_SIZE = 512 * 1024;
 
 // ─── Extension Entry ─────────────────────────────────────────────────────────
 
@@ -65,6 +87,16 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (event, ctx) => {
     state = initState(ctx);
+
+    if (state.config && state.layerSnapshot) {
+      uploadLayerSnapshot(state.config, state.layerSnapshot)
+        .then((ok) => {
+          if (!ok && ctx.hasUI) ctx.ui.notify("Layer snapshot upload failed", "warning");
+        })
+        .catch((err) => {
+          if (ctx.hasUI) ctx.ui.notify(`Layer snapshot upload failed: ${err.message}`, "warning");
+        });
+    }
 
     // On fresh startup, attempt crash recovery (fire-and-forget)
     if (event.reason === "startup" && state.config) {
@@ -181,6 +213,12 @@ export default function (pi: ExtensionAPI) {
           } catch (err) {
             // ignore
           }
+
+          state.layerSnapshot = buildPiLayerSnapshot(true);
+          state.layerHash = state.layerSnapshot.hash;
+          if (!(await uploadLayerSnapshot(state.config, state.layerSnapshot))) {
+            ctx.ui.notify("Layer snapshot upload failed", "warning");
+          }
         }
 
         const ok = await ctx.ui.confirm("Agent Swapped", `Swapped to ${choice}. Reload session now?`);
@@ -233,7 +271,10 @@ export default function (pi: ExtensionAPI) {
       lineCount = cursor.line_count;
     }
 
-    return { config, sessionFile, sessionId, byteOffset, lineCount, generation: 0 };
+    const layerSnapshot = buildPiLayerSnapshot(true);
+    const layerHash = layerSnapshot.hash;
+
+    return { config, sessionFile, sessionId, byteOffset, lineCount, generation: 0, layerHash, layerSnapshot };
   }
 
   function loadConfig(): ObservalConfig | null {
@@ -249,6 +290,163 @@ export default function (pi: ExtensionAPI) {
     } catch {
       return null;
     }
+  }
+
+  function buildPiLayerSnapshot(includeContent: boolean): LayerSnapshot {
+    const piHome = path.join(os.homedir(), ".pi", "agent");
+    const files = discoverPiLayerFiles(piHome);
+    const manifest: LayerFileEntry[] = [];
+
+    for (const file of files) {
+      try {
+        const rel = path.relative(piHome, file).split(path.sep).join("/");
+        const content = fs.readFileSync(file);
+        const entry: LayerFileEntry = {
+          path: `user:${rel}`,
+          hash: `sha256-${sha256(content)}`,
+          size: content.length,
+          source: "user",
+        };
+        if (includeContent) {
+          entry.content = content.toString("utf-8");
+        }
+        manifest.push(entry);
+      } catch {
+        continue;
+      }
+    }
+
+    manifest.sort((a, b) => a.path.localeCompare(b.path));
+    const hashEntries = manifest.map((entry) => [`pi/${entry.path}`, entry.hash] as [string, string]);
+    const layerHash = hashEntries.length === 0 ? "0".repeat(16) : sha256(Buffer.from(pyJsonPairs(hashEntries))).slice(0, 16);
+
+    return {
+      hash: layerHash,
+      harnesses: { pi: manifest },
+      lockfile_hash: computeLockfileHash(),
+      pinned_versions: readPinnedVersions(),
+      drift: { is_canonical: true, drifted_files: [] },
+    };
+  }
+
+  function discoverPiLayerFiles(root: string): string[] {
+    if (!fs.existsSync(root)) return [];
+    let rootReal: string;
+    try {
+      rootReal = fs.realpathSync(root);
+    } catch {
+      return [];
+    }
+    const found: string[] = [];
+    const skipDirs = new Set([".git", "node_modules", "sessions"]);
+
+    function walk(dir: string): void {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() && skipDirs.has(entry.name)) continue;
+        const abs = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(abs);
+          continue;
+        }
+        if (!entry.isFile()) continue;
+
+        const rel = path.relative(root, abs).split(path.sep).join("/");
+        if (!isPiLayerFile(rel)) continue;
+
+        try {
+          const stat = fs.statSync(abs);
+          if (stat.size > MAX_LAYER_FILE_SIZE) continue;
+          const real = fs.realpathSync(abs);
+          if (real !== rootReal && !real.startsWith(`${rootReal}${path.sep}`)) continue;
+          found.push(abs);
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    try {
+      walk(root);
+    } catch {
+      return [];
+    }
+
+    return found.sort().slice(0, 200);
+  }
+
+  function isPiLayerFile(rel: string): boolean {
+    return ["AGENTS.md", "SYSTEM.md", "APPEND_SYSTEM.md", "mcp.json", "settings.json"].includes(rel)
+      || /^skills\/[^/]+\/SKILL\.md$/.test(rel)
+      || rel.startsWith("sandboxes/")
+      || /^agents\/[^/]+\/(AGENTS\.md|SYSTEM\.md|APPEND_SYSTEM\.md|mcp\.json)$/.test(rel)
+      || /^agents\/[^/]+\/skills\/[^/]+\/SKILL\.md$/.test(rel)
+      || /^agents\/[^/]+\/sandboxes\//.test(rel);
+  }
+
+  function sha256(content: Buffer): string {
+    return crypto.createHash("sha256").update(content).digest("hex");
+  }
+
+  function pyJsonPairs(entries: [string, string][]): string {
+    return `[${entries.map(([left, right]) => `[${JSON.stringify(left)}, ${JSON.stringify(right)}]`).join(", ")}]`;
+  }
+
+  function computeLockfileHash(): string {
+    try {
+      if (!fs.existsSync(LOCKFILE_PATH)) return "0".repeat(16);
+      return sha256(fs.readFileSync(LOCKFILE_PATH)).slice(0, 16);
+    } catch {
+      return "0".repeat(16);
+    }
+  }
+
+  function readPinnedVersions(): Record<string, unknown> {
+    try {
+      if (!fs.existsSync(LOCKFILE_PATH)) return { agents: [], standalone: [] };
+      const data = JSON.parse(fs.readFileSync(LOCKFILE_PATH, "utf-8"));
+      const agents: Record<string, unknown>[] = [];
+      const standalone: Record<string, unknown>[] = [];
+      for (const [harness, section] of Object.entries((data.harnesses ?? {}) as Record<string, any>)) {
+        for (const agent of section.agents ?? []) {
+          agents.push({ ...agent, harness });
+        }
+        for (const item of section.standalone ?? []) {
+          standalone.push({ ...item, harness });
+        }
+      }
+      return { agents, standalone };
+    } catch {
+      return { agents: [], standalone: [] };
+    }
+  }
+
+  function needsLayerUpload(hash: string): boolean {
+    try {
+      if (!fs.existsSync(LAYER_SNAPSHOT_PATH)) return true;
+      const data = JSON.parse(fs.readFileSync(LAYER_SNAPSHOT_PATH, "utf-8"));
+      return data.hash !== hash;
+    } catch {
+      return true;
+    }
+  }
+
+  function saveLayerSnapshot(snapshot: LayerSnapshot): void {
+    try {
+      const serialized = JSON.stringify(snapshot, null, 2);
+      if (serialized.length > 5 * 1024 * 1024) return;
+      fs.mkdirSync(OBSERVAL_DIR, { recursive: true });
+      fs.writeFileSync(LAYER_SNAPSHOT_PATH, `${serialized}\n`);
+    } catch {
+      return;
+    }
+  }
+
+  async function uploadLayerSnapshot(config: ObservalConfig, snapshot: LayerSnapshot): Promise<boolean> {
+    if (!needsLayerUpload(snapshot.hash)) return true;
+    const result = await postJsonWithTimeout(config, "/api/v1/layer-snapshots", JSON.stringify(snapshot));
+    if (result?.hash !== snapshot.hash) return false;
+    saveLayerSnapshot(snapshot);
+    return true;
   }
 
   function readCursor(sessionId: string): CursorEntry {
@@ -326,9 +524,10 @@ export default function (pi: ExtensionAPI) {
 
         const payload = JSON.stringify({
           session_id: s.sessionId,
-          ide: "pi",
+          harness: "pi",
           agent_id: s.config!.agent_id ?? null,
           agent_version: s.config!.agent_version ?? null,
+          layer_hash: s.layerHash,
           lines: chunk,
           start_offset: s.lineCount + offset,
           hook_event: opts.final && isLastChunk ? "SessionShutdown" : "AgentEnd",
@@ -508,9 +707,10 @@ export default function (pi: ExtensionAPI) {
             const isLastChunk = offset + MAX_LINES_PER_CHUNK >= lines.length;
             const payload = JSON.stringify({
               session_id: sessionId,
-              ide: "pi",
+              harness: "pi",
               agent_id: s.config?.agent_id ?? null,
               agent_version: s.config?.agent_version ?? null,
+              layer_hash: s.layerHash,
               lines: chunk,
               start_offset: entry.line_count + offset,
               hook_event: "CrashRecovery",

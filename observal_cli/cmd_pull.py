@@ -751,10 +751,13 @@ def register_pull(app: typer.Typer):
         for sc in skill_components:
             sc_name = _sanitize_name(sc.get("name", "skill"))
             git_url = sc.get("git_url")
+            skill_dest = None
+            if sc.get("path"):
+                skill_dest = _resolve_path(sc["path"], target_dir, allow_home=is_user_scope).parent
 
             if dry_run:
                 mode = "would clone" if git_url else "would write"
-                written.append((f"<skill:{sc_name}>", mode))
+                written.append((str(skill_dest) if skill_dest else f"<skill:{sc_name}>", mode))
                 continue
 
             if git_url:
@@ -767,6 +770,7 @@ def register_pull(app: typer.Typer):
                     scope=scope_str,
                     skill_md_content=sc.get("skill_md_content"),
                     cwd=target_dir,
+                    dest=skill_dest,
                 )
                 if result_path:
                     written.append((str(result_path), "cloned"))
@@ -783,6 +787,7 @@ def register_pull(app: typer.Typer):
                     ide=harness,
                     scope=scope_str,
                     cwd=target_dir,
+                    dest=skill_dest,
                 )
                 if result_path:
                     written.append((str(result_path), "installed"))

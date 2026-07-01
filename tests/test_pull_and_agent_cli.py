@@ -147,6 +147,24 @@ def _copilot_snippet() -> dict:
     }
 
 
+def _pi_snippet() -> dict:
+    return {
+        "config_snippet": {
+            "agent_profile": {
+                "path": ".pi/agents/my-agent/AGENTS.md",
+                "content": "# Pi Agent\n",
+            },
+            "skill_components": [
+                {
+                    "name": "pi-skill",
+                    "path": ".pi/agents/my-agent/skills/pi-skill/SKILL.md",
+                    "skill_md_content": "# Pi Skill\n",
+                }
+            ],
+        }
+    }
+
+
 def _opencode_snippet() -> dict:
     return {
         "config_snippet": {
@@ -396,6 +414,31 @@ class TestPullCopilot:
 # ═══════════════════════════════════════════════════════════════
 # 6b. OpenCode format
 # ═══════════════════════════════════════════════════════════════
+
+
+class TestPullPi:
+    def test_writes_skill_to_agent_profile_path(self, tmp_path: Path):
+        with _patch_config(), _patch_get_agent(), _patch_post(_pi_snippet()):
+            result = runner.invoke(
+                cli_app,
+                [
+                    "agent",
+                    "pull",
+                    "abc123",
+                    "--harness",
+                    "pi",
+                    "--dir",
+                    str(tmp_path),
+                    "--no-prompt",
+                    "--scope",
+                    "project",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        skill = tmp_path / ".pi" / "agents" / "my-agent" / "skills" / "pi-skill" / "SKILL.md"
+        assert skill.exists()
+        assert "Pi Skill" in skill.read_text()
 
 
 class TestPullOpenCode:

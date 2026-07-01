@@ -68,11 +68,14 @@ class PiAdapter:
 
         # ── Skills ──
         if ctx.skill_configs:
+            skill_path_spec = HARNESS_REGISTRY["pi"]["skills"]
+            skill_path = skill_path_spec.get(scope, skill_path_spec.get("user"))
             rewritten_skills = []
             for skill in ctx.skill_configs:
                 skill_copy = dict(skill)
-                if skill_copy.get("path"):
-                    skill_copy["path"] = _rewrite_path(skill_copy["path"])
+                name = skill_copy.get("name")
+                if skill_path and name:
+                    skill_copy["path"] = _rewrite_path(skill_path.format(name=name))
                 rewritten_skills.append(skill_copy)
             result["skill_components"] = rewritten_skills
 

@@ -597,6 +597,7 @@ def install_skill_registry_direct(
     ide: str = "claude-code",
     scope: str = "user",
     cwd: Path | None = None,
+    dest: Path | None = None,
 ) -> Path | None:
     """Install a registry_direct skill: write SKILL.md and optional script.
 
@@ -604,15 +605,17 @@ def install_skill_registry_direct(
     Returns the destination Path on success, None on failure.
     """
     skill_name = _sanitize_name(name)
+    custom_dest = dest is not None
 
-    if scope == "user":
-        dest = _user_skill_dest(ide, skill_name)
-    else:
-        base = (cwd or Path.cwd()) / ".agents" / "skills"
-        dest = base / skill_name
-        if not _is_path_safe(dest, base):
-            rprint(f"[red]\u2717 Unsafe skill name (path traversal detected):[/red] {skill_name!r}")
-            return None
+    if dest is None:
+        if scope == "user":
+            dest = _user_skill_dest(ide, skill_name)
+        else:
+            base = (cwd or Path.cwd()) / ".agents" / "skills"
+            dest = base / skill_name
+            if not _is_path_safe(dest, base):
+                rprint(f"[red]✗ Unsafe skill name (path traversal detected):[/red] {skill_name!r}")
+                return None
 
     if not skill_md_content:
         rprint("[yellow]\u26a0 No SKILL.md content available to write.[/yellow]")
@@ -637,7 +640,7 @@ def install_skill_registry_direct(
                 os.chmod(script_path, 0o755)
             rprint(f"[green]\u2713 Wrote script:[/green] {script_path}")
 
-    if scope == "project":
+    if scope == "project" and not custom_dest:
         _symlink_for_ides(cwd or Path.cwd(), dest, skill_name)
 
     return dest
@@ -653,6 +656,7 @@ def install_skill_from_git(
     scope: str = "user",
     skill_md_content: str | None = None,
     cwd: Path | None = None,
+    dest: Path | None = None,
 ) -> Path | None:
     """Core skill install logic - clone full directory from git.
 
@@ -661,15 +665,17 @@ def install_skill_from_git(
     Returns the destination Path on success, None on failure.
     """
     skill_name = _sanitize_name(name)
+    custom_dest = dest is not None
 
-    if scope == "user":
-        dest = _user_skill_dest(ide, skill_name)
-    else:
-        base = (cwd or Path.cwd()) / ".agents" / "skills"
-        dest = base / skill_name
-        if not _is_path_safe(dest, base):
-            rprint(f"[red]\u2717 Unsafe skill name (path traversal detected):[/red] {skill_name!r}")
-            return None
+    if dest is None:
+        if scope == "user":
+            dest = _user_skill_dest(ide, skill_name)
+        else:
+            base = (cwd or Path.cwd()) / ".agents" / "skills"
+            dest = base / skill_name
+            if not _is_path_safe(dest, base):
+                rprint(f"[red]✗ Unsafe skill name (path traversal detected):[/red] {skill_name!r}")
+                return None
 
     wrote_full_dir = False
 
@@ -678,7 +684,7 @@ def install_skill_from_git(
         wrote_full_dir = _sparse_clone_skill_dir(git_url, skill_path, git_ref, dest)
         if wrote_full_dir:
             rprint(f"[green]\u2713 Skill directory written:[/green] {dest}")
-            if scope == "project":
+            if scope == "project" and not custom_dest:
                 _symlink_for_ides(cwd or Path.cwd(), dest, skill_name)
             return dest
         rprint("[yellow]\u26a0 git clone failed.[/yellow] Falling back to SKILL.md cache.")

@@ -209,6 +209,22 @@ class TestActiveIdeDetection:
 
         assert _detect_active_harnesses() == ["cursor", "codex", "pi"]
 
+    def test_pi_layer_manifest_includes_isolated_agent_profiles(self, tmp_path, monkeypatch):
+        from observal_cli.layer import build_layer_manifest
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        pi_home = tmp_path / ".pi" / "agent"
+        (pi_home / "agents" / "my-agent" / "skills" / "pi-skill").mkdir(parents=True)
+        (pi_home / "agents" / "my-agent" / "AGENTS.md").write_text("# Agent")
+        (pi_home / "agents" / "my-agent" / "mcp.json").write_text("{}")
+        (pi_home / "agents" / "my-agent" / "skills" / "pi-skill" / "SKILL.md").write_text("# Skill")
+
+        paths = {entry["path"] for entry in build_layer_manifest("pi")}
+
+        assert "user:agents/my-agent/AGENTS.md" in paths
+        assert "user:agents/my-agent/mcp.json" in paths
+        assert "user:agents/my-agent/skills/pi-skill/SKILL.md" in paths
+
 
 class TestAdapterProtocol:
     """Test that each adapter satisfies the protocol interface."""
