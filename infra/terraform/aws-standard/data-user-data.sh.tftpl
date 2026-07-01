@@ -36,8 +36,6 @@ mkdir -p /data
 UUID=$(blkid -s UUID -o value "$DEVICE")
 grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /data ext4 defaults,nofail 0 2" >> /etc/fstab
 mount -a
-# Ensure a clean database init directory by wiping any corrupted data from prior runs
-rm -rf /data/postgres/*
 mkdir -p /data/postgres /data/redis /data/clickhouse
 %{ if observability_grafana_enabled }
 mkdir -p /data/grafana
