@@ -288,7 +288,7 @@ def prompt_render(
     variables = {}
     for v in var:
         k, _, val = v.partition("=")
-        variables[k] = val
+        variables[k] = val.strip("\"'")
     with spinner("Rendering prompt..."):
         result = client.post(f"/api/v1/prompts/{resolved}/render", {"variables": variables})
     rprint(result.get("rendered", result))

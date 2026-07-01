@@ -587,14 +587,14 @@ def register_pull(app: typer.Typer):
         for item in env or []:
             k, _, v = item.partition("=")
             if k:
-                env_overrides[k.strip()] = v
+                env_overrides[k.strip()] = v.strip("\"'")
 
         # Parse --header flags into overrides dict
         header_overrides: dict[str, str] = {}
         for item in header or []:
             k, _, v = item.partition("=")
             if k:
-                header_overrides[k.strip()] = v
+                header_overrides[k.strip()] = v.strip("\"'")
 
         # Fetch agent details to discover MCP env vars
         with spinner("Fetching agent details..."):
