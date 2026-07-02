@@ -544,9 +544,12 @@ def fetch_all_releases(include_pre: bool = False) -> list[dict]:
 
 
 def check_version_compatibility(server_url: str) -> None:
-    """Enforce exact CLI/server version match.
+    """Enforce forward-compatible CLI/server version policy.
 
-    The server version is the canonical target. CLI must match it exactly.
+    Compatibility rules:
+    - Same major version and CLI >= server: allowed (newer CLI is backward-compatible)
+    - CLI behind server (same major): blocked (missing API features)
+    - Different major version: blocked (breaking changes)
 
     Reads from the local version cache first (populated by auto-update check)
     to avoid a duplicate network call. Falls back to a fresh fetch if needed.
@@ -584,19 +587,27 @@ def check_version_compatibility(server_url: str) -> None:
     except InvalidVersion:
         return
 
-    if cli_v == srv_v:
+    # Same major and CLI >= server: forward-compatible, allow
+    if cli_v.major == srv_v.major and cli_v >= srv_v:
         return
 
     from observal_cli.install_detector import upgrade_command
 
     install_command = upgrade_command(server_ver)
-    direction = "ahead of" if cli_v > srv_v else "behind"
-    rprint(
-        f"\n[bold red]\u2716 CLI version {cli_ver_str} is {direction} server {server_ver}.[/bold red]\n"
-        f"  The server is the source of truth for versioning.\n"
-        f"  Install the matching CLI before connecting:\n\n"
-        f"    [cyan]{install_command}[/cyan]\n"
-    )
+
+    if cli_v.major != srv_v.major:
+        rprint(
+            f"\n[bold red]\u2716 CLI version {cli_ver_str} is incompatible with server {server_ver} "
+            f"(major version mismatch).[/bold red]\n"
+            f"  Install a compatible CLI:\n\n"
+            f"    [cyan]{install_command}[/cyan]\n"
+        )
+    else:
+        rprint(
+            f"\n[bold red]\u2716 CLI version {cli_ver_str} is behind server {server_ver}.[/bold red]\n"
+            f"  Upgrade the CLI to connect:\n\n"
+            f"    [cyan]{install_command}[/cyan]\n"
+        )
     raise typer.Exit(1)
 
 

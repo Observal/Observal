@@ -228,7 +228,11 @@ def configure_version_middleware(app: FastAPI) -> None:
                 try:
                     client_ver = Version(cli_ver_str)
                     server_version = Version(server_ver)
-                    if client_ver != server_version:
+                    # Allow newer CLI within same major (forward-compatible).
+                    # Block if CLI is behind or major version differs.
+                    if client_ver.major != server_version.major:
+                        return _cli_version_response(server_ver, cli_ver_str)
+                    if client_ver < server_version:
                         return _cli_version_response(server_ver, cli_ver_str)
                     effective = str(server_version)
                 except InvalidVersion:

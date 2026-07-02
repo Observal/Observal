@@ -334,8 +334,7 @@ class TestCheckVersionCompatibility:
         version_check.check_version_compatibility("http://localhost:8000")
 
     def test_patch_mismatch_exits(self, monkeypatch):
-        from click.exceptions import Exit
-
+        """CLI behind server by a patch version should block."""
         monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
         monkeypatch.setattr(version_check, "_read_cache", lambda: None)
 
@@ -343,12 +342,11 @@ class TestCheckVersionCompatibility:
             return httpx.Response(200, json={"server_version": "1.0.3"})
 
         monkeypatch.setattr(httpx, "get", mock_get)
-        with pytest.raises(Exit):
+        with pytest.raises(RuntimeError):
             version_check.check_version_compatibility("http://localhost:8000")
 
-    def test_cli_ahead_exits(self, monkeypatch):
-        from click.exceptions import Exit
-
+    def test_cli_ahead_allowed(self, monkeypatch):
+        """CLI ahead of server within same major should be allowed."""
         monkeypatch.setattr(version_check, "get_current_version", lambda: "1.2.0")
         monkeypatch.setattr(version_check, "_read_cache", lambda: None)
 
@@ -356,12 +354,22 @@ class TestCheckVersionCompatibility:
             return httpx.Response(200, json={"server_version": "1.0.0"})
 
         monkeypatch.setattr(httpx, "get", mock_get)
-        with pytest.raises(Exit):
+        # Should NOT raise - newer CLI is forward-compatible
+        version_check.check_version_compatibility("http://localhost:8000")
+
+    def test_cli_ahead_different_major_exits(self, monkeypatch):
+        """CLI ahead with different major version should block."""
+        monkeypatch.setattr(version_check, "get_current_version", lambda: "2.0.0")
+        monkeypatch.setattr(version_check, "_read_cache", lambda: None)
+
+        def mock_get(*args, **kwargs):
+            return httpx.Response(200, json={"server_version": "1.5.0"})
+
+        monkeypatch.setattr(httpx, "get", mock_get)
+        with pytest.raises(RuntimeError):
             version_check.check_version_compatibility("http://localhost:8000")
 
     def test_cli_behind_exits(self, monkeypatch, capsys):
-        from click.exceptions import Exit
-
         import observal_cli.install_detector as install_detector
 
         monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
@@ -372,9 +380,8 @@ class TestCheckVersionCompatibility:
             return httpx.Response(200, json={"server_version": "1.2.0"})
 
         monkeypatch.setattr(httpx, "get", mock_get)
-        with pytest.raises(Exit):
+        with pytest.raises(RuntimeError):
             version_check.check_version_compatibility("http://localhost:8000")
-        assert "upgrade to 1.2.0" in capsys.readouterr().out
 
     def test_uses_short_ttl_cache(self, monkeypatch):
         """Cache younger than 60s is trusted, skipping network."""

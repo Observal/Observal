@@ -77,7 +77,13 @@ def _prompt_password(prompt_text: str = "New password") -> str:
 
 
 def _ensure_cli_matches_server(server_url: str) -> None:
-    """Block login when the CLI does not exactly match the server."""
+    """Block login when the CLI is incompatible with the server.
+
+    Compatibility policy (forward-compatible):
+    - Same major version and CLI >= server: allowed (newer CLI talks to older server)
+    - CLI behind server (same major): blocked (server may use APIs the CLI lacks)
+    - Different major version: blocked (breaking API changes expected)
+    """
     from packaging.version import InvalidVersion, Version
 
     from observal_cli.version_check import get_current_version
@@ -102,18 +108,27 @@ def _ensure_cli_matches_server(server_url: str) -> None:
     except InvalidVersion:
         return
 
-    if cli_version == server_version:
+    # Same major and CLI >= server: forward-compatible, allow
+    if cli_version.major == server_version.major and cli_version >= server_version:
         return
 
     from observal_cli.install_detector import upgrade_command
 
     install_command = upgrade_command(server_ver)
-    direction = "ahead of" if cli_version > server_version else "behind"
-    rprint(
-        f"\n[bold red]CLI version {cli_ver_str} is {direction} server {server_ver}.[/bold red]\n"
-        f"  Install the matching CLI before logging in:\n\n"
-        f"    [cyan]{install_command}[/cyan]\n"
-    )
+
+    if cli_version.major != server_version.major:
+        rprint(
+            f"\n[bold red]CLI version {cli_ver_str} is incompatible with server {server_ver} "
+            f"(major version mismatch).[/bold red]\n"
+            f"  Install a compatible CLI:\n\n"
+            f"    [cyan]{install_command}[/cyan]\n"
+        )
+    else:
+        rprint(
+            f"\n[bold red]CLI version {cli_ver_str} is behind server {server_ver}.[/bold red]\n"
+            f"  Upgrade the CLI to connect:\n\n"
+            f"    [cyan]{install_command}[/cyan]\n"
+        )
     raise typer.Exit(1)
 
 
