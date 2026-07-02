@@ -59,6 +59,7 @@
 
 ## Integrations
 
+* [Copilot](integrations/copilot.md)
 * [Kiro](integrations/kiro.md)
 * [OpenCode](integrations/opencode.md)
 
