@@ -60,6 +60,7 @@
 ## Integrations
 
 * [Copilot](integrations/copilot.md)
+* [Cursor](integrations/cursor.md)
 * [Kiro](integrations/kiro.md)
 * [OpenCode](integrations/opencode.md)
 
