@@ -324,6 +324,10 @@ Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://gith
  </picture>
 </a>
 
+## Integrations
+
+- [Cursor IDE](docs/integrations/cursor.md) — hook bridge, MCP servers, rules, and full scanning support.
+
 ## License
 
 GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
