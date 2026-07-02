@@ -59,6 +59,7 @@
 
 ## Integrations
 
+* [Cursor](integrations/cursor.md)
 * [Kiro](integrations/kiro.md)
 * [OpenCode](integrations/opencode.md)
 
