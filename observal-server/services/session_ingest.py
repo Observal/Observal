@@ -188,7 +188,7 @@ def _extract_uuid(parsed: dict, harness: str = "claude-code") -> tuple[str | Non
 
 
 # ---------------------------------------------------------------------------
-# Agent ID resolution (name -> UUID)
+# Agent attribution resolution
 # ---------------------------------------------------------------------------
 
 
@@ -257,6 +257,51 @@ async def _resolve_agent_id(agent_id: str | None) -> str | None:
     return resolved if resolved else agent_id
 
 
+async def _resolve_agent_version(agent_id: str | None, agent_version: str | None) -> str | None:
+    """Resolve the mutable latest alias to the agent's current version."""
+    if agent_version != "latest" or not agent_id or not _is_uuid(agent_id):
+        return agent_version
+
+    from services.redis import get_redis
+
+    cache_key = f"agent_version_resolve:{agent_id}:latest"
+    redis = None
+    try:
+        redis = get_redis()
+        cached = await redis.get(cache_key)
+        if cached is not None:
+            return cached if cached != "__none__" else agent_version
+    except Exception as e:
+        optic.trace("Redis cache read failed for agent version resolution: {}", e)
+
+    from sqlalchemy import select
+
+    from database import async_session
+    from models.agent import Agent, AgentVersion
+
+    resolved = None
+    try:
+        async with async_session() as db:
+            stmt = (
+                select(AgentVersion.version)
+                .join(Agent, Agent.latest_version_id == AgentVersion.id)
+                .where(Agent.id == _uuid.UUID(agent_id))
+                .limit(1)
+            )
+            result = await db.execute(stmt)
+            resolved = result.scalar_one_or_none()
+    except Exception as e:
+        optic.warning("agent_version resolution failed: {}", e)
+
+    if redis:
+        try:
+            await redis.setex(cache_key, 300, resolved or "__none__")
+        except Exception as e:
+            optic.trace("Redis cache write failed for agent version resolution: {}", e)
+
+    return resolved if resolved else agent_version
+
+
 @dataclass
 class IngestResult:
     ingested: int
@@ -309,9 +354,9 @@ async def ingest_session_lines(
     """
     optic.trace("ingesting session lines for session {}", session_id)
 
-    # Normalize agent_id: resolve human-readable names to UUIDs so that
-    # downstream queries (insights, exec dashboard) can match by UUID.
+    # Normalize agent_id and agent_version so downstream queries match canonical versions.
     agent_id = await _resolve_agent_id(agent_id)
+    agent_version = await _resolve_agent_version(agent_id, agent_version)
 
     ingested = 0
     skipped = 0

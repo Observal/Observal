@@ -200,14 +200,20 @@ export default function (pi: ExtensionAPI) {
         applyProfile(choice);
         
         if (state?.config) {
-          state.config.agent_id = choice === "default" ? undefined : choice;
+          const binding = resolvePiAgentBinding(choice);
+          state.config.agent_id = choice === "default" ? undefined : binding.id;
+          state.config.agent_version = choice === "default" ? undefined : binding.version;
           try {
             const configRaw = fs.readFileSync(CONFIG_PATH, "utf-8");
             const configJson = JSON.parse(configRaw);
             if (choice === "default") {
               delete configJson.active_agent;
             } else {
-              configJson.active_agent = { id: choice, version: "latest" };
+              configJson.active_agent = {
+                id: binding.id,
+                name: binding.name,
+                ...(binding.version ? { version: binding.version } : {}),
+              };
             }
             fs.writeFileSync(CONFIG_PATH, JSON.stringify(configJson, null, 2));
           } catch (err) {
@@ -284,12 +290,50 @@ export default function (pi: ExtensionAPI) {
       const data = JSON.parse(raw);
       if (!data.server_url || !data.access_token) return null;
       const config: ObservalConfig = { server_url: data.server_url, access_token: data.access_token };
-      if (data.active_agent?.id) config.agent_id = data.active_agent.id;
-      if (data.active_agent?.version) config.agent_version = data.active_agent.version;
+      if (data.active_agent?.id) {
+        const binding = resolvePiAgentBinding(String(data.active_agent.id), data.active_agent.name, data.active_agent.version);
+        config.agent_id = binding.id;
+        if (binding.version) config.agent_version = binding.version;
+      }
       return config;
     } catch {
       return null;
     }
+  }
+
+  function resolvePiAgentBinding(agent: string, rawName?: unknown, rawVersion?: unknown): { id: string; name: string; version?: string } {
+    const name = typeof rawName === "string" && rawName.trim() ? rawName.trim() : agent;
+    const entry = findPiLockfileAgent(agent, name);
+    return {
+      id: typeof entry?.id === "string" && entry.id.trim() ? entry.id : agent,
+      name: typeof entry?.name === "string" && entry.name.trim() ? entry.name : name,
+      version: normalizeAgentVersion(entry?.version) ?? normalizeAgentVersion(rawVersion),
+    };
+  }
+
+  function findPiLockfileAgent(agent: string, name: string): Record<string, any> | null {
+    try {
+      if (!fs.existsSync(LOCKFILE_PATH)) return null;
+      const data = JSON.parse(fs.readFileSync(LOCKFILE_PATH, "utf-8"));
+      const agents = data.harnesses?.pi?.agents;
+      if (!Array.isArray(agents)) return null;
+      const keys = new Set([agent, name, safeAgentName(agent), safeAgentName(name)].filter(Boolean));
+      return agents.find((item) => keys.has(String(item?.id ?? "")))
+        ?? agents.find((item) => keys.has(String(item?.name ?? "")) || keys.has(safeAgentName(String(item?.name ?? ""))))
+        ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeAgentVersion(version: unknown): string | undefined {
+    if (typeof version !== "string") return undefined;
+    const trimmed = version.trim();
+    return trimmed && trimmed !== "latest" ? trimmed : undefined;
+  }
+
+  function safeAgentName(name: string): string {
+    return name.replace(/[^a-zA-Z0-9_-]/g, "-");
   }
 
   function buildPiLayerSnapshot(includeContent: boolean): LayerSnapshot {
