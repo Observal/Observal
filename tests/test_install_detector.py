@@ -122,3 +122,7 @@ class TestUpgradeCommand:
             "curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh "
             "| bash -s -- --version v1.2.0"
         )
+
+    def test_unknown_command_uses_noninteractive_self_upgrade(self):
+        info = InstallInfo(InstallMethod.UNKNOWN, Path("/fake/observal"), True, None)
+        assert upgrade_command("1.2.0", info) == "observal self upgrade --version 1.2.0 --force"

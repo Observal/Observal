@@ -28,12 +28,14 @@ Not a Typer command. No flags needed.
 
 ```bash
 observal self status
-observal self upgrade
-observal self upgrade --version 2.5.0
+observal self upgrade --force
+observal self upgrade --version 2.5.0 --force
 observal self downgrade --list
-observal self downgrade --version 2.4.0
+observal self downgrade --version 2.4.0 --force
 observal self rollback
 ```
+
+Use `--force` when running upgrades or downgrades from an agent so the command is non-interactive.
 
 ---
 

@@ -72,7 +72,7 @@ def upgrade_command(target_version: str, install_info: InstallInfo | None = None
         return "brew upgrade observal"
     if info.method == InstallMethod.SYSTEM_PACKAGE and info.managed_by:
         return f"{info.managed_by} upgrade observal"
-    return f"observal self upgrade --version {target_version}"
+    return f"observal self upgrade --version {target_version} --force"
 
 
 def _detect_from_path(binary_path: Path, path_str: str) -> InstallInfo:
