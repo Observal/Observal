@@ -29,7 +29,7 @@ class EnterpriseGuardMiddleware(BaseHTTPMiddleware):
     so settings changes via the UI take effect immediately across all workers.
     """
 
-    def __init__(self, app, settings: "Settings") -> None:
+    def __init__(self, app, settings: Settings) -> None:
         super().__init__(app)
         self._settings = settings
 
