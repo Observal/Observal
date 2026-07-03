@@ -202,7 +202,7 @@ CHPROF
 cat > "$INSTALL_DIR/docker-compose.data.yml" <<'COMPOSE'
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:24.12
+    image: clickhouse/clickhouse-server:26.6
     container_name: observal-clickhouse
     restart: unless-stopped
     ports:
