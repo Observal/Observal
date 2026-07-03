@@ -136,12 +136,14 @@ resource "aws_ecs_task_definition" "web" {
     image        = local.web_image
     essential    = true
     portMappings = [{ containerPort = 3000, protocol = "tcp" }]
-    # Override entrypoint to write ECS-safe nginx config (no proxy_pass to
-    # Docker Compose hostnames that don't exist in ECS). The ALB routes
-    # /api/* and /auth/* to the API target group before reaching this container.
+    # Override entrypoint to skip nginx's docker-entrypoint.sh which runs
+    # envsubst on config files (breaks $uri/$uri/ in nginx directives).
+    # Write ECS-safe nginx config (no proxy_pass to Docker Compose hostnames
+    # that don't exist in ECS). The ALB routes /api/* and /auth/* to the
+    # API target group before reaching this container.
+    entryPoint = ["/bin/sh", "-c"]
     command = [
-      "/bin/sh", "-c",
-      "printf 'server {\\n  listen 3000;\\n  root /usr/share/nginx/html;\\n  index index.html;\\n  location /assets/ {\\n    expires 1y;\\n    add_header Cache-Control \"public, immutable\" always;\\n  }\\n  location / {\\n    try_files $$uri $$uri/ /index.html;\\n  }\\n}\\n' > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+      "printf 'server {\\n  listen 3000;\\n  root /usr/share/nginx/html;\\n  index index.html;\\n  location /assets/ {\\n    expires 1y;\\n    add_header Cache-Control \"public, immutable\" always;\\n  }\\n  location / {\\n    try_files $uri $uri/ /index.html;\\n  }\\n}\\n' > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
     ]
     environment = [
       { name = "NEXT_PUBLIC_API_URL", value = local.app_url },
