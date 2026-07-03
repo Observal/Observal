@@ -51,6 +51,9 @@ def validate_enterprise_config(settings: Settings) -> list[str]:
             saml_cert = ds.get_sync("saml.idp_x509_cert")
             if not saml_cert:
                 issues.append("saml.idp_x509_cert is not set (required when SAML IdP is configured)")
+            sp_enc_pw = ds.get_sync("saml.sp_key_encryption_password")
+            if not sp_enc_pw:
+                issues.append("saml.sp_key_encryption_password is not set (required when SAML IdP is configured)")
             sp_acs = ds.get_sync("saml.sp_acs_url")
             if sp_acs and not sp_acs.startswith("https://"):
                 issues.append("saml.sp_acs_url should use HTTPS for production deployments")
@@ -91,6 +94,8 @@ async def validate_enterprise_config_async(settings: Settings) -> list[str]:
         if saml_entity and saml_sso:
             if not await ds.get("saml.idp_x509_cert"):
                 issues.append("saml.idp_x509_cert is not set (required when SAML IdP is configured)")
+            if not await ds.get("saml.sp_key_encryption_password"):
+                issues.append("saml.sp_key_encryption_password is not set (required when SAML IdP is configured)")
             sp_acs = await ds.get("saml.sp_acs_url")
             if sp_acs and not sp_acs.startswith("https://"):
                 issues.append("saml.sp_acs_url should use HTTPS for production deployments")
