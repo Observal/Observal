@@ -36,7 +36,11 @@ WORKDIR /app/web
 RUN pnpm run build
 
 FROM nginx:alpine AS runner
+# NGINX_CONF selects the nginx config to bake in.
+# - docker/nginx-spa.conf     (default) — includes proxy_pass for Docker Compose
+# - docker/nginx-spa-ecs.conf            — SPA-only, no upstream (for ECS/Fargate)
+ARG NGINX_CONF=docker/nginx-spa.conf
 COPY --from=builder /app/web/dist /usr/share/nginx/html
-COPY docker/nginx-spa.conf /etc/nginx/conf.d/default.conf
+COPY ${NGINX_CONF} /etc/nginx/conf.d/default.conf
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]

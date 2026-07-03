@@ -209,6 +209,13 @@ resource "aws_ecs_task_definition" "web" {
     image        = local.web_image
     essential    = true
     portMappings = [{ containerPort = 3000, protocol = "tcp" }]
+    # Override entrypoint to write ECS-safe nginx config (no proxy_pass to
+    # Docker Compose hostnames that don't exist in Fargate). The ALB routes
+    # /api/* and /auth/* to the API target group before reaching this container.
+    command = [
+      "/bin/sh", "-c",
+      "printf 'server {\\n  listen 3000;\\n  root /usr/share/nginx/html;\\n  index index.html;\\n  location /assets/ {\\n    expires 1y;\\n    add_header Cache-Control \"public, immutable\" always;\\n  }\\n  location / {\\n    try_files $$uri $$uri/ /index.html;\\n  }\\n}\\n' > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+    ]
     environment = [
       { name = "NEXT_PUBLIC_API_URL", value = local.app_url },
       { name = "PORT", value = "3000" },
@@ -235,6 +242,7 @@ resource "aws_ecs_task_definition" "web" {
         { containerPath = "/tmp", size = 64, mountOptions = ["rw"] },
         { containerPath = "/var/cache/nginx", size = 64, mountOptions = ["rw"] },
         { containerPath = "/var/run", size = 8, mountOptions = ["rw"] },
+        { containerPath = "/etc/nginx/conf.d", size = 8, mountOptions = ["rw"] },
       ]
     }
   }])
