@@ -4,7 +4,7 @@
 # Cursor
 
 Cursor is a first-class Observal harness integration. Observal can install Cursor agents,
-configure MCP servers, expose rules, and collect Cursor session telemetry.
+configure MCP servers, and collect Cursor session telemetry.
 
 ---
 
@@ -13,7 +13,7 @@ configure MCP servers, expose rules, and collect Cursor session telemetry.
 Cursor agent profiles are Markdown files. Project agents live in `.cursor/agents/`.
 User agents live in `~/.cursor/agents/`.
 
-Cursor supports project and user installation scopes. MCP servers, rules, hooks,
+Cursor supports project and user installation scopes. MCP servers, hooks,
 and agent profiles are managed under the `.cursor` configuration directory.
 
 ---
@@ -25,7 +25,6 @@ and agent profiles are managed under the `.cursor` configuration directory.
 | Agent profiles  | Project and user scope                                      |
 | Hook bridge     | Supported                                                   |
 | MCP servers     | `.cursor/mcp.json` and `~/.cursor/mcp.json`                 |
-| Rules           | `.cursor/rules/{name}.mdc` and `~/.cursor/rules/{name}.mdc` |
 | Session parsing | Built-in Cursor session parser                              |
 | Default scope   | Project                                                     |
 
@@ -73,7 +72,6 @@ User agents are written to `~/.cursor/agents/{name}.md`.
 | ------------- | -------------------------------- | ---------------------------------- |
 | Agent profile | `.cursor/agents/{name}.md`       | `~/.cursor/agents/{name}.md`       |
 | MCP config    | `.cursor/mcp.json`               | `~/.cursor/mcp.json`               |
-| Rules         | `.cursor/rules/{name}.mdc`       | `~/.cursor/rules/{name}.mdc`       |
 | Skills        | `.cursor/skills/{name}/SKILL.md` | `~/.cursor/skills/{name}/SKILL.md` |
 | Hook config   | `.cursor/hooks.json`             | `~/.cursor/hooks.json`             |
 
@@ -108,7 +106,7 @@ Cursor uses the built-in `cursor` session parser.
 writes to `.cursor/agents/` unless `--scope user` is specified.
 
 **Configuration lives under `.cursor`.** Agent profiles, MCP configuration,
-rules, skills, and hooks are stored in the `.cursor` directory for project
+skills, and hooks are stored in the `.cursor` directory for project
 installs and under `~/.cursor` for user installs.
 
 **Auto model sentinel configuration is not available.**
