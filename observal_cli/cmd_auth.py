@@ -77,12 +77,11 @@ def _prompt_password(prompt_text: str = "New password") -> str:
 
 
 def _ensure_cli_matches_server(server_url: str) -> None:
-    """Block login when the CLI is incompatible with the server.
+    """Block login when the CLI does not exactly match the server version.
 
-    Compatibility policy (forward-compatible):
-    - Same major version and CLI >= server: allowed (newer CLI talks to older server)
-    - CLI behind server (same major): blocked (server may use APIs the CLI lacks)
-    - Different major version: blocked (breaking API changes expected)
+    The server is the source of truth. CLI pings the server to get its
+    version, then requires an exact match. Shows the correct upgrade or
+    downgrade command so the user knows exactly what to run.
     """
     from packaging.version import InvalidVersion, Version
 
@@ -108,25 +107,23 @@ def _ensure_cli_matches_server(server_url: str) -> None:
     except InvalidVersion:
         return
 
-    # Same major and CLI >= server: forward-compatible, allow
-    if cli_version.major == server_version.major and cli_version >= server_version:
+    if cli_version == server_version:
         return
 
     from observal_cli.install_detector import upgrade_command
 
-    install_command = upgrade_command(server_ver)
-
-    if cli_version.major != server_version.major:
+    if cli_version > server_version:
+        install_command = f"observal self downgrade --version {server_ver}"
         rprint(
-            f"\n[bold red]CLI version {cli_ver_str} is incompatible with server {server_ver} "
-            f"(major version mismatch).[/bold red]\n"
-            f"  Install a compatible CLI:\n\n"
+            f"\n[bold red]CLI version {cli_ver_str} is ahead of server {server_ver}.[/bold red]\n"
+            f"  Downgrade the CLI to match your server:\n\n"
             f"    [cyan]{install_command}[/cyan]\n"
         )
     else:
+        install_command = upgrade_command(server_ver)
         rprint(
             f"\n[bold red]CLI version {cli_ver_str} is behind server {server_ver}.[/bold red]\n"
-            f"  Upgrade the CLI to connect:\n\n"
+            f"  Upgrade the CLI to match your server:\n\n"
             f"    [cyan]{install_command}[/cyan]\n"
         )
     raise typer.Exit(1)

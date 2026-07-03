@@ -345,8 +345,8 @@ class TestCheckVersionCompatibility:
         with pytest.raises(RuntimeError):
             version_check.check_version_compatibility("http://localhost:8000")
 
-    def test_cli_ahead_allowed(self, monkeypatch):
-        """CLI ahead of server within same major should be allowed."""
+    def test_cli_ahead_exits(self, monkeypatch):
+        """CLI ahead of server should also block (strict match)."""
         monkeypatch.setattr(version_check, "get_current_version", lambda: "1.2.0")
         monkeypatch.setattr(version_check, "_read_cache", lambda: None)
 
@@ -354,8 +354,8 @@ class TestCheckVersionCompatibility:
             return httpx.Response(200, json={"server_version": "1.0.0"})
 
         monkeypatch.setattr(httpx, "get", mock_get)
-        # Should NOT raise - newer CLI is forward-compatible
-        version_check.check_version_compatibility("http://localhost:8000")
+        with pytest.raises(RuntimeError):
+            version_check.check_version_compatibility("http://localhost:8000")
 
     def test_cli_ahead_different_major_exits(self, monkeypatch):
         """CLI ahead with different major version should block."""

@@ -544,12 +544,11 @@ def fetch_all_releases(include_pre: bool = False) -> list[dict]:
 
 
 def check_version_compatibility(server_url: str) -> None:
-    """Enforce forward-compatible CLI/server version policy.
+    """Enforce exact CLI/server version match.
 
-    Compatibility rules:
-    - Same major version and CLI >= server: allowed (newer CLI is backward-compatible)
-    - CLI behind server (same major): blocked (missing API features)
-    - Different major version: blocked (breaking changes)
+    The server version is the canonical target. CLI pings the server to
+    get its version, then requires an exact match. Shows the correct
+    upgrade or downgrade command based on which direction the mismatch is.
 
     Reads from the local version cache first (populated by auto-update check)
     to avoid a duplicate network call. Falls back to a fresh fetch if needed.
@@ -562,7 +561,7 @@ def check_version_compatibility(server_url: str) -> None:
     if cli_ver_str == "0.0.0":
         return  # dev install, skip check
 
-    # Use cache if fresh (< 60s), otherwise fetch live.
+    # Use cache if fresh (< 60s), otherwise fetch live from the server.
     server_ver = None
     cache = _read_cache()
     if cache and cache.get("server_version") and cache.get("source") == "server" and not _should_check(cache, 60):
@@ -587,25 +586,23 @@ def check_version_compatibility(server_url: str) -> None:
     except InvalidVersion:
         return
 
-    # Same major and CLI >= server: forward-compatible, allow
-    if cli_v.major == srv_v.major and cli_v >= srv_v:
+    if cli_v == srv_v:
         return
 
     from observal_cli.install_detector import upgrade_command
 
-    install_command = upgrade_command(server_ver)
-
-    if cli_v.major != srv_v.major:
+    if cli_v > srv_v:
+        install_command = f"observal self downgrade --version {server_ver}"
         rprint(
-            f"\n[bold red]\u2716 CLI version {cli_ver_str} is incompatible with server {server_ver} "
-            f"(major version mismatch).[/bold red]\n"
-            f"  Install a compatible CLI:\n\n"
+            f"\n[bold red]\u2716 CLI version {cli_ver_str} is ahead of server {server_ver}.[/bold red]\n"
+            f"  Downgrade the CLI to match your server:\n\n"
             f"    [cyan]{install_command}[/cyan]\n"
         )
     else:
+        install_command = upgrade_command(server_ver)
         rprint(
             f"\n[bold red]\u2716 CLI version {cli_ver_str} is behind server {server_ver}.[/bold red]\n"
-            f"  Upgrade the CLI to connect:\n\n"
+            f"  Upgrade the CLI to match your server:\n\n"
             f"    [cyan]{install_command}[/cyan]\n"
         )
     raise typer.Exit(1)

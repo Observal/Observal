@@ -51,7 +51,7 @@ def test_demo_env_vars_default_to_none():
 
 
 def test_version_middleware_rejects_cli_drift(monkeypatch):
-    """CLI requests behind server version should be rejected."""
+    """CLI requests must match the exact server version."""
     import version
     from middleware import configure_version_middleware
 
@@ -71,8 +71,8 @@ def test_version_middleware_rejects_cli_drift(monkeypatch):
     assert response.json()["install_command"] == "observal self upgrade --version 1.6.2"
 
 
-def test_version_middleware_allows_newer_cli(monkeypatch):
-    """CLI requests ahead of server within same major should pass."""
+def test_version_middleware_rejects_newer_cli(monkeypatch):
+    """CLI requests ahead of server should also be rejected (strict match)."""
     import version
     from middleware import configure_version_middleware
 
@@ -88,28 +88,9 @@ def test_version_middleware_allows_newer_cli(monkeypatch):
     client = TestClient(app)
     response = client.get("/api/v1/example", headers={"X-Observal-CLI-Version": "1.9.8"})
 
-    assert response.status_code == 200
-    assert response.headers["X-Observal-Server"] == "1.6.2"
-
-
-def test_version_middleware_rejects_major_mismatch(monkeypatch):
-    """CLI requests with different major version should be rejected."""
-    import version
-    from middleware import configure_version_middleware
-
-    monkeypatch.setattr(version, "get_server_version", lambda: "1.6.2")
-
-    app = FastAPI()
-    configure_version_middleware(app)
-
-    @app.get("/api/v1/example")
-    async def example():
-        return {"ok": True}
-
-    client = TestClient(app)
-    response = client.get("/api/v1/example", headers={"X-Observal-CLI-Version": "2.0.0"})
-
     assert response.status_code == 426
+    assert response.json()["server_version"] == "1.6.2"
+    assert response.json()["install_command"] == "observal self downgrade --version 1.6.2"
 
 
 def test_version_middleware_allows_exact_cli_match(monkeypatch):

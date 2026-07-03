@@ -191,14 +191,24 @@ def _should_require_cli_version_header(request: Request) -> bool:
 
 
 def _cli_version_response(server_ver: str, cli_ver_str: str | None) -> JSONResponse:
-    install_command = f"observal self upgrade --version {server_ver}"
+    from packaging.version import InvalidVersion, Version
+
+    # Determine direction: if CLI is ahead, suggest downgrade; otherwise upgrade
+    direction = "upgrade"
+    if cli_ver_str:
+        try:
+            if Version(cli_ver_str) > Version(server_ver):
+                direction = "downgrade"
+        except InvalidVersion:
+            pass
+
+    install_command = f"observal self {direction} --version {server_ver}"
     shown_cli_version = cli_ver_str or "unknown"
     return JSONResponse(
         status_code=426,
         content={
             "detail": (
-                f"Observal CLI {shown_cli_version} cannot connect to server {server_ver}. "
-                f"Install the matching CLI with: {install_command}"
+                f"Observal CLI {shown_cli_version} cannot connect to server {server_ver}. Run: {install_command}"
             ),
             "server_version": server_ver,
             "cli_version": cli_ver_str,
@@ -228,11 +238,7 @@ def configure_version_middleware(app: FastAPI) -> None:
                 try:
                     client_ver = Version(cli_ver_str)
                     server_version = Version(server_ver)
-                    # Allow newer CLI within same major (forward-compatible).
-                    # Block if CLI is behind or major version differs.
-                    if client_ver.major != server_version.major:
-                        return _cli_version_response(server_ver, cli_ver_str)
-                    if client_ver < server_version:
+                    if client_ver != server_version:
                         return _cli_version_response(server_ver, cli_ver_str)
                     effective = str(server_version)
                 except InvalidVersion:
