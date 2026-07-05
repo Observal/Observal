@@ -72,7 +72,7 @@ function RegisterContent() {
       if (res.user.avatar_url) setUserAvatar(res.user.avatar_url);
       toast.success("Account created");
       const nextPath = searchParams.next;
-      router.navigate({ to: (nextPath && nextPath.startsWith("/") ? nextPath : "/") as "/" });
+      window.location.replace(nextPath && nextPath.startsWith("/") ? nextPath : "/");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Registration failed";
       setError(msg);
