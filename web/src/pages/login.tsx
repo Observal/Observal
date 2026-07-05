@@ -187,7 +187,7 @@ function LoginContent() {
       if (res.user.avatar_url) setUserAvatar(res.user.avatar_url);
       toast.success("Signed in successfully");
       const nextPath = searchParams.next;
-      router.navigate({ to: (nextPath && nextPath.startsWith("/") ? nextPath : "/") as "/" });
+      window.location.replace(nextPath && nextPath.startsWith("/") ? nextPath : "/");
     } catch (e) {
       const raw = e instanceof Error ? e.message : "Login failed";
       const status = e instanceof Error ? (e as Error & { status?: number }).status : undefined;
@@ -222,7 +222,7 @@ function LoginContent() {
       setUserEmail(res.email);
       if (res.username) setUserUsername(res.username);
       if (res.avatar_url) setUserAvatar(res.avatar_url);
-      router.navigate({ to: "/" });
+      window.location.replace("/");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to change password";
       setError(msg);
