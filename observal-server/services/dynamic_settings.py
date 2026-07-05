@@ -153,6 +153,9 @@ SSO_ENV_IMPORTS: dict[str, str] = {
     "GOOGLE_OAUTH_CLIENT_ID": "google.client_id",
     "GOOGLE_OAUTH_CLIENT_SECRET": "google.client_secret",
     "GOOGLE_OAUTH_ALLOWED_DOMAINS": "google.allowed_domains",
+    "GITHUB_OAUTH_CLIENT_ID": "github.client_id",
+    "GITHUB_OAUTH_CLIENT_SECRET": "github.client_secret",
+    "GITHUB_OAUTH_ALLOWED_ORGS": "github.allowed_orgs",
     "SSO_ONLY": "deployment.sso_only",
     "SAML_IDP_ENTITY_ID": "saml.idp_entity_id",
     "SAML_IDP_SSO_URL": "saml.idp_sso_url",
@@ -168,7 +171,11 @@ SSO_ENV_IMPORTS: dict[str, str] = {
 
 
 async def import_sso_env_once() -> int:
-    """Import legacy SSO env vars into dynamic settings when DB has no value."""
+    """Import legacy SSO env vars into dynamic settings when DB has no value.
+
+    A row whose value is empty counts as "no value": the env var overwrites it.
+    Only a non-empty DB value (set via the admin UI/API) wins over the env var.
+    """
     import os
 
     from sqlalchemy import select
@@ -178,23 +185,23 @@ async def import_sso_env_once() -> int:
 
     async with async_session() as session:
         result = await session.execute(
-            select(EnterpriseConfig.key).where(EnterpriseConfig.key.in_(tuple(SSO_ENV_IMPORTS.values())))
+            select(EnterpriseConfig).where(EnterpriseConfig.key.in_(tuple(SSO_ENV_IMPORTS.values())))
         )
-        existing = set(result.scalars().all())
-        values = {
-            setting_key: os.environ[env_key]
-            for env_key, setting_key in SSO_ENV_IMPORTS.items()
-            if setting_key not in existing and os.environ.get(env_key)
-        }
-        if not values:
-            return 0
+        rows = {cfg.key: cfg for cfg in result.scalars().all()}
 
         imported = 0
-        for setting_key, value in values.items():
-            if setting_key in existing:
+        for env_key, setting_key in SSO_ENV_IMPORTS.items():
+            env_value = (os.environ.get(env_key) or "").strip()
+            if not env_value:
                 continue
-            store_value = encrypt_value(value) if setting_key in SENSITIVE_KEYS else value
-            session.add(EnterpriseConfig(key=setting_key, value=store_value))
+            existing = rows.get(setting_key)
+            if existing is not None and existing.value:
+                continue
+            store_value = encrypt_value(env_value) if setting_key in SENSITIVE_KEYS else env_value
+            if existing is not None:
+                existing.value = store_value
+            else:
+                session.add(EnterpriseConfig(key=setting_key, value=store_value))
             imported += 1
         if imported:
             await session.commit()
@@ -236,6 +243,9 @@ DEFAULTS: dict[str, str] = {
     "google.client_id": "",
     "google.client_secret": "",
     "google.allowed_domains": "",
+    "github.client_id": "",
+    "github.client_secret": "",
+    "github.allowed_orgs": "",
     # Deployment
     "deployment.sso_only": "false",
     "deployment.frontend_url": "http://localhost:3000",
@@ -297,6 +307,7 @@ SENSITIVE_KEYS: set[str] = {
     "insights.api_key",
     "oauth.client_secret",
     "google.client_secret",
+    "github.client_secret",
     "saml.idp_x509_cert",
     "saml.sp_key_encryption_password",
 }
@@ -310,6 +321,9 @@ RESTART_REQUIRED_KEYS: set[str] = {
     "google.client_id",
     "google.client_secret",
     "google.allowed_domains",
+    "github.client_id",
+    "github.client_secret",
+    "github.allowed_orgs",
 }
 
 
@@ -408,6 +422,9 @@ SECTIONS: list[dict[str, Any]] = [
             "google.client_id",
             "google.client_secret",
             "google.allowed_domains",
+            "github.client_id",
+            "github.client_secret",
+            "github.allowed_orgs",
             *[k for k in DEFAULTS if k.startswith("saml.")],
         ],
     },

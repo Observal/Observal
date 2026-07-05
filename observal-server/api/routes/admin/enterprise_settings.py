@@ -192,13 +192,18 @@ async def upsert_setting(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     optic.trace("key={}", key)
+    # Wrapping whitespace from copy-paste silently breaks downstream consumers
+    # (discovery URLs, client secrets), so values are normalized on write.
+    # Interior content (multi-line PEM certs) is preserved.
+    value = req.value.strip() if isinstance(req.value, str) else req.value
+
     if key in ("branding.logo", "branding.wordmark"):
-        _validate_branding_logo(req.value)
+        _validate_branding_logo(value)
     elif key == "branding.app_name":
-        _validate_branding_app_name(req.value)
+        _validate_branding_app_name(value)
 
     sensitive = key in ds.SENSITIVE_KEYS
-    store_value = ds.encrypt_value(req.value) if sensitive else req.value
+    store_value = ds.encrypt_value(value) if sensitive else value
 
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
     cfg = result.scalar_one_or_none()
@@ -213,7 +218,7 @@ async def upsert_setting(
     await ds.refresh_sync_cache()
 
     # Auto-clean deprecated AWS/legacy settings when new API key is configured
-    if key == "insights.api_key" and req.value:
+    if key == "insights.api_key" and value:
         deprecated_keys = [
             "insights.aws_region",
             "insights.aws_access_key_id",

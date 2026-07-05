@@ -108,6 +108,16 @@ oauth = OAuth()
 
 GOOGLE_OAUTH_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
+# GitHub is plain OAuth 2.0, not OIDC: no discovery document, no ID token.
+# Profile and verified emails are fetched from the REST API after the exchange.
+GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_API_BASE_URL = "https://api.github.com/"
+
+_GITHUB_API_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+# GitHub org logins: alphanumeric and hyphens, no leading/trailing hyphen.
+_GITHUB_ORG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
+
 
 def configure_oauth_client() -> None:
     """Build OAuth clients from dynamic settings at API startup."""
@@ -140,6 +150,26 @@ def configure_oauth_client() -> None:
             },
         )
 
+    github_client_id = ds.get_sync("github.client_id")
+    github_client_secret = ds.get_sync("github.client_secret")
+    if github_client_id and github_client_secret:
+        # read:org is only needed (and only requested) when logins are
+        # restricted to org members, so the consent screen stays minimal.
+        github_scope = "read:user user:email"
+        if _github_allowed_orgs():
+            github_scope += " read:org"
+        oauth.register(
+            name="github",
+            client_id=github_client_id,
+            client_secret=github_client_secret,
+            authorize_url=GITHUB_AUTHORIZE_URL,
+            access_token_url=GITHUB_ACCESS_TOKEN_URL,
+            api_base_url=GITHUB_API_BASE_URL,
+            client_kwargs={
+                "scope": github_scope,
+            },
+        )
+
 
 def is_oidc_configured() -> bool:
     return bool(getattr(oauth, "oidc", None))
@@ -147,6 +177,10 @@ def is_oidc_configured() -> bool:
 
 def is_google_oauth_configured() -> bool:
     return bool(getattr(oauth, "google", None))
+
+
+def is_github_oauth_configured() -> bool:
+    return bool(getattr(oauth, "github", None))
 
 
 def _parse_allowed_domains(raw: str | None) -> set[str]:
@@ -157,6 +191,19 @@ def _parse_allowed_domains(raw: str | None) -> set[str]:
 
 def _google_allowed_domains() -> set[str]:
     return _parse_allowed_domains(ds.get_sync("google.allowed_domains"))
+
+
+def _github_allowed_orgs() -> set[str]:
+    """Parse github.allowed_orgs into validated org slugs.
+
+    Slugs that don't match GitHub's org-name grammar are dropped so a
+    misconfigured value can never turn into API path segments.
+    """
+    raw = ds.get_sync("github.allowed_orgs")
+    if not raw:
+        return set()
+    orgs = {o.strip().lstrip("@").lower() for o in raw.split(",") if o.strip()}
+    return {o for o in orgs if _GITHUB_ORG_RE.fullmatch(o)}
 
 
 def _is_safe_next(next_path: str | None) -> bool:
@@ -900,6 +947,148 @@ async def google_oauth_callback(request: Request, db: AsyncSession = Depends(get
     subject_id = subject if isinstance(subject, str) else None
 
     user = await _provision_sso_user(db, email=email, name=name, groups=None, provider="google", subject_id=subject_id)
+    return await _complete_sso_login(request, db, user, None)
+
+
+@router.get("/oauth/github/login")
+async def github_oauth_login(request: Request, next: str | None = None):
+    """Initiates the GitHub OAuth flow."""
+    optic.debug("github_oauth_login called")
+    github_client = getattr(oauth, "github", None)
+    if not github_client:
+        raise HTTPException(status_code=500, detail="GitHub OAuth is not configured on the server")
+    return await _start_oauth_flow(
+        request,
+        github_client,
+        callback_path="/api/v1/auth/oauth/github/callback",
+        next_path=next,
+    )
+
+
+async def _github_pick_verified_email(github_client, token: dict) -> str:
+    """Return the user's primary verified email, or any verified one.
+
+    The profile 'email' field is never trusted: it can be absent (hidden) and
+    GitHub does not require it to be verified. Only /user/emails entries with
+    verified=true count; no verified address means no login.
+    """
+    resp = await github_client.get("user/emails", token=token, headers=_GITHUB_API_HEADERS)
+    if resp.status_code != 200:
+        optic.warning("GitHub /user/emails returned HTTP {}", resp.status_code)
+        raise HTTPException(status_code=400, detail="Could not fetch GitHub email addresses")
+    entries = resp.json()
+    if not isinstance(entries, list):
+        raise HTTPException(status_code=400, detail="Could not fetch GitHub email addresses")
+
+    verified = [
+        e for e in entries if isinstance(e, dict) and e.get("verified") is True and isinstance(e.get("email"), str)
+    ]
+    primary = next((e["email"] for e in verified if e.get("primary") is True), None)
+    email = primary or (verified[0]["email"] if verified else None)
+    if not email:
+        raise HTTPException(status_code=400, detail="GitHub account has no verified email address")
+    return email.strip().lower()
+
+
+async def _github_check_org_membership(github_client, token: dict, allowed_orgs: set[str]) -> str | None:
+    """Return the first allowed org the user is an *active* member of, else None.
+
+    Pending invitations (state != active) don't count. API errors are treated
+    as non-membership so login fails closed when GitHub is unreachable.
+    """
+    for org in sorted(allowed_orgs):
+        try:
+            resp = await github_client.get(f"user/memberships/orgs/{org}", token=token, headers=_GITHUB_API_HEADERS)
+        except Exception as e:
+            optic.warning("GitHub org membership check errored for '{}': {}", org, e)
+            continue
+        if resp.status_code != 200:
+            continue
+        membership = resp.json()
+        if isinstance(membership, dict) and membership.get("state") == "active":
+            return org
+    return None
+
+
+@router.get("/oauth/github/callback")
+async def github_oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
+    """Handles the GitHub OAuth callback."""
+    optic.debug("github_oauth_callback called")
+    github_client = getattr(oauth, "github", None)
+    if not github_client:
+        raise HTTPException(status_code=500, detail="GitHub OAuth is not configured on the server")
+
+    source_ip, user_agent = _extract_request_info(request)
+    try:
+        token = await github_client.authorize_access_token(request)
+    except Exception as e:
+        await emit_security_event(
+            SecurityEvent(
+                event_type=EventType.SSO_FAILURE,
+                severity=Severity.WARNING,
+                outcome="failure",
+                source_ip=source_ip,
+                user_agent=user_agent,
+                detail=f"GitHub OAuth authorization failed: {e}",
+            )
+        )
+        optic.warning("GitHub authorize_access_token failed: {}", e)
+        raise HTTPException(status_code=400, detail="GitHub OAuth authorization failed")
+
+    try:
+        profile_resp = await github_client.get("user", token=token, headers=_GITHUB_API_HEADERS)
+    except Exception as e:
+        optic.warning("GitHub /user fetch failed: {}", e)
+        raise HTTPException(status_code=502, detail="Could not fetch GitHub profile")
+    if profile_resp.status_code != 200:
+        optic.warning("GitHub /user returned HTTP {}", profile_resp.status_code)
+        raise HTTPException(status_code=400, detail="Could not fetch GitHub profile")
+    profile = profile_resp.json()
+    # The numeric id is the stable subject; the login handle can be renamed
+    # and re-registered by someone else, so it is never used as an identifier.
+    if not isinstance(profile, dict) or profile.get("id") is None:
+        raise HTTPException(status_code=400, detail="GitHub profile is missing a user id")
+    subject_id = str(profile["id"])
+
+    try:
+        email = await _github_pick_verified_email(github_client, token)
+    except HTTPException as exc:
+        if exc.status_code == 400 and "verified" in exc.detail:
+            await emit_security_event(
+                SecurityEvent(
+                    event_type=EventType.SSO_FAILURE,
+                    severity=Severity.WARNING,
+                    outcome="failure",
+                    source_ip=source_ip,
+                    user_agent=user_agent,
+                    detail="GitHub account has no verified email address",
+                )
+            )
+        raise
+
+    allowed_orgs = _github_allowed_orgs()
+    if allowed_orgs:
+        member_org = await _github_check_org_membership(github_client, token, allowed_orgs)
+        if member_org is None:
+            await emit_security_event(
+                SecurityEvent(
+                    event_type=EventType.SSO_FAILURE,
+                    severity=Severity.WARNING,
+                    outcome="failure",
+                    actor_email=email,
+                    source_ip=source_ip,
+                    user_agent=user_agent,
+                    detail="GitHub user is not an active member of an allowed organization",
+                )
+            )
+            raise HTTPException(
+                status_code=403, detail="Your GitHub account is not a member of an allowed organization"
+            )
+
+    name_raw = profile.get("name") or profile.get("login")
+    name = name_raw if isinstance(name_raw, str) and name_raw else "GitHub User"
+
+    user = await _provision_sso_user(db, email=email, name=name, groups=None, provider="github", subject_id=subject_id)
     return await _complete_sso_login(request, db, user, None)
 
 

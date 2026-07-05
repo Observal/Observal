@@ -126,7 +126,7 @@ The first user who logs in via OAuth is **not** automatically an admin. Bootstra
 
 Observal requests standard `openid profile email` scope. The IdP's `email` claim is the canonical user identifier.
 
-## Google OAuth (first-class provider)
+## Google OAuth (first-class provider) {#google-oauth}
 
 Google sign-in runs as its own provider, separate from the generic OIDC slot above. Both can be enabled at the same time, so an org can offer Okta *and* Google on the login screen.
 
@@ -149,7 +149,7 @@ The Google OIDC discovery URL is hardcoded server-side, so you don't need to set
 6. Copy the generated **Client ID** and **Client secret** into SSO settings or your container env.
 7. Restart the API container so the Authlib client is rebuilt.
 
-### Restricting to specific email domains
+### Restricting to specific email domains {#google-allowed-domains}
 
 Set `GOOGLE_OAUTH_ALLOWED_DOMAINS` to a comma-separated list of domains. Anyone outside the list is rejected with a 403, even if they have a valid Google account.
 
@@ -164,6 +164,43 @@ Leave it unset to allow any Google account (including personal `@gmail.com` addr
 - Observal additionally requires Google's `email_verified` claim to be `true`. Unverified accounts (rare on Google but possible) are rejected with a 400.
 - The first Google user is **not** automatically an admin (matches the generic OIDC behavior). Bootstrap a local admin first, then use that account to promote the Google user.
 - The auth provider and Google subject ID are recorded on the user row (`auth_provider="google"`, `sso_subject_id=<google-sub>`) for audit purposes.
+
+## GitHub OAuth (first-class provider) {#github-oauth}
+
+GitHub sign-in runs as its own provider, alongside generic OIDC and Google. Unlike those two, GitHub is plain OAuth 2.0 (not OIDC): there is no discovery URL and no ID token. Observal fetches the profile and email list from the GitHub REST API after the code exchange.
+
+Set these in the SSO settings page, or as container env vars for one-time import at startup. The **Sign in with GitHub** button appears after the API restarts:
+
+```
+GITHUB_OAUTH_CLIENT_ID=Iv1.abc123...
+GITHUB_OAUTH_CLIENT_SECRET=ghp_... / github_pat_... style secret
+```
+
+### Creating the GitHub OAuth app
+
+1. Open **Settings → Developer settings → OAuth Apps** (on your personal account or, preferably, your GitHub organization) and click **New OAuth App**.
+2. **Homepage URL:** `{FRONTEND_URL}` (e.g. `https://observal.your-company.internal`).
+3. **Authorization callback URL:** `{FRONTEND_URL}/api/v1/auth/oauth/github/callback`.
+4. Copy the generated **Client ID** and generate a **Client secret**; put both into SSO settings or your container env.
+5. Restart the API container so the Authlib client is rebuilt.
+
+### Restricting to GitHub organizations {#github-allowed-orgs}
+
+Set `GITHUB_OAUTH_ALLOWED_ORGS` to a comma-separated list of GitHub organization slugs. Only *active* members of at least one listed org can sign in; everyone else is rejected with a 403. Pending invitations don't count.
+
+```
+GITHUB_OAUTH_ALLOWED_ORGS=acme-inc,acme-labs
+```
+
+When an org allowlist is configured, Observal requests the `read:org` scope (in addition to `read:user user:email`) so it can see private org memberships. Members may need to grant/request org approval for the OAuth app if the org restricts third-party access.
+
+Leave it unset to allow any GitHub account to provision itself as `role=user`.
+
+### Notes
+
+- Observal only accepts **verified** email addresses from `GET /user/emails` (preferring the primary). The profile-level `email` field is never trusted, and accounts with no verified email are rejected with a 400.
+- Departments are not populated automatically from GitHub (there is no groups claim). Assign them in **Admin → Users**, individually or via bulk upload — same as Google users.
+- The auth provider and the *numeric* GitHub user ID are recorded on the user row (`auth_provider="github"`, `sso_subject_id=<github-id>`). The numeric ID is used instead of the login handle because handles can be renamed and re-registered.
 
 ## Role-based access control (RBAC)
 

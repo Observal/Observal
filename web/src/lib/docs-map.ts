@@ -40,6 +40,12 @@ export const SETTING_DOCS: Record<string, DocRef> = {
 	"oauth.client_id": { file: "self-hosting/authentication.md", anchor: "oauth-client-id", label: "OIDC Client ID" },
 	"oauth.client_secret": { file: "self-hosting/authentication.md", anchor: "oauth-client-secret", label: "OIDC Client Secret" },
 	"oauth.server_metadata_url": { file: "self-hosting/authentication.md", anchor: "oauth-server-metadata-url", label: "OIDC Discovery URL" },
+	"google.client_id": { file: "self-hosting/authentication.md", anchor: "google-oauth", label: "Google Client ID" },
+	"google.client_secret": { file: "self-hosting/authentication.md", anchor: "google-oauth", label: "Google Client Secret" },
+	"google.allowed_domains": { file: "self-hosting/authentication.md", anchor: "google-allowed-domains", label: "Google Allowed Domains" },
+	"github.client_id": { file: "self-hosting/authentication.md", anchor: "github-oauth", label: "GitHub Client ID" },
+	"github.client_secret": { file: "self-hosting/authentication.md", anchor: "github-oauth", label: "GitHub Client Secret" },
+	"github.allowed_orgs": { file: "self-hosting/authentication.md", anchor: "github-allowed-orgs", label: "GitHub Allowed Organizations" },
 
 	// Deployment
 	"deployment.frontend_url": { file: "self-hosting/deployment-settings.md", anchor: "frontend-url", label: "Frontend URL" },

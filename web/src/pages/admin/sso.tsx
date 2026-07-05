@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ChevronRight,
   PlayCircle,
+  Power,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useHelp } from "@/components/wiki/help-context";
@@ -26,6 +27,8 @@ import { SETTING_DOCS } from "@/lib/docs-map";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   admin,
+  config as configApi,
+  getUserRole,
   type HealthCheck,
   type ValidateResult,
   type E2eStatusResult,
@@ -416,6 +419,18 @@ const SSO_SETTING_GROUPS = [
     keys: ["oauth.client_id", "oauth.client_secret", "oauth.server_metadata_url"],
   },
   {
+    id: "google",
+    title: "Google OAuth",
+    description: "First-class Google sign-in. The discovery URL is built in; only client credentials and an optional email-domain allowlist are needed.",
+    keys: ["google.client_id", "google.client_secret", "google.allowed_domains"],
+  },
+  {
+    id: "github",
+    title: "GitHub OAuth",
+    description: "GitHub sign-in with verified-email enforcement. Optionally restrict logins to active members of specific GitHub organizations (comma-separated org slugs).",
+    keys: ["github.client_id", "github.client_secret", "github.allowed_orgs"],
+  },
+  {
     id: "saml",
     title: "SAML 2.0",
     description: "Identity provider, service provider, and JIT provisioning settings for SAML login.",
@@ -434,8 +449,24 @@ const SSO_SETTING_GROUPS = [
   },
 ];
 
-const RESTART_REQUIRED_KEYS = new Set(["oauth.client_id", "oauth.client_secret", "oauth.server_metadata_url"]);
-const SENSITIVE_SETTING_KEYS = new Set(["oauth.client_secret", "saml.idp_x509_cert", "saml.sp_key_encryption_password"]);
+const RESTART_REQUIRED_KEYS = new Set([
+  "oauth.client_id",
+  "oauth.client_secret",
+  "oauth.server_metadata_url",
+  "google.client_id",
+  "google.client_secret",
+  "google.allowed_domains",
+  "github.client_id",
+  "github.client_secret",
+  "github.allowed_orgs",
+]);
+const SENSITIVE_SETTING_KEYS = new Set([
+  "oauth.client_secret",
+  "google.client_secret",
+  "github.client_secret",
+  "saml.idp_x509_cert",
+  "saml.sp_key_encryption_password",
+]);
 const MULTILINE_SETTING_KEYS = new Set(["saml.idp_x509_cert"]);
 const REDACTED_VALUE = "**REDACTED**";
 const DEFAULT_ROLE_OPTIONS = [
@@ -543,6 +574,82 @@ function SsoSettingInput({
   );
 }
 
+// How long to keep polling /config/version after a restart before giving up.
+const RESTART_POLL_TIMEOUT_MS = 120_000;
+const RESTART_POLL_INTERVAL_MS = 2_000;
+const RESTART_POLL_INITIAL_DELAY_MS = 3_000;
+
+function RestartApiButton({ onRestarted }: { onRestarted?: () => void }) {
+  const [restarting, setRestarting] = useState(false);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, []);
+
+  const handleRestart = useCallback(async () => {
+    if (
+      !confirm(
+        "Restart the API? All in-flight requests will be interrupted. The web UI, database, and ClickHouse stay running.",
+      )
+    ) {
+      return;
+    }
+    setRestarting(true);
+    try {
+      await admin.restartApi();
+      toast.info("API restart initiated. Waiting for it to come back…");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to trigger API restart");
+      setRestarting(false);
+      return;
+    }
+    const deadline = Date.now() + RESTART_POLL_TIMEOUT_MS;
+    const poll = async () => {
+      if (cancelledRef.current) return;
+      if (Date.now() > deadline) {
+        toast.error("API did not come back within 2 minutes. Check the container logs.");
+        setRestarting(false);
+        return;
+      }
+      try {
+        await configApi.version();
+        if (cancelledRef.current) return;
+        toast.success("API is back up");
+        setRestarting(false);
+        onRestarted?.();
+      } catch {
+        window.setTimeout(poll, RESTART_POLL_INTERVAL_MS);
+      }
+    };
+    window.setTimeout(poll, RESTART_POLL_INITIAL_DELAY_MS);
+  }, [onRestarted]);
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="outline" size="sm" onClick={handleRestart} disabled={restarting}>
+            {restarting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+            ) : (
+              <Power className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            {restarting ? "Restarting…" : "Restart API"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs text-xs">
+          Applies saved OAuth client changes by restarting the API process. Super admin only; the
+          container restart policy brings it back automatically.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function SsoSettingsSection() {
   const queryClient = useQueryClient();
   const helpCtx = useHelp();
@@ -616,7 +723,7 @@ function SsoSettingsSection() {
     if (!changedKeys.length) return;
     setSaving(true);
     try {
-      await Promise.all(changedKeys.map((key) => admin.updateSetting(key, { value: drafts[key] ?? "" })));
+      await Promise.all(changedKeys.map((key) => admin.updateSetting(key, { value: (drafts[key] ?? "").trim() })));
       if (changedKeys.some((key) => RESTART_REQUIRED_KEYS.has(key))) setRestartPending(true);
       toast.success("SSO settings saved");
       refresh();
@@ -639,6 +746,14 @@ function SsoSettingsSection() {
           </div>
           <div className="flex items-center gap-2">
             <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${status.className}`}>{status.label}</span>
+            {getUserRole() === "super_admin" && (
+              <RestartApiButton
+                onRestarted={() => {
+                  setRestartPending(false);
+                  refresh();
+                }}
+              />
+            )}
             <Button size="sm" onClick={saveChanges} disabled={!hasUnsavedChanges || saving}>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save changes"}
             </Button>

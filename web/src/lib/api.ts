@@ -727,6 +727,8 @@ export const admin = {
 	updateSamlConfig: (body: Record<string, unknown>) =>
 		put<Record<string, unknown>>("/admin/saml-config", body),
 	deleteSamlConfig: () => del("/admin/saml-config"),
+	restartApi: () =>
+		post<{ detail: string; delay_seconds: number }>("/admin/restart", {}),
 	validateOidc: () => post<ValidateResult>("/admin/sso/validate-oidc", {}),
 	validateSaml: () => post<ValidateResult>("/admin/sso/validate-saml", {}),
 	e2eOidcStart: () =>
@@ -869,6 +871,7 @@ export type PublicConfig = {
 	licensed: boolean;
 	sso_enabled: boolean;
 	google_sso_enabled: boolean;
+	github_sso_enabled: boolean;
 	sso_only: boolean;
 	self_registration_enabled: boolean;
 	saml_enabled: boolean;

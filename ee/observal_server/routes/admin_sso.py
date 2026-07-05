@@ -292,6 +292,28 @@ async def validate_oidc(
     }
 
 
+async def _enterprise_gate_check() -> dict:
+    """Run the same validator EnterpriseGuardMiddleware runs on /api/v1/sso/*.
+
+    The middleware refuses every SSO request with 503 while any issue exists,
+    so a validation button that skips these checks reports false greens: the
+    config looks protocol-correct but no user can actually log in.
+    """
+    from config import settings as app_settings
+    from ee.observal_server.services.config_validator import validate_enterprise_config_async
+
+    issues = await validate_enterprise_config_async(app_settings)
+    if not issues:
+        return make_check("enterprise_gate", "Enterprise login gate allows SSO requests", "pass")
+    return make_check(
+        "enterprise_gate",
+        "Enterprise login gate allows SSO requests",
+        "fail",
+        "; ".join(issues),
+        "The login-time enterprise gate returns 503 on all /api/v1/sso/* requests until these settings are fixed.",
+    )
+
+
 def _required_field_check(config) -> dict | None:
     """Return a failing check dict if any required SAML field is empty, else None."""
     missing = [
@@ -381,6 +403,7 @@ async def validate_saml(
     async with httpx.AsyncClient(timeout=_SAML_HEALTH_TIMEOUT, follow_redirects=False) as client:
         checks = await _run_saml_check_suite(config, sp_key, frontend_url, client)
     checks.insert(0, make_check("sp_key_decrypt", "SP private key decrypts", "pass"))
+    checks.insert(0, await _enterprise_gate_check())
     success = all_pass(checks)
     err_msg, err_hint = (None, None) if success else _first_failure(checks)
     latency_ms = round((time.monotonic() - start) * 1000)
@@ -611,6 +634,10 @@ async def e2e_saml_start(
     async with httpx.AsyncClient(timeout=_SAML_HEALTH_TIMEOUT, follow_redirects=False) as client:
         preflight_checks = await _run_saml_check_suite(config, sp_key, frontend_url, client)
     preflight_checks.insert(0, make_check("sp_key_decrypt", "SP private key decrypts", "pass"))
+    # The e2e login URL goes through /api/v1/sso/saml/login, which the
+    # enterprise gate 503s while any config issue exists -- catch that here
+    # instead of leaving the admin tab polling for a callback that never comes.
+    preflight_checks.insert(0, await _enterprise_gate_check())
     if not all_pass(preflight_checks):
         first_fail = next((c for c in preflight_checks if c.get("status") == "fail"), None)
         optic.info(

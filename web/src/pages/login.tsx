@@ -15,6 +15,7 @@ import type { SsoHealthResult, E2eStatusResult, HealthCheck } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
 import { GoogleGIcon } from "@/components/ui/google-g-icon";
+import { GithubMarkIcon } from "@/components/ui/github-mark-icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,7 @@ function LoginContent() {
   const {
     ssoEnabled,
     googleSsoEnabled,
+    githubSsoEnabled,
     ssoOnly,
     selfRegistrationEnabled,
     samlEnabled,
@@ -247,6 +249,15 @@ function LoginContent() {
     const url = nextParam && nextParam.startsWith("/")
       ? `/api/v1/auth/oauth/google/login?next=${encodeURIComponent(nextParam)}`
       : "/api/v1/auth/oauth/google/login";
+    window.location.href = url;
+  }
+
+  function handleGithubLogin() {
+    setSsoLoading(true);
+    const nextParam = searchParams.next;
+    const url = nextParam && nextParam.startsWith("/")
+      ? `/api/v1/auth/oauth/github/login?next=${encodeURIComponent(nextParam)}`
+      : "/api/v1/auth/oauth/github/login";
     window.location.href = url;
   }
 
@@ -502,7 +513,7 @@ function LoginContent() {
                   </Button>
                 )}
 
-                {!ssoOnly && (ssoEnabled || googleSsoEnabled || samlEnabled) && (
+                {!ssoOnly && (ssoEnabled || googleSsoEnabled || githubSsoEnabled || samlEnabled) && (
                   <div className="relative py-2">
                     <div className="absolute inset-0 flex items-center">
                       <span className="w-full border-t" />
@@ -527,6 +538,23 @@ function LoginContent() {
                       <GoogleGIcon className="mr-2 h-4 w-4" />
                     )}
                     Sign in with Google
+                  </Button>
+                )}
+
+                {githubSsoEnabled && (
+                  <Button
+                    type="button"
+                    variant={ssoOnly ? "default" : "outline"}
+                    className="w-full"
+                    onClick={handleGithubLogin}
+                    disabled={loading || ssoLoading}
+                  >
+                    {ssoLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <GithubMarkIcon className="mr-2 h-4 w-4" />
+                    )}
+                    Sign in with GitHub
                   </Button>
                 )}
 

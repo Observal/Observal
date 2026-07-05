@@ -20,6 +20,7 @@ export function useDeploymentConfig() {
 		licensed: data?.licensed ?? false,
 		ssoEnabled: data?.sso_enabled ?? false,
 		googleSsoEnabled: data?.google_sso_enabled ?? false,
+		githubSsoEnabled: data?.github_sso_enabled ?? false,
 		ssoOnly: data?.sso_only ?? false,
 		selfRegistrationEnabled: data?.self_registration_enabled ?? false,
 		samlEnabled: data?.saml_enabled ?? false,

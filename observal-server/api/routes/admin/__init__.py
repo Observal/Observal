@@ -4,5 +4,5 @@
 """Admin routes package. Sub-modules register routes on the shared router."""
 
 # Import sub-modules so they register their routes on the shared router.
-from . import enterprise_settings, insights_models, migrate, org, retention, users  # noqa: F401
+from . import enterprise_settings, insights_models, migrate, org, retention, system, users  # noqa: F401
 from ._router import router  # noqa: F401

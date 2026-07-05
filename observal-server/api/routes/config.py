@@ -136,12 +136,13 @@ async def get_public_config(db=Depends(get_db)):
     sso_only = await ds.get_bool("deployment.sso_only")
     self_registration_enabled = await ds.get_bool("auth.self_registration_enabled")
 
-    from api.routes.auth import is_google_oauth_configured, is_oidc_configured
+    from api.routes.auth import is_github_oauth_configured, is_google_oauth_configured, is_oidc_configured
 
     return {
         "licensed": licensed,
         "sso_enabled": is_oidc_configured(),
         "google_sso_enabled": is_google_oauth_configured(),
+        "github_sso_enabled": is_github_oauth_configured(),
         "sso_only": sso_only,
         "self_registration_enabled": self_registration_enabled,
         "saml_enabled": saml_enabled,
