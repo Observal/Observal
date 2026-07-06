@@ -337,6 +337,6 @@ Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://gith
 
 ## License
 
-The open-source core, all code outside `ee/`, is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+The open-source core, all code outside `ee/`, is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and our [License Commitment](LICENSE_COMMITMENT.md).
 
 The `ee/` directory contains Enterprise Edition code licensed separately under the [Observal Enterprise License](ee/LICENSE).
