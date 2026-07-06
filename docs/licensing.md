@@ -42,7 +42,7 @@ See [`ee/LICENSE`](../ee/LICENSE) for complete terms.
 
 ## For contributors
 
-All contributions to the open-source core outside `ee/` require signing the [Contributor License Agreement](../CLA.md). The CLA grants BlazeUp AI the right to sublicense contributions, including under a commercial license, while you retain copyright.
+All contributions to the open-source core outside `ee/` require signing the [Contributor License Agreement](../CLA.md). The CLA grants Observal the right to sublicense contributions, including under a commercial license, while you retain copyright.
 
 Community contributions to the `ee/` directory are not accepted.
 

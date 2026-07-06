@@ -48,7 +48,7 @@ OIDC, SAML, and SSO-only mode are configured in **Admin → SSO** and stored in 
 
 ### AWS (Bedrock)
 
-> **Note:** Bedrock now supports [API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) — generate one from the AWS console and use it like any other provider. See [Insights LLM Setup](https://github.com/BlazeUp-AI/Observal/blob/main/docs/insights-setup.md).
+> **Note:** Bedrock now supports [API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) — generate one from the AWS console and use it like any other provider. See [Insights LLM Setup](https://github.com/Observal/Observal/blob/main/docs/insights-setup.md).
 
 These environment variables are **not required** if you use Bedrock API keys (recommended). They exist only for legacy setups using instance roles or ECS task roles where LiteLLM auto-discovers credentials from the environment.
 

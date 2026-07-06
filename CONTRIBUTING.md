@@ -15,7 +15,7 @@ Thank you for considering contributing to Observal. Contributions of all kinds a
 
 > \[!IMPORTANT] **Discord is our primary communication channel.** Join at [discord.observal.io](https://discord.observal.io) and ask questions in **#contributing**, report bugs in **#bug**, or discuss ideas in **#feature-requests**. GitHub issues and PRs are for concrete, actionable items, not exploratory discussion.
 
-Please read our [Code of Conduct](https://github.com/BlazeUp-AI/Observal/blob/main/CODE_OF_CONDUCT.md) and [AI Policy](AI_POLICY.md) before contributing.
+Please read our [Code of Conduct](https://github.com/Observal/Observal/blob/main/CODE_OF_CONDUCT.md) and [AI Policy](AI_POLICY.md) before contributing.
 
 > Parts of this guide were inspired by the contributing documentation from [AnkiDroid/Anki-Android](https://github.com/ankidroid/Anki-Android). They set a great standard for OSS contributor docs and were one of the first open-source projects some of our maintainers were part of. If you are looking for another welcoming OSS project, check them out.
 
@@ -75,7 +75,7 @@ uv tool install --editable .
 observal auth login
 ```
 
-The stack starts at `http://localhost` (nginx LB on port 80). The `.env.example` seeds demo accounts on first startup, log in with `super@demo.example` / `super-changeme` for admin access. See [SETUP.md](https://github.com/BlazeUp-AI/Observal/blob/main/SETUP.md) for all credentials.
+The stack starts at `http://localhost` (nginx LB on port 80). The `.env.example` seeds demo accounts on first startup, log in with `super@demo.example` / `super-changeme` for admin access. See [SETUP.md](https://github.com/Observal/Observal/blob/main/SETUP.md) for all credentials.
 
 **Frontend only:**
 
@@ -164,7 +164,7 @@ Subject line under 72 characters, imperative mood, no trailing period.
 
 ### Changelog
 
-Add an entry under `[Unreleased]` in [CHANGELOG.md](https://github.com/BlazeUp-AI/Observal/blob/main/CHANGELOG.md) for any user-facing change.
+Add an entry under `[Unreleased]` in [CHANGELOG.md](https://github.com/Observal/Observal/blob/main/CHANGELOG.md) for any user-facing change.
 
 ***
 
@@ -208,7 +208,7 @@ Describe the problem you are solving, not just the solution. Discuss in **#featu
 
 > \[!CAUTION] Community contributions are **not accepted** into `ee/`. Pull requests touching `ee/` files will be closed. The open-source core must never import from `ee/`.
 
-The `ee/` directory is licensed under the [Observal Enterprise License](https://github.com/BlazeUp-AI/Observal/blob/main/ee/LICENSE/README.md). The dependency is strictly one-way: `ee/` may import from the core, never the reverse.
+The `ee/` directory is licensed under the [Observal Enterprise License](https://github.com/Observal/Observal/blob/main/ee/LICENSE/README.md). The dependency is strictly one-way: `ee/` may import from the core, never the reverse.
 
 ***
 
@@ -222,4 +222,4 @@ The `ee/` directory is licensed under the [Observal Enterprise License](ee/LICEN
 
 ## Contributor License Agreement (CLA)
 
-The [CLA-assistant](https://cla-assistant.io) bot will prompt you to sign the [Observal CLA](https://github.com/BlazeUp-AI/Observal/blob/main/CLA.md) on your first PR. You only need to sign once. For corporate contributions, contact contact@observal.io.
+The [CLA-assistant](https://cla-assistant.io) bot will prompt you to sign the [Observal CLA](https://github.com/Observal/Observal/blob/main/CLA.md) on your first PR. You only need to sign once. For corporate contributions, contact contact@observal.io.

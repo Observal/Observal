@@ -323,7 +323,7 @@ Logs are written to `~/.observal/logs/dev.log` and include structured context fo
 
 ## Security
 
-Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://github.com/Observal/Observal/security/advisories) or email contact@blazeup.app. Do not open a public issue. See [SECURITY.md](SECURITY.md).
+Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://github.com/Observal/Observal/security/advisories) or email contact@observal.io. Do not open a public issue. See [SECURITY.md](SECURITY.md).
 
 ## Star History
 

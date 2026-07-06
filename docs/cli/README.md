@@ -25,9 +25,9 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal agent`](agent.md)                                                               | Author and publish agents                                                             |
 | [`observal ops`](ops.md)                                                                   | Observability and operations (traces, spans, metrics, feedback)                       |
 | [`observal admin`](admin.md)                                                               | Admin operations (settings, users, review, security)                                  |
-| [`observal support`](https://github.com/BlazeUp-AI/Observal/blob/main/docs/cli/support.md) | Generate and inspect diagnostic support bundles                                       |
+| [`observal support`](https://github.com/Observal/Observal/blob/main/docs/cli/support.md) | Generate and inspect diagnostic support bundles                                       |
 | [`observal doctor`](doctor.md)                                                             | Diagnose harness compatibility; `doctor patch` applies instrumentation                |
-| [`observal migrate`](https://github.com/BlazeUp-AI/Observal/blob/main/docs/cli/migrate.md) | Export/import PostgreSQL registry (shallow copy) and ClickHouse telemetry (deep copy) |
+| [`observal migrate`](https://github.com/Observal/Observal/blob/main/docs/cli/migrate.md) | Export/import PostgreSQL registry (shallow copy) and ClickHouse telemetry (deep copy) |
 | [`observal self`](self.md)                                                                 | Upgrade or downgrade the CLI                                                          |
 | [`observal prompt`](prompt.md)                                                             | Manage reusable prompts in the registry                                               |
 | [`observal server`](server.md)                                                             | Manage the embedded server (start, stop, upgrade, rollback)                           |

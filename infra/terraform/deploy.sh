@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: 2026 BlazeUp AI
+# SPDX-FileCopyrightText: 2026 Observal
 # SPDX-License-Identifier: Apache-2.0
 #
 # Unified Observal AWS Deployment

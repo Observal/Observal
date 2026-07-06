@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 BlazeUp AI
+# SPDX-FileCopyrightText: 2026 Observal
 # SPDX-License-Identifier: Apache-2.0
 
 # Backups bucket — ClickHouse snapshots, Postgres dumps, ad-hoc data exports.

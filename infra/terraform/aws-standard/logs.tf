@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 BlazeUp AI
+# SPDX-FileCopyrightText: 2026 Observal
 # SPDX-License-Identifier: Apache-2.0
 
 # Centralized CloudWatch log groups for ECS tasks and the data host.

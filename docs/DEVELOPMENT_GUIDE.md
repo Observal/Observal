@@ -70,7 +70,7 @@ We are a small, active community and we take the quality of interactions serious
 >
 > * Pinging contributors, maintainers, or reviewers unnecessarily (outside of a direct reply on your own open PR or issue)
 > * Submitting low-effort or unreviewed PRs (slop), including unreviewed AI output or autonomous agent submissions
-> * Violating the [Code of Conduct](https://github.com/BlazeUp-AI/Observal/blob/main/CODE_OF_CONDUCT.md) in any channel
+> * Violating the [Code of Conduct](https://github.com/Observal/Observal/blob/main/CODE_OF_CONDUCT.md) in any channel
 > * Harassing reviewers over merge timelines
 
 Maintainers volunteer their time. Treat them accordingly.
@@ -310,7 +310,7 @@ They are not interchangeable. Never write telemetry to Postgres or relational da
 
 **Supporting services:** Redis (pub/sub + arq job queue), arq worker, nginx reverse proxy. Prometheus and Grafana are optional.
 
-See [AGENTS.md](https://github.com/BlazeUp-AI/Observal/blob/main/AGENTS.md) for a complete map of every important file and service.
+See [AGENTS.md](https://github.com/Observal/Observal/blob/main/AGENTS.md) for a complete map of every important file and service.
 
 ***
 

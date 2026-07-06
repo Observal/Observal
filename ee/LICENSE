@@ -1,13 +1,13 @@
 Observal Enterprise License
 Version 1.0
 
-Copyright (c) 2026-present Observal (BlazeUp AI LLP)
+Copyright (c) 2026-present Observal
 
 TERMS AND CONDITIONS
 
 1. Grant of Rights
 
-   Subject to the terms of this License, Observal (BlazeUp AI LLP)
+   Subject to the terms of this License, Observal
    ("Licensor") grants you a non-exclusive, non-transferable,
    non-sublicensable license to:
 
@@ -30,7 +30,7 @@ TERMS AND CONDITIONS
 
    To use the Enterprise Code (or any derivative thereof) in
    production, you must obtain a valid commercial license from
-   Observal (BlazeUp AI LLP). Production use is defined as any
+   Observal. Production use is defined as any
    use that:
 
    (a) Serves end users, internal or external;
@@ -74,7 +74,7 @@ TERMS AND CONDITIONS
 
    Community contributions are NOT accepted into this directory.
    All code under this License is written exclusively by
-   Observal (BlazeUp AI LLP) or its authorized contractors and
+   Observal or its authorized contractors and
    employees.
 
    Community contributions should be directed to the open-source
@@ -91,13 +91,13 @@ TERMS AND CONDITIONS
    TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
    PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
 
-   IN NO EVENT SHALL BLAZEUP AI LLP OR ITS CONTRIBUTORS BE
+   IN NO EVENT SHALL OBSERVAL OR ITS CONTRIBUTORS BE
    LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER
    IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
    OUT OF, OR IN CONNECTION WITH THE ENTERPRISE CODE OR THE
    USE OR OTHER DEALINGS IN THE ENTERPRISE CODE.
 
-   BLAZEUP AI LLP'S TOTAL LIABILITY UNDER THIS LICENSE SHALL
+   OBSERVAL'S TOTAL LIABILITY UNDER THIS LICENSE SHALL
    NOT EXCEED THE FEES PAID BY YOU FOR THE COMMERCIAL LICENSE
    IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM.
 
@@ -109,10 +109,10 @@ TERMS AND CONDITIONS
 
    (a) Fail to comply with any term of this License;
    (b) Allow your commercial license key to expire without renewal;
-   (c) Have your commercial license revoked by BlazeUp AI LLP
+   (c) Have your commercial license revoked by Observal
        due to breach of the Commercial License Agreement; or
    (d) Initiate any intellectual property litigation against
-       BlazeUp AI LLP relating to the Observal Platform.
+       Observal relating to the Observal Platform.
 
    Upon termination:
 

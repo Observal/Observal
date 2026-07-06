@@ -67,5 +67,5 @@ Set `domain_name`, `route53_zone_id`, and `enable_tls = true` to provision an AC
 
 ## SPDX
 
-SPDX-FileCopyrightText: 2026 BlazeUp AI
+SPDX-FileCopyrightText: 2026 Observal
 SPDX-License-Identifier: Apache-2.0

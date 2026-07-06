@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026-present Observal (BlazeUp AI LLP)
+SPDX-FileCopyrightText: 2026-present Observal
 SPDX-License-Identifier: Apache-2.0
 -->
 

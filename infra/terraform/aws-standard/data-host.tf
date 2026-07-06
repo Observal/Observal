@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 BlazeUp AI
+# SPDX-FileCopyrightText: 2026 Observal
 # SPDX-License-Identifier: Apache-2.0
 
 # Data tier: a single EC2 host running Postgres, Redis, ClickHouse, and optional observability.
