@@ -214,7 +214,9 @@ The `ee/` directory is licensed under the [Observal Enterprise License](https://
 
 ## License
 
-All code outside `ee/` is licensed under [Apache-2.0](https://github.com/BlazeUp-AI/Observal/blob/main/LICENSE/README.md). The `ee/` directory is licensed under the [Observal Enterprise License](https://github.com/BlazeUp-AI/Observal/blob/main/ee/LICENSE/README.md).
+All code outside `ee/` is licensed under [Apache-2.0](LICENSE). See the [License Commitment](LICENSE_COMMITMENT.md) for the project's Apache-2.0 commitment and license history.
+
+The `ee/` directory is licensed under the [Observal Enterprise License](ee/LICENSE).
 
 ***
 
