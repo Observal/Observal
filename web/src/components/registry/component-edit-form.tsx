@@ -119,10 +119,17 @@ function McpEditForm({
 	const itemUrl = (item.url as string) ?? "";
 	const itemTransport = (item.transport as string) ?? "";
 	const itemName = (item.name as string) ?? "";
-	const itemArgs = Array.isArray(item.args) ? (item.args as string[]) : [];
-	const itemEnvVars = Array.isArray(item.environment_variables)
-		? (item.environment_variables as { name: string }[])
-		: [];
+	const itemArgs = useMemo(
+		() => (Array.isArray(item.args) ? (item.args as string[]) : []),
+		[item.args],
+	);
+	const itemEnvVars = useMemo(
+		() =>
+			Array.isArray(item.environment_variables)
+				? (item.environment_variables as { name: string }[])
+				: [],
+		[item.environment_variables],
+	);
 
 	const currentConfigJson = useMemo(() => {
 		const cfg: Record<string, unknown> = {};
@@ -141,14 +148,13 @@ function McpEditForm({
 		if (Object.keys(cfg).length === 0) return "";
 		const wrapper = { mcpServers: { [itemName]: cfg } };
 		return JSON.stringify(wrapper, null, 2);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
 		itemCommand,
 		itemUrl,
 		itemTransport,
 		itemName,
-		JSON.stringify(itemArgs),
-		JSON.stringify(itemEnvVars),
+		itemArgs,
+		itemEnvVars,
 	]);
 
 	const [jsonInput, setJsonInput] = useState(currentConfigJson);

@@ -35,9 +35,8 @@ import {
 	useComponentVersionDetail,
 	useRegistryItem,
 } from "@/hooks/use-api";
-import { registry } from "@/lib/api";
 import type { RegistryType } from "@/lib/api";
-import type { ReviewItem, ComponentChange } from "@/lib/types";
+import type { ReviewItem } from "@/lib/types";
 
 function pluralizeType(type: string): string {
 	if (type === "agent") return "agents";
@@ -75,41 +74,6 @@ const changeIcon: Record<string, React.ReactNode> = {
 	removed: <Minus className="h-3 w-3" />,
 	updated: <RefreshCw className="h-3 w-3" />,
 };
-
-function ComponentChangesList({ changes }: { changes: ComponentChange[] }) {
-	if (!changes.length) return null;
-
-	return (
-		<div className="space-y-2">
-			{changes.map((c, i) => (
-				<div
-					key={i}
-					className="flex items-start gap-2 text-xs py-1.5 px-2 rounded bg-muted/40"
-				>
-					<Badge
-						variant="outline"
-						className={`text-[10px] shrink-0 flex items-center gap-1 ${changeBadgeClasses[c.change] ?? ""}`}
-					>
-						{changeIcon[c.change]}
-						{c.change}
-					</Badge>
-					<div className="min-w-0 flex-1">
-						<span className="font-medium truncate block">{c.name}</span>
-						<span className="text-muted-foreground">{c.type}</span>
-						{c.from && c.to && (
-							<span className="ml-1 text-muted-foreground">
-								{c.from} <ArrowRight className="h-2.5 w-2.5 inline" /> {c.to}
-							</span>
-						)}
-						{c.version && !c.from && (
-							<span className="ml-1 text-muted-foreground">v{c.version}</span>
-						)}
-					</div>
-				</div>
-			))}
-		</div>
-	);
-}
 
 const DIFF_METADATA_FIELDS = new Set([
 	"id",
