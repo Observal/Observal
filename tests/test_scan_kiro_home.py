@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Devaansh Dubey <devaanshdubey@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """Tests for Kiro scanning: agent, MCP, skill, and hook discovery."""
 

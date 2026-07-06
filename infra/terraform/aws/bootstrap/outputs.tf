@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 output "state_bucket" {
   description = "Name of the S3 bucket holding Terraform state. Plug into the main module's backend block as `bucket`."

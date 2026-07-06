@@ -6,7 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Santhosh Raja <santhoshpkraja2004@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 [project]
 name = "observal-cli"
@@ -14,7 +14,7 @@ version = "1.9.8"
 description = "Observal MCP Server Registry & Agent Registry CLI"
 readme = "README.md"
 requires-python = ">=3.11"
-license = "AGPL-3.0-only"
+license = "Apache-2.0"
 
 dependencies = [
     "typer>=0.12.0",
@@ -33,7 +33,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

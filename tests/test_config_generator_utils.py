@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 from observal_cli.cmd_pull import _dict_to_toml, _write_file
 from observal_cli.shared.utils import extract_mcp_servers as _parse_project_mcp_servers

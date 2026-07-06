@@ -1,6 +1,6 @@
 <!--
 SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
-SPDX-License-Identifier: AGPL-3.0-only
+SPDX-License-Identifier: Apache-2.0
 -->
 
 # observal-pi
@@ -56,4 +56,4 @@ Sync state is tracked in `~/.observal/sync_state.json` (per-session byte offsets
 
 ## License
 
-AGPL-3.0-only. See [LICENSE](./LICENSE)
+Apache-2.0. See [LICENSE](./LICENSE)

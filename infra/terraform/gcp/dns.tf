@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 resource "google_compute_global_address" "lb" {
   count = local.enable_custom_domain ? 1 : 0

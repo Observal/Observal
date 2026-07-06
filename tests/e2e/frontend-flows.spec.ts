@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Observal Contributors
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 
 import { test, expect } from "@playwright/test";
 import { loginToWebUI, API_BASE, getAccessToken } from "./helpers";

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # Azure Monitor Workspace (required for Managed Grafana integration)
 resource "azurerm_monitor_workspace" "main" {

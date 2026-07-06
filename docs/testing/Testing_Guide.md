@@ -1,5 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Testing Guide
 
@@ -21,7 +21,7 @@ Use this structure for most new test files:
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <email@example.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """Tests for the behavior under test.
 

@@ -1,6 +1,6 @@
 ---
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 name: observal-ops
 command: observal
 description: View traces, spans, metrics, feedback, telemetry health, and agent insight reports. Use when the user wants to see traces, check metrics, view top items, submit ratings, diagnose telemetry, or discuss how an agent is doing.

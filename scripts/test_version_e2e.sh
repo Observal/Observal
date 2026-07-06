@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # Full E2E test for version check & update mechanics
 # Run from: /Users/shaannarendran/Observal

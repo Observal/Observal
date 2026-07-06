@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Development Guide
 
 > \[!IMPORTANT] **Discord is the primary place to ask questions.** Join at [discord.observal.io](https://discord.observal.io).
@@ -74,7 +77,7 @@ Maintainers volunteer their time. Treat them accordingly.
 
 ### A note on autonomous coding agents
 
-**Autonomous coding agents (Devin, SWE-agent, OpenHands, etc.) are not permitted to submit PRs.** This is a legal constraint, not a quality judgment. The US Copyright Office's 2025 guidance confirms that purely AI-generated code has no copyright owner, which breaks our CLA, our AGPL licensing chain, and our ability to enforce copyleft. See the [AI Policy](../AI_POLICY.md) for the full explanation.
+**Autonomous coding agents (Devin, SWE-agent, OpenHands, etc.) are not permitted to submit PRs.** This is a legal constraint, not a quality judgment. The US Copyright Office's 2025 guidance confirms that purely AI-generated code has no copyright owner, which breaks our CLA and our ability to license and enforce the project. See the [AI Policy](../AI_POLICY.md) for the full explanation.
 
 ***
 

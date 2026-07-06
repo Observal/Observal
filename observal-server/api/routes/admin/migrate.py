@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """Admin data migration routes."""
 
@@ -451,14 +451,15 @@ async def download_artifact(
     if not job or not job.artifact_dir:
         raise HTTPException(status_code=404, detail="Artifact not found or purged")
 
-    # Path traversal protection: ensure the resolved artifact path stays
-    # within the job's artifact directory
-    artifact_dir = Path(job.artifact_dir).resolve()
-    artifact_path = (artifact_dir / artifact_name).resolve()
-    if not artifact_path.is_relative_to(artifact_dir):
+    # Path traversal protection: keep CodeQL-visible normalization and
+    # prefix validation before touching the filesystem.
+    artifact_dir = os.path.realpath(job.artifact_dir)
+    artifact_path = os.path.realpath(os.path.join(artifact_dir, str(artifact_name)))
+    artifact_dir_prefix = artifact_dir + os.sep
+    if artifact_path != artifact_dir and not artifact_path.startswith(artifact_dir_prefix):
         raise HTTPException(status_code=403, detail="Invalid artifact name")
 
-    if not artifact_path.exists():
+    if not os.path.isfile(artifact_path):
         raise HTTPException(status_code=404, detail="Artifact file not found (may have been purged)")
 
     await emit_security_event(
@@ -481,7 +482,7 @@ async def download_artifact(
     return StreamingResponse(
         _stream(),
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{artifact_path.name}"'},
+        headers={"Content-Disposition": f'attachment; filename="{os.path.basename(artifact_path)}"'},
     )
 
 

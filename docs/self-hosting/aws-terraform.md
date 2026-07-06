@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # AWS deployment with Terraform
 
 End state: an Observal install running in your own AWS account, fronted by an Application Load Balancer with HTTPS, with managed Postgres + Redis, ECS Fargate for the stateless app tier, and a single EC2 host for ClickHouse. Prometheus and Grafana are optional through `observability_stack`.

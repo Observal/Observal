@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # One-time bootstrap. Creates the S3 bucket + DynamoDB lock table that the
 # main module's `backend "s3"` block points at. Run this once per AWS account

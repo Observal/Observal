@@ -10,7 +10,7 @@
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 from app_factory import create_app
 from config import HAS_LICENSE

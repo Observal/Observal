@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-FileCopyrightText: 2026 Subramania Raja <dhanpraja231@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """Tests for SEC-003: rate limiting only trusts X-Forwarded-For from configured trusted proxies."""
 

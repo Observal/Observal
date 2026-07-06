@@ -1,24 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 license_policies:
-  # ── Approved (compatible with AGPL-3.0) ──────────────────
-  - license_key: agpl-3.0
-    label: Approved License
-  - license_key: agpl-3.0-plus
-    label: Approved License
-  - license_key: gpl-3.0
-    label: Approved License
-  - license_key: gpl-3.0-plus
-    label: Approved License
-  - license_key: lgpl-3.0
-    label: Approved License
-  - license_key: lgpl-3.0-plus
-    label: Approved License
-  - license_key: lgpl-2.1
-    label: Approved License
-  - license_key: lgpl-2.1-plus
-    label: Approved License
+  # ── Approved (compatible with Apache-2.0) ──────────────────
   - license_key: mit
     label: Approved License
   - license_key: bsd-simplified
@@ -41,8 +25,6 @@ license_policies:
     label: Approved License
   - license_key: 0bsd
     label: Approved License
-  - license_key: gpl-2.0-plus
-    label: Approved License
   - license_key: psf-2.0
     label: Approved License
   - license_key: openssl
@@ -51,7 +33,25 @@ license_policies:
     label: Approved License
 
   # ── Restricted (requires legal review) ───────────────────
+  - license_key: agpl-3.0
+    label: Restricted License
+  - license_key: agpl-3.0-plus
+    label: Restricted License
+  - license_key: gpl-3.0
+    label: Restricted License
+  - license_key: gpl-3.0-plus
+    label: Restricted License
+  - license_key: lgpl-3.0
+    label: Restricted License
+  - license_key: lgpl-3.0-plus
+    label: Restricted License
+  - license_key: lgpl-2.1
+    label: Restricted License
+  - license_key: lgpl-2.1-plus
+    label: Restricted License
   - license_key: gpl-2.0
+    label: Restricted License
+  - license_key: gpl-2.0-plus
     label: Restricted License
   - license_key: lgpl-2.0
     label: Restricted License

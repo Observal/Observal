@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 BlazeUp AI
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # ECS task definitions: api, web, worker, init.
 # All run on EC2 capacity provider with awsvpc networking.

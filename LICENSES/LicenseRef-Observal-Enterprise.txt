@@ -20,10 +20,10 @@ TERMS AND CONDITIONS
        user-facing environment without a valid commercial license.
 
    (c) Integrate or combine the Enterprise Code with the
-       AGPL-licensed open-source core of Observal ONLY if you
+       Apache-2.0-licensed open-source core of Observal ONLY if you
        hold a valid Observal Commercial License. Combining this
-       code with the AGPL core without a commercial license does
-       not grant you any rights under the AGPL for this directory.
+       code with the Apache-2.0 core without a commercial license does
+       not grant you any rights to this directory under Apache-2.0.
 
 
 2. Commercial Use Requires a License
@@ -65,9 +65,9 @@ TERMS AND CONDITIONS
        validation, feature flag, entitlement check, or access
        control mechanism present in this directory.
 
-   (f) Claim that your use of this code is covered by the AGPL
-       license governing the open-source core of Observal. The
-       AGPL does NOT extend to this directory.
+   (f) Claim that your use of this code is covered by the Apache-2.0
+       license governing the open-source core of Observal.
+       Apache-2.0 terms do NOT extend to this directory.
 
 
 4. Contributions
@@ -79,10 +79,9 @@ TERMS AND CONDITIONS
 
    Community contributions should be directed to the open-source
    directories of this repository (outside "ee/"), which are
-   licensed under the GNU Affero General Public License v3.0
-   (AGPL). Contributors to the open-source core must sign the
-   Observal Contributor License Agreement (CLA.md) located in
-   the root of this repository.
+   licensed under the Apache License 2.0. Contributors to
+   the open-source core must sign the Observal Contributor License
+   Agreement (CLA.md) located in the root of this repository.
 
 
 5. No Warranty
@@ -125,7 +124,7 @@ TERMS AND CONDITIONS
 
    (c) Your right to view the source code remains intact, as
        the source is publicly visible under the source-available
-       terms of this License — but all operational rights cease.
+       terms of this License, but all operational rights cease.
 
    (d) Sections 3, 5, 6, 7, and 8 survive termination.
 
@@ -133,23 +132,23 @@ TERMS AND CONDITIONS
 7. Open Source Core Separation
 
    The Enterprise Code in this directory ("ee/") is architecturally
-   and legally separate from the AGPL-licensed open-source core
+   and legally separate from the Apache-2.0-licensed open-source core
    of Observal. Specifically:
 
-   (a) The AGPL open-source core (all code outside "ee/") is
+   (a) The Apache-2.0 open-source core (all code outside "ee/") is
        fully functional without any code in this directory.
 
-   (b) No AGPL rights, permissions, or obligations extend to
+   (b) No Apache-2.0 rights, permissions, or obligations extend to
        the code in this directory by virtue of co-existing in
        the same repository.
 
-   (c) If you deploy only the AGPL-licensed core (outside "ee/")
+   (c) If you deploy only the Apache-2.0-licensed core (outside "ee/")
        without using any code from this directory, your use is
-       governed solely by the AGPL, not this License.
+       governed solely by Apache-2.0, not this License.
 
-   (d) If you use or deploy any code from this directory —
-       even one file — this License applies in full, regardless
-       of whether you hold an AGPL-compliant setup for the core.
+   (d) If you use or deploy any code from this directory,
+       even one file, this License applies in full, regardless
+       of whether you hold an Apache-2.0-compliant setup for the core.
 
 
 8. Governing Law & Dispute Resolution

@@ -1,5 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # AI Policy
 
@@ -20,11 +20,11 @@ This is not a quality judgement, it is a legal one.
 
 The [US Copyright Office's January 2025 report on AI copyrightability](https://www.copyright.gov/ai/Copyright-and-Artificial-Intelligence-Part-2-Copyrightability-Report.pdf) explicitly confirms that purely AI-generated code, where the AI made all material creative choices in response to a task description, has **no copyright owner**. Not you, not the AI company.
 
-This creates three structural problems for an AGPL-licensed project:
+This creates three structural problems for this project:
 
 1. **The CLA is invalidated.** Our CLA requires you to assert that the contribution is your original creation and that you have the right to license it. You cannot make that assertion for code an autonomous agent wrote.
 
-2. **The AGPL chain breaks.** The AGPL is a copyright license. It works by a copyright holder granting rights conditioned on copyleft obligations. If a contribution has no copyright owner, the AGPL cannot cover it, creating a licensing hole in the codebase that cannot be retroactively fixed.
+2. **The license chain breaks.** Apache-2.0 is a copyright license. It works by a copyright holder granting rights. If a contribution has no copyright owner, the license cannot cover it, creating a licensing hole in the codebase that cannot be retroactively fixed.
 
 3. **Training data provenance is unknowable.** Autonomous agents may reproduce verbatim or substantially similar GPL-licensed code from their training data without attribution, a risk confirmed by active litigation (_Doe 1 v. GitHub, Inc._, N.D. Cal. 2022) and studied by the [Software Freedom Conservancy](https://sfconservancy.org/blog/2022/feb/03/github-copilot-copyleft-gpl/) and [FSF](https://www.fsf.org/news/publication-of-the-fsf-funded-white-papers-on-questions-around-copilot).
 

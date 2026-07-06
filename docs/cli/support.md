@@ -1,6 +1,6 @@
 <!--
 SPDX-FileCopyrightText: 2026-present Observal (BlazeUp AI LLP)
-SPDX-License-Identifier: AGPL-3.0-only
+SPDX-License-Identifier: Apache-2.0
 -->
 
 # observal support

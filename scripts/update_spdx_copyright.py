@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 """
 Pre-commit hook: ensures the committer's SPDX-FileCopyrightText line is present
 in every staged file that already has an SPDX header.
@@ -129,7 +129,7 @@ def add_fresh_header(path: Path, name: str, email: str, year: int):
     prefix, suffix = style
     copyright_line = f"{prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{suffix}"
     # REUSE-IgnoreStart
-    license_line = f"{prefix}SPDX-License-Identifier: AGPL-3.0-only{suffix}"
+    license_line = f"{prefix}SPDX-License-Identifier: Apache-2.0{suffix}"
     # REUSE-IgnoreEnd
 
     raw = path.read_bytes()

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """Build a deterministic YAML snapshot of an :class:`AgentVersion`.
 

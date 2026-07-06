@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 resource "azurerm_virtual_network" "main" {
   name                = "${local.name}-vnet"

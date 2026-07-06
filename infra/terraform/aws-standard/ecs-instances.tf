@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 BlazeUp AI
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # EC2 launch template + ASG for ECS cluster instances.
 

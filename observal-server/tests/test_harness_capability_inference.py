@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 snoopuppy582 <mnb0968@naver.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """Tests for harness capability inference helpers."""
 

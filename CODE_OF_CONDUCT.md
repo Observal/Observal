@@ -1,7 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Contributor Covenant Code of Conduct
 
@@ -62,7 +62,7 @@ posting via an official social media account, or acting as an appointed
 representative at an online or offline event.
 
 **Note on contributions:** Community contributions are welcome across the
-open-source core (AGPL-3.0). The `ee/` directory contains proprietary
+open-source core (Apache-2.0). The `ee/` directory contains proprietary
 enterprise code and does not accept community contributions. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for details on the dual-license structure.
 

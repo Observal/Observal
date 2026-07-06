@@ -11,7 +11,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <pre>
  ██████╗ ██████╗ ███████╗███████╗██████╗ ██╗   ██╗ █████╗ ██╗
@@ -25,7 +25,7 @@
 **Observal is the control plane and system of record for internal AI components**
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.11+-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python">
   <a href="https://pypi.org/project/observal-cli/"><img src="https://img.shields.io/pypi/v/observal-cli?style=flat-square&logo=pypi&logoColor=white&label=pypi" alt="PyPI version"></a>
   <a href="https://github.com/Observal/Observal/graphs/contributors"><img src="https://img.shields.io/github/contributors/Observal/Observal?style=flat-square&logo=github" alt="Contributors"></a>
@@ -337,4 +337,4 @@ Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://gith
 
 ## License
 
-GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).

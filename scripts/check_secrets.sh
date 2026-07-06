@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # check_secrets.sh — pre-commit guard against .env files and hardcoded secrets
 set -euo pipefail

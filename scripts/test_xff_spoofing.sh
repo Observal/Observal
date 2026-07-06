@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # SEC-003 integration test: verify that X-Forwarded-For spoofing
 # cannot bypass rate limiting.

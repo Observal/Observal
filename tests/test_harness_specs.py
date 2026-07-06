@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Madhumidha <madhumidha072005@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 from observal_cli.harness_specs import claude_code_hooks_spec, kiro_hooks_spec
 from observal_cli.shared.utils import is_observal_hook_entry, is_observal_matcher_group

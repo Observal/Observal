@@ -1,7 +1,7 @@
 ---
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 name: observal
 command: observal
 description: "Core Observal CLI operations: pull agents into your harness, scan installed components, diagnose and patch harness configs, authenticate, manage CLI settings, and discuss agent insights. Use when the user wants to install an agent, check setup, login, configure the CLI, or ask how an agent is doing."

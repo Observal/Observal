@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # Container Apps Environment with VNet integration
 resource "azurerm_container_app_environment" "main" {

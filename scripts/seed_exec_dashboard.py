@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 """Seed exec dashboard test data into PostgreSQL + ClickHouse.
 
 Run on the EC2 instance (inside the container) or locally with SSH tunnel:

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -28,7 +28,7 @@ def test_split_sql_strips_spdx_and_keeps_quoted_semicolon():
     from services.clickhouse.migrations import _split_sql
 
     sql = """# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 SELECT 'a;b';
 SELECT 2;
 """

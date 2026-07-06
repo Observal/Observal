@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-FileCopyrightText: 2026 Harshith Padakanti <harshaharshith31@gmail.com>
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 
 import { createFileRoute } from "@tanstack/react-router";
 import { lazy } from "react";

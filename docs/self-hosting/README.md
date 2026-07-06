@@ -1,3 +1,8 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Overview
 
 Run Observal entirely on your own infrastructure. No SaaS, no egress, every byte of telemetry stays inside your network.

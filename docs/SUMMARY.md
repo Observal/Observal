@@ -1,3 +1,8 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Nithin-Bhargav-07 <gaddamnithinbhargav@gmail.com> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Table of contents
 
 ## Getting Started

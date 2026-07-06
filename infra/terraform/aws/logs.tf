@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # Centralized CloudWatch log groups. Retention is governed by var.log_retention_days.
 # CMKs can be supplied per-group for stricter compliance; defaults use AWS-managed encryption.

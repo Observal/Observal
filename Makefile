@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 .PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-enterprise rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release-major release-feature release-patch sync-skill
 

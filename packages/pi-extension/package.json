@@ -9,7 +9,7 @@
     "telemetry",
     "tracing"
   ],
-  "license": "AGPL-3.0-only",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/Observal/Observal.git",

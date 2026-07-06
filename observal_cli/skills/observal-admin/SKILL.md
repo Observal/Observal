@@ -1,6 +1,6 @@
 ---
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 name: observal-admin
 command: observal
 description: Observal admin operations including user management, enterprise settings, submission review queue, security events, audit logs, and SSO configuration. Use when the user needs to manage users, approve or reject submissions, view security events, or configure SAML/SCIM.

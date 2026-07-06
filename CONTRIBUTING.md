@@ -1,3 +1,12 @@
+<!-- SPDX-FileCopyrightText: 2026 Ai-chan-0411 <aoikabu12@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Luca Magrini <lucamagrini1234@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Contributing Guide
 
 Thank you for considering contributing to Observal. Contributions of all kinds are welcome: bug reports, bug fixes, new features, documentation improvements, and tests.
@@ -125,7 +134,7 @@ Every source file needs SPDX headers. The pre-commit hook adds them automaticall
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 ```
 
 Use `//` for TypeScript, `<!-- -->` for Markdown. CI will block merge if any file is missing headers.
@@ -205,7 +214,7 @@ The `ee/` directory is licensed under the [Observal Enterprise License](https://
 
 ## License
 
-All code outside `ee/` is licensed under [AGPL-3.0](https://github.com/BlazeUp-AI/Observal/blob/main/LICENSE/README.md). The `ee/` directory is licensed under the [Observal Enterprise License](https://github.com/BlazeUp-AI/Observal/blob/main/ee/LICENSE/README.md).
+All code outside `ee/` is licensed under [Apache-2.0](https://github.com/BlazeUp-AI/Observal/blob/main/LICENSE/README.md). The `ee/` directory is licensed under the [Observal Enterprise License](https://github.com/BlazeUp-AI/Observal/blob/main/ee/LICENSE/README.md).
 
 ***
 

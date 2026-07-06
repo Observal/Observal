@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import { useHelpMode } from "@/hooks/use-help-mode";

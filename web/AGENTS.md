@@ -1,5 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Web Frontend
 
@@ -147,4 +147,4 @@ E2E specs live in `tests/e2e/*.spec.ts` in the repo root workspace.
 
 There is no `web/ee/` directory. Enterprise pages live in normal route and page directories alongside core pages. They call license-gated API endpoints. If the feature is not licensed, the server returns 403 and the frontend shows an upgrade prompt.
 
-This follows the Langfuse/PostHog pattern: the `ee/` boundary is backend-only. The frontend is AGPL and gates features server-side.
+This follows the Langfuse/PostHog pattern: the `ee/` boundary is backend-only. The frontend is Apache-2.0 and gates features server-side.

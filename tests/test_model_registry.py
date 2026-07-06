@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Dhanpraja <dhanpraja231@users.noreply.github.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 shreyansh-web <shreyansh487@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """Registry-backed harness model tests."""
 

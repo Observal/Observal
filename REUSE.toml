@@ -3,12 +3,12 @@ version = 1
 [[annotations]]
 path = ".github/hooks/observal.json"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/insights.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/agent-activity.json"
@@ -16,7 +16,7 @@ SPDX-FileCopyrightText = [
   "2026 Apoorv Garg <apoorvgarg.21@gmail.com>",
   "2026 Hari Srinivasan <harisrini21@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/audit-log.json"
@@ -24,7 +24,7 @@ SPDX-FileCopyrightText = [
   "2026 Apoorv Garg <apoorvgarg.21@gmail.com>",
   "2026 Hari Srinivasan <harisrini21@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/cost-tracking.json"
@@ -32,7 +32,7 @@ SPDX-FileCopyrightText = [
   "2026 Apoorv Garg <apoorvgarg.21@gmail.com>",
   "2026 Hari Srinivasan <harisrini21@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/error-rates.json"
@@ -40,12 +40,12 @@ SPDX-FileCopyrightText = [
   "2026 Apoorv Garg <apoorvgarg.21@gmail.com>",
   "2026 Hari Srinivasan <harisrini21@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/performance-resources.json"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/scores-eval.json"
@@ -53,12 +53,12 @@ SPDX-FileCopyrightText = [
   "2026 Apoorv Garg <apoorvgarg.21@gmail.com>",
   "2026 Hari Srinivasan <harisrini21@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/self-observability.json"
 SPDX-FileCopyrightText = "2026 Kaushik Kumar <kaushikrjpm10@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/session-overview.json"
@@ -66,7 +66,7 @@ SPDX-FileCopyrightText = [
   "2026 Apoorv Garg <apoorvgarg.21@gmail.com>",
   "2026 Hari Srinivasan <harisrini21@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/token-usage.json"
@@ -74,7 +74,7 @@ SPDX-FileCopyrightText = [
   "2026 Apoorv Garg <apoorvgarg.21@gmail.com>",
   "2026 Hari Srinivasan <harisrini21@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "grafana/dashboards/tool-call-frequency.json"
@@ -82,17 +82,17 @@ SPDX-FileCopyrightText = [
   "2026 Apoorv Garg <apoorvgarg.21@gmail.com>",
   "2026 Hari Srinivasan <harisrini21@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/data/litellm_model_catalog.json"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/pyrightconfig.json"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "renovate.json"
@@ -100,17 +100,17 @@ SPDX-FileCopyrightText = [
   "2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>",
   "2026 Shaan Narendran <shaannaren06@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "test-agent.json"
 SPDX-FileCopyrightText = "2026 Naraen Rammoorthi <naraen13@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "tests/fixtures/model_display_cases.json"
 SPDX-FileCopyrightText = "2026 Aryan Iyappan <aryaniyappan2006@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "web/package.json"
@@ -120,18 +120,18 @@ SPDX-FileCopyrightText = [
   "2026 Shaan Narendran <shaannaren06@gmail.com>",
   "2026 SrihariLegend <sriharilegend23@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 
 [[annotations]]
 path = "web/tsconfig.json"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "CLA.md"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/uv.lock"
@@ -142,7 +142,7 @@ SPDX-FileCopyrightText = [
   "2026 SrihariLegend <sriharilegend23@gmail.com>",
   "2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "pnpm-lock.yaml"
@@ -150,42 +150,42 @@ SPDX-FileCopyrightText = [
   "2026 Hari Srinivasan <harisrini21@gmail.com>",
   "2026 SrihariLegend <sriharilegend23@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "package.json"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "pnpm-workspace.yaml"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "tests/e2e/package.json"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "infra/terraform/aws/tf.plan"
 SPDX-FileCopyrightText = "2026 Apoorv Garg <apoorvgarg.21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/alembic/README"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/alembic/env.py"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/alembic/script.py.mako"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "uv.lock"
@@ -199,27 +199,27 @@ SPDX-FileCopyrightText = [
   "2026 Swathi Saravanan <ss4522@cornell.edu>",
   "2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/alembic/versions/0001_initial_schema.py"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/alembic/versions/0002_models_by_harness.py"
 SPDX-FileCopyrightText = "2026 Aryan Iyappan <aryaniyappan2006@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "observal-server/alembic/versions/0003_add_insight_meta_cache.py"
 SPDX-FileCopyrightText = "2026 Shaan Narendran <shaannaren06@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "LICENSE"
 SPDX-FileCopyrightText = "2026-present BlazeUp AI LLP"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "ee/LICENSE"
@@ -229,57 +229,57 @@ SPDX-License-Identifier = "LicenseRef-Observal-Enterprise"
 [[annotations]]
 path = "docs/img/audit_logging.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/builder.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/complete_capture_thinking_response.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/component_registry.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/leaderboard.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/registry.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/review.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/review-diff.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/ses1.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/span.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "docs/img/traces.png"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "web/public/fonts/albert-sans-latin-variable.woff2"
@@ -299,12 +299,12 @@ SPDX-License-Identifier = "OFL-1.1"
 [[annotations]]
 path = ".clabot"
 SPDX-FileCopyrightText = "2026 Observal (BlazeUp AI LLP)"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "packages/pi-extension/package.json"
 SPDX-FileCopyrightText = "2026 Observal (BlazeUp AI LLP)"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "web/public/favicon.ico"
@@ -312,24 +312,29 @@ SPDX-FileCopyrightText = [
   "2026 Hari Srinivasan <harisrini21@gmail.com>",
   "2026 Lokesh Selvam <lokeshselvam7025@gmail.com>"
 ]
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "web/public/icon.png"
 SPDX-FileCopyrightText = "2026 Lokesh Selvam <lokeshselvam7025@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "web/src/routeTree.gen.ts"
 SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = ".github/vex/observal.vex.json"
 SPDX-FileCopyrightText = "2026 Kaushik Kumar <kaushikrjpm10@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "scripts/license-format.json"
 SPDX-FileCopyrightText = "2026 Kaushik Kumar <kaushikrjpm10@gmail.com>"
-SPDX-License-Identifier = "AGPL-3.0-only"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "docs/.gitbook/assets/insights.png"
+SPDX-FileCopyrightText = "2026 Subramania Raja Piramuthu Raja <contact@observal.io>"
+SPDX-License-Identifier = "Apache-2.0"

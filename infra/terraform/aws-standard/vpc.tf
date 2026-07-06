@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 BlazeUp AI
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # All VPC networking resources are conditional on local.should_create_vpc.
 # When vpc_id is provided (BYO-VPC), none of these are created.

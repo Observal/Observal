@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # Standalone Observal deployment — uses pre-built images from GHCR.
 # Generated for curl-install: no source code or build context required.

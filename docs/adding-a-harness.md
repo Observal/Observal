@@ -1,5 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Adding a New Harness to Observal
 
@@ -148,7 +148,7 @@ Create `observal_cli/harness/my_harness.py`. This handles local discovery:
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """My harness adapter."""
 
@@ -324,7 +324,7 @@ users run `observal pull` or install an agent:
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """My harness server-side config generator."""
 
@@ -374,7 +374,7 @@ hooks `observal doctor patch --hook` installs:
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 """Hook specification for My harness."""
 

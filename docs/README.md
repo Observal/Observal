@@ -1,3 +1,10 @@
+<!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Subramania Raja Piramuthu Raja <contact@observal.io> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Installation
 
 Observal has two parts: a **server** you self-host and a **CLI** installed on each developer machine.

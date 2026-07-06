@@ -3,7 +3,7 @@
   "version": "1.9.8",
   "private": true,
   "type": "module",
-  "license": "AGPL-3.0-only",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@10.34.4",
   "scripts": {
     "dev": "vite",

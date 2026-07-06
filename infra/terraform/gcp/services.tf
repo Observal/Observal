@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 # Auto-enable required GCP APIs. Resources that need a specific API
 # declare depends_on to the relevant google_project_service below,

@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
 

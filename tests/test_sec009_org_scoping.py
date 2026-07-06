@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 """Tests for org-scoped visibility on registry list and detail endpoints.
 
 Verifies that private listings are hidden from users in other organisations,
