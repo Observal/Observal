@@ -607,11 +607,11 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Environment Variables</h3>
           <div className="rounded-md border border-border divide-y divide-border">
             {envVars.map((ev) => (
-              <div key={ev.name} className="px-3 py-2 flex items-center justify-between text-sm">
-                <code className="font-mono text-xs">{ev.name}</code>
-                <div className="flex items-center gap-2">
-                  {ev.description && <span className="text-xs text-muted-foreground">{ev.description}</span>}
-                  {ev.required && <Badge variant="secondary" className="text-[10px]">required</Badge>}
+              <div key={ev.name} className="px-3 py-2 flex items-start justify-between gap-3 text-sm">
+                <code className="font-mono text-xs shrink-0 pt-0.5">{ev.name}</code>
+                <div className="min-w-0 flex flex-wrap items-start justify-end gap-2 text-right">
+                  {ev.description && <span className="min-w-0 break-words text-xs leading-relaxed text-muted-foreground">{ev.description}</span>}
+                  {ev.required && <Badge variant="secondary" className="shrink-0 text-[10px]">required</Badge>}
                 </div>
               </div>
             ))}
