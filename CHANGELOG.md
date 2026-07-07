@@ -10,10 +10,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.9.8] - 2026-07-01
+## [1.9.9] - 2026-07-07
 
 ### Added
 
+- add JSON output for scan (**cli**) ([223973f](https://github.com/Observal/Observal/commit/223973f82d05fa10239032d6162e19d5f27662fe))
+- GitHub OAuth sign-in + SSO settings robustness fixes (**auth**) ([9675ba6](https://github.com/Observal/Observal/commit/9675ba6b97964b73d34c2d4383f87c956ca3f7de))
 - agent swapping and local profile isolation for pi ([e261ba7](https://github.com/Observal/Observal/commit/e261ba72edd2db0007f55f8b692004205dee143d))
 - use ~/.pi/agent/agents isolated profiles with TUI to swap ([242be6b](https://github.com/Observal/Observal/commit/242be6bfafe5330626f93157716141239068c6a7))
 - add /agent command to swap active agent in pi ([0fd4c64](https://github.com/Observal/Observal/commit/0fd4c646be0db9d726efc461217afe95cb20f1e6))
@@ -802,6 +804,14 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+- remove BlazeUp references ([0923059](https://github.com/Observal/Observal/commit/092305999abf2b8b5c1f248836ddd03d815463be))
+- add license commitment ([35a6f54](https://github.com/Observal/Observal/commit/35a6f54c568446f9eeb2e7b76a326740aaa9b581))
+- remove outdated rules references (**cursor**) ([0b47917](https://github.com/Observal/Observal/commit/0b479172a8e447697c8c5ed6294f95106b46c947))
+- add Cursor integration to summary ([186e3bb](https://github.com/Observal/Observal/commit/186e3bb6e556789ee9139bd8ed2df65967590dec))
+- add Cursor integration guide ([ba6f935](https://github.com/Observal/Observal/commit/ba6f935bfd63b3bcdbbcaf085391511f0a6e148d))
+- clarify enterprise license boundary ([09e3202](https://github.com/Observal/Observal/commit/09e32024469c58ebfed4e2c79aa8d96c98b2b909))
+- add Copilot integration to summary.md ([49e64b8](https://github.com/Observal/Observal/commit/49e64b88d7ba8825d4982705b78156709889f598))
+- add Copilot integration guide (**integrations**) ([b74058b](https://github.com/Observal/Observal/commit/b74058bdcc1a6d31e0c8ed8aed0a052ec8b13143))
 - recommend uv tool installs (**cli**) ([baa0635](https://github.com/Observal/Observal/commit/baa063530576b43258698b248ee6e8e08afe2db2))
 - add search setup guidance (**skills**) ([38c55b9](https://github.com/Observal/Observal/commit/38c55b9b7f71489655a373a90c58a8e518ace147))
 - document harness attribution (**integrations**) ([636942b](https://github.com/Observal/Observal/commit/636942b54e94d09158d8d2699f2682443251efae))
@@ -929,6 +939,26 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- hide IDs from component versions (**web**) ([5d02072](https://github.com/Observal/Observal/commit/5d020723c7ca1cd0a550b558462cdc338a6c0ecd))
+- wrap MCP environment descriptions (**web**) ([959c971](https://github.com/Observal/Observal/commit/959c97144ed5510f8aa494fc2cc5a6d7f0cc30dc))
+- make visibility migration idempotent (**server**) ([b875fc4](https://github.com/Observal/Observal/commit/b875fc4121cdd3694504987a6ab1f393dc1395a8))
+- populate OpenCode plugin hook fields (**harness**) ([f8d8f6b](https://github.com/Observal/Observal/commit/f8d8f6b67b9c29f2c31f62845ff662d5fea4596a))
+- count all secret redactions (**security**) ([1304137](https://github.com/Observal/Observal/commit/130413743876cf29aeece17f8f35ac99a3177d78))
+- reject leading-zero semver (**versioning**) ([cfd8be7](https://github.com/Observal/Observal/commit/cfd8be740200e9494e16106ecda7890fd13f94b6))
+- correct internal git url setting hint (**mcp**) ([55a4499](https://github.com/Observal/Observal/commit/55a4499e90a9a82c6b17f9d60ff4b5cec3b67b2a))
+- restore strict version match, show correct upgrade/downgrade command (**cli**) ([330339f](https://github.com/Observal/Observal/commit/330339fc6a7521d1482a01a50d69032c1c3c6977))
+- use full page redirect after login to prevent auth loop on multi-replica deployments (**auth**) ([3a2bd32](https://github.com/Observal/Observal/commit/3a2bd3279b1a23c433e805604f07a0d95bb6fa11))
+- validate sp_key_encryption_password when SAML is configured (**ee**) ([7b468ba](https://github.com/Observal/Observal/commit/7b468ba9fec649028aefe7d61d9303cc806e6595))
+- remove unnecessary quotes from type annotation (**ee**) ([420a6da](https://github.com/Observal/Observal/commit/420a6dace881d976e3c9a3e2aa329b2a8342ce65))
+- override entryPoint to bypass nginx envsubst on $uri (**infra**) ([5fd2c1f](https://github.com/Observal/Observal/commit/5fd2c1fc27e8a549a38b1ac9c52da1d54bd1bafc))
+- resolve web container crash-loop on ECS (nginx upstream failure) (**infra**) ([bca2c04](https://github.com/Observal/Observal/commit/bca2c04faa911ab57704b4985a75e21d1978d19d))
+- align ClickHouse version to 26.6 across all modules (**infra**) ([96bdefd](https://github.com/Observal/Observal/commit/96bdefd4f99f572b4713f79b42ecf78f99b1d22b))
+- remove dangerous rm -rf /data/postgres/* from data host user-data (**infra**) ([6ea8268](https://github.com/Observal/Observal/commit/6ea826872f5d07174ac03a634b62f6c91935419f))
+- resolve connectivity and deployment issues in aws and aws-standard terraform modules (**infra**) ([2f8cb59](https://github.com/Observal/Observal/commit/2f8cb599cbbee57991cc3c5e122ca7c4f92dc7e1))
+- evaluate enterprise config dynamically on SSO/SCIM requests (**ee**) ([f815b44](https://github.com/Observal/Observal/commit/f815b4459cf07f51d981c86eb1fa7b7b91ad8326))
+- relax version enforcement for self-hosted servers (**cli**) ([6d6dca4](https://github.com/Observal/Observal/commit/6d6dca467e21ad0b480a73686b6b5267328c0966))
+- suggest noninteractive self upgrades (**cli**) ([89e211f](https://github.com/Observal/Observal/commit/89e211f9aa0e192715733412b6f3742cb6a238ad))
+- resolve latest telemetry version (**pi**) ([f2347dd](https://github.com/Observal/Observal/commit/f2347dd4b25ecfd7922aeae55936cb3c03522a6a))
 - show installer upgrade commands (**cli**) ([b3fdc03](https://github.com/Observal/Observal/commit/b3fdc039a20666a8f74cbc1a5f467863f2002343))
 - include isolated profiles in layer snapshots (**pi**) ([26d06d3](https://github.com/Observal/Observal/commit/26d06d30ff80606befef733c273f1450334ac953))
 - show api error detail when agent install fails ([2274d9f](https://github.com/Observal/Observal/commit/2274d9f4ffa1c8f28624b64d649f8318d50be933))
@@ -1627,8 +1657,13 @@ All notable changes to this project will be documented in this file.
 - resolve Docker stack and GraphQL DataLoader issues ([07f27e1](https://github.com/Observal/Observal/commit/07f27e130c0fcafe33237710cb199aa8edaa67bc))
 - add .dockerignore and use uv tool install for CLI setup ([ab39c37](https://github.com/Observal/Observal/commit/ab39c378a87e2fbc03084c8f1bb115b5a1e9942c))
 
+### GitBook
+
+- Update content ([23b8b8a](https://github.com/Observal/Observal/commit/23b8b8ad96b359f01570b77aaad543bf4c8265d5))
+
 ### Other
 
+- relicense core as Apache 2.0 ([e65969d](https://github.com/Observal/Observal/commit/e65969db03cb01f9b4c4c5d32ec0e3d060c82d30))
 - remove legacy env var startup guard ([3d5a853](https://github.com/Observal/Observal/commit/3d5a85333875f42b8495cb7aebfea21539b4c5ee))
 - update docker images (minor/patch) (**deps**) ([c9db9af](https://github.com/Observal/Observal/commit/c9db9af878fec262ed32f24448aca006a64f8f69))
 - update org namespace references ([896e97a](https://github.com/Observal/Observal/commit/896e97a494988806474638f11aab8e4951f7b3af))
@@ -1815,6 +1850,9 @@ All notable changes to this project will be documented in this file.
 
 ### Testing
 
+- cover doctor helpers (**cli**) ([6aee651](https://github.com/Observal/Observal/commit/6aee651c115af5ca1f7351675bf5b94536764fd6))
+- add Pi harness config generator tests (**api**) ([428542e](https://github.com/Observal/Observal/commit/428542ee3e8505b39e3a559133d3be5ee6115277))
+- add unit tests for harness specs ([69bd6cf](https://github.com/Observal/Observal/commit/69bd6cfda0a8f0af662a66ef4475363bd648ecd3))
 - add unit tests for services/session_parsers/claude_code.py ([1b8377a](https://github.com/Observal/Observal/commit/1b8377a4de254789f0af90f3ef6b077259527153))
 - update SSO settings expectations (**auth**) ([60a3ba5](https://github.com/Observal/Observal/commit/60a3ba5b8097c61ed9026dbb284f5c158839722e))
 - cover natural keywords (**search**) ([a33f3e0](https://github.com/Observal/Observal/commit/a33f3e06296e5e821d420501430748cf056514f8))
