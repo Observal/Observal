@@ -329,16 +329,13 @@ export default function ComponentDetailPage() {
                               <p className="text-xs text-muted-foreground/70 italic truncate max-w-xl">{v.changelog}</p>
                             )}
                           </div>
-                          <div className="shrink-0 text-right space-y-0.5">
-                            {v.released_by && (
-                              <p className="text-xs text-muted-foreground">{v.released_by}</p>
-                            )}
-                            {v.released_at && (
+                          {v.released_at && (
+                            <div className="shrink-0 text-right space-y-0.5">
                               <p className="text-xs text-muted-foreground">
                                 {new Date(v.released_at).toLocaleDateString()}
                               </p>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
