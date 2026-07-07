@@ -7,12 +7,15 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Madhumidha <madhumidha072005@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal scan: read-only inventory of local harness setup."""
 
 from __future__ import annotations
 
+import json
+from contextlib import nullcontext
 from pathlib import Path
 
 import typer
@@ -39,6 +42,7 @@ _HARNESS_HOME_DIRS: dict[str, str] = {
     "copilot": "~/.vscode",
     "copilot-cli": "~/.copilot",
     "opencode": "~/.config/opencode",
+    "antigravity": "~/.gemini",
     "cursor": "~/.cursor",
     "pi": "~/.pi/agent",
 }
@@ -72,6 +76,7 @@ def register_scan(app: typer.Typer):
     @app.command(name="scan")
     def scan(
         harness: str | None = typer.Option(None, "--harness", "-i", help="Filter to a specific harness"),
+        output: str = typer.Option("table", "--output", "-o", help="Output format: table or json"),
     ):
         """Show a read-only inventory of your local harness setup.
 
@@ -121,7 +126,9 @@ def register_scan(app: typer.Typer):
             if home_dir and not home_dir.is_dir():
                 continue
 
-            with spinner(f"Scanning {home_label or ide_name}..."):
+            # Suppress the scanning spinner in JSON mode to prevent stdout pollution
+            scan_ctx = nullcontext() if output == "json" else spinner(f"Scanning {home_label or ide_name}...")
+            with scan_ctx:
                 try:
                     home_result = adapter.scan_home(home)
                 except NotSupportedError:
@@ -165,8 +172,23 @@ def register_scan(app: typer.Typer):
         total = len(all_mcps) + len(all_skills) + len(all_hooks) + len(all_agents)
 
         if total == 0 and not ide_status:
+            if output == "json":
+                print(json.dumps({"harnesses": [], "mcps": [], "skills": [], "hooks": [], "agents": []}, indent=2))
+                return
             rprint("[yellow]No harness configurations found.[/yellow]")
             raise typer.Exit(1)
+
+        # In JSON mode, dump the raw discovered objects and exit before rendering rich tables
+        if output == "json":
+            out_data = {
+                "harnesses": [{"name": n, "hooks": h, "shims": s} for n, h, s in ide_status],
+                "mcps": [vars(m) for m in all_mcps],
+                "skills": [vars(s) for s in all_skills],
+                "hooks": [vars(h) for h in all_hooks],
+                "agents": [vars(a) for a in all_agents],
+            }
+            print(json.dumps(out_data, indent=2))
+            return
 
         rprint(f"\n[bold]Observal Scan[/bold] - {total} components discovered\n")
 
