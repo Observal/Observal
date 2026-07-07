@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Madhumidha <madhumidha072005@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """OpenCode harness adapter.
@@ -282,6 +283,9 @@ class OpenCodeAdapter(BaseAdapter):
                     DiscoveredHook(
                         name=name,
                         event="plugin",
+                        handler_type="plugin",
+                        handler_config={},
+                        description=f"OpenCode plugin hook: {name}",
                         source=source,
                     )
                 )
