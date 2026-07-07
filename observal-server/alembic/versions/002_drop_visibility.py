@@ -20,8 +20,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_table("agent_team_access")
-    op.drop_column("agents", "visibility")
+    inspector = sa.inspect(op.get_bind())
+    if inspector.has_table("agent_team_access"):
+        op.drop_table("agent_team_access")
+    if "visibility" in {column["name"] for column in inspector.get_columns("agents")}:
+        op.drop_column("agents", "visibility")
     op.execute("DROP TYPE IF EXISTS agentvisibility")
 
 
