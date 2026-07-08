@@ -52,13 +52,38 @@ VERSION_MODELS = {
 }
 
 
-async def _find_listing(listing_id: str, db: AsyncSession):
+def _owner_org_conditions(model, org_id: uuid.UUID | None) -> list:
+    if org_id is None or not hasattr(model, "owner_org_id"):
+        return []
+    return [model.owner_org_id == org_id]
+
+
+def _apply_owner_org_filter(stmt, model, org_id: uuid.UUID | None):
+    conditions = _owner_org_conditions(model, org_id)
+    return stmt.where(*conditions) if conditions else stmt
+
+
+async def _bundle_belongs_to_org(bundle: ComponentBundle, db: AsyncSession, org_id: uuid.UUID | None) -> bool:
+    if org_id is None:
+        return True
+    submitter = (
+        await db.execute(select(User).where(User.id == bundle.submitted_by, User.org_id == org_id))
+    ).scalar_one_or_none()
+    return submitter is not None
+
+
+async def _find_listing(listing_id: str, db: AsyncSession, org_id: uuid.UUID | None = None):
     """Find a listing by ID, prefix, or name across all component types."""
     optic.trace("listing_id={}", listing_id)
     hits = []
     for listing_type, model in LISTING_MODELS.items():
         try:
-            listing = await resolve_prefix_id(model, listing_id, db)
+            listing = await resolve_prefix_id(
+                model,
+                listing_id,
+                db,
+                extra_conditions=_owner_org_conditions(model, org_id),
+            )
             hits.append((listing_type, listing))
         except HTTPException as e:
             if e.status_code == 400 and "too short" not in str(e.detail):
@@ -76,7 +101,8 @@ async def _find_listing(listing_id: str, db: AsyncSession):
 
     # Fallback: name-based lookup
     for listing_type, model in LISTING_MODELS.items():
-        result = await db.execute(select(model).where(model.name == listing_id))
+        stmt = _apply_owner_org_filter(select(model).where(model.name == listing_id), model, org_id)
+        result = await db.execute(stmt)
         listing = result.scalar_one_or_none()
         if listing:
             return listing_type, listing
@@ -84,7 +110,11 @@ async def _find_listing(listing_id: str, db: AsyncSession):
     return None, None
 
 
-async def _check_agent_components_ready(components, db: AsyncSession) -> tuple[bool, list[dict]]:
+async def _check_agent_components_ready(
+    components,
+    db: AsyncSession,
+    org_id: uuid.UUID | None = None,
+) -> tuple[bool, list[dict]]:
     """Check if all of an agent version's components are approved."""
     optic.trace("components={}", components)
     if not components:
@@ -100,13 +130,23 @@ async def _check_agent_components_ready(components, db: AsyncSession) -> tuple[b
         version_model = VERSION_MODELS.get(comp_type)
         if not model or not version_model:
             continue
-        rows = (
-            await db.execute(
-                select(model.id, model.name, version_model.status)
-                .join(version_model, model.latest_version_id == version_model.id)
-                .where(model.id.in_(ids))
+        stmt = (
+            select(model.id, model.name, version_model.status)
+            .join(version_model, model.latest_version_id == version_model.id)
+            .where(model.id.in_(ids))
+        )
+        stmt = _apply_owner_org_filter(stmt, model, org_id)
+        rows = (await db.execute(stmt)).all()
+        found_ids = {row.id for row in rows}
+        for missing_id in set(ids) - found_ids:
+            blocking.append(
+                {
+                    "component_type": comp_type,
+                    "component_id": str(missing_id),
+                    "name": "",
+                    "status": "not_found_or_not_in_org",
+                }
             )
-        ).all()
         for row in rows:
             if row.status != ListingStatus.approved:
                 blocking.append(
@@ -120,14 +160,19 @@ async def _check_agent_components_ready(components, db: AsyncSession) -> tuple[b
     return len(blocking) == 0, blocking
 
 
-async def _query_pending_agents(db: AsyncSession) -> list[dict]:
+async def _query_pending_agents(db: AsyncSession, org_id: uuid.UUID | None = None) -> list[dict]:
     # Find agents that have ANY pending version (not just latest_version_id).
     # This ensures version updates appear in the review queue after the first
     # version is approved.
     optic.debug("_query_pending_agents called")
     pending_versions_stmt = (
-        select(AgentVersion).where(AgentVersion.status == AgentStatus.pending).order_by(AgentVersion.created_at.desc())
+        select(AgentVersion)
+        .join(Agent, AgentVersion.agent_id == Agent.id)
+        .where(AgentVersion.status == AgentStatus.pending)
+        .order_by(AgentVersion.created_at.desc())
     )
+    if org_id is not None:
+        pending_versions_stmt = pending_versions_stmt.where(Agent.owner_org_id == org_id)
     pending_versions = (await db.execute(pending_versions_stmt)).scalars().all()
 
     if not pending_versions:
@@ -142,7 +187,10 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
 
     # Load the agents
     agent_ids = list(seen_agents.keys())
-    agents_result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+    agents_stmt = select(Agent).where(Agent.id.in_(agent_ids))
+    if org_id is not None:
+        agents_stmt = agents_stmt.where(Agent.owner_org_id == org_id)
+    agents_result = await db.execute(agents_stmt)
     agents_map = {a.id: a for a in agents_result.scalars().all()}
 
     user_ids = {a.created_by for a in agents_map.values()}
@@ -157,7 +205,7 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
         a = agents_map.get(agent_id)
         if not a:
             continue
-        components_ready, blocking = await _check_agent_components_ready(pending_ver.components, db)
+        components_ready, blocking = await _check_agent_components_ready(pending_ver.components, db, org_id)
         items.append(
             {
                 "type": "agent",
@@ -179,7 +227,11 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
     return items
 
 
-async def _query_pending_components(db: AsyncSession, type_filter: str | None = None) -> list[dict]:
+async def _query_pending_components(
+    db: AsyncSession,
+    type_filter: str | None = None,
+    org_id: uuid.UUID | None = None,
+) -> list[dict]:
     optic.trace("type_filter={}", type_filter)
     models_to_query = (
         {type_filter: LISTING_MODELS[type_filter]} if type_filter and type_filter in LISTING_MODELS else LISTING_MODELS
@@ -192,9 +244,11 @@ async def _query_pending_components(db: AsyncSession, type_filter: str | None = 
         # This ensures version updates appear in the queue after first approval.
         pending_versions_stmt = (
             select(version_model)
+            .join(model, version_model.listing_id == model.id)
             .where(version_model.status == ListingStatus.pending)
             .order_by(version_model.released_at.desc())
         )
+        pending_versions_stmt = _apply_owner_org_filter(pending_versions_stmt, model, org_id)
         pending_versions = (await db.execute(pending_versions_stmt)).scalars().all()
         if not pending_versions:
             continue
@@ -209,7 +263,12 @@ async def _query_pending_components(db: AsyncSession, type_filter: str | None = 
             continue
 
         # Load the listings
-        listings_result = await db.execute(select(model).where(model.id.in_(list(seen_listings.keys()))))
+        listings_stmt = _apply_owner_org_filter(
+            select(model).where(model.id.in_(list(seen_listings.keys()))),
+            model,
+            org_id,
+        )
+        listings_result = await db.execute(listings_stmt)
         listings_map = {r.id: r for r in listings_result.scalars().all()}
 
         for listing_id, pv in seen_listings.items():
@@ -285,16 +344,16 @@ async def list_pending(
 ):
     optic.trace("type={}", type)
     if tab == "agents":
-        result = await _query_pending_agents(db)
+        result = await _query_pending_agents(db, current_user.org_id)
         return result
 
     if tab == "components":
-        result = await _query_pending_components(db, type)
+        result = await _query_pending_components(db, type, current_user.org_id)
         return result
 
     # Default: return both agents and components
-    agents = await _query_pending_agents(db)
-    components = await _query_pending_components(db, type)
+    agents = await _query_pending_agents(db, current_user.org_id)
+    components = await _query_pending_components(db, type, current_user.org_id)
 
     # Merge and sort by created_at (most recent first)
     all_items = agents + components
@@ -449,7 +508,7 @@ async def get_review(
     current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
     optic.trace("listing_id={}", listing_id)
-    listing_type, listing = await _find_listing(listing_id, db)
+    listing_type, listing = await _find_listing(listing_id, db, current_user.org_id)
 
     if listing:
         result = _serialize_listing_detail(listing_type, listing)
@@ -459,7 +518,10 @@ async def get_review(
             agent_uuid = uuid.UUID(listing_id)
         except ValueError:
             raise HTTPException(status_code=404, detail="Listing not found")
-        agent = (await db.execute(select(Agent).where(Agent.id == agent_uuid))).scalar_one_or_none()
+        agent_stmt = select(Agent).where(Agent.id == agent_uuid)
+        if current_user.org_id is not None:
+            agent_stmt = agent_stmt.where(Agent.owner_org_id == current_user.org_id)
+        agent = (await db.execute(agent_stmt)).scalar_one_or_none()
         if not agent:
             raise HTTPException(status_code=404, detail="Listing not found")
         # Use the pending version for review (not latest_version which is the approved one)
@@ -469,7 +531,7 @@ async def get_review(
         )
         ver = pending_ver or agent.latest_version
         ver_components = ver.components if ver else agent.components
-        components_ready, blocking = await _check_agent_components_ready(ver_components, db)
+        components_ready, blocking = await _check_agent_components_ready(ver_components, db, current_user.org_id)
         result = {
             "type": "agent",
             "id": str(agent.id),
@@ -512,7 +574,12 @@ async def get_review(
             }
             model = LISTING_MODELS.get(c.component_type)
             if model:
-                listing = (await db.execute(select(model).where(model.id == c.component_id))).scalar_one_or_none()
+                stmt = _apply_owner_org_filter(
+                    select(model).where(model.id == c.component_id),
+                    model,
+                    current_user.org_id,
+                )
+                listing = (await db.execute(stmt)).scalar_one_or_none()
                 if listing:
                     comp_data["name"] = listing.name
                     if c.component_type == "prompt":
@@ -542,7 +609,7 @@ async def approve(
     current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
     optic.trace("listing_id={}", listing_id)
-    listing_type, listing = await _find_listing(listing_id, db)
+    listing_type, listing = await _find_listing(listing_id, db, current_user.org_id)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -591,7 +658,7 @@ async def reject(
     current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
     optic.trace("listing_id={}, req={}", listing_id, req)
-    listing_type, listing = await _find_listing(listing_id, db)
+    listing_type, listing = await _find_listing(listing_id, db, current_user.org_id)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -657,7 +724,10 @@ async def approve_agent(
     optic.trace("agent_id={}, req={}", agent_id, req)
     from services.versioning import parse_semver
 
-    agent = (await db.execute(select(Agent).where(Agent.id == agent_id))).scalar_one_or_none()
+    agent_stmt = select(Agent).where(Agent.id == agent_id)
+    if current_user.org_id is not None:
+        agent_stmt = agent_stmt.where(Agent.owner_org_id == current_user.org_id)
+    agent = (await db.execute(agent_stmt)).scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -681,7 +751,7 @@ async def approve_agent(
             raise HTTPException(status_code=409, detail="Cannot approve: the owner is currently editing this agent")
 
     newest_pending = pending_versions[0]
-    components_ready, blocking = await _check_agent_components_ready(newest_pending.components, db)
+    components_ready, blocking = await _check_agent_components_ready(newest_pending.components, db, current_user.org_id)
     if not components_ready:
         raise HTTPException(
             status_code=422,
@@ -729,7 +799,10 @@ async def reject_agent(
     current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
     optic.trace("agent_id={}, req={}", agent_id, req)
-    agent = (await db.execute(select(Agent).where(Agent.id == agent_id))).scalar_one_or_none()
+    agent_stmt = select(Agent).where(Agent.id == agent_id)
+    if current_user.org_id is not None:
+        agent_stmt = agent_stmt.where(Agent.owner_org_id == current_user.org_id)
+    agent = (await db.execute(agent_stmt)).scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -781,10 +854,13 @@ async def approve_bundle(
     bundle = (await db.execute(select(ComponentBundle).where(ComponentBundle.id == bundle_id))).scalar_one_or_none()
     if not bundle:
         raise HTTPException(status_code=404, detail="Bundle not found")
+    if not await _bundle_belongs_to_org(bundle, db, current_user.org_id):
+        raise HTTPException(status_code=404, detail="Bundle not found")
 
     count = 0
     for model in LISTING_MODELS.values():
-        result = await db.execute(select(model).where(model.bundle_id == bundle_id))
+        stmt = _apply_owner_org_filter(select(model).where(model.bundle_id == bundle_id), model, current_user.org_id)
+        result = await db.execute(stmt)
         for listing in result.scalars().all():
             if listing.latest_version and is_actively_editing(listing.latest_version):
                 raise HTTPException(
@@ -810,10 +886,13 @@ async def reject_bundle(
     bundle = (await db.execute(select(ComponentBundle).where(ComponentBundle.id == bundle_id))).scalar_one_or_none()
     if not bundle:
         raise HTTPException(status_code=404, detail="Bundle not found")
+    if not await _bundle_belongs_to_org(bundle, db, current_user.org_id):
+        raise HTTPException(status_code=404, detail="Bundle not found")
 
     count = 0
     for model in LISTING_MODELS.values():
-        result = await db.execute(select(model).where(model.bundle_id == bundle_id))
+        stmt = _apply_owner_org_filter(select(model).where(model.bundle_id == bundle_id), model, current_user.org_id)
+        result = await db.execute(stmt)
         for listing in result.scalars().all():
             if listing.latest_version and is_actively_editing(listing.latest_version):
                 raise HTTPException(
@@ -840,7 +919,7 @@ async def get_related_skills(
     current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
     optic.trace("listing_id={}", listing_id)
-    listing_type, listing = await _find_listing(listing_id, db)
+    listing_type, listing = await _find_listing(listing_id, db, current_user.org_id)
     if not listing or listing_type != "mcp":
         return {"skills": []}
 
@@ -860,6 +939,7 @@ async def get_related_skills(
         )
         .order_by(SkillListing.created_at.desc())
     )
+    stmt = _apply_owner_org_filter(stmt, SkillListing, current_user.org_id)
     skills = (await db.execute(stmt)).scalars().all()
 
     user_ids = {s.submitted_by for s in skills}
@@ -902,7 +982,7 @@ async def approve_mcp_with_skills(
     current_user: User = Depends(require_role(UserRole.reviewer)),
 ):
     optic.trace("listing_id={}, req={}", listing_id, req)
-    listing_type, listing = await _find_listing(listing_id, db)
+    listing_type, listing = await _find_listing(listing_id, db, current_user.org_id)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if listing_type != "mcp":
@@ -917,7 +997,12 @@ async def approve_mcp_with_skills(
             skill_uuid = uuid.UUID(sid)
         except ValueError:
             continue
-        skill = (await db.execute(select(SkillListing).where(SkillListing.id == skill_uuid))).scalar_one_or_none()
+        stmt = _apply_owner_org_filter(
+            select(SkillListing).where(SkillListing.id == skill_uuid),
+            SkillListing,
+            current_user.org_id,
+        )
+        skill = (await db.execute(stmt)).scalar_one_or_none()
         if skill and skill.status == ListingStatus.pending:
             skill.status = ListingStatus.approved
             skill.rejection_reason = None
