@@ -39,6 +39,7 @@ _FLUSH_THRESHOLD = 500
 _audit_buffer: list[dict] = []
 _buffer_lock = asyncio.Lock()
 _flush_task: asyncio.Task | None = None
+_actor_org_cache: dict[str, str] = {}
 
 
 def _make_row(
@@ -46,6 +47,7 @@ def _make_row(
     actor_id: str,
     actor_email: str,
     actor_role: str = "",
+    org_id: str = "",
     action: str,
     resource_type: str,
     resource_id: str = "",
@@ -63,6 +65,7 @@ def _make_row(
         "actor_id": actor_id,
         "actor_email": actor_email,
         "actor_role": actor_role,
+        "org_id": org_id,
         "action": action,
         "resource_type": resource_type,
         "resource_id": resource_id,
@@ -86,10 +89,38 @@ def _enrich_with_http_context(row: dict) -> dict:
 
 
 async def _buffer_row(row: dict) -> None:
+    if not row.get("org_id"):
+        row["org_id"] = await _resolve_actor_org_id(row.get("actor_id", ""))
     async with _buffer_lock:
         _audit_buffer.append(row)
         if len(_audit_buffer) >= _FLUSH_THRESHOLD:
             await _flush_locked()
+
+
+async def _resolve_actor_org_id(actor_id: str) -> str:
+    if not actor_id:
+        return ""
+    if actor_id in _actor_org_cache:
+        return _actor_org_cache[actor_id]
+    try:
+        actor_uuid = uuid.UUID(actor_id)
+    except ValueError:
+        return ""
+    try:
+        from sqlalchemy import select
+
+        from database import async_session
+        from models.user import User
+
+        async with async_session() as db:
+            result = await db.execute(select(User.org_id).where(User.id == actor_uuid))
+            org_id = result.scalar_one_or_none()
+    except Exception:
+        logger.debug("Audit actor org lookup skipped", exc_info=True)
+        return ""
+    resolved = str(org_id) if org_id else ""
+    _actor_org_cache[actor_id] = resolved
+    return resolved
 
 
 async def _flush_locked() -> None:
@@ -138,6 +169,7 @@ def register_audit_handlers():
             actor_id=event.actor_id,
             actor_email=event.actor_email,
             actor_role=event.actor_role,
+            org_id=event.org_id,
             action=event.action,
             resource_type=event.resource_type,
             resource_id=event.resource_id,
@@ -167,9 +199,12 @@ def register_audit_handlers():
 
     @bus.on(UserDeleted)
     async def _audit_user_deleted(event: UserDeleted):
+        # org_id is carried on the event: the user is already deleted, so the
+        # _buffer_row fallback that resolves org from actor_id would find nothing.
         row = _make_row(
             actor_id=event.user_id,
             actor_email=event.email,
+            org_id=event.org_id,
             action="user.deleted",
             resource_type="user",
             resource_id=event.user_id,

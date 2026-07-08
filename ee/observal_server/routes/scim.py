@@ -307,10 +307,13 @@ async def delete_user(
 
     email = user.email
     user_id_str = str(user.id)
+    # Capture org before deletion so the audit row stays tenant-scoped; the user
+    # row is gone after commit and org_id can no longer be resolved from it.
+    org_id = str(user.org_id) if user.org_id else ""
     await db.delete(user)
     await db.commit()
 
-    await bus.emit(UserDeleted(user_id=user_id_str, email=email))
+    await bus.emit(UserDeleted(user_id=user_id_str, email=email, org_id=org_id))
 
 
 # ---------------------------------------------------------------------------

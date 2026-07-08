@@ -236,6 +236,7 @@ class TestAuditLogEndpoint:
 
         mock_query = AsyncMock(return_value=fake_resp)
         mock_user = MagicMock()
+        mock_user.org_id = None
 
         with patch("ee.observal_server.routes.audit._query", mock_query):
             result = await list_audit_logs(
@@ -263,6 +264,7 @@ class TestAuditLogEndpoint:
 
         mock_query = AsyncMock(return_value=fake_resp)
         mock_user = MagicMock()
+        mock_user.org_id = None
 
         with patch("ee.observal_server.routes.audit._query", mock_query):
             result = await list_audit_logs(
@@ -305,6 +307,7 @@ class TestAuditLogEndpoint:
 
         mock_query = AsyncMock(return_value=fake_resp)
         mock_user = MagicMock()
+        mock_user.org_id = None
 
         with patch("ee.observal_server.routes.audit._query", mock_query):
             result = await list_audit_logs(
