@@ -63,6 +63,7 @@
 * [Cursor](integrations/cursor.md)
 * [Kiro](integrations/kiro.md)
 * [OpenCode](integrations/opencode.md)
+* [Pi](integrations/pi.md)
 
 ## Reference
 
