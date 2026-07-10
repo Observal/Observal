@@ -1063,5 +1063,3 @@ export default function AgentDetailPage() {
     </>
   );
 }
-
-

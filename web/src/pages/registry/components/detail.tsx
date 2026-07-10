@@ -650,5 +650,3 @@ function ComponentMetadata({ item }: { item: RegistryItem }) {
     </>
   );
 }
-
-

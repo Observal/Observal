@@ -5,12 +5,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import base64
 import time
 from urllib.parse import urlparse
 
-import base64
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse, Response, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from loguru import logger as optic
 from sqlalchemy import select
 
@@ -89,9 +89,7 @@ async def get_endpoints(request: Request):
 async def get_favicon(db=Depends(get_db)):
     """Return the branding logo as a binary file, or redirect to default icon."""
     try:
-        result = await db.execute(
-            select(EnterpriseConfig).where(EnterpriseConfig.key == "branding.logo")
-        )
+        result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == "branding.logo"))
         cfg = result.scalar_one_or_none()
         if cfg and cfg.value and cfg.value.startswith("data:"):
             # Parse data URI: data:image/png;base64,....
@@ -104,6 +102,7 @@ async def get_favicon(db=Depends(get_db)):
     except Exception:
         pass
     return RedirectResponse(url="/icon.png")
+
 
 @router.get("/public")
 async def get_public_config(db=Depends(get_db)):

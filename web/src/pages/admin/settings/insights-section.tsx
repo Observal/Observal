@@ -460,7 +460,7 @@ export function InsightsSection({ entries, onSave, onRevoke, refetch }: Insights
 					)}
 				</div>
 
-	
+
 				{/* Divider */}
 				<div className="border-t border-border/50" />
 

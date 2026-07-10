@@ -133,9 +133,9 @@ export default function (pi: ExtensionAPI) {
         if (!fs.existsSync(AGENTS_DIR)) fs.mkdirSync(AGENTS_DIR, { recursive: true });
         const defaultDir = path.join(AGENTS_DIR, "default");
         if (fs.existsSync(defaultDir)) return; // already backed up
-        
+
         fs.mkdirSync(defaultDir, { recursive: true });
-        
+
         const filesToCopy = [
           { name: "AGENTS.md", isDir: false },
           { name: "SYSTEM.md", isDir: false },
@@ -143,7 +143,7 @@ export default function (pi: ExtensionAPI) {
           { name: "skills", isDir: true },
           { name: "sandboxes", isDir: true }
         ];
-        
+
         for (const f of filesToCopy) {
           const src = path.join(PI_HOME, f.name);
           const dest = path.join(defaultDir, f.name);
@@ -198,7 +198,7 @@ export default function (pi: ExtensionAPI) {
 
       try {
         applyProfile(choice);
-        
+
         if (state?.config) {
           const binding = resolvePiAgentBinding(choice);
           state.config.agent_id = choice === "default" ? undefined : binding.id;
