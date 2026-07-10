@@ -15,8 +15,17 @@ export function DynamicTitle() {
 
   useEffect(() => {
     const iconLinks = document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']");
+    
+    // To force browsers like Chrome and Safari to immediately repaint the favicon,
+    // we must create entirely new <link> elements and remove the old ones.
+    // Changing the href of an existing tag is often ignored.
     iconLinks.forEach((link) => {
-      link.href = brandingLogo || "/icon.png";
+      const newLink = document.createElement("link");
+      newLink.rel = link.rel;
+      newLink.href = brandingLogo || (link.rel === "alternate icon" ? "/favicon.ico" : "/icon.png");
+      
+      document.head.appendChild(newLink);
+      link.remove();
     });
   }, [brandingLogo]);
 
