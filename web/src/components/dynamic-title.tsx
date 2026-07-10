@@ -14,35 +14,66 @@ export function DynamicTitle() {
   }, [brandingAppName]);
 
   useEffect(() => {
-    // Browsers are very stubborn about updating favicons dynamically.
     // 1. Remove all existing icon tags
     const iconLinks = document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']");
     iconLinks.forEach((link) => link.remove());
 
-    // 2. Extract MIME type if it's a data URI
+    let finalHref = "/icon.png";
     let mimeType = "image/png";
-    if (brandingLogo && brandingLogo.startsWith("data:")) {
-      const match = brandingLogo.match(/^data:([^;]+);/);
-      if (match) {
-        mimeType = match[1];
+
+    if (brandingLogo) {
+      if (brandingLogo.startsWith("data:")) {
+        // Safari heavily caches and sometimes completely ignores dynamic changes to
+        // base64 Data URIs. Converting the Data URI to a Blob URL creates a unique
+        // URL for the session, forcing Safari to fetch and repaint the tab icon.
+        try {
+          const [header, base64] = brandingLogo.split(",");
+          const match = header.match(/^data:([^;]+);/);
+          if (match) {
+            mimeType = match[1];
+          }
+          const binary = atob(base64);
+          const array = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            array[i] = binary.charCodeAt(i);
+          }
+          const blob = new Blob([array], { type: mimeType });
+          finalHref = URL.createObjectURL(blob);
+        } catch (e) {
+          // Fallback if parsing fails
+          finalHref = brandingLogo;
+        }
+      } else {
+        // For standard URLs, append a cache-buster timestamp
+        try {
+          const urlObj = new URL(brandingLogo, window.location.origin);
+          urlObj.searchParams.set("t", Date.now().toString());
+          finalHref = urlObj.toString();
+        } catch (e) {
+          finalHref = brandingLogo;
+        }
       }
     }
 
-    // 3. Create a single fresh icon tag
+    // 2. Inject fresh tags
     const newLink = document.createElement("link");
-    newLink.rel = "shortcut icon"; // 'shortcut icon' forces a repaint in older/stubborn browsers
+    newLink.rel = "shortcut icon";
     newLink.type = mimeType;
-    newLink.href = brandingLogo || "/icon.png";
-    
+    newLink.href = finalHref;
     document.head.appendChild(newLink);
 
-    // Also add the standard icon rel
     const standardLink = document.createElement("link");
     standardLink.rel = "icon";
     standardLink.type = mimeType;
-    standardLink.href = brandingLogo || "/icon.png";
+    standardLink.href = finalHref;
     document.head.appendChild(standardLink);
 
+    // 3. Cleanup blob URL when logo changes again or unmounts
+    return () => {
+      if (finalHref.startsWith("blob:")) {
+        URL.revokeObjectURL(finalHref);
+      }
+    };
   }, [brandingLogo]);
 
   return null;
