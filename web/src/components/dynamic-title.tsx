@@ -14,12 +14,10 @@ export function DynamicTitle() {
   }, [brandingAppName]);
 
   useEffect(() => {
-    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (link && brandingLogo) {
-      link.href = brandingLogo;
-    } else if (link) {
-      link.href = "/icon.png";
-    }
+    const iconLinks = document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']");
+    iconLinks.forEach((link) => {
+      link.href = brandingLogo || "/icon.png";
+    });
   }, [brandingLogo]);
 
   return null;
