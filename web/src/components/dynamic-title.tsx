@@ -60,21 +60,22 @@ export function DynamicTitle() {
     newLink.id = "dynamic-favicon";
     newLink.rel = "shortcut icon";
     newLink.type = mimeType;
-    newLink.href = finalHref;
+    // VERY IMPORTANT FOR SAFARI: Adding a random query param to the blob URL to bypass the favicon cache completely
+    newLink.href = finalHref.startsWith("blob:") ? `${finalHref}#${Date.now()}` : finalHref;
     document.head.appendChild(newLink);
 
     const standardLink = document.createElement("link");
     standardLink.id = "dynamic-favicon-standard";
     standardLink.rel = "icon";
     standardLink.type = mimeType;
-    standardLink.href = finalHref;
+    standardLink.href = finalHref.startsWith("blob:") ? `${finalHref}#${Date.now()}` : finalHref;
     document.head.appendChild(standardLink);
 
     const appleLink = document.createElement("link");
     appleLink.id = "dynamic-favicon-apple";
     appleLink.rel = "apple-touch-icon";
     appleLink.type = mimeType;
-    appleLink.href = finalHref;
+    appleLink.href = finalHref.startsWith("blob:") ? `${finalHref}#${Date.now()}` : finalHref;
     document.head.appendChild(appleLink);
 
     // 3. Cleanup blob URL when logo changes again or unmounts
