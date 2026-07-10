@@ -50,7 +50,7 @@
     "cmdk": "^1.1.1",
     "codemirror": "^6.0.2",
     "graphql-ws": "^6.0.8",
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^5.0.0",
     "lucide-react": "^1.7.0",
     "mermaid": "^11.15.0",
     "react": "19.2.7",
