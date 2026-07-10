@@ -18,72 +18,30 @@ export function DynamicTitle() {
     const iconLinks = document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']");
     iconLinks.forEach((link) => link.remove());
 
-    let finalHref = "/icon.png";
-    let mimeType = "image/png";
-
-    if (brandingLogo) {
-      if (brandingLogo.startsWith("data:")) {
-        // Safari heavily caches and sometimes completely ignores dynamic changes to
-        // base64 Data URIs. Converting the Data URI to a Blob URL creates a unique
-        // URL for the session, forcing Safari to fetch and repaint the tab icon.
-        try {
-          const [header, base64] = brandingLogo.split(",");
-          const match = header.match(/^data:([^;]+);/);
-          if (match) {
-            mimeType = match[1];
-          }
-          const binary = atob(base64);
-          const array = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            array[i] = binary.charCodeAt(i);
-          }
-          const blob = new Blob([array], { type: mimeType });
-          finalHref = URL.createObjectURL(blob);
-        } catch (e) {
-          // Fallback if parsing fails
-          finalHref = brandingLogo;
-        }
-      } else {
-        // For standard URLs, append a cache-buster timestamp
-        try {
-          const urlObj = new URL(brandingLogo, window.location.origin);
-          urlObj.searchParams.set("t", Date.now().toString());
-          finalHref = urlObj.toString();
-        } catch (e) {
-          finalHref = brandingLogo;
-        }
-      }
-    }
+    // Safari strictly requires a true network URL to reliably update favicons dynamically.
+    // It ignores Data URIs and often fails on Blob URLs in Private Browsing.
+    // We point directly to our dedicated API endpoint that serves the binary image.
+    const timestamp = Date.now();
+    const finalHref = `/api/v1/config/favicon?t=${timestamp}`;
 
     // 2. Inject fresh tags
     const newLink = document.createElement("link");
     newLink.id = "dynamic-favicon";
     newLink.rel = "shortcut icon";
-    newLink.type = mimeType;
-    // VERY IMPORTANT FOR SAFARI: Adding a random query param to the blob URL to bypass the favicon cache completely
-    newLink.href = finalHref.startsWith("blob:") ? `${finalHref}#${Date.now()}` : finalHref;
+    newLink.href = finalHref;
     document.head.appendChild(newLink);
 
     const standardLink = document.createElement("link");
     standardLink.id = "dynamic-favicon-standard";
     standardLink.rel = "icon";
-    standardLink.type = mimeType;
-    standardLink.href = finalHref.startsWith("blob:") ? `${finalHref}#${Date.now()}` : finalHref;
+    standardLink.href = finalHref;
     document.head.appendChild(standardLink);
 
     const appleLink = document.createElement("link");
     appleLink.id = "dynamic-favicon-apple";
     appleLink.rel = "apple-touch-icon";
-    appleLink.type = mimeType;
-    appleLink.href = finalHref.startsWith("blob:") ? `${finalHref}#${Date.now()}` : finalHref;
+    appleLink.href = finalHref;
     document.head.appendChild(appleLink);
-
-    // 3. Cleanup blob URL when logo changes again or unmounts
-    return () => {
-      if (finalHref.startsWith("blob:")) {
-        URL.revokeObjectURL(finalHref);
-      }
-    };
   }, [brandingLogo]);
 
   return null;

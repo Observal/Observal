@@ -8,8 +8,9 @@ import asyncio
 import time
 from urllib.parse import urlparse
 
+import base64
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, RedirectResponse
 from loguru import logger as optic
 from sqlalchemy import select
 
@@ -84,6 +85,26 @@ async def get_endpoints(request: Request):
     optic.debug("config.derive_endpoints called")
     return await derive_endpoints(request)
 
+
+@router.get("/favicon")
+async def get_favicon(db=Depends(get_db)):
+    """Return the branding logo as a binary file, or redirect to default icon."""
+    try:
+        result = await db.execute(
+            select(EnterpriseConfig).where(EnterpriseConfig.key == "branding.logo")
+        )
+        cfg = result.scalar_one_or_none()
+        if cfg and cfg.value and cfg.value.startswith("data:"):
+            # Parse data URI: data:image/png;base64,....
+            header, encoded = cfg.value.split(",", 1)
+            mime_type = header.split(";")[0].replace("data:", "")
+            decoded = base64.b64decode(encoded)
+            return Response(content=decoded, media_type=mime_type, headers={"Cache-Control": "public, max-age=60"})
+        elif cfg and cfg.value and cfg.value.startswith("http"):
+            return RedirectResponse(url=cfg.value)
+    except Exception:
+        pass
+    return RedirectResponse(url="/icon.png")
 
 @router.get("/public")
 async def get_public_config(db=Depends(get_db)):
