@@ -164,4 +164,3 @@ observal prompt edit <id-or-name>
 Allows updating metadata, variables, descriptions, and prompt content before approval.
 
 ---
-

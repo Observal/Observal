@@ -478,4 +478,3 @@ variable "alb_scheme" {
     error_message = "alb_scheme must be 'internet-facing' or 'internal'."
   }
 }
-

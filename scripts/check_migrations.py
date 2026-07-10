@@ -22,8 +22,8 @@ from pathlib import Path
 
 VERSIONS_DIR = Path(__file__).resolve().parent.parent / "observal-server" / "alembic" / "versions"
 
-RE_REVISION = re.compile(r'^revision\s*=\s*["\'](.+?)["\']', re.MULTILINE)
-RE_DOWN = re.compile(r"^down_revision\s*=\s*(.+)", re.MULTILINE)
+RE_REVISION = re.compile(r'^revision(?:.*?)?\s*=\s*["\'](.+?)["\']', re.MULTILINE)
+RE_DOWN = re.compile(r"^down_revision(?:.*?)?\s*=\s*(.+)", re.MULTILINE)
 
 
 def parse_revision(text: str) -> str | None:

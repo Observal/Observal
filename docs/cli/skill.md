@@ -170,4 +170,3 @@ observal skill edit 2 --version 2.0.0 --task-type debugging
 | `--git-ref` | New git ref |
 
 ---
-
