@@ -261,12 +261,12 @@ An operator reads the log and passes the code to the user out-of-band (Slack, ph
 
 ## Enterprise extras
 
-Enterprise edition adds:
+Open-source Observal includes:
 
 * **Audit logging**: every privileged action lands in ClickHouse's `audit_log`
 * **SSO-only mode** (`deployment.sso_only=true`)
 
-See `/ee/docs/cli.md` in the repo for enterprise-specific CLI commands.
+See `docs/self-hosting/sso-cli.md` for SSO CLI commands.
 
 ## Next
 

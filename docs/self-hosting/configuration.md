@@ -11,7 +11,7 @@ Override these before going live:
 
 | Variable               | Default                        | Why change                                                                                                                         |
 | ---------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `SECRET_KEY`           | `change-me-to-a-random-string` | Session signing key. **The server refuses to start with this default when a license is configured.** Generate a real one. |
+| `SECRET_KEY`           | `change-me-to-a-random-string` | Session signing key. Generate a real one before production. |
 | `POSTGRES_PASSWORD`    | `postgres`                     | Default password is not secure.                                                                                                    |
 | `CLICKHOUSE_PASSWORD`  | `clickhouse`                   | Same.                                                                                                                              |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000`        | Scope to your real frontend origin(s). Configure as `deployment.cors_origins` in Admin Settings.                                   |
@@ -27,15 +27,6 @@ python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 
 Set `deployment.sso_only=true` in **Admin → SSO** when you want IdP-only access. Leave it `false` to keep password login available.
 
-## Enterprise license key
-
-```
-OBSERVAL_LICENSE_KEY=
-```
-
-Set this to your Ed25519-signed license key to enable enterprise features such as SAML and AI insight reports. Leave it unset for community edition. The server validates the key at startup and logs the result.
-
-The `setup.sh` interactive setup and both installer scripts (`install.sh`, `install-server.sh`) also accept the key via `--license-key` or this env var and write it into `.env` automatically.
 
 ## Demo accounts
 

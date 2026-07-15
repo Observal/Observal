@@ -231,30 +231,13 @@ See [Insights LLM Setup](docs/insights-setup.md) for configuration.
 
 ---
 
-## Enterprise Edition
+## Open-source features
 
-Source-available under a separate license. Activated with a signed JWT key. Core never imports from `ee/`, the open-source edition is fully functional without it.
-
-Enterprise adds:
-
-- **Audit trail/logs** with parameterized search and CSV export
-- **SAML SSO** and **SCIM provisioning**
-- **Executive dashboard** for org-wide agent performance
+Audit logs, SAML SSO, SCIM provisioning, and the executive dashboard are included in the Apache-2.0 distribution.
 
 **Audit log with parameterized search:**
 
 ![Audit log with PHI sensitivity badges and chain hashes](docs/img/audit_logging.png)
-
-The server and CLI are the same package for all editions. Enterprise features activate at runtime when a valid license key is present:
-
-```bash
-# Pass the key during server install
-curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash -s -- --license-key YOUR_KEY
-
-# Or add it later to your .env
-echo 'OBSERVAL_LICENSE_KEY=your.key' >> .env
-make rebuild
-```
 
 ---
 
@@ -337,6 +320,4 @@ Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://gith
 
 ## License
 
-The open-source core, all code outside `ee/`, is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and our [License Commitment](LICENSE_COMMITMENT.md).
-
-The `ee/` directory contains Enterprise Edition code licensed separately under the [Observal Enterprise License](ee/LICENSE).
+Observal is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and our [License Commitment](LICENSE_COMMITMENT.md).

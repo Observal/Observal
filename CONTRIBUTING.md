@@ -204,19 +204,10 @@ Describe the problem you are solving, not just the solution. Discuss in **#featu
 
 ***
 
-## Enterprise Directory (`ee/`)
-
-> \[!CAUTION] Community contributions are **not accepted** into `ee/`. Pull requests touching `ee/` files will be closed. The open-source core must never import from `ee/`.
-
-The `ee/` directory is licensed under the [Observal Enterprise License](https://github.com/Observal/Observal/blob/main/ee/LICENSE/README.md). The dependency is strictly one-way: `ee/` may import from the core, never the reverse.
-
-***
 
 ## License
 
-All code outside `ee/` is licensed under [Apache-2.0](LICENSE). See the [License Commitment](LICENSE_COMMITMENT.md) for the project's Apache-2.0 commitment and license history.
-
-The `ee/` directory is licensed under the [Observal Enterprise License](ee/LICENSE).
+All code is licensed under [Apache-2.0](LICENSE). See the [License Commitment](LICENSE_COMMITMENT.md) for the project's Apache-2.0 commitment and license history.
 
 ***
 

@@ -100,7 +100,7 @@ Flush happens automatically the next time the server is reachable.
 
 ## Deployment mode
 
-Enterprise features are controlled by `OBSERVAL_LICENSE_KEY`; SSO-only access is controlled by `deployment.sso_only`:
+SSO-only access is controlled by `deployment.sso_only`:
 
 | Mode | Self-registration | Bootstrap | Auth |
 | --- | --- | --- | --- |

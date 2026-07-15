@@ -62,9 +62,7 @@ posting via an official social media account, or acting as an appointed
 representative at an online or offline event.
 
 **Note on contributions:** Community contributions are welcome across the
-open-source core (Apache-2.0). The `ee/` directory contains proprietary
-enterprise code and does not accept community contributions. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for details on the dual-license structure.
+Apache-2.0 codebase. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Enforcement
 

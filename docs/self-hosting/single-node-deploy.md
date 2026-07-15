@@ -147,7 +147,7 @@ sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|" .env
 sed -i "s|^CLICKHOUSE_PASSWORD=.*|CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD|" .env
 ```
 
-> **Enterprise edition:** Set `OBSERVAL_LICENSE_KEY=eyJ...` in `.env` to enable SAML SSO, audit logs, and executive dashboards. See [Configuration](configuration.md).
+> SAML SSO, audit logs, and executive dashboards are included in the open-source distribution. See [Configuration](configuration.md).
 
 ## Step 4: Set up TLS
 

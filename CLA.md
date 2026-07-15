@@ -22,7 +22,7 @@ By signing this agreement, you accept and agree to the following terms and condi
 
 Subject to the terms and conditions of this Agreement, You hereby grant to Observal and to recipients of software distributed by Observal a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute Your Contributions and such derivative works.
 
-This license grant includes the right for Observal to sublicense Your Contributions under any license, including proprietary or commercial licenses, consistent with Observal's dual-license structure (Apache-2.0 for the open-source core and the Observal Enterprise License for the `ee/` directory). You acknowledge and agree that Observal may offer Your Contributions as part of a commercial product or service.
+This license grant includes the right for Observal to sublicense Your Contributions under any license, including proprietary or commercial licenses. You acknowledge and agree that Observal may offer Your Contributions as part of a commercial product or service.
 
 ---
 
