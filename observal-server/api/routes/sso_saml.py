@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: Apache-2.0
 
-"""SAML 2.0 SSO endpoints for enterprise deployments."""
+"""SAML 2.0 SSO endpoints."""
 
 from __future__ import annotations
 
@@ -30,7 +30,13 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
-from ee.observal_server.services.saml import (
+from models.saml_config import SamlConfig
+from models.user import User, UserRole
+from schemas.sso_health import all_pass, make_check
+from services import sso_diagnostics
+from services.jwt_service import create_access_token, create_refresh_token
+from services.redis import get_redis
+from services.saml import (
     build_saml_settings,
     check_cert_expiry,
     check_idp_cert_against_metadata,
@@ -46,12 +52,6 @@ from ee.observal_server.services.saml import (
     get_display_name,
     get_idp_metadata_xml,
 )
-from models.saml_config import SamlConfig
-from models.user import User, UserRole
-from schemas.sso_health import all_pass, make_check
-from services import sso_diagnostics
-from services.jwt_service import create_access_token, create_refresh_token
-from services.redis import get_redis
 from services.security_events import (
     EventType,
     SecurityEvent,
@@ -75,7 +75,7 @@ def _safe_redirect_path(value: str | None) -> str:
     return value
 
 
-router = APIRouter(prefix="/api/v1/sso/saml", tags=["enterprise-sso"])
+router = APIRouter(prefix="/api/v1/sso/saml", tags=["sso"])
 
 _dynamic_saml_config_cache: object | None = None
 _dynamic_saml_config_signature: tuple[str, ...] | None = None
@@ -289,7 +289,7 @@ async def saml_health_probe(db: AsyncSession) -> dict | None:
     """Public SAML health probe — exercises the saml_login code path.
 
     Registered into the core hook so the unauthenticated /config/sso-health
-    endpoint can report SAML status without core importing ee/. Returns ``None``
+    endpoint can report SAML status. Returns ``None``
     when SAML is not configured. Server-side validation cannot replay a signed
     assertion, so a green result still depends on a real user login round-trip.
     """

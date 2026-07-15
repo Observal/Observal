@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Typed async event bus for core / ee/ decoupling.
+"""Typed async event bus for service decoupling.
 
 Core defines event types (frozen dataclasses) and fires them at natural points.
-ee/ registers async handlers during startup. Handlers are fire-and-forget:
+Startup registers async handlers. Handlers are fire-and-forget:
 errors are logged, never raised to the emitter.
 """
 
@@ -91,7 +91,7 @@ class AgentLifecycleEvent(Event):
 
 @dataclass(frozen=True, slots=True)
 class AuditableAction(Event):
-    """Deprecated: retained only for ee/ backward compatibility."""
+    """Deprecated: retained only for backward compatibility."""
 
     actor_id: str
     actor_email: str
@@ -107,7 +107,7 @@ class AuditableAction(Event):
 
 
 class EventBus:
-    """Simple async event bus. Core emits events, ee/ registers handlers."""
+    """Simple async event bus. Services emit events and register handlers."""
 
     def __init__(self) -> None:
         self._handlers: dict[type[Event], list[EventHandler]] = defaultdict(list)
@@ -123,7 +123,7 @@ class EventBus:
         return decorator
 
     def register(self, event_type: type[Event], handler: EventHandler) -> None:
-        """Imperative registration (useful for ee/ modules)."""
+        """Imperative registration (useful for service modules)."""
         self._handlers[event_type].append(handler)
         optic.trace("registered handler '{}' for {}", handler.__name__, event_type.__name__)
 

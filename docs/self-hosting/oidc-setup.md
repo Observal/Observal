@@ -1,5 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
-<!-- SPDX-License-Identifier: LicenseRef-Observal-Enterprise -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # OIDC / OAuth 2.0 SSO Setup Guide
 
@@ -13,7 +13,6 @@ configuration, per-IdP setup instructions, and troubleshooting common issues.
 
 Before you begin, make sure the following requirements are met:
 
-- **Enterprise license is active.** OIDC SSO is only available in enterprise deployments. Set `OBSERVAL_LICENSE_KEY` in `.env`.
 - **HTTPS is required.** The Observal instance must be served over HTTPS.
   OAuth 2.0 redirect URIs must use HTTPS, and IdPs will reject callback URLs
   that use plain HTTP.
@@ -215,7 +214,6 @@ with [SCIM provisioning](scim-setup.md) for automated user lifecycle management
 **Fix:** Call `/api/v1/config/public` and check that it returns
 `"sso_enabled": true`. If it does not:
 
-- Verify `OBSERVAL_LICENSE_KEY` is set.
 - Verify all three OAuth variables (`oauth.client_id`, `oauth.client_secret`,
   `oauth.server_metadata_url`) are set and the server has been restarted.
 
@@ -251,7 +249,6 @@ permissions.
 
 **Fix:**
 
-- Verify `OBSERVAL_LICENSE_KEY` is set and the server has been restarted.
 - Check whether the user's account exists and is active in the Observal admin
   panel.
 

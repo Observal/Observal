@@ -40,7 +40,7 @@ class TestServerOptic:
         logger.remove(sink_id)
         assert any("test debug message" in str(m) for m in messages)
 
-    def test_setup_enterprise_mode_no_debug_output(self, capsys):
+    def test_setup_prod_mode_no_debug_output(self, capsys):
         """In prod mode, DEBUG messages are suppressed."""
         from services.optic import setup_optic
 

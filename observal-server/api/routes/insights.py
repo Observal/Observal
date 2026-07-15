@@ -38,7 +38,7 @@ def _require_insights():
     if not INSIGHTS_AVAILABLE:
         raise HTTPException(
             status_code=402,
-            detail="Insights is an enterprise feature. Contact sales for access.",
+            detail="Insights are not available on this server.",
         )
 
 
@@ -177,7 +177,7 @@ async def insights_status(current_user: User = Depends(require_role(UserRole.use
     import services.dynamic_settings as ds
 
     if not INSIGHTS_AVAILABLE:
-        return {"available": False, "reason": "Insights requires an enterprise license."}
+        return {"available": False, "reason": "Insights service is unavailable."}
 
     model = await ds.get("insights.model_sections")
     if not model:

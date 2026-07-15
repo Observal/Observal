@@ -29,7 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
-from api.deps import get_current_user, get_db, get_or_create_default_org, require_local_mode, require_password_auth
+from api.deps import get_current_user, get_db, get_or_create_default_org, require_password_auth
 from api.ratelimit import limiter
 from models.user import User, UserRole
 from models.user_group import UserGroup
@@ -282,7 +282,7 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/bootstrap", response_model=InitResponse, dependencies=[Depends(require_local_mode)])
+@router.post("/bootstrap", response_model=InitResponse)
 @limiter.limit("1/minute")
 async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
     """Auto-create admin account on a fresh server. No input needed."""

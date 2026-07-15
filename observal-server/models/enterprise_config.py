@@ -11,6 +11,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from models.base import Base
 
+RESTART_PENDING_KEY = "_system.restart_required"
+
 
 class EnterpriseConfig(Base):
     __tablename__ = "enterprise_config"

@@ -16,7 +16,6 @@ from sqlalchemy import select
 import services.dynamic_settings as ds_mod
 from api.deps import get_db
 from api.ratelimit import limiter
-from config import HAS_LICENSE
 from models.enterprise_config import EnterpriseConfig
 from schemas.harness_registry import HARNESS_REGISTRY
 from schemas.sso_health import all_pass
@@ -91,15 +90,12 @@ async def get_public_config(db=Depends(get_db)):
     optic.debug("config.get_public_config called")
     import services.dynamic_settings as ds
 
-    # Deployment mode derived from license presence
-    licensed = HAS_LICENSE
-
     # SAML: check DB-backed dynamic settings, then fall back to SamlConfig model
     saml_idp_entity = await ds.get("saml.idp_entity_id")
     saml_idp_sso = await ds.get("saml.idp_sso_url")
     saml_enabled = bool(saml_idp_entity and saml_idp_sso)
 
-    if not saml_enabled and HAS_LICENSE:
+    if not saml_enabled:
         try:
             from models.saml_config import SamlConfig
 
@@ -127,11 +123,8 @@ async def get_public_config(db=Depends(get_db)):
     except Exception:
         pass
 
-    # Feature availability
-    from services.insights import licensed_features as _get_licensed
-
-    licensed_features: list[str] = _get_licensed()
-    exec_dashboard_available = "all" in licensed_features or "exec_dashboard" in licensed_features
+    enabled_features = ["all"]
+    exec_dashboard_available = True
 
     sso_only = await ds.get_bool("deployment.sso_only")
     self_registration_enabled = await ds.get_bool("auth.self_registration_enabled")
@@ -139,7 +132,9 @@ async def get_public_config(db=Depends(get_db)):
     from api.routes.auth import is_github_oauth_configured, is_google_oauth_configured, is_oidc_configured
 
     return {
-        "licensed": licensed,
+        # Legacy compatibility: existing clients/deployments may still read these.
+        "licensed": True,
+        "licensed_features": enabled_features,
         "sso_enabled": is_oidc_configured(),
         "google_sso_enabled": is_google_oauth_configured(),
         "github_sso_enabled": is_github_oauth_configured(),
@@ -147,7 +142,7 @@ async def get_public_config(db=Depends(get_db)):
         "self_registration_enabled": self_registration_enabled,
         "saml_enabled": saml_enabled,
         "exec_dashboard_available": exec_dashboard_available,
-        "licensed_features": licensed_features,
+        "enabled_features": enabled_features,
         "branding_logo": branding_logo,
         "branding_app_name": branding_app_name,
         "branding_wordmark": branding_wordmark,

@@ -21,7 +21,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from config import HAS_LICENSE
 from database import async_session
 from models.organization import Organization
 from models.user import User, UserRole
@@ -302,15 +301,6 @@ def require_org_scope():
         return current_user.org_id
 
     return _dep
-
-
-async def require_local_mode() -> None:
-    """FastAPI dependency that blocks the endpoint in enterprise mode.
-
-    Usage: @router.post("/bootstrap", dependencies=[Depends(require_local_mode)])
-    """
-    if HAS_LICENSE:
-        raise HTTPException(status_code=403, detail="Disabled in enterprise mode")
 
 
 async def require_password_auth() -> None:

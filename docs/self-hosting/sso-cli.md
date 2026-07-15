@@ -1,10 +1,9 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
-<!-- SPDX-License-Identifier: LicenseRef-Observal-Enterprise -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal Enterprise CLI & API Reference
 
-Enterprise features are enabled by setting `OBSERVAL_LICENSE_KEY` in your `.env`. These features require the [Observal Enterprise License](../LICENSE).
 
 For the core CLI reference, see [docs/cli/README.md](../../docs/cli/README.md). For setup instructions, see [docs/self-hosting/README.md](../../docs/self-hosting/README.md).
 
@@ -14,7 +13,6 @@ For the core CLI reference, see [docs/cli/README.md](../../docs/cli/README.md). 
 
 | Setting | Default | Description |
 |----------|---------|-------------|
-| `OBSERVAL_LICENSE_KEY` | disabled | Set in `.env` to enable enterprise features |
 | `oauth.client_id` | disabled | OAuth/OIDC client ID (required in enterprise mode) |
 | `oauth.client_secret` | disabled | OAuth/OIDC client secret |
 | `oauth.server_metadata_url` | disabled | OIDC discovery URL |

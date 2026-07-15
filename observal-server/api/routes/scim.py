@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: Apache-2.0
 
-"""SCIM 2.0 provisioning endpoints for enterprise deployments."""
+"""SCIM 2.0 provisioning endpoints."""
 
 from __future__ import annotations
 
@@ -20,7 +20,10 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, get_or_create_default_org
-from ee.observal_server.services.scim_service import (
+from models.scim_token import ScimToken
+from models.user import User, UserRole
+from services.events import UserCreated, UserDeleted, bus
+from services.scim_service import (
     SCIM_PATCH_SCHEMA,
     SCIM_USER_SCHEMA,
     format_scim_error,
@@ -31,9 +34,6 @@ from ee.observal_server.services.scim_service import (
     parse_scim_user,
     validate_scim_pagination,
 )
-from models.scim_token import ScimToken
-from models.user import User, UserRole
-from services.events import UserCreated, UserDeleted, bus
 from services.security_events import (
     EventType,
     SecurityEvent,
@@ -42,10 +42,10 @@ from services.security_events import (
 )
 from services.username_generator import generate_unique_username
 
-logger = logging.getLogger("observal.ee.scim")
+logger = logging.getLogger("observal.scim")
 
 
-router = APIRouter(prefix="/api/v1/scim", tags=["enterprise-scim"])
+router = APIRouter(prefix="/api/v1/scim", tags=["scim"])
 
 SCIM_CONTENT_TYPE = "application/scim+json"
 
