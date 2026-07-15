@@ -14,7 +14,6 @@ coverage:
 
 ignore:
   - "tests/"
-  - "ee/"
   - "web/"
   - "demo/"
   - "alembic/"

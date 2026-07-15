@@ -16,6 +16,4 @@ module "observal" {
 
   domain_name           = var.domain_name
   dns_managed_zone_name = var.dns_managed_zone_name
-
-  observal_license_key = var.observal_license_key
 }

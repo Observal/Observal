@@ -225,12 +225,6 @@ variable "observability_stack" {
   }
 }
 
-variable "observal_license_key" {
-  description = "Observal Enterprise license key. Leave empty for community."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
 
 variable "log_retention_days" {
   description = "CloudWatch log retention."

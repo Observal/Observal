@@ -122,7 +122,6 @@ secrets:
   secretKey: ""
   postgresPassword: ""
   clickhousePassword: ""
-  licenseKey: ""
 
 config:
   logLevel: INFO

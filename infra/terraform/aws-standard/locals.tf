@@ -20,9 +20,7 @@ locals {
 
   enable_tls = var.enable_tls && var.domain_name != "" && var.route53_zone_id != ""
   app_url    = var.domain_name != "" ? "${local.enable_tls ? "https" : "http"}://${var.domain_name}" : "http://${aws_lb.app.dns_name}"
-
-  is_enterprise = var.observal_license_key != ""
-  ssm_prefix    = "/${local.name}"
+  ssm_prefix = "/${local.name}"
 
   observability_prometheus_enabled = contains(["prometheus", "grafana"], var.observability_stack)
   observability_grafana_enabled    = var.observability_stack == "grafana"

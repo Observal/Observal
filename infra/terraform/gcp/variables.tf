@@ -243,23 +243,6 @@ variable "data_retention_days" {
   default     = 90
 }
 
-variable "observal_license_key" {
-  description = "Observal Enterprise license key. Leave empty for community edition."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "edition" {
-  description = "Edition to deploy: 'auto', 'community', or 'enterprise'."
-  type        = string
-  default     = "auto"
-  validation {
-    condition     = contains(["auto", "community", "enterprise"], var.edition)
-    error_message = "edition must be 'auto', 'community', or 'enterprise'."
-  }
-}
-
 variable "google_oauth_client_id" {
   description = "Google OAuth 2.0 client ID from the GCP console. Leave empty to disable Google sign-in."
   type        = string

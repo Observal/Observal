@@ -46,9 +46,3 @@ output "log_group_names" {
     data_host = aws_cloudwatch_log_group.data_host.name
   }
 }
-
-output "edition" {
-  description = "Deployed edition: community or enterprise (based on license key presence)."
-  sensitive   = true
-  value       = local.is_enterprise ? "enterprise" : "community"
-}
