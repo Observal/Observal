@@ -202,8 +202,8 @@ test.describe("SSO Login Flow", () => {
   });
 });
 
-test.describe("Enterprise Mode Login Page", () => {
-  test("enterprise mode hides password form and shows only SSO button", async ({
+test.describe("SSO-only Login Page", () => {
+  test("SSO-only mode hides password form and shows only SSO button", async ({
     page,
   }) => {
     // Mock the config endpoint BEFORE navigation and wait for it to resolve
@@ -212,7 +212,7 @@ test.describe("Enterprise Mode Login Page", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          deployment_mode: "enterprise",
+
           sso_enabled: true,
           saml_enabled: false,
         }),
@@ -226,7 +226,7 @@ test.describe("Enterprise Mode Login Page", () => {
     const ssoButton = page.locator('button:has-text("Sign in with SSO")');
     await expect(ssoButton).toBeVisible({ timeout: 10_000 });
 
-    // In enterprise mode, the email/password form is conditionally not rendered.
+    // In SSO-only mode, the email/password form is conditionally not rendered.
     // Wait for the email input to be detached from the DOM (not just hidden).
     await expect(page.locator('input[id="email"]')).toHaveCount(0, {
       timeout: 5_000,

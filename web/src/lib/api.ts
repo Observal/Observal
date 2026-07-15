@@ -47,6 +47,7 @@ import type {
 	AuditLogEntry,
 	SecurityEvent,
 	DiagnosticsResponse,
+	RestartStatus,
 	SystemWarning,
 	InsightReportListItem,
 	InsightReport,
@@ -722,6 +723,7 @@ export const admin = {
 		);
 	},
 	diagnostics: () => get<DiagnosticsResponse>("/admin/diagnostics"),
+	restartStatus: () => get<RestartStatus>("/admin/restart/status"),
 	systemWarnings: () => get<SystemWarning[]>("/admin/system-warnings"),
 	samlConfig: () => get<Record<string, unknown>>("/admin/saml-config"),
 	updateSamlConfig: (body: Record<string, unknown>) =>
@@ -869,6 +871,7 @@ export type RetentionWarnings = {
 // ── Config ─────────────────────────────────────────────────────────
 export type PublicConfig = {
 	licensed: boolean;
+	licensed_features: string[];
 	sso_enabled: boolean;
 	google_sso_enabled: boolean;
 	github_sso_enabled: boolean;
@@ -876,7 +879,7 @@ export type PublicConfig = {
 	self_registration_enabled: boolean;
 	saml_enabled: boolean;
 	exec_dashboard_available: boolean;
-	licensed_features: string[];
+	enabled_features: string[];
 	branding_logo: string | null;
 	branding_app_name: string | null;
 	branding_wordmark: string | null;
