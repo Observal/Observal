@@ -17,7 +17,6 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
-import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
 const EVENT_TYPES = [
   "all",
@@ -108,7 +107,6 @@ function EventRow({ event }: { event: SecurityEvent }) {
 }
 
 export default function SecurityEventsPage() {
-  const { licensedFeatures } = useDeploymentConfig();
   const [eventType, setEventType] = useState("all");
   const [severity, setSeverity] = useState("all");
   const [actorEmail, setActorEmail] = useState("");
@@ -127,25 +125,7 @@ export default function SecurityEventsPage() {
 
   const { data, isLoading, isError, error, refetch } = useSecurityEvents(filters);
 
-  if (!licensedFeatures.includes("security_events") && !licensedFeatures.includes("all")) {
-    return (
-      <>
-        <PageHeader
-          title="Security Events"
-          breadcrumbs={[{ label: "Admin" }, { label: "Security" }]}
-        />
-        <div className="p-6 w-full mx-auto">
-          <EmptyState
-            icon={ShieldAlert}
-            title="Enterprise feature"
-            description="Security event monitoring is available in enterprise mode."
-          />
-        </div>
-      </>
-    );
-  }
-
-  const events = data?.events ?? [];
+const events = data?.events ?? [];
 
   return (
     <>

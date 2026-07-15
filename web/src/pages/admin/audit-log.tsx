@@ -33,7 +33,6 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
-import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
 const PAGE_SIZE = 50;
 
@@ -177,7 +176,6 @@ function DetailRow({ entry }: { entry: AuditLogEntry }) {
 }
 
 export default function AuditLogPage() {
-  const { licensedFeatures } = useDeploymentConfig();
   const { search: searchParam } = useSearch({ from: "/_authed/_admin/audit-log" });
   const { pathname } = useLocation();
   const [searchQuery, setSearchQuery] = useState(searchParam ?? "");
@@ -235,25 +233,7 @@ export default function AuditLogPage() {
     }
   }, [searchQuery]);
 
-  if (!licensedFeatures.includes("audit") && !licensedFeatures.includes("all")) {
-    return (
-      <>
-        <PageHeader
-          title="Audit Log"
-          breadcrumbs={[{ label: "Admin" }, { label: "Audit Log" }]}
-        />
-        <div className="p-6 w-full mx-auto">
-          <EmptyState
-            icon={ScrollText}
-            title="Enterprise feature"
-            description="Enterprise audit logging requires the audit license feature."
-          />
-        </div>
-      </>
-    );
-  }
-
-  return (
+return (
     <>
       <PageHeader
         title="Audit Log"

@@ -25,6 +25,7 @@ import {
 	AlertTriangle,
 	ShieldAlert,
 	ArrowLeftRight,
+	Power,
 } from "lucide-react";
 import { InsightsSection } from "./settings/insights-section";
 import { MigrateDialog } from "./dashboard/components/migrate-dialog";
@@ -32,7 +33,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHelp } from "@/components/wiki/help-context";
 import { SETTING_DOCS, SECTION_DOCS } from "@/lib/docs-map";
-import { useAdminSettings, useAdminSettingsSchema, useSystemWarnings } from "@/hooks/use-api";
+import { useAdminSettings, useAdminSettingsSchema, useRestartApi, useRestartStatus, useSystemWarnings } from "@/hooks/use-api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { useHarnesses } from "@/hooks/use-harnesses";
 import { useRoleGuard, hasMinRole } from "@/hooks/use-role-guard";
@@ -166,6 +167,18 @@ function HarnessAllowlistEditor({
 	);
 }
 
+function RestartRequiredMark() {
+	return (
+		<span
+			className="inline-flex items-center gap-1 text-[11px] font-normal text-amber-700 dark:text-amber-300"
+			title="Changing this setting requires an API restart"
+		>
+			<Power className="h-3 w-3" aria-hidden="true" />
+			Restart
+		</span>
+	);
+}
+
 function SettingHelpIcon({ settingKey, openHelp }: { settingKey: string; openHelp: (key?: string) => boolean }) {
 	if (!SETTING_DOCS[settingKey]) return null;
 	return (
@@ -195,13 +208,12 @@ export default function SettingsPage() {
 		refetch,
 	} = useAdminSettings();
 	const { data: settingsSchema = [] } = useAdminSettingsSchema();
+	const { data: restartStatus, refetch: refetchRestartStatus } = useRestartStatus();
 	const { data: systemWarnings } = useSystemWarnings();
 	const { data: harnesses = [] } = useHarnesses();
 	const {
-		licensed,
 		ssoEnabled,
 		samlEnabled,
-		licensedFeatures,
 		brandingLogo,
 		brandingAppName,
 		brandingWordmark,
@@ -245,6 +257,11 @@ export default function SettingsPage() {
 	);
 	const [brandingSaving, setBrandingSaving] = useState(false);
 	const [migrateOpen, setMigrateOpen] = useState(false);
+	const handleRestarted = useCallback(() => {
+		refetchRestartStatus();
+		refetch();
+	}, [refetch, refetchRestartStatus]);
+	const { restarting, restartApi } = useRestartApi(handleRestarted);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const wordmarkInputRef = useRef<HTMLInputElement>(null);
 
@@ -585,12 +602,13 @@ export default function SettingsPage() {
 			setEditingKey(null);
 			setEditingValue("");
 			refetch();
+			refetchRestartStatus();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Failed to save");
 		} finally {
 			setSaving(false);
 		}
-	}, [editingKey, editingValue, queryClient, refetch]);
+	}, [editingKey, editingValue, queryClient, refetch, refetchRestartStatus]);
 
 	const renderSettingEditor = (key: string) => {
 		if (key === "misc.harness_allowlist") {
@@ -663,6 +681,25 @@ export default function SettingsPage() {
 					{ label: "Dashboard", href: "/dashboard" },
 					{ label: "Settings" },
 				]}
+				actionButtonsRight={
+					<div className="flex items-center gap-2">
+						<span
+							className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+								restartStatus?.required
+									? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+									: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+							}`}
+						>
+							{restartStatus?.required ? "Saved, API restart required" : "Settings live"}
+						</span>
+						{restartStatus?.required && (
+							<Button size="sm" variant="outline" onClick={restartApi} disabled={restarting}>
+								{restarting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Power className="mr-1.5 h-3.5 w-3.5" />}
+								{restarting ? "Restarting" : "Restart API"}
+							</Button>
+						)}
+					</div>
+				}
 			/>
 			<div className="p-6 w-full mx-auto space-y-6">
 				{/* Security warnings */}
@@ -706,14 +743,6 @@ export default function SettingsPage() {
 					<div className="rounded-md border border-border bg-card px-4 py-3 space-y-2">
 						<div className="flex items-center justify-between py-1">
 							<span className="text-xs text-muted-foreground">
-								License
-							</span>
-							<span className="text-xs font-medium font-[family-name:var(--font-mono)]">
-								{licensed ? "Enterprise" : "Community"}
-							</span>
-						</div>
-						<div className="flex items-center justify-between py-1 border-t border-border">
-							<span className="text-xs text-muted-foreground">
 								SSO (OAuth/OIDC)
 							</span>
 							<span
@@ -731,15 +760,6 @@ export default function SettingsPage() {
 							</span>
 						</div>
 					</div>
-					{licensedFeatures.length > 0 && (
-						<div className="flex items-start gap-2 mt-2 text-xs text-muted-foreground">
-							<Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-							<span>
-								Enterprise mode is active. Self-registration and password login
-								are disabled.
-							</span>
-						</div>
-					)}
 				</section>
 
 				{/* Appearance */}
@@ -1268,8 +1288,8 @@ export default function SettingsPage() {
 						)}
 						{/* Add new setting form */}
 						{/* Unified sections, each setting stays in its section */}
-						{settingSections.filter((s) => !s.danger && (!s.requires_feature || licensedFeatures.includes(s.requires_feature) || licensedFeatures.includes("all"))).map((section) => {
-								const visibleSettings = section.settings.filter((d) => !d.requires_feature || licensedFeatures.includes(d.requires_feature) || licensedFeatures.includes("all"));
+						{settingSections.filter((s) => !s.danger).map((section) => {
+								const visibleSettings = section.settings;
 								if (visibleSettings.length === 0) return null;
 
 								if (section.title === "Agent Insights") {
@@ -1328,7 +1348,7 @@ export default function SettingsPage() {
 										if (isEditing) {
 											return (
 												<div key={d.key} className={`rounded-md border-2 border-primary/50 bg-card p-3 ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
-													<span className="text-sm font-semibold text-foreground mb-2 block">{d.label}</span>
+													<div className="mb-2 flex items-center gap-2"><span className="text-sm font-semibold text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 													<div className="flex items-center gap-2">
 														{renderSettingEditor(d.key)}
 														<Button size="sm" className="h-8" onClick={handleInlineSave} disabled={saving}>{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}</Button>
@@ -1343,7 +1363,7 @@ export default function SettingsPage() {
 											return (
 												<div key={d.key} className={`rounded-md border-2 border-border bg-card p-3 relative ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
 													<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
-													<span className="text-sm font-semibold text-foreground">{d.label}</span>
+													<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 													<div className="flex items-center gap-2 mt-1.5">
 														{isSensitive ? (
 															<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{isSet ? REDACTED_VALUE : "Not set"}</span>
@@ -1354,7 +1374,7 @@ export default function SettingsPage() {
 														{isSensitive && isSet ? (
 															<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setRevokeConfirmKey(d.key)}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
 														) : (
-															<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+															<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); refetchRestartStatus(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
 														)}
 													</div>
 												</div>
@@ -1363,7 +1383,7 @@ export default function SettingsPage() {
 										return (
 											<button key={d.key} type="button" onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); return; } setEditingKey(d.key); setEditingValue(""); }} className={`text-left rounded-md border-2 border-dashed border-border/80 p-3 hover:border-primary/40 hover:bg-background transition-colors relative ${helpTargetClass(d.key)}`}>
 												<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
-												<span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>
+												<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 											</button>
 										);
 									})}
@@ -1373,7 +1393,7 @@ export default function SettingsPage() {
 							})}
 
 							{/* Danger Zone */}
-							{settingSections.some((s) => s.danger && (!s.requires_feature || licensedFeatures.includes(s.requires_feature) || licensedFeatures.includes("all"))) && (
+							{settingSections.some((s) => s.danger) && (
 								<section className="mt-8">
 									<div className="border-t-2 border-amber-500/30 pt-6">
 										<h2 className="text-sm font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-2 mb-1">
@@ -1382,8 +1402,8 @@ export default function SettingsPage() {
 										</h2>
 										<p className="text-xs text-foreground/60 mb-4">These settings can affect authentication, security, and data integrity.</p>
 										<div className="space-y-4">
-											{settingSections.filter((s) => s.danger && (!s.requires_feature || licensedFeatures.includes(s.requires_feature) || licensedFeatures.includes("all"))).map((section) => {
-												const visibleDangerSettings = section.settings.filter((d) => !d.requires_feature || licensedFeatures.includes(d.requires_feature) || licensedFeatures.includes("all"));
+											{settingSections.filter((s) => s.danger).map((section) => {
+												const visibleDangerSettings = section.settings;
 												if (visibleDangerSettings.length === 0) return null;
 												return (
 												<details key={section.title} className="group rounded-md border-l-4 border-amber-500/60 border-2 border-border/70 bg-card">
@@ -1421,7 +1441,7 @@ export default function SettingsPage() {
 														if (isEditing) {
 															return (
 																<div key={d.key} className="rounded-md border-2 border-primary/50 bg-card p-3">
-																	<span className="text-sm font-semibold text-foreground mb-2 block">{d.label}</span>
+																	<div className="mb-2 flex items-center gap-2"><span className="text-sm font-semibold text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 																	<div className="flex items-center gap-2">
 																		{renderSettingEditor(d.key)}
 																		<Button size="sm" className="h-8" onClick={handleInlineSave} disabled={saving}>{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}</Button>
@@ -1436,7 +1456,7 @@ export default function SettingsPage() {
 															return (
 																<div key={d.key} className={`rounded-md border-2 border-border bg-card p-3 relative ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
 																	<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
-																	<span className="text-sm font-semibold text-foreground">{d.label}</span>
+																	<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 																	<div className="flex items-center gap-2 mt-1.5">
 																		{isSensitive ? (
 																			<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{isSet ? REDACTED_VALUE : "Not set"}</span>
@@ -1447,7 +1467,7 @@ export default function SettingsPage() {
 																		{isSensitive && isSet ? (
 																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setRevokeConfirmKey(d.key)}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
 																		) : (
-																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); refetchRestartStatus(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
 																		)}
 																	</div>
 																</div>
@@ -1456,7 +1476,7 @@ export default function SettingsPage() {
 														return (
 															<button key={d.key} type="button" onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); return; } setEditingKey(d.key); setEditingValue(""); }} className={`text-left rounded-md border-2 border-dashed border-border/80 p-3 hover:border-primary/40 hover:bg-background transition-colors relative ${helpTargetClass(d.key)}`}>
 																<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
-																<span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>
+																<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 															</button>
 														);
 															})}
@@ -1481,7 +1501,7 @@ export default function SettingsPage() {
 					</DialogHeader>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setRevokeConfirmKey(null)}>Cancel</Button>
-						<Button variant="destructive" onClick={async () => { try { await admin.revokeSetting(revokeConfirmKey!); refetch(); toast.success(`Revoked ${revokeConfirmKey}`); } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Failed to revoke setting"); } finally { setRevokeConfirmKey(null); } }}>Revoke</Button>
+						<Button variant="destructive" onClick={async () => { try { await admin.revokeSetting(revokeConfirmKey!); refetch(); refetchRestartStatus(); toast.success(`Revoked ${revokeConfirmKey}`); } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Failed to revoke setting"); } finally { setRevokeConfirmKey(null); } }}>Revoke</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>

@@ -98,8 +98,7 @@ export default function DiagnosticsPage() {
                     <div>
                       <CardTitle className="text-lg">System Status</CardTitle>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        License: {data.licensed ? "Enterprise" : "Community"}
-                        {dataUpdatedAt ? ` · Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
+                        Updated: {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "never"}
                       </p>
                     </div>
                   </div>
@@ -161,20 +160,20 @@ export default function DiagnosticsPage() {
 
               <CatalogStatusCard />
 
-              {/* Enterprise */}
-              {data.checks.enterprise && (
+              {/* Runtime config */}
+              {data.checks.runtime_config && (
                 <Card className="md:col-span-2">
                   <CardHeader className="pb-3">
                     <div className="flex items-center gap-2">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-sm">Enterprise Config</CardTitle>
-                      <div className="ml-auto">{statusBadge(data.checks.enterprise.status as string)}</div>
+                      <CardTitle className="text-sm">Runtime Config</CardTitle>
+                      <div className="ml-auto">{statusBadge(data.checks.runtime_config.status as string)}</div>
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {Array.isArray(data.checks.enterprise.issues) && data.checks.enterprise.issues.length > 0 ? (
+                    {Array.isArray(data.checks.runtime_config.issues) && data.checks.runtime_config.issues.length > 0 ? (
                       <ul className="space-y-1.5">
-                        {(data.checks.enterprise.issues as string[]).map((issue: string, i: number) => (
+                        {(data.checks.runtime_config.issues as string[]).map((issue: string, i: number) => (
                           <li key={i} className="flex items-start gap-2 text-xs">
                             <AlertTriangle className="h-3.5 w-3.5 text-warning mt-0.5 shrink-0" />
                             <span>{issue}</span>

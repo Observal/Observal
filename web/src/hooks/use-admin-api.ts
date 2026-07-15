@@ -10,6 +10,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useQuery,
   useMutation,
@@ -19,6 +20,7 @@ import { toast } from "sonner";
 import {
   auth,
   admin,
+  config,
   telemetry,
   getUserRole,
 } from "@/lib/api";
@@ -117,6 +119,65 @@ export function useAdminSettings() {
 
 export function useAdminSettingsSchema() {
   return useQuery({ queryKey: ["admin", "settings", "schema"], queryFn: admin.settingsSchema });
+}
+
+export function useRestartStatus() {
+  return useQuery({
+    queryKey: ["admin", "restart-status"],
+    queryFn: admin.restartStatus,
+    refetchInterval: 30_000,
+  });
+}
+
+const RESTART_POLL_TIMEOUT_MS = 120_000;
+const RESTART_POLL_INTERVAL_MS = 2_000;
+const RESTART_POLL_INITIAL_DELAY_MS = 3_000;
+
+export function useRestartApi(onRestarted?: () => void) {
+  const [restarting, setRestarting] = useState(false);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, []);
+
+  const restartApi = useCallback(async () => {
+    if (!confirm("Restart the API? In-flight requests will be interrupted while the process restarts.")) return;
+    setRestarting(true);
+    try {
+      await admin.restartApi();
+      toast.info("API restart initiated. Waiting for it to come back.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to trigger API restart");
+      setRestarting(false);
+      return;
+    }
+
+    const deadline = Date.now() + RESTART_POLL_TIMEOUT_MS;
+    const poll = async () => {
+      if (cancelledRef.current) return;
+      if (Date.now() > deadline) {
+        toast.error("API did not return within 2 minutes. Check the container logs.");
+        setRestarting(false);
+        return;
+      }
+      try {
+        await config.version();
+        if (cancelledRef.current) return;
+        toast.success("API is back up");
+        setRestarting(false);
+        onRestarted?.();
+      } catch {
+        window.setTimeout(poll, RESTART_POLL_INTERVAL_MS);
+      }
+    };
+    window.setTimeout(poll, RESTART_POLL_INITIAL_DELAY_MS);
+  }, [onRestarted]);
+
+  return { restarting, restartApi };
 }
 
 // ── Audit & Security ────────────────────────────────────────────────
