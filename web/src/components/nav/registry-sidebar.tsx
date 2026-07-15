@@ -59,7 +59,6 @@ type NavItem = {
 	icon: typeof Home;
 	requiresAuth?: boolean;
 	minRole?: Role;
-	requiresFeature?: string;
 };
 
 const registryNav: NavItem[] = [
@@ -90,7 +89,6 @@ const adminNav: NavItem[] = [
 		href: "/dashboard",
 		icon: LayoutDashboard,
 		minRole: "admin",
-		requiresFeature: "exec_dashboard",
 	},
 	{ title: "Users", href: "/users", icon: Users, minRole: "admin" },
 	{
@@ -98,14 +96,12 @@ const adminNav: NavItem[] = [
 		href: "/audit-log",
 		icon: ScrollText,
 		minRole: "admin",
-		requiresFeature: "audit",
 	},
 	{
 		title: "Security",
 		href: "/security-events",
 		icon: ShieldAlert,
 		minRole: "admin",
-		requiresFeature: "security_events",
 	},
 	{
 		title: "SSO",
@@ -155,7 +151,6 @@ export function RegistrySidebar() {
 	const [token, role, userName, userEmail, userUsername] = snap.split("|");
 	const isAuthenticated = !!token;
 	const {
-		licensedFeatures,
 		brandingLogo,
 		brandingAppName,
 		brandingWordmark,
@@ -194,11 +189,7 @@ export function RegistrySidebar() {
 		: [];
 
 	const visibleAdminNav = isAuthenticated
-		? adminNav.filter(
-				(item) =>
-					(!item.minRole || hasMinRole(role, item.minRole)) &&
-					(!item.requiresFeature || licensedFeatures.includes(item.requiresFeature) || licensedFeatures.includes("all")),
-			)
+		? adminNav.filter((item) => !item.minRole || hasMinRole(role, item.minRole))
 		: [];
 
 	return (

@@ -98,8 +98,13 @@ export interface SecurityEvent {
 
 export interface DiagnosticsResponse {
 	status: "ok" | "degraded" | "unhealthy";
-	licensed: boolean;
 	checks: Record<string, Record<string, unknown>>;
+}
+
+export interface RestartStatus {
+	required: boolean;
+	changed_at: string | null;
+	keys: string[];
 }
 
 // ── Insights ───────────────────────────────────────────────────────

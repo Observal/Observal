@@ -27,14 +27,13 @@ import { SETTING_DOCS } from "@/lib/docs-map";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   admin,
-  config as configApi,
   getUserRole,
   type HealthCheck,
   type ValidateResult,
   type E2eStatusResult,
 } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
-import { useAdminSettings, useAdminSettingsSchema } from "@/hooks/use-api";
+import { useAdminSettings, useAdminSettingsSchema, useRestartApi, useRestartStatus } from "@/hooks/use-api";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import type { AdminSetting, AdminSettingDef } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -449,17 +448,6 @@ const SSO_SETTING_GROUPS = [
   },
 ];
 
-const RESTART_REQUIRED_KEYS = new Set([
-  "oauth.client_id",
-  "oauth.client_secret",
-  "oauth.server_metadata_url",
-  "google.client_id",
-  "google.client_secret",
-  "google.allowed_domains",
-  "github.client_id",
-  "github.client_secret",
-  "github.allowed_orgs",
-]);
 const SENSITIVE_SETTING_KEYS = new Set([
   "oauth.client_secret",
   "google.client_secret",
@@ -574,65 +562,14 @@ function SsoSettingInput({
   );
 }
 
-// How long to keep polling /config/version after a restart before giving up.
-const RESTART_POLL_TIMEOUT_MS = 120_000;
-const RESTART_POLL_INTERVAL_MS = 2_000;
-const RESTART_POLL_INITIAL_DELAY_MS = 3_000;
-
 function RestartApiButton({ onRestarted }: { onRestarted?: () => void }) {
-  const [restarting, setRestarting] = useState(false);
-  const cancelledRef = useRef(false);
-
-  useEffect(() => {
-    cancelledRef.current = false;
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, []);
-
-  const handleRestart = useCallback(async () => {
-    if (
-      !confirm(
-        "Restart the API? All in-flight requests will be interrupted. The web UI, database, and ClickHouse stay running.",
-      )
-    ) {
-      return;
-    }
-    setRestarting(true);
-    try {
-      await admin.restartApi();
-      toast.info("API restart initiated. Waiting for it to come back…");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to trigger API restart");
-      setRestarting(false);
-      return;
-    }
-    const deadline = Date.now() + RESTART_POLL_TIMEOUT_MS;
-    const poll = async () => {
-      if (cancelledRef.current) return;
-      if (Date.now() > deadline) {
-        toast.error("API did not come back within 2 minutes. Check the container logs.");
-        setRestarting(false);
-        return;
-      }
-      try {
-        await configApi.version();
-        if (cancelledRef.current) return;
-        toast.success("API is back up");
-        setRestarting(false);
-        onRestarted?.();
-      } catch {
-        window.setTimeout(poll, RESTART_POLL_INTERVAL_MS);
-      }
-    };
-    window.setTimeout(poll, RESTART_POLL_INITIAL_DELAY_MS);
-  }, [onRestarted]);
+  const { restarting, restartApi } = useRestartApi(onRestarted);
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="outline" size="sm" onClick={handleRestart} disabled={restarting}>
+          <Button variant="outline" size="sm" onClick={restartApi} disabled={restarting}>
             {restarting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
             ) : (
@@ -657,9 +594,9 @@ function SsoSettingsSection() {
   const { ssoEnabled } = useDeploymentConfig();
   const { data: settings } = useAdminSettings();
   const { data: schema = [] } = useAdminSettingsSchema();
+  const { data: restartStatus, refetch: refetchRestartStatus } = useRestartStatus();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [restartPending, setRestartPending] = useState(false);
 
   const settingsByKey = useMemo(() => {
     const map = new Map<string, AdminSetting>();
@@ -700,7 +637,7 @@ function SsoSettingsSection() {
     (settingsByKey.get("oauth.client_secret")?.is_set || settingsByKey.get("oauth.client_secret")?.value) &&
     (settingsByKey.get("oauth.server_metadata_url")?.value || "").trim(),
   );
-  const savedNeedsRestart = restartPending || (oidcSavedComplete && !ssoEnabled);
+  const savedNeedsRestart = Boolean(restartStatus?.required) || (oidcSavedComplete && !ssoEnabled);
   const status = hasUnsavedChanges
     ? { label: "Unsaved changes", className: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400" }
     : savedNeedsRestart
@@ -724,15 +661,15 @@ function SsoSettingsSection() {
     setSaving(true);
     try {
       await Promise.all(changedKeys.map((key) => admin.updateSetting(key, { value: (drafts[key] ?? "").trim() })));
-      if (changedKeys.some((key) => RESTART_REQUIRED_KEYS.has(key))) setRestartPending(true);
       toast.success("SSO settings saved");
       refresh();
+      refetchRestartStatus();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to save SSO settings");
     } finally {
       setSaving(false);
     }
-  }, [changedKeys, drafts, refresh]);
+  }, [changedKeys, drafts, refresh, refetchRestartStatus]);
 
   return (
     <Card>
@@ -749,8 +686,8 @@ function SsoSettingsSection() {
             {getUserRole() === "super_admin" && (
               <RestartApiButton
                 onRestarted={() => {
-                  setRestartPending(false);
                   refresh();
+                  refetchRestartStatus();
                 }}
               />
             )}
@@ -1122,34 +1059,11 @@ function SamlConfigSection() {
 
 export default function SsoPage() {
   const { ready } = useRoleGuard("admin");
-  const { licensed, licensedFeatures } = useDeploymentConfig();
   const helpCtx = useHelp();
 
   if (!ready) return null;
 
-  if (!licensed) {
-    return (
-      <>
-        <PageHeader
-          title="SSO"
-          breadcrumbs={[{ label: "Admin" }, { label: "SSO" }]}
-        />
-        <div className="p-6">
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Shield className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-              <h3 className="text-sm font-medium">Enterprise Feature</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                SSO is available in enterprise deployments.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </>
-    );
-  }
-
-  return (
+return (
     <>
       <PageHeader
         title="SSO"
@@ -1164,21 +1078,19 @@ export default function SsoPage() {
             >
               <HelpCircle className="h-4 w-4" />
             </button>
-            {(licensedFeatures.includes("saml") || licensedFeatures.includes("all")) && (
-              <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" size="sm" asChild>
                 <a href="/api/v1/sso/saml/metadata" target="_blank" rel="noopener noreferrer">
                   <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                   SP Metadata XML
                 </a>
               </Button>
-            )}
           </div>
         }
       />
       <div className="p-6 w-full mx-auto space-y-6">
         <SsoSettingsSection />
         <OidcConfigSection />
-        {(licensedFeatures.includes("saml") || licensedFeatures.includes("all")) && <SamlConfigSection />}
+        <SamlConfigSection />
       </div>
     </>
   );

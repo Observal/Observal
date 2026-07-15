@@ -17,14 +17,15 @@ export function useDeploymentConfig() {
 	});
 
 	return {
-		licensed: data?.licensed ?? false,
+		licensed: data?.licensed ?? true,
+		licensedFeatures: data?.licensed_features ?? ["all"],
 		ssoEnabled: data?.sso_enabled ?? false,
 		googleSsoEnabled: data?.google_sso_enabled ?? false,
 		githubSsoEnabled: data?.github_sso_enabled ?? false,
 		ssoOnly: data?.sso_only ?? false,
 		selfRegistrationEnabled: data?.self_registration_enabled ?? false,
 		samlEnabled: data?.saml_enabled ?? false,
-		licensedFeatures: data?.licensed_features ?? [],
+		enabledFeatures: data?.enabled_features ?? [],
 		brandingLogo: data?.branding_logo ?? null,
 		brandingAppName: data?.branding_app_name ?? null,
 		brandingWordmark: data?.branding_wordmark ?? null,
