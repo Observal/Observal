@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import time
 
-import httpx
 import typer
 from loguru import logger as optic
 from rich import print as rprint
@@ -28,29 +27,6 @@ from observal_cli.render import (
     star_rating,
     status_badge,
 )
-
-
-def _require_enterprise():
-    """Check that the server is running in enterprise mode. Exit with a clear message if not."""
-    try:
-        cfg = config.load()
-        server_url = cfg.get("server_url", "").rstrip("/")
-        if not server_url:
-            return
-        r = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
-        if r.status_code == 200:
-            pub = r.json()
-            if not pub.get("licensed"):
-                rprint("[yellow]This feature requires an enterprise license.[/yellow]")
-                rprint("[dim]Set OBSERVAL_LICENSE_KEY on the server to enable.[/dim]")
-                raise typer.Exit(1)
-    except (httpx.ConnectError, httpx.TimeoutException):
-        pass
-    except typer.Exit:
-        raise
-    except Exception as exc:
-        rprint(f"[dim]Warning: could not verify enterprise mode: {exc}[/dim]")
-
 
 # ═══════════════════════════════════════════════════════════
 # ops_app: Observability / operational commands group
@@ -638,7 +614,7 @@ def admin_settings(output: str = typer.Option("table", "--output", "-o")):
     if not data:
         rprint("[dim]No settings configured.[/dim]")
         return
-    table = Table(title="Enterprise Settings", show_lines=False, padding=(0, 1))
+    table = Table(title="Admin Settings", show_lines=False, padding=(0, 1))
     table.add_column("Key", style="bold")
     table.add_column("Value")
     for item in data:
@@ -828,7 +804,7 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
     """Show system diagnostics and health status.
 
     Reports overall system health, database connectivity, JWT key status,
-    and enterprise configuration issues. Useful for troubleshooting
+    and runtime configuration issues. Useful for troubleshooting
     deployment problems.
 
     Examples:
@@ -846,7 +822,6 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
     overall = data.get("status", "unknown")
     color = {"ok": "green", "degraded": "yellow", "unhealthy": "red"}.get(overall, "white")
     rprint(f"\n  Overall: [{color}]{overall}[/{color}]")
-    rprint(f"  Licensed: {'yes' if data.get('licensed') else 'no'}")
 
     checks = data.get("checks", {})
 
@@ -862,15 +837,15 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
         rprint(f"\n  JWT:     [{jwt_color}]{jwt_info.get('status', 'unknown')}[/{jwt_color}]")
         rprint(f"    Algorithm: {jwt_info.get('algorithm', '?')}")
 
-    ee = checks.get("enterprise", {})
-    if ee:
-        issues = ee.get("issues", [])
+    runtime_cfg = checks.get("runtime_config", {})
+    if runtime_cfg:
+        issues = runtime_cfg.get("issues", [])
         if issues:
-            rprint("\n  [yellow]Enterprise issues:[/yellow]")
+            rprint("\n  [yellow]Configuration issues:[/yellow]")
             for issue in issues:
                 rprint(f"    - {issue}")
         else:
-            rprint("\n  Enterprise: [green]ok[/green]")
+            rprint("\n  Configuration: [green]ok[/green]")
     rprint()
 
 
@@ -879,7 +854,7 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
 
 @admin_app.command(name="saml-config")
 def admin_saml_config(output: str = typer.Option("table", "--output", "-o")):
-    """View current SAML SSO configuration. (Enterprise only)
+    """View current SAML SSO configuration.
 
     Displays the IdP entity ID, SSO/SLO URLs, SP entity ID, and whether
     SAML and JIT provisioning are active.
@@ -890,7 +865,6 @@ def admin_saml_config(output: str = typer.Option("table", "--output", "-o")):
 
         observal admin saml-config --output json
     """
-    _require_enterprise()
     with spinner():
         data = client.get("/api/v1/admin/saml-config")
     if output == "json":
@@ -928,7 +902,6 @@ def admin_saml_config_set(
             --idp-sso-url https://idp.example.com/sso \\
             --idp-x509-cert "$(cat idp-cert.pem)"
     """
-    _require_enterprise()
     body: dict = {"saml_active": active, "jit_provisioning": jit}
     if idp_entity_id:
         body["idp_entity_id"] = idp_entity_id
@@ -956,7 +929,7 @@ def admin_saml_config_set(
 def admin_saml_config_delete(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
-    """Delete SAML SSO configuration. Disables SAML SSO. (Enterprise only)
+    """Delete SAML SSO configuration. Disables SAML SSO.
 
     Removes the entire SAML configuration, disabling SSO for all users.
     Prompts for confirmation unless --force is passed.
@@ -967,7 +940,6 @@ def admin_saml_config_delete(
 
         observal admin saml-config-delete --force
     """
-    _require_enterprise()
     if not force:
         typer.confirm("This will disable SAML SSO for all users. Continue?", abort=True)
     with spinner("Deleting SAML config..."):
@@ -980,7 +952,7 @@ def admin_saml_config_delete(
 
 @admin_app.command(name="scim-tokens")
 def admin_scim_tokens(output: str = typer.Option("table", "--output", "-o")):
-    """List SCIM provisioning tokens. (Enterprise only)
+    """List SCIM provisioning tokens.
 
     Shows all SCIM bearer tokens with their prefix, description,
     active status, and creation date.
@@ -991,7 +963,6 @@ def admin_scim_tokens(output: str = typer.Option("table", "--output", "-o")):
 
         observal admin scim-tokens --output json
     """
-    _require_enterprise()
     with spinner():
         data = client.get("/api/v1/admin/scim-tokens")
     if output == "json":
@@ -1026,13 +997,12 @@ def admin_scim_token_create(
 ):
     """Create a new SCIM provisioning token.
 
-    The token is shown once on creation. Save it securely. (Enterprise only)
+    The token is shown once on creation. Save it securely.
 
     Examples:
         observal admin scim-token-create
         observal admin scim-token-create --description "Okta SCIM sync"
     """
-    _require_enterprise()
     body: dict = {}
     if description:
         body["description"] = description
@@ -1050,7 +1020,7 @@ def admin_scim_token_revoke(
     token_id: str = typer.Argument(..., help="Token ID to revoke"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
-    """Revoke a SCIM provisioning token. (Enterprise only)
+    """Revoke a SCIM provisioning token.
 
     Permanently disables the specified SCIM token so it can no longer
     be used for provisioning. Prompts for confirmation unless --force.
@@ -1061,7 +1031,6 @@ def admin_scim_token_revoke(
 
         observal admin scim-token-revoke abc12345-uuid --force
     """
-    _require_enterprise()
     if not force:
         typer.confirm(f"Revoke SCIM token {token_id[:8]}...?", abort=True)
     with spinner("Revoking SCIM token..."):
@@ -1150,7 +1119,7 @@ def admin_audit_log(
     limit: int = typer.Option(50, "--limit", "-n"),
     output: str = typer.Option("table", "--output", "-o"),
 ):
-    """Query the audit log. (Enterprise only)
+    """Query the audit log.
 
     Shows timestamped entries of admin and user actions with actor,
     resource, IP address, and detail fields. Supports filtering by
@@ -1166,7 +1135,6 @@ def admin_audit_log(
 
         observal admin audit-log --output json
     """
-    _require_enterprise()
     from urllib.parse import urlencode
 
     params: dict = {"limit": str(limit)}
@@ -1215,7 +1183,7 @@ def admin_audit_log_export(
     actor: str = typer.Option(None, "--actor", help="Filter by actor email"),
     file: str = typer.Option(None, "--file", "-f", help="Write output to file"),
 ):
-    """Export audit log as CSV. (Enterprise only)
+    """Export audit log as CSV.
 
     Downloads the audit log in CSV format. Prints to stdout by default,
     or writes to a file with --file.
@@ -1228,7 +1196,6 @@ def admin_audit_log_export(
 
         observal admin audit-log-export --action auth.login --actor bob@example.com
     """
-    _require_enterprise()
     from urllib.parse import urlencode
 
     params: dict = {}

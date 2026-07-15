@@ -53,7 +53,7 @@ class UpdateAvailable:
     """Represents a version mismatch that the user should act on."""
 
     current: str
-    latest: str  # target version (could be newer OR older for enterprise)
+    latest: str  # target version (could be newer OR older for server)
     release_url: str
     published_at: str
     source: str  # "server" or "github"
@@ -201,7 +201,7 @@ def _should_check(cache: dict | None, interval: int) -> bool:
     return (now - last_ts) >= interval
 
 
-# ── Fetch from server (enterprise mode) ────────────────────────
+# ── Fetch from server (server mode) ────────────────────────
 
 
 def _fetch_from_server(server_url: str, token: str) -> dict | None:
@@ -390,7 +390,7 @@ def verify_server_image_exists(version: str) -> bool:
 def _resolve_update_source() -> dict | None:
     """Determine check mode and fetch the target version.
 
-    - If server_url configured + reachable: server mode (enterprise)
+    - If server_url configured + reachable: server mode (server)
     - Otherwise: GitHub mode (community)
     """
     cfg = load_config()
@@ -442,7 +442,7 @@ def maybe_check() -> UpdateAvailable | None:
                         direction="upgrade",
                     )
                 elif source == "server" and target != current:
-                    # Enterprise: server recommends an older/different version
+                    # Server: server recommends an older/different version
                     return UpdateAvailable(
                         current=current,
                         latest=target,
@@ -488,7 +488,7 @@ def maybe_check() -> UpdateAvailable | None:
                 direction="upgrade",
             )
         elif source == "server" and target != current:
-            # Enterprise: server recommends a different (likely older) version
+            # Server: server recommends a different (likely older) version
             return UpdateAvailable(
                 current=current,
                 latest=target,
@@ -615,7 +615,7 @@ def auto_update_if_needed() -> bool:
     """Auto-update CLI if a minor/patch update is available. Returns True if update applied.
 
     Behavior:
-    - Enterprise (server connected): match server version exactly.
+    - Server connected: match server version exactly.
     - Community (GitHub): update to latest minor/patch, prompt for major.
     - Respects `auto_update` config (default: true).
     - Never auto-updates across major versions without explicit consent.
