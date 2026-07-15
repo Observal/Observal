@@ -13,6 +13,7 @@ license = "Apache-2.0"
 dependencies = [
     "fastapi>=0.136.0,!=0.136.3",
     "starlette>=1.3.1",
+    "click>=8.3.3",
     "uvicorn[standard]",
     "sqlalchemy[asyncio]",
     "asyncpg",
