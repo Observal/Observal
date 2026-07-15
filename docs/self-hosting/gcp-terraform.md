@@ -14,7 +14,7 @@ A single `terraform apply` creates:
 - **VPC** with a private subnet, Cloud NAT, and a Serverless VPC Access Connector
 - **Cloud Run v2 services**: `api`, `web`, `worker` with autoscaling (min/max instance counts)
 - **Cloud Run v2 job**: `init` (one-shot migrations + seeds)
-- **Cloud SQL Postgres** (Enterprise edition): optional HA, encrypted, automated backups
+- **Cloud SQL Postgres** (Open-source distribution): optional HA, encrypted, automated backups
 - **Memorystore Redis**: BASIC or STANDARD_HA tier
 - **GCE instance** (data host): ClickHouse on a persistent disk, with optional Prometheus and Grafana, accessible via IAP SSH tunnel
 - **Global HTTPS Load Balancer** with managed SSL certificate (when domain is supplied)
@@ -137,10 +137,9 @@ clickhouse_cloud_url = "https://abc123.us-central1.gcp.clickhouse.cloud:8443"
 
 The GCE data host is skipped entirely.
 
-### Enterprise edition
+### Open-source distribution
 
 ```hcl
-observal_license_key = "eyJ...your-key..."
 ```
 
 Stored in Secret Manager, injected into all Cloud Run services. Enterprise features activate automatically.

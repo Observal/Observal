@@ -284,7 +284,7 @@ Complete Okta Part A before saving Observal SSO settings, so redirect URIs and s
 
 ### Step 11 - Set OAuth in the SSO tab
 
-Set the enterprise license in `.env`, then configure OIDC in **Admin → SSO → SSO settings**.
+Configure OIDC in **Admin → SSO → SSO settings**.
 
 | Setting | Value |
 | --- | --- |
@@ -364,7 +364,7 @@ If `false`:
 ### Step 15 - Verify groups synced
 
 1. Log in as a user who belongs to Okta groups (e.g. `engineering`).
-2. In Observal, open the **exec dashboard** (if licensed) or check admin user tooling.
+2. In Observal, open the **exec dashboard** or check admin user tooling.
 3. Confirm department/group filters reflect Okta group names.
 
 Groups refresh on **each SSO login**. If you change group membership in Okta, have the user log out and sign in again.
@@ -389,7 +389,7 @@ Only after Steps 14–16 succeed:
 
 1. **Settings** → **Deployment** → enable **SSO Only Mode**.
 2. Confirm password login is disabled for normal users.
-3. Document CLI access: users run `observal auth login` with device flow (see `ee/docs/cli-sso.md`).
+3. Document CLI access: users run `observal auth login` with device flow (see `docs/self-hosting/cli-sso.md`).
 
 ---
 
@@ -415,5 +415,5 @@ Only after Steps 14–16 succeed:
 
 - [Authentication and SSO](authentication.md) - JWT, RBAC, SSO behavior
 - [Configuration](configuration.md) - `.env` reference
-- `ee/docs/oidc-setup.md` - OIDC reference (multi-IdP)
-- `ee/docs/cli-sso.md` - CLI login when SSO-only is enabled
+- `docs/self-hosting/oidc-setup.md` - OIDC reference (multi-IdP)
+- `docs/self-hosting/cli-sso.md` - CLI login when SSO-only is enabled

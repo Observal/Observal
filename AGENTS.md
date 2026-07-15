@@ -53,9 +53,6 @@ observal-server/       FastAPI server
     shared/            Cross-service utilities
   jobs/                Background job definitions (catalog, maintenance)
 
-ee/                    Enterprise (source-available, separate license)
-  license.py           JWT license validation
-  observal_server/     EE routes + services (audit, SAML, SCIM, exec dashboard)
 
 web/                   Next.js 16 / React 19 frontend
 packages/pi-extension/ Pi telemetry extension (npm: observal-pi)
@@ -101,7 +98,6 @@ A stub harness has:
 - **Dynamic settings** for runtime config: `from services.dynamic_settings import get, get_int, get_bool`. Non-boot settings live in the DB, not env vars.
 - **ClickHouse migrations** live in `observal-server/clickhouse/migrations/*.sql` and run through `services.clickhouse.migrations`. Keep Alembic for Postgres only. Never add ClickHouse DDL to startup code. The init container runs ClickHouse migrations after Alembic and before API startup.
 - **SSRF guard** for all outbound network: `from services.ssrf_guard import check_url`. Used in webhooks, git clone, MCP analysis.
-- **Feature gating via license**: `from ee.license import is_feature_licensed`. Never import other `ee/` modules from core.
 - **Conventional Commits**: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`. Scope in parens. No fixup commits (amend instead).
 
 ### TypeScript (web)
@@ -109,7 +105,6 @@ A stub harness has:
 - **sessionStorage** for auth state (API key, user role). Never localStorage.
 - **TanStack Query hooks** from `use-api.ts` for all data fetching. No raw `fetch` in components.
 - **Types centralized** in `src/lib/types.ts`. No inline API response types.
-- **Feature gating** is server-side: API returns 403 for unlicensed features. Frontend shows upgrade prompts.
 - **harness list from server** (`/api/v1/config/harnesses`), never hardcoded in frontend.
 - **OKLCH color tokens** in `globals.css`. No raw hex/rgb in components.
 
@@ -183,14 +178,6 @@ The shim never modifies messages, only observes. Telemetry is fire-and-forget; o
 - Device authorization flow for CLI login via browser confirmation.
 - Redis fail-closed: if Redis is down, auth fails (prevents stale token usage).
 - Fresh servers auto-bootstrap admin on first `observal auth login` (localhost-only).
-
-## Enterprise (`ee/`)
-
-Source-available, separate license. Loaded via signed JWT (`OBSERVAL_LICENSE_KEY`). Features gated individually: `is_feature_licensed("insights")`, `is_feature_licensed("saml")`, etc.
-
-**Critical constraint:** Core never imports from `ee/`. The `ee/` code imports core. Open-source is fully functional without a license key.
-
-Contents: SAML SSO, SCIM provisioning, exec dashboard, compliance audit, license generation script.
 
 ## Commands
 

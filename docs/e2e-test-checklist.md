@@ -4,7 +4,6 @@
 
 # E2E Test Checklist
 
-> For enterprise-mode testing (SSO, SCIM, audit log, security events), see [e2e-test-checklist-enterprise.md](e2e-test-checklist-enterprise.md).
 
 ## Test Accounts
 

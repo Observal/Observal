@@ -172,26 +172,6 @@ gcloud run jobs execute observal-prod-init --region=us-central1
 terraform output app_url
 ```
 
-## Enterprise edition
-
-Both Terraform modules support deploying the enterprise edition. Set the license key variable:
-
-**AWS** (`terraform.tfvars`):
-```hcl
-observal_license_key = "eyJ...your-key..."
-```
-
-**GCP** (`terraform.tfvars`):
-```hcl
-observal_license_key = "eyJ...your-key..."
-```
-
-When a license key is provided, Terraform:
-1. Stores the key in SSM Parameter Store (AWS) or Secret Manager (GCP) as an encrypted secret
-2. Injects `OBSERVAL_LICENSE_KEY` into every compute task at startup
-3. Enterprise features (SAML SSO, audit logs, executive dashboards) activate automatically
-
-Leave the key empty to deploy community edition.
 
 ## Day-2 operations
 

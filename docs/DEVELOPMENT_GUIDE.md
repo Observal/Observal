@@ -295,7 +295,6 @@ observal-server/    FastAPI backend (Python)
 observal_cli/       CLI, shim, and proxy (Python)
 web/                Next.js 16 / React 19 frontend (TypeScript)
 tests/              Shared test suite (~1500 tests, 96 files)
-ee/                 Enterprise features (closed, no community contributions)
 docker/             Docker Compose and Dockerfiles
 docs/               Documentation
 scripts/            Dev tooling scripts

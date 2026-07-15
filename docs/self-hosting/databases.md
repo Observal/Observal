@@ -20,7 +20,7 @@ Observal runs two DBs with very different jobs.
 * `feedback`, `ratings`
 * `alerts`, `alert_history`
 * `api_keys`
-* Enterprise: `audit_log` and related enterprise-only tables when enabled
+* `audit_log` and related audit tables
 
 ### Migrations
 

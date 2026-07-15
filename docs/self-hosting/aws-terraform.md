@@ -171,24 +171,20 @@ image_tag           = "v1.4.0"       # specific Observal release; "latest" pulls
 
 ### License and edition
 
-Provide an enterprise license key to deploy the enterprise edition with private GHCR images.
+Provide an open-source distribution key to deploy the open-source distribution with private GHCR images.
 
 ```hcl
-observal_license_key = "eyJ...your-key..."
 
 # edition defaults to "auto": enterprise if a key is present, community otherwise.
 # Override explicitly if needed:
 # edition = "enterprise"
 ```
 
-When `observal_license_key` is set, Terraform:
 
 * Stores the key in SSM Parameter Store as a `SecureString`
-* Injects `OBSERVAL_LICENSE_KEY` into every ECS task at startup
 * Switches `api` and `web` image repos to the enterprise GHCR images
 * Reports the active edition via the `edition` output (`terraform output --raw edition`)
 
-Leave `observal_license_key` empty (the default) to deploy community edition.
 
 See [Configuration](configuration.md) for the meaning of each application setting.
 

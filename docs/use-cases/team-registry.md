@@ -114,7 +114,7 @@ Filters in the web UI let you slice by user, agent, harness, and time range.
 
 ## Enterprise concerns
 
-For orgs that need SSO and audit logging, add an enterprise license, then configure OIDC in **Admin → SSO**:
+For orgs that need SSO and audit logging, configure OIDC in **Admin → SSO**:
 
 | Setting | Value |
 | --- | --- |

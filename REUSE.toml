@@ -221,10 +221,6 @@ path = "LICENSE"
 SPDX-FileCopyrightText = "2026-present Observal"
 SPDX-License-Identifier = "Apache-2.0"
 
-[[annotations]]
-path = "ee/LICENSE"
-SPDX-FileCopyrightText = "2026-present Observal"
-SPDX-License-Identifier = "LicenseRef-Observal-Enterprise"
 
 [[annotations]]
 path = "docs/img/audit_logging.png"
