@@ -57,7 +57,7 @@ _SESSION_TTL_SECONDS = 600  # 10 minutes — long enough for an interactive logi
 _REDIS_PREFIX = "sso_diag:"
 
 # Sentinel used in OIDC `state` and SAML `RelayState` to mark an e2e test
-# round-trip. Exported so the OIDC callback (core) and SAML ACS (ee) can both
+# round-trip. Exported so the OIDC callback (core) and SAML ACS (SAML) can both
 # detect it without duplicating the literal.
 E2E_SENTINEL_PREFIX = "__e2e:"
 

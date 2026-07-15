@@ -12,14 +12,14 @@ from httpx import ASGITransport, AsyncClient
 
 class TestSamlKeyGeneration:
     def test_generate_sp_key_pair_returns_pem_strings(self):
-        from ee.observal_server.services.saml import generate_sp_key_pair
+        from services.saml import generate_sp_key_pair
 
         private_key_pem, cert_pem = generate_sp_key_pair(common_name="test-sp.example.com")
         assert "BEGIN RSA PRIVATE KEY" in private_key_pem or "BEGIN PRIVATE KEY" in private_key_pem
         assert "BEGIN CERTIFICATE" in cert_pem
 
     def test_encrypt_decrypt_private_key_roundtrip(self):
-        from ee.observal_server.services.saml import (
+        from services.saml import (
             decrypt_private_key,
             encrypt_private_key,
             generate_sp_key_pair,
@@ -34,7 +34,7 @@ class TestSamlKeyGeneration:
         assert decrypted == private_key_pem
 
     def test_encrypt_decrypt_with_empty_password_is_noop(self):
-        from ee.observal_server.services.saml import (
+        from services.saml import (
             decrypt_private_key,
             encrypt_private_key,
             generate_sp_key_pair,
@@ -47,7 +47,7 @@ class TestSamlKeyGeneration:
         assert decrypted == private_key_pem
 
     def test_build_saml_settings_returns_valid_dict(self):
-        from ee.observal_server.services.saml import build_saml_settings, generate_sp_key_pair
+        from services.saml import build_saml_settings, generate_sp_key_pair
 
         private_key_pem, cert_pem = generate_sp_key_pair(common_name="test.example.com")
         result = build_saml_settings(
@@ -74,7 +74,7 @@ class TestSamlHelpers:
     def test_extract_name_id_and_attrs(self):
         from unittest.mock import MagicMock
 
-        from ee.observal_server.services.saml import extract_name_id_and_attrs
+        from services.saml import extract_name_id_and_attrs
 
         auth = MagicMock()
         auth.get_nameid.return_value = "User@Example.COM"
@@ -85,25 +85,25 @@ class TestSamlHelpers:
         assert attrs["displayName"] == ["Test User"]
 
     def test_get_display_name_from_display_name_attr(self):
-        from ee.observal_server.services.saml import get_display_name
+        from services.saml import get_display_name
 
         attrs = {"displayName": ["Jane Smith"]}
         assert get_display_name(attrs) == "Jane Smith"
 
     def test_get_display_name_fallback(self):
-        from ee.observal_server.services.saml import get_display_name
+        from services.saml import get_display_name
 
         assert get_display_name({}) == "SSO User"
         assert get_display_name({}, fallback="Unknown") == "Unknown"
 
     def test_get_display_name_tries_multiple_claims(self):
-        from ee.observal_server.services.saml import get_display_name
+        from services.saml import get_display_name
 
         attrs = {"givenName": ["Jane"]}
         assert get_display_name(attrs) == "Jane"
 
     def test_strip_pem_headers(self):
-        from ee.observal_server.services.saml import _strip_pem_headers
+        from services.saml import _strip_pem_headers
 
         pem = "-----BEGIN CERTIFICATE-----\nMIIC\nmzCC\n-----END CERTIFICATE-----\n"
         assert _strip_pem_headers(pem) == "MIICmzCC"
@@ -114,14 +114,14 @@ class TestSamlEndpoints:
     def saml_app(self):
         from fastapi import FastAPI
 
-        from ee.observal_server.routes.sso_saml import router
+        from api.routes.sso_saml import router
 
         app = FastAPI()
         app.include_router(router)
         return app
 
     def _make_mock_config(self):
-        from ee.observal_server.services.saml import generate_sp_key_pair
+        from services.saml import generate_sp_key_pair
 
         private_key, cert = generate_sp_key_pair("test.example.com")
         mock_config = MagicMock()
@@ -144,12 +144,12 @@ class TestSamlEndpoints:
 
         with (
             patch(
-                "ee.observal_server.routes.sso_saml._get_saml_config",
+                "api.routes.sso_saml._get_saml_config",
                 new_callable=AsyncMock,
                 return_value=mock_config,
             ),
             patch(
-                "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                "api.routes.sso_saml._decrypt_sp_key",
                 return_value=private_key,
             ),
         ):
@@ -165,7 +165,7 @@ class TestSamlEndpoints:
     @pytest.mark.asyncio
     async def test_metadata_returns_404_when_not_configured(self, saml_app):
         with patch(
-            "ee.observal_server.routes.sso_saml._get_saml_config",
+            "api.routes.sso_saml._get_saml_config",
             new_callable=AsyncMock,
             return_value=None,
         ):
@@ -182,12 +182,12 @@ class TestSamlEndpoints:
 
         with (
             patch(
-                "ee.observal_server.routes.sso_saml._get_saml_config",
+                "api.routes.sso_saml._get_saml_config",
                 new_callable=AsyncMock,
                 return_value=mock_config,
             ),
             patch(
-                "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                "api.routes.sso_saml._decrypt_sp_key",
                 return_value=private_key,
             ),
         ):
@@ -204,7 +204,7 @@ class TestSamlEndpoints:
     @pytest.mark.asyncio
     async def test_login_returns_404_when_not_configured(self, saml_app):
         with patch(
-            "ee.observal_server.routes.sso_saml._get_saml_config",
+            "api.routes.sso_saml._get_saml_config",
             new_callable=AsyncMock,
             return_value=None,
         ):
@@ -222,7 +222,7 @@ class TestSamlEndpoints:
         # which check failed ("SAML SSO is configured on server") rather than a
         # generic HTTP error.
         with patch(
-            "ee.observal_server.routes.sso_saml._get_saml_config",
+            "api.routes.sso_saml._get_saml_config",
             new_callable=AsyncMock,
             return_value=None,
         ):
@@ -278,32 +278,32 @@ class TestSamlEndpoints:
         try:
             with (
                 patch(
-                    "ee.observal_server.routes.sso_saml._get_saml_config",
+                    "api.routes.sso_saml._get_saml_config",
                     new_callable=AsyncMock,
                     return_value=mock_config,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                    "api.routes.sso_saml._decrypt_sp_key",
                     return_value=private_key,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml._build_auth",
+                    "api.routes.sso_saml._build_auth",
                     return_value=mock_auth,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.get_redis",
+                    "api.routes.sso_saml.get_redis",
                     return_value=mock_redis,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.emit_security_event",
+                    "api.routes.sso_saml.emit_security_event",
                     new_callable=AsyncMock,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.create_access_token",
+                    "api.routes.sso_saml.create_access_token",
                     return_value=("access-tok", 3600),
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.create_refresh_token",
+                    "api.routes.sso_saml.create_refresh_token",
                     return_value=("refresh-tok", "jti-1"),
                 ),
             ):
@@ -349,24 +349,24 @@ class TestSamlEndpoints:
         try:
             with (
                 patch(
-                    "ee.observal_server.routes.sso_saml._get_saml_config",
+                    "api.routes.sso_saml._get_saml_config",
                     new_callable=AsyncMock,
                     return_value=mock_config,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                    "api.routes.sso_saml._decrypt_sp_key",
                     return_value=private_key,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml._build_auth",
+                    "api.routes.sso_saml._build_auth",
                     return_value=mock_auth,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.get_redis",
+                    "api.routes.sso_saml.get_redis",
                     return_value=mock_redis,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.emit_security_event",
+                    "api.routes.sso_saml.emit_security_event",
                     new_callable=AsyncMock,
                 ) as mock_emit,
             ):
@@ -399,12 +399,12 @@ class TestSamlEndpoints:
 
         with (
             patch(
-                "ee.observal_server.routes.sso_saml._get_saml_config",
+                "api.routes.sso_saml._get_saml_config",
                 new_callable=AsyncMock,
                 return_value=mock_config,
             ),
             patch(
-                "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                "api.routes.sso_saml._decrypt_sp_key",
                 return_value=private_key,
             ),
         ):
@@ -425,7 +425,7 @@ class TestSamlEndpoints:
         mock_config.idp_slo_url = ""
 
         with patch(
-            "ee.observal_server.routes.sso_saml._get_saml_config",
+            "api.routes.sso_saml._get_saml_config",
             new_callable=AsyncMock,
             return_value=mock_config,
         ):
@@ -443,7 +443,7 @@ class TestSamlEndpoints:
     async def test_logout_redirects_to_login_when_not_configured(self, saml_app):
         """Logout should redirect to /login when SAML is not configured at all."""
         with patch(
-            "ee.observal_server.routes.sso_saml._get_saml_config",
+            "api.routes.sso_saml._get_saml_config",
             new_callable=AsyncMock,
             return_value=None,
         ):
@@ -468,16 +468,16 @@ class TestSamlEndpoints:
 
         with (
             patch(
-                "ee.observal_server.routes.sso_saml._get_saml_config",
+                "api.routes.sso_saml._get_saml_config",
                 new_callable=AsyncMock,
                 return_value=mock_config,
             ),
             patch(
-                "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                "api.routes.sso_saml._decrypt_sp_key",
                 return_value=private_key,
             ),
             patch(
-                "ee.observal_server.routes.sso_saml._build_auth",
+                "api.routes.sso_saml._build_auth",
                 return_value=mock_auth,
             ),
         ):
@@ -495,7 +495,7 @@ class TestSamlEndpoints:
     async def test_sls_redirects_when_not_configured(self, saml_app):
         """SLS endpoint should redirect to /login when SAML is not configured."""
         with patch(
-            "ee.observal_server.routes.sso_saml._get_saml_config",
+            "api.routes.sso_saml._get_saml_config",
             new_callable=AsyncMock,
             return_value=None,
         ):
@@ -516,14 +516,14 @@ class TestSamlRelayState:
     def saml_app(self):
         from fastapi import FastAPI
 
-        from ee.observal_server.routes.sso_saml import router
+        from api.routes.sso_saml import router
 
         app = FastAPI()
         app.include_router(router)
         return app
 
     def _make_mock_config(self):
-        from ee.observal_server.services.saml import generate_sp_key_pair
+        from services.saml import generate_sp_key_pair
 
         private_key, cert = generate_sp_key_pair("test.example.com")
         mock_config = MagicMock()
@@ -547,12 +547,12 @@ class TestSamlRelayState:
 
         with (
             patch(
-                "ee.observal_server.routes.sso_saml._get_saml_config",
+                "api.routes.sso_saml._get_saml_config",
                 new_callable=AsyncMock,
                 return_value=mock_config,
             ),
             patch(
-                "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                "api.routes.sso_saml._decrypt_sp_key",
                 return_value=private_key,
             ),
         ):
@@ -575,12 +575,12 @@ class TestSamlRelayState:
 
         with (
             patch(
-                "ee.observal_server.routes.sso_saml._get_saml_config",
+                "api.routes.sso_saml._get_saml_config",
                 new_callable=AsyncMock,
                 return_value=mock_config,
             ),
             patch(
-                "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                "api.routes.sso_saml._decrypt_sp_key",
                 return_value=private_key,
             ),
         ):
@@ -602,12 +602,12 @@ class TestSamlRelayState:
 
         with (
             patch(
-                "ee.observal_server.routes.sso_saml._get_saml_config",
+                "api.routes.sso_saml._get_saml_config",
                 new_callable=AsyncMock,
                 return_value=mock_config,
             ),
             patch(
-                "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                "api.routes.sso_saml._decrypt_sp_key",
                 return_value=private_key,
             ),
         ):
@@ -665,32 +665,32 @@ class TestSamlRelayState:
         try:
             with (
                 patch(
-                    "ee.observal_server.routes.sso_saml._get_saml_config",
+                    "api.routes.sso_saml._get_saml_config",
                     new_callable=AsyncMock,
                     return_value=mock_config,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                    "api.routes.sso_saml._decrypt_sp_key",
                     return_value=private_key,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml._build_auth",
+                    "api.routes.sso_saml._build_auth",
                     return_value=mock_auth,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.get_redis",
+                    "api.routes.sso_saml.get_redis",
                     return_value=mock_redis,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.emit_security_event",
+                    "api.routes.sso_saml.emit_security_event",
                     new_callable=AsyncMock,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.create_access_token",
+                    "api.routes.sso_saml.create_access_token",
                     return_value=("access-tok", 3600),
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.create_refresh_token",
+                    "api.routes.sso_saml.create_refresh_token",
                     return_value=("refresh-tok", "jti-1"),
                 ),
             ):
@@ -756,32 +756,32 @@ class TestSamlRelayState:
         try:
             with (
                 patch(
-                    "ee.observal_server.routes.sso_saml._get_saml_config",
+                    "api.routes.sso_saml._get_saml_config",
                     new_callable=AsyncMock,
                     return_value=mock_config,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml._decrypt_sp_key",
+                    "api.routes.sso_saml._decrypt_sp_key",
                     return_value=private_key,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml._build_auth",
+                    "api.routes.sso_saml._build_auth",
                     return_value=mock_auth,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.get_redis",
+                    "api.routes.sso_saml.get_redis",
                     return_value=mock_redis,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.emit_security_event",
+                    "api.routes.sso_saml.emit_security_event",
                     new_callable=AsyncMock,
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.create_access_token",
+                    "api.routes.sso_saml.create_access_token",
                     return_value=("access-tok", 3600),
                 ),
                 patch(
-                    "ee.observal_server.routes.sso_saml.create_refresh_token",
+                    "api.routes.sso_saml.create_refresh_token",
                     return_value=("refresh-tok", "jti-1"),
                 ),
             ):

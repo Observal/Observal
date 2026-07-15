@@ -10,7 +10,7 @@ Generates agent insight reports: deterministic metadata extraction from raw
 session JSONL, LLM-powered facet extraction, parallel narrative sections,
 and self-contained HTML export.
 
-Previously gated behind an enterprise license; now freely available.
+Freely available in open-source Observal.
 """
 
 import json
@@ -191,14 +191,9 @@ async def call_model(prompt: str, model_override: str | None = None, max_tokens:
 # ---------------------------------------------------------------------------
 
 
-def licensed_features() -> list[str]:
-    """Return licensed enterprise feature list (for /config endpoint)."""
-    try:
-        from ee.license import licensed_features as _lf
-
-        return _lf()
-    except (ImportError, RuntimeError):
-        return []
+def enabled_features() -> list[str]:
+    """Return enabled feature list for the public config endpoint."""
+    return ["all"]
 
 
 def configure_insights():

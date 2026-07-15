@@ -17,10 +17,11 @@ import services.dynamic_settings as ds
 from api.middleware.audit import AuditMiddleware
 from api.middleware.content_type import ContentTypeMiddleware
 from api.middleware.request_id import RequestIDMiddleware
+from api.middleware.sso_config_guard import SsoConfigGuardMiddleware
 from api.middleware.trusted_proxy import TrustedProxyMiddleware
 from api.ratelimit import limiter
 from config import settings
-from services.audit import AUDIT_LICENSED
+from services.audit import AUDIT_ENABLED
 
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:3000"
 DEFAULT_MAX_REQUEST_SIZE_MB = "10"
@@ -277,7 +278,8 @@ def configure_middleware(app: FastAPI) -> None:
     app.add_middleware(SecurityHeadersMiddleware, security_headers=build_security_headers(cors_allowed_origins))
     app.add_middleware(ContentTypeMiddleware)
     app.add_middleware(RequestIDMiddleware)
-    if AUDIT_LICENSED:
+    if AUDIT_ENABLED:
         app.add_middleware(AuditMiddleware)
+    app.add_middleware(SsoConfigGuardMiddleware, settings=settings)
     app.add_middleware(TrustedProxyMiddleware)
     app.add_middleware(CacheControlMiddleware)

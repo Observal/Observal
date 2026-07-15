@@ -324,6 +324,14 @@ RESTART_REQUIRED_KEYS: set[str] = {
     "github.client_id",
     "github.client_secret",
     "github.allowed_orgs",
+    "security.rate_limit_auth",
+    "security.rate_limit_auth_strict",
+    "data.cache_ttl_default",
+    "data.cache_ttl_dashboard",
+    "observability.log_format",
+    "observability.enable_openapi",
+    "observability.enable_metrics",
+    "misc.git_mirror_base_path",
 }
 
 

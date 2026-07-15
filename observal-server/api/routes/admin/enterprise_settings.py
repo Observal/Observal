@@ -4,7 +4,9 @@
 
 """Admin settings, diagnostics, and resource tuning routes."""
 
+import json
 import time
+from datetime import UTC, datetime
 
 import litellm
 from fastapi import Depends, HTTPException
@@ -15,21 +17,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
 from api.deps import get_db, get_project_id, require_role
-from config import HAS_LICENSE, settings
+from config import settings
 from models.agent import Agent
-from models.enterprise_config import EnterpriseConfig
+from models.enterprise_config import RESTART_PENDING_KEY, EnterpriseConfig
 from models.insight_meta_cache import InsightMetaCache
 from models.insight_report import InsightReport
 from models.insight_session_facets import InsightSessionFacets
 from models.insight_session_meta import InsightSessionMeta
 from models.user import User, UserRole
 from schemas.admin import EnterpriseConfigResponse, EnterpriseConfigUpdate, SettingRevokedResponse
+from services.config_validator import validate_runtime_config_async
 from services.insights import _normalize_model_id
 from services.secrets_redactor import REDACTED
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
 from .helpers import _validate_branding_app_name, _validate_branding_logo
+
+
+async def _mark_restart_pending(db: AsyncSession, key: str) -> None:
+    result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == RESTART_PENDING_KEY))
+    marker = result.scalar_one_or_none()
+    keys: set[str] = set()
+    if marker:
+        try:
+            keys.update(json.loads(marker.value).get("keys", []))
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    keys.add(key)
+    value = json.dumps({"changed_at": datetime.now(UTC).isoformat(), "keys": sorted(keys)})
+    if marker:
+        marker.value = value
+    else:
+        db.add(EnterpriseConfig(key=RESTART_PENDING_KEY, value=value))
+
 
 # ── Diagnostics ─────────────────────────────────────────
 
@@ -45,7 +66,6 @@ async def diagnostics(
 
     diag: dict[str, object] = {
         "status": "ok",
-        "licensed": HAS_LICENSE,
         "checks": {},
     }
 
@@ -76,25 +96,15 @@ async def diagnostics(
             "algorithm": settings.JWT_SIGNING_ALGORITHM,
         }
 
-    # Enterprise config
-    if HAS_LICENSE:
-        issues: list[str] = []
-        if settings.SECRET_KEY == "change-me-to-a-random-string":
-            issues.append("SECRET_KEY is using default value")
-        sso_only = await ds.get_bool("deployment.sso_only")
-        frontend_url = await ds.get("deployment.frontend_url")
-        if sso_only and not await ds.get("oauth.client_id"):
-            issues.append("oauth.client_id is not set (required for SSO-only mode)")
-        if frontend_url in ("http://localhost:3000", ""):
-            issues.append("deployment.frontend_url is localhost")
-        diag["checks"]["enterprise"] = {
-            "status": "ok" if not issues else "misconfigured",
-            "sso_only": sso_only,
-            "sso_configured": bool(await ds.get("oauth.client_id")),
-            "issues": issues,
-        }
-        if issues:
-            diag["status"] = "degraded"
+    issues = await validate_runtime_config_async(settings)
+    diag["checks"]["runtime_config"] = {
+        "status": "ok" if not issues else "misconfigured",
+        "sso_only": await ds.get_bool("deployment.sso_only"),
+        "sso_configured": bool(await ds.get("oauth.client_id")),
+        "issues": issues,
+    }
+    if issues:
+        diag["status"] = "degraded"
     return diag
 
 
@@ -147,6 +157,8 @@ async def list_settings(
     result = await db.execute(select(EnterpriseConfig).order_by(EnterpriseConfig.key))
     configs = []
     for c in result.scalars().all():
+        if c.key == RESTART_PENDING_KEY:
+            continue
         sensitive = c.key in ds.SENSITIVE_KEYS
         has_value = bool(c.value)
         # Never return plaintext or ciphertext for sensitive keys.
@@ -207,11 +219,14 @@ async def upsert_setting(
 
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
     cfg = result.scalar_one_or_none()
+    changed = cfg is None or cfg.value != store_value
     if cfg:
         cfg.value = store_value
     else:
         cfg = EnterpriseConfig(key=key, value=store_value)
         db.add(cfg)
+    if changed and key in ds.RESTART_REQUIRED_KEYS:
+        await _mark_restart_pending(db, key)
     await db.commit()
     await db.refresh(cfg)
     await ds.invalidate(key)
@@ -267,6 +282,8 @@ async def delete_setting(
     if not cfg:
         raise HTTPException(status_code=404, detail="Setting not found")
     await db.delete(cfg)
+    if key in ds.RESTART_REQUIRED_KEYS:
+        await _mark_restart_pending(db, key)
     await db.commit()
     await ds.invalidate(key)
     await ds.refresh_sync_cache()
@@ -292,6 +309,8 @@ async def revoke_setting(
     if not cfg:
         raise HTTPException(status_code=404, detail="Setting not found or already revoked")
     await db.delete(cfg)
+    if key in ds.RESTART_REQUIRED_KEYS:
+        await _mark_restart_pending(db, key)
     await db.commit()
     await ds.invalidate(key)
     await ds.refresh_sync_cache()

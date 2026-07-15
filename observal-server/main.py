@@ -13,6 +13,5 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from app_factory import create_app
-from config import HAS_LICENSE
 
-app = create_app(has_license_getter=lambda: HAS_LICENSE)
+app = create_app()

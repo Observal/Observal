@@ -11,15 +11,19 @@ on the API service) to bring the process back up.
 """
 
 import asyncio
+import json
 import os
 import signal
 
 from fastapi import Depends, Request
 from loguru import logger as optic
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import require_super_admin
+from api.deps import get_db, require_role, require_super_admin
 from api.ratelimit import limiter
-from models.user import User
+from models.enterprise_config import RESTART_PENDING_KEY, EnterpriseConfig
+from models.user import User, UserRole
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
@@ -34,7 +38,7 @@ def _terminate_api_process() -> None:
 
     In the container the tree root is PID 1: the uvicorn master when running
     with ``--workers N``, or uvicorn itself when single-process. Signaling the
-    root takes every worker down together -- terminating only the serving
+    root takes every worker down together. Terminating only the serving
     worker would leave sibling workers running with stale OAuth clients.
     Outside a container (dev), only our own process is signaled so a parent
     shell is never killed.
@@ -44,6 +48,27 @@ def _terminate_api_process() -> None:
     target = 1 if (pid == 1 or ppid == 1) else pid
     optic.warning("API restart: sending SIGTERM to pid {} (self={}, parent={})", target, pid, ppid)
     os.kill(target, signal.SIGTERM)
+
+
+@router.get("/restart/status")
+async def restart_status(
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_role(UserRole.admin)),
+):
+    """Return whether saved settings require an API restart."""
+    result = await db.execute(select(EnterpriseConfig.value).where(EnterpriseConfig.key == RESTART_PENDING_KEY))
+    raw = result.scalar_one_or_none()
+    if not raw:
+        return {"required": False, "changed_at": None, "keys": []}
+    try:
+        state = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        state = {}
+    return {
+        "required": True,
+        "changed_at": state.get("changed_at"),
+        "keys": state.get("keys", []),
+    }
 
 
 @router.post("/restart", status_code=202)

@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Enterprise configuration validator.
+"""Runtime configuration validator.
 
-Checks that required settings are properly configured for enterprise mode.
+Checks that required settings are properly configured for SSO and provisioning.
 Returns a list of human-readable issue descriptions (empty = healthy).
 
 Uses dynamic_settings for SSO values and config.settings for boot-time values.
@@ -20,11 +20,11 @@ if TYPE_CHECKING:
 import services.dynamic_settings as ds
 
 
-def validate_enterprise_config(settings: Settings) -> list[str]:
-    """Validate enterprise-required configuration (sync, uses in-memory cache).
+def validate_runtime_config(settings: Settings) -> list[str]:
+    """Validate runtime-required configuration (sync, uses in-memory cache).
 
     Used at boot time for logging. For live request-time checks, use
-    ``validate_enterprise_config_async`` which reads fresh values from Redis/DB.
+    ``validate_runtime_config_async`` which reads fresh values from Redis/DB.
     """
     issues: list[str] = []
 
@@ -65,8 +65,8 @@ def validate_enterprise_config(settings: Settings) -> list[str]:
     return issues
 
 
-async def validate_enterprise_config_async(settings: Settings) -> list[str]:
-    """Validate enterprise-required configuration (async, reads from Redis/DB).
+async def validate_runtime_config_async(settings: Settings) -> list[str]:
+    """Validate runtime-required configuration (async, reads from Redis/DB).
 
     Always returns fresh values — safe to call on every request without stale cache issues.
     """

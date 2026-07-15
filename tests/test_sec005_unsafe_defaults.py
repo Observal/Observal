@@ -3,7 +3,7 @@
 """Tests for startup weak-secret guard and the /admin/system-warnings endpoint.
 
 Verifies that:
-- Weak or default SECRET_KEY values are detected at startup in non-local deployments
+- Weak or default SECRET_KEY values are detected
 - Strong keys pass the check
 - GET /api/v1/admin/system-warnings is admin-only
 - It surfaces a warning when SECRET_KEY is insecure
@@ -30,10 +30,6 @@ class TestStartupGuard:
         key = "a-very-strong-random-key-for-jwt-32+"
         _weak_set = {"change-me-to-a-random-string", "changeme", "secret", "dev", ""}
         assert key not in _weak_set and len(key) >= 32
-
-    def test_local_mode_skips_guard(self):
-        # guard condition: DEPLOYMENT_MODE != "local"
-        assert "local" == "local"
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -126,7 +122,6 @@ async def test_system_warnings_weak_secret_key():
     try:
         with patch("api.routes.admin.enterprise_settings.settings") as mock_settings:
             mock_settings.SECRET_KEY = "changeme"
-            mock_settings.DEPLOYMENT_MODE = "enterprise"
             async with _make_client() as client:
                 r = await client.get("/api/v1/admin/system-warnings")
         assert r.status_code == 200
@@ -154,7 +149,6 @@ async def test_system_warnings_demo_accounts():
     try:
         with patch("api.routes.admin.enterprise_settings.settings") as mock_settings:
             mock_settings.SECRET_KEY = "a-very-strong-random-secret-key-xyz!"
-            mock_settings.DEPLOYMENT_MODE = "enterprise"
             async with _make_client() as client:
                 r = await client.get("/api/v1/admin/system-warnings")
         assert r.status_code == 200
@@ -184,7 +178,6 @@ async def test_system_warnings_clean():
     try:
         with patch("api.routes.admin.enterprise_settings.settings") as mock_settings:
             mock_settings.SECRET_KEY = "a-very-strong-random-secret-key-xyz!"
-            mock_settings.DEPLOYMENT_MODE = "enterprise"
             async with _make_client() as client:
                 r = await client.get("/api/v1/admin/system-warnings")
         assert r.status_code == 200

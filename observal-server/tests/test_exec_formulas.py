@@ -112,7 +112,7 @@ class TestPeriodBounds:
 
 class TestAIInsightsCacheResponse:
     def test_empty_response_is_not_generated(self):
-        from ee.observal_server.routes.exec_dashboard import _empty_ai_insights_response
+        from api.routes.exec_dashboard import _empty_ai_insights_response
 
         response = _empty_ai_insights_response()
 
@@ -121,7 +121,7 @@ class TestAIInsightsCacheResponse:
         assert response.platform_insight["title"] == "No cached report"
 
     def test_legacy_cached_payload_without_generated_at_validates(self):
-        from ee.observal_server.routes.exec_dashboard import AIInsightsResponse
+        from api.routes.exec_dashboard import AIInsightsResponse
 
         response = AIInsightsResponse.model_validate(
             {

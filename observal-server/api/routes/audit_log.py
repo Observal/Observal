@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Enterprise audit log query and export endpoints.
+"""Audit log query and export endpoints.
 
 Compliance-grade audit trail with tamper-detection chain hashes,
 sensitivity classification, and outcome tracking.

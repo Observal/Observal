@@ -25,19 +25,21 @@ if TYPE_CHECKING:
 import services.dynamic_settings as ds
 from api.deps import get_db, get_or_create_default_org, require_role
 from api.ratelimit import limiter
-from ee.observal_server.routes.sso_saml import _get_saml_config, _run_saml_check_suite
-from ee.observal_server.services.saml import (
-    decrypt_private_key,
-    encrypt_private_key,
-    generate_sp_key_pair,
-)
-from ee.observal_server.services.scim_service import hash_scim_token
+from api.routes.sso_saml import _get_saml_config, _run_saml_check_suite
+from config import settings as app_settings
 from models.saml_config import SamlConfig
 from models.scim_token import ScimToken
 from models.user import User, UserRole
 from schemas.sso_health import all_pass, make_check
 from services import sso_diagnostics
+from services.config_validator import validate_runtime_config_async
 from services.oidc_health import run_oidc_checks
+from services.saml import (
+    decrypt_private_key,
+    encrypt_private_key,
+    generate_sp_key_pair,
+)
+from services.scim_service import hash_scim_token
 from services.security_events import (
     EventType,
     SecurityEvent,
@@ -292,25 +294,22 @@ async def validate_oidc(
     }
 
 
-async def _enterprise_gate_check() -> dict:
-    """Run the same validator EnterpriseGuardMiddleware runs on /api/v1/sso/*.
+async def _runtime_config_check() -> dict:
+    """Run the same validator SsoConfigGuardMiddleware runs on /api/v1/sso/*.
 
     The middleware refuses every SSO request with 503 while any issue exists,
     so a validation button that skips these checks reports false greens: the
     config looks protocol-correct but no user can actually log in.
     """
-    from config import settings as app_settings
-    from ee.observal_server.services.config_validator import validate_enterprise_config_async
-
-    issues = await validate_enterprise_config_async(app_settings)
+    issues = await validate_runtime_config_async(app_settings)
     if not issues:
-        return make_check("enterprise_gate", "Enterprise login gate allows SSO requests", "pass")
+        return make_check("runtime_config", "Runtime config allows SSO requests", "pass")
     return make_check(
-        "enterprise_gate",
-        "Enterprise login gate allows SSO requests",
+        "runtime_config",
+        "Runtime config allows SSO requests",
         "fail",
         "; ".join(issues),
-        "The login-time enterprise gate returns 503 on all /api/v1/sso/* requests until these settings are fixed.",
+        "The login-time runtime config guard returns 503 on all /api/v1/sso/* requests until these settings are fixed.",
     )
 
 
@@ -403,7 +402,7 @@ async def validate_saml(
     async with httpx.AsyncClient(timeout=_SAML_HEALTH_TIMEOUT, follow_redirects=False) as client:
         checks = await _run_saml_check_suite(config, sp_key, frontend_url, client)
     checks.insert(0, make_check("sp_key_decrypt", "SP private key decrypts", "pass"))
-    checks.insert(0, await _enterprise_gate_check())
+    checks.insert(0, await _runtime_config_check())
     success = all_pass(checks)
     err_msg, err_hint = (None, None) if success else _first_failure(checks)
     latency_ms = round((time.monotonic() - start) * 1000)
@@ -635,9 +634,9 @@ async def e2e_saml_start(
         preflight_checks = await _run_saml_check_suite(config, sp_key, frontend_url, client)
     preflight_checks.insert(0, make_check("sp_key_decrypt", "SP private key decrypts", "pass"))
     # The e2e login URL goes through /api/v1/sso/saml/login, which the
-    # enterprise gate 503s while any config issue exists -- catch that here
+    # The runtime config guard returns 503 while any config issue exists, so catch that here.
     # instead of leaving the admin tab polling for a callback that never comes.
-    preflight_checks.insert(0, await _enterprise_gate_check())
+    preflight_checks.insert(0, await _runtime_config_check())
     if not all_pass(preflight_checks):
         first_fail = next((c for c in preflight_checks if c.get("status") == "fail"), None)
         optic.info(

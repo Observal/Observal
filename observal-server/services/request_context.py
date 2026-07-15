@@ -5,7 +5,7 @@
 """Per-request context propagation via contextvars.
 
 Populates IP, user agent, HTTP method, and path so that downstream code
-(including ee/ audit handlers) can access request metadata without
+can access request metadata without
 requiring an explicit ``Request`` parameter.
 """
 

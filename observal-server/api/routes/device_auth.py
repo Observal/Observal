@@ -27,7 +27,6 @@ import services.dynamic_settings as ds
 from api.deps import get_current_user, get_db
 from api.ratelimit import limiter
 from api.routes.auth import _issue_tokens
-from config import HAS_LICENSE
 from models.user import User
 from schemas.auth import (
     DeviceAuthRequest,
@@ -115,8 +114,6 @@ def _resolve_frontend_url(request: Request) -> str:
 
 
 async def _saml_configured(db: AsyncSession) -> bool:
-    if not HAS_LICENSE:
-        return False
     if ds.get_sync("saml.idp_entity_id") and ds.get_sync("saml.idp_sso_url"):
         return True
     try:

@@ -25,7 +25,7 @@ class TestLiveness:
 
 
 class TestReadiness:
-    """GET /health — checks DB, returns degraded for misconfigured enterprise."""
+    """GET /health checks DB and dependent services."""
 
     @pytest.mark.asyncio
     async def test_returns_ok_when_db_connected(self):
@@ -44,7 +44,6 @@ class TestReadiness:
         app.dependency_overrides[get_db] = _mock_get_db
         try:
             with (
-                patch("main.HAS_LICENSE", False),
                 patch("services.clickhouse.clickhouse_health", new_callable=AsyncMock, return_value=True),
                 patch("services.redis.ping", new_callable=AsyncMock, return_value=True),
             ):
@@ -57,36 +56,6 @@ class TestReadiness:
             assert data["initialized"] is True
         finally:
             app.dependency_overrides.clear()
-
-    @pytest.mark.asyncio
-    async def test_returns_degraded_when_enterprise_misconfigured(self):
-        from main import app
-
-        mock_db = AsyncMock()
-        mock_db.scalar = AsyncMock(return_value=1)
-
-        async def _mock_get_db():
-            yield mock_db
-
-        from api.deps import get_db
-
-        app.dependency_overrides[get_db] = _mock_get_db
-        app.state.enterprise_issues = ["SECRET_KEY is default"]
-        try:
-            with (
-                patch("main.HAS_LICENSE", True),
-                patch("services.clickhouse.clickhouse_health", new_callable=AsyncMock, return_value=True),
-                patch("services.redis.ping", new_callable=AsyncMock, return_value=True),
-            ):
-                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-                    r = await ac.get("/health")
-            # degraded is still 200 — the app CAN serve requests
-            assert r.status_code == 200
-            assert r.json()["status"] == "degraded"
-        finally:
-            app.dependency_overrides.clear()
-            if hasattr(app.state, "enterprise_issues"):
-                del app.state.enterprise_issues
 
 
 class TestDiagnostics:
@@ -131,9 +100,13 @@ class TestDiagnostics:
         app.dependency_overrides[get_current_user] = _mock_admin
         try:
             with (
-                patch("api.routes.admin.enterprise_settings.HAS_LICENSE", False),
                 patch("api.routes.admin.enterprise_settings.settings") as mock_settings,
                 patch("api.routes.admin.enterprise_settings.ds") as mock_ds,
+                patch(
+                    "api.routes.admin.enterprise_settings.validate_runtime_config_async",
+                    new_callable=AsyncMock,
+                    return_value=[],
+                ),
             ):
                 mock_settings.JWT_SIGNING_ALGORITHM = "ES256"
                 mock_ds.get_bool = AsyncMock(return_value=True)
@@ -142,7 +115,6 @@ class TestDiagnostics:
                     r = await ac.get("/api/v1/admin/diagnostics")
             assert r.status_code == 200
             data = r.json()
-            assert data["licensed"] is False
             assert data["status"] == "ok"
             assert "database" in data["checks"]
             assert "jwt_keys" in data["checks"]
@@ -174,7 +146,7 @@ class TestDiagnostics:
             app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_enterprise_mode_shows_config_issues(self):
+    async def test_diagnostics_show_config_issues(self):
         from api.deps import get_current_user, get_db
         from main import app
 
@@ -193,12 +165,20 @@ class TestDiagnostics:
         app.dependency_overrides[get_db] = _mock_get_db
         app.dependency_overrides[get_current_user] = _mock_admin
         try:
+            issues = [
+                "SECRET_KEY is using default value",
+                "oauth.client_id is not set",
+                "deployment.frontend_url is localhost",
+            ]
             with (
-                patch("api.routes.admin.enterprise_settings.HAS_LICENSE", True),
                 patch("api.routes.admin.enterprise_settings.settings") as mock_settings,
                 patch("api.routes.admin.enterprise_settings.ds") as mock_ds,
+                patch(
+                    "api.routes.admin.enterprise_settings.validate_runtime_config_async",
+                    new_callable=AsyncMock,
+                    return_value=issues,
+                ),
             ):
-                mock_settings.SECRET_KEY = "change-me-to-a-random-string"
                 mock_settings.JWT_SIGNING_ALGORITHM = "ES256"
                 mock_ds.get_bool = AsyncMock(return_value=True)
                 mock_ds.get = AsyncMock(
@@ -209,8 +189,8 @@ class TestDiagnostics:
             assert r.status_code == 200
             data = r.json()
             assert data["status"] == "degraded"
-            assert "enterprise" in data["checks"]
-            issues = data["checks"]["enterprise"]["issues"]
+            assert "runtime_config" in data["checks"]
+            issues = data["checks"]["runtime_config"]["issues"]
             assert any("SECRET_KEY" in i for i in issues)
             assert any("oauth.client_id" in i for i in issues)
             assert any("frontend" in i.lower() for i in issues)

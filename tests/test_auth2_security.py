@@ -534,10 +534,10 @@ class TestUsernameLogin:
 
 
 class TestSafeRedirectPath:
-    """Unit tests for the _safe_redirect_path helper in ee/observal_server/routes/sso_saml.py."""
+    """Unit tests for the _safe_redirect_path helper in api/routes/sso_saml.py."""
 
     def _fn(self):
-        from ee.observal_server.routes.sso_saml import _safe_redirect_path
+        from api.routes.sso_saml import _safe_redirect_path
 
         return _safe_redirect_path
 
