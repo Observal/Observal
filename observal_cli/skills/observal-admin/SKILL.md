@@ -10,7 +10,7 @@ owner: observal
 
 # Observal Admin Operations
 
-All commands require the `admin` role. Enterprise-only commands (SAML, SCIM, audit-log) require enterprise mode.
+All commands require the `admin` role. SAML, SCIM, and audit-log commands require admin role.
 
 ## Critical Rules
 
@@ -71,7 +71,7 @@ observal admin audit-log-export --file audit.csv
 
 ---
 
-## Procedure: Enterprise SSO
+## Procedure: SSO
 
 ```bash
 observal admin saml-config --output json

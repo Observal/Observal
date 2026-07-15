@@ -20,19 +20,19 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal admin review list`: List pending submissions awaiting admin review.
   - `observal admin review reject`: Reject a submission (component, agent, or bundle).
   - `observal admin review show`: Show review details for a component or agent.
-  - `observal admin audit-log`: Query the audit log. (Enterprise only)
-  - `observal admin audit-log-export`: Export audit log as CSV. (Enterprise only)
+  - `observal admin audit-log`: Query the audit log.
+  - `observal admin audit-log-export`: Export audit log as CSV.
   - `observal admin cache-clear`: Clear all server caches.
   - `observal admin create-user`: Create a new user account. Requires admin privileges.
   - `observal admin delete-user`: Delete a user account. Requires admin privileges.
   - `observal admin diagnostics`: Show system diagnostics and health status.
   - `observal admin reset-password`: Reset a user's password. Requires admin privileges.
-  - `observal admin saml-config`: View current SAML SSO configuration. (Enterprise only)
-  - `observal admin saml-config-delete`: Delete SAML SSO configuration. Disables SAML SSO. (Enterprise only)
+  - `observal admin saml-config`: View current SAML SSO configuration.
+  - `observal admin saml-config-delete`: Delete SAML SSO configuration. Disables SAML SSO.
   - `observal admin saml-config-set`: Create or update SAML SSO configuration.
   - `observal admin scim-token-create`: Create a new SCIM provisioning token.
-  - `observal admin scim-token-revoke`: Revoke a SCIM provisioning token. (Enterprise only)
-  - `observal admin scim-tokens`: List SCIM provisioning tokens. (Enterprise only)
+  - `observal admin scim-token-revoke`: Revoke a SCIM provisioning token.
+  - `observal admin scim-tokens`: List SCIM provisioning tokens.
   - `observal admin security-events`: View security events log.
   - `observal admin set`: Set an enterprise setting.
   - `observal admin set-role`: Change a user's role.
