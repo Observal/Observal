@@ -29,22 +29,22 @@ def _mock_ds(sso_only=False, frontend_url="https://app.example.com", **saml_over
 
 class TestConfigValidator:
     def test_detects_default_secret_key(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = MagicMock()
         settings.SECRET_KEY = "change-me-to-a-random-string"
-        with patch("ee.observal_server.services.config_validator.ds", _mock_ds()):
-            issues = validate_enterprise_config(settings)
+        with patch("services.config_validator.ds", _mock_ds()):
+            issues = validate_runtime_config(settings)
         assert len(issues) == 1
         assert any("SECRET_KEY" in i for i in issues)
 
     def test_detects_missing_oauth_when_sso_only(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
         with patch(
-            "ee.observal_server.services.config_validator.ds",
+            "services.config_validator.ds",
             _mock_ds(
                 sso_only=True,
                 **{
@@ -54,39 +54,39 @@ class TestConfigValidator:
                 },
             ),
         ):
-            issues = validate_enterprise_config(settings)
+            issues = validate_runtime_config(settings)
         assert len(issues) == 3
         assert any("oauth.client_id" in i for i in issues)
 
     def test_no_oauth_issues_when_sso_not_required(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
-        with patch("ee.observal_server.services.config_validator.ds", _mock_ds(sso_only=False)):
-            issues = validate_enterprise_config(settings)
+        with patch("services.config_validator.ds", _mock_ds(sso_only=False)):
+            issues = validate_runtime_config(settings)
         assert len(issues) == 0
 
     def test_detects_localhost_frontend(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
-        with patch("ee.observal_server.services.config_validator.ds", _mock_ds(frontend_url="http://localhost:3000")):
-            issues = validate_enterprise_config(settings)
+        with patch("services.config_validator.ds", _mock_ds(frontend_url="http://localhost:3000")):
+            issues = validate_runtime_config(settings)
         assert any("frontend_url" in i for i in issues)
 
     def test_healthy_config_returns_empty(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
-        with patch("ee.observal_server.services.config_validator.ds", _mock_ds()):
-            issues = validate_enterprise_config(settings)
+        with patch("services.config_validator.ds", _mock_ds()):
+            issues = validate_runtime_config(settings)
         assert issues == []
 
     def test_detects_missing_saml_idp_cert_when_saml_configured(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = MagicMock()
         settings.SECRET_KEY = "proper-random-secret-key-32chars!!"
@@ -97,6 +97,6 @@ class TestConfigValidator:
                 "saml.idp_x509_cert": "",
             }
         )
-        with patch("ee.observal_server.services.config_validator.ds", ds_mock):
-            issues = validate_enterprise_config(settings)
+        with patch("services.config_validator.ds", ds_mock):
+            issues = validate_runtime_config(settings)
         assert any("x509_cert" in i for i in issues)

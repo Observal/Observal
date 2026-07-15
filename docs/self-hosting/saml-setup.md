@@ -1,5 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
-<!-- SPDX-License-Identifier: LicenseRef-Observal-Enterprise -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # SAML 2.0 Setup Guide
 
@@ -14,7 +14,7 @@ provider (SP) metadata, and troubleshooting common issues.
 Before you begin, make sure the following requirements are met:
 
 - **Enterprise mode is enabled.** SAML SSO is only available in enterprise
-  deployments. Confirm that your instance is running with the enterprise license
+  deployments. Confirm that your instance is running with the open-source distribution
   active.
 - **IdP admin access.** You need administrator privileges on your identity
   provider (Okta, Azure AD / Entra ID, Google Workspace, or another
@@ -327,10 +327,10 @@ see a 403 Forbidden error.
 `/api/v1/sso/saml/metadata` return a 404.
 
 **Cause:** Enterprise mode is not active. SAML endpoints are only registered
-when the enterprise license is valid.
+when the open-source distribution is valid.
 
 **Fix:**
-- Verify that your enterprise license key is set and valid.
+- Verify that your open-source distribution key is set and valid.
 - Restart the Observal server after applying the license.
 - Check server logs for license validation errors.
 

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: Apache-2.0
 
 """Executive Dashboard API endpoints."""
 
@@ -28,8 +28,6 @@ from services.redis import get_redis
 
 logger = structlog.get_logger(__name__)
 
-# Enforce license at import time — if ee/ is absent or unlicensed this module
-# will not be imported (mount_ee_routes is guarded by try/except).
 
 router = APIRouter(prefix="/api/v1/exec", tags=["exec-dashboard"])
 

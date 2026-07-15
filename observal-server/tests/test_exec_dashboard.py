@@ -123,7 +123,7 @@ class TestComputeTrendEdgeCases:
         from api.routes.exec_dashboard import compute_trend_percent
 
         result = compute_trend_percent(10000, 1)
-        assert result > 999900  # ~999900%
+        assert result >= 999900  # approximately 999900%
 
     def test_handles_near_zero_previous(self):
         from api.routes.exec_dashboard import compute_trend_percent

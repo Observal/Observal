@@ -75,7 +75,7 @@ dev = [
 
 [tool.coverage.run]
 source = ["../observal_cli", "."]
-omit = ["tests/*", "**/tests/*", "../ee/*"]
+omit = ["tests/*", "**/tests/*"]
 
 [tool.coverage.report]
 show_missing = true

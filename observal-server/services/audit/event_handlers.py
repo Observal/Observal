@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-# SPDX-License-Identifier: LicenseRef-Observal-Enterprise
+# SPDX-License-Identifier: Apache-2.0
 
-"""Audit logging service for enterprise compliance (SOC 2 / ISO 27001).
+"""Audit event bus handlers for compliance logging.
 
 Registers event bus handlers that buffer events and batch-insert to the
-ClickHouse audit_log table.  Only active when DEPLOYMENT_MODE=enterprise.
+ClickHouse audit_log table.
 
 Buffer is flushed every 2 seconds or when it reaches 500 rows, whichever
-comes first.  A background asyncio.Task handles the periodic flush.
+comes first. A background asyncio.Task handles the periodic flush.
 """
 
 import asyncio
@@ -31,7 +31,7 @@ from services.events import (
 )
 from services.request_context import get_request_context
 
-logger = logging.getLogger("observal.ee.audit")
+logger = logging.getLogger("observal.audit.events")
 
 _FLUSH_INTERVAL_S = 2.0
 _FLUSH_THRESHOLD = 500
@@ -124,7 +124,7 @@ async def flush_audit_buffer() -> int:
 
 
 def register_audit_handlers():
-    """Register event bus handlers for audit logging.  Called during enterprise startup."""
+    """Register event bus handlers for audit logging."""
     global _flush_task
     try:
         _flush_task = asyncio.get_running_loop().create_task(_periodic_flush())

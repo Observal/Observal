@@ -32,14 +32,14 @@ class TestRegisterAuditHandlers:
         bus.clear()
 
     def test_registers_correct_number_of_handlers(self):
-        from ee.observal_server.services.audit import register_audit_handlers
+        from services.audit.event_handlers import register_audit_handlers
 
         assert bus.handler_count == 0
         register_audit_handlers()
         assert bus.handler_count == 9
 
     def test_registers_handlers_for_all_event_types(self):
-        from ee.observal_server.services.audit import register_audit_handlers
+        from services.audit.event_handlers import register_audit_handlers
 
         register_audit_handlers()
         expected_types = [
@@ -68,10 +68,10 @@ class TestBufferedAuditWrite:
 
     @pytest.mark.asyncio
     async def test_user_created_buffers_row(self):
-        from ee.observal_server.services.audit import _audit_buffer, register_audit_handlers
+        from services.audit.event_handlers import _audit_buffer, register_audit_handlers
 
         mock_insert = AsyncMock()
-        with patch("ee.observal_server.services.audit.insert_audit_log", mock_insert):
+        with patch("services.audit.event_handlers.insert_audit_log", mock_insert):
             register_audit_handlers()
             _audit_buffer.clear()
             event = UserCreated(user_id="u1", email="test@example.com", role="viewer", is_demo=True)
@@ -89,7 +89,7 @@ class TestBufferedAuditWrite:
 
     @pytest.mark.asyncio
     async def test_login_failure_buffers_row(self):
-        from ee.observal_server.services.audit import _audit_buffer, register_audit_handlers
+        from services.audit.event_handlers import _audit_buffer, register_audit_handlers
 
         register_audit_handlers()
         _audit_buffer.clear()
@@ -106,7 +106,7 @@ class TestBufferedAuditWrite:
 
     @pytest.mark.asyncio
     async def test_alert_rule_changed_buffers_row(self):
-        from ee.observal_server.services.audit import _audit_buffer, register_audit_handlers
+        from services.audit.event_handlers import _audit_buffer, register_audit_handlers
 
         register_audit_handlers()
         _audit_buffer.clear()
@@ -127,7 +127,7 @@ class TestBufferedAuditWrite:
 
     @pytest.mark.asyncio
     async def test_agent_lifecycle_buffers_row(self):
-        from ee.observal_server.services.audit import _audit_buffer, register_audit_handlers
+        from services.audit.event_handlers import _audit_buffer, register_audit_handlers
 
         register_audit_handlers()
         _audit_buffer.clear()
@@ -148,7 +148,7 @@ class TestBufferedAuditWrite:
 
     @pytest.mark.asyncio
     async def test_auditable_action_buffers_row(self):
-        from ee.observal_server.services.audit import _audit_buffer, register_audit_handlers
+        from services.audit.event_handlers import _audit_buffer, register_audit_handlers
 
         register_audit_handlers()
         _audit_buffer.clear()
@@ -177,7 +177,7 @@ class TestFlushBuffer:
 
     @pytest.mark.asyncio
     async def test_flush_sends_batch(self):
-        from ee.observal_server.services.audit import _audit_buffer, _make_row, flush_audit_buffer
+        from services.audit.event_handlers import _audit_buffer, _make_row, flush_audit_buffer
 
         mock_insert = AsyncMock()
         _audit_buffer.clear()
@@ -197,7 +197,7 @@ class TestFlushBuffer:
                 resource_type="test2",
             )
         )
-        with patch("ee.observal_server.services.audit.insert_audit_log", mock_insert):
+        with patch("services.audit.event_handlers.insert_audit_log", mock_insert):
             count = await flush_audit_buffer()
 
         assert count == 2
@@ -211,7 +211,7 @@ class TestAuditLogEndpoint:
 
     @pytest.mark.asyncio
     async def test_list_audit_logs_returns_entries(self):
-        from ee.observal_server.routes.audit import list_audit_logs
+        from api.routes.audit_log import list_audit_logs
 
         fake_row = {
             "event_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -237,7 +237,7 @@ class TestAuditLogEndpoint:
         mock_query = AsyncMock(return_value=fake_resp)
         mock_user = MagicMock()
 
-        with patch("ee.observal_server.routes.audit._query", mock_query):
+        with patch("api.routes.audit_log._query", mock_query):
             result = await list_audit_logs(
                 actor=None,
                 action=None,
@@ -255,7 +255,7 @@ class TestAuditLogEndpoint:
 
     @pytest.mark.asyncio
     async def test_list_endpoint_handles_empty_response(self):
-        from ee.observal_server.routes.audit import list_audit_logs
+        from api.routes.audit_log import list_audit_logs
 
         fake_resp = MagicMock()
         fake_resp.status_code = 500
@@ -264,7 +264,7 @@ class TestAuditLogEndpoint:
         mock_query = AsyncMock(return_value=fake_resp)
         mock_user = MagicMock()
 
-        with patch("ee.observal_server.routes.audit._query", mock_query):
+        with patch("api.routes.audit_log._query", mock_query):
             result = await list_audit_logs(
                 actor=None,
                 action=None,
@@ -280,7 +280,7 @@ class TestAuditLogEndpoint:
 
     @pytest.mark.asyncio
     async def test_list_endpoint_with_filters(self):
-        from ee.observal_server.routes.audit import list_audit_logs
+        from api.routes.audit_log import list_audit_logs
 
         fake_row = {
             "event_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -306,7 +306,7 @@ class TestAuditLogEndpoint:
         mock_query = AsyncMock(return_value=fake_resp)
         mock_user = MagicMock()
 
-        with patch("ee.observal_server.routes.audit._query", mock_query):
+        with patch("api.routes.audit_log._query", mock_query):
             result = await list_audit_logs(
                 actor="admin@example.com",
                 action="user.created",

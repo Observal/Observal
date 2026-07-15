@@ -12,12 +12,11 @@
 """Boot-time configuration: env vars required to start the server.
 
 All runtime-tunable settings have been moved to the Settings page
-(stored in enterprise_config table, accessed via services.dynamic_settings).
+(stored in runtime settings, accessed via services.dynamic_settings).
 
 Only infrastructure, crypto, and auth middleware vars remain here.
 """
 
-import os
 from typing import Literal
 
 from pydantic_settings import BaseSettings
@@ -67,9 +66,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-# Derived: True when an enterprise license key is configured.
-# Used as the replacement for the removed DEPLOYMENT_MODE env var.
-# Feature availability is still gated by ee.license.is_feature_licensed();
-# this flag only controls "should we attempt to load ee/ packages."
-HAS_LICENSE: bool = bool(os.environ.get("OBSERVAL_LICENSE_KEY", ""))

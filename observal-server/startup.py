@@ -5,15 +5,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 import services.dynamic_settings as ds
 from api.deps import get_or_create_default_org
-from config import HAS_LICENSE, settings
+from config import settings
 from database import engine
 from models import Base
+from models.enterprise_config import RESTART_PENDING_KEY, EnterpriseConfig
 from models.user import User
-from services.audit import AUDIT_LICENSED, setup_audit, shutdown_audit
+from services.audit import setup_audit, shutdown_audit
+from services.audit.event_handlers import register_audit_handlers
+from services.audit.event_handlers import shutdown_audit as shutdown_audit_handlers
 from services.cache import close_cache, init_cache
 from services.clickhouse import init_clickhouse
 from services.crypto import init_key_manager
@@ -58,14 +61,6 @@ async def run_startup_tasks() -> None:
 
     configure_oauth_client()
 
-    if HAS_LICENSE:
-        weak_secrets = {"change-me-to-a-random-string", "changeme", "secret", "dev", ""}
-        if settings.SECRET_KEY in weak_secrets or len(settings.SECRET_KEY) < 32:
-            raise RuntimeError(
-                "SECRET_KEY is insecure. Set a random string of at least 32 characters "
-                "before running in non-local mode."
-            )
-
     await init_cache()
     init_key_manager(
         key_dir=settings.JWT_KEY_DIR,
@@ -75,8 +70,6 @@ async def run_startup_tasks() -> None:
     from database import async_session as session_factory
 
     async with session_factory() as db:
-        from models.enterprise_config import EnterpriseConfig
-
         result = await db.execute(
             select(EnterpriseConfig).where(EnterpriseConfig.key == "jwt.refresh_token_expire_days")
         )
@@ -97,8 +90,8 @@ async def run_startup_tasks() -> None:
     async with session_factory() as db:
         await seed_demo_accounts(db)
 
-    if AUDIT_LICENSED:
-        setup_audit()
+    setup_audit()
+    register_audit_handlers()
 
     from services.insights import configure_insights
 
@@ -108,11 +101,16 @@ async def run_startup_tasks() -> None:
 
     await start_registry_cache()
 
+    # A successful startup applies all restart-required settings.
+    async with session_factory() as db:
+        await db.execute(delete(EnterpriseConfig).where(EnterpriseConfig.key == RESTART_PENDING_KEY))
+        await db.commit()
+
 
 async def run_shutdown_tasks() -> None:
     """Release application dependencies used by the FastAPI lifespan."""
-    if AUDIT_LICENSED:
-        await shutdown_audit()
+    await shutdown_audit()
+    await shutdown_audit_handlers()
 
     from services.agent_registry_cache import stop as stop_registry_cache
 

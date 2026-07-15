@@ -39,11 +39,6 @@ async def receive_cli_audit_event(
     current_user: User = Depends(get_current_user),
 ):
     """Receive and store an audit event from the CLI."""
-    from services.audit import AUDIT_LICENSED
-
-    if not AUDIT_LICENSED:
-        return {"status": "skipped", "reason": "audit not licensed"}
-
     from services.clickhouse import insert_audit_log
 
     # Real IP is resolved by TrustedProxyMiddleware into request.scope["client"]

@@ -6,7 +6,7 @@
 - #1567: admin settings PUT trims wrapping whitespace before store.
 - #1565: import_sso_env_once overwrites empty-string DB rows from env vars.
 - #1566: POST /admin/restart is super-admin gated and schedules a SIGTERM.
-- #1563: the SAML validate button runs the same enterprise-gate validator
+- #1563: the SAML validate button runs the same runtime-config validator
   the login-time middleware runs.
 """
 
@@ -14,15 +14,17 @@ import signal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 import services.dynamic_settings as dsm
 from api.deps import require_super_admin
+from api.middleware.sso_config_guard import SsoConfigGuardMiddleware
 from api.ratelimit import limiter
 from api.routes.admin import enterprise_settings as es
 from api.routes.admin import system as system_module
 from main import app
-from models.enterprise_config import EnterpriseConfig
+from models.enterprise_config import RESTART_PENDING_KEY, EnterpriseConfig
 from schemas.admin import EnterpriseConfigUpdate
 from services.crypto import init_key_manager
 
@@ -70,8 +72,11 @@ class TestUpsertSettingTrimsWhitespace:
             current_user=_admin_user(),
         )
 
-        stored = db.add.call_args.args[0]
+        added = [call.args[0] for call in db.add.call_args_list]
+        stored = next(item for item in added if item.key == "oauth.server_metadata_url")
+        marker = next(item for item in added if item.key == RESTART_PENDING_KEY)
         assert stored.value == url
+        assert "oauth.server_metadata_url" in marker.value
         assert resp.value == url
 
     @pytest.mark.asyncio
@@ -96,7 +101,9 @@ class TestUpsertSettingTrimsWhitespace:
         )
 
         assert seen == ["super-secret"]
-        assert db.add.call_args.args[0].value == "enc:super-secret"
+        added = [call.args[0] for call in db.add.call_args_list]
+        stored = next(item for item in added if item.key == "oauth.client_secret")
+        assert stored.value == "enc:super-secret"
 
     @pytest.mark.asyncio
     async def test_multiline_cert_keeps_interior_newlines(self, monkeypatch):
@@ -291,31 +298,73 @@ class TestTerminateApiProcess:
         assert self._run(monkeypatch, pid=1, ppid=0) == [(1, signal.SIGTERM)]
 
 
-# ── #1563: SAML validation runs the enterprise-gate validator ────────────
+# ── #1563: SAML validation runs the runtime-config validator ────────────
 
 
-class TestEnterpriseGateCheck:
+class TestRuntimeConfigCheck:
     @pytest.mark.asyncio
     async def test_passes_when_validator_finds_no_issues(self, monkeypatch):
-        import ee.observal_server.services.config_validator as cv
-        from ee.observal_server.routes import admin_sso
+        from api.routes import admin_sso
 
-        monkeypatch.setattr(cv, "validate_enterprise_config_async", AsyncMock(return_value=[]))
-        check = await admin_sso._enterprise_gate_check()
+        monkeypatch.setattr(admin_sso, "validate_runtime_config_async", AsyncMock(return_value=[]))
+        check = await admin_sso._runtime_config_check()
         assert check["status"] == "pass"
 
     @pytest.mark.asyncio
     async def test_fails_with_joined_issues_when_gate_would_503(self, monkeypatch):
-        import ee.observal_server.services.config_validator as cv
-        from ee.observal_server.routes import admin_sso
+        from api.routes import admin_sso
 
         issues = [
             "saml.sp_key_encryption_password is not set (required when SAML IdP is configured)",
             "deployment.frontend_url is localhost or empty",
         ]
-        monkeypatch.setattr(cv, "validate_enterprise_config_async", AsyncMock(return_value=issues))
-        check = await admin_sso._enterprise_gate_check()
+        monkeypatch.setattr(admin_sso, "validate_runtime_config_async", AsyncMock(return_value=issues))
+        check = await admin_sso._runtime_config_check()
         assert check["status"] == "fail"
         assert "sp_key_encryption_password" in check["message"]
         assert "frontend_url" in check["message"]
         assert "503" in check["hint"]
+
+
+class TestRestartState:
+    @pytest.mark.asyncio
+    async def test_status_returns_persisted_keys(self):
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = '{"changed_at":"2026-07-15T20:00:00+00:00","keys":["oauth.client_id"]}'
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=result)
+
+        state = await system_module.restart_status(db=db, _current_user=_admin_user())
+
+        assert state == {
+            "required": True,
+            "changed_at": "2026-07-15T20:00:00+00:00",
+            "keys": ["oauth.client_id"],
+        }
+
+
+class TestSsoConfigGuard:
+    @pytest.mark.asyncio
+    async def test_metadata_bypasses_runtime_config_guard(self, monkeypatch):
+        import api.middleware.sso_config_guard as guard_module
+
+        validator = AsyncMock(return_value=["deployment.frontend_url is localhost or empty"])
+        monkeypatch.setattr(guard_module, "validate_runtime_config_async", validator)
+        guarded_app = FastAPI()
+
+        @guarded_app.get("/api/v1/sso/saml/metadata")
+        async def metadata():
+            return {"ok": True}
+
+        @guarded_app.get("/api/v1/sso/saml/login")
+        async def login():
+            return {"ok": True}
+
+        guarded_app.add_middleware(SsoConfigGuardMiddleware, settings=MagicMock())
+        async with AsyncClient(transport=ASGITransport(app=guarded_app), base_url="http://test") as client:
+            metadata_response = await client.get("/api/v1/sso/saml/metadata")
+            login_response = await client.get("/api/v1/sso/saml/login")
+
+        assert metadata_response.status_code == 200
+        assert login_response.status_code == 503
+        validator.assert_awaited_once()

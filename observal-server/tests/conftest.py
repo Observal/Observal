@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-# Ensure repo root is on sys.path so ee/ imports work
+# Ensure repo root is on sys.path
 _repo_root = str(Path(__file__).resolve().parent.parent.parent)
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)

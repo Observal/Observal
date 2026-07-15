@@ -27,10 +27,10 @@ from httpx import ASGITransport, AsyncClient
 
 
 class TestScimFilterParsing:
-    """Test parse_scim_filter from ee.observal_server.services.scim_service."""
+    """Test parse_scim_filter from services.scim_service."""
 
     def test_valid_eq_filter(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter('userName eq "user@example.com"')
         assert result is not None
@@ -39,7 +39,7 @@ class TestScimFilterParsing:
         assert result.value == "user@example.com"
 
     def test_valid_sw_filter(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter('userName sw "user"')
         assert result is not None
@@ -48,7 +48,7 @@ class TestScimFilterParsing:
         assert result.value == "user"
 
     def test_valid_co_filter(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter('userName co "example"')
         assert result is not None
@@ -57,7 +57,7 @@ class TestScimFilterParsing:
         assert result.value == "example"
 
     def test_valid_ne_filter(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter('userName ne "admin@test.com"')
         assert result is not None
@@ -66,34 +66,34 @@ class TestScimFilterParsing:
         assert result.value == "admin@test.com"
 
     def test_invalid_filter_no_quotes(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter("userName eq user@example.com")
         assert result is None
 
     def test_invalid_filter_unsupported_op(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter('userName gt "admin@test.com"')
         assert result is None
 
     def test_empty_filter_returns_none(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         assert parse_scim_filter("") is None
 
     def test_whitespace_filter_returns_none(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         assert parse_scim_filter("   ") is None
 
     def test_none_filter_returns_none(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         assert parse_scim_filter(None) is None
 
     def test_filter_with_leading_trailing_whitespace(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter('  userName eq "user@example.com"  ')
         assert result is not None
@@ -102,14 +102,14 @@ class TestScimFilterParsing:
         assert result.value == "user@example.com"
 
     def test_filter_case_insensitive_op(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter('userName EQ "user@example.com"')
         assert result is not None
         assert result.op == "eq"
 
     def test_filter_dotted_attribute(self):
-        from ee.observal_server.services.scim_service import parse_scim_filter
+        from services.scim_service import parse_scim_filter
 
         result = parse_scim_filter('name.givenName eq "Jane"')
         assert result is not None
@@ -123,31 +123,31 @@ class TestScimFilterParsing:
 
 
 class TestScimPaginationValidation:
-    """Test validate_scim_pagination from ee.observal_server.services.scim_service."""
+    """Test validate_scim_pagination from services.scim_service."""
 
     def test_normal_values(self):
-        from ee.observal_server.services.scim_service import validate_scim_pagination
+        from services.scim_service import validate_scim_pagination
 
         start, count = validate_scim_pagination(1, 100)
         assert start == 1
         assert count == 100
 
     def test_negative_start_index_clamped_to_one(self):
-        from ee.observal_server.services.scim_service import validate_scim_pagination
+        from services.scim_service import validate_scim_pagination
 
         start, count = validate_scim_pagination(-5, 100)
         assert start == 1
         assert count == 100
 
     def test_zero_start_index_clamped_to_one(self):
-        from ee.observal_server.services.scim_service import validate_scim_pagination
+        from services.scim_service import validate_scim_pagination
 
         start, count = validate_scim_pagination(0, 100)
         assert start == 1
         assert count == 100
 
     def test_huge_count_clamped_to_max(self):
-        from ee.observal_server.services.scim_service import (
+        from services.scim_service import (
             MAX_SCIM_PAGE_SIZE,
             validate_scim_pagination,
         )
@@ -158,21 +158,21 @@ class TestScimPaginationValidation:
         assert count == 500
 
     def test_negative_count_clamped_to_zero(self):
-        from ee.observal_server.services.scim_service import validate_scim_pagination
+        from services.scim_service import validate_scim_pagination
 
         start, count = validate_scim_pagination(1, -5)
         assert start == 1
         assert count == 0
 
     def test_both_boundary_values(self):
-        from ee.observal_server.services.scim_service import validate_scim_pagination
+        from services.scim_service import validate_scim_pagination
 
         start, count = validate_scim_pagination(-100, 999999)
         assert start == 1
         assert count == 500
 
     def test_exact_max_page_size(self):
-        from ee.observal_server.services.scim_service import (
+        from services.scim_service import (
             MAX_SCIM_PAGE_SIZE,
             validate_scim_pagination,
         )
@@ -196,7 +196,7 @@ class TestAdminSamlConfigAPI:
         """Create a FastAPI app with admin_sso router and overridden deps."""
         from fastapi import FastAPI
 
-        from ee.observal_server.routes.admin_sso import router
+        from api.routes.admin_sso import router
         from models.user import UserRole
 
         app = FastAPI()
@@ -237,7 +237,7 @@ class TestAdminSamlConfigAPI:
 
         with (
             patch(
-                "ee.observal_server.routes.admin_sso.ds",
+                "api.routes.admin_sso.ds",
             ) as mock_settings,
         ):
             mock_settings.get_sync.side_effect = lambda key, *a, **kw: {
@@ -282,7 +282,7 @@ class TestAdminSamlConfigAPI:
 
         with (
             patch(
-                "ee.observal_server.routes.admin_sso.ds",
+                "api.routes.admin_sso.ds",
             ) as mock_settings,
         ):
             mock_settings.get_sync.side_effect = lambda key, *a, **kw: a[0] if a else ""
@@ -364,7 +364,7 @@ class TestAdminSamlConfigAPI:
         self._override_deps(app, mock_user, mock_db)
 
         with patch(
-            "ee.observal_server.routes.admin_sso.get_or_create_default_org",
+            "api.routes.admin_sso.get_or_create_default_org",
             new_callable=AsyncMock,
         ) as mock_get_org:
             mock_org = MagicMock()
@@ -440,7 +440,7 @@ class TestAdminScimTokenAPI:
         from fastapi import FastAPI
 
         from api.deps import get_current_user, get_db
-        from ee.observal_server.routes.admin_sso import router
+        from api.routes.admin_sso import router
         from models.user import UserRole
 
         app = FastAPI()
@@ -480,7 +480,7 @@ class TestAdminScimTokenAPI:
 
         with (
             patch(
-                "ee.observal_server.routes.admin_sso.emit_security_event",
+                "api.routes.admin_sso.emit_security_event",
                 new_callable=AsyncMock,
             ),
         ):
@@ -556,7 +556,7 @@ class TestAdminScimTokenAPI:
 
         with (
             patch(
-                "ee.observal_server.routes.admin_sso.emit_security_event",
+                "api.routes.admin_sso.emit_security_event",
                 new_callable=AsyncMock,
             ),
         ):
@@ -584,7 +584,7 @@ class TestAdminScimTokenAPI:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         with patch(
-            "ee.observal_server.routes.admin_sso.get_or_create_default_org",
+            "api.routes.admin_sso.get_or_create_default_org",
             new_callable=AsyncMock,
         ) as mock_get_org:
             mock_org = MagicMock()
@@ -668,39 +668,39 @@ class TestConfigValidatorSaml:
         return s
 
     def test_saml_entity_id_without_sso_url(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = self._make_settings(
             SAML_IDP_ENTITY_ID="https://idp.example.com",
             SAML_IDP_SSO_URL="",
         )
         with patch(
-            "ee.observal_server.services.config_validator.ds",
+            "services.config_validator.ds",
             self._make_ds(
                 **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
             ),
         ):
-            issues = validate_enterprise_config(settings)
+            issues = validate_runtime_config(settings)
         assert any("saml.idp_sso_url" in i for i in issues)
 
     def test_saml_sso_url_without_entity_id(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = self._make_settings(
             SAML_IDP_ENTITY_ID="",
             SAML_IDP_SSO_URL="https://idp.example.com/sso",
         )
         with patch(
-            "ee.observal_server.services.config_validator.ds",
+            "services.config_validator.ds",
             self._make_ds(
                 **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
             ),
         ):
-            issues = validate_enterprise_config(settings)
+            issues = validate_runtime_config(settings)
         assert any("saml.idp_entity_id" in i for i in issues)
 
     def test_saml_configured_without_cert(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = self._make_settings(
             SAML_IDP_ENTITY_ID="https://idp.example.com",
@@ -708,16 +708,16 @@ class TestConfigValidatorSaml:
             SAML_IDP_X509_CERT="",
         )
         with patch(
-            "ee.observal_server.services.config_validator.ds",
+            "services.config_validator.ds",
             self._make_ds(
                 **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
             ),
         ):
-            issues = validate_enterprise_config(settings)
+            issues = validate_runtime_config(settings)
         assert any("saml.idp_x509_cert" in i for i in issues)
 
     def test_saml_configured_without_encryption_password(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = self._make_settings(
             SAML_IDP_ENTITY_ID="https://idp.example.com",
@@ -726,16 +726,16 @@ class TestConfigValidatorSaml:
             SAML_SP_KEY_ENCRYPTION_PASSWORD="",
         )
         with patch(
-            "ee.observal_server.services.config_validator.ds",
+            "services.config_validator.ds",
             self._make_ds(
                 **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
             ),
         ):
-            issues = validate_enterprise_config(settings)
+            issues = validate_runtime_config(settings)
         assert any("sp_key_encryption_password" in i for i in issues)
 
     def test_saml_acs_url_not_https(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = self._make_settings(
             SAML_IDP_ENTITY_ID="https://idp.example.com",
@@ -745,16 +745,16 @@ class TestConfigValidatorSaml:
             SAML_SP_ACS_URL="http://app.example.com/saml/acs",
         )
         with patch(
-            "ee.observal_server.services.config_validator.ds",
+            "services.config_validator.ds",
             self._make_ds(
                 **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
             ),
         ):
-            issues = validate_enterprise_config(settings)
+            issues = validate_runtime_config(settings)
         assert any("saml.sp_acs_url" in i and "HTTPS" in i.upper() for i in issues)
 
     def test_complete_saml_config_no_saml_issues(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = self._make_settings(
             SAML_IDP_ENTITY_ID="https://idp.example.com",
@@ -764,30 +764,30 @@ class TestConfigValidatorSaml:
             SAML_SP_ACS_URL="https://app.example.com/saml/acs",
         )
         with patch(
-            "ee.observal_server.services.config_validator.ds",
+            "services.config_validator.ds",
             self._make_ds(
                 **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
             ),
         ):
-            issues = validate_enterprise_config(settings)
+            issues = validate_runtime_config(settings)
         # Should have no SAML-related issues
         saml_issues = [i for i in issues if "SAML" in i]
         assert len(saml_issues) == 0
 
     def test_saml_not_configured_no_saml_issues(self):
-        from ee.observal_server.services.config_validator import validate_enterprise_config
+        from services.config_validator import validate_runtime_config
 
         settings = self._make_settings(
             SAML_IDP_ENTITY_ID="",
             SAML_IDP_SSO_URL="",
         )
         with patch(
-            "ee.observal_server.services.config_validator.ds",
+            "services.config_validator.ds",
             self._make_ds(
                 **{k.lower().replace("saml_", "saml."): v for k, v in vars(settings).items() if k.startswith("SAML_")}
             ),
         ):
-            issues = validate_enterprise_config(settings)
+            issues = validate_runtime_config(settings)
         saml_issues = [i for i in issues if "SAML" in i]
         assert len(saml_issues) == 0
 
@@ -804,7 +804,7 @@ class TestScimDiscoveryEndpoints:
     def scim_app(self):
         from fastapi import FastAPI
 
-        from ee.observal_server.routes.scim import router
+        from api.routes.scim import router
 
         app = FastAPI()
         app.include_router(router)
