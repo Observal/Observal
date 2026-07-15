@@ -342,12 +342,6 @@ variable "enable_public_ops_paths" {
 
 # ── License / Edition ──────────────────────────────────────────────────────
 
-variable "observal_license_key" {
-  description = "Observal Enterprise license key. If set, enterprise features are enabled at runtime. Leave empty for community edition."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
 
 # ── Demo account seeding (optional, first-deploy only) ────────────────────────
 
@@ -478,4 +472,3 @@ variable "alb_scheme" {
     error_message = "alb_scheme must be 'internet-facing' or 'internal'."
   }
 }
-

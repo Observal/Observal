@@ -23,7 +23,6 @@ observal_ref = "main"
 # Environment variable overrides
 # Empty values ("") use the default from .env.example. Only fill in what you need to change.
 env_overrides = {
-  OBSERVAL_LICENSE_KEY         = ""
   OAUTH_CLIENT_ID              = ""
   OAUTH_CLIENT_SECRET          = ""
   GOOGLE_OAUTH_CLIENT_ID       = ""

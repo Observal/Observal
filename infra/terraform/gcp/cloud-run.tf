@@ -109,16 +109,6 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
-        name = "OBSERVAL_LICENSE_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.app["OBSERVAL_LICENSE_KEY"].secret_id
-            version = "latest"
-          }
-        }
-      }
-
-      env {
         name = "GOOGLE_OAUTH_CLIENT_ID"
         value_source {
           secret_key_ref {
@@ -291,16 +281,6 @@ resource "google_cloud_run_v2_service" "worker" {
         value_source {
           secret_key_ref {
             secret  = google_secret_manager_secret.app["CLICKHOUSE_URL"].secret_id
-            version = "latest"
-          }
-        }
-      }
-
-      env {
-        name = "OBSERVAL_LICENSE_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.app["OBSERVAL_LICENSE_KEY"].secret_id
             version = "latest"
           }
         }

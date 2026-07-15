@@ -123,7 +123,6 @@ if [ -f "terraform.tfvars" ]; then
   REGION=$(get_tfvar "region")
   IMAGE_TAG=$(get_tfvar "image_tag")
   VPC_ID=$(get_tfvar "vpc_id")
-  LICENSE=$(get_tfvar "observal_license_key")
   DEMO_EMAIL=$(get_tfvar "demo_super_admin_email")
 
   [ -n "$REGION" ] && pass "region = $REGION" || fail "region not set"
@@ -139,7 +138,6 @@ if [ -f "terraform.tfvars" ]; then
     pass "VPC mode: create new"
   fi
 
-  [ -n "$LICENSE" ] && pass "License key provided (enterprise)" || info "No license key (community edition)"
   [ -n "$DEMO_EMAIL" ] && pass "Demo accounts configured" || warn "No demo accounts (you'll need to bootstrap manually via observal auth login)"
 else
   if [ "$MODE" = "check" ]; then
@@ -354,9 +352,6 @@ if [ "$TFVARS_EXISTS" = "false" ] && [ "$MODE" != "check" ]; then
       echo ""
     fi
 
-    echo ""
-    echo "  License key enables: insights, SAML, SCIM, exec dashboard, audit."
-    read -rp "  License key (empty = community): " V_LICENSE
 
     echo ""
     read -rp "  Use existing VPC? [y/N]: " V_BYO
@@ -400,7 +395,6 @@ EOF
     [ "$V_SIZING" != "custom" ] && echo "sizing = \"$V_SIZING\"" >> terraform.tfvars
     [ -n "$V_DOMAIN" ] && echo "domain_name     = \"$V_DOMAIN\"" >> terraform.tfvars
     [ -n "$V_ZONE" ] && echo "route53_zone_id = \"$V_ZONE\"" >> terraform.tfvars
-    [ -n "$V_LICENSE" ] && echo "observal_license_key = \"$V_LICENSE\"" >> terraform.tfvars
 
     if [ "$V_CH_MODE" = "cloud" ]; then
       cat >> terraform.tfvars <<CHEOF

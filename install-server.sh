@@ -9,21 +9,17 @@ set -euo pipefail
 # Usage: curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash -s -- [OPTIONS]
 #
 # Options:
-#   --license-key KEY          Enterprise license key (enables enterprise edition)
 #   --version VERSION          Version to install (default: latest)
 #   --install-dir DIR          Install directory (default: ~/.observal on macOS, /opt/observal on Linux)
 #   --force                    Skip overwrite confirmation on re-install
 #
 # Environment variable overrides (lower priority than flags):
-#   OBSERVAL_LICENSE_KEY       Enterprise license key
 #   OBSERVAL_VERSION=latest    Version to install
 #   OBSERVAL_INSTALL_DIR       Install directory
 #   OBSERVAL_FORCE=1           Skip overwrite confirmation
 
 GITHUB_REPO="Observal/Observal"
 
-# Ed25519 public key for license verification (base64-encoded, 32 bytes raw)
-LICENSE_PUBLIC_KEY="X5Ia46wxT2AxZ6nFlvFnT7ZE6vXoVI208Io3TDoX6N8="
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -37,7 +33,6 @@ die() {
 
 # ── Parse arguments ──────────────────────────────────────────
 
-LICENSE_KEY="${OBSERVAL_LICENSE_KEY:-}"
 VERSION="${OBSERVAL_VERSION:-latest}"
 FORCE="${OBSERVAL_FORCE:-0}"
 BASE_URL="${OBSERVAL_BASE_URL:-}"
@@ -56,11 +51,9 @@ while [ $# -gt 0 ]; do
     case "$1" in
     --license-key)
         [ -n "${2:-}" ] || die "--license-key requires a value"
-        LICENSE_KEY="$2"
         shift 2
         ;;
     --license-key=*)
-        LICENSE_KEY="${1#--license-key=}"
         shift
         ;;
     --version)
@@ -91,13 +84,11 @@ Observal Server Installer
 Usage: curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash -s -- [OPTIONS]
 
 Options:
-  --license-key KEY    Enterprise license key (enables enterprise edition)
   --version VERSION    Version to install (default: latest)
   --install-dir DIR    Install directory (default: ~/.observal on macOS, /opt/observal on Linux)
   --force              Skip overwrite confirmation on re-install
 
 Environment variable overrides (lower priority than flags):
-  OBSERVAL_LICENSE_KEY   Enterprise license key
   OBSERVAL_VERSION       Version to install
   OBSERVAL_INSTALL_DIR   Install directory
   OBSERVAL_FORCE=1       Skip overwrite confirmation
@@ -109,86 +100,6 @@ HELP
         ;;
     esac
 done
-
-# ── License validation ───────────────────────────────────────
-
-EDITION="community"
-
-# NOTE: This function is identical in install.sh, install-server.sh, and
-# docker/server-package/setup.sh. If you change the validation logic,
-# update all three files together.
-validate_license() {
-    local key="$1"
-
-    # License format: base64url(json_payload).base64url(ed25519_signature)
-    local payload_b64 sig_b64
-    payload_b64="${key%%.*}"
-    sig_b64="${key#*.}"
-
-    if [ -z "$payload_b64" ] || [ -z "$sig_b64" ] || [ "$payload_b64" = "$sig_b64" ]; then
-        return 1
-    fi
-
-    python3 - "$payload_b64" "$sig_b64" "$LICENSE_PUBLIC_KEY" 2>/dev/null <<'PYTHON'
-import base64, json, sys, time
-
-payload_b64, sig_b64, pub_key_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
-
-# Structural validation (no dependencies needed)
-try:
-    padded = payload_b64 + "=" * (4 - len(payload_b64) % 4)
-    payload = json.loads(base64.urlsafe_b64decode(padded))
-except Exception:
-    sys.exit(1)
-
-if "org_id" not in payload:
-    sys.exit(1)
-
-exp = payload.get("exp", 0)
-if exp > 0 and time.time() > exp:
-    print("EXPIRED", file=sys.stderr)
-    sys.exit(2)
-
-try:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-    pub_key_bytes = base64.urlsafe_b64decode(pub_key_b64 + "==")
-    pub_key = Ed25519PublicKey.from_public_bytes(pub_key_bytes)
-    sig_bytes = base64.urlsafe_b64decode(sig_b64 + "==")
-    pub_key.verify(sig_bytes, payload_b64.encode())
-
-    print(payload.get("org_id", "unknown"))
-    sys.exit(0)
-except ImportError:
-    print(payload.get("org_id", "unknown"))
-    sys.exit(3)
-except Exception as e:
-    print(str(e), file=sys.stderr)
-    sys.exit(1)
-PYTHON
-}
-
-if [ -n "$LICENSE_KEY" ]; then
-    info "Validating license key..."
-    ORG_ID=""
-    if ORG_ID=$(validate_license "$LICENSE_KEY"); then
-        EDITION="enterprise"
-        info "Valid enterprise license (org: $ORG_ID)"
-    else
-        EXIT_CODE=$?
-        if [ "$EXIT_CODE" -eq 2 ]; then
-            die "License key has expired. Contact sales@observal.dev to renew."
-        elif [ "$EXIT_CODE" -eq 3 ]; then
-            warn "Cannot verify license locally (python3 cryptography package not found)."
-            warn "Proceeding with enterprise install — the server will validate at startup."
-            EDITION="enterprise"
-        else
-            die "Invalid license key. Check your key or contact support@observal.dev"
-        fi
-    fi
-else
-    info "No license key provided — installing community edition"
-fi
 
 # ── Pre-flight ───────────────────────────────────────────────
 
@@ -204,12 +115,10 @@ if [ "$VERSION" = "latest" ]; then
     [ -n "$VERSION" ] || die "Could not determine latest version"
 fi
 
-info "Installing Observal Server $VERSION [$EDITION edition]"
+info "Installing Observal Server $VERSION"
 
 # ── Download ─────────────────────────────────────────────────
 
-# Same server package for both editions; enterprise features activate via the
-# license key passed to setup.sh at the end of this script.
 ARTIFACT="observal-server-${VERSION}.tar.gz"
 
 if [ -n "$BASE_URL" ]; then
@@ -221,7 +130,7 @@ fi
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-info "Downloading server package ($EDITION)..."
+info "Downloading server package..."
 if ! curl -fsSL -o "$TMPDIR/$ARTIFACT" "$URL"; then
     die "Download failed. Check that $VERSION exists at https://github.com/$GITHUB_REPO/releases"
 fi
@@ -249,10 +158,8 @@ else
     sudo chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
 fi
 
-# ── Run setup (pass license key and edition) ─────────────────
+# ── Run setup ───────────────────────────────────────────────
 
 info "Running guided setup..."
 OBSERVAL_INSTALL_DIR="$INSTALL_DIR" \
-    OBSERVAL_LICENSE_KEY="$LICENSE_KEY" \
-    OBSERVAL_EDITION="$EDITION" \
     bash "$INSTALL_DIR/setup.sh" </dev/tty

@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-enterprise rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release-major release-feature release-patch sync-skill
+.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release-major release-feature release-patch sync-skill
 
 # ── Linting ──────────────────────────────────────────────
 
@@ -48,13 +48,7 @@ hooks:  ## Install pre-commit hooks
 
 # ── Docker ───────────────────────────────────────────────
 
-# Auto-detect enterprise edition: if ee/observal_insights/ exists, include enterprise compose file.
-# Enterprise features activate when OBSERVAL_LICENSE_KEY is set in .env.
 COMPOSE_FILES := -f docker-compose.yml
-ifneq (,$(wildcard ee/observal_insights/__init__.py))
-  COMPOSE_FILES += -f docker-compose.enterprise.yml
-  $(info [enterprise mode] ee/observal_insights/ detected)
-endif
 OBSERVABILITY_COMPOSE_FILES := $(COMPOSE_FILES) -f docker-compose.observability.yml
 
 up:  ## Start Docker stack
@@ -117,19 +111,12 @@ rebuild-observability:  ## Rebuild and restart Docker stack with Prometheus and 
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy."
 
-rebuild-enterprise:  ## Rebuild in enterprise mode (insights enabled)
-	cd docker && docker compose -f docker-compose.yml -f docker-compose.enterprise.yml up --build -d
-	@echo "Waiting for API to be healthy..."
-	@cd docker && until docker compose -f docker-compose.yml -f docker-compose.enterprise.yml exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
-	cd docker && docker compose -f docker-compose.yml -f docker-compose.enterprise.yml restart observal-lb
-	@echo "✓ Running in enterprise mode (license key active)"
-
-rebuild-local:  ## Rebuild in local mode (no enterprise features)
+rebuild-local:  ## Rebuild local Docker stack
 	cd docker && docker compose -f docker-compose.yml up --build -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose -f docker-compose.yml exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
 	cd docker && docker compose -f docker-compose.yml restart observal-lb
-	@echo "✓ Running in local mode (DEPLOYMENT_MODE=local)"
+	@echo "✓ Running local Docker stack"
 
 reset:  ## Nuke all Docker volumes, including optional observability, and rebuild core
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) down -v

@@ -66,15 +66,3 @@ resource "aws_ssm_parameter" "urls" {
 
   tags = { Name = "${local.name}-${lower(each.key)}" }
 }
-
-# ── License key (enterprise only) ────────────────────────────────────────
-
-resource "aws_ssm_parameter" "license_key" {
-  count = local.is_enterprise ? 1 : 0
-
-  name  = "${local.ssm_prefix}/OBSERVAL_LICENSE_KEY"
-  type  = "SecureString"
-  value = var.observal_license_key
-
-  tags = { Name = "${local.name}-license-key" }
-}

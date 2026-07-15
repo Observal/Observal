@@ -35,9 +35,3 @@ variable "dns_managed_zone_name" {
   type    = string
   default = ""
 }
-
-variable "observal_license_key" {
-  type      = string
-  default   = ""
-  sensitive = true
-}

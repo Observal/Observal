@@ -8,7 +8,6 @@ Adds SPDX headers to all source files.
 - Skips bots (renovate, github-actions)
 - Inline headers for commentable file types
 - REUSE.toml for JSON, images, lock files, binaries
-- ee/ files get LicenseRef-Observal-Enterprise
 - Preserves original line endings (CRLF vs LF)
 """
 
@@ -207,9 +206,6 @@ def format_copyright_lines(authors: dict, prefix: str, suffix: str) -> list:
 
 
 def get_license_id(path: Path) -> str:
-    rel = str(path.relative_to(ROOT))
-    if rel.startswith("ee/"):
-        return "LicenseRef-Observal-Enterprise"
     return "Apache-2.0"
 
 
