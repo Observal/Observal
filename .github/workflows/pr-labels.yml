@@ -88,8 +88,6 @@ jobs:
               /\.spec\.[jt]sx?$/.test(p)
             );
 
-            const isEnterprise = paths.some((p) => /^ee\//.test(p));
-
             const isCli = paths.some((p) => /^observal_cli\//.test(p));
 
             const isServer = paths.some((p) => /^observal-server\//.test(p));
@@ -98,7 +96,6 @@ jobs:
 
             const labelsToApply = [
               ...(isTest ? ['tests'] : []),
-              ...(isEnterprise ? ['enterprise'] : []),
               ...(isCli ? ['cli'] : []),
               ...(isServer ? ['server'] : []),
               ...(isWeb ? ['web'] : []),
@@ -108,7 +105,6 @@ jobs:
 
             const labelDefs = {
               tests: { color: '0075ca', description: 'Pull request adds or modifies tests' },
-              enterprise: { color: 'e11d48', description: 'Pull request touches enterprise (ee/) code' },
               cli: { color: '1d76db', description: 'Pull request touches CLI code' },
               server: { color: 'fbca04', description: 'Pull request touches server code' },
               web: { color: '0e8a16', description: 'Pull request touches web frontend code' },

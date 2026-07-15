@@ -10,5 +10,4 @@ image_tag   = "latest"
 # domain_name           = "observal.example.com"
 # dns_managed_zone_name = "example-com"
 
-# Optional: enterprise license
-# observal_license_key = "eyJ..."
+# Optional deployment

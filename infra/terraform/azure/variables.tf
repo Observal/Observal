@@ -239,12 +239,6 @@ variable "observability_stack" {
 
 # -- Application config ------------------------------------------------------
 
-variable "observal_license_key" {
-  description = "Observal Enterprise license key. Leave empty for community edition."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
 
 variable "log_retention_days" {
   description = "Log Analytics workspace retention in days."

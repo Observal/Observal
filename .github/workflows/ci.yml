@@ -17,7 +17,6 @@
 #     • test (3.13)
 #     • web-lint
 #     • docker-build
-#     • import-boundary
 #     • dependency-audit
 #   Require a pull request before merging
 #   Require approvals: 1
@@ -218,26 +217,6 @@ jobs:
       - name: TypeScript typecheck
         if: needs.changes.outputs.web == 'true'
         run: pnpm run typecheck
-
-# ── Job 5: Import boundary check ─────────────────────────────────────────────
-  import-boundary:
-    name: import-boundary
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.python == 'true'
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Check ee/ import boundary
-        run: |
-          echo "Checking that core does not import from ee/..."
-          VIOLATIONS=$(grep -rn "from ee\b\|import ee\b" observal-server/ observal_cli/ --include="*.py" | grep -v "main.py" | grep -v "services/insights/__init__.py" | grep -v "services/audit/__init__.py" | grep -v "/tests/" || true)
-          if [ -n "$VIOLATIONS" ]; then
-            echo "::error::Import boundary violation — core must not import from ee/"
-            echo "$VIOLATIONS"
-            exit 1
-          fi
-          echo "✓ No import boundary violations found"
 
 # ── Job 6: Docker build ───────────────────────────────────────────────────────
   docker-build:

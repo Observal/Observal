@@ -129,8 +129,6 @@ locals {
   clickhouse_host_internal = local.clickhouse_self_hosted ? "clickhouse.${var.internal_dns_zone}" : ""
 
   ssm_prefix = "/${local.name}"
-
-  is_enterprise = var.observal_license_key != ""
 }
 
 # Always fetch VPC metadata (works in both create and BYO modes).

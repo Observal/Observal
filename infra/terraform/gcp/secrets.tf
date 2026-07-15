@@ -18,7 +18,6 @@ locals {
     REDIS_URL                  = local.redis_url
     SECRET_KEY                 = random_password.secret_key.result
     CLICKHOUSE_URL             = local.clickhouse_url
-    OBSERVAL_LICENSE_KEY       = var.observal_license_key
     GOOGLE_OAUTH_CLIENT_ID     = var.google_oauth_client_id
     GOOGLE_OAUTH_CLIENT_SECRET = var.google_oauth_client_secret
   }

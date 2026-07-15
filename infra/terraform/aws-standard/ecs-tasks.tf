@@ -22,14 +22,12 @@ locals {
   ]
 
   # Secrets injected by ECS at task start via SSM Parameter Store ARNs.
-  app_secrets = concat([
+  app_secrets = [
     { name = "DATABASE_URL", valueFrom = aws_ssm_parameter.urls["DATABASE_URL"].arn },
     { name = "REDIS_URL", valueFrom = aws_ssm_parameter.urls["REDIS_URL"].arn },
     { name = "CLICKHOUSE_URL", valueFrom = aws_ssm_parameter.urls["CLICKHOUSE_URL"].arn },
     { name = "SECRET_KEY", valueFrom = aws_ssm_parameter.secret_key.arn },
-    ], local.is_enterprise ? [
-    { name = "OBSERVAL_LICENSE_KEY", valueFrom = aws_ssm_parameter.license_key[0].arn },
-  ] : [])
+  ]
 }
 
 # ── Task: init (one-shot, runs entrypoint.sh) ─────────────────────────────

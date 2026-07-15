@@ -56,9 +56,3 @@ output "init_job_run_command" {
   description = "Command to manually run the init/migrations job."
   value       = "gcloud run jobs execute ${google_cloud_run_v2_job.init.name} --region=${var.region}"
 }
-
-output "edition" {
-  description = "Deployed edition."
-  value       = local.effective_edition
-  sensitive   = true
-}

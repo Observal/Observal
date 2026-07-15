@@ -34,7 +34,6 @@ COMMON_VARS = {
     "name_prefix",
     "image_tag",
     "clickhouse_mode",
-    "observal_license_key",
 }
 
 PROVIDER_SPECIFIC: dict[str, set[str]] = {
@@ -209,7 +208,6 @@ def check_env_coverage() -> tuple[list[str], list[str]]:
 # Env vars that Terraform injects but config.py doesn't read via Settings
 KNOWN_NON_CONFIG_VARS = {
     "NEXT_PUBLIC_API_URL",  # consumed by web container, not config.py
-    "OBSERVAL_LICENSE_KEY",  # read via os.environ.get, not Settings class
     "PORT",  # consumed by Next.js web container, not the API
 }
 
