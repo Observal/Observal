@@ -127,6 +127,113 @@ jobs:
 
             console.log(`Applied labels: ${labelsToApply.join(', ')}`);
 
+  # Adds/removes 'env-changed' label and posts a reminder when .env.example is modified or renamed
+  env-changed:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const repo = context.repo;
+            const labelName = 'env-changed';
+            const marker = '<!-- observal:env-changed -->';
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const envChanged = files.some(
+              (f) => f.filename === '.env.example' || f.previous_filename === '.env.example'
+            );
+
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              ...repo,
+              issue_number: pr.number,
+            });
+            const isLabeled = labels.some((l) => l.name === labelName);
+
+            if (envChanged && !isLabeled) {
+              try {
+                await github.rest.issues.getLabel({ ...repo, name: labelName });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                try {
+                  await github.rest.issues.createLabel({
+                    ...repo,
+                    name: labelName,
+                    color: 'e3a008',
+                    description: 'PR modifies .env.example — check dependent config files',
+                  });
+                } catch (createErr) {
+                  if (createErr.status !== 422) throw createErr;
+                }
+              }
+
+              await github.rest.issues.addLabels({
+                ...repo,
+                issue_number: pr.number,
+                labels: [labelName],
+              });
+              console.log(`Added '${labelName}' label to #${pr.number}.`);
+
+              let alreadyCommented = false;
+              let page = 1;
+              while (true) {
+                const { data: comments } = await github.rest.issues.listComments({
+                  ...repo,
+                  issue_number: pr.number,
+                  per_page: 100,
+                  page,
+                });
+                if (comments.length === 0) break;
+                if (comments.some((c) => c.body && c.body.includes(marker))) {
+                  alreadyCommented = true;
+                  break;
+                }
+                page++;
+              }
+
+              if (!alreadyCommented) {
+                const repoUrl = `https://github.com/${repo.owner}/${repo.repo}`;
+                const body = [
+                  marker,
+                  '## :warning: `.env.example` was modified',
+                  '',
+                  'New or changed environment variables detected. Please verify the following are updated accordingly:',
+                  '',
+                  `- [ ] [\`SETUP.md\`](${repoUrl}/blob/main/SETUP.md) — reflects any new/removed/renamed variables`,
+                  `- [ ] [\`docker/docker-compose.yml\`](${repoUrl}/blob/main/docker/docker-compose.yml) — services pass the new vars`,
+                  `- [ ] [\`docker/docker-compose.production.yml\`](${repoUrl}/blob/main/docker/docker-compose.production.yml) — production overrides if applicable`,
+                  `- [ ] [\`infra/helm/observal/values.yaml\`](${repoUrl}/blob/main/infra/helm/observal/values.yaml) — Helm values include the new config`,
+                  '',
+                  '> This is an automated reminder. If none of the above apply to your change, you can safely ignore this comment.',
+                ].join('\n');
+
+                await github.rest.issues.createComment({
+                  ...repo,
+                  issue_number: pr.number,
+                  body,
+                });
+                console.log('Posted env-changed reminder comment.');
+              } else {
+                console.log('Reminder comment already exists, skipping.');
+              }
+            } else if (!envChanged && isLabeled) {
+              await github.rest.issues.removeLabel({
+                ...repo,
+                issue_number: pr.number,
+                name: labelName,
+              });
+              console.log(`Removed '${labelName}' label from #${pr.number}.`);
+            } else {
+              console.log('No env-changed action needed.');
+            }
+
   # Applies or removes 'Has Conflicts' based on mergeable_state
   conflict-label:
     runs-on: ubuntu-latest
