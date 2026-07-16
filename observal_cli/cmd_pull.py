@@ -358,6 +358,38 @@ def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
     return content
 
 
+def _rewrite_copilot_cli_hooks(content: dict, agent_id: str | None = None) -> dict:
+    """Rewrite Copilot CLI hook commands to inject per-agent attribution.
+
+    The server emits a generic ``.github/hooks/observal.json`` whose commands
+    carry no agent identity, so sessions fall back to best-effort cwd matching
+    and go unattributed for user-scope installs or when the project moves.
+    Rebuilding the Observal hooks with ``build_copilot_cli_hooks(agent_id=...)``
+    prepends ``OBSERVAL_AGENT_ID`` (both bash and powershell forms), which the
+    session push hook resolves to an exact agent+version via the lockfile.
+
+    User-added hooks in the file are preserved; only Observal's entries are
+    replaced. Mirrors _rewrite_kiro_hooks().
+    """
+    optic.trace("content={}, agent_id={}", content, agent_id)
+    hooks = content.get("hooks")
+    if not hooks:
+        return content
+
+    from observal_cli.harness_specs.copilot_cli_hooks_spec import build_copilot_cli_hooks
+
+    desired_hooks = build_copilot_cli_hooks(agent_id=agent_id or "")["hooks"]
+
+    # Replace only Observal hooks, preserve any user-added hooks
+    for event, desired_entries in desired_hooks.items():
+        existing = hooks.get(event, [])
+        cleaned = [h for h in existing if "copilot_cli_session_push" not in h.get("bash", "")]
+        hooks[event] = cleaned + desired_entries
+
+    content["hooks"] = hooks
+    return content
+
+
 def _resolve_path(raw_path: str, target_dir: Path, *, allow_home: bool = False) -> Path:
     """Resolve a path from the config snippet relative to *target_dir*.
 
@@ -676,6 +708,14 @@ def register_pull(app: typer.Typer):
                     raw,
                 )
                 content = json.loads(raw)
+                # Copilot project hooks are one file per project; stamp the
+                # pulled agent's UUID so sessions attribute deterministically
+                # instead of relying on best-effort cwd matching.
+                if harness in ("copilot", "copilot-cli"):
+                    content = _rewrite_copilot_cli_hooks(
+                        content,
+                        agent_id=str(agent_detail.get("id", resolved)),
+                    )
             if dry_run:
                 written.append((str(p), "would write"))
             else:
