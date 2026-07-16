@@ -463,10 +463,19 @@ def _resolve_agent(
 
     env_agent_id = os.environ.get("OBSERVAL_AGENT_ID", "")
     if env_agent_id:
+        # Prefer a harness-scoped match, but fall back to an unscoped UUID
+        # lookup. A UUID is globally unique, and the harness recorded at pull
+        # time may differ from the one resolving the session: Copilot CLI is
+        # pulled under "copilot" yet reports "copilot-cli", and build_payload
+        # defaults harness to "claude-code" when a caller sets payload["harness"]
+        # after the fact. Scoping the lookup would leave those sessions
+        # unattributed despite a valid OBSERVAL_AGENT_ID.
         lockfile_entry = _lookup_lockfile_agent_by_id(env_agent_id, harness=harness)
+        if lockfile_entry is None:
+            lockfile_entry = _lookup_lockfile_agent_by_id(env_agent_id)
         if lockfile_entry:
             return lockfile_entry.get("id"), lockfile_entry.get("version")
-        optic.warning("OBSERVAL_AGENT_ID={} not found in lockfile for harness={}", env_agent_id, harness)
+        optic.warning("OBSERVAL_AGENT_ID={} not found in lockfile (harness={})", env_agent_id, harness)
         return None, None
 
     if harness == "kiro":

@@ -327,6 +327,125 @@ class TestBuildCopilotCliHooks:
         for event, entries in result["hooks"].items():
             assert entries[0]["timeoutSec"] == 5, f"Event {event} timeout != 5"
 
+    def test_no_agent_id_omits_observal_agent_id(self):
+        """Without an agent_id, commands carry no OBSERVAL_AGENT_ID prefix."""
+        from observal_cli.harness_specs.copilot_cli_hooks_spec import build_copilot_cli_hooks
+
+        result = build_copilot_cli_hooks()
+        for entries in result["hooks"].values():
+            assert "OBSERVAL_AGENT_ID" not in entries[0]["bash"]
+            assert "OBSERVAL_AGENT_ID" not in entries[0]["powershell"]
+
+    def test_agent_id_injected_into_both_command_forms(self):
+        """A supplied agent_id is stamped into bash and powershell commands.
+
+        Regression: Copilot CLI sessions were unattributed because the project
+        hook carried no agent identity. The UUID must reach the push hook so
+        _resolve_agent can map it to an agent+version via the lockfile.
+        """
+        from observal_cli.harness_specs.copilot_cli_hooks_spec import build_copilot_cli_hooks
+
+        result = build_copilot_cli_hooks(agent_id="agent-uuid-42")
+        for event, entries in result["hooks"].items():
+            bash = entries[0]["bash"]
+            ps = entries[0]["powershell"]
+            assert "OBSERVAL_AGENT_ID=agent-uuid-42" in bash, f"{event} bash missing UUID"
+            assert "agent-uuid-42" in ps and "OBSERVAL_AGENT_ID" in ps, f"{event} powershell missing UUID"
+            # The push command must still be present after the prefix.
+            assert "copilot_cli_session_push" in bash
+
+
+class TestRewriteCopilotCliHooks:
+    """_rewrite_copilot_cli_hooks: stamps the pulled agent UUID at pull time."""
+
+    def _server_content(self) -> dict:
+        """Generic hook file as the server emits it (no agent identity)."""
+        push = "python3 -m observal_cli.hooks.copilot_cli_session_push"
+        return {
+            "version": 1,
+            "hooks": {
+                "sessionStart": [{"type": "command", "bash": push, "powershell": push, "timeoutSec": 5}],
+                "userPromptSubmitted": [{"type": "command", "bash": push, "powershell": push, "timeoutSec": 5}],
+            },
+        }
+
+    def test_stamps_agent_id_into_observal_hooks(self):
+        from observal_cli.cmd_pull import _rewrite_copilot_cli_hooks
+
+        out = _rewrite_copilot_cli_hooks(self._server_content(), agent_id="uuid-99")
+        for entries in out["hooks"].values():
+            obs = [e for e in entries if "copilot_cli_session_push" in e.get("bash", "")]
+            assert len(obs) == 1
+            assert "OBSERVAL_AGENT_ID=uuid-99" in obs[0]["bash"]
+
+    def test_preserves_user_added_hooks(self):
+        from observal_cli.cmd_pull import _rewrite_copilot_cli_hooks
+
+        content = self._server_content()
+        content["hooks"]["sessionStart"].append({"type": "command", "bash": "echo user-hook", "timeoutSec": 5})
+        out = _rewrite_copilot_cli_hooks(content, agent_id="uuid-99")
+        bashes = [e["bash"] for e in out["hooks"]["sessionStart"]]
+        assert any("echo user-hook" in b for b in bashes), "user hook must survive"
+
+    def test_is_idempotent_no_duplicate_observal_hooks(self):
+        """Re-pulling must not accumulate duplicate Observal entries."""
+        from observal_cli.cmd_pull import _rewrite_copilot_cli_hooks
+
+        content = _rewrite_copilot_cli_hooks(self._server_content(), agent_id="uuid-1")
+        content = _rewrite_copilot_cli_hooks(content, agent_id="uuid-2")
+        for entries in content["hooks"].values():
+            obs = [e for e in entries if "copilot_cli_session_push" in e.get("bash", "")]
+            assert len(obs) == 1, "exactly one Observal hook per event"
+            assert "OBSERVAL_AGENT_ID=uuid-2" in obs[0]["bash"], "latest UUID wins"
+
+    def test_no_hooks_key_returns_unchanged(self):
+        from observal_cli.cmd_pull import _rewrite_copilot_cli_hooks
+
+        assert _rewrite_copilot_cli_hooks({}, agent_id="uuid-1") == {}
+
+
+class TestResolveAgentCopilotUuidFallback:
+    """_resolve_agent: OBSERVAL_AGENT_ID resolves across a harness-key mismatch."""
+
+    def test_unscoped_fallback_when_harness_scope_misses(self):
+        """Copilot pulls under 'copilot' but pushes with harness 'copilot-cli'
+        (and build_payload defaults to 'claude-code'). A globally-unique UUID
+        must still resolve via the unscoped lockfile lookup.
+        """
+        from unittest.mock import patch
+
+        from observal_cli.sessions.base import _resolve_agent
+
+        entry = {"id": "uuid-cp", "name": "test", "version": "1.2.0"}
+
+        def by_id(agent_id, harness=None):
+            if agent_id != "uuid-cp":
+                return None
+            # Agent is stored only under the 'copilot' harness key.
+            return entry if harness in (None, "copilot") else None
+
+        with (
+            patch.dict("os.environ", {"OBSERVAL_AGENT_ID": "uuid-cp"}, clear=True),
+            patch("observal_cli.sessions.base._lookup_lockfile_agent_by_id", side_effect=by_id),
+        ):
+            # harness reported by the push payload differs from the lockfile key
+            assert _resolve_agent("/repo", [], None, harness="copilot-cli") == ("uuid-cp", "1.2.0")
+            # build_payload's default harness also differs
+            assert _resolve_agent("/repo", [], None, harness="claude-code") == ("uuid-cp", "1.2.0")
+
+    def test_unknown_uuid_stays_unattributed(self):
+        from unittest.mock import patch
+
+        from observal_cli.sessions.base import _resolve_agent
+
+        with (
+            patch.dict("os.environ", {"OBSERVAL_AGENT_ID": "nope"}, clear=True),
+            patch("observal_cli.sessions.base._lookup_lockfile_agent_by_id", return_value=None),
+            patch("observal_cli.sessions.base._lookup_lockfile_agent") as cwd_lookup,
+        ):
+            assert _resolve_agent("/repo", [], None, harness="copilot-cli") == (None, None)
+            cwd_lookup.assert_not_called()
+
 
 class TestPatchCopilot:
     """_patch_copilot: hook installation for VS Code Copilot."""
