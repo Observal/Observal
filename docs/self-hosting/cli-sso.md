@@ -102,8 +102,7 @@ Generate API tokens from the Observal web UI under your user settings.
 
 ## Server Configuration
 
-The device flow endpoints are always available (not gated behind enterprise
-mode) so that any deployment with SSO can use them.
+The device flow endpoints are always available so any deployment with SSO can use them.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|

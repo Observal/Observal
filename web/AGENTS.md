@@ -121,7 +121,7 @@ src/lib/           # API wrapper, types, query client, theme, GraphQL WS
 
 **Types:** API response types live in `src/lib/types.ts`. Do not define inline types for API data that is shared by multiple components. If a new endpoint is added, add its types there.
 
-**Feature gating:** Enterprise features are gated server-side. The API returns 403 for unlicensed features. The frontend reads `useDeploymentConfig()` for display decisions, but never trusts the client to enforce access.
+**Access control:** Feature access is role-based and enforced server-side. The frontend may use deployment config for display decisions, but never trusts the client to enforce access.
 
 **Harness list:** Fetched from `/api/v1/config/harnesses` via `useHarnesses()`. Never hardcode harness names or capabilities in the frontend. The server is the single source of truth.
 
@@ -142,7 +142,3 @@ pnpm e2e:ui       # Playwright UI mode
 ```
 
 E2E specs live in `tests/e2e/*.spec.ts` in the repo root workspace.
-
-## Enterprise in the frontend
-
-Feature pages live in normal route and page directories alongside core pages. Access control is role-based and enforced server-side.

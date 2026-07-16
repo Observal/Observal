@@ -4,7 +4,7 @@
 # OIDC / OAuth 2.0 SSO Setup Guide
 
 This guide walks you through configuring OpenID Connect (OIDC) / OAuth 2.0
-Single Sign-On for Observal Enterprise. It covers environment variable
+Single Sign-On for Observal. It covers environment variable
 configuration, per-IdP setup instructions, and troubleshooting common issues.
 
 ---
@@ -245,7 +245,7 @@ permissions.
 
 ### 403 Forbidden on callback
 
-**Cause:** Enterprise mode is not active, or the user is deactivated.
+**Cause:** The user is deactivated or does not satisfy the configured identity-provider policy.
 
 **Fix:**
 

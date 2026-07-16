@@ -28,7 +28,6 @@ Please read our [Code of Conduct](https://github.com/Observal/Observal/blob/main
 * [Making Changes](CONTRIBUTING.md#making-changes)
 * [Submitting a Pull Request](CONTRIBUTING.md#submitting-a-pull-request)
 * [Reporting Issues](CONTRIBUTING.md#reporting-issues)
-* [Enterprise Directory](CONTRIBUTING.md#enterprise-directory-ee)
 * [License](CONTRIBUTING.md#license)
 * [CLA](CONTRIBUTING.md#contributor-license-agreement-cla)
 
@@ -207,7 +206,7 @@ Describe the problem you are solving, not just the solution. Discuss in **#featu
 
 ## License
 
-All code is licensed under [Apache-2.0](LICENSE). See the [License Commitment](LICENSE_COMMITMENT.md) for the project's Apache-2.0 commitment and license history.
+All code is licensed under [Apache-2.0](LICENSE).
 
 ***
 

@@ -3,11 +3,9 @@
 
 """SAML health-probe hook.
 
-The core package must stay decoupled from the enterprise layer. The enterprise
-layer registers its SAML health checker here at startup (via mount_ee_routes);
-the public sso-health endpoint calls it through this indirection. When the
-enterprise layer is unavailable, the probe is unregistered and the endpoint
-reports no SAML status.
+The SAML route registers its health checker here during app setup. The public
+SSO health endpoint calls it through this indirection so the probe remains easy
+to replace in tests. An unregistered probe reports no SAML status.
 """
 
 from __future__ import annotations

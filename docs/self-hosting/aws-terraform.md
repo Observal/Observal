@@ -169,23 +169,6 @@ log_retention_days  = 30             # CloudWatch log group retention
 image_tag           = "v1.4.0"       # specific Observal release; "latest" pulls main
 ```
 
-### License and edition
-
-Provide an open-source distribution key to deploy the open-source distribution with private GHCR images.
-
-```hcl
-
-# edition defaults to "auto": enterprise if a key is present, community otherwise.
-# Override explicitly if needed:
-# edition = "enterprise"
-```
-
-
-* Stores the key in SSM Parameter Store as a `SecureString`
-* Switches `api` and `web` image repos to the enterprise GHCR images
-* Reports the active edition via the `edition` output (`terraform output --raw edition`)
-
-
 See [Configuration](configuration.md) for the meaning of each application setting.
 
 ### Bring Your Own VPC

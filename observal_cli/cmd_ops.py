@@ -596,9 +596,9 @@ admin_app = typer.Typer(help="Admin commands")
 
 @admin_app.command(name="settings")
 def admin_settings(output: str = typer.Option("table", "--output", "-o")):
-    """List enterprise settings.
+    """List server settings.
 
-    Displays all configured key-value enterprise settings on the server.
+    Displays all configured key-value server settings.
 
     Examples:
 
@@ -627,9 +627,9 @@ def admin_set(
     key: str = typer.Argument(...),
     value: str = typer.Argument(...),
 ):
-    """Set an enterprise setting.
+    """Set a server setting.
 
-    Creates or updates a key-value enterprise configuration entry
+    Creates or updates a key-value server configuration entry
     on the server. Requires admin privileges.
 
     Examples:

@@ -34,9 +34,9 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal admin scim-token-revoke`: Revoke a SCIM provisioning token.
   - `observal admin scim-tokens`: List SCIM provisioning tokens.
   - `observal admin security-events`: View security events log.
-  - `observal admin set`: Set an enterprise setting.
+  - `observal admin set`: Set a server setting.
   - `observal admin set-role`: Change a user's role.
-  - `observal admin settings`: List enterprise settings.
+  - `observal admin settings`: List server settings.
   - `observal admin trace-privacy`: View trace privacy setting.
   - `observal admin trace-privacy-set`: Enable or disable trace privacy (redacts sensitive trace data).
   - `observal admin users`: List all users.

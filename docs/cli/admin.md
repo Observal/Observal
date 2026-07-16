@@ -11,10 +11,10 @@ Admin commands. Requires the `admin` or `super_admin` role.
 * [Review workflow](#review-workflow)
 * [Diagnostics and cache](#diagnostics-and-cache)
 * [Trace privacy](#trace-privacy)
-* [SAML SSO (Enterprise)](#saml-sso-enterprise)
-* [SCIM provisioning (Enterprise)](#scim-provisioning-enterprise)
+* [SAML SSO](#saml-sso)
+* [SCIM provisioning](#scim-provisioning)
 * [Security events](#security-events)
-* [Audit log (Enterprise)](#audit-log-enterprise)
+* [Audit log](#audit-log)
 
 ---
 
@@ -194,9 +194,7 @@ observal admin trace-privacy-set false
 
 ---
 
-## SAML SSO (Enterprise)
-
-These commands require enterprise mode on the server.
+## SAML SSO
 
 | Command | Description |
 | --- | --- |
@@ -270,9 +268,7 @@ observal admin saml-config-delete --force
 
 ---
 
-## SCIM provisioning (Enterprise)
-
-These commands require enterprise mode on the server.
+## SCIM provisioning
 
 | Command | Description |
 | --- | --- |
@@ -382,9 +378,7 @@ Security Events (3)
 
 ---
 
-## Audit log (Enterprise)
-
-These commands require enterprise mode on the server.
+## Audit log
 
 | Command | Description |
 | --- | --- |

@@ -320,4 +320,4 @@ Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://gith
 
 ## License
 
-Observal is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and our [License Commitment](LICENSE_COMMITMENT.md).
+Observal is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

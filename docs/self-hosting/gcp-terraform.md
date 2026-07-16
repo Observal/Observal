@@ -137,13 +137,6 @@ clickhouse_cloud_url = "https://abc123.us-central1.gcp.clickhouse.cloud:8443"
 
 The GCE data host is skipped entirely.
 
-### Open-source distribution
-
-```hcl
-```
-
-Stored in Secret Manager, injected into all Cloud Run services. Enterprise features activate automatically.
-
 ## Operating the install
 
 ### Shell into the data host

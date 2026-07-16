@@ -47,10 +47,6 @@ image_tag = "latest"
 # ── App config ────────────────────────────────────────────────────────
 log_retention_days = 30
 
-# ── License ──────────────────────────────────────────────────────────────────
-# Provide your deployment key to enable included features.
-# Without a key, community edition is deployed (same image, features gated at runtime).
-
 # ── Bring-your-own VPC (BYO-VPC) ─────────────────────────────────────────────
 # Deploy into an existing VPC instead of creating one.
 #

@@ -4,7 +4,7 @@
 # SAML 2.0 Setup Guide
 
 This guide walks you through configuring SAML 2.0 Single Sign-On (SSO) for
-Observal Enterprise. It covers identity provider (IdP) configuration, service
+Observal. It covers identity provider (IdP) configuration, service
 provider (SP) metadata, and troubleshooting common issues.
 
 ---
@@ -13,9 +13,7 @@ provider (SP) metadata, and troubleshooting common issues.
 
 Before you begin, make sure the following requirements are met:
 
-- **Enterprise mode is enabled.** SAML SSO is only available in enterprise
-  deployments. Confirm that your instance is running with the open-source distribution
-  active.
+- **Admin access.** You need a super-admin account in Observal to configure SAML settings.
 - **IdP admin access.** You need administrator privileges on your identity
   provider (Okta, Azure AD / Entra ID, Google Workspace, or another
   SAML 2.0-compliant IdP) to create and configure a SAML application.
@@ -69,7 +67,7 @@ In **Admin → SSO → SSO settings**, set:
 | `saml.idp_sso_url` | `https://idp.example.com/saml/sso` |
 | `saml.idp_x509_cert` | The PEM certificate from your IdP |
 
-With these three settings saved and enterprise mode active, SAML SSO is ready.
+With these three settings saved, SAML SSO is ready.
 
 ---
 
@@ -326,13 +324,12 @@ see a 403 Forbidden error.
 **Symptom:** Requests to `/api/v1/sso/saml/login`, `/api/v1/sso/saml/acs`, or
 `/api/v1/sso/saml/metadata` return a 404.
 
-**Cause:** Enterprise mode is not active. SAML endpoints are only registered
-when the open-source distribution is valid.
+**Cause:** The server is not running the expected release, or SAML routes failed to load.
 
 **Fix:**
-- Verify that your open-source distribution key is set and valid.
-- Restart the Observal server after applying the license.
-- Check server logs for license validation errors.
+- Confirm the API is healthy and running the same version as the web UI.
+- Restart the Observal API.
+- Check server logs for SAML route startup errors.
 
 ### 400 Bad Request on ACS
 

@@ -46,10 +46,6 @@ image_tag = "latest"
 # ── App config ────────────────────────────────────────────────────────
 log_retention_days  = 30
 
-# ── License ──────────────────────────────────────────────────────────────────
-# Provide your deployment key to enable included features.
-# Without a key, community edition is deployed (same image, features gated at runtime).
-
 # ── Demo account (optional, first-deploy convenience) ────────────────────────
 # Creates demo accounts on first startup for immediate access.
 # All tiers auto-delete when real users are created at that role.

@@ -3,7 +3,7 @@
 
 # SCIM 2.0 Provisioning Setup Guide
 
-This guide covers configuring SCIM 2.0 user provisioning between your identity provider (IdP) and Observal Enterprise. SCIM automates user creation, updates, and deprovisioning so your Observal user directory stays synchronized with your IdP.
+This guide covers configuring SCIM 2.0 user provisioning between your identity provider (IdP) and Observal. SCIM automates user creation, updates, and deprovisioning so your Observal user directory stays synchronized with your IdP.
 
 ---
 

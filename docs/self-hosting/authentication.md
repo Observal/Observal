@@ -14,7 +14,7 @@ Observal supports password auth, API keys, OAuth / OIDC, and SAML. The public lo
 | Email + password | Default password auth | Used by bootstrap admins and locally managed users |
 | Self registration | `auth.self_registration_enabled=true` | Creates standard `user` accounts only |
 | OAuth / OIDC | SSO tab settings: `oauth.client_id`, `oauth.client_secret`, `oauth.server_metadata_url` | Uses IdP discovery metadata. API restart required after changes. |
-| SAML | SSO tab settings: `saml.*` | Enterprise SAML setup |
+| SAML | SSO tab settings: `saml.*` | SAML setup with JIT provisioning |
 | API keys | User generated after login | Inherits the user's role |
 
 Use `deployment.sso_only=true` when password login should be hidden and only SSO should be available.
@@ -259,9 +259,9 @@ WARNING - PASSWORD RESET CODE for alice@example.com: A7X9B2 (expires in 15 minut
 
 An operator reads the log and passes the code to the user out-of-band (Slack, phone). This is deliberate: no email infrastructure needed for the default flow. If you want emailed reset codes, implement an email transport in the server.
 
-## Enterprise extras
+## Operational controls
 
-Open-source Observal includes:
+Observal includes:
 
 * **Audit logging**: every privileged action lands in ClickHouse's `audit_log`
 * **SSO-only mode** (`deployment.sso_only=true`)

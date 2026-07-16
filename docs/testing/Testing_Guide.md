@@ -482,7 +482,7 @@ In practice:
 
 - Unused mock variables are allowed in test files.
 - Some server tests can use guarded imports after setup.
-- Tests may import enterprise modules when the test is specifically about licensed behavior.
+- Tests should import feature modules from their normal server package paths.
 - New tests should still prefer clear imports, typed helpers, and small setup.
 
 ## Review checklist

@@ -112,7 +112,7 @@ observal ops top --type mcp             # hottest MCP servers
 
 Filters in the web UI let you slice by user, agent, harness, and time range.
 
-## Enterprise concerns
+## SSO and audit considerations
 
 For orgs that need SSO and audit logging, configure OIDC in **Admin → SSO**:
 

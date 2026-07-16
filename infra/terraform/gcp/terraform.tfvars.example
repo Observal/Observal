@@ -32,8 +32,6 @@ observability_stack  = "none"
 # Application
 data_retention_days = 90
 
-# License (leave empty for community edition)
-
 # Google OAuth (leave empty to disable Google sign-in)
 # google_oauth_client_id        = ""
 # google_oauth_client_secret    = ""

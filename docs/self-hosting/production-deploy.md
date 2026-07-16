@@ -3,7 +3,7 @@
 
 # Production deployment
 
-Deploy Observal as a distributed, highly-available stack on AWS or GCP using Terraform. Best for enterprise customers, SLA-bound deployments, teams over 50 users, and any environment where uptime and horizontal scaling matter.
+Deploy Observal as a distributed, highly available stack on AWS or GCP using Terraform. Best for SLA-bound deployments, teams over 50 users, and any environment where uptime and horizontal scaling matter.
 
 **End state:** a fully managed Observal install with autoscaling compute, managed databases with automated failover, encrypted secrets, centralized logging, automated backups, and HTTPS on your domain — provisioned with a single `terraform apply`.
 

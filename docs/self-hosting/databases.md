@@ -60,7 +60,7 @@ Core tables:
 | `session_events` | Raw and parsed harness JSONL lines, token fields, tool fields, and session metadata |
 | `session_stats_agg` | Pre-aggregated session list and summary metrics from `session_events` |
 | `layer_snapshots` | Harness config snapshots used by version-aware insights |
-| `audit_log` | Enterprise audit events |
+| `audit_log` | Audit events |
 | `security_events` | Security events for login, auth, and admin activity |
 | `webhook_deliveries` | Alert webhook delivery attempts and status |
 

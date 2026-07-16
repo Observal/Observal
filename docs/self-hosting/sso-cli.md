@@ -2,18 +2,18 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Observal Enterprise CLI & API Reference
+# Observal SSO, SCIM, and Audit API Reference
 
 
 For the core CLI reference, see [docs/cli/README.md](../../docs/cli/README.md). For setup instructions, see [docs/self-hosting/README.md](../../docs/self-hosting/README.md).
 
 ---
 
-## Enterprise Configuration
+## SSO Configuration
 
 | Setting | Default | Description |
 |----------|---------|-------------|
-| `oauth.client_id` | disabled | OAuth/OIDC client ID (required in enterprise mode) |
+| `oauth.client_id` | disabled | OAuth/OIDC client ID |
 | `oauth.client_secret` | disabled | OAuth/OIDC client secret |
 | `oauth.server_metadata_url` | disabled | OIDC discovery URL |
 | `deployment.sso_only` | `false` | When true, disables password auth entirely; only SSO login allowed |
@@ -32,7 +32,7 @@ When `deployment.sso_only=true`, password-based login is disabled. All authentic
 
 ## Audit Log API
 
-Enterprise mode automatically logs all admin and write operations to ClickHouse. Audit logs are queryable via the API and exportable as CSV.
+Observal logs admin and write operations to ClickHouse. Audit logs are queryable via the API and exportable as CSV.
 
 ### `GET /api/v1/admin/audit-log`
 
@@ -112,15 +112,8 @@ For detailed instructions, see [cli-sso.md](cli-sso.md).
 
 ---
 
-## Enterprise Guard Middleware
+## SSO Configuration Guard
 
-When `deployment.sso_only=true`, the following routes are blocked:
+SSO login and SCIM routes return a configuration error when required identity-provider settings are incomplete. SAML SP metadata remains available so administrators can configure the IdP.
 
-- `POST /api/v1/auth/bootstrap`, admin bootstrapping disabled (use IdP)
-
-Self-registration is removed in enterprise mode. Users are provisioned via IdP
-(OIDC or SAML JIT provisioning on first login) or via SCIM for automated
-lifecycle management. In local mode, admins can create users directly through
-the admin panel.
-
-All other routes function normally with SSO-based authentication.
+When `deployment.sso_only=true`, password authentication is disabled. Users can be provisioned via OIDC, SAML JIT provisioning, SCIM, or the admin panel. Public self-registration remains controlled by `auth.self_registration_enabled`.

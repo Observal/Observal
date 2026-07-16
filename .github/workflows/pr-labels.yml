@@ -60,7 +60,7 @@ jobs:
               labels: [labelName],
             });
 
-  # Applies 'tests' and/or 'enterprise' based on changed file paths
+  # Applies area labels based on changed file paths.
   auto-label:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
