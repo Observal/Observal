@@ -188,7 +188,7 @@ HARNESS_REGISTRY: dict[str, dict] = {
     "copilot": {
         "display_name": "Copilot",
         "session_parser": "copilot-cli",
-        "capabilities": {"mcp_servers", "hooks", "skills"},
+        "capabilities": {"mcp_servers", "hooks", "skills", "prompts"},
         "scopes": ["project"],
         "default_scope": "project",
         "scope_labels": None,
@@ -224,7 +224,7 @@ HARNESS_REGISTRY: dict[str, dict] = {
     "copilot-cli": {
         "display_name": "Copilot CLI",
         "session_parser": "copilot-cli",
-        "capabilities": {"mcp_servers", "hooks", "skills"},
+        "capabilities": {"mcp_servers", "hooks", "skills", "prompts"},
         "scopes": ["project"],
         "default_scope": "project",
         "scope_labels": None,

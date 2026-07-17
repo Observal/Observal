@@ -32,10 +32,10 @@ class TestRegistryAndFrontend:
     """Registry entries for Copilot harness support."""
 
     def test_copilot_feature_matrix(self):
-        """Copilot features == {"mcp_servers", "hooks", "skills"}."""
+        """Copilot features == {"mcp_servers", "hooks", "skills", "prompts"}."""
         from observal_cli.constants import HARNESS_CAPABILITIES
 
-        assert HARNESS_CAPABILITIES["copilot"] == {"mcp_servers", "hooks", "skills"}
+        assert HARNESS_CAPABILITIES["copilot"] == {"mcp_servers", "hooks", "skills", "prompts"}
 
     def test_copilot_session_parser(self):
         """Copilot session_parser is 'copilot-cli' (shares parser with Copilot CLI)."""
@@ -1022,7 +1022,10 @@ class TestServerAdapterFormatConfig:
             "skill_configs": [],
             "hook_listings": [],
             "compatibility_warnings": [],
+            "prompt_listings": None,
+            "component_names": None,
         }
+        agent_components = overrides.pop("agent_components", [])
         defaults.update(overrides)
 
         ctx = MagicMock(spec=ConfigContext)
@@ -1030,6 +1033,7 @@ class TestServerAdapterFormatConfig:
             setattr(ctx, k, v)
         ctx.agent = MagicMock()
         ctx.agent.description = "Test agent"
+        ctx.agent.components = agent_components
         return ctx
 
     def test_correct_hook_file_format(self):
@@ -1067,6 +1071,52 @@ class TestServerAdapterFormatConfig:
         mcp_config = result["mcp_config"]
         assert mcp_config["path"] == "~/.copilot/mcp-config.json"
         assert "mcpServers" in mcp_config["content"]
+
+    def test_no_prompt_files_without_prompt_components(self):
+        from services.harness.copilot_cli import CopilotCliAdapter
+
+        result = CopilotCliAdapter().format_config(self._make_ctx())
+        assert "prompt_files" not in result
+
+    def test_emits_native_prompt_file(self):
+        """A prompt component becomes .github/prompts/<name>.prompt.md."""
+        from services.harness.copilot_cli import CopilotCliAdapter
+
+        comp = MagicMock()
+        comp.component_type = "prompt"
+        comp.component_id = "pid-1"
+        listing = MagicMock()
+        listing.name = "My Prompt"
+        listing.template = "Do the thing."
+        listing.description = "A test prompt"
+
+        ctx = self._make_ctx(prompt_listings={"pid-1": listing}, agent_components=[comp])
+        result = CopilotCliAdapter().format_config(ctx)
+
+        assert "prompt_files" in result
+        pf = result["prompt_files"]
+        assert len(pf) == 1
+        # sanitize_name preserves case, replaces the space with a hyphen
+        assert pf[0]["path"] == ".github/prompts/My-Prompt.prompt.md"
+        assert "Do the thing." in pf[0]["content"]
+        assert "description:" in pf[0]["content"]
+
+    def test_vscode_copilot_also_emits_prompt_file(self):
+        from services.harness.copilot import CopilotAdapter
+
+        comp = MagicMock()
+        comp.component_type = "prompt"
+        comp.component_id = "pid-9"
+        listing = MagicMock()
+        listing.name = "vs-prompt"
+        listing.template = "vscode prompt body"
+        listing.description = "d"
+
+        ctx = self._make_ctx(prompt_listings={"pid-9": listing}, agent_components=[comp])
+        result = CopilotAdapter().format_config(ctx)
+
+        assert "prompt_files" in result
+        assert result["prompt_files"][0]["path"] == ".github/prompts/vs-prompt.prompt.md"
 
     def test_correct_skill_paths(self):
         from services.harness.copilot_cli import CopilotCliAdapter

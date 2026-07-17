@@ -770,6 +770,17 @@ def register_pull(app: typer.Typer):
                     os.chmod(p, 0o755)
                 written.append((str(p), "updated" if existed else "created"))
 
+        # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
+        for pf in snippet.get("prompt_files") or []:
+            p = _resolve_path(pf["path"], target_dir, allow_home=is_user_scope)
+            if dry_run:
+                written.append((str(p), "would write"))
+            else:
+                existed = p.exists()
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(pf["content"])
+                written.append((str(p), "updated" if existed else "created"))
+
         # ── Direct skill files ─────────────────────────
         for sf in snippet.get("skills") or []:
             p = _resolve_path(sf["path"], target_dir, allow_home=is_user_scope)

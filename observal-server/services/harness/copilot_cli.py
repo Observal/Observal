@@ -12,6 +12,7 @@ from schemas.harness_registry import HARNESS_REGISTRY
 from services.harness import ConfigContext, register_adapter
 from services.harness.helpers import (
     _collect_hook_script_files,
+    _generate_prompt_files,
     _generate_skill,
     _merge_hook_components_into_config,
 )
@@ -133,6 +134,10 @@ class CopilotCliAdapter:
         hook_files = _collect_hook_script_files(hook_configs, ctx.hook_listings, "copilot-cli")
         if hook_files:
             result["hook_files"] = hook_files
+        # Native Copilot prompt files (.github/prompts/*.prompt.md)
+        prompt_files = _generate_prompt_files(ctx.prompt_listings, ctx.agent, ctx.component_names)
+        if prompt_files:
+            result["prompt_files"] = prompt_files
         if skills:
             result["skills"] = skills
             result["skill_components"] = [s for s in skill_configs if s.get("git_url")]

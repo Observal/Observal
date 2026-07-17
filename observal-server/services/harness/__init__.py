@@ -29,6 +29,8 @@ class ConfigContext:
     hook_listings: dict | None = None
     skill_listings: dict | None = None
     sandbox_listings: dict | None = None
+    prompt_listings: dict | None = None
+    component_names: dict | None = None
 
 
 @runtime_checkable
@@ -109,7 +111,16 @@ def generate_agent_config(
         if sandbox_mcp:
             mcp_configs.update(sandbox_mcp)
 
-    rules_content = _build_rules_content(agent, component_names, prompt_listings, sandbox_listings)
+    # Harnesses with first-class prompt files (Copilot) emit the full template
+    # into .github/prompts/*.prompt.md, so keep the agent body to a name list
+    # to avoid duplicating the template.
+    emit_prompt_files = harness in ("copilot", "copilot-cli")
+    rules_content = _build_rules_content(
+        agent,
+        component_names,
+        None if emit_prompt_files else prompt_listings,
+        sandbox_listings,
+    )
     skill_configs = _build_skill_configs(agent, skill_listings)
     hook_configs = _build_hook_configs(agent, hook_listings)
     options = options or {}
@@ -135,6 +146,8 @@ def generate_agent_config(
         hook_listings=hook_listings,
         skill_listings=skill_listings,
         sandbox_listings=sandbox_listings,
+        prompt_listings=prompt_listings,
+        component_names=component_names,
     )
     return adapter.format_config(ctx)
 

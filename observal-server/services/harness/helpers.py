@@ -778,3 +778,40 @@ def _build_rules_content(
             sections.append("\n".join(lines))
 
     return "\n\n".join(sections) if sections else f"# {agent.name}"
+
+
+def _generate_prompt_files(
+    prompt_listings: dict | None,
+    agent: Agent,
+    component_names: dict | None = None,
+) -> list[dict]:
+    """Build native prompt files for harnesses with first-class prompt support.
+
+    Returns ``[{"path": ".github/prompts/<name>.prompt.md", "content": ...}]``
+    for each prompt component attached to the agent. GitHub Copilot reads these
+    as reusable prompt files, so the full template lives in its own file rather
+    than only being summarised in the agent body.
+
+    Returns ``[]`` when there are no prompt components or listings are missing.
+    """
+    if not prompt_listings:
+        return []
+    names = component_names or {}
+    files: list[dict] = []
+    for comp in getattr(agent, "components", []):
+        if comp.component_type != "prompt":
+            continue
+        listing = prompt_listings.get(comp.component_id)
+        if not listing:
+            continue
+        template = getattr(listing, "template", "") or ""
+        if not template:
+            continue
+        raw_name = getattr(listing, "name", "") or names.get(str(comp.component_id), str(comp.component_id)[:8])
+        safe = _sanitize_name(raw_name)
+        description = getattr(listing, "description", "") or raw_name
+        # Keep the YAML description on one line and quote-safe.
+        desc_yaml = description.replace('"', "'").splitlines()[0] if description else raw_name
+        content = f'---\ndescription: "{desc_yaml}"\n---\n\n{template.rstrip()}\n'
+        files.append({"path": f".github/prompts/{safe}.prompt.md", "content": content})
+    return files

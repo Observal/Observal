@@ -82,7 +82,7 @@ class TestConstants:
 
     def test_copilot_feature_matrix(self):
         assert "copilot" in HARNESS_CAPABILITIES
-        assert HARNESS_CAPABILITIES["copilot"] == {"mcp_servers", "hooks", "skills"}
+        assert HARNESS_CAPABILITIES["copilot"] == {"mcp_servers", "hooks", "skills", "prompts"}
 
     def test_copilot_session_parser(self):
         from observal_cli.harness_registry import HARNESS_REGISTRY
@@ -127,7 +127,7 @@ class TestConstants:
 
     def test_copilot_cli_feature_matrix(self):
         assert "copilot-cli" in HARNESS_CAPABILITIES
-        assert HARNESS_CAPABILITIES["copilot-cli"] == {"mcp_servers", "hooks", "skills"}
+        assert HARNESS_CAPABILITIES["copilot-cli"] == {"mcp_servers", "hooks", "skills", "prompts"}
 
 
 # ═══════════════════════════════════════════════════════════════════

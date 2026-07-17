@@ -16,6 +16,7 @@ from loguru import logger as optic
 
 from schemas.harness_registry import HARNESS_REGISTRY
 from services.harness import ConfigContext, register_adapter
+from services.harness.helpers import _generate_prompt_files
 
 
 class CopilotAdapter:
@@ -67,6 +68,10 @@ class CopilotAdapter:
             },
             "scope": copilot_spec["default_scope"],
         }
+        # Native Copilot prompt files (.github/prompts/*.prompt.md)
+        prompt_files = _generate_prompt_files(ctx.prompt_listings, ctx.agent, ctx.component_names)
+        if prompt_files:
+            result["prompt_files"] = prompt_files
         if ctx.compatibility_warnings:
             result["_warnings"] = ctx.compatibility_warnings
 
