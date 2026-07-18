@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+import time
+from pathlib import Path
+from typing import Any
 
 from observal_cli.harness import (
     DiscoveredAgent,
@@ -15,6 +17,7 @@ from observal_cli.harness import (
     DiscoveredSkill,
     HookSpec,
     ScanResult,
+    SessionSource,
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
@@ -24,9 +27,6 @@ from observal_cli.shared.utils import (
     parse_frontmatter_field,
     resolve_antigravity_config_dir,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class AntigravityAdapter(BaseAdapter):
@@ -38,6 +38,70 @@ class AntigravityAdapter(BaseAdapter):
     @property
     def harness_name(self) -> str:
         return "antigravity"
+
+    def resolve_session_source(self, event: dict, home: Path | None = None) -> SessionSource | None:
+        from observal_cli.sessions.antigravity import (
+            find_antigravity_jsonl,
+            remember_session,
+            resolve_hook_event,
+            resolve_session_id,
+            resolve_transcript_path,
+        )
+
+        session_id = resolve_session_id(event, home=home)
+        if not session_id:
+            return None
+        hook_event = resolve_hook_event(event, home=home)
+        remember_session(session_id, hook_event, home=home)
+        transcript = str(event.get("transcriptPath") or event.get("transcript_path") or "")
+        path = Path(resolve_transcript_path(transcript)) if transcript else None
+        if path is None or not path.is_file():
+            path = find_antigravity_jsonl(session_id, home=home)
+        if path is None:
+            return None
+        workspace_paths = event.get("workspacePaths") or []
+        cwd = str(workspace_paths[0]) if workspace_paths else str(event.get("cwd") or "")
+        return SessionSource(self.harness_name, session_id, path, cwd=cwd)
+
+    def discover_session_sources(
+        self,
+        home: Path | None = None,
+        since_hours: int = 168,
+    ) -> list[SessionSource]:
+        from observal_cli.sessions.antigravity import find_sessions_dir
+
+        brain = find_sessions_dir(home=home)
+        if brain is None or not brain.is_dir():
+            return []
+        cutoff = time.time() - since_hours * 3600
+        sources: list[SessionSource] = []
+        for session_dir in brain.iterdir():
+            path = session_dir / ".system_generated" / "logs" / "transcript.jsonl"
+            try:
+                if path.is_file() and path.stat().st_mtime >= cutoff:
+                    sources.append(SessionSource(self.harness_name, session_dir.name, path))
+            except OSError:
+                continue
+        return sorted(sources, key=lambda source: source.path.stat().st_mtime if source.path else 0, reverse=True)
+
+    def session_extra_fields(
+        self,
+        source: SessionSource,
+        event: dict,
+        final: bool,
+        home: Path | None = None,
+    ) -> dict[str, Any]:
+        from observal_cli.sessions.antigravity import resolve_hook_event
+
+        return {"hook_event": resolve_hook_event(event, home=home)}
+
+    def defer_session_delivery(self) -> bool:
+        return True
+
+    def is_session_final(self, event: dict) -> bool:
+        from observal_cli.sessions.antigravity import resolve_hook_event
+
+        return resolve_hook_event(event).lower() in {"stop", "sessionend", "session_end"}
 
     # -- Scanning ----------------------------------------------------------
 

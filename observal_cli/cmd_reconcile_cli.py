@@ -1,28 +1,16 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""observal reconcile: push local session transcripts to the Observal server.
-
-Scans harness session directories for transcripts not yet pushed and uploads them.
-Currently supports Antigravity CLI (brain/<id>/.system_generated/logs/transcript.jsonl).
-"""
+"""Public reconciliation command backed by harness adapters and the shared outbox."""
 
 from __future__ import annotations
-
-import time
 
 import typer
 from loguru import logger as optic
 from rich import print as rprint
 
-from observal_cli.sessions.base import (
-    build_payload,
-    load_config,
-    post_to_server,
-    read_cursor,
-    read_new_lines,
-    write_cursor,
-)
+from observal_cli.harness import ensure_loaded, get_adapter
+from observal_cli.sessions.base import drain_session_source, load_config, read_cursor
 
 reconcile_app = typer.Typer(name="reconcile", help="Push local session transcripts to the server")
 
@@ -33,115 +21,56 @@ def reconcile(
     since_hours: int = typer.Option(168, "--since", help="Only process sessions modified within N hours"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be pushed without sending"),
 ):
-    """Push local session transcripts to the Observal server.
-
-    Scans for session JSONL files that haven't been fully pushed yet and
-    uploads them. Useful when hooks can't fire (e.g. agy on WSL).
-
-    Examples:
-        observal reconcile --harness antigravity
-        observal reconcile --since 24
-        observal reconcile --dry-run
-    """
+    """Push local session transcripts through durable acknowledged delivery."""
     optic.debug("reconcile: harness={}, since_hours={}", harness, since_hours)
-
     cfg = load_config()
     if cfg is None:
         rprint("[red]Not configured. Run [bold]observal auth login[/bold] first.[/red]")
         raise typer.Exit(1)
 
+    ensure_loaded()
     targets = [harness] if harness else ["antigravity"]
-    total_pushed = 0
-
-    for target in targets:
-        if target == "antigravity":
-            pushed = _reconcile_antigravity(cfg, since_hours, dry_run)
-            total_pushed += pushed
-
+    total = sum(_reconcile_harness(target, cfg, since_hours, dry_run) for target in targets)
     if dry_run:
-        rprint(f"\n[yellow]Dry run:[/yellow] {total_pushed} session(s) would be pushed.")
-    elif total_pushed:
-        rprint(f"\n[green]✓ Pushed {total_pushed} session(s) to Observal.[/green]")
+        rprint(f"\n[yellow]Dry run:[/yellow] {total} session(s) would be pushed.")
+    elif total:
+        rprint(f"\n[green]✓ Pushed {total} session(s) to Observal.[/green]")
     else:
         rprint("[dim]No new sessions to push.[/dim]")
 
 
-def _reconcile_antigravity(cfg: dict, since_hours: int, dry_run: bool) -> int:
-    """Scan antigravity brain/ for non-empty transcripts and push them."""
-    from observal_cli.shared.utils import resolve_antigravity_dir
-
-    ag_dir = resolve_antigravity_dir()
-    if ag_dir is None:
-        rprint("[dim]Antigravity not found — skipping[/dim]")
+def _reconcile_harness(harness: str, cfg: dict, since_hours: int, dry_run: bool) -> int:
+    """Drain one adapter's recent sources through the shared delivery engine."""
+    try:
+        adapter = get_adapter(harness)
+    except KeyError:
+        rprint(f"[red]Unknown harness:[/red] {harness}")
         return 0
 
-    brain_dir = ag_dir / "brain"
-    if not brain_dir.is_dir():
-        rprint("[dim]No antigravity sessions found[/dim]")
+    sources = adapter.discover_session_sources(since_hours=since_hours)
+    if not sources:
+        rprint(f"[dim]No {harness} sessions found[/dim]")
         return 0
 
-    cutoff = time.time() - since_hours * 3600
     pushed = 0
-
-    rprint("[cyan]Antigravity - scanning sessions...[/cyan]")
-
-    for session_dir in brain_dir.iterdir():
-        if not session_dir.is_dir():
+    rprint(f"[cyan]{harness} - scanning sessions...[/cyan]")
+    for source in sources:
+        if source.path is None:
             continue
-
-        transcript = session_dir / ".system_generated" / "logs" / "transcript.jsonl"
-        if not transcript.exists():
-            continue
-
         try:
-            stat = transcript.stat()
-            if stat.st_size == 0:
-                continue
-            if stat.st_mtime < cutoff:
-                continue
+            size = source.path.stat().st_size
         except OSError:
             continue
-
-        session_id = session_dir.name
-
-        # Check cursor — skip if already fully pushed
-        offset, line_count = read_cursor(session_id)
-        if offset >= stat.st_size:
+        offset, _line_count = read_cursor(source.checkpoint_key)
+        if offset >= size:
             continue
-
         if dry_run:
-            rprint(f"  [dim]Would push:[/dim] {session_id} ({stat.st_size - offset} bytes new)")
+            rprint(f"  [dim]Would push:[/dim] {source.session_id} ({size - offset} bytes new)")
             pushed += 1
             continue
-
-        # Read new lines from where we left off
-        lines, bytes_read = read_new_lines(transcript, offset=offset)
-        if not lines:
-            continue
-
-        new_offset = offset + bytes_read
-        payload = build_payload(
-            session_id=session_id,
-            lines=lines,
-            start_offset=line_count,
-            hook_event="Stop",
-            line_count_before=line_count,
-            new_offset=new_offset,
-            cwd="",
-        )
-        payload["harness"] = "antigravity"
-
-        success = post_to_server(
-            server_url=cfg["server_url"],
-            access_token=cfg["access_token"],
-            payload=payload,
-        )
-
-        if success:
-            write_cursor(session_id, new_offset, line_count + len(lines), finalized=True)
-            rprint(f"  [green]✓[/green] {session_id} ({len(lines)} lines)")
+        if drain_session_source(source, cfg, hook_event="Reconcile", final=True):
+            rprint(f"  [green]✓[/green] {source.session_id}")
             pushed += 1
         else:
-            rprint(f"  [red]✗[/red] {session_id} (push failed)")
-
+            rprint(f"  [yellow]↻[/yellow] {source.session_id} queued for retry")
     return pushed

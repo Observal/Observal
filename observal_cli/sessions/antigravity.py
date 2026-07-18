@@ -13,6 +13,8 @@ resolve_antigravity_dir() to find the correct base directory.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -44,6 +46,45 @@ def find_sessions_dir(home: Path | None = None) -> Path | None:
     if ag_dir is None:
         return None
     return ag_dir / "brain"
+
+
+def resolve_transcript_path(path_str: str) -> str:
+    """Translate a Windows transcript path when the hook runs under WSL."""
+    if os.name != "nt" and len(path_str) >= 3 and path_str[1:3] in {":\\", ":/"}:
+        try:
+            result = subprocess.run(["wslpath", path_str], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+        path_str = f"/mnt/{path_str[0].lower()}/{path_str[3:].replace(chr(92), '/')}"
+    return path_str
+
+
+def resolve_hook_event(event: dict, home: Path | None = None) -> str:
+    """Return the Antigravity lifecycle event name, including native agy payloads."""
+    if "terminationReason" in event:
+        return "Stop"
+    if "invocationNum" in event:
+        return "PreInvocation"
+    event_name = str(
+        event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or ""
+    )
+    if event_name:
+        return event_name
+    home = home or Path.home()
+    try:
+        return str(json.loads((home / ".observal" / ".antigravity-session").read_text()).get("hook_event") or "")
+    except (OSError, json.JSONDecodeError, ValueError):
+        return ""
+
+
+def remember_session(session_id: str, hook_event: str, home: Path | None = None) -> None:
+    """Persist the ID because native Stop payloads may omit it."""
+    home = home or Path.home()
+    state = home / ".observal" / ".antigravity-session"
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(json.dumps({"session_id": session_id, "hook_event": hook_event}))
 
 
 def resolve_session_id(event: dict, home: Path | None = None) -> str:
