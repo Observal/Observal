@@ -135,6 +135,20 @@ class BaseAdapter:
         """Return optional harness-specific ingest fields."""
         return {}
 
+    def session_extra_records(
+        self,
+        source: SessionSource,
+        event: dict[str, Any],
+        final: bool,
+        home: Path | None = None,
+    ) -> tuple[str, ...]:
+        """Return optional synthetic records from a hook payload."""
+        return ()
+
+    def defer_session_delivery(self) -> bool:
+        """Return whether the harness requires detached network delivery."""
+        return False
+
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Recognize common final lifecycle event names."""
         event_name = str(

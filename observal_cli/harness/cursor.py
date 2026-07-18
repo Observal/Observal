@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from observal_cli.harness import (
     DiscoveredMcp,
     HookSpec,
     ScanResult,
+    SessionSource,
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
@@ -31,6 +33,105 @@ class CursorAdapter(BaseAdapter):
     @property
     def harness_name(self) -> str:
         return "cursor"
+
+    def resolve_session_source(self, event: dict, home: Path | None = None) -> SessionSource | None:
+        from observal_cli.sessions.cursor import find_cursor_jsonl, get_parent_session_id, project_key_from_cwd
+
+        session_id = str(
+            event.get("conversationId") or event.get("conversation_id") or event.get("session_id") or ""
+        )
+        if not session_id:
+            return None
+        transcript = str(event.get("transcriptPath") or event.get("transcript_path") or "")
+        path = Path(transcript) if transcript else None
+        if path is None or not path.is_file():
+            workspace = str(event.get("workspacePath") or event.get("cwd") or "")
+            roots = event.get("workspace_roots") or []
+            cwd = workspace or (str(roots[0]) if roots else "")
+            path = find_cursor_jsonl(session_id, project_key_from_cwd(cwd), home=home)
+        else:
+            cwd = str(event.get("workspacePath") or event.get("cwd") or "")
+        if path is None:
+            return None
+        parent_session_id = get_parent_session_id(path)
+        subagent_id = path.stem.removeprefix("agent-")
+        return SessionSource(
+            self.harness_name,
+            subagent_id if parent_session_id else session_id,
+            path,
+            cwd=cwd,
+            cursor_key=f"{parent_session_id}__sub__{subagent_id}" if parent_session_id else None,
+            parent_session_id=parent_session_id,
+        )
+
+    def discover_session_sources(
+        self,
+        home: Path | None = None,
+        since_hours: int = 168,
+    ) -> list[SessionSource]:
+        from observal_cli.sessions.cursor import get_parent_session_id
+
+        home = home or Path.home()
+        root = home / ".cursor" / "projects"
+        if not root.is_dir():
+            return []
+        cutoff = time.time() - since_hours * 3600
+        sources: dict[str, SessionSource] = {}
+        for path in root.glob("**/*.jsonl"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    continue
+            except OSError:
+                continue
+            parent_session_id = get_parent_session_id(path)
+            session_id = path.stem.removeprefix("agent-")
+            cursor_key = f"{parent_session_id}__sub__{session_id}" if parent_session_id else None
+            key = cursor_key or session_id
+            sources[key] = SessionSource(
+                self.harness_name,
+                session_id,
+                path,
+                cursor_key=cursor_key,
+                parent_session_id=parent_session_id,
+            )
+        return sorted(sources.values(), key=lambda source: source.path.stat().st_mtime, reverse=True)
+
+    def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
+        if source.path is None or source.parent_session_id is not None:
+            return []
+        directories = (source.path.parent / "subagents", source.path.parent / source.session_id / "subagents")
+        paths = {path for directory in directories if directory.is_dir() for path in directory.glob("agent-*.jsonl")}
+        related: list[SessionSource] = []
+        for path in sorted(paths):
+            subagent_id = path.stem.removeprefix("agent-")
+            related.append(
+                SessionSource(
+                    self.harness_name,
+                    subagent_id,
+                    path,
+                    cwd=source.cwd,
+                    cursor_key=f"{source.session_id}__sub__{subagent_id}",
+                    parent_session_id=source.session_id,
+                )
+            )
+        return related
+
+    def session_extra_records(
+        self,
+        source: SessionSource,
+        event: dict,
+        final: bool,
+        home: Path | None = None,
+    ) -> tuple[str, ...]:
+        if not final or source.parent_session_id is not None:
+            return ()
+        from observal_cli.sessions.cursor import build_usage_line
+
+        usage = build_usage_line(event)
+        return (usage,) if usage else ()
+
+    def defer_session_delivery(self) -> bool:
+        return True
 
     def scan_home(self, home: Path | None = None) -> ScanResult:
         home = home or Path.home()

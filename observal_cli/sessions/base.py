@@ -388,6 +388,8 @@ def drain_session_source(
     hook_event: str,
     final: bool = False,
     extra_fields: dict | None = None,
+    extra_records: tuple[str, ...] = (),
+    spool_only: bool = False,
     home: Path | None = None,
     db_path: Path | None = None,
     post: Callable[[dict, dict], dict | None] | None = None,
@@ -401,7 +403,8 @@ def drain_session_source(
         return False
 
     # A failed pre-drain never prevents newly observed local records from being spooled.
-    drain_outbox(config, home=home, db_path=db_path, post=post)
+    if not spool_only:
+        drain_outbox(config, home=home, db_path=db_path, post=post)
 
     byte_offset, line_count = read_cursor(source.checkpoint_key, home=home)
     byte_offset, line_count = telemetry_buffer.spooled_checkpoint(
@@ -415,6 +418,9 @@ def drain_session_source(
         db_path=db_path,
     )
     lines, end_byte_offsets, bytes_read = read_new_records(source.path, byte_offset)
+    if extra_records:
+        lines.extend(extra_records)
+        end_byte_offsets.extend([byte_offset + bytes_read] * len(extra_records))
     if not lines:
         if bytes_read:
             byte_offset += bytes_read
@@ -444,6 +450,8 @@ def drain_session_source(
                 checkpoint_key=source.checkpoint_key,
                 db_path=db_path,
             )
+        if spool_only:
+            return True
         delivered = drain_outbox(config, home=home, db_path=db_path, post=post)
         if bytes_read or (final and delivered):
             write_cursor(
@@ -494,6 +502,8 @@ def drain_session_source(
             db_path=db_path,
         )
 
+    if spool_only:
+        return True
     return drain_outbox(config, home=home, db_path=db_path, post=post)
 
 

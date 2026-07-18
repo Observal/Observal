@@ -365,7 +365,7 @@ def _check_cursor(issues: list, warnings: list):
     for event in ("beforeSubmitPrompt", "stop"):
         entries = hooks.get(event, [])
         for e in entries:
-            if "cursor_session_push" in e.get("command", ""):
+            if "hooks.session_push --harness cursor" in e.get("command", ""):
                 has_session_push = True
                 break
 
@@ -1162,7 +1162,7 @@ def _patch_cursor(dry_run: bool) -> bool:
 
     # Use the current interpreter (from the observal CLI's venv) so that
     # httpx and other dependencies are available when Cursor fires the hook.
-    cmd = f"{sys.executable} -m observal_cli.hooks.cursor_session_push"
+    cmd = f"{sys.executable} -m observal_cli.hooks.session_push --harness cursor"
 
     desired = {
         "version": 1,
@@ -1186,7 +1186,7 @@ def _patch_cursor(dry_run: bool) -> bool:
 
     for event in ("beforeSubmitPrompt", "stop"):
         entries = existing_hooks.get(event, [])
-        has_observal = any("cursor_session_push" in e.get("command", "") for e in entries)
+        has_observal = any("hooks.session_push --harness cursor" in e.get("command", "") for e in entries)
         if not has_observal:
             needs_update = True
             break

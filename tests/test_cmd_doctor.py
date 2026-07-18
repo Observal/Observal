@@ -265,7 +265,7 @@ class TestPatchFunctions:
         data = read_json(hooks_path)
         commands = [entry["command"] for entry in data["hooks"]["beforeSubmitPrompt"]]
         assert "foreign" in commands
-        assert any("cursor_session_push" in command for command in commands)
+        assert any("hooks.session_push --harness cursor" in command for command in commands)
         assert _patch_cursor(dry_run=False) is False
 
     def test_patch_pi_adds_package_and_is_idempotent(self, tmp_path: Path):

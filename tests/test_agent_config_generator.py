@@ -350,25 +350,25 @@ class TestGenerateCursorVscode:
         assert "beforeSubmitPrompt" in hooks
         assert "stop" in hooks
 
-    def test_cursor_hooks_use_cursor_session_push(self):
+    def test_cursor_hooks_use_shared_session_push(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "cursor")
         cmd = cfg["hooks_config"]["content"]["hooks"]["beforeSubmitPrompt"][0]["command"]
-        assert "cursor_session_push" in cmd
+        assert "hooks.session_push --harness cursor" in cmd
 
     def test_cursor_hooks_win32_uses_python(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "cursor", platform="win32")
         cmd = cfg["hooks_config"]["content"]["hooks"]["beforeSubmitPrompt"][0]["command"]
         assert cmd.startswith("python -m")
-        assert "cursor_session_push" in cmd
+        assert "hooks.session_push --harness cursor" in cmd
 
     def test_cursor_hooks_unix_uses_python3(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "cursor", platform="linux")
         cmd = cfg["hooks_config"]["content"]["hooks"]["beforeSubmitPrompt"][0]["command"]
         assert cmd.startswith("python3 -m")
-        assert "cursor_session_push" in cmd
+        assert "hooks.session_push --harness cursor" in cmd
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from loguru import logger as optic
 
 from observal_cli.harness import ensure_loaded, get_adapter
-from observal_cli.sessions.base import drain_session_source, load_config, log_error
+from observal_cli.sessions.base import drain_outbox, drain_session_source, load_config, log_error
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -52,12 +52,15 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
 
     hook_event = str(event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or "")
     is_final = adapter.is_session_final(event)
+    deferred = adapter.defer_session_delivery()
     delivered = drain_session_source(
         source,
         config,
         hook_event=hook_event,
         final=False,
         extra_fields=adapter.session_extra_fields(source, event, is_final, home=home),
+        extra_records=adapter.session_extra_records(source, event, is_final, home=home),
+        spool_only=deferred,
         home=home,
     )
     for related in adapter.related_session_sources(source, home=home):
@@ -68,12 +71,16 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
                 hook_event=hook_event,
                 final=False,
                 extra_fields=adapter.session_extra_fields(related, event, is_final, home=home),
+                extra_records=adapter.session_extra_records(related, event, is_final, home=home),
+                spool_only=deferred,
                 home=home,
             )
             and delivered
         )
     if not delivered:
         log_error(f"session_push: durable records pending for {harness} session {source.session_id}", home=home)
+    if deferred:
+        _spawn_worker("--drain-outbox", harness=harness)
 
     if is_final:
         _spawn_worker(
@@ -146,6 +153,12 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
         )
 
 
+def _drain_pending(home: Path | None = None) -> None:
+    config = load_config(home=home)
+    if config is not None:
+        drain_outbox(config, home=home)
+
+
 def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None = None) -> None:
     ensure_loaded()
     adapter = get_adapter(harness)
@@ -178,6 +191,7 @@ def cli_main() -> None:
     parser.add_argument("--finalize-session", default="")
     parser.add_argument("--cwd", default="")
     parser.add_argument("--recover", action="store_true")
+    parser.add_argument("--drain-outbox", action="store_true")
     parser.add_argument("--exclude-session", default="")
     args = parser.parse_args()
     try:
@@ -185,6 +199,8 @@ def cli_main() -> None:
             _finalize_session(args.harness, args.finalize_session, args.cwd)
         elif args.recover:
             _recover_sessions(args.harness, args.exclude_session)
+        elif args.drain_outbox:
+            _drain_pending()
         else:
             main(harness=args.harness)
     except Exception as exc:

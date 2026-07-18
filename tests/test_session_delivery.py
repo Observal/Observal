@@ -66,6 +66,31 @@ def test_offline_delivery_spools_before_post_and_keeps_cursor(tmp_path: Path, mo
     assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db)[0].attempts == 1
 
 
+def test_spool_only_never_blocks_hook_on_network(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text('{"role":"user","message":{"content":[]}}\n')
+    db = tmp_path / "outbox.db"
+    posts: list[dict] = []
+
+    assert base.drain_session_source(
+        SessionSource("cursor", "session", source_path),
+        config(),
+        hook_event="stop",
+        extra_records=(json.dumps({"role": "assistant", "message": {"usage": {"input_tokens": 1}}}),),
+        spool_only=True,
+        home=tmp_path,
+        db_path=db,
+        post=lambda payload, _config: posts.append(payload),
+    )
+
+    assert posts == []
+    assert base.read_cursor("session", home=tmp_path) == (0, 0)
+    item = telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db)[0]
+    assert item.start_line == 0
+    assert item.end_line == 1
+
+
 def test_offline_growth_spools_only_records_after_pending_checkpoint(tmp_path: Path, monkeypatch):
     disable_payload_metadata(monkeypatch)
     source_path = tmp_path / "session.jsonl"

@@ -39,7 +39,7 @@ _KIRO_EVENT_MAP = {
 
 # Session push hook command - reads JSONL incrementally, only needs 2 events.
 _SESSION_PUSH_CMD = "python3 -m observal_cli.hooks.session_push"
-_CURSOR_SESSION_PUSH_CMD = "python3 -m observal_cli.hooks.cursor_session_push"
+_CURSOR_SESSION_PUSH_CMD = "python3 -m observal_cli.hooks.session_push --harness cursor"
 
 
 # The two events that drive JSONL-based telemetry collection.
@@ -124,7 +124,7 @@ def _cursor_hooks_config(platform: str = "") -> dict:
     Cursor uses beforeSubmitPrompt (fires after user hits send) and stop
     (fires when the agent loop ends).
     """
-    cmd = "python -m observal_cli.hooks.cursor_session_push" if platform == "win32" else _CURSOR_SESSION_PUSH_CMD
+    cmd = "python -m observal_cli.hooks.session_push --harness cursor" if platform == "win32" else _CURSOR_SESSION_PUSH_CMD
     return {
         "version": 1,
         "hooks": {

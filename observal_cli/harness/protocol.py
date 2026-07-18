@@ -291,6 +291,20 @@ class HarnessAdapter(Protocol):
         """Return harness-specific ingest metadata for a session wake-up."""
         ...
 
+    def session_extra_records(
+        self,
+        source: SessionSource,
+        event: dict[str, Any],
+        final: bool,
+        home: Path | None = None,
+    ) -> tuple[str, ...]:
+        """Return synthetic source records supplied by a harness hook."""
+        ...
+
+    def defer_session_delivery(self) -> bool:
+        """Return whether network drain must run outside the hook process."""
+        ...
+
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Return whether a hook payload marks its session final."""
         ...

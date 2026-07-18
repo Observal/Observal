@@ -1,157 +1,126 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for observal_cli.hooks.cursor_session_push."""
+"""Cursor adapter and shared acknowledged-delivery tests."""
+
+from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from typing import TYPE_CHECKING
 
-from observal_cli.hooks.cursor_session_push import (
-    find_cursor_jsonl,
-    main,
-    project_key_from_cwd,
-)
+from observal_cli.harness import ensure_loaded, get_adapter
+from observal_cli.hooks import session_push
+from observal_cli.sessions.cursor import find_cursor_jsonl, project_key_from_cwd
 
-
-class TestProjectKeyFromCwd:
-    def test_unix_path(self):
-        assert project_key_from_cwd("/home/user/project") == "home-user-project"
-
-    def test_unix_path_wsl(self):
-        result = project_key_from_cwd("/mnt/c/Users/alice/projects/myapp")
-        assert result == "mnt-c-Users-alice-projects-myapp"
-
-    def test_windows_path_backslashes(self):
-        result = project_key_from_cwd("C:\\Users\\alice\\project")
-        assert result == "c-Users-alice-project"
-
-    def test_windows_path_forward_slashes(self):
-        result = project_key_from_cwd("C:/Users/alice/project")
-        assert result == "c-Users-alice-project"
-
-    def test_lowercase_drive_letter(self):
-        result = project_key_from_cwd("D:\\Code\\repo")
-        assert result == "d-Code-repo"
-
-    def test_real_observal_path(self):
-        result = project_key_from_cwd("C:\\Users\\alice\\projects\\myapp")
-        assert result == "c-Users-alice-projects-myapp"
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
-class TestFindCursorJsonl:
-    def test_finds_primary_path(self, tmp_path):
-        project_key = "c-Users-alice-project"
-        session_dir = tmp_path / ".cursor" / "projects" / project_key / "agent-transcripts" / "abc123"
-        session_dir.mkdir(parents=True)
-        jsonl_file = session_dir / "abc123.jsonl"
-        jsonl_file.write_text('{"type":"user"}\n')
-
-        result = find_cursor_jsonl("abc123", project_key, home=tmp_path)
-        assert result == jsonl_file
-
-    def test_returns_none_when_not_found(self, tmp_path):
-        result = find_cursor_jsonl("nonexistent", "some-project", home=tmp_path)
-        assert result is None
-
-    def test_fallback_scan(self, tmp_path):
-        session_dir = tmp_path / ".cursor" / "projects" / "other-project" / "agent-transcripts" / "def456"
-        session_dir.mkdir(parents=True)
-        jsonl_file = session_dir / "def456.jsonl"
-        jsonl_file.write_text('{"type":"user"}\n')
-
-        result = find_cursor_jsonl("def456", "wrong-project-key", home=tmp_path)
-        assert result == jsonl_file
-
-    def test_empty_session_id_returns_none(self, tmp_path):
-        assert find_cursor_jsonl("", "some-project", home=tmp_path) is None
+def make_session(home: Path, session_id: str = "session") -> Path:
+    root = home / ".cursor" / "projects" / "home-user-project" / "agent-transcripts" / session_id
+    root.mkdir(parents=True)
+    path = root / f"{session_id}.jsonl"
+    path.write_text('{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}\n')
+    return path
 
 
-class TestMainEntrypoint:
-    def test_no_crash_on_empty_stdin(self, monkeypatch):
-        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(""))
-        main()
+def write_config(home: Path) -> None:
+    root = home / ".observal"
+    root.mkdir(parents=True)
+    (root / "config.json").write_text(
+        json.dumps({"server_url": "http://server", "access_token": "token", "user_id": "user"})
+    )
 
-    def test_no_crash_on_invalid_json(self, monkeypatch):
-        monkeypatch.setattr("sys.stdin", __import__("io").StringIO("not json"))
-        main()
 
-    def test_no_crash_on_missing_config(self, tmp_path, monkeypatch):
-        event = json.dumps(
-            {
-                "event": "beforeSubmitPrompt",
-                "conversationId": "test-session",
-                "workspacePath": "/home/user/project",
-            }
-        )
-        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(event))
-        main(home=tmp_path)
+def test_project_key_from_paths():
+    assert project_key_from_cwd("/home/user/project") == "home-user-project"
+    assert project_key_from_cwd("C:\\Users\\alice\\project") == "c-Users-alice-project"
 
-    def test_pushes_lines_via_transcript_path(self, tmp_path, monkeypatch):
-        transcript_file = tmp_path / "transcript" / "sess-1.jsonl"
-        transcript_file.parent.mkdir(parents=True)
-        transcript_file.write_text('{"type":"human","message":{"content":"hello"}}\n')
 
-        config_dir = tmp_path / ".observal"
-        config_dir.mkdir(parents=True)
-        (config_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "server_url": "http://localhost:8000",
-                    "access_token": "test-token",
-                }
-            )
-        )
+def test_find_cursor_jsonl_primary_and_fallback(tmp_path: Path):
+    path = make_session(tmp_path)
+    assert find_cursor_jsonl("session", "home-user-project", home=tmp_path) == path
+    assert find_cursor_jsonl("session", "wrong", home=tmp_path) == path
+    assert find_cursor_jsonl("missing", "home-user-project", home=tmp_path) is None
 
-        event = json.dumps(
-            {
-                "event": "beforeSubmitPrompt",
-                "conversationId": "sess-1",
-                "transcriptPath": str(transcript_file),
-                "workspacePath": "/home/user/project",
-            }
-        )
-        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(event))
 
-        with patch("observal_cli.hooks.cursor_session_push._spawn_post") as mock_spawn:
-            main(home=tmp_path)
+def test_cursor_adapter_resolves_transcript_and_related_subagent(tmp_path: Path):
+    path = make_session(tmp_path)
+    subagents = path.parent / "subagents"
+    subagents.mkdir()
+    child = subagents / "agent-child.jsonl"
+    child.write_text('{"role":"assistant","message":{"content":[]}}\n')
+    ensure_loaded()
+    adapter = get_adapter("cursor")
 
-        mock_spawn.assert_called_once()
-        payload = mock_spawn.call_args[0][0]
-        assert payload["harness"] == "cursor"
-        assert payload["session_id"] == "sess-1"
-        assert len(payload["lines"]) == 1
+    source = adapter.resolve_session_source(
+        {
+            "conversationId": "session",
+            "transcriptPath": str(path),
+            "workspacePath": "/home/user/project",
+        },
+        home=tmp_path,
+    )
 
-    def test_fallback_to_project_search(self, tmp_path, monkeypatch):
-        project_key = "home-user-project"
-        session_dir = tmp_path / ".cursor" / "projects" / project_key / "agent-transcripts" / "sess-2"
-        session_dir.mkdir(parents=True)
-        jsonl_file = session_dir / "sess-2.jsonl"
-        jsonl_file.write_text('{"type":"human","message":{"content":"hi"}}\n')
+    assert source is not None and source.path == path
+    related = adapter.related_session_sources(source, home=tmp_path)
+    assert len(related) == 1
+    assert related[0].path == child
+    assert related[0].checkpoint_key == "session__sub__child"
+    assert related[0].parent_session_id == "session"
 
-        config_dir = tmp_path / ".observal"
-        config_dir.mkdir(parents=True)
-        (config_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "server_url": "http://localhost:8000",
-                    "access_token": "test-token",
-                }
-            )
-        )
 
-        event = json.dumps(
-            {
-                "event": "beforeSubmitPrompt",
-                "conversationId": "sess-2",
-                "workspacePath": "/home/user/project",
-            }
-        )
-        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(event))
+def test_cursor_usage_is_a_parent_only_synthetic_record(tmp_path: Path):
+    path = make_session(tmp_path)
+    ensure_loaded()
+    adapter = get_adapter("cursor")
+    source = adapter.resolve_session_source(
+        {"conversationId": "session", "transcriptPath": str(path)},
+        home=tmp_path,
+    )
+    assert source is not None
+    event = {"input_tokens": 10, "output_tokens": 5, "model": "cursor-model"}
 
-        with patch("observal_cli.hooks.cursor_session_push._spawn_post") as mock_spawn:
-            main(home=tmp_path)
+    records = adapter.session_extra_records(source, event, True, home=tmp_path)
 
-        mock_spawn.assert_called_once()
-        payload = mock_spawn.call_args[0][0]
-        assert payload["harness"] == "cursor"
-        assert payload["session_id"] == "sess-2"
+    assert len(records) == 1
+    usage = json.loads(records[0])["message"]["usage"]
+    assert usage["input_tokens"] == 10
+    assert usage["output_tokens"] == 5
+    assert adapter.session_extra_records(source, event, False, home=tmp_path) == ()
+    assert adapter.defer_session_delivery()
+
+
+def test_cursor_stop_spools_in_hook_and_drains_in_worker(tmp_path: Path, monkeypatch):
+    path = make_session(tmp_path)
+    write_config(tmp_path)
+    calls: list[dict] = []
+    workers: list[tuple[tuple[str, ...], str]] = []
+
+    monkeypatch.setattr(
+        session_push,
+        "drain_session_source",
+        lambda _source, _config, **kwargs: calls.append(kwargs) or True,
+    )
+    monkeypatch.setattr(
+        session_push,
+        "_spawn_worker",
+        lambda *args, harness: workers.append((args, harness)),
+    )
+
+    session_push._run_hook(
+        {
+            "event": "stop",
+            "conversationId": "session",
+            "transcriptPath": str(path),
+            "workspacePath": "/home/user/project",
+            "input_tokens": 10,
+        },
+        harness="cursor",
+        home=tmp_path,
+    )
+
+    assert calls[0]["spool_only"] is True
+    assert len(calls[0]["extra_records"]) == 1
+    assert (("--drain-outbox",), "cursor") in workers
+    assert (("--finalize-session", "session", "--cwd", "/home/user/project"), "cursor") in workers

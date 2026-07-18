@@ -65,6 +65,8 @@ def register_adapter(adapter: HarnessAdapter) -> None:
         "discover_session_sources",
         "related_session_sources",
         "session_extra_fields",
+        "session_extra_records",
+        "defer_session_delivery",
         "is_session_final",
         "get_observal_managed_files",
     )
