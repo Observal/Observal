@@ -20,7 +20,14 @@ import orjson
 import xxhash
 from loguru import logger as optic
 
-from services.clickhouse import insert_session_events, query_existing_for_dedup, query_session_event_count
+from services.clickhouse import (
+    insert_session_checkpoint,
+    insert_session_events,
+    query_existing_for_dedup,
+    query_session_checkpoint,
+    query_source_records_after,
+    refresh_session_summary,
+)
 from services.secrets_redactor import redact_secrets
 from services.session_parsers.ingest_classify import extract_timestamp, get_classifier, get_extra_rows
 
@@ -302,6 +309,14 @@ async def _resolve_agent_version(agent_id: str | None, agent_version: str | None
     return resolved if resolved else agent_version
 
 
+class SessionRecordConflictError(ValueError):
+    """Raised when a source line index is retried with different content."""
+
+    def __init__(self, offsets: list[int]):
+        self.offsets = offsets
+        super().__init__(f"session source content changed at line(s): {', '.join(map(str, offsets))}")
+
+
 @dataclass
 class IngestResult:
     ingested: int
@@ -312,9 +327,9 @@ class IngestResult:
 @dataclass
 class IntegrityResult:
     ok: bool
-    stored_count: int
-    stored_max_offset: int
-    expected_count: int
+    acknowledged_line: int
+    acknowledged_offset: int
+    expected_line: int
     expected_offset: int
 
 
@@ -328,6 +343,7 @@ async def ingest_session_lines(
     harness: str = "claude-code",
     lines: list[str] | None = None,
     start_offset: int = 0,
+    end_byte_offsets: list[int] | None = None,
     total_credits: float | None = None,
     parent_session_id: str | None = None,
 ) -> IngestResult:
@@ -362,57 +378,59 @@ async def ingest_session_lines(
     skipped = 0
     errors = 0
 
+    if end_byte_offsets is not None and len(end_byte_offsets) != len(lines or []):
+        raise ValueError("end_byte_offsets must contain one value per source line")
+
     if not lines:
-        # No JSONL lines -- still store any harness-specific extra rows (e.g. Kiro credits).
         extra = get_extra_rows(harness, session_id, project_id, user_id, agent_id, agent_version, total_credits)
+        for row in extra:
+            row["is_source_record"] = 0
+            row["rendered"] = 1
         if extra:
             await insert_session_events(extra)
+            await refresh_session_summary(session_id, project_id, user_id, harness)
         optic.debug("no lines to ingest for session {}", session_id)
         return IngestResult(ingested=0, skipped=0, errors=0)
 
-    # Pre-check: fetch (existing_offsets, existing_hashes) for this batch range.
-    # Skip the expensive ClickHouse FINAL query on first push (start_offset=0)
-    # when we haven't seen this session before. Use a Redis flag to detect retries.
     max_batch_offset = start_offset + len(lines) - 1
-    if start_offset == 0:
-        from services.redis import get_redis
+    existing = await query_existing_for_dedup(
+        session_id,
+        project_id,
+        user_id,
+        harness,
+        start_offset,
+        max_batch_offset,
+    )
+    line_hashes = [xxhash.xxh128(line.encode("utf-8", errors="replace")).hexdigest() for line in lines]
+    conflicts = [start_offset + i for i, digest in enumerate(line_hashes) if existing.get(start_offset + i, digest) != digest]
+    if conflicts:
+        raise SessionRecordConflictError(conflicts)
 
-        _flag_key = f"session_ingested:{session_id}"
-        try:
-            _redis = get_redis()
-            _already_seen = await _redis.exists(_flag_key)
-        except Exception as e:
-            optic.trace("Redis flag check failed, falling back to dedup query: {}", e)
-            _already_seen = True  # Fail safe: do the dedup check
-        if not _already_seen:
-            existing_offsets, existing_hashes = frozenset(), frozenset()
-            try:
-                await _redis.setex(_flag_key, 3600, "1")
-            except Exception as e:
-                optic.trace("Redis flag write failed: {}", e)
-        else:
-            existing_offsets, existing_hashes = await query_existing_for_dedup(
-                session_id, project_id, start_offset, max_batch_offset
-            )
-    else:
-        existing_offsets, existing_hashes = await query_existing_for_dedup(
-            session_id, project_id, start_offset, max_batch_offset
-        )
-
+    byte_offsets = end_byte_offsets or [0] * len(lines)
     rows: list[dict] = []
     classify_fn, preview_fn, tool_info_fn = get_classifier(harness)
-    last_real_ts: str | None = None  # carry forward when a line has no timestamp
+    last_real_ts: str | None = None
 
-    for i, raw_line in enumerate(lines):
+    from datetime import UTC, datetime
+
+    for i, (raw_line, line_hash) in enumerate(zip(lines, line_hashes, strict=True)):
         line_offset = start_offset + i
-        line_hash = xxhash.xxh128(raw_line.encode("utf-8", errors="replace")).hexdigest()
-
-        if line_offset in existing_offsets or line_hash in existing_hashes:
+        if line_offset in existing:
             skipped += 1
             continue
 
+        parsed: dict = {}
+        rendered = 1
         try:
-            parsed = orjson.loads(raw_line)
+            candidate = orjson.loads(raw_line)
+            if not isinstance(candidate, dict):
+                raise ValueError("session record must be a JSON object")
+            parsed = candidate
+            event_type = classify_fn(parsed)
+            if event_type is None:
+                event_type = "_ignored"
+                rendered = 0
+                skipped += 1
         except (orjson.JSONDecodeError, ValueError) as exc:
             optic.warning(
                 "session_ingest_parse_error: session={}, offset={}, error={}, line_preview={}",
@@ -421,31 +439,28 @@ async def ingest_session_lines(
                 str(exc),
                 repr(raw_line[:200]),
             )
+            event_type = "_parse_error"
+            rendered = 0
             errors += 1
-            continue
 
-        event_type = classify_fn(parsed)
-        if event_type is None:
-            skipped += 1
-            continue
-
-        redacted_line = redact_secrets(raw_line)
-        preview = redact_secrets(preview_fn(parsed, event_type))
-        tool_name, tool_id = tool_info_fn(parsed)
-        uuid, parent_uuid = _extract_uuid(parsed, harness)
-
-        ts = extract_timestamp(harness, parsed)
-        if ts is not None:
-            last_real_ts = ts
-        if ts is not None:
-            timestamp = ts
-        elif last_real_ts is not None:
-            timestamp = last_real_ts
+        if parsed:
+            ts = extract_timestamp(harness, parsed)
+            if ts is not None:
+                last_real_ts = ts
+            timestamp = ts or last_real_ts or datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         else:
-            from datetime import UTC, datetime
+            timestamp = last_real_ts or datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
-            timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
+        preview = redact_secrets(preview_fn(parsed, event_type)) if rendered else ""
+        tool_name, tool_id = tool_info_fn(parsed) if rendered else (None, None)
+        uuid, parent_uuid = _extract_uuid(parsed, harness) if parsed else (None, None)
+        usage = _extract_usage_tokens(parsed, harness) if parsed else {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "model": "",
+        }
         rows.append(
             {
                 "session_id": session_id,
@@ -456,7 +471,10 @@ async def ingest_session_lines(
                 "layer_hash": layer_hash,
                 "harness": harness,
                 "line_offset": line_offset,
+                "source_end_offset": byte_offsets[i],
                 "line_hash": line_hash,
+                "is_source_record": 1,
+                "rendered": rendered,
                 "event_type": event_type,
                 "timestamp": timestamp,
                 "uuid": uuid,
@@ -465,49 +483,97 @@ async def ingest_session_lines(
                 "tool_id": tool_id,
                 "content_preview": preview,
                 "content_length": len(raw_line.encode()),
-                "raw_line": redacted_line,
+                "raw_line": redact_secrets(raw_line),
                 "credits": 0.0,
                 "parent_session_id": parent_session_id,
-                # Token counts from the JSONL line (harness-specific field names).
-                **_extract_usage_tokens(parsed, harness),
+                **usage,
             }
         )
-        ingested += 1
+        ingested += rendered
 
     if rows:
         await insert_session_events(rows)
-        optic.debug(
-            "inserted {} rows into session_events for session={}",
-            len(rows),
-            session_id,
-        )
+        optic.debug("inserted {} canonical rows for session={}", len(rows), session_id)
 
-    # Store any harness-specific extra rows (e.g. Kiro credits summary row).
     extra = get_extra_rows(harness, session_id, project_id, user_id, agent_id, agent_version, total_credits)
+    for row in extra:
+        row["is_source_record"] = 0
+        row["rendered"] = 1
     if extra:
         await insert_session_events(extra)
 
+    if rows or extra:
+        await refresh_session_summary(session_id, project_id, user_id, harness)
+
     return IngestResult(ingested=ingested, skipped=skipped, errors=errors)
+
+
+async def advance_session_checkpoint(
+    session_id: str,
+    project_id: str,
+    user_id: str,
+    harness: str,
+) -> tuple[int, int]:
+    """Advance and return the highest contiguous canonical source position."""
+    acknowledged_line, acknowledged_offset = await query_session_checkpoint(
+        session_id, project_id, user_id, harness
+    )
+    while True:
+        records = await query_source_records_after(
+            session_id,
+            project_id,
+            user_id,
+            harness,
+            acknowledged_line,
+        )
+        if not records:
+            break
+        expected = acknowledged_line + 1
+        advanced = False
+        for line_offset, end_offset in records:
+            if line_offset < expected:
+                continue
+            if line_offset != expected:
+                break
+            acknowledged_line = line_offset
+            acknowledged_offset = end_offset
+            expected += 1
+            advanced = True
+        if not advanced or len(records) < 5000 or records[-1][0] != acknowledged_line:
+            break
+
+    await insert_session_checkpoint(
+        session_id,
+        project_id,
+        user_id,
+        harness,
+        acknowledged_line,
+        acknowledged_offset,
+    )
+    return acknowledged_line, acknowledged_offset
 
 
 async def check_session_integrity(
     session_id: str,
     project_id: str,
+    user_id: str,
+    harness: str,
     expected_line_count: int,
     expected_offset: int,
+    acknowledged_line: int | None = None,
+    acknowledged_offset: int | None = None,
 ) -> IntegrityResult:
-    """Verify that stored event counts match what the client sent.
-
-    Queries ``SELECT count(), max(line_offset)`` for the session and
-    compares against the expected values.
-    """
-    optic.trace("ingesting session lines for session {}", session_id)
-    stored_count, stored_max_offset = await query_session_event_count(session_id, project_id)
-    ok = stored_count == expected_line_count and stored_max_offset == expected_offset
+    """Verify final source counts against the contiguous server checkpoint."""
+    if acknowledged_line is None or acknowledged_offset is None:
+        acknowledged_line, acknowledged_offset = await query_session_checkpoint(
+            session_id, project_id, user_id, harness
+        )
+    expected_line = expected_line_count - 1
+    offset_ok = expected_offset == 0 or acknowledged_offset == 0 or acknowledged_offset == expected_offset
     return IntegrityResult(
-        ok=ok,
-        stored_count=stored_count,
-        stored_max_offset=stored_max_offset,
-        expected_count=expected_line_count,
+        ok=acknowledged_line == expected_line and offset_ok,
+        acknowledged_line=acknowledged_line,
+        acknowledged_offset=acknowledged_offset,
+        expected_line=expected_line,
         expected_offset=expected_offset,
     )

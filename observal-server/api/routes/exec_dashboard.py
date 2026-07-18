@@ -252,7 +252,7 @@ async def get_adoption(
         "  AND start_time >= now() - INTERVAL 12 MONTH"
         "  UNION ALL"
         "  SELECT toStartOfMonth(first_event_time) AS month, user_id "
-        "  FROM session_stats_agg WHERE project_id = 'default' "
+        "  FROM session_stats_agg FINAL WHERE project_id = 'default' "
         "  AND first_event_time >= now() - INTERVAL 12 MONTH"
         ") GROUP BY month ORDER BY month",
         current_user,
@@ -271,7 +271,7 @@ async def get_adoption(
         "  WHERE project_id = 'default' AND is_deleted = 0 "
         "  AND start_time >= toStartOfMonth(now())"
         "  UNION ALL"
-        "  SELECT user_id FROM session_stats_agg "
+        "  SELECT user_id FROM session_stats_agg FINAL "
         "  WHERE project_id = 'default' "
         "  AND first_event_time >= toStartOfMonth(now())"
         ")",
@@ -964,7 +964,7 @@ async def get_cost_summary(
     # Cost per session (from session_stats_agg — one row per user-initiated session)
     cost_per_session_rows = await _ch_json_scoped(
         "SELECT round(avg(total_credits), 4) AS avg_cost "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' "
         "AND first_event_time >= now() - INTERVAL {days:UInt32} DAY "
         "AND total_credits > 0",
@@ -1255,7 +1255,7 @@ async def get_strategic_insights(
         "count() AS sessions, "
         "round(avg(total_credits), 4) AS avg_cost, "
         "round(avg(input_tokens + output_tokens)) AS avg_tokens "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' AND model != '' "
         "GROUP BY model "
         "HAVING sessions >= 5 "
@@ -1322,7 +1322,7 @@ async def get_strategic_insights(
         all_user_ids.extend(uids)
 
     user_session_rows = await _ch_json_scoped(
-        "SELECT user_id, count() AS sessions FROM session_stats_agg WHERE project_id = 'default' GROUP BY user_id",
+        "SELECT user_id, count() AS sessions FROM session_stats_agg FINAL WHERE project_id = 'default' GROUP BY user_id",
         current_user,
     )
     user_sessions = {r["user_id"]: int(r["sessions"]) for r in user_session_rows}
@@ -1360,7 +1360,7 @@ async def get_strategic_insights(
     # Win: expensive model used for simple tasks (low token count)
     expensive_simple_rows = await _ch_json_scoped(
         "SELECT model, count() AS sessions, round(sum(total_credits), 2) AS total_cost "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' AND model != '' "
         "AND (input_tokens + output_tokens) < 2000 "
         "AND total_credits > 0.10 "
@@ -1389,7 +1389,7 @@ async def get_strategic_insights(
     # Win: inactive agents still consuming resources
     inactive_agent_rows = await _ch_json_scoped(
         "SELECT agent_id, count() AS sessions, round(sum(total_credits), 2) AS cost "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' AND agent_id != '' "
         "AND first_event_time < now() - INTERVAL 14 DAY "
         "GROUP BY agent_id "
@@ -1444,7 +1444,7 @@ async def get_strategic_insights(
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time))) AS avg_time_ms, "
         "count() AS sessions, "
         "countIf(event_count > 2) AS completed "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' AND harness != '' "
         "AND first_event_time != last_event_time "
         "GROUP BY harness "
@@ -1465,7 +1465,7 @@ async def get_strategic_insights(
     # 5. Power user analysis
     user_value_rows = await _ch_json_scoped(
         "SELECT user_id, count() AS sessions, sum(total_credits) AS value "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id "
@@ -1487,7 +1487,7 @@ async def get_strategic_insights(
         "SELECT "
         "countIf((input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
         "count() AS total "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' "
         "AND first_event_time >= now() - INTERVAL 30 DAY",
         current_user,
@@ -1551,7 +1551,7 @@ async def get_developer_breakdown(
         "count() AS sessions, "
         "sumIf(input_tokens + output_tokens, input_tokens IS NOT NULL) AS tokens, "
         "sum(total_credits) AS cost "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id "
@@ -1951,7 +1951,7 @@ async def generate_ai_insights(
         "  WHERE project_id = 'default' AND is_deleted = 0 "
         "  AND start_time >= now() - INTERVAL 30 DAY"
         "  UNION ALL"
-        "  SELECT user_id FROM session_stats_agg "
+        "  SELECT user_id FROM session_stats_agg FINAL "
         "  WHERE project_id = 'default' "
         "  AND first_event_time >= now() - INTERVAL 30 DAY"
         ")",
@@ -1965,7 +1965,7 @@ async def generate_ai_insights(
         "SELECT model, count() AS sessions, "
         "round(avg(total_credits), 4) AS avg_cost, "
         "round(avg(input_tokens + output_tokens)) AS avg_tokens "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' AND model != '' "
         "GROUP BY model HAVING sessions >= 3 "
         "ORDER BY sessions DESC LIMIT 10",
@@ -1977,7 +1977,7 @@ async def generate_ai_insights(
         "SELECT harness, count() AS sessions, "
         "count(DISTINCT user_id) AS users, "
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time)) / 1000) AS avg_task_seconds "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' AND harness != '' "
         "AND first_event_time != last_event_time "
         "GROUP BY harness HAVING sessions >= 3 "
@@ -1989,7 +1989,7 @@ async def generate_ai_insights(
     dept_map = await resolve_user_departments(db, org_id)
     user_session_rows = await _ch_json_scoped(
         "SELECT user_id, count() AS sessions "
-        "FROM session_stats_agg WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id",
         current_user,
@@ -2018,7 +2018,7 @@ async def generate_ai_insights(
     expensive_rows = await _ch_json_scoped(
         "SELECT model, count() AS sessions, round(sum(total_credits), 2) AS total_cost, "
         "round(avg(input_tokens + output_tokens)) AS avg_tokens "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' AND model != '' "
         "AND (input_tokens + output_tokens) < 2000 "
         "AND total_credits > 0.05 "
@@ -2032,7 +2032,7 @@ async def generate_ai_insights(
         "SELECT "
         "countIf((input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
         "count() AS total "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' "
         "AND first_event_time >= now() - INTERVAL 30 DAY",
         current_user,
@@ -2043,7 +2043,7 @@ async def generate_ai_insights(
     # 7. Developer activity summary
     dev_rows = await _ch_json_scoped(
         "SELECT user_id, count() AS sessions, sum(total_credits) AS cost "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE project_id = 'default' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id ORDER BY sessions DESC",

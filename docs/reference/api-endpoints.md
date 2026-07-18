@@ -63,7 +63,11 @@ All `{id}` parameters accept a UUID or a name.
 | `POST` | `/telemetry/ingest` | Batch ingest traces, spans, scores |
 | `POST` | `/telemetry/events` | Legacy event ingestion |
 | `GET` | `/telemetry/status` | Data flow status |
+| `POST` | `/ingest/session` | Idempotently ingest indexed session source records and return the highest contiguous acknowledgement |
+| `GET` | `/ingest/session/checkpoint` | Get the caller's contiguous line/byte checkpoint for a harness session |
 | `GET` | `/crypto/public-key` | Server public key for payload encryption |
+
+Session record identity is scoped by project, user, harness, session ID, and source line index. Retrying the same content at the same index is safe; different content at an existing index returns `409`.
 
 ## Telemetry hooks
 

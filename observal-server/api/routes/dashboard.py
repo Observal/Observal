@@ -115,11 +115,11 @@ async def overview_stats(
     )
     total_users_coro = db.scalar(select(func.count(User.id)))
     tool_rows_coro = _ch_json(
-        "SELECT sum(tool_call_count) as cnt FROM session_stats_agg WHERE last_event_time > now() - INTERVAL {days:UInt32} DAY",
+        "SELECT sum(tool_call_count) as cnt FROM session_stats_agg FINAL WHERE last_event_time > now() - INTERVAL {days:UInt32} DAY",
         {"param_days": str(days)},
     )
     agent_rows_coro = _ch_json(
-        "SELECT count() as cnt FROM session_stats_agg WHERE last_event_time > now() - INTERVAL {days:UInt32} DAY",
+        "SELECT count() as cnt FROM session_stats_agg FINAL WHERE last_event_time > now() - INTERVAL {days:UInt32} DAY",
         {"param_days": str(days)},
     )
 

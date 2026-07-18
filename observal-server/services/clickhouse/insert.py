@@ -87,22 +87,95 @@ async def _insert_webhook_deliveries(records: list[dict]):
 
 
 async def insert_session_events(rows: list[dict]):
-    """Batch insert session event rows into ClickHouse using JSONEachRow."""
+    """Batch insert canonical session source rows into ClickHouse."""
     optic.trace("inserting {} session events into ClickHouse", len(rows))
     if not rows:
         return
+    for row in rows:
+        row.setdefault("source_end_offset", 0)
+        row.setdefault("is_source_record", 1)
+        row.setdefault("rendered", 1)
+        row.setdefault("raw_line_truncated", 0)
     sql = (
         "INSERT INTO session_events (session_id, project_id, user_id, agent_id, "
-        "agent_version, layer_hash, harness, line_offset, line_hash, event_type, timestamp, uuid, parent_uuid, "
+        "agent_version, layer_hash, harness, line_offset, source_end_offset, line_hash, "
+        "is_source_record, rendered, event_type, timestamp, uuid, parent_uuid, "
         "tool_name, tool_id, content_preview, content_length, raw_line, credits, parent_session_id, "
         "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, model, raw_line_truncated) FORMAT JSONEachRow"
     )
     try:
-        r = await _client._query(sql, data="\n".join(_dumps(row) for row in rows))
+        r = await _client._query(
+            sql,
+            {"wait_for_async_insert": "1"},
+            data="\n".join(_dumps(row) for row in rows),
+        )
         r.raise_for_status()
     except Exception as e:
         optic.error("failed to insert {} session events - session will appear incomplete: {}", len(rows), e)
         raise
+
+
+async def insert_session_checkpoint(
+    session_id: str,
+    project_id: str,
+    user_id: str,
+    harness: str,
+    acknowledged_line: int,
+    acknowledged_offset: int,
+) -> None:
+    """Insert a monotonic replaceable session checkpoint."""
+    if acknowledged_line < 0:
+        return
+    row = {
+        "session_id": session_id,
+        "project_id": project_id,
+        "user_id": user_id,
+        "harness": harness,
+        "acknowledged_line": acknowledged_line,
+        "acknowledged_offset": acknowledged_offset,
+        "checkpoint_version": acknowledged_line + 1,
+    }
+    r = await _client._query(
+        "INSERT INTO session_checkpoints (session_id, project_id, user_id, harness, acknowledged_line, "
+        "acknowledged_offset, checkpoint_version) FORMAT JSONEachRow",
+        {"wait_for_async_insert": "1"},
+        data=_dumps(row),
+    )
+    r.raise_for_status()
+
+
+async def refresh_session_summary(session_id: str, project_id: str, user_id: str, harness: str) -> None:
+    """Replace one session summary from canonical deduplicated rows."""
+    sql = (
+        "INSERT INTO session_stats_agg "
+        "SELECT project_id, session_id, "
+        "coalesce(anyIf(agent_id, agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id, "
+        "coalesce(anyIf(agent_version, agent_version IS NOT NULL AND agent_version != ''), '') AS agent_version, "
+        "user_id, coalesce(anyIf(parent_session_id, parent_session_id IS NOT NULL), '') AS parent_session_id, "
+        "harness, coalesce(anyIf(layer_hash, layer_hash IS NOT NULL AND layer_hash != ''), '') AS layer_hash, "
+        "minIf(timestamp, rendered = 1 AND timestamp > '1971-01-01 00:00:00' AND timestamp < '2099-01-01 00:00:00') AS first_event_time, "
+        "maxIf(timestamp, rendered = 1 AND timestamp > '1971-01-01 00:00:00' AND timestamp < '2099-01-01 00:00:00') AS last_event_time, "
+        "countIf(rendered = 1) AS event_count, countIf(rendered = 1 AND event_type = 'user_prompt') AS prompt_count, "
+        "countIf(rendered = 1 AND event_type = 'tool_call') AS tool_call_count, "
+        "countIf(rendered = 1 AND event_type = 'tool_result') AS tool_result_count, "
+        "sumIf(input_tokens, rendered = 1) AS input_tokens, sumIf(output_tokens, rendered = 1) AS output_tokens, "
+        "sumIf(cache_read_tokens, rendered = 1) AS cache_read_tokens, "
+        "sumIf(cache_write_tokens, rendered = 1) AS cache_write_tokens, max(credits) AS total_credits, "
+        "anyLastIf(model, rendered = 1 AND model != '') AS model, "
+        "toUInt64(toUnixTimestamp64Milli(now64(3))) AS summary_version, now64(3) AS updated_at "
+        "FROM session_events FINAL WHERE project_id = {pid:String} AND user_id = {uid:String} "
+        "AND harness = {harness:String} AND session_id = {sid:String} "
+        "GROUP BY project_id, session_id, user_id, harness"
+    )
+    params = {
+        "param_pid": project_id,
+        "param_uid": user_id,
+        "param_harness": harness,
+        "param_sid": session_id,
+    }
+    params["wait_for_async_insert"] = "1"
+    r = await _client._query(sql, params)
+    r.raise_for_status()
 
 
 async def insert_layer_snapshot(row: dict):

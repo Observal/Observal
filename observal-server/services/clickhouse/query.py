@@ -15,7 +15,7 @@ async def query_recent_events(minutes: int = 60) -> dict:
     try:
         r = await _client._query(
             "SELECT sum(tool_call_count) AS tools, count() AS sessions "
-            "FROM session_stats_agg "
+            "FROM session_stats_agg FINAL "
             "WHERE last_event_time > now() - INTERVAL {minutes:UInt32} MINUTE "
             "FORMAT JSON",
             {"param_minutes": str(minutes)},
@@ -31,54 +31,87 @@ async def query_recent_events(minutes: int = 60) -> dict:
         return {"tool_call_events": 0, "agent_interaction_events": 0}
 
 
-async def query_session_event_count(session_id: str, project_id: str) -> tuple[int, int]:
-    """Return (count, max_offset) for a session's stored events.
-
-    Uses FINAL so ReplacingMergeTree dedup is applied before counting.
-    Returns (0, -1) when no rows exist.
-    """
-    _t0 = time.perf_counter()
+async def query_session_checkpoint(
+    session_id: str,
+    project_id: str,
+    user_id: str,
+    harness: str,
+) -> tuple[int, int]:
+    """Return the durable contiguous (source line, end byte) checkpoint."""
     sql = (
-        "SELECT count() AS cnt, max(line_offset) AS max_off "
-        "FROM session_events FINAL "
-        "WHERE session_id = {sid:String} AND project_id = {pid:String} "
-        "FORMAT JSON"
+        "SELECT acknowledged_line, acknowledged_offset FROM session_checkpoints FINAL "
+        "WHERE project_id = {pid:String} AND user_id = {uid:String} "
+        "AND harness = {harness:String} AND session_id = {sid:String} LIMIT 1 FORMAT JSON"
     )
-    params = {"param_sid": session_id, "param_pid": project_id}
+    params = {
+        "param_pid": project_id,
+        "param_uid": user_id,
+        "param_harness": harness,
+        "param_sid": session_id,
+    }
     try:
         r = await _client._query(sql, params)
         r.raise_for_status()
-        data = r.json().get("data", [{}])
-        row = data[0] if data else {}
-        count = int(row.get("cnt", 0))
-        max_off = int(row.get("max_off", -1)) if count > 0 else -1
-        _elapsed = (time.perf_counter() - _t0) * 1000
-        optic.trace("session {} has {} events, max_offset={} ({:.0f}ms)", session_id, count, max_off, _elapsed)
-        return count, max_off
+        data = r.json().get("data", [])
+        if not data:
+            return -1, 0
+        return int(data[0]["acknowledged_line"]), int(data[0].get("acknowledged_offset") or 0)
     except Exception as e:
-        optic.error("failed to count events for session {}: {}", session_id, e)
-        return 0, -1
+        optic.error("failed to read checkpoint for session {}: {}", session_id, e)
+        raise
+
+
+async def query_source_records_after(
+    session_id: str,
+    project_id: str,
+    user_id: str,
+    harness: str,
+    after_line: int,
+    limit: int = 5000,
+) -> list[tuple[int, int]]:
+    """Return ordered source positions after a checkpoint for gap detection."""
+    sql = (
+        "SELECT line_offset, source_end_offset FROM session_events FINAL "
+        "WHERE project_id = {pid:String} AND user_id = {uid:String} "
+        "AND harness = {harness:String} AND session_id = {sid:String} "
+        "AND is_source_record = 1 AND line_offset > {after:Int64} "
+        "ORDER BY line_offset LIMIT {limit:UInt32} FORMAT JSON"
+    )
+    params = {
+        "param_pid": project_id,
+        "param_uid": user_id,
+        "param_harness": harness,
+        "param_sid": session_id,
+        "param_after": str(after_line),
+        "param_limit": str(limit),
+    }
+    r = await _client._query(sql, params)
+    r.raise_for_status()
+    return [(int(row["line_offset"]), int(row.get("source_end_offset") or 0)) for row in r.json().get("data", [])]
 
 
 async def query_existing_for_dedup(
     session_id: str,
     project_id: str,
+    user_id: str,
+    harness: str,
     min_offset: int,
     max_offset: int,
-) -> tuple[frozenset[int], frozenset[str]]:
-    """Return (existing_offsets, existing_hashes) for dedup.  Fail-open on errors."""
+) -> dict[int, str]:
+    """Return existing source line hashes by stable source index."""
     _t0 = time.perf_counter()
     if min_offset > max_offset:
-        return frozenset(), frozenset()
+        return {}
     sql = (
-        "SELECT line_offset, line_hash "
-        "FROM session_events FINAL "
-        "WHERE project_id = {pid:String} AND session_id = {sid:String} "
-        "AND line_offset >= {min_off:UInt32} AND line_offset <= {max_off:UInt32} "
-        "FORMAT JSON"
+        "SELECT line_offset, line_hash FROM session_events FINAL "
+        "WHERE project_id = {pid:String} AND user_id = {uid:String} "
+        "AND harness = {harness:String} AND session_id = {sid:String} AND is_source_record = 1 "
+        "AND line_offset >= {min_off:UInt32} AND line_offset <= {max_off:UInt32} FORMAT JSON"
     )
     params = {
         "param_pid": project_id,
+        "param_uid": user_id,
+        "param_harness": harness,
         "param_sid": session_id,
         "param_min_off": str(min_offset),
         "param_max_off": str(max_offset),
@@ -86,24 +119,17 @@ async def query_existing_for_dedup(
     try:
         r = await _client._query(sql, params)
         r.raise_for_status()
-        data = r.json().get("data", [])
-        existing_offsets = frozenset(int(row["line_offset"]) for row in data)
-        existing_hashes = frozenset(row["line_hash"] for row in data if row.get("line_hash"))
+        existing = {int(row["line_offset"]): str(row.get("line_hash") or "") for row in r.json().get("data", [])}
         _elapsed = (time.perf_counter() - _t0) * 1000
         optic.trace(
-            "dedup check for session {}: {} existing offsets, {} hashes in range [{}, {}] ({:.0f}ms)",
+            "dedup check for session {}: {} offsets in range [{}, {}] ({:.0f}ms)",
             session_id,
-            len(existing_offsets),
-            len(existing_hashes),
+            len(existing),
             min_offset,
             max_offset,
             _elapsed,
         )
-        return existing_offsets, existing_hashes
+        return existing
     except Exception as e:
-        optic.warning(
-            "dedup query failed for session {} (fail-open, will re-insert): {}",
-            session_id,
-            e,
-        )
-        return frozenset(), frozenset()
+        optic.error("dedup query failed for session {}: {}", session_id, e)
+        raise

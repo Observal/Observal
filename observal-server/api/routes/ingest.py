@@ -4,9 +4,9 @@
 
 """Session JSONL ingest endpoint."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger as optic
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api.deps import get_project_id, require_role
 from api.ratelimit import limiter
@@ -26,6 +26,7 @@ class SessionIngestRequest(BaseModel):
     layer_hash: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
     lines: list[str] = Field(..., max_length=MAX_SESSION_LINES)  # Raw JSONL lines
     start_offset: int = Field(0, ge=0)
+    end_byte_offsets: list[int] | None = Field(None, max_length=MAX_SESSION_LINES)
     hook_event: str = Field("UserPromptSubmit", max_length=MAX_SHORT_STRING_LENGTH)
     # Sent on Stop for integrity check
     final: bool = False
@@ -44,12 +45,32 @@ class SessionIngestRequest(BaseModel):
                 raise ValueError(f"session lines must be at most {MAX_TEXT_LENGTH} characters")
         return value
 
+    @model_validator(mode="after")
+    def byte_offsets_match_lines(self):
+        if self.end_byte_offsets is not None:
+            if len(self.end_byte_offsets) != len(self.lines):
+                raise ValueError("end_byte_offsets must contain one value per source line")
+            if any(offset < 0 for offset in self.end_byte_offsets):
+                raise ValueError("end_byte_offsets cannot contain negative values")
+            if self.end_byte_offsets != sorted(self.end_byte_offsets):
+                raise ValueError("end_byte_offsets must be ordered")
+        return self
+
 
 class SessionIngestResponse(BaseModel):
     ingested: int
     skipped: int
     errors: int
+    acknowledged_line: int
+    acknowledged_offset: int
     integrity_ok: bool | None = None  # Only set when final=True
+
+
+class SessionCheckpointResponse(BaseModel):
+    session_id: str
+    harness: str
+    acknowledged_line: int
+    acknowledged_offset: int
 
 
 @router.post("/session", response_model=SessionIngestResponse)
@@ -65,7 +86,12 @@ async def ingest_session(
     Lines are stored as-is and classified server-side.
     """
     optic.trace("user_id={}", current_user.id)
-    from services.session_ingest import check_session_integrity, ingest_session_lines
+    from services.session_ingest import (
+        SessionRecordConflictError,
+        advance_session_checkpoint,
+        check_session_integrity,
+        ingest_session_lines,
+    )
 
     user_id = str(current_user.id)
     project_id = get_project_id(current_user)
@@ -79,18 +105,32 @@ async def ingest_session(
         req.final,
     )
 
-    result = await ingest_session_lines(
-        session_id=req.session_id,
-        project_id=project_id,
-        user_id=user_id,
-        agent_id=req.agent_id,
-        agent_version=req.agent_version,
-        layer_hash=req.layer_hash,
-        harness=req.harness,
-        lines=req.lines,
-        start_offset=req.start_offset,
-        total_credits=req.total_credits,
-        parent_session_id=req.parent_session_id,
+    try:
+        result = await ingest_session_lines(
+            session_id=req.session_id,
+            project_id=project_id,
+            user_id=user_id,
+            agent_id=req.agent_id,
+            agent_version=req.agent_version,
+            layer_hash=req.layer_hash,
+            harness=req.harness,
+            lines=req.lines,
+            start_offset=req.start_offset,
+            end_byte_offsets=req.end_byte_offsets,
+            total_credits=req.total_credits,
+            parent_session_id=req.parent_session_id,
+        )
+    except SessionRecordConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "session source changed at an acknowledged line", "offsets": exc.offsets},
+        )
+
+    acknowledged_line, acknowledged_offset = await advance_session_checkpoint(
+        req.session_id,
+        project_id,
+        user_id,
+        req.harness,
     )
 
     integrity_ok = None
@@ -98,8 +138,12 @@ async def ingest_session(
         integrity = await check_session_integrity(
             session_id=req.session_id,
             project_id=project_id,
+            user_id=user_id,
+            harness=req.harness,
             expected_line_count=req.total_line_count,
             expected_offset=req.total_offset or 0,
+            acknowledged_line=acknowledged_line,
+            acknowledged_offset=acknowledged_offset,
         )
         integrity_ok = integrity.ok
         if not integrity_ok:
@@ -138,5 +182,31 @@ async def ingest_session(
         ingested=result.ingested,
         skipped=result.skipped,
         errors=result.errors,
+        acknowledged_line=acknowledged_line,
+        acknowledged_offset=acknowledged_offset,
         integrity_ok=integrity_ok,
+    )
+
+
+@router.get("/session/checkpoint", response_model=SessionCheckpointResponse)
+async def get_session_checkpoint(
+    session_id: str = Query(..., max_length=MAX_SHORT_STRING_LENGTH),
+    harness: str = Query(..., max_length=MAX_SHORT_STRING_LENGTH),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Return the caller's durable contiguous checkpoint for one session source."""
+    from services.clickhouse import query_session_checkpoint
+
+    project_id = get_project_id(current_user)
+    acknowledged_line, acknowledged_offset = await query_session_checkpoint(
+        session_id,
+        project_id,
+        str(current_user.id),
+        harness,
+    )
+    return SessionCheckpointResponse(
+        session_id=session_id,
+        harness=harness,
+        acknowledged_line=acknowledged_line,
+        acknowledged_offset=acknowledged_offset,
     )

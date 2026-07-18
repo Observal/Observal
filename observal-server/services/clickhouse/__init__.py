@@ -23,13 +23,16 @@ from services.clickhouse.client import (
 from services.clickhouse.insert import (
     _insert_webhook_deliveries,
     insert_audit_log,
+    insert_session_checkpoint,
     insert_session_events,
+    refresh_session_summary,
 )
 from services.clickhouse.migrations import run_clickhouse_migrations
 from services.clickhouse.query import (
     query_existing_for_dedup,
     query_recent_events,
-    query_session_event_count,
+    query_session_checkpoint,
+    query_source_records_after,
 )
 from services.clickhouse.schema import (
     DEFAULT_QUERY_SETTINGS,
@@ -58,9 +61,12 @@ __all__ = [
     "clickhouse_health",
     "init_clickhouse",
     "insert_audit_log",
+    "insert_session_checkpoint",
     "insert_session_events",
     "query_existing_for_dedup",
     "query_recent_events",
-    "query_session_event_count",
+    "query_session_checkpoint",
+    "query_source_records_after",
+    "refresh_session_summary",
     "run_clickhouse_migrations",
 ]

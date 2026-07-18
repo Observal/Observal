@@ -273,7 +273,7 @@ async def sessions_summary(
         "countIf(toDate(last_event_time) = today()) AS today_sessions "
         "FROM ( "
         "  SELECT session_id, max(last_event_time) AS last_event_time "
-        "  FROM session_stats_agg "
+        "  FROM session_stats_agg FINAL "
         "  WHERE session_id != '' " + user_filter + "  GROUP BY session_id "
         ")",
         params or None,
@@ -304,7 +304,7 @@ async def sessions_stats(current_user: User = Depends(require_role(UserRole.admi
         "    sum(prompt_count) AS prompt_count, "
         "    sum(tool_call_count) AS tool_call_count, "
         "    sum(event_count) AS event_count "
-        "  FROM session_stats_agg "
+        "  FROM session_stats_agg FINAL "
         "  WHERE session_id != '' "
         "  GROUP BY session_id "
         ")"
@@ -356,7 +356,7 @@ async def get_session(
         "uuid, parent_uuid, content_length, harness, agent_id, agent_version, raw_line, raw_line_truncated, "
         "credits, ingested_at "
         "FROM session_events FINAL "
-        "WHERE session_id = {sid:String} " + _offset_filter + "ORDER BY line_offset ASC "
+        "WHERE session_id = {sid:String} AND rendered = 1 " + _offset_filter + "ORDER BY line_offset ASC "
         "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
     )
     _sub_params = {"param_sid": session_id}
@@ -369,7 +369,9 @@ async def get_session(
         "tool_name, tool_id, uuid, parent_uuid, content_length, harness, "
         "raw_line, raw_line_truncated, credits, ingested_at, line_offset "
         "FROM session_events FINAL "
-        "WHERE parent_session_id = {sid:String} " + _sub_offset_filter + "ORDER BY session_id, line_offset ASC "
+        "WHERE parent_session_id = {sid:String} AND rendered = 1 "
+        + _sub_offset_filter
+        + "ORDER BY session_id, line_offset ASC "
         "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
     )
     rows, sub_rows_all = await asyncio.gather(

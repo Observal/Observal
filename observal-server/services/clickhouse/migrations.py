@@ -145,7 +145,7 @@ async def _run_file(path: Path) -> None:
     statements = _split_sql(path.read_text())
     optic.info("applying ClickHouse migration {} ({} statements)", path.name, len(statements))
     for stmt in statements:
-        resp = await _client._query(stmt)
+        resp = await _client._query(stmt, {"wait_for_async_insert": "1"})
         if resp.status_code >= 400:
             raise RuntimeError(f"ClickHouse migration {path.name} failed: {_response_text(resp)[:200]}")
     await _record_applied(version, path.name)

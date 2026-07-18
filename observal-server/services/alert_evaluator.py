@@ -66,7 +66,7 @@ async def _query_token_usage(target_type: str, target_id: str, lookback_minutes:
     optic.trace("querying token usage for {} {}", target_type, target_id)
     sql = (
         "SELECT sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS token_usage "
-        "FROM session_stats_agg "
+        "FROM session_stats_agg FINAL "
         "WHERE last_event_time > now() - INTERVAL {lookback:UInt32} MINUTE"
     )
     params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
