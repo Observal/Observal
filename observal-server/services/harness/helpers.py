@@ -143,8 +143,8 @@ def _vscode_copilot_hooks_config() -> dict:
     - "timeoutSec" for timeout (not "timeout")
     - PascalCase event names for VS Code compatible payloads
     """
-    cmd = _SESSION_PUSH_CMD
-    ps_cmd = "python -m observal_cli.hooks.copilot_cli_session_push"
+    cmd = "python3 -m observal_cli.hooks.session_push --harness copilot --json-response"
+    ps_cmd = "python -m observal_cli.hooks.session_push --harness copilot --json-response"
     return {
         "version": 1,
         "hooks": {
@@ -159,8 +159,8 @@ def _vscode_copilot_hooks_frontmatter_lines() -> list[str]:
 
     Uses the official Copilot hooks format with bash/powershell keys.
     """
-    cmd = _SESSION_PUSH_CMD
-    ps_cmd = "python -m observal_cli.hooks.copilot_cli_session_push"
+    cmd = "python3 -m observal_cli.hooks.session_push --harness copilot --json-response"
+    ps_cmd = "python -m observal_cli.hooks.session_push --harness copilot --json-response"
     return [
         "hooks:",
         "  UserPromptSubmit:",

@@ -62,10 +62,10 @@ def build_copilot_cli_hooks(agent_id: str = "") -> dict:
     ``.github/hooks/observal.json`` (one file per project), so the UUID
     identifies whichever agent was pulled into that project.
     """
-    module = "observal_cli.hooks.copilot_cli_session_push"
-    bash_cmd = f"{_python_cmd()} -m {module}"
+    module = "observal_cli.hooks.session_push"
+    bash_cmd = f"{_python_cmd()} -m {module} --harness copilot-cli"
     # PowerShell command uses bare 'python' which must be on Windows PATH
-    ps_cmd = f"python -m {module}"
+    ps_cmd = f"python -m {module} --harness copilot-cli"
 
     if agent_id:
         if sys.platform == "win32":

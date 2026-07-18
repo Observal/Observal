@@ -15,8 +15,10 @@ Envelope format:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 
 def find_sessions_dir(home: Path | None = None) -> Path:
@@ -141,6 +143,97 @@ def find_session_jsonl(session_id: str, home: Path | None = None) -> Path | None
     if primary.exists():
         return primary
     return None
+
+
+def resolve_hook_event(event: dict) -> str:
+    """Resolve Copilot/VS Code hook payloads to canonical event names."""
+    explicit = event.get("hookEventName") or event.get("hook_event_name")
+    if explicit:
+        return str(explicit)
+    if "source" in event or "initialPrompt" in event or "initial_prompt" in event:
+        return "SessionStart"
+    if "reason" in event:
+        return "Stop"
+    if "prompt" in event:
+        return "UserPromptSubmit"
+    if "toolResult" in event or "tool_result" in event or "tool_response" in event:
+        return "PostToolUse"
+    if "toolName" in event or "tool_name" in event:
+        return "PreToolUse"
+    return "UserPromptSubmit"
+
+
+_EVENT_TYPE_MAP = {
+    "SessionStart": "session.start",
+    "UserPromptSubmit": "user.message",
+    "PreToolUse": "tool.call",
+    "PostToolUse": "tool.result",
+    "Stop": "session.end",
+    "SessionEnd": "session.end",
+}
+
+
+def hook_event_to_line(event: dict, session_id: str) -> str:
+    """Convert a native hook payload into one stable Copilot envelope record."""
+    hook_event = resolve_hook_event(event)
+    body: dict = {"type": _EVENT_TYPE_MAP.get(hook_event, "session.start")}
+    if hook_event == "UserPromptSubmit":
+        body["content"] = event.get("prompt", "")
+    elif hook_event == "PreToolUse":
+        body["name"] = event.get("tool_name") or event.get("toolName") or ""
+        tool_input = event.get("tool_input", event.get("toolArgs", {}))
+        if isinstance(tool_input, str):
+            try:
+                tool_input = json.loads(tool_input)
+            except (json.JSONDecodeError, ValueError):
+                tool_input = {"raw": tool_input}
+        body["input"] = tool_input
+    elif hook_event == "PostToolUse":
+        body["name"] = event.get("tool_name") or event.get("toolName") or ""
+        result = event.get("tool_response", event.get("tool_result", event.get("toolResult", "")))
+        if isinstance(result, dict):
+            body["output"] = result.get("text_result_for_llm", result.get("textResultForLlm", json.dumps(result)))
+        else:
+            body["output"] = str(result or "")
+    elif hook_event == "SessionStart":
+        body["source"] = event.get("source", "new")
+    elif hook_event in ("Stop", "SessionEnd"):
+        body["reason"] = event.get("reason", event.get("stop_reason", event.get("stopReason", "session_end")))
+    return json.dumps(
+        {
+            "agentId": session_id,
+            "ts": event.get("timestamp", ""),
+            "event": body,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def vscode_hook_source_path(session_id: str, home: Path | None = None) -> Path:
+    """Return the durable local source path for a VS Code Copilot session."""
+    home = home or Path.home()
+    return home / ".observal" / "session_sources" / "copilot" / f"{quote(session_id, safe='')}.jsonl"
+
+
+def append_vscode_hook_event(event: dict, session_id: str, home: Path | None = None) -> Path:
+    """Durably append a VS Code hook event to its local JSONL source."""
+    path = vscode_hook_source_path(session_id, home=home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as source:
+        source.write(hook_event_to_line(event, session_id) + "\n")
+        source.flush()
+        os.fsync(source.fileno())
+    return path
+
+
+def discover_vscode_hook_sources(home: Path | None = None) -> list[tuple[str, Path]]:
+    """Return materialized VS Code hook sources and their original session IDs."""
+    home = home or Path.home()
+    root = home / ".observal" / "session_sources" / "copilot"
+    if not root.is_dir():
+        return []
+    return [(unquote(path.stem), path) for path in root.glob("*.jsonl")]
 
 
 def find_active_session(cwd: str, home: Path | None = None) -> Path | None:

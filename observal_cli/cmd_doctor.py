@@ -443,7 +443,11 @@ def _check_copilot(issues: list, warnings: list):
                     if isinstance(entries, list):
                         for e in entries:
                             cmd = e.get("command", "") + e.get("bash", "")
-                            if "copilot_vscode_session_push" in cmd or "run_hook.ps1" in cmd:
+                            if (
+                                "copilot_vscode_session_push" in cmd
+                                or "run_hook.ps1" in cmd
+                                or "hooks.session_push --harness copilot" in cmd
+                            ):
                                 has_hooks = True
                                 break
 
@@ -480,7 +484,8 @@ def _check_copilot_cli(issues: list, warnings: list):
     for event in ("sessionStart", "sessionEnd", "userPromptSubmitted"):
         entries = hooks.get(event, [])
         for e in entries:
-            if "copilot_cli_session_push" in e.get("bash", ""):
+            command = e.get("bash", "")
+            if "copilot_cli_session_push" in command or "hooks.session_push --harness copilot-cli" in command:
                 has_session_push = True
                 break
 
@@ -884,7 +889,7 @@ def _cleanup_copilot(dry_run: bool) -> bool:
 
     if ps1_path.exists():
         existing = ps1_path.read_text()
-        if "copilot_vscode_session_push" in existing:
+        if "copilot_vscode_session_push" in existing or "hooks.session_push --harness copilot" in existing:
             verb = "Would remove" if dry_run else "Removed"
             rprint(f"  {verb} {ps1_path}")
             if not dry_run:
@@ -1494,13 +1499,12 @@ def _patch_copilot(dry_run: bool) -> bool:
         else:
             python_path = f"{win_appdata}\\uv\\tools\\observal-cli\\Scripts\\python.exe"
 
-    script_path = "observal_cli\\hooks\\copilot_vscode_session_push.py"
-    ps1_content = build_copilot_run_hook_ps1(python_path, script_path)
+    ps1_content = build_copilot_run_hook_ps1(python_path)
 
     needs_ps1_update = True
     if ps1_path.exists():
         existing_ps1 = ps1_path.read_text()
-        if "copilot_vscode_session_push" in existing_ps1:
+        if "hooks.session_push --harness copilot" in existing_ps1:
             needs_ps1_update = False
 
     if needs_ps1_update:
@@ -1540,7 +1544,7 @@ def _patch_copilot_cli(dry_run: bool) -> bool:
 
     for event in ("sessionStart", "sessionEnd", "userPromptSubmitted", "preToolUse", "postToolUse"):
         entries = existing_hooks.get(event, [])
-        has_observal = any("copilot_cli_session_push" in e.get("bash", "") for e in entries)
+        has_observal = any("hooks.session_push --harness copilot-cli" in e.get("bash", "") for e in entries)
         if not has_observal:
             needs_update = True
             break
