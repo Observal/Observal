@@ -121,6 +121,10 @@ class BaseAdapter:
         """Return recent session sources; harness adapters opt in as they are migrated."""
         return []
 
+    def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
+        """Return child sources when a harness stores them separately."""
+        return []
+
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Recognize common final lifecycle event names."""
         event_name = str(

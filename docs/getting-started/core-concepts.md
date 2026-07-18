@@ -87,16 +87,18 @@ Interception is **transparent**: nothing is changed on the wire. If Observal is 
 
 ## Telemetry buffer
 
-When the Observal server is unreachable, the CLI and shim don't drop telemetry. Events are queued in a local SQLite buffer at `~/.observal/telemetry_buffer.db` and flushed the next time the server is reachable.
+Acknowledged session exporters persist records they observe in a local SQLite outbox at `~/.observal/telemetry_buffer.db` before attempting upload. Failed attempts remain pending across process restarts. A batch is removed, and its local source cursor advances, only after the server acknowledges a contiguous checkpoint that covers it.
 
-Check the buffer:
+The guarantee begins when Observal observes and spools a record. It cannot recover a source record that the harness deletes before any installed hook or extension runs.
+
+Check the outbox:
 
 ```bash
 observal auth status
 observal ops telemetry status
 ```
 
-Flush happens automatically the next time the server is reachable.
+Drain happens automatically on the next exporter wake-up after the server is reachable.
 
 ## Deployment mode
 

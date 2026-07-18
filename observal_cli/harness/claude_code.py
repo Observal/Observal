@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from observal_cli.harness import (
     DiscoveredSkill,
     HookSpec,
     ScanResult,
+    SessionSource,
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
@@ -38,6 +40,92 @@ class ClaudeCodeAdapter(BaseAdapter):
     @property
     def harness_name(self) -> str:
         return "claude-code"
+
+    def resolve_session_source(self, event: dict[str, Any], home: Path | None = None) -> SessionSource | None:
+        from observal_cli.sessions.claude_code import (
+            find_jsonl_file,
+            get_parent_session_id,
+            project_key_from_cwd,
+        )
+
+        session_id = str(event.get("session_id") or "")
+        cwd = str(event.get("cwd") or "")
+        if not session_id:
+            return None
+        path = find_jsonl_file(session_id, project_key_from_cwd(cwd), home=home)
+        if path is None:
+            return None
+        parent_session_id = get_parent_session_id(path)
+        cursor_key = None
+        if parent_session_id:
+            cursor_key = f"{parent_session_id}__sub__{path.stem.removeprefix('agent-')}"
+        return SessionSource(
+            harness=self.harness_name,
+            session_id=path.stem.removeprefix("agent-") if parent_session_id else session_id,
+            path=path,
+            cwd=cwd,
+            cursor_key=cursor_key,
+            parent_session_id=parent_session_id,
+        )
+
+    def discover_session_sources(
+        self,
+        home: Path | None = None,
+        since_hours: int = 168,
+    ) -> list[SessionSource]:
+        from observal_cli.sessions.claude_code import find_sessions_dir
+
+        cutoff = time.time() - since_hours * 3600
+        root = find_sessions_dir(home)
+        if not root.is_dir():
+            return []
+        sources: list[SessionSource] = []
+        for path in root.glob("*/*.jsonl"):
+            if self._recent(path, cutoff):
+                sources.append(SessionSource(self.harness_name, path.stem, path))
+        for path in root.glob("*/*/subagents/*.jsonl"):
+            if not self._recent(path, cutoff):
+                continue
+            parent_session_id = path.parts[-3]
+            subagent_id = path.stem.removeprefix("agent-")
+            sources.append(
+                SessionSource(
+                    self.harness_name,
+                    subagent_id,
+                    path,
+                    cursor_key=f"{parent_session_id}__sub__{subagent_id}",
+                    parent_session_id=parent_session_id,
+                )
+            )
+        return sorted(sources, key=lambda source: str(source.path))
+
+    def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
+        if source.path is None or source.parent_session_id is not None:
+            return []
+        subagents_dir = source.path.parent / source.session_id / "subagents"
+        if not subagents_dir.is_dir():
+            return []
+        related: list[SessionSource] = []
+        for path in sorted(subagents_dir.glob("agent-*.jsonl")):
+            subagent_id = path.stem.removeprefix("agent-")
+            related.append(
+                SessionSource(
+                    self.harness_name,
+                    subagent_id,
+                    path,
+                    cwd=source.cwd,
+                    cursor_key=f"{source.session_id}__sub__{subagent_id}",
+                    parent_session_id=source.session_id,
+                )
+            )
+        return related
+
+    @staticmethod
+    def _recent(path: Path, cutoff: float) -> bool:
+        try:
+            return path.stat().st_mtime >= cutoff
+        except OSError:
+            return False
 
     def scan_home(self, home: Path | None = None) -> ScanResult:
         home = home or Path.home()

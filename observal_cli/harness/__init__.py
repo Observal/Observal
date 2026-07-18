@@ -63,6 +63,7 @@ def register_adapter(adapter: HarnessAdapter) -> None:
         "shim_status",
         "resolve_session_source",
         "discover_session_sources",
+        "related_session_sources",
         "is_session_final",
         "get_observal_managed_files",
     )
