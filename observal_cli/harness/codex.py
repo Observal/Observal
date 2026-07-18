@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import json
+import re
+import time
 from pathlib import Path
 
 from observal_cli.harness import (
     DiscoveredMcp,
     HookSpec,
     ScanResult,
+    SessionSource,
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
@@ -50,6 +53,59 @@ class CodexAdapter(BaseAdapter):
     @property
     def harness_name(self) -> str:
         return "codex"
+
+    @staticmethod
+    def _session_id(path: Path) -> str:
+        match = re.search(r"([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$", path.stem)
+        return match.group(1) if match else path.stem
+
+    def resolve_session_source(self, event: dict, home: Path | None = None) -> SessionSource | None:
+        home = home or Path.home()
+        root = home / ".codex" / "sessions"
+        if not root.is_dir():
+            return None
+        session_id = str(event.get("session_id") or event.get("thread_id") or "")
+        candidates = list(root.rglob("*.jsonl"))
+        if session_id:
+            candidates = [path for path in candidates if self._session_id(path) == session_id]
+        if not candidates:
+            return None
+        try:
+            path = max(candidates, key=lambda item: item.stat().st_mtime)
+        except OSError:
+            return None
+        return SessionSource(
+            self.harness_name,
+            self._session_id(path),
+            path,
+            cwd=str(event.get("cwd") or ""),
+        )
+
+    def discover_session_sources(
+        self,
+        home: Path | None = None,
+        since_hours: int = 168,
+    ) -> list[SessionSource]:
+        home = home or Path.home()
+        root = home / ".codex" / "sessions"
+        if not root.is_dir():
+            return []
+        cutoff = time.time() - since_hours * 3600
+        sources: list[SessionSource] = []
+        for path in root.rglob("*.jsonl"):
+            try:
+                modified_at = path.stat().st_mtime
+                if modified_at >= cutoff:
+                    sources.append(
+                        SessionSource(
+                            self.harness_name,
+                            self._session_id(path),
+                            path,
+                        )
+                    )
+            except OSError:
+                continue
+        return sorted(sources, key=lambda source: source.path.stat().st_mtime if source.path else 0, reverse=True)
 
     def scan_home(self, home: Path | None = None) -> ScanResult:
         home = home or Path.home()
@@ -107,8 +163,18 @@ class CodexAdapter(BaseAdapter):
         return HookSpec(
             events=["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"],
             format="command",
-            markers=["observal", "OBSERVAL", "codex_session_push"],
+            markers=["observal", "OBSERVAL", "session_push --harness codex"],
         )
+
+    def generate_hook_config(
+        self,
+        observal_url: str,
+        api_key: str,
+        agent_id: str | None = None,
+    ) -> dict:
+        from observal_cli.harness_specs.codex_hooks_spec import build_codex_hooks
+
+        return build_codex_hooks()
 
     def detect_hooks(self, config_dir: Path) -> str:
         """Check ~/.codex/hooks.json for Observal markers."""

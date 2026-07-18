@@ -287,7 +287,9 @@ class TestPatchFunctions:
         groups = read_json(codex_dir / "hooks.json")["hooks"]["Stop"]
         assert any(group.get("hooks", [{}])[0].get("command") == "foreign" for group in groups)
         assert any(
-            "codex_session_push" in hook.get("command", "") for group in groups for hook in group.get("hooks", [])
+            "hooks.session_push --harness codex" in hook.get("command", "")
+            for group in groups
+            for hook in group.get("hooks", [])
         )
 
     def test_patch_copilot_writes_project_hooks_and_wrapper(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
