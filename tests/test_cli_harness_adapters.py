@@ -12,7 +12,6 @@ import pytest
 from observal_cli.harness import (
     DiscoveredMcp,
     HookSpec,
-    NotSupportedError,
     ScanResult,
     SessionSource,
     ensure_loaded,
@@ -424,19 +423,6 @@ class TestKiroAdapter:
         adapter = get_adapter("kiro")
         result = adapter.scan_home(home=tmp_path)
         assert any(m.name == "my-mcp" for m in result.mcps)
-
-
-class TestStubAdapters:
-    """Tests for stub adapters that raise NotSupportedError for unsupported ops."""
-
-    @pytest.mark.parametrize("harness_name", ["codex"])
-    def test_generate_hook_config_raises_not_supported(self, harness_name):
-        adapter = get_adapter(harness_name)
-        with pytest.raises(NotSupportedError):
-            adapter.generate_hook_config(
-                observal_url="http://localhost:8000",
-                api_key="test-key",
-            )
 
 
 class TestShimStatus:

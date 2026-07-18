@@ -42,7 +42,7 @@ def build_codex_hooks() -> dict:
     Uses Claude Code hook format:
     {"hooks": {"EventName": [{"matcher": "", "hooks": [{"type": "command", "command": "..."}]}]}}
     """
-    cmd = f"{_python_cmd()} -m observal_cli.hooks.codex_session_push"
+    cmd = f"{_python_cmd()} -m observal_cli.hooks.session_push --harness codex"
     hooks: dict[str, list[dict]] = {}
     for event in CODEX_HOOK_EVENTS:
         hooks[event] = [{"matcher": "", "hooks": [{"type": "command", "command": cmd}]}]
