@@ -40,6 +40,74 @@ def test_read_new_records_excludes_partial_line_and_tracks_bytes(tmp_path: Path)
     assert consumed == 9
 
 
+@pytest.mark.parametrize("local_state", ["missing", "corrupt", "stale"])
+def test_server_checkpoint_recovers_local_cursor(tmp_path: Path, monkeypatch, local_state: str):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "session.jsonl"
+    records = ['{"n":0}\n', '{"n":1}\n', '{"n":2}\n']
+    source_path.write_text("".join(records))
+    if local_state == "corrupt":
+        state = tmp_path / ".observal" / "sync_state.json"
+        state.parent.mkdir()
+        state.write_text("not-json")
+    elif local_state == "stale":
+        base.write_cursor("session", source_path.stat().st_size, 3, finalized=True, home=tmp_path)
+    db = tmp_path / "outbox.db"
+    source = SessionSource("claude-code", "session", source_path)
+    acknowledged_offset = len(records[0].encode()) + len(records[1].encode())
+
+    assert base.drain_session_source(
+        source,
+        config(),
+        hook_event="Reconcile",
+        spool_only=True,
+        recover_from_server=True,
+        checkpoint_fetch=lambda _source, _config: {
+            "acknowledged_line": 1,
+            "acknowledged_offset": acknowledged_offset,
+        },
+        home=tmp_path,
+        db_path=db,
+    )
+
+    item = telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db)[0]
+    assert item.start_line == item.end_line == 2
+    assert item.payload["lines"] == ['{"n":2}']
+    assert base.read_cursor("session", home=tmp_path) == (acknowledged_offset, 2)
+    assert base.read_cursor_state("session", home=tmp_path)[2] is False
+
+
+def test_server_checkpoint_without_byte_offset_maps_source_line(tmp_path: Path):
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text('{"n":0}\n\n{"n":1}\n')
+    source = SessionSource("claude-code", "session", source_path)
+
+    recovered = base.recover_cursor_from_server(
+        source,
+        config(),
+        home=tmp_path,
+        fetch=lambda _source, _config: {"acknowledged_line": 0, "acknowledged_offset": 0},
+    )
+
+    assert recovered == (8, 1)
+
+
+def test_invalid_server_byte_checkpoint_does_not_skip_local_source(tmp_path: Path):
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text('{"n":0}\n')
+    source = SessionSource("claude-code", "session", source_path)
+
+    recovered = base.recover_cursor_from_server(
+        source,
+        config(),
+        home=tmp_path,
+        fetch=lambda _source, _config: {"acknowledged_line": 4, "acknowledged_offset": 999},
+    )
+
+    assert recovered is None
+    assert base.read_cursor("session", home=tmp_path) == (0, 0)
+
+
 def test_offline_delivery_spools_before_post_and_keeps_cursor(tmp_path: Path, monkeypatch):
     disable_payload_metadata(monkeypatch)
     source_path = tmp_path / "session.jsonl"

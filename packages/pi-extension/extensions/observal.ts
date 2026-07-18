@@ -51,6 +51,7 @@ interface CursorEntry {
   line_count: number;
   finalized?: boolean;
   last_pushed_at?: number;
+  local_valid?: boolean;
 }
 
 interface LayerFileEntry {
@@ -521,11 +522,16 @@ export default function (pi: ExtensionAPI) {
 
   function readCursor(sessionId: string): CursorEntry {
     try {
-      if (!fs.existsSync(SYNC_STATE_PATH)) return { offset: 0, line_count: 0 };
+      if (!fs.existsSync(SYNC_STATE_PATH)) return { offset: 0, line_count: 0, local_valid: false };
       const data = JSON.parse(fs.readFileSync(SYNC_STATE_PATH, "utf-8"));
-      return data[sessionId] ?? { offset: 0, line_count: 0 };
+      const entry = data[sessionId];
+      if (!entry || !Number.isInteger(entry.offset) || !Number.isInteger(entry.line_count)
+        || entry.offset < 0 || entry.line_count < 0) {
+        return { offset: 0, line_count: 0, local_valid: false };
+      }
+      return { ...entry, local_valid: true };
     } catch {
-      return { offset: 0, line_count: 0 };
+      return { offset: 0, line_count: 0, local_valid: false };
     }
   }
 
@@ -606,6 +612,61 @@ export default function (pi: ExtensionAPI) {
     return true;
   }
 
+  function checkpointByteOffset(sessionFile: string, lineCount: number, serverOffset: number): number | null {
+    try {
+      const content = fs.readFileSync(sessionFile);
+      if (serverOffset > 0) {
+        return serverOffset <= content.length && content[serverOffset - 1] === 10 ? serverOffset : null;
+      }
+      if (lineCount === 0) return 0;
+      let seen = 0;
+      let start = 0;
+      for (let index = 0; index < content.length; index++) {
+        if (content[index] !== 10) continue;
+        if (content.subarray(start, index).toString("utf-8").trim()) {
+          seen++;
+          if (seen === lineCount) return index + 1;
+        }
+        start = index + 1;
+      }
+    } catch { }
+    return null;
+  }
+
+  async function recoverCursorFromServer(
+    config: ObservalConfig,
+    sessionId: string,
+    sessionFile: string,
+  ): Promise<CursorEntry | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const url = new URL("/api/v1/ingest/session/checkpoint", config.server_url);
+      url.searchParams.set("session_id", sessionId);
+      url.searchParams.set("harness", "pi");
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${config.access_token}` },
+        signal: controller.signal,
+      });
+      if (!response.ok) return null;
+      const checkpoint = await response.json();
+      if (!Number.isInteger(checkpoint?.acknowledged_line)) return null;
+      const lineCount = checkpoint.acknowledged_line + 1;
+      const byteOffset = checkpointByteOffset(
+        sessionFile,
+        lineCount,
+        Number(checkpoint.acknowledged_offset || 0),
+      );
+      if (byteOffset === null) return null;
+      if (!writeCursor(sessionId, byteOffset, lineCount, false)) return null;
+      return readCursor(sessionId);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async function pushNewLines(s: ObservalState, opts: { final: boolean }): Promise<void> {
     if (!s.config || !s.sessionFile) return;
 
@@ -618,6 +679,10 @@ export default function (pi: ExtensionAPI) {
         if (!(await deliverPending(s.config, storedPending))) return;
         if (s.generation !== gen) return;
         cursor = readCursor(s.sessionId);
+      }
+      if (!cursor.local_valid) {
+        cursor = await recoverCursorFromServer(s.config, s.sessionId, s.sessionFile) ?? cursor;
+        if (s.generation !== gen) return;
       }
       s.byteOffset = cursor.offset;
       s.lineCount = cursor.line_count;

@@ -10,7 +10,13 @@ from loguru import logger as optic
 from rich import print as rprint
 
 from observal_cli.harness import ensure_loaded, get_adapter, get_all_adapters
-from observal_cli.sessions.base import drain_outbox, drain_session_source, load_config, read_cursor
+from observal_cli.sessions.base import (
+    drain_outbox,
+    drain_session_source,
+    load_config,
+    read_cursor,
+    recover_cursor_from_server,
+)
 
 reconcile_app = typer.Typer(name="reconcile", help="Push local session transcripts to the server")
 
@@ -68,13 +74,24 @@ def _reconcile_harness(harness: str, cfg: dict, since_hours: int, dry_run: bool)
         except OSError:
             continue
         offset, _line_count = read_cursor(source.checkpoint_key)
+        if dry_run:
+            if offset < size:
+                rprint(f"  [dim]Would push:[/dim] {source.session_id} ({size - offset} bytes new)")
+                pushed += 1
+            continue
+        recovered = recover_cursor_from_server(source, cfg)
+        if recovered is None:
+            rprint(f"  [yellow]↻[/yellow] {source.session_id} checkpoint does not match local source")
+            continue
+        offset, _line_count = recovered
         if offset >= size:
             continue
-        if dry_run:
-            rprint(f"  [dim]Would push:[/dim] {source.session_id} ({size - offset} bytes new)")
-            pushed += 1
-            continue
-        if drain_session_source(source, cfg, hook_event="Reconcile", final=True):
+        if drain_session_source(
+            source,
+            cfg,
+            hook_event="Reconcile",
+            final=True,
+        ):
             rprint(f"  [green]✓[/green] {source.session_id}")
             pushed += 1
         else:

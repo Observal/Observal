@@ -17,12 +17,23 @@ const lines = Array.from({ length: 501 }, (_, index) => JSON.stringify({ type: "
 fs.writeFileSync(sessionFile, `${lines.join("\n")}\n`);
 
 const ingestPayloads = [];
+let serverAcknowledgedLine = -1;
+let serverAcknowledgedOffset = 0;
 const server = http.createServer((request, response) => {
+  response.setHeader("Content-Type", "application/json");
+  if (request.method === "GET" && request.url?.startsWith("/api/v1/ingest/session/checkpoint")) {
+    response.end(JSON.stringify({
+      session_id: "pi-session",
+      harness: "pi",
+      acknowledged_line: serverAcknowledgedLine,
+      acknowledged_offset: serverAcknowledgedOffset,
+    }));
+    return;
+  }
   const chunks = [];
   request.on("data", (chunk) => chunks.push(chunk));
   request.on("end", () => {
     const payload = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-    response.setHeader("Content-Type", "application/json");
     if (request.url === "/api/v1/layer-snapshots") {
       response.end(JSON.stringify({ hash: payload.hash }));
       return;
@@ -33,10 +44,14 @@ const server = http.createServer((request, response) => {
       response.end(JSON.stringify({ ingested: payload.lines.length })); // HTTP success without acknowledgement.
       return;
     }
+    if (payload.lines.length > 0) {
+      serverAcknowledgedLine = payload.start_offset + payload.lines.length - 1;
+      serverAcknowledgedOffset = payload.end_byte_offsets.at(-1);
+    }
     response.end(
       JSON.stringify({
-        acknowledged_line: payload.start_offset + payload.lines.length - 1,
-        acknowledged_offset: payload.end_byte_offsets.at(-1),
+        acknowledged_line: serverAcknowledgedLine,
+        acknowledged_offset: serverAcknowledgedOffset,
       }),
     );
   });
@@ -104,7 +119,23 @@ assert.equal(outboxFiles.length, 0);
 assert.equal(ingestPayloads.length, 3);
 assert.deepEqual(ingestPayloads[1], ingestPayloads[2], "retry keeps the same source identity and content");
 
-await handlers.get("session_shutdown")({}, context);
+fs.unlinkSync(statePath);
+const recoveredHandlers = new Map();
+const recoveredPi = {
+  on(name, handler) {
+    recoveredHandlers.set(name, handler);
+  },
+  registerCommand() {},
+};
+const recoveredExtension = await import(`../extensions/observal.ts?recover=${Date.now()}`);
+recoveredExtension.default(recoveredPi);
+await recoveredHandlers.get("session_start")({ reason: "resume" }, context);
+await recoveredHandlers.get("agent_end")({}, context);
+cursor = JSON.parse(fs.readFileSync(statePath, "utf-8"))["pi-session"];
+assert.equal(cursor.line_count, 501, "missing local state recovers from the server checkpoint");
+assert.equal(ingestPayloads.length, 3, "checkpoint recovery avoids replaying acknowledged history");
+
+await recoveredHandlers.get("session_shutdown")({}, context);
 cursor = JSON.parse(fs.readFileSync(statePath, "utf-8"))["pi-session"];
 assert.equal(cursor.finalized, true, "finality also requires a server acknowledgement");
 assert.equal(ingestPayloads[3].final, true);

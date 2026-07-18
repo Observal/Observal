@@ -150,13 +150,14 @@ id and installed version.
 The OpenCode plugin implements the same acknowledged delivery contract as Python harnesses:
 
 1. Load `~/.observal/config.json` and resolve the active agent through `~/.observal/lockfile.json`.
-2. On `session.idle`, retry any durable pending batch before reading new messages.
-3. Fetch messages from `client.session.messages` and convert each message into one stable JSONL-compatible source record.
-4. Atomically persist the pending indexed batch under `~/.observal/opencode_session_outbox/` before network delivery.
-5. Retry the same batch idempotently until the server returns a contiguous acknowledgement covering it.
-6. Advance the persisted source line only after that acknowledgement; a crash after server commit safely retries the batch.
+2. On `session.idle`, recover missing, stale, or quarantined local state from the server's contiguous checkpoint.
+3. Retry any durable pending batch before reading new messages.
+4. Fetch messages from `client.session.messages` and convert each message into one stable JSONL-compatible source record.
+5. Atomically persist the pending indexed batch under `~/.observal/opencode_session_outbox/` before network delivery.
+6. Retry the same batch idempotently until the server returns a contiguous acknowledgement covering it.
+7. Advance the persisted source line only after that acknowledgement; a crash after server commit safely retries the batch.
 
-Acknowledged state is retained for seven days to avoid unnecessary replay. Capacity errors and corrupt state fail closed: pending files are kept rather than silently discarded.
+Acknowledged state is retained for seven days to avoid unnecessary replay. Capacity errors fail closed without discarding pending records. Corrupt state is quarantined and rebuilt from the authenticated server checkpoint plus the OpenCode message source.
 
 ---
 

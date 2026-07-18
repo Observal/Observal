@@ -147,6 +147,7 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
         hook_event="Stop",
         final=True,
         extra_fields=adapter.session_extra_fields(source, event, True, home=home),
+        recover_from_server=True,
         home=home,
     )
     for related in adapter.related_session_sources(source, home=home):
@@ -158,6 +159,7 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
             hook_event="Stop",
             final=True,
             extra_fields=adapter.session_extra_fields(related, event, True, home=home),
+            recover_from_server=True,
             home=home,
         )
 
@@ -195,6 +197,7 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
             hook_event="CrashRecovery",
             final=True,
             extra_fields=adapter.session_extra_fields(source, event, True, home=home),
+            recover_from_server=True,
             home=home,
         )
 

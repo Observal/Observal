@@ -12,6 +12,7 @@ logging. Hooks, background recovery, and public reconcile all use this engine.
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,19 +28,30 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def read_cursor_state(session_id: str, home: Path | None = None) -> tuple[int, int, bool]:
-    """Return byte offset, line count, and finality for one local source."""
+def read_cursor_status(session_id: str, home: Path | None = None) -> tuple[int, int, bool, bool]:
+    """Return byte offset, line count, finality, and whether local state is valid."""
     if home is None:
         home = Path.home()
     state_file = home / ".observal" / "sync_state.json"
     if state_file.exists():
         try:
-            data = json.loads(state_file.read_text())
-            entry = data.get(session_id, {})
-            return entry.get("offset", 0), entry.get("line_count", 0), bool(entry.get("finalized"))
+            entry = json.loads(state_file.read_text()).get(session_id)
+            if not isinstance(entry, dict):
+                return 0, 0, False, False
+            offset = entry.get("offset")
+            line_count = entry.get("line_count")
+            if not isinstance(offset, int) or not isinstance(line_count, int) or offset < 0 or line_count < 0:
+                return 0, 0, False, False
+            return offset, line_count, bool(entry.get("finalized")), True
         except Exception:
             pass
-    return 0, 0, False
+    return 0, 0, False, False
+
+
+def read_cursor_state(session_id: str, home: Path | None = None) -> tuple[int, int, bool]:
+    """Return byte offset, line count, and finality for one local source."""
+    offset, line_count, finalized, _valid = read_cursor_status(session_id, home=home)
+    return offset, line_count, finalized
 
 
 def read_cursor(session_id: str, home: Path | None = None) -> tuple[int, int]:
@@ -54,6 +66,7 @@ def write_cursor(
     line_count: int,
     finalized: bool = False,
     home: Path | None = None,
+    preserve_finalized: bool = True,
 ) -> None:
     """Persist updated byte offset and line count for *session_id*.
 
@@ -69,15 +82,20 @@ def write_cursor(
     data: dict = {}
     if state_file.exists():
         try:
-            data = json.loads(state_file.read_text())
+            loaded = json.loads(state_file.read_text())
+            if isinstance(loaded, dict):
+                data = loaded
         except Exception:
             pass
 
     entry: dict = {"offset": offset, "line_count": line_count}
-    if finalized or (session_id in data and data[session_id].get("finalized")):
+    previous = data.get(session_id)
+    if finalized or (preserve_finalized and isinstance(previous, dict) and previous.get("finalized")):
         entry["finalized"] = True
     data[session_id] = entry
-    state_file.write_text(json.dumps(data))
+    with tempfile.NamedTemporaryFile("w", dir=sync_dir, delete=False) as temporary:
+        temporary.write(json.dumps(data))
+    Path(temporary.name).replace(state_file)
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +253,106 @@ def post_to_server_ack(
         return None
 
 
+def get_server_checkpoint(source: SessionSource, config: dict) -> dict | None:
+    """Fetch the authenticated contiguous checkpoint for one session source."""
+    import httpx
+
+    server_url = str(config.get("server_url") or "").rstrip("/")
+    token = str(config.get("access_token") or "")
+    if not server_url or not token:
+        return None
+    url = f"{server_url}/api/v1/ingest/session/checkpoint"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                url,
+                params={"session_id": source.session_id, "harness": source.harness},
+                headers=headers,
+            )
+            if response.status_code == 401:
+                refresh_token = str(config.get("refresh_token") or "")
+                config_path = str(config.get("_config_path") or "")
+                if refresh_token and config_path:
+                    token = _refresh_access_token(server_url, refresh_token, config_path) or ""
+                    if token:
+                        config["access_token"] = token
+                        headers["Authorization"] = f"Bearer {token}"
+                        response = client.get(
+                            url,
+                            params={"session_id": source.session_id, "harness": source.harness},
+                            headers=headers,
+                        )
+            if response.status_code >= 300:
+                return None
+            checkpoint = response.json()
+            if not isinstance(checkpoint.get("acknowledged_line"), int):
+                return None
+            return checkpoint
+    except Exception as exc:
+        optic.debug("could not recover server checkpoint for {}: {}", source.session_id, exc)
+        return None
+
+
+def _checkpoint_byte_offset(path: Path, line_count: int, server_offset: int) -> int | None:
+    """Resolve a server source position to a safe local newline boundary."""
+    try:
+        size = path.stat().st_size
+        if server_offset > 0:
+            if server_offset > size:
+                return None
+            with path.open("rb") as file:
+                file.seek(server_offset - 1)
+                return server_offset if file.read(1) == b"\n" else None
+        if line_count == 0:
+            return 0
+        seen = 0
+        offset = 0
+        with path.open("rb") as file:
+            for encoded_line in file:
+                offset += len(encoded_line)
+                if encoded_line.rstrip(b"\r\n").strip():
+                    seen += 1
+                    if seen == line_count:
+                        return offset
+    except OSError:
+        pass
+    return None
+
+
+def recover_cursor_from_server(
+    source: SessionSource,
+    config: dict,
+    *,
+    home: Path | None = None,
+    fetch: Callable[[SessionSource, dict], dict | None] | None = None,
+) -> tuple[int, int] | None:
+    """Replace missing, corrupt, or stale local state with the server checkpoint."""
+    if source.path is None:
+        return None
+    checkpoint = (fetch or get_server_checkpoint)(source, config)
+    if checkpoint is None:
+        return read_cursor(source.checkpoint_key, home=home)
+    acknowledged_line = int(checkpoint["acknowledged_line"])
+    line_count = acknowledged_line + 1
+    server_offset = int(checkpoint.get("acknowledged_offset") or 0)
+    byte_offset = _checkpoint_byte_offset(source.path, line_count, server_offset)
+    if byte_offset is None:
+        log_error(
+            f"server checkpoint does not match local source for {source.harness} session {source.session_id}",
+            home=home,
+        )
+        return None
+    write_cursor(
+        source.checkpoint_key,
+        byte_offset,
+        line_count,
+        home=home,
+        preserve_finalized=False,
+    )
+    return byte_offset, line_count
+
+
 MAX_CHUNK_SIZE = 500
 
 
@@ -311,9 +429,11 @@ def drain_session_source(
     extra_fields: dict | None = None,
     extra_records: tuple[str, ...] = (),
     spool_only: bool = False,
+    recover_from_server: bool = False,
     home: Path | None = None,
     db_path: Path | None = None,
     post: Callable[[dict, dict], dict | None] | None = None,
+    checkpoint_fetch: Callable[[SessionSource, dict], dict | None] | None = None,
 ) -> bool:
     """Spool all complete source records, then deliver them through the outbox."""
     from observal_cli import telemetry_buffer
@@ -327,7 +447,13 @@ def drain_session_source(
     if not spool_only:
         drain_outbox(config, home=home, db_path=db_path, post=post)
 
-    byte_offset, line_count = read_cursor(source.checkpoint_key, home=home)
+    if recover_from_server:
+        recovered = recover_cursor_from_server(source, config, home=home, fetch=checkpoint_fetch)
+        if recovered is None:
+            return False
+        byte_offset, line_count = recovered
+    else:
+        byte_offset, line_count = read_cursor(source.checkpoint_key, home=home)
     byte_offset, line_count = telemetry_buffer.spooled_checkpoint(
         destination=destination,
         user_id=user_id,

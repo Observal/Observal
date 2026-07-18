@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def test_generated_plugin_uses_durable_acknowledged_delivery():
-    assert OPENCODE_PLUGIN_VERSION == "4"
+    assert OPENCODE_PLUGIN_VERSION == "5"
     assert "saveSessionState(state); // Durable before network delivery." in OPENCODE_PLUGIN_SOURCE
     assert "acknowledged_line" in OPENCODE_PLUGIN_SOURCE
     assert "pushedMessageIds" not in OPENCODE_PLUGIN_SOURCE
@@ -31,7 +31,7 @@ def test_native_outbox_survives_restart_and_clears_only_after_ack(tmp_path: Path
     runner.write_text(
         """
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -63,8 +63,10 @@ assert.equal(state.pending, null);
 assert.equal(state.acknowledgedLine, 1);
 
 writeFileSync(path, "not-json");
-assert.throws(() => plugin.loadSessionState("session"), /outbox is corrupt/);
-assert.equal(readFileSync(path, "utf-8"), "not-json");
+state = plugin.loadSessionState("session");
+assert.equal(state.acknowledgedLine, -1);
+assert.equal(existsSync(path), false);
+assert.equal(readdirSync(path.slice(0, path.lastIndexOf("/"))).some((name) => name.includes(".corrupt.")), true);
 
 const observalDir = join(process.env.HOME, ".observal");
 mkdirSync(observalDir, { recursive: true });
@@ -85,9 +87,16 @@ const client = {
 };
 let shouldFail = true;
 let requests = 0;
-globalThis.fetch = async () => {
+let ingestRequests = 0;
+let checkpointLine = -1;
+globalThis.fetch = async (_url, options = {}) => {
   requests += 1;
+  if (!options.method || options.method === "GET") {
+    return { ok: true, json: async () => ({ acknowledged_line: checkpointLine, acknowledged_offset: 0 }) };
+  }
+  ingestRequests += 1;
   if (shouldFail) return { ok: false, status: 503 };
+  checkpointLine = 1;
   return { ok: true, json: async () => ({ acknowledged_line: 1, acknowledged_offset: 0 }) };
 };
 const hooks = await plugin.ObservalPlugin({ client, directory: "/work" });
@@ -102,7 +111,16 @@ await hooks.event({ event: { type: "session.idle", properties: { sessionID: "del
 delivery = plugin.loadSessionState("delivery");
 assert.equal(delivery.pending, null);
 assert.equal(delivery.acknowledgedLine, 1);
-assert.equal(requests, 2);
+assert.equal(requests, 3);
+assert.equal(ingestRequests, 2);
+
+await hooks.event({ event: { type: "session.created", properties: { sessionID: "recovered", agent: "custom" } } });
+await hooks.event({ event: { type: "message.updated", properties: { sessionID: "recovered" } } });
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "recovered" } } });
+const recovered = plugin.loadSessionState("recovered");
+assert.equal(recovered.acknowledgedLine, 1);
+assert.equal(recovered.pending, null);
+assert.equal(ingestRequests, 2);
 """
     )
     env = os.environ | {"HOME": str(tmp_path)}
