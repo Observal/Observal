@@ -13,12 +13,9 @@ configure MCP servers, add hooks, expose skills, and collect Kiro session teleme
 Kiro agent profiles are JSON files. Project agents live in `.kiro/agents/`.
 User agents live in `~/.kiro/agents/`.
 
-When Observal installs a Kiro agent, it writes hook commands into that agent JSON.
-The default hooks run `observal_cli.hooks.kiro_session_push` for `userPromptSubmit`
-and `stop`.
+When Observal installs a Kiro agent, it writes attributed hook commands into that agent JSON. The default hooks run the shared `observal_cli.hooks.session_push --harness kiro` exporter for `userPromptSubmit` and `stop`.
 
-The hook reads Kiro session JSONL files from `~/.kiro/sessions/cli/`. It reads
-only new lines since the last push and sends them to Observal.
+Current Kiro CLI conversations are read from `~/.local/share/kiro-cli/data.sqlite3` (with platform-equivalent application-data paths). The Kiro adapter converts each stored prompt, assistant response, tool call, and tool result into the stable Kiro record format used by the server parser. Legacy `~/.kiro/sessions/cli/*.jsonl` sessions remain readable as a fallback.
 
 ---
 
@@ -33,7 +30,7 @@ only new lines since the last push and sends them to Observal.
 | Agent prompt | Registry prompts are embedded in the generated Kiro agent profile |
 | Guidance files | Scanned from steering files and `AGENTS.md`, not overwritten |
 | Skills | `.kiro/skills/{name}/SKILL.md` and `~/.kiro/skills/{name}/SKILL.md` |
-| Session parsing | Kiro JSONL parser |
+| Session parsing | Kiro SQLite/legacy JSONL source adapter and Kiro record parser |
 | Telemetry | MCP telemetry through `observal-shim`; session telemetry through hooks |
 | Model selection | Registry-backed Kiro model catalog |
 
@@ -92,8 +89,8 @@ that agent's Observal UUID. `doctor patch` does not install generic Kiro hooks.
 | Skill definition | `.kiro/skills/{name}/SKILL.md` | `~/.kiro/skills/{name}/SKILL.md` |
 | Hook config | Embedded in `.kiro/agents/{name}.json` | Embedded in `~/.kiro/agents/{name}.json` |
 | Custom hook scripts | `.kiro/hooks/` | `~/.kiro/hooks/` |
-| Session JSONL | `~/.kiro/sessions/cli/{session_id}.jsonl` | `~/.kiro/sessions/cli/{session_id}.jsonl` |
-| Credit metadata | `~/.kiro/sessions/cli/{session_id}.json` | `~/.kiro/sessions/cli/{session_id}.json` |
+| Current session store | `~/.local/share/kiro-cli/data.sqlite3` | `~/.local/share/kiro-cli/data.sqlite3` |
+| Legacy session store | `~/.kiro/sessions/cli/{session_id}.jsonl` | `~/.kiro/sessions/cli/{session_id}.jsonl` |
 | Observal credentials | `~/.observal/config.json` | `~/.observal/config.json` |
 | Last session cache | `~/.observal/.kiro-session` | `~/.observal/.kiro-session` |
 
@@ -110,12 +107,12 @@ Observal writes the telemetry hooks inside each Kiro agent JSON:
   "hooks": {
     "userPromptSubmit": [
       {
-        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.kiro_session_push"
+        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.session_push --harness kiro"
       }
     ],
     "stop": [
       {
-        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.kiro_session_push"
+        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.session_push --harness kiro"
       }
     ]
   }
@@ -128,13 +125,11 @@ the active Python interpreter.
 
 ### Attribution
 
-Kiro does not expose a reliable active Observal agent in its session JSONL. The
-per-agent hook command is the source of truth.
+Kiro's local conversation store identifies the Kiro conversation, not the installed Observal registry agent. The per-agent hook command is the attribution source of truth.
 
 1. `observal agent pull` writes the agent UUID into the Kiro hook command as
    `OBSERVAL_AGENT_ID`.
-2. `kiro_session_push` reads that UUID when Kiro fires `userPromptSubmit` or
-   `stop`.
+2. The shared session exporter reads that UUID when Kiro fires `userPromptSubmit` or `stop`.
 3. The CLI looks up the UUID in `~/.observal/lockfile.json` under the `kiro`
    harness.
 4. The session payload is sent with the lockfile agent id and version.
@@ -160,14 +155,14 @@ when no matcher is set.
 
 Kiro uses the shared acknowledged session delivery engine:
 
-1. Resolve the Kiro session ID from the hook payload or `~/.observal/.kiro-session`.
-2. Find `~/.kiro/sessions/cli/{session_id}.jsonl` through the Kiro adapter.
-3. Read complete records after the acknowledged byte/line cursor.
+1. Resolve the conversation ID from the hook payload; if an older Kiro build omits it, select the newest SQLite conversation for the hook's working directory.
+2. Read `conversations_v2` from Kiro's SQLite store, or fall back to the legacy JSONL path.
+3. Convert SQLite history entries into stable indexed Kiro records without writing a temporary JSONL file.
 4. Persist new batches to `~/.observal/telemetry_buffer.db` before network delivery.
 5. Retry batches idempotently until the server returns a contiguous checkpoint covering them.
-6. Advance the local cursor only to that acknowledged checkpoint.
+6. Advance the local line cursor only to that acknowledged checkpoint.
 
-On `stop`, a delayed stable-file pass captures late records and finalizes the cursor. The adapter also reads `~/.kiro/sessions/cli/{session_id}.json` and durably sends Kiro credit usage, including when no transcript lines were added by the final hook.
+On `stop`, a delayed pass rereads the completed SQLite conversation and finalizes the cursor. Credit usage from conversation metadata is sent through the same durable outbox, including when no new conversation records were added by the final hook.
 
 ---
 
@@ -222,9 +217,7 @@ Run `pytest -q` from the project root.
 **Default scope is user.** `observal agent pull <agent-name> --harness kiro`
 writes to `~/.kiro/agents/` unless `--scope project` is set.
 
-**No Claude Code subagent layout.** Kiro reads
-`~/.kiro/sessions/cli/{session_id}.jsonl`. It does not scan Claude Code's
-`subagents/` directory.
+**No Claude Code subagent layout.** Kiro reads its own SQLite conversation rows or legacy flat JSONL sessions. It does not scan Claude Code's `subagents/` directory.
 
 **MCP config is Kiro-specific.** Kiro uses `.kiro/settings/mcp.json` and
 `~/.kiro/settings/mcp.json`, not Claude Code MCP paths.

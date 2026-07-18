@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import time
 from typing import TYPE_CHECKING
 
@@ -38,6 +39,55 @@ def make_session(home: Path, session_id: str = "kiro-session") -> Path:
     return transcript
 
 
+def make_sqlite_session(home: Path, session_id: str = "sqlite-session", cwd: str = "/work") -> Path:
+    path = home / ".local" / "share" / "kiro-cli" / "data.sqlite3"
+    path.parent.mkdir(parents=True)
+    conversation = {
+        "history": [
+            {
+                "user": {
+                    "content": {"Prompt": {"prompt": "hello sqlite"}},
+                    "timestamp": "2026-07-18T12:00:00Z",
+                },
+                "assistant": {
+                    "ToolUse": {
+                        "message_id": "assistant-1",
+                        "content": "",
+                        "tool_uses": [{"id": "tool-1", "name": "read", "args": {"path": "README.md"}}],
+                    }
+                },
+                "request_metadata": {"message_id": "user-1", "request_start_timestamp_ms": 1784376000000},
+            },
+            {
+                "user": {
+                    "content": {
+                        "ToolUseResults": {
+                            "tool_use_results": [
+                                {"tool_use_id": "tool-1", "status": "Success", "content": [{"Text": "done"}]}
+                            ]
+                        }
+                    }
+                },
+                "assistant": {"Response": {"message_id": "assistant-2", "content": "finished"}},
+                "request_metadata": {"message_id": "user-2", "request_start_timestamp_ms": 1784376001000},
+            },
+        ],
+        "user_turn_metadata": {
+            "usage_info": [{"unit": "credit", "value": 0.5}, {"unit": "request", "value": 1}]
+        },
+    }
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE conversations_v2 (key TEXT, conversation_id TEXT, value TEXT, created_at INTEGER, "
+            "updated_at INTEGER, PRIMARY KEY (key, conversation_id))"
+        )
+        connection.execute(
+            "INSERT INTO conversations_v2 VALUES (?, ?, ?, ?, ?)",
+            (cwd, session_id, json.dumps(conversation), 1784376000000, 1784376001000),
+        )
+    return path
+
+
 def write_config(home: Path) -> None:
     root = home / ".observal"
     root.mkdir(parents=True, exist_ok=True)
@@ -60,6 +110,40 @@ def test_kiro_adapter_resolves_and_persists_session_for_stop(tmp_path: Path):
     assert source is not None and source.path == transcript
     assert stop_source is not None and stop_source.session_id == "kiro-session"
     assert json.loads((tmp_path / ".observal" / ".kiro-session").read_text())["session_id"] == "kiro-session"
+
+
+def test_kiro_adapter_reads_v2_sqlite_as_stable_kiro_records(tmp_path: Path):
+    make_sqlite_session(tmp_path)
+    ensure_loaded()
+    adapter = get_adapter("kiro")
+
+    source = adapter.resolve_session_source(
+        {"session_id": "sqlite-session", "cwd": "/work"},
+        home=tmp_path,
+    )
+
+    assert source is not None
+    assert source.path is None
+    assert len(source.records) == 4
+    parsed = [json.loads(record) for record in source.records]
+    assert [record["kind"] for record in parsed] == [
+        "Prompt",
+        "AssistantMessage",
+        "ToolResults",
+        "AssistantMessage",
+    ]
+    assert parsed[1]["data"]["content"][0]["data"]["name"] == "read"
+    assert adapter.session_extra_fields(source, {}, True, home=tmp_path) == {"total_credits": 0.5}
+
+
+def test_kiro_adapter_uses_latest_sqlite_conversation_when_hook_omits_id(tmp_path: Path):
+    make_sqlite_session(tmp_path, cwd="/work")
+    ensure_loaded()
+
+    source = get_adapter("kiro").resolve_session_source({"cwd": "/work", "hook_event_name": "stop"}, home=tmp_path)
+
+    assert source is not None
+    assert source.session_id == "sqlite-session"
 
 
 def test_kiro_adapter_discovers_recent_sessions_and_credits(tmp_path: Path):

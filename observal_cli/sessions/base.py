@@ -397,7 +397,7 @@ def drain_session_source(
 
     destination = str(config.get("server_url") or "").rstrip("/")
     user_id = str(config.get("user_id") or "")
-    if source.path is None or not destination or not user_id:
+    if (source.path is None and not source.records) or not destination or not user_id:
         return False
 
     # A failed pre-drain never prevents newly observed local records from being spooled.
@@ -414,7 +414,12 @@ def drain_session_source(
         byte_offset=byte_offset,
         db_path=db_path,
     )
-    lines, end_byte_offsets, bytes_read = read_new_records(source.path, byte_offset)
+    if source.path is not None:
+        lines, end_byte_offsets, bytes_read = read_new_records(source.path, byte_offset)
+    else:
+        lines = list(source.records[line_count:])
+        end_byte_offsets = [0] * len(lines)
+        bytes_read = 0
     if not lines:
         if bytes_read:
             byte_offset += bytes_read
@@ -455,8 +460,9 @@ def drain_session_source(
             )
         return delivered
 
-    # Attribute trailing blank-line bytes to the last real record checkpoint.
-    end_byte_offsets[-1] = byte_offset + bytes_read
+    # Attribute trailing blank-line bytes to the last real file record checkpoint.
+    if source.path is not None:
+        end_byte_offsets[-1] = byte_offset + bytes_read
 
     for chunk_start in range(0, len(lines), MAX_CHUNK_SIZE):
         chunk = lines[chunk_start : chunk_start + MAX_CHUNK_SIZE]

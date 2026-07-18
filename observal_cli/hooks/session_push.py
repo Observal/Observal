@@ -121,10 +121,11 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
     adapter = get_adapter(harness)
     source = adapter.resolve_session_source({"session_id": session_id, "cwd": cwd}, home=home)
     config = load_config(home=home)
-    if source is None or config is None or source.path is None:
+    if source is None or config is None:
         return
     event = {"session_id": session_id, "cwd": cwd, "hook_event_name": "Stop"}
-    _wait_until_stable(source.path)
+    if source.path is not None:
+        _wait_until_stable(source.path)
     drain_session_source(
         source,
         config,
@@ -154,12 +155,15 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
         return
     now = time.time()
     for source in adapter.discover_session_sources(home=home):
-        if source.session_id == exclude_session or source.path is None:
+        if source.session_id == exclude_session:
             continue
-        try:
-            if now - source.path.stat().st_mtime < _RECOVERY_MIN_AGE_SECONDS:
+        if source.path is not None:
+            try:
+                if now - source.path.stat().st_mtime < _RECOVERY_MIN_AGE_SECONDS:
+                    continue
+            except OSError:
                 continue
-        except OSError:
+        elif source.modified_at and now - source.modified_at < _RECOVERY_MIN_AGE_SECONDS:
             continue
         event = {"session_id": source.session_id, "hook_event_name": "Stop"}
         drain_session_source(
