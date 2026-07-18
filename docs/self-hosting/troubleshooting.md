@@ -123,7 +123,7 @@ observal doctor --harness <harness>
 curl http://localhost/health
 ```
 
-If the shim is wrapped but traces aren't arriving, the shim may be silently dropping events because the API is unreachable. Check `~/.observal/telemetry_buffer.db`. If it's growing, that's exactly the issue.
+If the shim is wrapped but traces aren't arriving, the API may be unreachable while telemetry remains buffered. Check `~/.observal/telemetry_buffer.db`; growth indicates pending delivery rather than silent loss.
 
 ### `observal doctor patch` wraps 0 servers
 

@@ -156,6 +156,7 @@ The OpenCode plugin implements the same acknowledged delivery contract as Python
 5. Atomically persist the pending indexed batch under `~/.observal/opencode_session_outbox/` before network delivery.
 6. Retry the same batch idempotently until the server returns a contiguous acknowledgement covering it.
 7. Advance the persisted source line only after that acknowledgement; a crash after server commit safely retries the batch.
+8. On finalization, compare a SHA-256 audit manifest and replay from the server-requested repair range when needed.
 
 Acknowledged state is retained for seven days to avoid unnecessary replay. Capacity errors fail closed without discarding pending records. Corrupt state is quarantined and rebuilt from the authenticated server checkpoint plus the OpenCode message source.
 

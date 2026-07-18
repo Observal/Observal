@@ -16,6 +16,8 @@ Every file Observal reads or writes on the client (`~/.observal/`) and in each h
 | `last_results.json` | Last `list` / `show` output - enables row-number references | `0600` |
 | `telemetry_buffer.db` | Durable SQLite outbox for Python session exporters awaiting contiguous server acknowledgement | `0600` |
 | `opencode_session_outbox/` | Per-session durable OpenCode plugin batches and acknowledged line state | `0600` files |
+| `pi_session_outbox/` | Durable pending Pi extension batches | `0600` files |
+| `sync_state.json` | Acknowledged byte/line cursors for file-backed exporters | owner read/write |
 | `keys/` | Server-side JWT keys (operators only; path controlled by `JWT_KEY_DIR`) | `0600` |
 
 ### `config.json` schema
@@ -37,7 +39,9 @@ Override any field at runtime with `observal config set <key> <value>` or with a
 
 ### Durable session outbox
 
-Python session exporters persist each observed batch in `telemetry_buffer.db` before network delivery. OpenCode uses per-session files under `opencode_session_outbox/` because its native TypeScript plugin cannot call the Python SQLite engine. Both follow the same protocol: pending data survives process restarts and failed attempts, and the source line advances only when the server's contiguous checkpoint covers the complete batch. Observal does not silently evict unacknowledged records at capacity.
+Python session exporters persist each observed batch in `telemetry_buffer.db` before network delivery. OpenCode and Pi use per-session files under their native outbox directories because their TypeScript runtimes cannot call the Python SQLite engine. All follow the same protocol: pending data survives process restarts and failed attempts, and the source line advances only when the server's contiguous checkpoint covers the complete batch. Observal does not silently evict unacknowledged records at capacity.
+
+`sync_state.json` is a cache of acknowledged local positions, not the authority for delivered history. If it is missing, corrupt, or stale, recovery validates and restores positions from the authenticated server checkpoint. Finalized sessions also send a SHA-256 audit manifest; hashing is not performed on ordinary incremental uploads.
 
 Use `observal ops telemetry status` to inspect pending batch count, disk use, oldest pending time, and last successful acknowledgement.
 

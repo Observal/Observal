@@ -390,67 +390,61 @@ def build_hooks() -> dict:
             "preToolUse": [
                 {
                     "type": "command",
-                    "command": "python -m observal_cli.hooks.session_push pre_tool_use",
+                    "command": "python -m observal_cli.hooks.session_push --harness my-harness",
                 }
             ],
             "postToolUse": [
                 {
                     "type": "command",
-                    "command": "python -m observal_cli.hooks.session_push post_tool_use",
+                    "command": "python -m observal_cli.hooks.session_push --harness my-harness",
                 }
             ],
             "sessionEnd": [
                 {
                     "type": "command",
-                    "command": "python -m observal_cli.hooks.session_push stop",
+                    "command": "python -m observal_cli.hooks.session_push --harness my-harness",
                 }
             ],
         }
     }
 ```
 
-## Step 6: Create Session Parser (required)
+## Step 6: Add the Session Source Adapter and Parser (required)
 
-Every harness needs a session parser. Without one, `observal reconcile` cannot
-push conversation context (assistant messages, tool results, thinking blocks)
-to the server, making rich trace logs impossible. You only get bare hook
-metadata without this.
+Transport and parsing are intentionally separate. The CLI adapter locates raw source records; it must not normalize them. The server parser remains harness-specific and converts stored raw rows into frontend events.
 
-**CLI side:** `observal_cli/sessions/my_harness.py` (reads local session files,
-normalizes into records for upload)
-
-**Server side:** `observal-server/services/session_parsers/my_harness.py` (reads
-raw ClickHouse rows, normalizes into frontend-displayable events)
-
-Both must produce the same normalized format so the trace viewer shows
-consistent data regardless of whether it came from reconcile or live hooks.
-
-See `sessions/claude_code.py` and `sessions/kiro.py` for reference
-implementations. Key things to handle:
-
-- User prompts and assistant responses
-- Tool call requests and results
-- Thinking/reasoning blocks (if the harness exposes them)
-- Error events
-- Session boundaries (start/end markers)
-
-Register the parser in `observal-server/services/session_parsers/__init__.py`:
+For a JSONL harness, implement the session methods on the existing `HarnessAdapter` in `observal_cli/harness/my_harness.py`:
 
 ```python
-from .my_harness import parse_rows as _parse_my_harness
-
-_PARSERS: dict[str, Callable] = {
+def resolve_session_source(self, event: dict, home: Path | None = None) -> SessionSource | None:
+    # Resolve the exact session ID, source path, cwd, and optional parent ID.
     ...
-    "my_harness": _parse_my_harness,
-}
+
+def discover_session_sources(self, home: Path | None = None, since_hours: int = 168) -> list[SessionSource]:
+    # Used by background recovery and `observal reconcile`.
+    ...
+
+def is_session_final(self, event: dict) -> bool:
+    ...
 ```
 
-The `session_parser` key in the harness registry entry must match this ID.
+Use `related_session_sources()` for separately stored subagents, `session_extra_fields()` for durable metadata such as credits, and `session_extra_records()` only for actual synthetic source records. Reuse `observal_cli.hooks.session_push --harness my-harness`; create a bridge module only when the host requires special stdout or runtime behavior. Do not add another cursor, direct POST path, or harness-specific reconcile scanner.
 
-## Step 7: Create Session Push Hook
+The shared engine reads complete records, spools them before network delivery, retries stable source indexes, advances only after a contiguous acknowledgement, recovers from the server checkpoint, and hashes full history only during final audit.
 
-Create `observal_cli/hooks/my_harness_session_push.py` if the harness needs a
-custom session push script (most can reuse `session_push.py`).
+Implement the independent server parser in `observal-server/services/session_parsers/my_harness.py`. It should handle user and assistant messages, tool calls/results, reasoning blocks, errors, and boundaries. Register it in `observal-server/services/session_parsers/__init__.py`; the harness registry's `session_parser` value must match its ID.
+
+For a non-JSONL host, add a native source/exporter only when the supported harness actually requires one. It must persist pending indexed records before delivery and obey the same acknowledgement/checkpoint/final-hash protocol. OpenCode and Pi are the reference native implementations.
+
+## Step 7: Configure the Shared Session Hook
+
+Point generated hook commands at:
+
+```text
+python -m observal_cli.hooks.session_push --harness my-harness
+```
+
+A thin compatibility bridge is acceptable for required host responses, but all recovery and delivery still route through the shared engine.
 
 ## Step 8: Register Everything
 
@@ -520,9 +514,9 @@ class TestMyHarnessAdapter:
     def test_detect_hooks_installed(self, tmp_path):
         (tmp_path / "settings.json").write_text(json.dumps({
             "hooks": {
-                "preToolUse": [{"command": "python -m observal_cli.hooks.session_push"}],
-                "postToolUse": [{"command": "python -m observal_cli.hooks.session_push"}],
-                "sessionEnd": [{"command": "python -m observal_cli.hooks.session_push"}],
+                "preToolUse": [{"command": "python -m observal_cli.hooks.session_push --harness my-harness"}],
+                "postToolUse": [{"command": "python -m observal_cli.hooks.session_push --harness my-harness"}],
+                "sessionEnd": [{"command": "python -m observal_cli.hooks.session_push --harness my-harness"}],
             }
         }))
         adapter = MyHarnessAdapter()
@@ -552,7 +546,7 @@ class TestMyHarnessAdapter:
 cd observal-server && uv run pytest ../tests/test_constants_sync.py -q
 
 # Adapter registration works
-cd observal-server && uv run pytest ../tests/test_cli_ide_adapters.py -q
+cd observal-server && uv run pytest ../tests/test_cli_harness_adapters.py -q
 
 # Scan discovers your harness
 observal scan --harness my-harness
@@ -565,6 +559,9 @@ observal pull <some-agent> --harness my-harness --dry-run
 
 # Hooks install correctly
 observal doctor patch --hook --harness my-harness --dry-run
+
+# Recovery discovers and drains an unfinished fixture through the shared engine
+observal reconcile --harness my-harness --dry-run
 ```
 
 ## Architecture Notes
@@ -583,7 +580,8 @@ No additional sandbox-specific code is needed per harness.
 
 Other notes:
 
-- Adapters are self-contained: one file handles scanning, hook detection, and shim status
+- Adapters are self-contained: one file handles scanning, hook detection, session source discovery, and shim status
+- Server parsers remain format-specific; transport, recovery, acknowledgement, and final audit behavior stay shared
 - Shared utilities in `observal_cli/shared/utils.py`: `extract_mcp_servers`, `parse_frontmatter_field`, `is_already_shimmed`, `_OBSERVAL_HOOK_MARKERS`
 - `BaseAdapter` in `observal_cli/harness/base.py` provides feature-gating via `_check_feature()`
 - `ensure_loaded()` guarantees all adapters are registered before cross-adapter operations

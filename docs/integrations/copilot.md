@@ -91,9 +91,11 @@ Copilot MCP configuration uses the `servers` key.
 
 ---
 
-## Session parsing
+## Session parsing and delivery
 
-Copilot uses the built-in `copilot-cli` session parser.
+Copilot uses the built-in `copilot-cli` server parser while retaining separate source adapters for VS Code Copilot and Copilot CLI. VS Code hook events are durably materialized as JSONL-compatible source records; Copilot CLI discovers its native `events.jsonl` sessions.
+
+Both adapters route through the shared spool-first delivery engine. Hook execution writes to the durable outbox and defers network work, retries keep stable source indexes, and cursors advance only after contiguous server acknowledgement. Recovery uses the authenticated server checkpoint. Finalization audits the complete source hash and rewinds/replays a mismatched range.
 
 ---
 

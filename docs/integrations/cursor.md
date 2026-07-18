@@ -99,7 +99,7 @@ Cursor MCP configs use the `mcpServers` key.
 
 Cursor keeps its built-in `cursor` parser. Its adapter resolves the transcript path supplied by Cursor, with project-directory discovery as a fallback, and discovers separately stored subagent transcripts.
 
-Cursor hook timeouts require a split delivery path: the hook synchronously writes complete transcript records and Stop-event token usage into the durable SQLite outbox, then a detached shared worker performs network delivery. The local byte/line cursor is not advanced by the hook or worker launch; it advances only after the server acknowledges a contiguous checkpoint. A delayed finalizer captures records written after Cursor's Stop event.
+Cursor hook timeouts require a split delivery path: the hook synchronously writes complete transcript records and Stop-event token usage into the durable SQLite outbox, then a detached shared worker performs network delivery. The local byte/line cursor is not advanced by the hook or worker launch; it advances only after the server acknowledges a contiguous checkpoint. A delayed finalizer captures records written after Cursor's Stop event, restores stale local state from the server checkpoint, and performs the final hash audit. Audit mismatches rewind and replay the affected range.
 
 ---
 

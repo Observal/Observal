@@ -50,7 +50,7 @@ observal doctor patch --all --harness copilot-cli
 
 ## Observability at zero cost to your agents
 
-The shim is transparent - it forwards every byte unchanged. If it can't reach the Observal server, the tool call **still succeeds** and telemetry is buffered locally in `~/.observal/telemetry_buffer.db`, flushed on the next successful contact. See [Core Concepts → Telemetry buffer](../getting-started/core-concepts.md#telemetry-buffer).
+The shim is transparent - it forwards every byte unchanged. If it can't reach the Observal server, the tool call **still succeeds** and telemetry is buffered locally in `~/.observal/telemetry_buffer.db`, flushed on the next successful contact. See [Core Concepts → Durable session outboxes](../getting-started/core-concepts.md#durable-session-outboxes).
 
 Restart your harness after `doctor patch`. The next MCP call produces a trace.
 
