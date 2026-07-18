@@ -5,9 +5,8 @@
 """Shared IO primitives for all harness session push scripts.
 
 These functions are harness-agnostic and handle config loading, offset
-tracking, line reading, HTTP posting, and error logging.  Every
-hook push script and cmd_reconcile imports from here instead of
-duplicating the logic.
+tracking, line reading, durable spooling, acknowledged delivery, and error
+logging. Hooks, background recovery, and public reconcile all use this engine.
 """
 
 from __future__ import annotations
@@ -28,8 +27,8 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def read_cursor(session_id: str, home: Path | None = None) -> tuple[int, int]:
-    """Return (byte_offset, line_count) for *session_id* from sync_state.json."""
+def read_cursor_state(session_id: str, home: Path | None = None) -> tuple[int, int, bool]:
+    """Return byte offset, line count, and finality for one local source."""
     if home is None:
         home = Path.home()
     state_file = home / ".observal" / "sync_state.json"
@@ -37,10 +36,16 @@ def read_cursor(session_id: str, home: Path | None = None) -> tuple[int, int]:
         try:
             data = json.loads(state_file.read_text())
             entry = data.get(session_id, {})
-            return entry.get("offset", 0), entry.get("line_count", 0)
+            return entry.get("offset", 0), entry.get("line_count", 0), bool(entry.get("finalized"))
         except Exception:
             pass
-    return 0, 0
+    return 0, 0, False
+
+
+def read_cursor(session_id: str, home: Path | None = None) -> tuple[int, int]:
+    """Return (byte_offset, line_count) for *session_id* from sync_state.json."""
+    offset, line_count, _finalized = read_cursor_state(session_id, home=home)
+    return offset, line_count
 
 
 def write_cursor(
@@ -230,91 +235,7 @@ def post_to_server_ack(
         return None
 
 
-def post_to_server(server_url: str, access_token: str, payload: dict, config: dict | None = None) -> bool:
-    """Return whether the server acknowledged a session batch."""
-    return post_to_server_ack(server_url, access_token, payload, config=config) is not None
-
-
-# ---------------------------------------------------------------------------
-# Chunked posting
-# ---------------------------------------------------------------------------
-
 MAX_CHUNK_SIZE = 500
-
-
-def post_lines_chunked(
-    server_url: str,
-    access_token: str,
-    session_id: str,
-    lines: list[str],
-    start_offset: int,
-    hook_event: str,
-    line_count_before: int,
-    new_offset: int = 0,
-    cwd: str = "",
-    parent_session_id: str | None = None,
-    session_jsonl: Path | None = None,
-    harness: str = "claude-code",
-    config: dict | None = None,
-    extra_fields: dict | None = None,
-) -> bool:
-    """Post lines to ingest in chunks of MAX_CHUNK_SIZE.
-
-    Returns True if ALL chunks succeed, False on first failure.
-    Callers should only advance the cursor on True.
-    """
-    if not lines:
-        return True
-
-    total_chunks = (len(lines) + MAX_CHUNK_SIZE - 1) // MAX_CHUNK_SIZE
-
-    for i in range(0, len(lines), MAX_CHUNK_SIZE):
-        chunk = lines[i : i + MAX_CHUNK_SIZE]
-        chunk_index = i // MAX_CHUNK_SIZE
-        is_last = chunk_index == total_chunks - 1
-
-        payload = build_payload(
-            session_id=session_id,
-            lines=chunk,
-            start_offset=line_count_before + i,
-            hook_event=hook_event,
-            line_count_before=line_count_before + i,
-            new_offset=new_offset if is_last else 0,
-            cwd=cwd,
-            parent_session_id=parent_session_id,
-            session_jsonl=session_jsonl,
-            harness=harness,
-        )
-        payload["harness"] = harness
-        # Only mark final on the last chunk if the hook_event warrants it
-        if not is_last:
-            payload.pop("final", None)
-            payload.pop("total_line_count", None)
-            payload.pop("total_offset", None)
-        if extra_fields:
-            payload.update(extra_fields)
-
-        success = post_to_server(
-            server_url=server_url,
-            access_token=access_token,
-            payload=payload,
-            config=config,
-        )
-        if not success:
-            return False
-
-        # On first chunk, upload layer snapshot if hash changed
-        if i == 0 and payload.get("layer_hash"):
-            _maybe_upload_layer_snapshot(
-                server_url=server_url,
-                access_token=access_token,
-                layer_hash=payload["layer_hash"],
-                harness=harness,
-                cwd=cwd,
-                config=config,
-            )
-
-    return True
 
 
 # ---------------------------------------------------------------------------

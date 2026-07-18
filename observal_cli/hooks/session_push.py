@@ -16,7 +16,13 @@ from typing import TYPE_CHECKING
 from loguru import logger as optic
 
 from observal_cli.harness import ensure_loaded, get_adapter
-from observal_cli.sessions.base import drain_outbox, drain_session_source, load_config, log_error
+from observal_cli.sessions.base import (
+    drain_outbox,
+    drain_session_source,
+    load_config,
+    log_error,
+    read_cursor_state,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -168,14 +174,19 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
     config = load_config(home=home)
     if config is None:
         return
+    drain_outbox(config, home=home)
     now = time.time()
     for source in adapter.discover_session_sources(home=home):
         if source.session_id == exclude_session or source.path is None:
             continue
         try:
-            if now - source.path.stat().st_mtime < _RECOVERY_MIN_AGE_SECONDS:
+            stat = source.path.stat()
+            if now - stat.st_mtime < _RECOVERY_MIN_AGE_SECONDS:
                 continue
         except OSError:
+            continue
+        offset, _line_count, finalized = read_cursor_state(source.checkpoint_key, home=home)
+        if finalized and offset >= stat.st_size:
             continue
         event = {"session_id": source.session_id, "hook_event_name": "Stop"}
         drain_session_source(
