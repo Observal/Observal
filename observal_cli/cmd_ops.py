@@ -240,8 +240,8 @@ def telemetry_status():
     """Check telemetry data flow status.
 
     Shows server-side event counts (tool calls, interactions) for the
-    last hour and local buffer statistics (pending, failed, sent events).
-    Useful for verifying that the shim is forwarding telemetry correctly.
+    last hour and durable local session outbox statistics.
+    Useful for verifying that session telemetry is reaching the server.
 
     Examples:
 
@@ -259,18 +259,15 @@ def telemetry_status():
 
         buf = buffer_stats()
         rprint()
-        rprint("  [bold]Local Buffer[/bold]")
-        rprint(f"  Pending:      {buf['pending']} events")
-        if buf["failed"]:
-            rprint(f"  Failed:       [red]{buf['failed']} events[/red]")
-        if buf["sent"]:
-            rprint(f"  Sent (cached):{buf['sent']} events")
+        rprint("  [bold]Durable Session Outbox[/bold]")
+        rprint(f"  Pending:      {buf['pending']} batches")
+        rprint(f"  Disk:         {buf['bytes'] / 1024:.1f} KiB")
         if buf["oldest_pending"]:
             rprint(f"  Oldest:       {buf['oldest_pending']} UTC")
         if buf["last_sync"]:
             rprint(f"  Last sync:    {buf['last_sync']} UTC")
         if buf["total"] == 0:
-            rprint("  [dim]Buffer is empty (all events sent directly)[/dim]")
+            rprint("  [dim]Outbox is empty (all observed records acknowledged)[/dim]")
     except Exception:
         pass
 

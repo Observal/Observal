@@ -427,7 +427,7 @@ def status():
             rprint()
             pending = buf["pending"]
             label = f"[yellow]{pending} pending[/yellow]" if pending else "[green]0 pending[/green]"
-            rprint(f"  Buffer:  {label}, {buf['failed']} failed, {buf['sent']} sent")
+            rprint(f"  Outbox:  {label} batches, {buf['bytes'] / 1024:.1f} KiB")
             if buf["oldest_pending"]:
                 rprint(f"  Oldest:  {buf['oldest_pending']} UTC")
             if pending and not ok:
