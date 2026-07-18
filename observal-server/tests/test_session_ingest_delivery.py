@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -67,6 +68,7 @@ async def test_dedup_uses_source_index_not_content_hash(monkeypatch):
     inserted: list[dict] = []
 
     monkeypatch.setattr(session_ingest, "query_existing_for_dedup", AsyncMock(return_value={0: digest}))
+    monkeypatch.setattr(session_ingest, "query_session_checkpoint", AsyncMock(return_value=(0, 0)))
     monkeypatch.setattr(session_ingest, "insert_session_events", AsyncMock(side_effect=lambda rows: inserted.extend(rows)))
     monkeypatch.setattr(session_ingest, "refresh_session_summary", AsyncMock())
 
@@ -87,6 +89,7 @@ async def test_dedup_uses_source_index_not_content_hash(monkeypatch):
 @pytest.mark.asyncio
 async def test_conflicting_content_at_same_source_index_is_rejected(monkeypatch):
     monkeypatch.setattr(session_ingest, "query_existing_for_dedup", AsyncMock(return_value={7: "different"}))
+    monkeypatch.setattr(session_ingest, "query_session_checkpoint", AsyncMock(return_value=(7, 0)))
     insert = AsyncMock()
     monkeypatch.setattr(session_ingest, "insert_session_events", insert)
 
@@ -104,6 +107,28 @@ async def test_conflicting_content_at_same_source_index_is_rejected(monkeypatch)
 
     assert exc.value.offsets == [7]
     insert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_conflict_after_audited_checkpoint_is_replaced(monkeypatch):
+    monkeypatch.setattr(session_ingest, "query_existing_for_dedup", AsyncMock(return_value={7: "different"}))
+    monkeypatch.setattr(session_ingest, "query_session_checkpoint", AsyncMock(return_value=(6, 70)))
+    inserted = AsyncMock()
+    monkeypatch.setattr(session_ingest, "insert_session_events", inserted)
+    monkeypatch.setattr(session_ingest, "refresh_session_summary", AsyncMock())
+
+    await session_ingest.ingest_session_lines(
+        session_id="session",
+        project_id="project",
+        user_id="user",
+        agent_id=None,
+        agent_version=None,
+        harness="claude-code",
+        lines=['{"type":"system"}'],
+        start_offset=7,
+    )
+
+    assert inserted.await_args.args[0][0]["line_offset"] == 7
 
 
 @pytest.mark.asyncio
@@ -144,6 +169,35 @@ async def test_integrity_uses_line_and_byte_checkpoints(monkeypatch):
 
     assert result.ok
     assert result.expected_line == 2
+
+
+@pytest.mark.asyncio
+async def test_final_hash_audit_identifies_first_missing_range(monkeypatch):
+    lines = ["zero", "one", "two"]
+    source_hashes = [hashlib.sha256(line.encode()).hexdigest() for line in lines]
+    expected_hash = hashlib.sha256("".join(f"{digest}\n" for digest in source_hashes).encode()).hexdigest()
+    monkeypatch.setattr(
+        session_ingest,
+        "query_session_source_manifest",
+        AsyncMock(return_value=[(0, 5, source_hashes[0]), (2, 14, source_hashes[2])]),
+    )
+
+    result = await session_ingest.check_session_integrity(
+        "session",
+        "project",
+        "user",
+        "claude-code",
+        3,
+        14,
+        acknowledged_line=2,
+        acknowledged_offset=14,
+        expected_hash=expected_hash,
+        hashed_line_count=3,
+    )
+
+    assert not result.ok
+    assert result.repair_from_line == 1
+    assert result.repair_offset == 5
 
 
 def test_request_requires_one_ordered_byte_checkpoint_per_line():

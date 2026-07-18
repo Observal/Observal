@@ -612,6 +612,24 @@ export default function (pi: ExtensionAPI) {
     return true;
   }
 
+  function hashSessionFile(sessionFile: string): { hash: string; lineCount: number } {
+    const content = fs.readFileSync(sessionFile);
+    const hasher = crypto.createHash("sha256");
+    let lineCount = 0;
+    let start = 0;
+    for (let index = 0; index < content.length; index++) {
+      if (content[index] !== 10) continue;
+      const line = content.subarray(start, index).toString("utf-8").replace(/\r$/, "");
+      if (line.trim()) {
+        hasher.update(crypto.createHash("sha256").update(line, "utf-8").digest("hex"));
+        hasher.update("\n");
+        lineCount++;
+      }
+      start = index + 1;
+    }
+    return { hash: hasher.digest("hex"), lineCount };
+  }
+
   function checkpointByteOffset(sessionFile: string, lineCount: number, serverOffset: number): number | null {
     try {
       const content = fs.readFileSync(sessionFile);
@@ -688,6 +706,7 @@ export default function (pi: ExtensionAPI) {
       s.lineCount = cursor.line_count;
 
       const stat = fs.statSync(s.sessionFile);
+      const audit = opts.final ? hashSessionFile(s.sessionFile) : null;
       const newBytes = stat.size - s.byteOffset;
       if (newBytes < 0) return;
 
@@ -739,6 +758,8 @@ export default function (pi: ExtensionAPI) {
           final: true,
           total_line_count: s.lineCount,
           total_offset: s.byteOffset,
+          session_hash: audit?.hash,
+          hashed_line_count: audit?.lineCount,
         };
         const pending: PendingBatch = {
           session_id: s.sessionId,
@@ -775,7 +796,12 @@ export default function (pi: ExtensionAPI) {
           hook_event: opts.final && isLastChunk ? "SessionShutdown" : "AgentEnd",
           final: opts.final && isLastChunk,
           ...(opts.final && isLastChunk
-            ? { total_line_count: initialLineCount + lines.length, total_offset: finalOffset }
+            ? {
+                total_line_count: initialLineCount + lines.length,
+                total_offset: finalOffset,
+                session_hash: audit?.hash,
+                hashed_line_count: audit?.lineCount,
+              }
             : {}),
         };
         const pending: PendingBatch = {

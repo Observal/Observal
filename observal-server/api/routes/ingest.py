@@ -32,6 +32,8 @@ class SessionIngestRequest(BaseModel):
     final: bool = False
     total_line_count: int | None = Field(None, ge=0)
     total_offset: int | None = Field(None, ge=0)
+    session_hash: str | None = Field(None, max_length=128)
+    hashed_line_count: int | None = Field(None, ge=0)
     # Kiro-specific: total credits consumed this session
     total_credits: float | None = Field(None, ge=0)
     # Claude Code subagent attribution: set when this session is a subagent
@@ -54,6 +56,14 @@ class SessionIngestRequest(BaseModel):
                 raise ValueError("end_byte_offsets cannot contain negative values")
             if self.end_byte_offsets != sorted(self.end_byte_offsets):
                 raise ValueError("end_byte_offsets must be ordered")
+        if self.session_hash is not None and self.hashed_line_count is None:
+            raise ValueError("hashed_line_count is required with session_hash")
+        if (
+            self.hashed_line_count is not None
+            and self.total_line_count is not None
+            and self.hashed_line_count > self.total_line_count
+        ):
+            raise ValueError("hashed_line_count cannot exceed total_line_count")
         return self
 
 
@@ -64,6 +74,8 @@ class SessionIngestResponse(BaseModel):
     acknowledged_line: int
     acknowledged_offset: int
     integrity_ok: bool | None = None  # Only set when final=True
+    server_hash: str | None = None
+    repair_from_line: int | None = None
 
 
 class SessionCheckpointResponse(BaseModel):
@@ -144,8 +156,23 @@ async def ingest_session(
             expected_offset=req.total_offset or 0,
             acknowledged_line=acknowledged_line,
             acknowledged_offset=acknowledged_offset,
+            expected_hash=req.session_hash,
+            hashed_line_count=req.hashed_line_count,
         )
         integrity_ok = integrity.ok
+        if integrity.repair_from_line is not None:
+            from services.clickhouse import insert_session_checkpoint
+
+            acknowledged_line = integrity.repair_from_line - 1
+            acknowledged_offset = integrity.repair_offset
+            await insert_session_checkpoint(
+                req.session_id,
+                project_id,
+                user_id,
+                req.harness,
+                acknowledged_line,
+                acknowledged_offset,
+            )
         if not integrity_ok:
             optic.warning(
                 "session integrity check failed: session={}, expected={}, actual offset={}",
@@ -185,6 +212,8 @@ async def ingest_session(
         acknowledged_line=acknowledged_line,
         acknowledged_offset=acknowledged_offset,
         integrity_ok=integrity_ok,
+        server_hash=integrity.server_hash if req.final and req.total_line_count is not None else None,
+        repair_from_line=integrity.repair_from_line if req.final and req.total_line_count is not None else None,
     )
 
 

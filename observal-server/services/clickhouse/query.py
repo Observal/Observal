@@ -90,6 +90,33 @@ async def query_source_records_after(
     return [(int(row["line_offset"]), int(row.get("source_end_offset") or 0)) for row in r.json().get("data", [])]
 
 
+async def query_session_source_manifest(
+    session_id: str,
+    project_id: str,
+    user_id: str,
+    harness: str,
+) -> list[tuple[int, int, str]]:
+    """Return canonical source positions for final integrity auditing."""
+    sql = (
+        "SELECT line_offset, source_end_offset, source_sha256 FROM session_events FINAL "
+        "WHERE project_id = {pid:String} AND user_id = {uid:String} "
+        "AND harness = {harness:String} AND session_id = {sid:String} "
+        "AND is_source_record = 1 ORDER BY line_offset FORMAT JSON"
+    )
+    params = {
+        "param_pid": project_id,
+        "param_uid": user_id,
+        "param_harness": harness,
+        "param_sid": session_id,
+    }
+    r = await _client._query(sql, params)
+    r.raise_for_status()
+    return [
+        (int(row["line_offset"]), int(row.get("source_end_offset") or 0), str(row.get("source_sha256") or ""))
+        for row in r.json().get("data", [])
+    ]
+
+
 async def query_existing_for_dedup(
     session_id: str,
     project_id: str,

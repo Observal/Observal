@@ -261,7 +261,9 @@ def test_final_drain_with_no_new_records_marks_acknowledged_cursor_final(tmp_pat
     def acknowledge(payload, _config):
         return {
             "acknowledged_line": payload["start_offset"] + len(payload["lines"]) - 1,
-            "acknowledged_offset": payload["end_byte_offsets"][-1],
+            "acknowledged_offset": payload.get("end_byte_offsets", [])[-1]
+            if payload.get("end_byte_offsets")
+            else payload["total_offset"],
         }
 
     assert base.drain_session_source(
@@ -283,6 +285,54 @@ def test_final_drain_with_no_new_records_marks_acknowledged_cursor_final(tmp_pat
     )
     state = json.loads((tmp_path / ".observal" / "sync_state.json").read_text())
     assert state["session"]["finalized"] is True
+
+
+def test_final_hash_mismatch_rewinds_and_repairs_source_range(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text('{"n":0}\n{"n":1}\n{"n":2}\n')
+    source = SessionSource("claude-code", "session", source_path)
+    db = tmp_path / "outbox.db"
+    starts: list[int] = []
+
+    def audit(payload, _config):
+        starts.append(payload["start_offset"])
+        if len(starts) == 1:
+            return {
+                "acknowledged_line": 0,
+                "acknowledged_offset": 8,
+                "integrity_ok": False,
+                "repair_from_line": 1,
+            }
+        return {
+            "acknowledged_line": 2,
+            "acknowledged_offset": source_path.stat().st_size,
+            "integrity_ok": True,
+        }
+
+    assert not base.drain_session_source(
+        source,
+        config(),
+        hook_event="Stop",
+        final=True,
+        home=tmp_path,
+        db_path=db,
+        post=audit,
+    )
+    assert base.read_cursor("session", home=tmp_path) == (8, 1)
+
+    assert base.drain_session_source(
+        source,
+        config(),
+        hook_event="Stop",
+        final=True,
+        home=tmp_path,
+        db_path=db,
+        post=audit,
+    )
+    assert starts == [0, 1]
+    assert telemetry_buffer.stats(db_path=db)["pending"] == 0
+    assert base.read_cursor("session", home=tmp_path) == (source_path.stat().st_size, 3)
 
 
 def test_server_commit_before_local_delete_is_safe_to_retry(tmp_path: Path, monkeypatch):

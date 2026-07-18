@@ -12,6 +12,7 @@ Classification dispatches strictly by harness via
 default fallback.  Passing an unknown ``harness`` value raises ``KeyError``.
 """
 
+import hashlib
 import uuid as _uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from services.clickhouse import (
     insert_session_events,
     query_existing_for_dedup,
     query_session_checkpoint,
+    query_session_source_manifest,
     query_source_records_after,
     refresh_session_summary,
 )
@@ -331,6 +333,9 @@ class IntegrityResult:
     acknowledged_offset: int
     expected_line: int
     expected_offset: int
+    server_hash: str | None = None
+    repair_from_line: int | None = None
+    repair_offset: int = 0
 
 
 async def ingest_session_lines(
@@ -403,8 +408,15 @@ async def ingest_session_lines(
     )
     line_hashes = [xxhash.xxh128(line.encode("utf-8", errors="replace")).hexdigest() for line in lines]
     conflicts = [start_offset + i for i, digest in enumerate(line_hashes) if existing.get(start_offset + i, digest) != digest]
-    if conflicts:
-        raise SessionRecordConflictError(conflicts)
+    repair_offsets: set[int] = set()
+    if existing:
+        checkpoint_line, _checkpoint_offset = await query_session_checkpoint(
+            session_id, project_id, user_id, harness
+        )
+        blocked = [offset for offset in conflicts if offset <= checkpoint_line]
+        if blocked:
+            raise SessionRecordConflictError(blocked)
+        repair_offsets = {offset for offset in existing if offset > checkpoint_line}
 
     byte_offsets = end_byte_offsets or [0] * len(lines)
     rows: list[dict] = []
@@ -415,7 +427,7 @@ async def ingest_session_lines(
 
     for i, (raw_line, line_hash) in enumerate(zip(lines, line_hashes, strict=True)):
         line_offset = start_offset + i
-        if line_offset in existing:
+        if line_offset in existing and line_offset not in repair_offsets:
             skipped += 1
             continue
 
@@ -473,6 +485,7 @@ async def ingest_session_lines(
                 "line_offset": line_offset,
                 "source_end_offset": byte_offsets[i],
                 "line_hash": line_hash,
+                "source_sha256": hashlib.sha256(raw_line.encode("utf-8", errors="replace")).hexdigest(),
                 "is_source_record": 1,
                 "rendered": rendered,
                 "event_type": event_type,
@@ -562,18 +575,54 @@ async def check_session_integrity(
     expected_offset: int,
     acknowledged_line: int | None = None,
     acknowledged_offset: int | None = None,
+    expected_hash: str | None = None,
+    hashed_line_count: int | None = None,
 ) -> IntegrityResult:
-    """Verify final source counts against the contiguous server checkpoint."""
+    """Audit final source continuity and hash only on finalization."""
     if acknowledged_line is None or acknowledged_offset is None:
         acknowledged_line, acknowledged_offset = await query_session_checkpoint(
             session_id, project_id, user_id, harness
         )
     expected_line = expected_line_count - 1
     offset_ok = expected_offset == 0 or acknowledged_offset == 0 or acknowledged_offset == expected_offset
+    server_hash = None
+    repair_from_line = acknowledged_line + 1 if acknowledged_line < expected_line else None
+    manifest: list[tuple[int, int, str]] = []
+
+    if expected_hash is not None:
+        manifest = await query_session_source_manifest(session_id, project_id, user_id, harness)
+        hash_count = expected_line_count if hashed_line_count is None else hashed_line_count
+        hasher = hashlib.sha256()
+        hashed_offsets: list[int] = []
+        for line_offset, _end_offset, source_hash in manifest:
+            if line_offset >= hash_count:
+                continue
+            hasher.update(source_hash.encode())
+            hasher.update(b"\n")
+            hashed_offsets.append(line_offset)
+        server_hash = hasher.hexdigest()
+        expected_offsets = list(range(hash_count))
+        if hashed_offsets != expected_offsets:
+            present_offsets = set(hashed_offsets)
+            missing = next((offset for offset in expected_offsets if offset not in present_offsets), 0)
+            repair_from_line = missing if repair_from_line is None else min(repair_from_line, missing)
+        elif server_hash != expected_hash:
+            repair_from_line = 0 if repair_from_line is None else min(repair_from_line, 0)
+
+    repair_offset = 0
+    if repair_from_line and manifest:
+        repair_offset = next(
+            (end_offset for line_offset, end_offset, _raw in manifest if line_offset == repair_from_line - 1),
+            0,
+        )
+
     return IntegrityResult(
-        ok=acknowledged_line == expected_line and offset_ok,
+        ok=acknowledged_line == expected_line and offset_ok and repair_from_line is None,
         acknowledged_line=acknowledged_line,
         acknowledged_offset=acknowledged_offset,
         expected_line=expected_line,
         expected_offset=expected_offset,
+        server_hash=server_hash,
+        repair_from_line=repair_from_line,
+        repair_offset=repair_offset,
     )

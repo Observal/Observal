@@ -32,6 +32,7 @@ from services.clickhouse.query import (
     query_existing_for_dedup,
     query_recent_events,
     query_session_checkpoint,
+    query_session_source_manifest,
     query_source_records_after,
 )
 from services.clickhouse.schema import (
@@ -66,6 +67,7 @@ __all__ = [
     "query_existing_for_dedup",
     "query_recent_events",
     "query_session_checkpoint",
+    "query_session_source_manifest",
     "query_source_records_after",
     "refresh_session_summary",
     "run_clickhouse_migrations",

@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """ClickHouse insert functions for live tables."""
 
+import time
+
 import orjson
 from loguru import logger as optic
 
@@ -98,7 +100,7 @@ async def insert_session_events(rows: list[dict]):
         row.setdefault("raw_line_truncated", 0)
     sql = (
         "INSERT INTO session_events (session_id, project_id, user_id, agent_id, "
-        "agent_version, layer_hash, harness, line_offset, source_end_offset, line_hash, "
+        "agent_version, layer_hash, harness, line_offset, source_end_offset, line_hash, source_sha256, "
         "is_source_record, rendered, event_type, timestamp, uuid, parent_uuid, "
         "tool_name, tool_id, content_preview, content_length, raw_line, credits, parent_session_id, "
         "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, model, raw_line_truncated) FORMAT JSONEachRow"
@@ -123,9 +125,7 @@ async def insert_session_checkpoint(
     acknowledged_line: int,
     acknowledged_offset: int,
 ) -> None:
-    """Insert a monotonic replaceable session checkpoint."""
-    if acknowledged_line < 0:
-        return
+    """Insert a replaceable checkpoint, including audit rewinds."""
     row = {
         "session_id": session_id,
         "project_id": project_id,
@@ -133,7 +133,7 @@ async def insert_session_checkpoint(
         "harness": harness,
         "acknowledged_line": acknowledged_line,
         "acknowledged_offset": acknowledged_offset,
-        "checkpoint_version": acknowledged_line + 1,
+        "checkpoint_version": time.time_ns(),
     }
     r = await _client._query(
         "INSERT INTO session_checkpoints (session_id, project_id, user_id, harness, acknowledged_line, "

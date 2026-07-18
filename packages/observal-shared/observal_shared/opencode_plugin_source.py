@@ -232,6 +232,8 @@ function pendingPayload(state) {
   if (pending.final) {
     payload.total_line_count = pending.endLine + 1;
     payload.total_offset = 0;
+    payload.session_hash = pending.sessionHash;
+    payload.hashed_line_count = pending.hashedLineCount;
   }
   return payload;
 }
@@ -386,6 +388,12 @@ export const ObservalPlugin = async ({ client, directory }) => {
             return;
           }
           const isFinal = event?.properties?.final === true || event?.properties?.reason === "completed";
+          const allLines = isFinal ? messagesToLines(messages) : [];
+          const sessionHash = isFinal
+            ? createHash("sha256").update(
+                allLines.map((line) => `${createHash("sha256").update(line).digest("hex")}\n`).join("")
+              ).digest("hex")
+            : null;
           state.pending = {
             destination: config.server_url,
             userId: config.user_id,
@@ -395,6 +403,8 @@ export const ObservalPlugin = async ({ client, directory }) => {
             agentId: agent.id,
             agentVersion: agent.version,
             final: isFinal,
+            sessionHash,
+            hashedLineCount: isFinal ? allLines.length : null,
           };
           saveSessionState(state); // Durable before network delivery.
           pendingPush.delete(sessionId);

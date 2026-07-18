@@ -134,7 +134,7 @@ def enqueue(
     """
     lines = payload.get("lines") or []
     metadata_only = not lines
-    if metadata_only and payload.get("total_credits") is None:
+    if metadata_only and payload.get("total_credits") is None and not payload.get("final"):
         raise ValueError("empty session outbox payload must contain durable metadata")
     harness = str(payload.get("harness") or "")
     session_id = str(payload.get("session_id") or "")
@@ -284,6 +284,16 @@ def record_attempt(item_id: int, *, db_path: Path | None = None) -> None:
             "UPDATE session_outbox SET attempts = attempts + 1, last_attempt = datetime('now') WHERE id = ?",
             (item_id,),
         )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def accept_item(item_id: int, *, db_path: Path | None = None) -> None:
+    """Remove one posted batch when an audit rewinds the contiguous checkpoint."""
+    conn = _connect(db_path)
+    try:
+        conn.execute("DELETE FROM session_outbox WHERE id = ?", (item_id,))
         conn.commit()
     finally:
         conn.close()

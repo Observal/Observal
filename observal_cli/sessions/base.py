@@ -11,6 +11,7 @@ logging. Hooks, background recovery, and public reconcile all use this engine.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 from pathlib import Path
@@ -125,6 +126,17 @@ def read_new_records(jsonl_path: Path, offset: int) -> tuple[list[str], list[int
             lines.append(line)
             end_offsets.append(absolute_offset)
     return lines, end_offsets, complete_bytes
+
+
+def hash_session_source(jsonl_path: Path) -> tuple[str, int]:
+    """Hash complete non-empty source records for final/audit delivery."""
+    lines, _offsets, _bytes_read = read_new_records(jsonl_path, 0)
+    hasher = hashlib.sha256()
+    for line in lines:
+        source_hash = hashlib.sha256(line.encode("utf-8", errors="replace")).hexdigest()
+        hasher.update(source_hash.encode())
+        hasher.update(b"\n")
+    return hasher.hexdigest(), len(lines)
 
 
 def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
@@ -397,6 +409,17 @@ def drain_outbox(
             return False
         acknowledged_line = int(acknowledgement["acknowledged_line"])
         acknowledged_offset = int(acknowledgement.get("acknowledged_offset") or 0)
+        repair_from_line = acknowledgement.get("repair_from_line")
+        if isinstance(repair_from_line, int):
+            write_cursor(
+                item.checkpoint_key,
+                acknowledged_offset,
+                acknowledged_line + 1,
+                home=home,
+                preserve_finalized=False,
+            )
+            telemetry_buffer.accept_item(item.id, db_path=db_path)
+            return False
         if acknowledged_line < item.end_line:
             return False
         if acknowledged_offset <= 0:
@@ -464,6 +487,7 @@ def drain_session_source(
         byte_offset=byte_offset,
         db_path=db_path,
     )
+    session_hash, hashed_line_count = hash_session_source(source.path) if final else (None, None)
     lines, end_byte_offsets, bytes_read = read_new_records(source.path, byte_offset)
     if extra_records:
         lines.extend(extra_records)
@@ -471,7 +495,7 @@ def drain_session_source(
     if not lines:
         if bytes_read:
             byte_offset += bytes_read
-        if extra_fields:
+        if extra_fields or final:
             payload = build_payload(
                 session_id=source.session_id,
                 lines=[],
@@ -485,11 +509,14 @@ def drain_session_source(
                 harness=source.harness,
             )
             payload["harness"] = source.harness
-            payload.update(extra_fields)
+            if extra_fields:
+                payload.update(extra_fields)
             if final:
                 payload["final"] = True
                 payload["total_line_count"] = line_count
                 payload["total_offset"] = byte_offset
+                payload["session_hash"] = session_hash
+                payload["hashed_line_count"] = hashed_line_count
             telemetry_buffer.enqueue(
                 payload,
                 destination=destination,
@@ -535,6 +562,8 @@ def drain_session_source(
             payload["final"] = True
             payload["total_line_count"] = line_count + len(lines)
             payload["total_offset"] = byte_offset + bytes_read
+            payload["session_hash"] = session_hash
+            payload["hashed_line_count"] = hashed_line_count
         else:
             payload.pop("final", None)
             payload.pop("total_line_count", None)
