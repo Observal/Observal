@@ -11,7 +11,7 @@ The vocabulary you need to be productive with Observal. Read once; every other p
 ```mermaid
 flowchart TB
     harness["AI coding harness: Claude Code, Kiro, Cursor, Pi"]
-    sessions["Local session store - JSONL transcripts / SQLite buffers"]
+    sessions["Harness session sources - JSONL or native message APIs"]
     hooks["harness hooks - session + lifecycle events"]
     shim["observal-shim / proxy - MCP request + response capture"]
     mcp[MCP servers]
@@ -34,7 +34,7 @@ flowchart TB
 
 Observal collects agent activity through three complementary paths:
 
-* **Session capture** reads the coding agent's local session files or SQLite buffers and reconciles them into normalized traces.
+* **Session capture** reads harness JSONL transcripts or native message APIs and delivers indexed raw records for server-side parsing.
 * **harness hooks** capture lifecycle events such as session start, user prompt, tool use, stop, and notifications when the harness exposes them.
 * **MCP shims and proxies** capture MCP requests and responses without modifying the traffic.
 
@@ -87,9 +87,11 @@ Interception is **transparent**: nothing is changed on the wire, and an unreacha
 
 ## Durable session outboxes
 
-Acknowledged Python session exporters persist records in `~/.observal/telemetry_buffer.db` before upload. OpenCode's native plugin uses per-session files under `~/.observal/opencode_session_outbox/`. Failed attempts remain pending across process restarts. A batch is removed, and its source line advances, only after the server acknowledges a contiguous checkpoint that covers it.
+Session traces use **eventual at-least-once delivery with effectively-once storage**. Python exporters persist records in `~/.observal/telemetry_buffer.db` before upload. OpenCode and Pi use native durable outboxes under `~/.observal/`. Failed attempts remain pending across process restarts. A batch is removed, and its source line advances, only after the server acknowledges a contiguous checkpoint that covers it.
 
-The guarantee begins when Observal observes and spools a record. It cannot recover a source record that the harness deletes before any installed hook or extension runs.
+The server identifies a source record by project, user, harness, session ID, and source line index. Retries and overlapping batches therefore converge to one canonical record. If local cursor state is missing, corrupt, or stale, recovery reads the authenticated server checkpoint before resuming. Finalization performs a stable-file pass and SHA-256 audit; a mismatch rewinds to the affected range for idempotent replay. Full-history hashing does not run on normal hook uploads.
+
+The guarantee begins when Observal observes and durably spools a record. It cannot recover a source record that the harness deletes before any installed hook or extension runs.
 
 Check Python exporter outbox status:
 

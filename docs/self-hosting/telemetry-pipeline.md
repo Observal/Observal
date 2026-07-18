@@ -12,13 +12,13 @@ How agent session data becomes traces, turns, spans, and insight-ready session a
 ```mermaid
 flowchart TB
     harness["AI coding harness"]
-    sessionFiles["Local session files - JSONL transcripts / SQLite buffers"]
-    reconcile["observal reconcile - session parser"]
+    sessionFiles["Harness session sources - JSONL / native message APIs"]
+    reconcile["Acknowledged exporter / observal reconcile"]
     hooks["harness hooks - session lifecycle events"]
     shim["observal-shim / proxy - MCP requests + responses"]
     api["Observal API"]
     ch["ClickHouse - traces, turns, spans, events"]
-    sessionStore["Session JSONL artifacts - used for insights"]
+    sessionStore["Canonical indexed session records"]
 
     harness --> sessionFiles
     sessionFiles --> reconcile
@@ -37,13 +37,15 @@ Observal presents activity in the UI as **sessions**, **traces / turns**, and **
 - A **trace / turn** is usually one user prompt and the agent work that follows.
 - A **span** is one operation inside a turn, commonly a tool call, MCP request, hook event, model step, or parser event.
 
-For insights, Observal also keeps session-shaped artifacts derived from the agent's JSONL transcripts or SQLite session buffers. Those richer session artifacts let the insights engine reason about the conversation in order, while ClickHouse stores the normalized analytical layer used by trace views, dashboards, and queries.
+For insights, Observal keeps canonical indexed source records and their parsed session events. These preserve conversation order while ClickHouse also provides the normalized analytical layer used by trace views, dashboards, and queries.
 
 ## Path 1: session sources
 
 This is the primary path for full-session reconstruction. Coding agents expose local JSONL transcripts or equivalent history. The harness adapter resolves those sources, while Observal sends indexed raw records for harness-specific classification on the server.
 
-Claude Code, Kiro, Codex, and Cursor use the shared Python acknowledged exporter: each observed batch is written to `~/.observal/telemetry_buffer.db` before upload, retries are idempotent, and the local source cursor advances only after the server returns a contiguous line/byte checkpoint. OpenCode's native plugin implements the same contract with per-session files under `~/.observal/opencode_session_outbox/`. On Stop, a delayed stable-file pass captures records written after Python hooks; Kiro credit metadata uses the same durable path. Outboxes survive CLI and harness restarts, but cannot cover records deleted before Observal observes them.
+Claude Code, Kiro, Codex, Cursor, Copilot, Copilot CLI, and Antigravity use the shared Python acknowledged exporter: each observed batch is written to `~/.observal/telemetry_buffer.db` before upload, retries are idempotent, and the local source cursor advances only after the server returns a contiguous line/byte checkpoint. OpenCode and Pi implement the same wire contract with native durable outboxes. On Stop, a delayed stable-file pass captures records written after Python hooks; Kiro credit metadata uses the same durable path. Outboxes survive CLI and harness restarts, but cannot cover records deleted before Observal observes them.
+
+Outboxes drain before source scans. Background recovery and `observal reconcile` use the same harness adapter registry and delivery engine. Missing or corrupt local state is rebuilt from `GET /api/v1/ingest/session/checkpoint`. Finalization alone computes a whole-session SHA-256 audit hash. Missing or mismatched ranges rewind the server and local checkpoints and are replayed idempotently; normal prompt-boundary uploads never scan or hash full history.
 
 This path preserves the conversation shape needed for insight reports: prompts, assistant messages, tool calls, timing, and ordering.
 
@@ -72,7 +74,7 @@ Operational knobs:
 
 - **Server address**: `OBSERVAL_SERVER_URL` on the CLI user's machine. The shim picks this up from `~/.observal/config.json` or the env var.
 - **API key**: the shim uses the user's stored credentials. No extra setup.
-- **Offline behavior**: if the server is unreachable, telemetry is buffered at `~/.observal/telemetry_buffer.db` and flushed later. Check the buffer size with `observal auth status`.
+- **Offline behavior**: if the server is unreachable, Python telemetry is buffered at `~/.observal/telemetry_buffer.db`; native exporters retain their own pending files. Check Python buffer size with `observal ops telemetry status`.
 
 ## High-volume tuning
 

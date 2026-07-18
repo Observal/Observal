@@ -10,6 +10,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- Durable, acknowledged session delivery with contiguous server checkpoints, restart recovery, and final SHA-256 integrity audits across Python, Pi, and OpenCode exporters.
+
+### Changed
+
+- Unified hook delivery, delayed finalization, background recovery, and `observal reconcile` through the harness adapter registry.
+- Session retries now converge on full project/user/harness/session/source-line identity without duplicate summary totals.
+
 ## [1.9.9] - 2026-07-07
 
 ### Added

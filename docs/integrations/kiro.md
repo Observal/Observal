@@ -15,8 +15,8 @@ Kiro agent profiles are JSON files. Project agents live in `.kiro/agents/`.
 User agents live in `~/.kiro/agents/`.
 
 When Observal installs a Kiro agent, it writes hook commands into that agent JSON.
-The default hooks run `observal_cli.hooks.kiro_session_push` for `userPromptSubmit`
-and `stop`.
+The default hooks run the shared `observal_cli.hooks.session_push --harness kiro`
+entry point for `userPromptSubmit` and `stop`.
 
 The hook reads Kiro session JSONL files from `~/.kiro/sessions/cli/`. It reads
 only new lines since the last push and sends them to Observal.
@@ -111,12 +111,12 @@ Observal writes the telemetry hooks inside each Kiro agent JSON:
   "hooks": {
     "userPromptSubmit": [
       {
-        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.kiro_session_push"
+        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.session_push --harness kiro"
       }
     ],
     "stop": [
       {
-        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.kiro_session_push"
+        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.session_push --harness kiro"
       }
     ]
   }
@@ -134,7 +134,7 @@ per-agent hook command is the source of truth.
 
 1. `observal agent pull` writes the agent UUID into the Kiro hook command as
    `OBSERVAL_AGENT_ID`.
-2. `kiro_session_push` reads that UUID when Kiro fires `userPromptSubmit` or
+2. The shared session hook reads that UUID when Kiro fires `userPromptSubmit` or
    `stop`.
 3. The CLI looks up the UUID in `~/.observal/lockfile.json` under the `kiro`
    harness.
@@ -167,6 +167,8 @@ Kiro uses the shared acknowledged session delivery engine:
 4. Persist new batches to `~/.observal/telemetry_buffer.db` before network delivery.
 5. Retry batches idempotently until the server returns a contiguous checkpoint covering them.
 6. Advance the local cursor only to that acknowledged checkpoint.
+7. Recover missing or corrupt local state from the authenticated server checkpoint.
+8. On finalization, compare the SHA-256 audit manifest and replay any affected range.
 
 On `stop`, a delayed stable-file pass captures late records and finalizes the cursor. The adapter also reads `~/.kiro/sessions/cli/{session_id}.json` and durably sends Kiro credit usage, including when no transcript lines were added by the final hook.
 

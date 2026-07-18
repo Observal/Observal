@@ -23,7 +23,7 @@ pi install npm:observal-pi
 
 - **Incremental push:** After each user prompt (`agent_end`), durably stages new JSONL lines before sending them to Observal
 - **Acknowledged checkpoints:** Advances byte and line cursors only after a contiguous server acknowledgement
-- **Final push:** On session exit, sends remaining lines with integrity metadata
+- **Final push:** On session exit, sends remaining lines and a SHA-256 audit manifest; mismatches replay from the requested range
 - **Crash recovery:** Retries durable pending batches and rebuilds missing/corrupt cursors from the authenticated server checkpoint
 - **Status indicator:** Shows `● observal` in the footer with line count
 

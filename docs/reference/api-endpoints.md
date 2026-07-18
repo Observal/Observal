@@ -67,7 +67,9 @@ All `{id}` parameters accept a UUID or a name.
 | `GET` | `/ingest/session/checkpoint` | Get the caller's contiguous line/byte checkpoint for a harness session |
 | `GET` | `/crypto/public-key` | Server public key for payload encryption |
 
-Session record identity is scoped by project, user, harness, session ID, and source line index. Retrying the same content at the same index is safe; different content at an existing index returns `409`.
+Session record identity is scoped by project, user, harness, session ID, and source line index. Retrying the same content at the same index is safe; different content at an already acknowledged index returns `409`.
+
+Final session requests can include `session_hash` and `hashed_line_count`. The response includes `integrity_ok`, `server_hash`, and `repair_from_line`. A failed audit rewinds the durable checkpoint to the first affected range; the exporter then replays that range idempotently. Hashing and canonical manifest scans occur only for final/audit requests, not incremental ingest.
 
 ## Telemetry hooks
 
