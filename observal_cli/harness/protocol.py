@@ -281,6 +281,16 @@ class HarnessAdapter(Protocol):
         """Return child/subagent sources associated with a resolved session."""
         ...
 
+    def session_extra_fields(
+        self,
+        source: SessionSource,
+        event: dict[str, Any],
+        final: bool,
+        home: Path | None = None,
+    ) -> dict[str, Any]:
+        """Return harness-specific ingest metadata for a session wake-up."""
+        ...
+
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Return whether a hook payload marks its session final."""
         ...

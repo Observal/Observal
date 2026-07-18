@@ -158,17 +158,16 @@ when no matcher is set.
 
 ## Session push behavior
 
-`kiro_session_push` works as follows:
+Kiro uses the shared acknowledged session delivery engine:
 
 1. Resolve the Kiro session ID from the hook payload or `~/.observal/.kiro-session`.
-2. Find `~/.kiro/sessions/cli/{session_id}.jsonl`.
-3. Read the saved byte cursor for the session.
-4. Read only new JSONL lines.
-5. Send the lines to Observal with the harness set to `kiro`.
-6. Advance the cursor after a successful push.
+2. Find `~/.kiro/sessions/cli/{session_id}.jsonl` through the Kiro adapter.
+3. Read complete records after the acknowledged byte/line cursor.
+4. Persist new batches to `~/.observal/telemetry_buffer.db` before network delivery.
+5. Retry batches idempotently until the server returns a contiguous checkpoint covering them.
+6. Advance the local cursor only to that acknowledged checkpoint.
 
-On `stop`, the hook finalizes the cursor. It also reads
-`~/.kiro/sessions/cli/{session_id}.json` when present and sends Kiro credit usage.
+On `stop`, a delayed stable-file pass captures late records and finalizes the cursor. The adapter also reads `~/.kiro/sessions/cli/{session_id}.json` and durably sends Kiro credit usage, including when no transcript lines were added by the final hook.
 
 ---
 
@@ -218,9 +217,7 @@ Run `pytest -q` from the project root.
 **Guidance files are scan-only.** Observal layers Kiro steering files and
 `AGENTS.md` as context, but does not overwrite them during pull.
 
-**Hooks are per agent.** Pulling a new agent includes telemetry hooks
-automatically. Pull the agent again to refresh its Observal hook command.
-`doctor patch` does not install generic Kiro attribution hooks.
+**Hooks are per agent.** Pulling a new agent includes telemetry hooks automatically, with `OBSERVAL_AGENT_ID` bound to that agent's UUID. Pull the agent again to replace an older Kiro-specific push command with the shared acknowledged exporter. `doctor patch` does not install generic Kiro attribution hooks.
 
 **Default scope is user.** `observal agent pull <agent-name> --harness kiro`
 writes to `~/.kiro/agents/` unless `--scope project` is set.

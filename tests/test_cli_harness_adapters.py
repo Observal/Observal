@@ -61,6 +61,7 @@ class TestAdapterRegistry:
             "resolve_session_source",
             "discover_session_sources",
             "related_session_sources",
+            "session_extra_fields",
             "is_session_final",
             "get_observal_managed_files",
         ]

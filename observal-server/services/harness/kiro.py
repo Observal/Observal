@@ -35,9 +35,15 @@ class KiroAdapter:
         # Telemetry via JSONL session push. The UUID is resolved through the local lockfile at push time.
         agent_id = str(ctx.agent.id)
         if platform == "win32":
-            push_cmd = f'set "OBSERVAL_AGENT_ID={agent_id}" && python -m observal_cli.hooks.kiro_session_push'
+            push_cmd = (
+                f'set "OBSERVAL_AGENT_ID={agent_id}" && '
+                "python -m observal_cli.hooks.session_push --harness kiro"
+            )
         else:
-            push_cmd = f"OBSERVAL_AGENT_ID={agent_id} python3 -m observal_cli.hooks.kiro_session_push"
+            push_cmd = (
+                f"OBSERVAL_AGENT_ID={agent_id} "
+                "python3 -m observal_cli.hooks.session_push --harness kiro"
+            )
         hooks: dict = {
             "userPromptSubmit": [{"command": push_cmd}],
             "stop": [{"command": push_cmd}],

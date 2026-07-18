@@ -51,11 +51,13 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
         return
 
     hook_event = str(event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or "")
+    is_final = adapter.is_session_final(event)
     delivered = drain_session_source(
         source,
         config,
         hook_event=hook_event,
         final=False,
+        extra_fields=adapter.session_extra_fields(source, event, is_final, home=home),
         home=home,
     )
     for related in adapter.related_session_sources(source, home=home):
@@ -65,6 +67,7 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
                 config,
                 hook_event=hook_event,
                 final=False,
+                extra_fields=adapter.session_extra_fields(related, event, is_final, home=home),
                 home=home,
             )
             and delivered
@@ -72,7 +75,7 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
     if not delivered:
         log_error(f"session_push: durable records pending for {harness} session {source.session_id}", home=home)
 
-    if adapter.is_session_final(event):
+    if is_final:
         _spawn_worker(
             "--finalize-session",
             source.session_id,
@@ -120,12 +123,27 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
     config = load_config(home=home)
     if source is None or config is None or source.path is None:
         return
+    event = {"session_id": session_id, "cwd": cwd, "hook_event_name": "Stop"}
     _wait_until_stable(source.path)
-    drain_session_source(source, config, hook_event="Stop", final=True, home=home)
+    drain_session_source(
+        source,
+        config,
+        hook_event="Stop",
+        final=True,
+        extra_fields=adapter.session_extra_fields(source, event, True, home=home),
+        home=home,
+    )
     for related in adapter.related_session_sources(source, home=home):
         if related.path is not None:
             _wait_until_stable(related.path)
-        drain_session_source(related, config, hook_event="Stop", final=True, home=home)
+        drain_session_source(
+            related,
+            config,
+            hook_event="Stop",
+            final=True,
+            extra_fields=adapter.session_extra_fields(related, event, True, home=home),
+            home=home,
+        )
 
 
 def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None = None) -> None:
@@ -143,7 +161,15 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
                 continue
         except OSError:
             continue
-        drain_session_source(source, config, hook_event="CrashRecovery", final=True, home=home)
+        event = {"session_id": source.session_id, "hook_event_name": "Stop"}
+        drain_session_source(
+            source,
+            config,
+            hook_event="CrashRecovery",
+            final=True,
+            extra_fields=adapter.session_extra_fields(source, event, True, home=home),
+            home=home,
+        )
 
 
 def cli_main() -> None:

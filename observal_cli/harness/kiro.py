@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from observal_cli.harness import (
     DiscoveredSkill,
     HookSpec,
     ScanResult,
+    SessionSource,
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
@@ -37,6 +39,64 @@ class KiroAdapter(BaseAdapter):
     @property
     def harness_name(self) -> str:
         return "kiro"
+
+    def resolve_session_source(self, event: dict[str, Any], home: Path | None = None) -> SessionSource | None:
+        from observal_cli.sessions.kiro import find_kiro_jsonl, resolve_session_id
+
+        session_id = resolve_session_id(event, home=home)
+        if not session_id:
+            return None
+        home = home or Path.home()
+        state_dir = home / ".observal"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        (state_dir / ".kiro-session").write_text(json.dumps({"session_id": session_id}))
+        path = find_kiro_jsonl(session_id, home=home)
+        if path is None:
+            return None
+        return SessionSource(
+            harness=self.harness_name,
+            session_id=session_id,
+            path=path,
+            cwd=str(event.get("cwd") or ""),
+        )
+
+    def discover_session_sources(
+        self,
+        home: Path | None = None,
+        since_hours: int = 168,
+    ) -> list[SessionSource]:
+        from observal_cli.sessions.kiro import find_sessions_dir
+
+        cutoff = time.time() - since_hours * 3600
+        root = find_sessions_dir(home)
+        if not root.is_dir():
+            return []
+        sources: list[SessionSource] = []
+        for path in sorted(root.glob("*.jsonl")):
+            try:
+                if path.stat().st_mtime >= cutoff:
+                    sources.append(SessionSource(self.harness_name, path.stem, path))
+            except OSError:
+                continue
+        return sources
+
+    def session_extra_fields(
+        self,
+        source: SessionSource,
+        event: dict[str, Any],
+        final: bool,
+        home: Path | None = None,
+    ) -> dict[str, Any]:
+        from observal_cli.sessions.kiro import read_kiro_credits
+
+        attempts = 5 if final else 1
+        for attempt in range(attempts):
+            credits = read_kiro_credits(source.session_id, home=home)
+            if credits is not None:
+                return {"total_credits": credits}
+            if attempt < attempts - 1:
+                time.sleep(0.5 * (attempt + 1))
+        return {}
 
     def scan_home(self, home: Path | None = None) -> ScanResult:
         home = home or Path.home()
@@ -89,7 +149,7 @@ class KiroAdapter(BaseAdapter):
     ) -> dict[str, Any]:
         from observal_cli.harness_specs.kiro_hooks_spec import build_kiro_hooks
 
-        return build_kiro_hooks()
+        return build_kiro_hooks(agent_id=agent_id or "")
 
     def detect_hooks(self, config_dir: Path) -> str:
         agents_dir = config_dir / "agents"

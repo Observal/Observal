@@ -170,7 +170,7 @@ class TestChecks:
 
         _check_kiro([], warnings)
 
-        assert any("Kiro session push hooks not installed" in warning for warning in warnings)
+        assert any("Kiro acknowledged session hooks not installed" in warning for warning in warnings)
 
     def test_pi_warns_when_extension_package_missing(self, tmp_path: Path):
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": []})

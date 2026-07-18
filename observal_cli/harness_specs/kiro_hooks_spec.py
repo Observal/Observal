@@ -41,7 +41,7 @@ def build_kiro_hooks(*args, **kwargs) -> dict:
     Accepts optional agent_id for per-agent attribution.
     """
     agent_id = kwargs.get("agent_id", "") or (args[2] if len(args) > 2 else "")
-    cmd = f"{_python_cmd()} -m observal_cli.hooks.kiro_session_push"
+    cmd = f"{_python_cmd()} -m observal_cli.hooks.session_push --harness kiro"
     if agent_id:
         if sys.platform == "win32":
             cmd = f'set "OBSERVAL_AGENT_ID={agent_id}" && {cmd}'

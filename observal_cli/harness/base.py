@@ -125,6 +125,16 @@ class BaseAdapter:
         """Return child sources when a harness stores them separately."""
         return []
 
+    def session_extra_fields(
+        self,
+        source: SessionSource,
+        event: dict[str, Any],
+        final: bool,
+        home: Path | None = None,
+    ) -> dict[str, Any]:
+        """Return optional harness-specific ingest fields."""
+        return {}
+
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Recognize common final lifecycle event names."""
         event_name = str(

@@ -808,7 +808,7 @@ class TestGenerateKiroWin32:
         cfg = generate_agent_config(agent, "kiro", platform="win32")
         cmds = self._all_hook_commands(cfg)
         for cmd in cmds:
-            assert "kiro_session_push" in cmd
+            assert "hooks.session_push --harness kiro" in cmd
             assert f"OBSERVAL_AGENT_ID={agent.id}" in cmd
             assert "OBSERVAL_AGENT_NAME" not in cmd
 
@@ -861,7 +861,7 @@ class TestGenerateKiroPreservation:
         cfg = generate_agent_config(agent, "kiro", platform="linux")
         hooks = cfg["agent_profile"]["content"]["hooks"]
         cmd = hooks["userPromptSubmit"][0]["command"]
-        assert "python3 -m observal_cli.hooks.kiro_session_push" in cmd
+        assert "python3 -m observal_cli.hooks.session_push --harness kiro" in cmd
         assert f"OBSERVAL_AGENT_ID={agent.id}" in cmd
         assert "OBSERVAL_AGENT_NAME" not in cmd
         assert "cat |" not in cmd

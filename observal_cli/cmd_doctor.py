@@ -302,14 +302,15 @@ def _check_kiro(issues: list, warnings: list):
             if not isinstance(entries, list):
                 continue
             for h in entries:
-                if "observal_cli.hooks.kiro_session_push" in h.get("command", ""):
+                command = h.get("command", "")
+                if "observal_cli.hooks.session_push --harness kiro" in command:
                     has_session_push = True
                     break
 
     if not has_session_push:
         warnings.append(
-            "Kiro session push hooks not installed in any agent config. "
-            "Run `observal doctor patch --all --harness kiro` to inject them."
+            "Kiro acknowledged session hooks not installed in any agent config. "
+            "Pull the Kiro agent again to refresh its attributed hooks."
         )
 
 

@@ -5,7 +5,7 @@
 """Hook runtime and spec interface.
 
 This package contains:
-- Session push hook scripts (session_push, kiro_session_push, cursor_session_push)
+- Shared Python session push runtime plus host-specific bridges
 - Re-exports of hook spec helpers for convenience
 """
 
