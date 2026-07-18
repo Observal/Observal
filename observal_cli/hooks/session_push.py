@@ -126,7 +126,10 @@ def _wait_until_stable(path: Path) -> None:
 def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None = None) -> None:
     ensure_loaded()
     adapter = get_adapter(harness)
-    source = adapter.resolve_session_source({"session_id": session_id, "cwd": cwd}, home=home)
+    source = adapter.resolve_session_source(
+        {"session_id": session_id, "cwd": cwd, "_observal_lookup_only": True},
+        home=home,
+    )
     config = load_config(home=home)
     if source is None or config is None or source.path is None:
         return
@@ -192,6 +195,7 @@ def cli_main() -> None:
     parser.add_argument("--cwd", default="")
     parser.add_argument("--recover", action="store_true")
     parser.add_argument("--drain-outbox", action="store_true")
+    parser.add_argument("--json-response", action="store_true")
     parser.add_argument("--exclude-session", default="")
     args = parser.parse_args()
     try:
@@ -205,6 +209,10 @@ def cli_main() -> None:
             main(harness=args.harness)
     except Exception as exc:
         optic.error("session worker crashed: {}", exc)
+    finally:
+        if args.json_response:
+            sys.stdout.write('{"continue":true}\n')
+            sys.stdout.flush()
 
 
 if __name__ == "__main__":

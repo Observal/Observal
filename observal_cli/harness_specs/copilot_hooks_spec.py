@@ -48,7 +48,10 @@ def build_copilot_hooks(hooks_dir: str = ".github/hooks", bash_cmd: str | None =
     win_cmd = f"powershell -ExecutionPolicy Bypass -File {ps1_path}"
 
     if bash_cmd is None:
-        bash_cmd = f"{sys.executable} -m observal_cli.hooks.copilot_cli_session_push"
+        bash_cmd = (
+            f'"{sys.executable}" -m observal_cli.hooks.session_push '
+            "--harness copilot --json-response"
+        )
 
     hooks: dict[str, list[dict]] = {}
     for event in COPILOT_HOOK_EVENTS:
@@ -56,20 +59,10 @@ def build_copilot_hooks(hooks_dir: str = ".github/hooks", bash_cmd: str | None =
     return {"version": 1, "hooks": hooks}
 
 
-def build_copilot_run_hook_ps1(python_path: str, script_path: str) -> str:
-    """Return the content of the run_hook.ps1 wrapper script.
-
-    Args:
-        python_path: Full path to the Python executable (with observal_cli available).
-        script_path: Relative path to copilot_vscode_session_push.py from the project root.
-    """
+def build_copilot_run_hook_ps1(python_path: str) -> str:
+    """Return the PowerShell bridge to the shared acknowledged session hook."""
     return f"""# Observal session push hook for VS Code Copilot.
-# Pipes stdin (hook JSON payload) to the Python handler script.
-
 $stdinData = [Console]::In.ReadToEnd()
 $python = "{python_path}"
-$script = "{script_path}"
-
-$stdinData | & $python $script 2>$null
-Write-Output '{{"continue":true}}'
+$stdinData | & $python -m observal_cli.hooks.session_push --harness copilot --json-response 2>$null
 """

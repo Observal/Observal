@@ -109,7 +109,7 @@ class TestCopilotAdapterDetectHooks:
         hooks_dir.mkdir(parents=True)
         (hooks_dir / "observal.json").write_text(
             json.dumps(
-                {"hooks": {"UserPromptSubmit": [{"bash": "python -m observal_cli.hooks.copilot_cli_session_push"}]}}
+                {"hooks": {"UserPromptSubmit": [{"bash": "python -m observal_cli.hooks.session_push --harness copilot-cli"}]}}
             )
         )
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -225,7 +225,7 @@ class TestCopilotCliAdapterDetectHooks:
                     "version": 1,
                     "hooks": {
                         "sessionStart": [
-                            {"type": "command", "bash": "python -m observal_cli.hooks.copilot_cli_session_push"}
+                            {"type": "command", "bash": "python -m observal_cli.hooks.session_push --harness copilot-cli"}
                         ]
                     },
                 }
@@ -250,7 +250,7 @@ class TestCopilotCliAdapterDetectHooks:
                     "version": 1,
                     "hooks": {
                         "preToolUse": [
-                            {"type": "command", "bash": "python -m observal_cli.hooks.copilot_cli_session_push"}
+                            {"type": "command", "bash": "python -m observal_cli.hooks.session_push --harness copilot-cli"}
                         ]
                     },
                 }
@@ -353,7 +353,7 @@ class TestBuildCopilotCliHooks:
             assert "OBSERVAL_AGENT_ID=agent-uuid-42" in bash, f"{event} bash missing UUID"
             assert "agent-uuid-42" in ps and "OBSERVAL_AGENT_ID" in ps, f"{event} powershell missing UUID"
             # The push command must still be present after the prefix.
-            assert "copilot_cli_session_push" in bash
+            assert "hooks.session_push --harness copilot-cli" in bash
 
 
 class TestRewriteCopilotCliHooks:
@@ -361,7 +361,7 @@ class TestRewriteCopilotCliHooks:
 
     def _server_content(self) -> dict:
         """Generic hook file as the server emits it (no agent identity)."""
-        push = "python3 -m observal_cli.hooks.copilot_cli_session_push"
+        push = "python3 -m observal_cli.hooks.session_push --harness copilot-cli"
         return {
             "version": 1,
             "hooks": {
@@ -375,7 +375,7 @@ class TestRewriteCopilotCliHooks:
 
         out = _rewrite_copilot_cli_hooks(self._server_content(), agent_id="uuid-99")
         for entries in out["hooks"].values():
-            obs = [e for e in entries if "copilot_cli_session_push" in e.get("bash", "")]
+            obs = [e for e in entries if "hooks.session_push --harness copilot-cli" in e.get("bash", "")]
             assert len(obs) == 1
             assert "OBSERVAL_AGENT_ID=uuid-99" in obs[0]["bash"]
 
@@ -395,7 +395,7 @@ class TestRewriteCopilotCliHooks:
         content = _rewrite_copilot_cli_hooks(self._server_content(), agent_id="uuid-1")
         content = _rewrite_copilot_cli_hooks(content, agent_id="uuid-2")
         for entries in content["hooks"].values():
-            obs = [e for e in entries if "copilot_cli_session_push" in e.get("bash", "")]
+            obs = [e for e in entries if "hooks.session_push --harness copilot-cli" in e.get("bash", "")]
             assert len(obs) == 1, "exactly one Observal hook per event"
             assert "OBSERVAL_AGENT_ID=uuid-2" in obs[0]["bash"], "latest UUID wins"
 
@@ -849,164 +849,17 @@ class TestServerParserRegistration:
 
 
 class TestCopilotCliSessionPush:
-    """copilot_cli_session_push: stdin handling, error resilience."""
+    """Legacy module entry point routes through the shared delivery hook."""
 
-    def test_reads_valid_json_from_stdin(self, tmp_path, monkeypatch):
-        from observal_cli.hooks.copilot_cli_session_push import main
+    def test_compatibility_entry_point_uses_shared_hook(self, monkeypatch):
+        import observal_cli.hooks.copilot_cli_session_push as hook
 
-        # Setup config
-        observal_dir = tmp_path / ".observal"
-        observal_dir.mkdir()
-        (observal_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "server_url": "http://localhost:9999",
-                    "access_token": "test-token",
-                }
-            )
-        )
+        calls = []
+        monkeypatch.setattr(hook, "_shared_main", lambda harness, home=None: calls.append((harness, home)))
 
-        # Setup session
-        sessions_dir = tmp_path / ".copilot" / "session-state" / "test-session"
-        sessions_dir.mkdir(parents=True)
-        events_file = sessions_dir / "events.jsonl"
-        events_file.write_text(
-            json.dumps(
-                {
-                    "agentId": "a",
-                    "ts": "2025-01-01T00:00:00Z",
-                    "event": {"type": "session.start", "source": "cli"},
-                }
-            )
-            + "\n"
-        )
+        hook.main()
 
-        # Mock stdin with valid JSON
-        stdin_data = json.dumps({"source": "cli", "cwd": str(tmp_path)})
-        monkeypatch.setattr("sys.stdin", MagicMock(read=lambda: stdin_data))
-        # Mock post_to_server to avoid network
-        monkeypatch.setattr(
-            "observal_cli.hooks.copilot_cli_session_push.post_to_server",
-            lambda **kwargs: True,
-        )
-
-        # Should not raise
-        main(home=tmp_path)
-
-    def test_exits_silently_on_invalid_stdin(self, tmp_path, monkeypatch):
-        from observal_cli.hooks.copilot_cli_session_push import main
-
-        monkeypatch.setattr("sys.stdin", MagicMock(read=lambda: "not json"))
-
-        # Should not raise
-        main(home=tmp_path)
-
-    def test_exits_silently_when_server_unreachable(self, tmp_path, monkeypatch):
-        from observal_cli.hooks.copilot_cli_session_push import main
-
-        # No config file = server unreachable
-        stdin_data = json.dumps({"source": "cli", "cwd": str(tmp_path)})
-        monkeypatch.setattr("sys.stdin", MagicMock(read=lambda: stdin_data))
-
-        # Should not raise
-        main(home=tmp_path)
-
-    def test_marks_session_finalized_on_session_end(self, tmp_path, monkeypatch):
-        from observal_cli.hooks.copilot_cli_session_push import main
-
-        # Setup config
-        observal_dir = tmp_path / ".observal"
-        observal_dir.mkdir()
-        (observal_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "server_url": "http://localhost:9999",
-                    "access_token": "test-token",
-                }
-            )
-        )
-
-        # Setup session
-        sessions_dir = tmp_path / ".copilot" / "session-state" / "test-session"
-        sessions_dir.mkdir(parents=True)
-        events_file = sessions_dir / "events.jsonl"
-        events_file.write_text(
-            json.dumps(
-                {
-                    "agentId": "a",
-                    "ts": "2025-01-01T00:00:00Z",
-                    "event": {"type": "session.end", "reason": "done"},
-                }
-            )
-            + "\n"
-        )
-
-        # Stdin payload indicating session end
-        stdin_data = json.dumps({"reason": "done", "cwd": str(tmp_path)})
-        monkeypatch.setattr("sys.stdin", MagicMock(read=lambda: stdin_data))
-        monkeypatch.setattr(
-            "observal_cli.hooks.copilot_cli_session_push.post_to_server",
-            lambda **kwargs: True,
-        )
-
-        main(home=tmp_path)
-
-        # Check sync state
-        state_file = tmp_path / ".observal" / "sync_state.json"
-        if state_file.exists():
-            state = json.loads(state_file.read_text())
-            # Find the session entry
-            for _sid, entry in state.items():
-                if entry.get("finalized"):
-                    break
-            else:
-                # If no finalized entry, that's also acceptable if the session wasn't found
-                pass
-
-    def test_reads_incremental_lines(self, tmp_path, monkeypatch):
-        from observal_cli.hooks.copilot_cli_session_push import main
-
-        # Setup config
-        observal_dir = tmp_path / ".observal"
-        observal_dir.mkdir()
-        (observal_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "server_url": "http://localhost:9999",
-                    "access_token": "test-token",
-                }
-            )
-        )
-
-        # Setup session with multiple lines
-        sessions_dir = tmp_path / ".copilot" / "session-state" / "test-session"
-        sessions_dir.mkdir(parents=True)
-        events_file = sessions_dir / "events.jsonl"
-        lines = [
-            json.dumps({"agentId": "a", "ts": "t1", "event": {"type": "session.start"}}),
-            json.dumps({"agentId": "a", "ts": "t2", "event": {"type": "user.message", "content": "hi"}}),
-            json.dumps({"agentId": "a", "ts": "t3", "event": {"type": "tool.call", "name": "x"}}),
-        ]
-        events_file.write_text("\n".join(lines) + "\n")
-
-        captured_payloads = []
-
-        def mock_post(**kwargs):
-            captured_payloads.append(kwargs.get("payload"))
-            return True
-
-        stdin_data = json.dumps({"source": "cli", "cwd": str(tmp_path)})
-        monkeypatch.setattr("sys.stdin", MagicMock(read=lambda: stdin_data))
-        monkeypatch.setattr(
-            "observal_cli.hooks.copilot_cli_session_push.post_to_server",
-            mock_post,
-        )
-
-        main(home=tmp_path)
-
-        # Should have posted with lines
-        if captured_payloads:
-            assert len(captured_payloads[0].get("lines", [])) >= 1
+        assert calls == [("copilot-cli", None)]
 
 
 class TestServerAdapterFormatConfig:

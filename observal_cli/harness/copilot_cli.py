@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from observal_cli.harness import (
@@ -16,6 +17,7 @@ from observal_cli.harness import (
     DiscoveredSkill,
     HookSpec,
     ScanResult,
+    SessionSource,
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
@@ -36,6 +38,50 @@ class CopilotCliAdapter(BaseAdapter):
     @property
     def harness_name(self) -> str:
         return "copilot-cli"
+
+    def resolve_session_source(self, event: dict, home: Path | None = None) -> SessionSource | None:
+        from observal_cli.sessions.copilot_cli import find_active_session, find_session_jsonl
+
+        session_id = str(event.get("sessionId") or event.get("session_id") or "")
+        transcript = str(event.get("transcriptPath") or event.get("transcript_path") or "")
+        path = Path(transcript) if transcript else None
+        if path is not None and not path.is_file():
+            path = None
+        if path is None and session_id:
+            path = find_session_jsonl(session_id, home=home)
+        cwd = str(event.get("cwd") or "")
+        if path is None and not session_id:
+            path = find_active_session(cwd, home=home)
+        if path is None:
+            return None
+        if not session_id:
+            session_id = path.parent.name
+        return SessionSource(self.harness_name, session_id, path, cwd=cwd)
+
+    def discover_session_sources(
+        self,
+        home: Path | None = None,
+        since_hours: int = 168,
+    ) -> list[SessionSource]:
+        from observal_cli.sessions.copilot_cli import discover_sessions
+
+        cutoff = time.time() - since_hours * 3600
+        sources: list[SessionSource] = []
+        for path in discover_sessions(home=home):
+            try:
+                if path.stat().st_mtime >= cutoff:
+                    sources.append(SessionSource(self.harness_name, path.parent.name, path))
+            except OSError:
+                continue
+        return sorted(sources, key=lambda source: source.path.stat().st_mtime if source.path else 0, reverse=True)
+
+    def defer_session_delivery(self) -> bool:
+        return True
+
+    def is_session_final(self, event: dict) -> bool:
+        from observal_cli.sessions.copilot_cli import resolve_hook_event
+
+        return resolve_hook_event(event) in {"Stop", "SessionEnd"}
 
     def scan_home(self, home: Path | None = None) -> ScanResult:
         home = home or Path.home()
@@ -61,8 +107,18 @@ class CopilotCliAdapter(BaseAdapter):
         return HookSpec(
             events=["sessionStart", "sessionEnd", "userPromptSubmitted", "preToolUse", "postToolUse"],
             format="command",
-            markers=["observal", "OBSERVAL"],
+            markers=["observal", "OBSERVAL", "session_push --harness copilot-cli"],
         )
+
+    def generate_hook_config(
+        self,
+        observal_url: str,
+        api_key: str,
+        agent_id: str | None = None,
+    ) -> dict:
+        from observal_cli.harness_specs.copilot_cli_hooks_spec import build_copilot_cli_hooks
+
+        return build_copilot_cli_hooks(agent_id=agent_id or "")
 
     def detect_hooks(self, config_dir: Path) -> str:
         """Check for Observal hooks in both project and user-level hook dirs."""

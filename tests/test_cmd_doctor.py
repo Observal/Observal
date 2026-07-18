@@ -308,7 +308,7 @@ class TestPatchFunctions:
 
         hooks_path = tmp_path / ".copilot/hooks/observal.json"
         assert any(
-            "copilot_cli_session_push" in entry.get("bash", "")
+            "hooks.session_push --harness copilot-cli" in entry.get("bash", "")
             for entries in read_json(hooks_path)["hooks"].values()
             for entry in entries
         )

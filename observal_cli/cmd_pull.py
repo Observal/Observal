@@ -383,7 +383,12 @@ def _rewrite_copilot_cli_hooks(content: dict, agent_id: str | None = None) -> di
     # Replace only Observal hooks, preserve any user-added hooks
     for event, desired_entries in desired_hooks.items():
         existing = hooks.get(event, [])
-        cleaned = [h for h in existing if "copilot_cli_session_push" not in h.get("bash", "")]
+        cleaned = [
+            h
+            for h in existing
+            if "copilot_cli_session_push" not in h.get("bash", "")
+            and "hooks.session_push --harness copilot-cli" not in h.get("bash", "")
+        ]
         hooks[event] = cleaned + desired_entries
 
     content["hooks"] = hooks
