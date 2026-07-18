@@ -403,11 +403,30 @@ def drain_session_source(
     drain_outbox(config, home=home, db_path=db_path, post=post)
 
     byte_offset, line_count = read_cursor(source.checkpoint_key, home=home)
+    byte_offset, line_count = telemetry_buffer.spooled_checkpoint(
+        destination=destination,
+        user_id=user_id,
+        harness=source.harness,
+        session_id=source.session_id,
+        checkpoint_key=source.checkpoint_key,
+        line_count=line_count,
+        byte_offset=byte_offset,
+        db_path=db_path,
+    )
     lines, end_byte_offsets, bytes_read = read_new_records(source.path, byte_offset)
     if not lines:
         if bytes_read:
-            write_cursor(source.checkpoint_key, byte_offset + bytes_read, line_count, home=home)
-        return drain_outbox(config, home=home, db_path=db_path, post=post)
+            byte_offset += bytes_read
+        delivered = drain_outbox(config, home=home, db_path=db_path, post=post)
+        if bytes_read or (final and delivered):
+            write_cursor(
+                source.checkpoint_key,
+                byte_offset,
+                line_count,
+                finalized=final and delivered,
+                home=home,
+            )
+        return delivered
 
     # Attribute trailing blank-line bytes to the last real record checkpoint.
     end_byte_offsets[-1] = byte_offset + bytes_read

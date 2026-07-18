@@ -66,6 +66,42 @@ def test_offline_delivery_spools_before_post_and_keeps_cursor(tmp_path: Path, mo
     assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db)[0].attempts == 1
 
 
+def test_offline_growth_spools_only_records_after_pending_checkpoint(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text('{"type":"system","content":"one"}\n')
+    db = tmp_path / "outbox.db"
+    source = SessionSource("claude-code", "session", source_path)
+
+    def offline(_payload, _config):
+        return None
+
+    base.drain_session_source(
+        source,
+        config(),
+        hook_event="UserPromptSubmit",
+        home=tmp_path,
+        db_path=db,
+        post=offline,
+    )
+    with source_path.open("a") as file:
+        file.write('{"type":"system","content":"two"}\n')
+    base.drain_session_source(
+        source,
+        config(),
+        hook_event="Stop",
+        final=True,
+        home=tmp_path,
+        db_path=db,
+        post=offline,
+    )
+
+    items = telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db)
+    assert [(item.start_line, item.end_line) for item in items] == [(0, 0), (1, 1)]
+    assert items[-1].final
+    assert base.read_cursor("session", home=tmp_path) == (0, 0)
+
+
 def test_restart_drains_acknowledged_records_and_finalizes_cursor(tmp_path: Path, monkeypatch):
     disable_payload_metadata(monkeypatch)
     source_path = tmp_path / "session.jsonl"
@@ -92,6 +128,40 @@ def test_restart_drains_acknowledged_records_and_finalizes_cursor(tmp_path: Path
     assert base.drain_outbox(config(), home=tmp_path, db_path=db, post=acknowledge)
     assert telemetry_buffer.stats(db_path=db)["pending"] == 0
     assert base.read_cursor("session", home=tmp_path) == (source_path.stat().st_size, 1)
+    state = json.loads((tmp_path / ".observal" / "sync_state.json").read_text())
+    assert state["session"]["finalized"] is True
+
+
+def test_final_drain_with_no_new_records_marks_acknowledged_cursor_final(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text('{"type":"system","content":"one"}\n')
+    db = tmp_path / "outbox.db"
+    source = SessionSource("claude-code", "session", source_path)
+
+    def acknowledge(payload, _config):
+        return {
+            "acknowledged_line": payload["start_offset"] + len(payload["lines"]) - 1,
+            "acknowledged_offset": payload["end_byte_offsets"][-1],
+        }
+
+    assert base.drain_session_source(
+        source,
+        config(),
+        hook_event="UserPromptSubmit",
+        home=tmp_path,
+        db_path=db,
+        post=acknowledge,
+    )
+    assert base.drain_session_source(
+        source,
+        config(),
+        hook_event="Stop",
+        final=True,
+        home=tmp_path,
+        db_path=db,
+        post=acknowledge,
+    )
     state = json.loads((tmp_path / ".observal" / "sync_state.json").read_text())
     assert state["session"]["finalized"] is True
 

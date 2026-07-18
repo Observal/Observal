@@ -75,6 +75,23 @@ def test_requeue_rejects_different_content_for_same_source_range(tmp_path: Path)
     ]
 
 
+def test_spooled_checkpoint_advances_across_pending_ranges(tmp_path: Path):
+    db = tmp_path / "outbox.db"
+    outbox.enqueue(payload(0, ["zero", "one"]), destination="http://server", user_id="user", db_path=db)
+    outbox.enqueue(payload(2, ["two"]), destination="http://server", user_id="user", db_path=db)
+
+    assert outbox.spooled_checkpoint(
+        destination="http://server",
+        user_id="user",
+        harness="claude-code",
+        session_id="session",
+        checkpoint_key="session",
+        line_count=0,
+        byte_offset=0,
+        db_path=db,
+    ) == (30, 3)
+
+
 def test_failed_attempts_never_become_terminal(tmp_path: Path):
     db = tmp_path / "outbox.db"
     item_id = outbox.enqueue(payload(0, ["zero"]), destination="http://server", user_id="user", db_path=db)

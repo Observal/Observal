@@ -234,6 +234,43 @@ def pending(
         conn.close()
 
 
+def spooled_checkpoint(
+    *,
+    destination: str,
+    user_id: str,
+    harness: str,
+    session_id: str,
+    checkpoint_key: str,
+    line_count: int,
+    byte_offset: int,
+    db_path: Path | None = None,
+) -> tuple[int, int]:
+    """Return the contiguous local checkpoint including durable pending batches."""
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT start_line, end_line, end_offset FROM session_outbox "
+            "WHERE destination = ? AND user_id = ? AND harness = ? AND session_id = ? AND checkpoint_key = ? "
+            "ORDER BY start_line, end_line",
+            (destination.rstrip("/"), user_id, harness, session_id, checkpoint_key),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    expected = line_count
+    offset = byte_offset
+    for start_line, end_line, end_offset in rows:
+        start_line = int(start_line)
+        end_line = int(end_line)
+        if start_line > expected:
+            break
+        if end_line < expected:
+            continue
+        expected = end_line + 1
+        offset = max(offset, int(end_offset))
+    return offset, expected
+
+
 def record_attempt(item_id: int, *, db_path: Path | None = None) -> None:
     """Record a failed attempt without discarding or disabling the batch."""
     conn = _connect(db_path)
