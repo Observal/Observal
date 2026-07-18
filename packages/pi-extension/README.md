@@ -1,5 +1,6 @@
 <!--
 SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 SPDX-License-Identifier: Apache-2.0
 -->
 
@@ -20,9 +21,10 @@ pi install npm:observal-pi
 
 ## What it does
 
-- **Incremental push:** After each user prompt (`agent_end`), reads new JSONL lines from the session file and POSTs them to your Observal server
+- **Incremental push:** After each user prompt (`agent_end`), durably stages new JSONL lines before sending them to Observal
+- **Acknowledged checkpoints:** Advances byte and line cursors only after a contiguous server acknowledgement
 - **Final push:** On session exit, sends remaining lines with integrity metadata
-- **Crash recovery:** On startup, detects sessions that weren't cleanly finalized and pushes their remaining data
+- **Crash recovery:** On startup, retries durable pending batches before reading remaining session data
 - **Status indicator:** Shows `● observal` in the footer with line count
 
 ## Commands
@@ -39,7 +41,7 @@ pi install npm:observal-pi
 - **Fail-open**: never throws, never crashes pi. If the server is unreachable, pi continues normally
 - **5s timeout**: all HTTP calls abort after 5 seconds
 - **Chunked uploads**: batches of 500 lines max per request
-- **Dedup-safe**: server deduplicates by `(session_id, line_offset, line_hash)`
+- **Retry-safe**: pending batches retain stable source indexes and are retried until acknowledged
 
 ## Configuration
 
@@ -52,7 +54,7 @@ The extension reads credentials from `~/.observal/config.json` (written by `obse
 }
 ```
 
-Sync state is tracked in `~/.observal/sync_state.json` (per-session byte offsets).
+Acknowledged cursors are stored atomically in `~/.observal/sync_state.json`. Unacknowledged Pi batches remain in `~/.observal/pi_session_outbox/` until the server confirms a contiguous checkpoint.
 
 ## License
 

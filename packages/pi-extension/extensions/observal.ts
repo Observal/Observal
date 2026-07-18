@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+// SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 /**
@@ -12,7 +13,8 @@
  * - Fail-open: never throw, never crash pi
  * - 5s timeout on all HTTP calls
  * - Generation counter for async safety
- * - Byte offset tracking (same model as CLI hooks)
+ * - Durable batches before network delivery
+ * - Cursor advancement only after contiguous server acknowledgement
  * - Chunk at 500 lines per POST to avoid 413
  */
 
@@ -29,8 +31,19 @@ import * as path from "node:path";
 interface ObservalConfig {
   server_url: string;
   access_token: string;
+  user_id?: string;
   agent_id?: string;
   agent_version?: string;
+}
+
+export interface PendingBatch {
+  session_id: string;
+  destination: string;
+  user_id?: string;
+  payload: Record<string, unknown>;
+  end_line: number;
+  end_offset: number;
+  final: boolean;
 }
 
 interface CursorEntry {
@@ -74,11 +87,19 @@ const CONFIG_PATH = path.join(OBSERVAL_DIR, "config.json");
 const SYNC_STATE_PATH = path.join(OBSERVAL_DIR, "sync_state.json");
 const LAYER_SNAPSHOT_PATH = path.join(OBSERVAL_DIR, "layer_snapshot.json");
 const LOCKFILE_PATH = path.join(OBSERVAL_DIR, "lockfile.json");
+const OUTBOX_DIR = path.join(OBSERVAL_DIR, "pi_session_outbox");
 const TIMEOUT_MS = 5_000;
 const MAX_LINES_PER_CHUNK = 500;
 const RECOVERY_MAX_SESSIONS = 5;
 const RECOVERY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_LAYER_FILE_SIZE = 512 * 1024;
+const MAX_OUTBOX_BYTES = 256 * 1024 * 1024;
+
+export function acknowledgementCovers(acknowledgement: unknown, pending: PendingBatch): boolean {
+  if (!acknowledgement || typeof acknowledgement !== "object") return false;
+  const acknowledgedLine = (acknowledgement as Record<string, unknown>).acknowledged_line;
+  return Number.isInteger(acknowledgedLine) && Number(acknowledgedLine) >= pending.end_line;
+}
 
 // ─── Extension Entry ─────────────────────────────────────────────────────────
 
@@ -288,8 +309,13 @@ export default function (pi: ExtensionAPI) {
       if (!fs.existsSync(CONFIG_PATH)) return null;
       const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
       const data = JSON.parse(raw);
-      if (!data.server_url || !data.access_token) return null;
-      const config: ObservalConfig = { server_url: data.server_url, access_token: data.access_token };
+      const accessToken = data.api_key || data.access_token;
+      if (!data.server_url || !accessToken) return null;
+      const config: ObservalConfig = {
+        server_url: data.server_url,
+        access_token: accessToken,
+        user_id: data.user_id || undefined,
+      };
       if (data.active_agent?.id) {
         const binding = resolvePiAgentBinding(String(data.active_agent.id), data.active_agent.name, data.active_agent.version);
         config.agent_id = binding.id;
@@ -503,7 +529,7 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function writeCursor(sessionId: string, offset: number, lineCount: number, finalized = false): void {
+  function writeCursor(sessionId: string, offset: number, lineCount: number, finalized = false): boolean {
     try {
       fs.mkdirSync(OBSERVAL_DIR, { recursive: true });
       let data: Record<string, CursorEntry> = {};
@@ -511,10 +537,73 @@ export default function (pi: ExtensionAPI) {
         data = JSON.parse(fs.readFileSync(SYNC_STATE_PATH, "utf-8"));
       }
       data[sessionId] = { offset, line_count: lineCount, finalized, last_pushed_at: Date.now() };
-      fs.writeFileSync(SYNC_STATE_PATH, JSON.stringify(data, null, 2));
+      const temporary = `${SYNC_STATE_PATH}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify(data, null, 2), { mode: 0o600 });
+      fs.renameSync(temporary, SYNC_STATE_PATH);
+      return true;
     } catch {
-      // Fail-open
+      return false;
     }
+  }
+
+  function pendingPath(sessionId: string): string {
+    return path.join(OUTBOX_DIR, `${sha256(Buffer.from(sessionId))}.json`);
+  }
+
+  function readPending(sessionId: string): PendingBatch | null {
+    const file = pendingPath(sessionId);
+    if (!fs.existsSync(file)) return null;
+    const pending = JSON.parse(fs.readFileSync(file, "utf-8"));
+    if (pending?.session_id !== sessionId || !pending?.payload) {
+      throw new Error(`invalid Pi outbox entry: ${file}`);
+    }
+    return pending;
+  }
+
+  function outboxBytes(exclude: string): number {
+    if (!fs.existsSync(OUTBOX_DIR)) return 0;
+    let total = 0;
+    for (const name of fs.readdirSync(OUTBOX_DIR)) {
+      const file = path.join(OUTBOX_DIR, name);
+      if (file === exclude || !name.endsWith(".json")) continue;
+      try { total += fs.statSync(file).size; } catch { }
+    }
+    return total;
+  }
+
+  function writePending(pending: PendingBatch): boolean {
+    try {
+      fs.mkdirSync(OUTBOX_DIR, { recursive: true });
+      const file = pendingPath(pending.session_id);
+      const serialized = JSON.stringify(pending);
+      if (outboxBytes(file) + Buffer.byteLength(serialized) > MAX_OUTBOX_BYTES) return false;
+      const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(temporary, serialized, { mode: 0o600 });
+      fs.renameSync(temporary, file);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function removePending(sessionId: string): void {
+    try { fs.unlinkSync(pendingPath(sessionId)); } catch { }
+  }
+
+  async function deliverPending(config: ObservalConfig, pending: PendingBatch): Promise<boolean> {
+    if (pending.destination.replace(/\/$/, "") !== config.server_url.replace(/\/$/, "")) return false;
+    if (pending.user_id && pending.user_id !== config.user_id) return false;
+
+    const acknowledgement = await postJsonWithTimeout(
+      config,
+      "/api/v1/ingest/session",
+      JSON.stringify(pending.payload),
+      TIMEOUT_MS,
+    );
+    if (!acknowledgementCovers(acknowledgement, pending)) return false;
+    if (!writeCursor(pending.session_id, pending.end_offset, pending.end_line + 1, pending.final)) return false;
+    removePending(pending.session_id);
+    return true;
   }
 
   async function pushNewLines(s: ObservalState, opts: { final: boolean }): Promise<void> {
@@ -523,83 +612,133 @@ export default function (pi: ExtensionAPI) {
     const gen = ++s.generation;
 
     try {
+      let cursor = readCursor(s.sessionId);
+      const storedPending = readPending(s.sessionId);
+      if (storedPending) {
+        if (!(await deliverPending(s.config, storedPending))) return;
+        if (s.generation !== gen) return;
+        cursor = readCursor(s.sessionId);
+      }
+      s.byteOffset = cursor.offset;
+      s.lineCount = cursor.line_count;
+
       const stat = fs.statSync(s.sessionFile);
       const newBytes = stat.size - s.byteOffset;
+      if (newBytes < 0) return;
 
-      if (newBytes <= 0) {
-        if (opts.final) writeCursor(s.sessionId, s.byteOffset, s.lineCount, true);
+      let lines: string[] = [];
+      let endByteOffsets: number[] = [];
+      let consumedBytes = 0;
+
+      if (newBytes > 0) {
+        const buffer = Buffer.alloc(newBytes);
+        const fd = fs.openSync(s.sessionFile, "r");
+        try {
+          fs.readSync(fd, buffer, 0, newBytes, s.byteOffset);
+        } finally {
+          fs.closeSync(fd);
+        }
+
+        if (s.generation !== gen) return;
+        const rawLines = buffer.toString("utf-8").split("\n");
+        for (let i = 0; i < rawLines.length - 1; i++) {
+          const line = rawLines[i]!;
+          consumedBytes += Buffer.byteLength(line, "utf-8") + 1;
+          if (line.trim()) {
+            lines.push(line);
+            endByteOffsets.push(s.byteOffset + consumedBytes);
+          }
+        }
+        if (endByteOffsets.length > 0) {
+          endByteOffsets[endByteOffsets.length - 1] = s.byteOffset + consumedBytes;
+        }
+      }
+
+      if (lines.length === 0) {
+        if (consumedBytes > 0) {
+          s.byteOffset += consumedBytes;
+          if (!writeCursor(s.sessionId, s.byteOffset, s.lineCount, false)) return;
+        }
+        if (!opts.final) return;
+
+        const payload: Record<string, unknown> = {
+          session_id: s.sessionId,
+          harness: "pi",
+          agent_id: s.config.agent_id ?? null,
+          agent_version: s.config.agent_version ?? null,
+          layer_hash: s.layerHash,
+          lines: [],
+          end_byte_offsets: [],
+          start_offset: s.lineCount,
+          hook_event: "SessionShutdown",
+          final: true,
+          total_line_count: s.lineCount,
+          total_offset: s.byteOffset,
+        };
+        const pending: PendingBatch = {
+          session_id: s.sessionId,
+          destination: s.config.server_url,
+          user_id: s.config.user_id,
+          payload,
+          end_line: s.lineCount - 1,
+          end_offset: s.byteOffset,
+          final: true,
+        };
+        if (!writePending(pending)) return;
+        await deliverPending(s.config, pending);
         return;
       }
 
-      const buffer = Buffer.alloc(newBytes);
-      const fd = fs.openSync(s.sessionFile, "r");
-      fs.readSync(fd, buffer, 0, newBytes, s.byteOffset);
-      fs.closeSync(fd);
-
-      if (s.generation !== gen) return; // stale
-
-      const text = buffer.toString("utf-8");
-      const rawLines = text.split("\n");
-
-      // Only consume complete lines (discard partial last line)
-      const lines: string[] = [];
-      let consumedBytes = 0;
-      for (let i = 0; i < rawLines.length; i++) {
-        const line = rawLines[i]!;
-        if (i === rawLines.length - 1) {
-          // Last element after split: either empty (file ended with \n)
-          // or an incomplete line (file didn't end with \n). Either way, stop.
-          break;
-        }
-        if (line.trim()) {
-          lines.push(line);
-        }
-        consumedBytes += Buffer.byteLength(line, "utf-8") + 1; // +1 for \n
-      }
-
-      if (lines.length === 0 && !opts.final) return;
-
-      // Chunk large batches
+      const initialLineCount = s.lineCount;
+      const finalOffset = s.byteOffset + consumedBytes;
       for (let offset = 0; offset < lines.length; offset += MAX_LINES_PER_CHUNK) {
-        if (s.generation !== gen) return; // stale
-
+        if (s.generation !== gen) return;
         const chunk = lines.slice(offset, offset + MAX_LINES_PER_CHUNK);
+        const chunkEndOffsets = endByteOffsets.slice(offset, offset + MAX_LINES_PER_CHUNK);
         const isLastChunk = offset + MAX_LINES_PER_CHUNK >= lines.length;
-
-        const payload = JSON.stringify({
+        const endLine = initialLineCount + offset + chunk.length - 1;
+        const endOffset = chunkEndOffsets[chunkEndOffsets.length - 1]!;
+        const payload: Record<string, unknown> = {
           session_id: s.sessionId,
           harness: "pi",
-          agent_id: s.config!.agent_id ?? null,
-          agent_version: s.config!.agent_version ?? null,
+          agent_id: s.config.agent_id ?? null,
+          agent_version: s.config.agent_version ?? null,
           layer_hash: s.layerHash,
           lines: chunk,
-          start_offset: s.lineCount + offset,
+          end_byte_offsets: chunkEndOffsets,
+          start_offset: initialLineCount + offset,
           hook_event: opts.final && isLastChunk ? "SessionShutdown" : "AgentEnd",
           final: opts.final && isLastChunk,
           ...(opts.final && isLastChunk
-            ? {
-                total_line_count: s.lineCount + lines.length,
-                total_offset: s.byteOffset + consumedBytes,
-              }
+            ? { total_line_count: initialLineCount + lines.length, total_offset: finalOffset }
             : {}),
-        });
-
-        const ok = await postWithTimeout(s.config!, "/api/v1/ingest/session", payload);
-        if (!ok) break; // stop chunking on failure, retry next time
+        };
+        const pending: PendingBatch = {
+          session_id: s.sessionId,
+          destination: s.config.server_url,
+          user_id: s.config.user_id,
+          payload,
+          end_line: endLine,
+          end_offset: endOffset,
+          final: opts.final && isLastChunk,
+        };
+        if (!writePending(pending)) return;
+        if (!(await deliverPending(s.config, pending))) return;
+        if (s.generation !== gen) return;
+        s.byteOffset = endOffset;
+        s.lineCount = endLine + 1;
       }
-
-      if (s.generation !== gen) return; // stale
-
-      // Update state
-      s.byteOffset += consumedBytes;
-      s.lineCount += lines.length;
-      writeCursor(s.sessionId, s.byteOffset, s.lineCount, opts.final);
     } catch {
       // Fail-open
     }
   }
 
-  function postJsonWithTimeout(config: ObservalConfig, urlPath: string, body: string): Promise<any | null> {
+  function postJsonWithTimeout(
+    config: ObservalConfig,
+    urlPath: string,
+    body: string,
+    timeoutMs = TIMEOUT_MS * 2,
+  ): Promise<any | null> {
     return new Promise((resolve) => {
       try {
         const url = new URL(urlPath, config.server_url);
@@ -607,7 +746,7 @@ export default function (pi: ExtensionAPI) {
         const timer = setTimeout(() => {
           req.destroy();
           resolve(null);
-        }, TIMEOUT_MS * 2);
+        }, timeoutMs);
 
         const req = mod.request(
           url,
@@ -650,133 +789,62 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  function postWithTimeout(config: ObservalConfig, urlPath: string, body: string): Promise<boolean> {
-    return new Promise((resolve) => {
+
+  async function drainStoredOutbox(config: ObservalConfig): Promise<void> {
+    if (!fs.existsSync(OUTBOX_DIR)) return;
+    for (const name of fs.readdirSync(OUTBOX_DIR)) {
+      if (!name.endsWith(".json")) continue;
       try {
-        const url = new URL(urlPath, config.server_url);
-        const mod = url.protocol === "https:" ? https : http;
-        const timer = setTimeout(() => {
-          req.destroy();
-          resolve(false);
-        }, TIMEOUT_MS);
-
-        const req = mod.request(
-          url,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${config.access_token}`,
-              "Content-Length": String(Buffer.byteLength(body)),
-            },
-          },
-          (res) => {
-            clearTimeout(timer);
-            res.resume(); // drain response
-            resolve(res.statusCode! >= 200 && res.statusCode! < 300);
-          },
-        );
-
-        req.on("error", () => {
-          clearTimeout(timer);
-          resolve(false);
-        });
-
-        req.write(body);
-        req.end();
+        const pending = JSON.parse(fs.readFileSync(path.join(OUTBOX_DIR, name), "utf-8"));
+        if (!pending?.session_id || !pending?.payload) continue;
+        await deliverPending(config, pending);
       } catch {
-        resolve(false);
+        // Keep corrupt or unreachable entries for manual recovery.
       }
-    });
+    }
   }
 
   async function recoverStaleSessions(s: ObservalState, ctx: ExtensionContext): Promise<void> {
     try {
-      if (!fs.existsSync(SYNC_STATE_PATH) || !s.config) return;
+      if (!s.config) return;
+      await drainStoredOutbox(s.config);
+      if (!fs.existsSync(SYNC_STATE_PATH)) return;
       const data: Record<string, CursorEntry> = JSON.parse(
         fs.readFileSync(SYNC_STATE_PATH, "utf-8"),
       );
 
-      // Use sessionManager to resolve session directory when available,
-      // falling back to the conventional path layout.
       const sessionsDir = (ctx.sessionManager as any).getSessionDir?.()
         ?? path.join(os.homedir(), ".pi", "agent", "sessions");
-      const cwd = ctx.cwd;
-      const projectKey = cwd.replace(/\//g, "-");
+      const projectKey = ctx.cwd.replace(/\//g, "-");
       const fullDir = path.join(sessionsDir, `-${projectKey}-`);
-
-      if (!fs.existsSync(fullDir)) return;
-
       let recovered = 0;
       const now = Date.now();
 
-      for (const [sessionId, entry] of Object.entries(data)) {
+      for (const [sessionId, storedEntry] of Object.entries(data)) {
+        if (sessionId === s.sessionId || recovered >= RECOVERY_MAX_SESSIONS) continue;
+        const entry = storedEntry;
         if (entry.finalized) continue;
-        if (sessionId === s.sessionId) continue; // current session
-        if (recovered >= RECOVERY_MAX_SESSIONS) break;
+        if (!fs.existsSync(fullDir)) continue;
 
-        // Find the JSONL file for this session
         const files = fs.readdirSync(fullDir).filter((f) => f.includes(sessionId));
         if (files.length === 0) continue;
-
         const filePath = path.join(fullDir, files[0]!);
         if (!fs.existsSync(filePath)) continue;
-
-        // Skip sessions older than 7 days
         const fileStat = fs.statSync(filePath);
-        if (now - fileStat.mtimeMs > RECOVERY_MAX_AGE_MS) {
-          writeCursor(sessionId, entry.offset, entry.line_count, true);
-          continue;
-        }
+        if (now - fileStat.mtimeMs > RECOVERY_MAX_AGE_MS) continue;
 
-        if (fileStat.size <= entry.offset) {
-          writeCursor(sessionId, entry.offset, entry.line_count, true);
-          continue;
-        }
-
-        const fd = fs.openSync(filePath, "r");
-        const buffer = Buffer.alloc(fileStat.size - entry.offset);
-        fs.readSync(fd, buffer, 0, buffer.length, entry.offset);
-        fs.closeSync(fd);
-
-        const lines = buffer
-          .toString("utf-8")
-          .split("\n")
-          .filter((l) => l.trim());
-
-        if (lines.length > 0) {
-          let pushOk = true;
-          for (let offset = 0; offset < lines.length; offset += MAX_LINES_PER_CHUNK) {
-            const chunk = lines.slice(offset, offset + MAX_LINES_PER_CHUNK);
-            const isLastChunk = offset + MAX_LINES_PER_CHUNK >= lines.length;
-            const payload = JSON.stringify({
-              session_id: sessionId,
-              harness: "pi",
-              agent_id: s.config?.agent_id ?? null,
-              agent_version: s.config?.agent_version ?? null,
-              layer_hash: s.layerHash,
-              lines: chunk,
-              start_offset: entry.line_count + offset,
-              hook_event: "CrashRecovery",
-              final: isLastChunk,
-              ...(isLastChunk
-                ? {
-                    total_line_count: entry.line_count + lines.length,
-                    total_offset: fileStat.size,
-                  }
-                : {}),
-            });
-            const ok = await postWithTimeout(s.config!, "/api/v1/ingest/session", payload);
-            if (!ok) { pushOk = false; break; }
-          }
-          if (!pushOk) continue; // skip finalization, retry next startup
-        }
-
-        writeCursor(sessionId, fileStat.size, entry.line_count + lines.length, true);
-        recovered++;
+        const recoveryState: ObservalState = {
+          ...s,
+          sessionFile: filePath,
+          sessionId,
+          byteOffset: entry.offset,
+          lineCount: entry.line_count,
+          generation: 0,
+        };
+        await pushNewLines(recoveryState, { final: true });
+        if (readCursor(sessionId).finalized) recovered++;
       }
 
-      // Prune old finalized entries from sync_state.json
       pruneSyncState();
     } catch {
       // Fail-open
@@ -790,15 +858,20 @@ export default function (pi: ExtensionAPI) {
         fs.readFileSync(SYNC_STATE_PATH, "utf-8"),
       );
       const entries = Object.entries(data);
-      if (entries.length <= 50) return; // No pruning needed
+      if (entries.length <= 50) return;
 
-      // Keep only the 50 most recent entries (by last push time, falling back to offset)
-      const sorted = entries.sort((a, b) => (b[1].last_pushed_at ?? 0) - (a[1].last_pushed_at ?? 0));
+      const required = entries.filter(([, value]) => !value.finalized);
+      const recentFinalized = entries
+        .filter(([, value]) => value.finalized)
+        .sort((a, b) => (b[1].last_pushed_at ?? 0) - (a[1].last_pushed_at ?? 0))
+        .slice(0, Math.max(0, 50 - required.length));
       const pruned: Record<string, CursorEntry> = {};
-      for (const [key, value] of sorted.slice(0, 50)) {
+      for (const [key, value] of [...required, ...recentFinalized]) {
         pruned[key] = value;
       }
-      fs.writeFileSync(SYNC_STATE_PATH, JSON.stringify(pruned, null, 2));
+      const temporary = `${SYNC_STATE_PATH}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify(pruned, null, 2), { mode: 0o600 });
+      fs.renameSync(temporary, SYNC_STATE_PATH);
     } catch {
       // Fail-open
     }
