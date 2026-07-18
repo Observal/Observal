@@ -9,8 +9,8 @@ import typer
 from loguru import logger as optic
 from rich import print as rprint
 
-from observal_cli.harness import ensure_loaded, get_adapter
-from observal_cli.sessions.base import drain_session_source, load_config, read_cursor
+from observal_cli.harness import ensure_loaded, get_adapter, get_all_adapters
+from observal_cli.sessions.base import drain_outbox, drain_session_source, load_config, read_cursor
 
 reconcile_app = typer.Typer(name="reconcile", help="Push local session transcripts to the server")
 
@@ -29,7 +29,13 @@ def reconcile(
         raise typer.Exit(1)
 
     ensure_loaded()
-    targets = [harness] if harness else ["antigravity"]
+    if not dry_run:
+        drain_outbox(cfg)
+    targets = (
+        [harness]
+        if harness
+        else [name for name, adapter in get_all_adapters().items() if adapter.is_installed()]
+    )
     total = sum(_reconcile_harness(target, cfg, since_hours, dry_run) for target in targets)
     if dry_run:
         rprint(f"\n[yellow]Dry run:[/yellow] {total} session(s) would be pushed.")

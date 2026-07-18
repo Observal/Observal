@@ -1,5 +1,6 @@
 ---
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 name: observal-advanced
 command: observal
@@ -14,13 +15,17 @@ owner: observal
 
 Push local session JSONL to server for full trace context. Normally automatic via hooks.
 
-Manual run for crash recovery:
+Manual recovery for all detected harnesses:
 
 ```bash
-python -m observal_cli.cmd_reconcile
+observal reconcile
 ```
 
-Not a Typer command. No flags needed.
+Target one harness or shorten the discovery window when needed:
+
+```bash
+observal reconcile --harness claude-code --since 24
+```
 
 ---
 

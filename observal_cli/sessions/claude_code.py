@@ -4,8 +4,8 @@
 
 """Claude Code session file helpers.
 
-Handles JSONL file discovery, subagent detection, agent marker reading,
-and subagent session pushing for Claude Code sessions.
+Handles JSONL file discovery, subagent detection, and agent marker reading
+for the Claude Code adapter.
 """
 
 from __future__ import annotations
@@ -54,58 +54,3 @@ def find_sessions_dir(home: Path | None = None) -> Path:
     if home is None:
         home = Path.home()
     return home / ".claude" / "projects"
-
-
-def push_subagent_sessions(
-    parent_session_id: str,
-    jsonl_path: Path,
-    config: dict,
-    cwd: str = "",
-    home: Path | None = None,
-) -> None:
-    """Push incremental lines from any subagent JSONL files under the parent session dir.
-
-    Claude Code writes subagent transcripts to:
-        <project_dir>/<parent_session_id>/subagents/agent-<agent_id>.jsonl
-    """
-    from observal_cli.sessions.base import (
-        build_payload,
-        post_to_server,
-        read_cursor,
-        read_new_lines,
-        write_cursor,
-    )
-
-    subagents_dir = jsonl_path.parent / parent_session_id / "subagents"
-    if not subagents_dir.is_dir():
-        return
-
-    for sub_file in subagents_dir.glob("agent-*.jsonl"):
-        agent_id = sub_file.stem[len("agent-") :]
-        cursor_key = f"{parent_session_id}__sub__{agent_id}"
-
-        offset, line_count = read_cursor(cursor_key, home=home)
-        lines, bytes_read = read_new_lines(sub_file, offset=offset)
-        if not lines:
-            continue
-
-        new_offset = offset + bytes_read
-        payload = build_payload(
-            session_id=agent_id,
-            lines=lines,
-            start_offset=line_count,
-            hook_event="UserPromptSubmit",
-            line_count_before=line_count,
-            new_offset=new_offset,
-            cwd=cwd,
-            parent_session_id=parent_session_id,
-        )
-
-        success = post_to_server(
-            server_url=config["server_url"],
-            access_token=config["access_token"],
-            payload=payload,
-            config=config,
-        )
-        if success:
-            write_cursor(cursor_key, new_offset, line_count + len(lines), home=home)
