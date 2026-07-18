@@ -133,8 +133,9 @@ def enqueue(
     existing range is rejected instead of overwriting unacknowledged records.
     """
     lines = payload.get("lines") or []
-    if not lines:
-        raise ValueError("session outbox payload must contain source lines")
+    metadata_only = not lines
+    if metadata_only and payload.get("total_credits") is None:
+        raise ValueError("empty session outbox payload must contain durable metadata")
     harness = str(payload.get("harness") or "")
     session_id = str(payload.get("session_id") or "")
     if not destination or not user_id or not harness or not session_id:
@@ -176,7 +177,10 @@ def enqueue(
                     checkpoint_key = excluded.checkpoint_key,
                     end_offset = max(session_outbox.end_offset, excluded.end_offset),
                     final = max(session_outbox.final, excluded.final),
-                    payload = CASE WHEN excluded.final = 1 THEN excluded.payload ELSE session_outbox.payload END
+                    payload = CASE
+                        WHEN excluded.final = 1 OR excluded.end_line < excluded.start_line THEN excluded.payload
+                        ELSE session_outbox.payload
+                    END
                 """,
                 (*key[:4], checkpoint_key or session_id, start_line, end_line, end_offset, int(final), serialized, records_hash),
             )
@@ -210,7 +214,8 @@ def pending(
         rows = conn.execute(
             "SELECT id, destination, user_id, harness, session_id, checkpoint_key, "
             "start_line, end_line, end_offset, final, payload, attempts "
-            "FROM session_outbox WHERE destination = ? AND user_id = ? ORDER BY id LIMIT ?",
+            "FROM session_outbox WHERE destination = ? AND user_id = ? "
+            "ORDER BY (end_line < start_line), id LIMIT ?",
             (destination.rstrip("/"), user_id, limit),
         ).fetchall()
         return [
@@ -291,15 +296,17 @@ def acknowledge(
     harness: str,
     session_id: str,
     acknowledged_line: int,
+    include_metadata: bool = False,
     db_path: Path | None = None,
 ) -> int:
-    """Delete only batches fully covered by a contiguous server acknowledgement."""
+    """Delete acknowledged source batches and only metadata that was itself posted."""
     conn = _connect(db_path)
     try:
         cursor = conn.execute(
             "DELETE FROM session_outbox WHERE destination = ? AND user_id = ? AND harness = ? "
-            "AND session_id = ? AND end_line <= ?",
-            (destination.rstrip("/"), user_id, harness, session_id, acknowledged_line),
+            "AND session_id = ? AND end_line <= ? "
+            "AND (end_line >= start_line OR ? = 1)",
+            (destination.rstrip("/"), user_id, harness, session_id, acknowledged_line, int(include_metadata)),
         )
         if cursor.rowcount:
             conn.execute(

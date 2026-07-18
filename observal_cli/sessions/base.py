@@ -375,6 +375,7 @@ def drain_outbox(
             harness=item.harness,
             session_id=item.session_id,
             acknowledged_line=acknowledged_line,
+            include_metadata=item.end_line < item.start_line,
             db_path=db_path,
         )
     return True
@@ -417,6 +418,32 @@ def drain_session_source(
     if not lines:
         if bytes_read:
             byte_offset += bytes_read
+        if extra_fields:
+            payload = build_payload(
+                session_id=source.session_id,
+                lines=[],
+                start_offset=line_count,
+                hook_event=hook_event,
+                line_count_before=line_count,
+                new_offset=byte_offset,
+                cwd=source.cwd,
+                parent_session_id=source.parent_session_id,
+                session_jsonl=source.path,
+                harness=source.harness,
+            )
+            payload["harness"] = source.harness
+            payload.update(extra_fields)
+            if final:
+                payload["final"] = True
+                payload["total_line_count"] = line_count
+                payload["total_offset"] = byte_offset
+            telemetry_buffer.enqueue(
+                payload,
+                destination=destination,
+                user_id=user_id,
+                checkpoint_key=source.checkpoint_key,
+                db_path=db_path,
+            )
         delivered = drain_outbox(config, home=home, db_path=db_path, post=post)
         if bytes_read or (final and delivered):
             write_cursor(

@@ -132,6 +132,32 @@ def test_restart_drains_acknowledged_records_and_finalizes_cursor(tmp_path: Path
     assert state["session"]["finalized"] is True
 
 
+def test_metadata_only_final_batch_is_spooled_and_acknowledged(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text("")
+    db = tmp_path / "outbox.db"
+    captured: list[dict] = []
+
+    def acknowledge(payload, _config):
+        captured.append(payload)
+        return {"acknowledged_line": -1, "acknowledged_offset": 0}
+
+    assert base.drain_session_source(
+        SessionSource("kiro", "session", source_path),
+        config(),
+        hook_event="Stop",
+        final=True,
+        extra_fields={"total_credits": 2.0},
+        home=tmp_path,
+        db_path=db,
+        post=acknowledge,
+    )
+    assert captured[0]["lines"] == []
+    assert captured[0]["total_credits"] == 2.0
+    assert telemetry_buffer.stats(db_path=db)["pending"] == 0
+
+
 def test_final_drain_with_no_new_records_marks_acknowledged_cursor_final(tmp_path: Path, monkeypatch):
     disable_payload_metadata(monkeypatch)
     source_path = tmp_path / "session.jsonl"

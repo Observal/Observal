@@ -63,6 +63,46 @@ def test_requeue_is_idempotent_and_can_promote_final_payload(tmp_path: Path):
     assert items[0].payload["final"] is True
 
 
+def test_metadata_only_batch_is_durable_and_replaceable(tmp_path: Path):
+    db = tmp_path / "outbox.db"
+    first = payload(2, []) | {"total_credits": 1.0}
+    latest = payload(2, [], final=True) | {"total_credits": 2.0}
+
+    outbox.enqueue(first, destination="http://server", user_id="user", db_path=db)
+    outbox.enqueue(latest, destination="http://server", user_id="user", db_path=db)
+
+    item = outbox.pending(destination="http://server", user_id="user", db_path=db)[0]
+    assert item.start_line == 2
+    assert item.end_line == 1
+    assert item.final
+    assert item.payload["total_credits"] == 2.0
+
+
+def test_source_batches_drain_before_metadata_waiting_on_their_checkpoint(tmp_path: Path):
+    db = tmp_path / "outbox.db"
+    outbox.enqueue(
+        payload(2, []) | {"total_credits": 2.0},
+        destination="http://server",
+        user_id="user",
+        db_path=db,
+    )
+    outbox.enqueue(payload(0, ["zero", "one"]), destination="http://server", user_id="user", db_path=db)
+
+    items = outbox.pending(destination="http://server", user_id="user", db_path=db)
+    assert [(item.start_line, item.end_line) for item in items] == [(0, 1), (2, 1)]
+
+    outbox.acknowledge(
+        destination="http://server",
+        user_id="user",
+        harness="claude-code",
+        session_id="session",
+        acknowledged_line=1,
+        db_path=db,
+    )
+    remaining = outbox.pending(destination="http://server", user_id="user", db_path=db)
+    assert [(item.start_line, item.end_line) for item in remaining] == [(2, 1)]
+
+
 def test_requeue_rejects_different_content_for_same_source_range(tmp_path: Path):
     db = tmp_path / "outbox.db"
     outbox.enqueue(payload(0, ["original"]), destination="http://server", user_id="user", db_path=db)
