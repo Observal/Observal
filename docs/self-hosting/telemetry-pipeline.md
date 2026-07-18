@@ -43,7 +43,7 @@ For insights, Observal also keeps session-shaped artifacts derived from the agen
 
 This is the primary path for full-session reconstruction. Coding agents expose local JSONL transcripts or equivalent history. The harness adapter resolves those sources, while Observal sends indexed raw records for harness-specific classification on the server.
 
-Claude Code and Kiro use the shared acknowledged exporter: each observed batch is written to `~/.observal/telemetry_buffer.db` before upload, retries are idempotent, and the local source cursor advances only after the server returns a contiguous line/byte checkpoint. On Stop, a delayed stable-file pass captures records written after the hook itself; Kiro credit metadata uses the same durable path. The outbox survives CLI and harness restarts, but it cannot cover records the harness deletes before any Observal hook observes them.
+Claude Code and Kiro use the shared Python acknowledged exporter: each observed batch is written to `~/.observal/telemetry_buffer.db` before upload, retries are idempotent, and the local source cursor advances only after the server returns a contiguous line/byte checkpoint. OpenCode's native plugin implements the same contract with per-session files under `~/.observal/opencode_session_outbox/`. On Stop, a delayed stable-file pass captures records written after Python hooks; Kiro credit metadata uses the same durable path. Outboxes survive CLI and harness restarts, but cannot cover records deleted before Observal observes them.
 
 This path preserves the conversation shape needed for insight reports: prompts, assistant messages, tool calls, timing, and ordering.
 

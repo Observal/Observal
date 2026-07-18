@@ -14,7 +14,8 @@ Every file Observal reads or writes on the client (`~/.observal/`) and in each h
 | `config.json` | CLI config (server URL, access token, user info, timeout) | `0600` |
 | `aliases.json` | User-defined shortcuts (`@my-mcp` → UUID) | `0600` |
 | `last_results.json` | Last `list` / `show` output - enables row-number references | `0600` |
-| `telemetry_buffer.db` | Durable SQLite outbox for observed session records awaiting contiguous server acknowledgement | `0600` |
+| `telemetry_buffer.db` | Durable SQLite outbox for Python session exporters awaiting contiguous server acknowledgement | `0600` |
+| `opencode_session_outbox/` | Per-session durable OpenCode plugin batches and acknowledged line state | `0600` files |
 | `keys/` | Server-side JWT keys (operators only; path controlled by `JWT_KEY_DIR`) | `0600` |
 
 ### `config.json` schema
@@ -36,7 +37,7 @@ Override any field at runtime with `observal config set <key> <value>` or with a
 
 ### Durable session outbox
 
-Acknowledged session exporters persist each observed batch in `telemetry_buffer.db` before network delivery. A batch remains pending across process restarts and failed attempts, and is deleted only when the server's contiguous checkpoint covers the complete batch. Observal does not silently evict unacknowledged records at capacity; a full outbox or disk is reported as an error so the source cursor cannot advance past unspooled data.
+Python session exporters persist each observed batch in `telemetry_buffer.db` before network delivery. OpenCode uses per-session files under `opencode_session_outbox/` because its native TypeScript plugin cannot call the Python SQLite engine. Both follow the same protocol: pending data survives process restarts and failed attempts, and the source line advances only when the server's contiguous checkpoint covers the complete batch. Observal does not silently evict unacknowledged records at capacity.
 
 Use `observal ops telemetry status` to inspect pending batch count, disk use, oldest pending time, and last successful acknowledgement.
 

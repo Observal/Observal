@@ -13,7 +13,7 @@ Bump HOOKS_SPEC_VERSION whenever the plugin definition changes.
 
 from __future__ import annotations
 
-HOOKS_SPEC_VERSION = "3"
+HOOKS_SPEC_VERSION = "4"
 
 # OpenCode plugin events used for telemetry:
 # - session.created: session started (initialization)

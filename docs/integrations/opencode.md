@@ -147,18 +147,16 @@ id and installed version.
 
 ## Session push behavior
 
-The OpenCode plugin works as follows:
+The OpenCode plugin implements the same acknowledged delivery contract as Python harnesses:
 
-1. Load `~/.observal/config.json` for server URL and API key.
-2. Track active sessions in memory.
-3. Resolve the active OpenCode agent name through `~/.observal/lockfile.json`.
-4. On `session.idle`, fetch messages from `client.session.messages`.
-5. Convert messages into JSONL-compatible Observal session lines.
-6. Send only messages that have not already been pushed for that session.
-7. Mark the final payload when OpenCode reports completion.
+1. Load `~/.observal/config.json` and resolve the active agent through `~/.observal/lockfile.json`.
+2. On `session.idle`, retry any durable pending batch before reading new messages.
+3. Fetch messages from `client.session.messages` and convert each message into one stable JSONL-compatible source record.
+4. Atomically persist the pending indexed batch under `~/.observal/opencode_session_outbox/` before network delivery.
+5. Retry the same batch idempotently until the server returns a contiguous acknowledgement covering it.
+6. Advance the persisted source line only after that acknowledgement; a crash after server commit safely retries the batch.
 
-The plugin keeps a small in-memory session cache and drops the oldest tracked
-session when the cache is full.
+Acknowledged state is retained for seven days to avoid unnecessary replay. Capacity errors and corrupt state fail closed: pending files are kept rather than silently discarded.
 
 ---
 

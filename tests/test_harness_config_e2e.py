@@ -420,7 +420,7 @@ class TestGenerateOpenCodeConfig:
         assert '"session.next.agent.switched"' in plugin
         assert 'harness: "opencode"' in plugin
         assert "LOCKFILE_PATH" in plugin
-        assert "agent_version: agent.version" in plugin
+        assert "agent_version: pending.agentVersion" in plugin
         assert "client.app.log" in plugin
 
 

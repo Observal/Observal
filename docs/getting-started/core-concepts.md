@@ -83,15 +83,15 @@ Observal intercepts MCP traffic without modifying it. Two flavors:
 
 You rarely call either one directly. `observal doctor patch --shim` (or `--all`) rewrites your harness config to route MCP servers through the appropriate one.
 
-Interception is **transparent**: nothing is changed on the wire. If Observal is unreachable, the tool call still succeeds, and the telemetry is queued locally (see [Telemetry buffer](#telemetry-buffer) below) and flushed later.
+Interception is **transparent**: nothing is changed on the wire, and an unreachable Observal server does not block the MCP tool call. Reliable session delivery is handled separately by the harness exporter.
 
-## Telemetry buffer
+## Durable session outboxes
 
-Acknowledged session exporters persist records they observe in a local SQLite outbox at `~/.observal/telemetry_buffer.db` before attempting upload. Failed attempts remain pending across process restarts. A batch is removed, and its local source cursor advances, only after the server acknowledges a contiguous checkpoint that covers it.
+Acknowledged Python session exporters persist records in `~/.observal/telemetry_buffer.db` before upload. OpenCode's native plugin uses per-session files under `~/.observal/opencode_session_outbox/`. Failed attempts remain pending across process restarts. A batch is removed, and its source line advances, only after the server acknowledges a contiguous checkpoint that covers it.
 
 The guarantee begins when Observal observes and spools a record. It cannot recover a source record that the harness deletes before any installed hook or extension runs.
 
-Check the outbox:
+Check Python exporter outbox status:
 
 ```bash
 observal auth status
