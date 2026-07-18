@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Codex CLI hook specification for session telemetry.
