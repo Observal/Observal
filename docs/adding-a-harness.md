@@ -27,7 +27,7 @@ When a user runs `observal scan`, Observal reads those same locations to discove
 |---|------|-------------|
 | 1 | `observal-server/schemas/harness_registry.py` | harness metadata: paths, keys, event maps, formats |
 | 2 | `observal_cli/harness_registry.py` | CLI mirror (must be identical, enforced by test) |
-| 3 | `observal_cli/harness/<harness_name>.py` | CLI adapter: scanning, hook detection, shim status, managed file attribution |
+| 3 | `observal_cli/harness/<harness_name>.py` | CLI adapter: scanning, hook detection, session source resolution/discovery, shim status, managed file attribution |
 | 4 | `observal_cli/harness/load_all.py` | Add import line for auto-registration |
 | 5 | `observal_cli/harness/__init__.py` | Adapter registry and protocol validation |
 | 6 | `observal-server/services/harness/<harness_name>.py` | Server adapter: config generation for install |

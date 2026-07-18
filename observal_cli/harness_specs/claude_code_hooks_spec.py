@@ -25,7 +25,7 @@ from pathlib import Path
 from observal_cli.shared.utils import OBSERVAL_METADATA_KEY
 
 # Bump this when hook definitions change.
-HOOKS_SPEC_VERSION = "10"
+HOOKS_SPEC_VERSION = "11"
 
 
 # Parent of the observal_cli package directory
@@ -53,7 +53,7 @@ def get_desired_hooks() -> dict[str, list[dict]]:
     push hook which reads the JSONL file incrementally.
     """
     meta = {OBSERVAL_METADATA_KEY: {"version": HOOKS_SPEC_VERSION}}
-    cmd = f"{_python_cmd()} -m observal_cli.hooks.session_push"
+    cmd = f"{_python_cmd()} -m observal_cli.hooks.session_push --harness claude-code"
 
     hook_group: list[dict] = [{**meta, "hooks": [{"type": "command", "command": cmd}]}]
 

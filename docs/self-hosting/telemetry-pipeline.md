@@ -39,11 +39,13 @@ Observal presents activity in the UI as **sessions**, **traces / turns**, and **
 
 For insights, Observal also keeps session-shaped artifacts derived from the agent's JSONL transcripts or SQLite session buffers. Those richer session artifacts let the insights engine reason about the conversation in order, while ClickHouse stores the normalized analytical layer used by trace views, dashboards, and queries.
 
-## Path 1: session files and SQLite buffers
+## Path 1: session sources
 
-This is the primary path for full-session reconstruction. Coding agents write local session state as JSONL transcripts, SQLite buffers, or equivalent local history. `observal reconcile` parses those files and pushes normalized sessions to the server.
+This is the primary path for full-session reconstruction. Coding agents expose local JSONL transcripts or equivalent history. The harness adapter resolves those sources, while Observal sends indexed raw records for harness-specific classification on the server.
 
-This path gives Observal the full conversation shape needed for insight reports: prompts, assistant messages, tool calls, timing, and ordering.
+Claude Code is the reference acknowledged exporter: each observed batch is written to `~/.observal/telemetry_buffer.db` before upload, retries are idempotent, and the local source cursor advances only after the server returns a contiguous line/byte checkpoint. On Stop, a delayed stable-file pass captures records Claude writes after the hook itself. The durable outbox survives CLI and harness restarts; it does not cover records the harness deletes before any Observal hook observes them.
+
+This path preserves the conversation shape needed for insight reports: prompts, assistant messages, tool calls, timing, and ordering.
 
 ## Path 2: harness hooks
 

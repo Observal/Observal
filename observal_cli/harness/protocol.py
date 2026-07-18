@@ -277,6 +277,10 @@ class HarnessAdapter(Protocol):
         """Discover recently modified local session sources."""
         ...
 
+    def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
+        """Return child/subagent sources associated with a resolved session."""
+        ...
+
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Return whether a hook payload marks its session final."""
         ...
