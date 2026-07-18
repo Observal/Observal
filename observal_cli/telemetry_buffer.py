@@ -1,170 +1,295 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Lightweight SQLite buffer for offline telemetry events.
+"""Durable SQLite outbox for acknowledged session delivery.
 
-Stores telemetry events locally when the Observal server is unreachable,
-and provides methods to flush them when connectivity is restored.
-
-Database location: ~/.observal/telemetry_buffer.db
+Observed session records are stored before network delivery and deleted only
+after the server acknowledges a contiguous checkpoint.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
 from pathlib import Path
 
-from loguru import logger as optic
-
 DB_PATH = Path.home() / ".observal" / "telemetry_buffer.db"
-MAX_EVENTS = 10_000
-SENT_TTL_HOURS = 24
-MAX_RETRIES = 3
+MAX_OUTBOX_BYTES = 256 * 1024 * 1024
 BATCH_SIZE = 50
 
 
-def _connect() -> sqlite3.Connection:
-    """Open (or create) the telemetry buffer database with WAL mode."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), timeout=5)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=3000")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS pending_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            event_type TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            attempts INTEGER NOT NULL DEFAULT 0,
-            last_attempt TEXT,
-            status TEXT NOT NULL DEFAULT 'pending'
-        )
-        """
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON pending_events(status)")
-    conn.commit()
-    return conn
+class OutboxError(RuntimeError):
+    """Base error for durable outbox failures."""
 
 
-def buffer_event(payload: str, event_type: str = "hook") -> None:
-    """Write a single event to the local buffer.
+class OutboxFullError(OutboxError):
+    """Raised instead of dropping telemetry when the durable outbox is full."""
 
-    Enforces the FIFO cap: if the buffer exceeds MAX_EVENTS, the oldest
-    pending rows are deleted to make room.
-    """
-    optic.trace("type={}", event_type)
-    conn = _connect()
+
+class OutboxConflictError(OutboxError):
+    """Raised when one source range is queued with different records."""
+
+
+@dataclass(frozen=True)
+class OutboxItem:
+    id: int
+    destination: str
+    user_id: str
+    harness: str
+    session_id: str
+    checkpoint_key: str
+    start_line: int
+    end_line: int
+    end_offset: int
+    final: bool
+    payload: dict
+    attempts: int
+
+
+def _path(db_path: Path | None) -> Path:
+    return db_path or DB_PATH
+
+
+def _connect(db_path: Path | None = None, max_bytes: int = MAX_OUTBOX_BYTES) -> sqlite3.Connection:
+    path = _path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        conn = sqlite3.connect(str(path), timeout=5)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.execute("PRAGMA busy_timeout=3000")
         conn.execute(
-            "INSERT INTO pending_events (event_type, payload) VALUES (?, ?)",
-            (event_type, payload),
+            """
+            CREATE TABLE IF NOT EXISTS session_outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                destination TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                harness TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                checkpoint_key TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                end_offset INTEGER NOT NULL,
+                final INTEGER NOT NULL DEFAULT 0,
+                payload TEXT NOT NULL,
+                records_hash TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_attempt TEXT,
+                UNIQUE(destination, user_id, harness, session_id, start_line, end_line)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_session_outbox_pending "
+            "ON session_outbox(destination, user_id, id)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS session_outbox_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_sync TEXT
+            )
+            """
         )
         conn.commit()
-        _enforce_cap(conn)
+        page_size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+        conn.execute(f"PRAGMA max_page_count = {max(1, max_bytes // page_size)}")
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
+        return conn
+    except sqlite3.Error as exc:
+        raise OutboxError(f"cannot open durable telemetry outbox: {exc}") from exc
+
+
+def _used_bytes(conn: sqlite3.Connection) -> int:
+    page_size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+    page_count = int(conn.execute("PRAGMA page_count").fetchone()[0])
+    free_pages = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+    return (page_count - free_pages) * page_size
+
+
+def _records_hash(payload: dict) -> str:
+    lines = payload.get("lines") or []
+    return hashlib.sha256("\n".join(str(line) for line in lines).encode()).hexdigest()
+
+
+def enqueue(
+    payload: dict,
+    *,
+    destination: str,
+    user_id: str,
+    checkpoint_key: str | None = None,
+    db_path: Path | None = None,
+    max_bytes: int = MAX_OUTBOX_BYTES,
+) -> int:
+    """Persist one source batch and return its durable row ID.
+
+    Re-queuing the same source range is idempotent. Different content for an
+    existing range is rejected instead of overwriting unacknowledged records.
+    """
+    lines = payload.get("lines") or []
+    if not lines:
+        raise ValueError("session outbox payload must contain source lines")
+    harness = str(payload.get("harness") or "")
+    session_id = str(payload.get("session_id") or "")
+    if not destination or not user_id or not harness or not session_id:
+        raise ValueError("destination, user_id, harness, and session_id are required")
+
+    start_line = int(payload.get("start_offset", 0))
+    end_line = start_line + len(lines) - 1
+    end_offsets = payload.get("end_byte_offsets") or []
+    end_offset = int(end_offsets[-1]) if end_offsets else int(payload.get("total_offset") or 0)
+    final = bool(payload.get("final"))
+    serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    records_hash = _records_hash(payload)
+    key = (destination.rstrip("/"), user_id, harness, session_id, start_line, end_line)
+
+    conn = _connect(db_path, max_bytes=max_bytes)
+    try:
+        existing = conn.execute(
+            "SELECT id, records_hash FROM session_outbox "
+            "WHERE destination = ? AND user_id = ? AND harness = ? AND session_id = ? "
+            "AND start_line = ? AND end_line = ?",
+            key,
+        ).fetchone()
+        if existing and existing[1] != records_hash:
+            raise OutboxConflictError(
+                f"different records already queued for {harness}/{session_id} lines {start_line}-{end_line}"
+            )
+        if not existing and _used_bytes(conn) + len(serialized.encode()) + 4096 > max_bytes:
+            raise OutboxFullError(f"durable telemetry outbox reached its {max_bytes}-byte capacity")
+
+        try:
+            conn.execute(
+                """
+                INSERT INTO session_outbox (
+                    destination, user_id, harness, session_id, checkpoint_key,
+                    start_line, end_line, end_offset, final, payload, records_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(destination, user_id, harness, session_id, start_line, end_line)
+                DO UPDATE SET
+                    checkpoint_key = excluded.checkpoint_key,
+                    end_offset = max(session_outbox.end_offset, excluded.end_offset),
+                    final = max(session_outbox.final, excluded.final),
+                    payload = CASE WHEN excluded.final = 1 THEN excluded.payload ELSE session_outbox.payload END
+                """,
+                (*key[:4], checkpoint_key or session_id, start_line, end_line, end_offset, int(final), serialized, records_hash),
+            )
+            conn.commit()
+        except sqlite3.Error as exc:
+            conn.rollback()
+            if "full" in str(exc).lower():
+                raise OutboxFullError("durable telemetry outbox or disk is full") from exc
+            raise OutboxError(f"cannot persist session records: {exc}") from exc
+
+        row = conn.execute(
+            "SELECT id FROM session_outbox WHERE destination = ? AND user_id = ? AND harness = ? "
+            "AND session_id = ? AND start_line = ? AND end_line = ?",
+            key,
+        ).fetchone()
+        return int(row[0])
     finally:
         conn.close()
 
 
-def get_pending(limit: int = BATCH_SIZE) -> list[dict]:
-    """Return up to *limit* pending events ordered oldest-first."""
-    optic.trace("limit={}", limit)
-    conn = _connect()
+def pending(
+    *,
+    destination: str,
+    user_id: str,
+    limit: int = BATCH_SIZE,
+    db_path: Path | None = None,
+) -> list[OutboxItem]:
+    """Return durable batches oldest-first; attempts never make a row terminal."""
+    conn = _connect(db_path)
     try:
         rows = conn.execute(
-            "SELECT id, event_type, payload FROM pending_events "
-            "WHERE status = 'pending' AND attempts < ? "
-            "ORDER BY id ASC LIMIT ?",
-            (MAX_RETRIES, limit),
+            "SELECT id, destination, user_id, harness, session_id, checkpoint_key, "
+            "start_line, end_line, end_offset, final, payload, attempts "
+            "FROM session_outbox WHERE destination = ? AND user_id = ? ORDER BY id LIMIT ?",
+            (destination.rstrip("/"), user_id, limit),
         ).fetchall()
-        return [{"id": r[0], "event_type": r[1], "payload": r[2]} for r in rows]
+        return [
+            OutboxItem(
+                id=int(row[0]),
+                destination=row[1],
+                user_id=row[2],
+                harness=row[3],
+                session_id=row[4],
+                checkpoint_key=row[5],
+                start_line=int(row[6]),
+                end_line=int(row[7]),
+                end_offset=int(row[8]),
+                final=bool(row[9]),
+                payload=json.loads(row[10]),
+                attempts=int(row[11]),
+            )
+            for row in rows
+        ]
     finally:
         conn.close()
 
 
-def mark_sent(event_ids: list[int]) -> None:
-    """Mark events as successfully sent."""
-    if not event_ids:
-        return
-    conn = _connect()
+def record_attempt(item_id: int, *, db_path: Path | None = None) -> None:
+    """Record a failed attempt without discarding or disabling the batch."""
+    conn = _connect(db_path)
     try:
-        placeholders = ",".join("?" for _ in event_ids)
         conn.execute(
-            f"UPDATE pending_events SET status = 'sent', last_attempt = datetime('now') WHERE id IN ({placeholders})",
-            event_ids,
+            "UPDATE session_outbox SET attempts = attempts + 1, last_attempt = datetime('now') WHERE id = ?",
+            (item_id,),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def mark_failed(event_ids: list[int]) -> None:
-    """Increment attempt counter for events that failed to send."""
-    if not event_ids:
-        return
-    conn = _connect()
+def acknowledge(
+    *,
+    destination: str,
+    user_id: str,
+    harness: str,
+    session_id: str,
+    acknowledged_line: int,
+    db_path: Path | None = None,
+) -> int:
+    """Delete only batches fully covered by a contiguous server acknowledgement."""
+    conn = _connect(db_path)
     try:
-        placeholders = ",".join("?" for _ in event_ids)
-        conn.execute(
-            f"UPDATE pending_events SET attempts = attempts + 1, "
-            f"last_attempt = datetime('now'), "
-            f"status = CASE WHEN attempts + 1 >= {MAX_RETRIES} THEN 'failed' ELSE 'pending' END "
-            f"WHERE id IN ({placeholders})",
-            event_ids,
+        cursor = conn.execute(
+            "DELETE FROM session_outbox WHERE destination = ? AND user_id = ? AND harness = ? "
+            "AND session_id = ? AND end_line <= ?",
+            (destination.rstrip("/"), user_id, harness, session_id, acknowledged_line),
         )
+        if cursor.rowcount:
+            conn.execute(
+                "INSERT INTO session_outbox_state (id, last_sync) VALUES (1, datetime('now')) "
+                "ON CONFLICT(id) DO UPDATE SET last_sync = excluded.last_sync"
+            )
         conn.commit()
+        return int(cursor.rowcount)
     finally:
         conn.close()
 
 
-def cleanup() -> int:
-    """Delete sent events older than SENT_TTL_HOURS. Returns rows deleted."""
-    conn = _connect()
+def stats(*, db_path: Path | None = None) -> dict:
+    """Return durable outbox statistics for CLI status commands."""
+    conn = _connect(db_path)
     try:
-        cutoff = (datetime.now(UTC) - timedelta(hours=SENT_TTL_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
-        cur = conn.execute(
-            "DELETE FROM pending_events WHERE status = 'sent' AND created_at < ?",
-            (cutoff,),
-        )
-        conn.commit()
-        return cur.rowcount
-    finally:
-        conn.close()
-
-
-def stats() -> dict:
-    """Return buffer statistics for the status command."""
-    conn = _connect()
-    try:
-        pending = conn.execute("SELECT COUNT(*) FROM pending_events WHERE status = 'pending'").fetchone()[0]
-        failed = conn.execute("SELECT COUNT(*) FROM pending_events WHERE status = 'failed'").fetchone()[0]
-        sent = conn.execute("SELECT COUNT(*) FROM pending_events WHERE status = 'sent'").fetchone()[0]
-        oldest_row = conn.execute(
-            "SELECT created_at FROM pending_events WHERE status = 'pending' ORDER BY id ASC LIMIT 1"
-        ).fetchone()
-        last_sync_row = conn.execute(
-            "SELECT last_attempt FROM pending_events WHERE status = 'sent' ORDER BY last_attempt DESC LIMIT 1"
-        ).fetchone()
+        pending_count = int(conn.execute("SELECT COUNT(*) FROM session_outbox").fetchone()[0])
+        oldest = conn.execute("SELECT created_at FROM session_outbox ORDER BY id LIMIT 1").fetchone()
+        last_sync = conn.execute("SELECT last_sync FROM session_outbox_state WHERE id = 1").fetchone()
         return {
-            "pending": pending,
-            "failed": failed,
-            "sent": sent,
-            "total": pending + failed + sent,
-            "oldest_pending": oldest_row[0] if oldest_row else None,
-            "last_sync": last_sync_row[0] if last_sync_row else None,
+            "pending": pending_count,
+            "failed": 0,
+            "sent": 0,
+            "total": pending_count,
+            "oldest_pending": oldest[0] if oldest else None,
+            "last_sync": last_sync[0] if last_sync else None,
+            "bytes": _used_bytes(conn),
         }
     finally:
         conn.close()
-
-
-def _enforce_cap(conn: sqlite3.Connection) -> None:
-    """Delete oldest pending events when buffer exceeds MAX_EVENTS."""
-    count = conn.execute("SELECT COUNT(*) FROM pending_events").fetchone()[0]
-    if count > MAX_EVENTS:
-        excess = count - MAX_EVENTS
-        conn.execute(
-            "DELETE FROM pending_events WHERE id IN (  SELECT id FROM pending_events ORDER BY id ASC LIMIT ?)",
-            (excess,),
-        )
-        conn.commit()

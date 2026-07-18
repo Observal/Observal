@@ -14,8 +14,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger as optic
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from observal_cli.harness import SessionSource
 
 # ---------------------------------------------------------------------------
 # Offset / cursor state
@@ -74,33 +80,33 @@ def write_cursor(
 # ---------------------------------------------------------------------------
 
 
-def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
-    """Read bytes from *offset* to EOF in *jsonl_path*.
-
-    Returns (lines, bytes_read).  Empty lines are filtered.  Lines are raw
-    strings - not parsed.  If the file ends without a newline (incomplete
-    write in progress), the partial last line is excluded and bytes_read
-    is adjusted so the next call re-reads it once complete.
-    """
-    with open(jsonl_path, "rb") as f:
-        f.seek(offset)
-        raw = f.read()
+def read_new_records(jsonl_path: Path, offset: int) -> tuple[list[str], list[int], int]:
+    """Read complete non-empty records and their absolute end-byte offsets."""
+    with open(jsonl_path, "rb") as file:
+        file.seek(offset)
+        raw = file.read()
     if not raw:
-        return [], 0
-    text = raw.decode("utf-8", errors="replace")
-    # If the file doesn't end with newline, the last "line" is likely a
-    # partial write still being flushed by the agent.  Exclude it and
-    # adjust bytes_read so we re-read from that point next time.
-    if not text.endswith("\n"):
-        last_nl = text.rfind("\n")
-        if last_nl == -1:
-            # No complete line at all - wait for more data
-            return [], 0
-        text = text[: last_nl + 1]
-        bytes_read = len(text.encode("utf-8"))
-    else:
-        bytes_read = len(raw)
-    lines = [ln for ln in text.split("\n") if ln.strip()]
+        return [], [], 0
+
+    complete_bytes = len(raw) if raw.endswith(b"\n") else raw.rfind(b"\n") + 1
+    if complete_bytes <= 0:
+        return [], [], 0
+
+    lines: list[str] = []
+    end_offsets: list[int] = []
+    absolute_offset = offset
+    for encoded_line in raw[:complete_bytes].splitlines(keepends=True):
+        absolute_offset += len(encoded_line)
+        line = encoded_line.rstrip(b"\r\n").decode("utf-8", errors="replace")
+        if line.strip():
+            lines.append(line)
+            end_offsets.append(absolute_offset)
+    return lines, end_offsets, complete_bytes
+
+
+def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
+    """Read complete non-empty lines from a byte offset."""
+    lines, _end_offsets, bytes_read = read_new_records(jsonl_path, offset)
     return lines, bytes_read
 
 
@@ -132,6 +138,7 @@ def load_config(home: Path | None = None) -> dict | None:
         "server_url": server_url,
         "access_token": access_token,
         "refresh_token": data.get("refresh_token", "").strip(),
+        "user_id": str(data.get("user_id", "")).strip(),
         "_config_path": str(cfg_file),
     }
 
@@ -169,60 +176,63 @@ def _refresh_access_token(server_url: str, refresh_token: str, config_path: str)
         return None
 
 
-def post_to_server(server_url: str, access_token: str, payload: dict, config: dict | None = None) -> bool:
-    """POST *payload* to the ingest endpoint.
-
-    On 401, attempts one token refresh then retries.
-    Returns True on HTTP 2xx, False on any error.
-    """
+def post_to_server_ack(
+    server_url: str,
+    access_token: str,
+    payload: dict,
+    config: dict | None = None,
+) -> dict | None:
+    """POST a session batch and return its server acknowledgement."""
     import time
 
     import httpx
 
-    _t0 = time.perf_counter()
-    url = "{}/api/v1/ingest/session".format(server_url.rstrip("/"))
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
-    session_id = payload.get("session_id", "?")[:12]
+    started = time.perf_counter()
+    url = f"{server_url.rstrip('/')}/api/v1/ingest/session"
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    session_id = str(payload.get("session_id", "?"))[:12]
     line_count = len(payload.get("lines", []))
 
     try:
         with httpx.Client(timeout=10.0) as client:
             response = client.post(url, json=payload, headers=headers)
-            if response.status_code < 300:
-                _elapsed = (time.perf_counter() - _t0) * 1000
-                optic.debug("uploaded {} lines for session {} ({:.0f}ms)", line_count, session_id, _elapsed)
-                return True
             if response.status_code == 401 and config:
-                optic.debug("got 401, attempting token refresh")
                 refresh_token = config.get("refresh_token", "")
                 config_path = config.get("_config_path", "")
                 if refresh_token and config_path:
                     new_token = _refresh_access_token(server_url, refresh_token, config_path)
                     if new_token:
+                        config["access_token"] = new_token
                         headers["Authorization"] = f"Bearer {new_token}"
-                        retry = client.post(url, json=payload, headers=headers)
-                        if retry.status_code < 300:
-                            _elapsed = (time.perf_counter() - _t0) * 1000
-                            optic.debug("uploaded {} lines after token refresh ({:.0f}ms)", line_count, _elapsed)
-                            return True
-            optic.warning(
-                "ingest POST returned {} for session {} - server rejected the payload",
-                response.status_code,
-                session_id,
-            )
-            return False
+                        response = client.post(url, json=payload, headers=headers)
+            if response.status_code >= 300:
+                optic.warning(
+                    "ingest POST returned {} for session {} - server rejected the payload",
+                    response.status_code,
+                    session_id,
+                )
+                return None
+            data = response.json()
+            if not isinstance(data.get("acknowledged_line"), int):
+                optic.warning("ingest response for session {} had no acknowledgement", session_id)
+                return None
+            elapsed = (time.perf_counter() - started) * 1000
+            optic.debug("uploaded {} lines for session {} ({:.0f}ms)", line_count, session_id, elapsed)
+            return data
     except Exception as e:
-        _elapsed = (time.perf_counter() - _t0) * 1000
+        elapsed = (time.perf_counter() - started) * 1000
         optic.error(
-            "ingest POST failed for session {} after {:.0f}ms: {} - lines are buffered locally but not on server",
+            "ingest POST failed for session {} after {:.0f}ms: {} - durable outbox retained the records",
             session_id,
-            _elapsed,
+            elapsed,
             e,
         )
-        return False
+        return None
+
+
+def post_to_server(server_url: str, access_token: str, payload: dict, config: dict | None = None) -> bool:
+    """Return whether the server acknowledged a session batch."""
+    return post_to_server_ack(server_url, access_token, payload, config=config) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +315,140 @@ def post_lines_chunked(
             )
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# Durable acknowledged delivery
+# ---------------------------------------------------------------------------
+
+
+def drain_outbox(
+    config: dict,
+    *,
+    home: Path | None = None,
+    db_path: Path | None = None,
+    post: Callable[[dict, dict], dict | None] | None = None,
+) -> bool:
+    """Drain durable batches for the configured server/user until blocked."""
+    from observal_cli import telemetry_buffer
+
+    destination = str(config.get("server_url") or "").rstrip("/")
+    user_id = str(config.get("user_id") or "")
+    if not destination or not user_id:
+        return False
+    post_batch = post or (
+        lambda payload, cfg: post_to_server_ack(
+            destination,
+            str(cfg.get("access_token") or ""),
+            payload,
+            config=cfg,
+        )
+    )
+
+    while items := telemetry_buffer.pending(
+        destination=destination,
+        user_id=user_id,
+        limit=1,
+        db_path=db_path,
+    ):
+        item = items[0]
+        acknowledgement = post_batch(item.payload, config)
+        if acknowledgement is None:
+            telemetry_buffer.record_attempt(item.id, db_path=db_path)
+            return False
+        acknowledged_line = int(acknowledgement["acknowledged_line"])
+        acknowledged_offset = int(acknowledgement.get("acknowledged_offset") or 0)
+        if acknowledged_line < item.end_line:
+            return False
+        if acknowledged_offset <= 0:
+            acknowledged_offset = item.end_offset
+        write_cursor(
+            item.checkpoint_key,
+            acknowledged_offset,
+            acknowledged_line + 1,
+            finalized=item.final,
+            home=home,
+        )
+        telemetry_buffer.acknowledge(
+            destination=destination,
+            user_id=user_id,
+            harness=item.harness,
+            session_id=item.session_id,
+            acknowledged_line=acknowledged_line,
+            db_path=db_path,
+        )
+    return True
+
+
+def drain_session_source(
+    source: SessionSource,
+    config: dict,
+    *,
+    hook_event: str,
+    final: bool = False,
+    extra_fields: dict | None = None,
+    home: Path | None = None,
+    db_path: Path | None = None,
+    post: Callable[[dict, dict], dict | None] | None = None,
+) -> bool:
+    """Spool all complete source records, then deliver them through the outbox."""
+    from observal_cli import telemetry_buffer
+
+    destination = str(config.get("server_url") or "").rstrip("/")
+    user_id = str(config.get("user_id") or "")
+    if source.path is None or not destination or not user_id:
+        return False
+
+    # A failed pre-drain never prevents newly observed local records from being spooled.
+    drain_outbox(config, home=home, db_path=db_path, post=post)
+
+    byte_offset, line_count = read_cursor(source.checkpoint_key, home=home)
+    lines, end_byte_offsets, bytes_read = read_new_records(source.path, byte_offset)
+    if not lines:
+        if bytes_read:
+            write_cursor(source.checkpoint_key, byte_offset + bytes_read, line_count, home=home)
+        return drain_outbox(config, home=home, db_path=db_path, post=post)
+
+    # Attribute trailing blank-line bytes to the last real record checkpoint.
+    end_byte_offsets[-1] = byte_offset + bytes_read
+
+    for chunk_start in range(0, len(lines), MAX_CHUNK_SIZE):
+        chunk = lines[chunk_start : chunk_start + MAX_CHUNK_SIZE]
+        chunk_end_offsets = end_byte_offsets[chunk_start : chunk_start + MAX_CHUNK_SIZE]
+        is_last = chunk_start + MAX_CHUNK_SIZE >= len(lines)
+        payload = build_payload(
+            session_id=source.session_id,
+            lines=chunk,
+            start_offset=line_count + chunk_start,
+            hook_event=hook_event,
+            line_count_before=line_count + chunk_start,
+            new_offset=byte_offset + bytes_read if is_last else chunk_end_offsets[-1],
+            cwd=source.cwd,
+            parent_session_id=source.parent_session_id,
+            session_jsonl=source.path,
+            harness=source.harness,
+        )
+        payload["harness"] = source.harness
+        payload["end_byte_offsets"] = chunk_end_offsets
+        if final and is_last:
+            payload["final"] = True
+            payload["total_line_count"] = line_count + len(lines)
+            payload["total_offset"] = byte_offset + bytes_read
+        else:
+            payload.pop("final", None)
+            payload.pop("total_line_count", None)
+            payload.pop("total_offset", None)
+        if extra_fields:
+            payload.update(extra_fields)
+        telemetry_buffer.enqueue(
+            payload,
+            destination=destination,
+            user_id=user_id,
+            checkpoint_key=source.checkpoint_key,
+            db_path=db_path,
+        )
+
+    return drain_outbox(config, home=home, db_path=db_path, post=post)
 
 
 # ---------------------------------------------------------------------------
