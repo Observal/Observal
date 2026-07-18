@@ -136,8 +136,6 @@ class SessionSource:
     cwd: str = ""
     cursor_key: str | None = None
     parent_session_id: str | None = None
-    records: tuple[str, ...] = ()
-    modified_at: float = 0.0
 
     @property
     def checkpoint_key(self) -> str:
