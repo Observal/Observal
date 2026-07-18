@@ -126,6 +126,23 @@ class HookSpec:
     env_vars: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class SessionSource:
+    """A harness session source resolved from a hook or recent-session scan."""
+
+    harness: str
+    session_id: str
+    path: Path | None = None
+    cwd: str = ""
+    cursor_key: str | None = None
+    parent_session_id: str | None = None
+
+    @property
+    def checkpoint_key(self) -> str:
+        """Return the local checkpoint key for this source."""
+        return self.cursor_key or self.session_id
+
+
 class NotSupportedError(Exception):
     """Raised when an harness does not support a requested operation."""
 
@@ -246,6 +263,22 @@ class HarnessAdapter(Protocol):
         Raises:
             NotSupportedError: If this harness does not have mcp_servers feature.
         """
+        ...
+
+    def resolve_session_source(self, event: dict[str, Any], home: Path | None = None) -> SessionSource | None:
+        """Resolve a harness hook payload to its local session source."""
+        ...
+
+    def discover_session_sources(
+        self,
+        home: Path | None = None,
+        since_hours: int = 168,
+    ) -> list[SessionSource]:
+        """Discover recently modified local session sources."""
+        ...
+
+    def is_session_final(self, event: dict[str, Any]) -> bool:
+        """Return whether a hook payload marks its session final."""
         ...
 
     def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:

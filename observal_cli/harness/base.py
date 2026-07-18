@@ -19,6 +19,7 @@ from observal_cli.harness.protocol import (
     HookSpec,
     NotSupportedError,
     ScanResult,
+    SessionSource,
 )
 
 
@@ -107,6 +108,29 @@ class BaseAdapter:
             elif (home / marker).exists():
                 return True
         return False
+
+    def resolve_session_source(self, event: dict[str, Any], home: Path | None = None) -> SessionSource | None:
+        """Resolve a hook payload to a session source when the harness supports it."""
+        return None
+
+    def discover_session_sources(
+        self,
+        home: Path | None = None,
+        since_hours: int = 168,
+    ) -> list[SessionSource]:
+        """Return recent session sources; harness adapters opt in as they are migrated."""
+        return []
+
+    def is_session_final(self, event: dict[str, Any]) -> bool:
+        """Recognize common final lifecycle event names."""
+        event_name = str(
+            event.get("hook_event_name")
+            or event.get("hookEventName")
+            or event.get("event")
+            or event.get("type")
+            or ""
+        )
+        return event_name.lower() in {"stop", "sessionend", "session_end", "sessionshutdown"}
 
     def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:
         """Return layer snapshot display paths managed by Observal for this harness."""

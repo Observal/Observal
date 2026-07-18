@@ -20,6 +20,7 @@ from observal_cli.harness.protocol import (
     HookSpec,
     NotSupportedError,
     ScanResult,
+    SessionSource,
 )
 from observal_cli.harness_registry import HARNESS_REGISTRY
 
@@ -33,6 +34,7 @@ __all__ = [
     "HookSpec",
     "NotSupportedError",
     "ScanResult",
+    "SessionSource",
     "ensure_loaded",
     "get_adapter",
     "get_all_adapters",
@@ -59,6 +61,9 @@ def register_adapter(adapter: HarnessAdapter) -> None:
         "generate_hook_config",
         "detect_hooks",
         "shim_status",
+        "resolve_session_source",
+        "discover_session_sources",
+        "is_session_final",
         "get_observal_managed_files",
     )
     for method in required:

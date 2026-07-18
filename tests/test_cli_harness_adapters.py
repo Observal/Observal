@@ -14,6 +14,7 @@ from observal_cli.harness import (
     HookSpec,
     NotSupportedError,
     ScanResult,
+    SessionSource,
     ensure_loaded,
     get_adapter,
     get_all_adapters,
@@ -57,12 +58,29 @@ class TestAdapterRegistry:
             "generate_hook_config",
             "detect_hooks",
             "shim_status",
+            "resolve_session_source",
+            "discover_session_sources",
+            "is_session_final",
             "get_observal_managed_files",
         ]
         for name, adapter in get_all_adapters().items():
             for method in required_methods:
                 assert hasattr(adapter, method), f"{name} missing {method}"
                 assert callable(getattr(adapter, method)), f"{name}.{method} not callable"
+
+    def test_session_source_uses_explicit_cursor_key(self, tmp_path):
+        source = SessionSource("claude-code", "session-id", tmp_path / "session.jsonl", cursor_key="subagent")
+        assert source.checkpoint_key == "subagent"
+
+    def test_session_source_defaults_checkpoint_to_session_id(self):
+        source = SessionSource("claude-code", "session-id")
+        assert source.checkpoint_key == "session-id"
+
+    def test_base_adapter_recognizes_common_final_events(self):
+        adapter = get_adapter("claude-code")
+        assert adapter.is_session_final({"hook_event_name": "Stop"})
+        assert adapter.is_session_final({"event": "sessionEnd"})
+        assert not adapter.is_session_final({"hook_event_name": "UserPromptSubmit"})
 
 
 class TestManagedLayerFiles:
