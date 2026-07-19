@@ -1,0 +1,210 @@
+# SPDX-FileCopyrightText: 2026 Amineh Dadsetan <amineh.dadsetan@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+name: Harness Support Request
+description: Request support for a new coding-agent harness / IDE CLI
+title: "Add harness support: "
+labels: ["enhancement", "harness-support"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a new harness!
+
+        **[docs/adding-a-harness.md](https://github.com/Observal/Observal/blob/main/docs/adding-a-harness.md)** is the canonical implementation guide (registry entry, CLI/server adapters, hooks, session parsers, doctor, layer scan, tests). Please read it before filing — the detailed file checklist lives there and is not repeated in this form.
+
+        Just gauging interest? Start a thread in [GitHub Discussions](https://github.com/Observal/Observal/discussions) instead.
+
+  # ── 1. Duplicate check ─────────────────────────────────────
+  - type: checkboxes
+    id: duplicate_check
+    attributes:
+      label: Duplicate check
+      description: Confirm this harness is not already tracked or supported.
+      options:
+        - label: I searched open and closed issues and did not find an existing request for this harness.
+          required: true
+        - label: I read docs/adding-a-harness.md and understand the expected work (adapters, hooks, sessions, doctor, layer scan, tests, docs).
+          required: true
+
+  # ── 2. Harness identity ────────────────────────────────────
+  - type: input
+    id: harness_name
+    attributes:
+      label: Harness name
+      description: Common product name (e.g. Claude Code, Cursor, Windsurf).
+      placeholder: My Harness
+    validations:
+      required: true
+
+  - type: input
+    id: source_repo
+    attributes:
+      label: Source repository (if open source)
+      description: GitHub/GitLab URL of the harness itself, if public.
+      placeholder: https://github.com/org/repo
+
+  # ── 3. Official references ──────────────────────────────────
+  - type: input
+    id: official_docs
+    attributes:
+      label: Official documentation
+      description: Link to the vendor docs for MCP / skills / hooks / config.
+      placeholder: https://...
+    validations:
+      required: true
+
+  # ── 4. Supported interfaces and platforms ──────────────────
+  - type: textarea
+    id: interfaces
+    attributes:
+      label: Supported interfaces
+      description: What surfaces does this harness expose that Observal should integrate with?
+      placeholder: |
+        - MCP servers (stdio / SSE / HTTP)
+        - Skills / rules / instruction files
+        - Custom agents / subagents
+        - Hooks / lifecycle events
+        - Session logs (JSONL / SQLite / other)
+        - Sandbox / isolation features
+    validations:
+      required: true
+
+  - type: textarea
+    id: operating_systems
+    attributes:
+      label: Operating systems
+      description: Where the harness runs in practice.
+      placeholder: |
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+
+  # ── 5. Configuration research ──────────────────────────────
+  - type: textarea
+    id: config_paths
+    attributes:
+      label: Known user and project configuration paths
+      description: Home-level and project-level paths and formats for MCP, skills, agents, hooks, and sessions.
+      placeholder: |
+        Project MCP: .my-harness/mcp.json (top-level key: mcpServers)
+        User MCP:    ~/.my-harness/mcp.json
+        Skills:      ~/.my-harness/skills/{name}/SKILL.md (yaml frontmatter)
+        Agents:      ~/.my-harness/agents/{name}.md
+        Hooks:       ~/.my-harness/settings.json (hook_type: command / http / plugin)
+        Sessions:    ~/.my-harness/sessions/*.jsonl
+    validations:
+      required: true
+
+  # ── 6. Capability research ─────────────────────────────────
+  - type: textarea
+    id: capability_research
+    attributes:
+      label: Capability research
+      description: What you already know about each capability (or mark unknown). Doctor and layer attribution are required per docs/adding-a-harness.md Step 2.5 — a harness can look supported in pull/scan while doctor and layer observability stay broken.
+      placeholder: |
+        - MCP servers (transports, top-level key, home vs project config):
+        - Skills (format, directory, frontmatter):
+        - Custom agents / subagents (file format, directory):
+        - Hooks / lifecycle events (registration + event map to PreToolUse/PostToolUse/Stop/SessionStart/UserPromptSubmit/SubagentStop):
+        - Sandbox support (MCP-delivered — usually free if MCP works):
+        - Doctor integration (diagnose / patch / cleanup for this harness):
+        - Layer attribution (HARNESS_LAYER_CONFIGS globs, home markers, managed agent/skill/mcp file patterns):
+    validations:
+      required: true
+
+  # ── 7. Session and telemetry research ──────────────────────
+  - type: textarea
+    id: session_telemetry_research
+    attributes:
+      label: Session and telemetry research
+      description: How sessions are stored and how telemetry/events flow, so reconciliation and traces work.
+      placeholder: |
+        - Session format & location (JSONL / SQLite / custom; path):
+        - Session schema (messages, tool calls/results, reasoning blocks, errors, boundaries):
+        - Final-record signal (how to tell a session is complete):
+        - Telemetry / hook events emitted on tool use and session start/stop:
+        - Subagent / related sessions stored separately?:
+    validations:
+      required: true
+
+  # ── 8. Contributor testing and maintenance commitment ──────
+  - type: dropdown
+    id: can_test
+    attributes:
+      label: Can you test this harness end-to-end as a real user?
+      description: Local install + ability to run scan / pull / doctor / reconcile flows.
+      options:
+        - "Yes — I can install and exercise the harness locally"
+        - "Partially — limited access"
+        - "No — research-only proposal"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: will_maintain
+    attributes:
+      label: Will you help maintain this integration?
+      description: Respond to breakage when the harness changes its config/hook/session formats.
+      options:
+        - "Yes — I'll help maintain it"
+        - "For an initial period only"
+        - "No — I can only contribute the initial integration"
+        - "No — research-only proposal"
+    validations:
+      required: true
+
+  # ── 9. Integration evidence (required before completion) ───
+  - type: markdown
+    attributes:
+      value: |
+        ### Integration evidence
+
+        Real evidence that the integration works is required **before this issue can be closed** (research-only proposals may file first and fill this in as work lands). Paste command output, screenshots, or trace links below and tick each item as it's demonstrated.
+
+  - type: checkboxes
+    id: integration_evidence
+    attributes:
+      label: Evidence checklist
+      description: Demonstrated end-to-end, not just written.
+      options:
+        - label: Installed agents are discovered by `observal scan`
+        - label: Installed skills are discovered
+        - label: Installed MCP servers are discovered
+        - label: Observal hooks install and fire (telemetry hooks detected)
+        - label: Session traces reach Observal and render correctly
+
+  - type: textarea
+    id: integration_evidence_details
+    attributes:
+      label: Evidence details
+      description: Paste `observal scan` / `observal doctor` output, trace links, or screenshots backing the checklist above.
+      placeholder: |
+        $ observal scan --harness my-harness
+        ...
+    validations:
+      required: false
+
+  # ── 10. Acceptance checks ──────────────────────────────────
+  - type: checkboxes
+    id: acceptance_checks
+    attributes:
+      label: Acceptance checks
+      description: The definition of done, mirrored from docs/adding-a-harness.md so this issue does not drift. Tick as each lands.
+      options:
+        - label: "`observal pull <agent> --harness <name>` writes correct native config files"
+        - label: "`observal scan --harness <name>` discovers installed MCP/skills/agents/hooks"
+        - label: "`observal doctor` diagnose / patch / cleanup implemented for this harness"
+        - label: "Layer attribution: layer scan globs + managed-file patterns resolve sources correctly"
+        - label: "Telemetry: hooks fire and sessions reconcile through the shared engine"
+        - label: "Tests: adapter unit tests added and passing (tests/test_cli_harness_adapters.py)"
+        - label: "Documentation: harness listed / documented where users expect it"
+
+  # ── Additional context ─────────────────────────────────────
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, config samples, prior art, related issues.
