@@ -19,6 +19,33 @@ def _user(role="user"):
 
 
 @pytest.mark.asyncio
+async def test_session_detail_queries_use_owned_canonical_identity():
+    from api.routes.sessions import get_session
+
+    calls: list[tuple[str, dict]] = []
+
+    async def query(sql, params=None):
+        calls.append((sql, params or {}))
+        if len(calls) == 1:
+            return [{"project_id": "project", "user_id": str(user.id), "harness": "cursor"}]
+        return []
+
+    user = _user()
+    with patch("api.routes.sessions._ch_json", side_effect=query):
+        await get_session("shared-id", current_user=user)
+
+    assert len(calls) == 3
+    assert "user_id = {uid:String}" in calls[0][0]
+    for sql, params in calls[1:]:
+        assert "project_id = {pid:String}" in sql
+        assert "user_id = {uid:String}" in sql
+        assert "harness = {harness:String}" in sql
+        assert params["param_pid"] == "project"
+        assert params["param_uid"] == str(user.id)
+        assert params["param_harness"] == "cursor"
+
+
+@pytest.mark.asyncio
 async def test_bind_session_agent_denied_raises_404():
     """Mutation access failures should use HTTP errors, matching other ownership checks."""
     from api.routes.sessions import bind_session_agent

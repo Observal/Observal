@@ -329,17 +329,27 @@ async def get_session(
 ):
     optic.trace("session_id={}, after_offset={}", session_id, after_offset)
     is_admin = _has_admin_trace_access(current_user)
-    params: dict[str, str] = {"param_sid": session_id}
-
+    identity_params: dict[str, str] = {"param_sid": session_id}
+    identity_user_filter = ""
     if not is_admin:
-        # Verify the user owns this session
-        params["param_uid"] = str(current_user.id)
-        ownership = await _ch_json(
-            "SELECT 1 FROM session_events WHERE session_id = {sid:String} AND user_id = {uid:String} LIMIT 1",
-            params,
-        )
-        if not ownership:
-            return {"session_id": session_id, "harness": "", "events": []}
+        identity_params["param_uid"] = str(current_user.id)
+        identity_user_filter = "AND user_id = {uid:String} "
+    identity_rows = await _ch_json(
+        "SELECT project_id, user_id, harness FROM session_events FINAL "
+        "WHERE session_id = {sid:String} " + identity_user_filter + "ORDER BY ingested_at DESC LIMIT 1",
+        identity_params,
+    )
+    if not identity_rows:
+        return {"session_id": session_id, "harness": "", "events": []}
+
+    identity = identity_rows[0]
+    params: dict[str, str] = {
+        "param_sid": session_id,
+        "param_pid": str(identity["project_id"]),
+        "param_uid": str(identity["user_id"]),
+        "param_harness": str(identity["harness"]),
+    }
+    identity_filter = "project_id = {pid:String} AND user_id = {uid:String} AND harness = {harness:String} "
 
     # Build offset filter for incremental fetches
     _offset_filter = ""
@@ -348,28 +358,32 @@ async def get_session(
         params["param_offset"] = str(after_offset)
 
     # Fan out both FINAL scans in parallel - wall time ≈ max(t1, t2) not t1+t2.
-    # do_not_merge_across_partitions_select_final=1 lets CH process each monthly
-    # partition independently instead of a single cross-partition merge pass.
+    # Stable identity partitioning lets ClickHouse run FINAL per partition.
     _main_sql = (
         "SELECT "
         "line_offset, timestamp, event_type, content_preview, tool_name, tool_id, "
         "uuid, parent_uuid, content_length, harness, agent_id, agent_version, raw_line, raw_line_truncated, "
         "credits, ingested_at "
         "FROM session_events FINAL "
-        "WHERE session_id = {sid:String} AND rendered = 1 " + _offset_filter + "ORDER BY line_offset ASC "
+        "WHERE session_id = {sid:String} AND "
+        + identity_filter
+        + "AND rendered = 1 "
+        + _offset_filter
+        + "ORDER BY line_offset ASC "
         "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
     )
-    _sub_params = {"param_sid": session_id}
+    _sub_params = dict(params)
     _sub_offset_filter = ""
     if after_offset is not None:
         _sub_offset_filter = "AND line_offset > {offset:UInt32} "
-        _sub_params["param_offset"] = str(after_offset)
     _sub_sql = (
         "SELECT session_id, timestamp, event_type, content_preview, "
         "tool_name, tool_id, uuid, parent_uuid, content_length, harness, "
         "raw_line, raw_line_truncated, credits, ingested_at, line_offset "
         "FROM session_events FINAL "
-        "WHERE parent_session_id = {sid:String} AND rendered = 1 "
+        "WHERE parent_session_id = {sid:String} AND "
+        + identity_filter
+        + "AND rendered = 1 "
         + _sub_offset_filter
         + "ORDER BY session_id, line_offset ASC "
         "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
