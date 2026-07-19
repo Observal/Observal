@@ -457,8 +457,8 @@ class PlatformScore(BaseModel):
     sessions: int
     avg_cost: float
     avg_latency_ms: float
-    success_rate: float
-    error_rate: float
+    success_rate: float | None
+    error_rate: float | None
     users: int
 
 
@@ -488,8 +488,8 @@ async def get_platforms(
         # populate these when session ingestion gains those fields.
         avg_cost = 0.0
         avg_latency = float(r.get("avg_latency_ms") or 0)
-        error_rate = 0.0
-        success_rate = 1.0
+        error_rate = None
+        success_rate = None
 
         results.append(
             PlatformScore(
@@ -498,8 +498,8 @@ async def get_platforms(
                 sessions=sessions,
                 avg_cost=avg_cost,
                 avg_latency_ms=avg_latency,
-                success_rate=round(success_rate * 100, 1),
-                error_rate=round(error_rate * 100, 2),
+                success_rate=success_rate,
+                error_rate=error_rate,
                 users=users,
             )
         )

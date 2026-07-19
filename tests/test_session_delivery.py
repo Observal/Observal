@@ -134,6 +134,55 @@ def test_offline_delivery_spools_before_post_and_keeps_cursor(tmp_path: Path, mo
     assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db)[0].attempts == 1
 
 
+@pytest.mark.parametrize("status_code", [400, 409, 413, 415, 422])
+def test_payload_rejection_status_is_permanent(monkeypatch, status_code: int):
+    import httpx
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, *_args, **_kwargs):
+            return type("Response", (), {"status_code": status_code})()
+
+    monkeypatch.setattr(httpx, "Client", lambda **_kwargs: Client())
+
+    with pytest.raises(base.PermanentIngestRejectionError):
+        base.post_to_server_ack("http://server", "token", {"session_id": "bad", "lines": []})
+
+
+def test_permanent_rejection_is_quarantined_without_blocking_later_sessions(tmp_path: Path):
+    db = tmp_path / "outbox.db"
+    for session_id, line in (("bad", "invalid"), ("good", "valid")):
+        telemetry_buffer.enqueue(
+            {
+                "harness": "claude-code",
+                "session_id": session_id,
+                "lines": [line],
+                "start_offset": 0,
+                "end_byte_offsets": [len(line)],
+            },
+            destination="http://server",
+            user_id="user",
+            db_path=db,
+        )
+
+    def post(payload, _config):
+        if payload["session_id"] == "bad":
+            raise base.PermanentIngestRejectionError(422)
+        return {"acknowledged_line": 0, "acknowledged_offset": len("valid")}
+
+    assert base.drain_outbox(config(), home=tmp_path, db_path=db, post=post)
+    assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db) == []
+    assert telemetry_buffer.stats(db_path=db)["failed"] == 1
+    rejected = json.loads(db.with_suffix(".rejected.jsonl").read_text())
+    assert rejected["session_id"] == "bad"
+    assert rejected["reason"].endswith("status 422")
+
+
 def test_spool_only_never_blocks_hook_on_network(tmp_path: Path, monkeypatch):
     disable_payload_metadata(monkeypatch)
     source_path = tmp_path / "session.jsonl"

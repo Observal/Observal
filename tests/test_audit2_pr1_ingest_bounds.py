@@ -39,6 +39,16 @@ def test_session_ingest_rejects_oversized_batches_and_lines():
         SessionIngestRequest(session_id="session-1", lines=["{}"], start_offset=-1)
 
 
+def test_session_ingest_rejects_unbounded_integrity_counts():
+    from api.routes.ingest import MAX_SESSION_TOTAL_LINES, SessionIngestRequest
+
+    with pytest.raises(ValidationError):
+        SessionIngestRequest(session_id="session-1", lines=[], total_line_count=MAX_SESSION_TOTAL_LINES + 1)
+
+    with pytest.raises(ValidationError):
+        SessionIngestRequest(session_id="session-1", lines=[], hashed_line_count=MAX_SESSION_TOTAL_LINES + 1)
+
+
 def test_alert_history_query_params_are_bounded():
     import inspect
 

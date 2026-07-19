@@ -18,6 +18,7 @@ MAX_TEXT_LENGTH = 1_048_576
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
 MAX_SESSION_LINES = 1000
+MAX_SESSION_TOTAL_LINES = 10_000_000
 
 
 class SessionIngestRequest(BaseModel):
@@ -32,10 +33,10 @@ class SessionIngestRequest(BaseModel):
     hook_event: str = Field("UserPromptSubmit", max_length=MAX_SHORT_STRING_LENGTH)
     # Sent on Stop for integrity check
     final: bool = False
-    total_line_count: int | None = Field(None, ge=0)
+    total_line_count: int | None = Field(None, ge=0, le=MAX_SESSION_TOTAL_LINES)
     total_offset: int | None = Field(None, ge=0)
     session_hash: str | None = Field(None, max_length=128)
-    hashed_line_count: int | None = Field(None, ge=0)
+    hashed_line_count: int | None = Field(None, ge=0, le=MAX_SESSION_TOTAL_LINES)
     # Kiro-specific: total credits consumed this session
     total_credits: float | None = Field(None, ge=0)
     # Claude Code subagent attribution: set when this session is a subagent

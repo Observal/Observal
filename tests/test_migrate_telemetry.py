@@ -1285,6 +1285,8 @@ def test_exec_dashboard_queries_session_tables_only():
     assert "JOIN traces" not in source
     assert "JOIN spans" not in source
     assert "session_stats_agg" in source
+    assert "error_rate = None" in source
+    assert "success_rate = None" in source
 
 
 def test_legacy_clickhouse_tables_are_dropped_but_not_exported():

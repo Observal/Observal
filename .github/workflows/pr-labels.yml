@@ -167,7 +167,7 @@ jobs:
                     ...repo,
                     name: labelName,
                     color: 'e3a008',
-                    description: 'PR modifies .env.example — check dependent config files',
+                    description: 'PR modifies .env.example; check dependent config files',
                   });
                 } catch (createErr) {
                   if (createErr.status !== 422) throw createErr;
@@ -206,10 +206,10 @@ jobs:
                   '',
                   'New or changed environment variables detected. Please verify the following are updated accordingly:',
                   '',
-                  `- [ ] [\`SETUP.md\`](${repoUrl}/blob/main/SETUP.md) — reflects any new/removed/renamed variables`,
-                  `- [ ] [\`docker/docker-compose.yml\`](${repoUrl}/blob/main/docker/docker-compose.yml) — services pass the new vars`,
-                  `- [ ] [\`docker/docker-compose.production.yml\`](${repoUrl}/blob/main/docker/docker-compose.production.yml) — production overrides if applicable`,
-                  `- [ ] [\`infra/helm/observal/values.yaml\`](${repoUrl}/blob/main/infra/helm/observal/values.yaml) — Helm values include the new config`,
+                  `- [ ] [\`SETUP.md\`](${repoUrl}/blob/main/SETUP.md): reflects any new/removed/renamed variables`,
+                  `- [ ] [\`docker/docker-compose.yml\`](${repoUrl}/blob/main/docker/docker-compose.yml): services pass the new vars`,
+                  `- [ ] [\`docker/docker-compose.production.yml\`](${repoUrl}/blob/main/docker/docker-compose.production.yml): production overrides if applicable`,
+                  `- [ ] [\`infra/helm/observal/values.yaml\`](${repoUrl}/blob/main/infra/helm/observal/values.yaml): Helm values include the new config`,
                   '',
                   '> This is an automated reminder. If none of the above apply to your change, you can safely ignore this comment.',
                 ].join('\n');

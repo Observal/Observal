@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 DB_PATH = Path.home() / ".observal" / "telemetry_buffer.db"
@@ -297,6 +299,30 @@ def record_attempt(item_id: int, *, db_path: Path | None = None) -> None:
         conn.close()
 
 
+def quarantine(item: OutboxItem, reason: str, *, db_path: Path | None = None) -> Path:
+    """Preserve a permanently rejected batch outside the delivery queue."""
+    path = _path(db_path).with_suffix(".rejected.jsonl")
+    record = {
+        "quarantined_at": datetime.now(UTC).isoformat(),
+        "reason": reason,
+        "destination": item.destination,
+        "user_id": item.user_id,
+        "harness": item.harness,
+        "session_id": item.session_id,
+        "checkpoint_key": item.checkpoint_key,
+        "start_line": item.start_line,
+        "end_line": item.end_line,
+        "payload": item.payload,
+    }
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(descriptor, "ab") as file:
+        file.write((json.dumps(record, separators=(",", ":"), ensure_ascii=False) + "\n").encode())
+        file.flush()
+        os.fsync(file.fileno())
+    accept_item(item.id, db_path=db_path)
+    return path
+
+
 def accept_item(item_id: int, *, db_path: Path | None = None) -> None:
     """Remove one posted batch when an audit rewinds the contiguous checkpoint."""
     conn = _connect(db_path)
@@ -344,11 +370,17 @@ def stats(*, db_path: Path | None = None) -> dict:
         pending_count = int(conn.execute("SELECT COUNT(*) FROM session_outbox").fetchone()[0])
         oldest = conn.execute("SELECT created_at FROM session_outbox ORDER BY id LIMIT 1").fetchone()
         last_sync = conn.execute("SELECT last_sync FROM session_outbox_state WHERE id = 1").fetchone()
+        quarantine_path = _path(db_path).with_suffix(".rejected.jsonl")
+        try:
+            with quarantine_path.open("rb") as file:
+                failed_count = sum(1 for _line in file)
+        except FileNotFoundError:
+            failed_count = 0
         return {
             "pending": pending_count,
-            "failed": 0,
+            "failed": failed_count,
             "sent": 0,
-            "total": pending_count,
+            "total": pending_count + failed_count,
             "oldest_pending": oldest[0] if oldest else None,
             "last_sync": last_sync[0] if last_sync else None,
             "bytes": _used_bytes(conn),

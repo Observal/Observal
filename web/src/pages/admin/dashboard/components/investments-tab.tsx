@@ -14,19 +14,20 @@ import type { ExecPlatformScore } from "@/lib/types";
 const COLORS = ["#2563eb", "#7c3aed", "#0d9488", "#f59e0b", "#e11d48", "#6366f1", "#84cc16"];
 
 function deriveRadarData(p: ExecPlatformScore, best: { latency: number; cost: number }) {
-  const successScore = p.success_rate;
   const speedScore = best.latency > 0 ? Math.max(0, 100 - ((p.avg_latency_ms / best.latency) - 1) * 50) : 100;
   const costScore = best.cost > 0 ? Math.max(0, 100 - ((p.avg_cost / best.cost) - 1) * 50) : 100;
-  const reliabilityScore = 100 - p.error_rate;
-  const volumeScore = p.composite_score;
-
-  return [
-    { metric: "Success Rate", value: Math.min(successScore, 100) },
+  const data = [
     { metric: "Speed", value: Math.min(Math.max(speedScore, 0), 100) },
     { metric: "Cost Efficiency", value: Math.min(Math.max(costScore, 0), 100) },
-    { metric: "Reliability", value: Math.min(Math.max(reliabilityScore, 0), 100) },
-    { metric: "Volume", value: Math.min(Math.max(volumeScore, 0), 100) },
+    { metric: "Volume", value: Math.min(Math.max(p.composite_score, 0), 100) },
   ];
+  if (p.success_rate !== null) data.unshift({ metric: "Success Rate", value: Math.min(p.success_rate, 100) });
+  if (p.error_rate !== null) data.push({ metric: "Reliability", value: Math.min(Math.max(100 - p.error_rate, 0), 100) });
+  return data;
+}
+
+function formatPercent(value: number | null) {
+  return value === null ? "N/A" : `${value}%`;
 }
 
 export function InvestmentsTab() {
@@ -53,7 +54,7 @@ export function InvestmentsTab() {
     return (
       <div className="space-y-6 pt-4">
         <div className="rounded-md border border-border p-8 text-center text-muted-foreground">
-          <p className="text-sm">No platform data yet — traces from different harnesses will populate this view.</p>
+          <p className="text-sm">No platform data yet. Traces from different harnesses will populate this view.</p>
         </div>
       </div>
     );
@@ -72,10 +73,10 @@ export function InvestmentsTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* Sessions Bar Chart — sorted by adoption (most used = most validated) */}
+      {/* Sessions bar chart, sorted by adoption (most used = most validated). */}
       <div className="rounded-lg border border-border p-4">
         <h3 className="text-sm font-medium mb-1">Platform Adoption</h3>
-        <p className="text-xs text-muted-foreground mb-4">Sorted by usage volume — click a bar to view platform details</p>
+        <p className="text-xs text-muted-foreground mb-4">Sorted by usage volume. Click a bar to view platform details.</p>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} vertical={false} />
@@ -116,7 +117,7 @@ export function InvestmentsTab() {
               <div className="text-xs text-muted-foreground">Avg Cost/Task</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-bold">{platform.success_rate}%</div>
+              <div className="text-lg font-bold">{formatPercent(platform.success_rate)}</div>
               <div className="text-xs text-muted-foreground">Success Rate</div>
             </div>
           </div>
@@ -127,7 +128,7 @@ export function InvestmentsTab() {
               <div className="text-xs text-muted-foreground">Avg Latency</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-bold">{platform.error_rate}%</div>
+              <div className="text-lg font-bold">{formatPercent(platform.error_rate)}</div>
               <div className="text-xs text-muted-foreground">Error Rate</div>
             </div>
             <div className="text-center">
@@ -186,7 +187,7 @@ export function InvestmentsTab() {
                 <td className="p-3 tabular-nums font-semibold">{p.sessions >= 1000 ? `${(p.sessions / 1000).toFixed(1)}K` : p.sessions}</td>
                 <td className="p-3 tabular-nums">{p.users}</td>
                 <td className="p-3 tabular-nums font-mono text-xs">${p.avg_cost.toFixed(3)}</td>
-                <td className="p-3 tabular-nums">{p.success_rate}%</td>
+                <td className="p-3 tabular-nums">{formatPercent(p.success_rate)}</td>
                 <td className="p-3 tabular-nums">{p.avg_latency_ms.toFixed(0)}ms</td>
               </tr>
             ))}
