@@ -357,8 +357,8 @@ export interface ExecPlatformScore {
 	sessions: number;
 	avg_cost: number;
 	avg_latency_ms: number;
-	success_rate: number;
-	error_rate: number;
+	success_rate: number | null;
+	error_rate: number | null;
 	users: number;
 }
 

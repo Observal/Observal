@@ -211,6 +211,14 @@ def _refresh_access_token(server_url: str, refresh_token: str, config_path: str)
         return None
 
 
+class PermanentIngestRejectionError(RuntimeError):
+    """A payload rejection that retrying cannot resolve."""
+
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+        super().__init__(f"server permanently rejected the payload with status {status_code}")
+
+
 def post_to_server_ack(
     server_url: str,
     access_token: str,
@@ -242,10 +250,12 @@ def post_to_server_ack(
                         response = client.post(url, json=payload, headers=headers)
             if response.status_code >= 300:
                 optic.warning(
-                    "ingest POST returned {} for session {} - server rejected the payload",
+                    "ingest POST returned {} for session {}: server rejected the payload",
                     response.status_code,
                     session_id,
                 )
+                if response.status_code in {400, 409, 413, 415, 422}:
+                    raise PermanentIngestRejectionError(response.status_code)
                 return None
             data = response.json()
             if not isinstance(data.get("acknowledged_line"), int):
@@ -254,6 +264,8 @@ def post_to_server_ack(
             elapsed = (time.perf_counter() - started) * 1000
             optic.debug("uploaded {} lines for session {} ({:.0f}ms)", line_count, session_id, elapsed)
             return data
+    except PermanentIngestRejectionError:
+        raise
     except Exception as e:
         elapsed = (time.perf_counter() - started) * 1000
         optic.error(
@@ -404,7 +416,15 @@ def drain_outbox(
         db_path=db_path,
     ):
         item = items[0]
-        acknowledgement = post_batch(item.payload, config)
+        try:
+            acknowledgement = post_batch(item.payload, config)
+        except PermanentIngestRejectionError as exc:
+            quarantine_path = telemetry_buffer.quarantine(item, str(exc), db_path=db_path)
+            log_error(
+                f"quarantined rejected {item.harness} session {item.session_id} batch at {quarantine_path}",
+                home=home,
+            )
+            continue
         if acknowledgement is None:
             telemetry_buffer.record_attempt(item.id, db_path=db_path)
             return False

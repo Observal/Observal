@@ -595,19 +595,21 @@ async def check_session_integrity(
         manifest = await query_session_source_manifest(session_id, project_id, user_id, harness)
         hash_count = expected_line_count if hashed_line_count is None else hashed_line_count
         hasher = hashlib.sha256()
-        hashed_offsets: list[int] = []
+        next_offset = 0
+        missing_offset = None
         for line_offset, _end_offset, source_hash in manifest:
             if line_offset >= hash_count:
                 continue
             hasher.update(source_hash.encode())
             hasher.update(b"\n")
-            hashed_offsets.append(line_offset)
+            if missing_offset is None and line_offset != next_offset:
+                missing_offset = next_offset
+            next_offset += 1
         server_hash = hasher.hexdigest()
-        expected_offsets = list(range(hash_count))
-        if hashed_offsets != expected_offsets:
-            present_offsets = set(hashed_offsets)
-            missing = next((offset for offset in expected_offsets if offset not in present_offsets), 0)
-            repair_from_line = missing if repair_from_line is None else min(repair_from_line, missing)
+        if missing_offset is None and next_offset < hash_count:
+            missing_offset = next_offset
+        if missing_offset is not None:
+            repair_from_line = missing_offset if repair_from_line is None else min(repair_from_line, missing_offset)
         elif server_hash != expected_hash:
             repair_from_line = 0 if repair_from_line is None else min(repair_from_line, 0)
 
