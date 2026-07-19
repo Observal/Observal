@@ -83,8 +83,7 @@ def _connect(db_path: Path | None = None, max_bytes: int = MAX_OUTBOX_BYTES) -> 
             """
         )
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_session_outbox_pending "
-            "ON session_outbox(destination, user_id, id)"
+            "CREATE INDEX IF NOT EXISTS idx_session_outbox_pending ON session_outbox(destination, user_id, id)"
         )
         conn.execute(
             """
@@ -182,7 +181,16 @@ def enqueue(
                         ELSE session_outbox.payload
                     END
                 """,
-                (*key[:4], checkpoint_key or session_id, start_line, end_line, end_offset, int(final), serialized, records_hash),
+                (
+                    *key[:4],
+                    checkpoint_key or session_id,
+                    start_line,
+                    end_line,
+                    end_offset,
+                    int(final),
+                    serialized,
+                    records_hash,
+                ),
             )
             conn.commit()
         except sqlite3.Error as exc:

@@ -17,14 +17,7 @@ if TYPE_CHECKING:
 
 def _transcript(home: Path, session_id: str = "session") -> Path:
     path = (
-        home
-        / ".gemini"
-        / "antigravity-cli"
-        / "brain"
-        / session_id
-        / ".system_generated"
-        / "logs"
-        / "transcript.jsonl"
+        home / ".gemini" / "antigravity-cli" / "brain" / session_id / ".system_generated" / "logs" / "transcript.jsonl"
     )
     path.parent.mkdir(parents=True)
     path.write_text('{"step_index":0,"type":"user","content":"hello"}\n')

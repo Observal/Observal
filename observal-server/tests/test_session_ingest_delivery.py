@@ -69,7 +69,9 @@ async def test_dedup_uses_source_index_not_content_hash(monkeypatch):
 
     monkeypatch.setattr(session_ingest, "query_existing_for_dedup", AsyncMock(return_value={0: digest}))
     monkeypatch.setattr(session_ingest, "query_session_checkpoint", AsyncMock(return_value=(0, 0)))
-    monkeypatch.setattr(session_ingest, "insert_session_events", AsyncMock(side_effect=lambda rows: inserted.extend(rows)))
+    monkeypatch.setattr(
+        session_ingest, "insert_session_events", AsyncMock(side_effect=lambda rows: inserted.extend(rows))
+    )
     monkeypatch.setattr(session_ingest, "refresh_session_summary", AsyncMock())
 
     result = await session_ingest.ingest_session_lines(

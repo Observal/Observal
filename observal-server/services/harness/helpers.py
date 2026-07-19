@@ -124,7 +124,11 @@ def _cursor_hooks_config(platform: str = "") -> dict:
     Cursor uses beforeSubmitPrompt (fires after user hits send) and stop
     (fires when the agent loop ends).
     """
-    cmd = "python -m observal_cli.hooks.session_push --harness cursor" if platform == "win32" else _CURSOR_SESSION_PUSH_CMD
+    cmd = (
+        "python -m observal_cli.hooks.session_push --harness cursor"
+        if platform == "win32"
+        else _CURSOR_SESSION_PUSH_CMD
+    )
     return {
         "version": 1,
         "hooks": {

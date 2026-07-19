@@ -152,11 +152,7 @@ class BaseAdapter:
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Recognize common final lifecycle event names."""
         event_name = str(
-            event.get("hook_event_name")
-            or event.get("hookEventName")
-            or event.get("event")
-            or event.get("type")
-            or ""
+            event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or event.get("type") or ""
         )
         return event_name.lower() in {"stop", "sessionend", "session_end", "sessionshutdown"}
 

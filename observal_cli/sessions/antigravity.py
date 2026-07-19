@@ -67,9 +67,7 @@ def resolve_hook_event(event: dict, home: Path | None = None) -> str:
         return "Stop"
     if "invocationNum" in event:
         return "PreInvocation"
-    event_name = str(
-        event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or ""
-    )
+    event_name = str(event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or "")
     if event_name:
         return event_name
     home = home or Path.home()

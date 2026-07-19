@@ -99,7 +99,7 @@ def test_stop_hook_drains_parent_and_child_then_spawns_finalizer(tmp_path: Path,
     )
 
     assert drained == [("parent", False), ("child", False)]
-    assert spawned == [(('--finalize-session', 'parent', '--cwd', '/work/project'), "claude-code")]
+    assert spawned == [(("--finalize-session", "parent", "--cwd", "/work/project"), "claude-code")]
 
 
 def test_finalizer_waits_then_finalizes_parent_and_child(tmp_path: Path, monkeypatch):
@@ -125,10 +125,7 @@ def test_claude_hook_spec_uses_generic_harness_entrypoint():
     from observal_cli.harness_specs.claude_code_hooks_spec import get_desired_hooks
 
     commands = {
-        hook["command"]
-        for groups in get_desired_hooks().values()
-        for group in groups
-        for hook in group["hooks"]
+        hook["command"] for groups in get_desired_hooks().values() for group in groups for hook in group["hooks"]
     }
     assert len(commands) == 1
     assert "observal_cli.hooks.session_push --harness claude-code" in commands.pop()

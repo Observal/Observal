@@ -397,10 +397,7 @@ def _check_codex(issues: list, warnings: list):
                 for g in groups:
                     if isinstance(g, dict):
                         for h in g.get("hooks", []):
-                            if (
-                                isinstance(h, dict)
-                                and "hooks.session_push --harness codex" in h.get("command", "")
-                            ):
+                            if isinstance(h, dict) and "hooks.session_push --harness codex" in h.get("command", ""):
                                 has_session_push = True
                                 break
 

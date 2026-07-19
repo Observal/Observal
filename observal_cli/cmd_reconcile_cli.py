@@ -37,11 +37,7 @@ def reconcile(
     ensure_loaded()
     if not dry_run:
         drain_outbox(cfg)
-    targets = (
-        [harness]
-        if harness
-        else [name for name, adapter in get_all_adapters().items() if adapter.is_installed()]
-    )
+    targets = [harness] if harness else [name for name, adapter in get_all_adapters().items() if adapter.is_installed()]
     total = sum(_reconcile_harness(target, cfg, since_hours, dry_run) for target in targets)
     if dry_run:
         rprint(f"\n[yellow]Dry run:[/yellow] {total} session(s) would be pushed.")

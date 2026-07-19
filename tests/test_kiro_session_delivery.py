@@ -100,7 +100,7 @@ def test_kiro_stop_routes_credits_through_shared_engine(tmp_path: Path, monkeypa
     )
 
     assert drained[0]["extra_fields"] == {"total_credits": 2.0}
-    assert spawned == [(('--finalize-session', 'kiro-session', '--cwd', '/work'), "kiro")]
+    assert spawned == [(("--finalize-session", "kiro-session", "--cwd", "/work"), "kiro")]
 
 
 def test_kiro_hook_spec_uses_shared_engine_with_uuid_attribution():
