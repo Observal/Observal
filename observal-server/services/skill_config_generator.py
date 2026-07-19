@@ -12,8 +12,8 @@ import re
 import yaml
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from schemas.skill_commands import normalize_slash_command
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import ensure_loaded, get_adapter
 from services.shared.utils import sanitize_name as _sanitize_name
 from services.skill_validator import validate_skill_md_content_frontmatter
 
@@ -76,13 +76,17 @@ def _generate_skill(skill_source, harness: str, scope: str = "project") -> dict 
 
     # Fallback: synthesise a minimal stub from stored fields.
     short_desc = _short_description(desc)
+    ensure_loaded()
+    adapter = get_adapter(harness_key)
+    if adapter is None:
+        raise ValueError(f"No adapter registered for harness: {harness_key!r}")
+
     skill_format = spec.get("skill_format")
     if skill_format == "yaml_frontmatter":
         frontmatter = {"name": name}
         if short_desc:
             frontmatter["description"] = short_desc
-        if slash_cmd and harness_key == "claude-code":
-            frontmatter["command"] = f"/{normalize_slash_command(slash_cmd)}"
+        frontmatter.update(adapter.skill_frontmatter_extra(slash_cmd))
         content = _yaml_frontmatter(frontmatter) + f"{desc}\n"
     else:
         frontmatter = {"description": short_desc, "alwaysApply": False}
@@ -116,8 +120,11 @@ def generate_skill_config(
         },
         "timeout": 10,
     }
-    if harness == "claude-code":
-        hook_entry["allowedEnvVars"] = ["OBSERVAL_ACCESS_TOKEN"]
+    ensure_loaded()
+    adapter = get_adapter(harness)
+    if adapter is None:
+        raise ValueError(f"No adapter registered for harness: {harness!r}")
+    hook_entry.update(adapter.skill_hook_extra())
 
     config = {
         "hooks": {

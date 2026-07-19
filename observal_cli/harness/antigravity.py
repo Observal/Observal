@@ -286,5 +286,10 @@ class AntigravityAdapter(BaseAdapter):
             )
         return agents
 
+    def patch_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _patch_antigravity
+
+        return _patch_antigravity(dry_run)
+
 
 register_adapter(AntigravityAdapter())

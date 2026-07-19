@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from loguru import logger
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from services.harness import ConfigContext, register_adapter
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import BaseHarnessAdapter, ConfigContext, register_adapter
 
 
-class AntigravityAdapter:
+class AntigravityAdapter(BaseHarnessAdapter):
     """Antigravity CLI harness adapter for agent config generation."""
 
     @property

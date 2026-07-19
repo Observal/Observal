@@ -131,5 +131,17 @@ class PiAdapter(BaseAdapter):
             )
         return skills
 
+    def persist_active_agent(self, agent_id: str, name: str, version: str | None) -> None:
+        from observal_cli.config import load, save
+
+        config = load()
+        config["active_agent"] = {"id": agent_id, "name": name, "version": version}
+        save(config)
+
+    def patch_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _patch_pi
+
+        return _patch_pi(dry_run)
+
 
 register_adapter(PiAdapter())

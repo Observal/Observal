@@ -25,7 +25,7 @@ from observal_cli.harness.protocol import (
 
 def _get_features(harness_name: str) -> set[str]:
     """Look up the feature set for an harness from the registry."""
-    from observal_cli.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     spec = HARNESS_REGISTRY.get(harness_name, {})
     return spec.get("capabilities", set())
@@ -155,6 +155,55 @@ class BaseAdapter:
             event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or event.get("type") or ""
         )
         return event_name.lower() in {"stop", "sessionend", "session_end", "sessionshutdown"}
+
+    def saved_model(self, agent_detail: dict | None) -> str | None:
+        if not agent_detail:
+            return None
+        values = agent_detail.get("models_by_harness")
+        candidate = values.get(self.harness_name) if isinstance(values, dict) else None
+        return candidate.strip() if isinstance(candidate, str) and candidate.strip() else None
+
+    def apply_install_options(self, options: dict, tools: str | None) -> None:
+        return None
+
+    def rewrite_hooks(self, content: dict, agent_id: str) -> dict:
+        return content
+
+    def rewrite_agent_profile(self, content: dict, agent_id: str) -> dict:
+        return content
+
+    def allow_home_agent_profile(self, is_user_scope: bool) -> bool:
+        return is_user_scope
+
+    def persist_active_agent(self, agent_id: str, name: str, version: str | None) -> None:
+        return None
+
+    def extract_mcp_servers(self, config: dict) -> dict:
+        from observal_shared.harness_registry import HARNESS_REGISTRY
+
+        key = HARNESS_REGISTRY[self.harness_name].get("mcp_servers_key", "mcpServers")
+        value = config
+        for part in key.split("."):
+            value = value.get(part, {}) if isinstance(value, dict) else {}
+        if value:
+            return value
+        for fallback in ("mcpServers", "servers"):
+            if isinstance(config.get(fallback), dict):
+                return config[fallback]
+        return {
+            name: entry
+            for name, entry in config.items()
+            if isinstance(entry, dict) and any(field in entry for field in ("command", "url", "type"))
+        }
+
+    def patch_hooks(self, dry_run: bool) -> bool:
+        return False
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        return False
+
+    def requires_explicit_agent_id(self) -> bool:
+        return False
 
     def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:
         """Return layer snapshot display paths managed by Observal for this harness."""

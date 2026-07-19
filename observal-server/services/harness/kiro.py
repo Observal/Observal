@@ -5,23 +5,46 @@
 
 from __future__ import annotations
 
+import re
+
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from services.harness import ConfigContext, register_adapter
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import BaseHarnessAdapter, ConfigContext, register_adapter
 from services.harness.helpers import (
     _KIRO_EVENT_MAP,
     _collect_hook_script_files,
     _wrap_kiro_prompt,
 )
 
+_KIRO_MODEL_RE = re.compile(r"^(claude-[a-z]+-\d{1,3})-(\d{1,3})(-\d{8})?$")
 
-class KiroAdapter:
+
+class KiroAdapter(BaseHarnessAdapter):
     """Kiro harness adapter."""
 
     @property
     def harness_name(self) -> str:
         return "kiro"
+
+    def format_hook_install_snippet(self, event: str, handler_type: str, command: str, timeout: int | None) -> dict:
+        return {"hooks": {event: [{"command": command}]}}
+
+    def format_hook_telemetry(self, hook_listing, server_url: str, platform: str) -> dict:
+        event = _KIRO_EVENT_MAP.get(str(hook_listing.event), str(hook_listing.event))
+        python = "python" if platform == "win32" else "python3"
+        module = "kiro_stop_hook" if event == "stop" else "kiro_hook"
+        command = f"{python} -m observal_cli.hooks.{module} --url {server_url}/api/v1/telemetry/hooks"
+        entry = {"command": command}
+        if event in ("preToolUse", "postToolUse"):
+            entry["matcher"] = "*"
+        return {"hooks": {event: [entry]}}
+
+    def format_model(self, model: str, provider: str) -> str:
+        match = _KIRO_MODEL_RE.match(model)
+        if not match:
+            return model
+        return f"{match.group(1)}.{match.group(2)}{match.group(3) or ''}"
 
     def format_config(self, ctx: ConfigContext) -> dict:
         optic.trace("ctx={}", ctx)

@@ -454,7 +454,7 @@ def _detect_active_harnesses() -> list[str]:
     from pathlib import Path
 
     from observal_cli.harness import ensure_loaded, get_adapter
-    from observal_cli.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     ensure_loaded()
     home = Path.home()

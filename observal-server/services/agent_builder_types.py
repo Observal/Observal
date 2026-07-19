@@ -6,9 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Agent builder type models - shared by agent_builder, config builders, and harness helpers."""
-
-from typing import Literal
+"""Portable agent manifest and composition models."""
 
 from pydantic import BaseModel, Field
 
@@ -123,42 +121,3 @@ class CompositionSummary(BaseModel):
     component_counts: dict[str, int] = Field(default_factory=dict)
     components: dict[str, list[dict]] = Field(default_factory=dict)
     errors: list[ManifestError] = Field(default_factory=list)
-
-
-# ── harness Agent File Models ───────────────────────────────────────────
-
-
-class AgentFile(BaseModel):
-    """A single file to write for harness agent installation."""
-
-    path: str
-    content: str | dict
-    format: Literal["markdown", "json", "toml"] = "json"
-
-
-class HookInstallEntry(BaseModel):
-    """A hook to install as part of agent pull."""
-
-    path: str  # harness-relative path for the script file
-    content: str  # Script content
-    executable: bool = False
-
-
-class HookConfigEntry(BaseModel):
-    """Hook config snippet to merge into the harness's hooks config."""
-
-    config_path: str  # Where to write/merge config (e.g., .cursor/hooks.json)
-    config_snippet: dict  # The harness-specific hook config
-    merge: bool = True  # Whether to merge into existing file
-
-
-class HarnessAgentConfig(BaseModel):
-    """Complete harness-specific agent configuration output."""
-
-    harness: str
-    files: list[AgentFile] = Field(default_factory=list)
-    mcp_servers: dict = Field(default_factory=dict)
-    env: dict[str, str] = Field(default_factory=dict)
-    setup_commands: list[list[str]] = Field(default_factory=list)
-    hook_files: list[HookInstallEntry] = Field(default_factory=list)
-    hook_configs: list[HookConfigEntry] = Field(default_factory=list)

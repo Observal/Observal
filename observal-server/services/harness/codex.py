@@ -9,8 +9,8 @@ import json
 
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from services.harness import ConfigContext, register_adapter
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import BaseHarnessAdapter, ConfigContext, McpConfigContext, register_adapter
 
 _CODEX_SESSION_PUSH_CMD = "python3 -m observal_cli.hooks.codex_session_push"
 
@@ -43,12 +43,36 @@ def _codex_hooks_config(agent_name: str = "") -> dict:
     }
 
 
-class CodexAdapter:
+class CodexAdapter(BaseHarnessAdapter):
     """Codex CLI harness adapter."""
 
     @property
     def harness_name(self) -> str:
         return "codex"
+
+    def format_hook_install_snippet(self, event: str, handler_type: str, command: str, timeout: int | None) -> dict:
+        return {
+            "hooks": {event: {"command": command}},
+            "_format": "toml",
+            "_note": f"Add to .codex/config.toml under [hooks.{event}]",
+        }
+
+    def agent_mcp_entry(self, ctx: McpConfigContext) -> None:
+        # Agent installs historically omit Codex MCP entries. Preserve that output here.
+        return None
+
+    def format_mcp_config(self, ctx: McpConfigContext) -> dict:
+        if ctx.url:
+            entry: dict = {"url": ctx.url}
+            if ctx.headers:
+                entry["headers"] = ctx.headers
+            if ctx.server_env:
+                entry["env"] = ctx.server_env
+        elif ctx.proxy_url:
+            entry = {"url": ctx.proxy_url, "env": ctx.server_env}
+        else:
+            entry = ctx.standard_entry()
+        return {"mcp_servers": {ctx.name: entry}}
 
     def format_config(self, ctx: ConfigContext) -> dict:
         optic.trace("ctx={}", ctx)

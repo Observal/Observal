@@ -315,5 +315,15 @@ class OpenCodeAdapter(BaseAdapter):
             return value
         return None
 
+    def patch_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _patch_opencode
+
+        return _patch_opencode(dry_run)
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _cleanup_opencode
+
+        return _cleanup_opencode(dry_run)
+
 
 register_adapter(OpenCodeAdapter())

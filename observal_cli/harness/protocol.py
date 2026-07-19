@@ -309,6 +309,46 @@ class HarnessAdapter(Protocol):
         """Return whether a hook payload marks its session final."""
         ...
 
+    def saved_model(self, agent_detail: dict | None) -> str | None:
+        """Return the saved model for this harness."""
+        ...
+
+    def apply_install_options(self, options: dict, tools: str | None) -> None:
+        """Apply harness-specific CLI install options."""
+        ...
+
+    def rewrite_hooks(self, content: dict, agent_id: str) -> dict:
+        """Rewrite downloaded hook configuration before writing it."""
+        ...
+
+    def rewrite_agent_profile(self, content: dict, agent_id: str) -> dict:
+        """Rewrite a downloaded structured agent profile before writing it."""
+        ...
+
+    def allow_home_agent_profile(self, is_user_scope: bool) -> bool:
+        """Return whether an agent profile may resolve under the home directory."""
+        ...
+
+    def persist_active_agent(self, agent_id: str, name: str, version: str | None) -> None:
+        """Persist harness-specific global agent attribution after pull."""
+        ...
+
+    def extract_mcp_servers(self, config: dict) -> dict:
+        """Extract MCP server entries from a harness configuration."""
+        ...
+
+    def patch_hooks(self, dry_run: bool) -> bool:
+        """Install this harness's telemetry hooks."""
+        ...
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        """Remove this harness's telemetry hooks."""
+        ...
+
+    def requires_explicit_agent_id(self) -> bool:
+        """Return whether sessions must not fall back to name or cwd attribution."""
+        ...
+
     def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:
         """Return layer snapshot display paths managed by Observal for this harness.
 

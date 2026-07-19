@@ -791,8 +791,11 @@ def _resolve_agent(
         optic.warning("OBSERVAL_AGENT_ID={} not found in lockfile (harness={})", env_agent_id, harness)
         return None, None
 
-    if harness == "kiro":
-        optic.debug("Kiro session has no OBSERVAL_AGENT_ID; leaving unattributed")
+    from observal_cli.harness import ensure_loaded, get_adapter
+
+    ensure_loaded()
+    if get_adapter(harness).requires_explicit_agent_id():
+        optic.debug("{} session has no OBSERVAL_AGENT_ID; leaving unattributed", harness)
         return None, None
 
     # Resolve agent name from env var or JSONL
@@ -843,8 +846,8 @@ def _lookup_lockfile_agent_by_id(agent_id: str, harness: str | None = None) -> d
 def _lookup_lockfile_agent(cwd: str, agent_name: str | None = None) -> dict | None:
     """Find the lockfile agent for a directory and optional agent name."""
     try:
-        from observal_cli.harness_registry import get_valid_harnesses
         from observal_cli.lockfile import read_lockfile
+        from observal_shared.harness_registry import get_valid_harnesses
 
         data = read_lockfile()
         name_matches: list[dict] = []

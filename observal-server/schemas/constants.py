@@ -11,14 +11,14 @@ The CLI mirrors these in ``observal_cli/constants.py`` -- a sync test
 (``tests/test_constants_sync.py``) ensures they stay in lockstep.
 
 harness-specific data (features, paths, scopes) is defined in
-``schemas/harness_registry.py``; the lists below are derived from it.
+``observal_shared/harness_registry.py``; the lists below are derived from it.
 """
 
 from __future__ import annotations
 
 import re
 
-from schemas.harness_registry import get_harness_capability_matrix, get_valid_harnesses
+from observal_shared.harness_registry import get_harness_capability_matrix, get_valid_harnesses
 
 # ── Name validation ───────────────────────────────────────────
 

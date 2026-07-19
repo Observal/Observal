@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import ensure_loaded, get_adapter
 
 
 def generate_hook_install_config(
@@ -41,6 +42,11 @@ def generate_hook_install_config(
             "source_fetch": None,
             "notes": [f"harness '{harness}' is not recognized. Supported: {', '.join(HARNESS_REGISTRY.keys())}"],
         }
+
+    ensure_loaded()
+    adapter = get_adapter(harness)
+    if adapter is None:
+        raise ValueError(f"No adapter registered for harness: {harness!r}")
 
     hook_type = ide_info.get("hook_type")
     events_map = ide_info.get("hook_events_map", {})
@@ -110,8 +116,7 @@ def generate_hook_install_config(
         }
         actual_command = f"{hook_scripts_dir}/{hook_listing.name}/{command}"
 
-    # Generate config snippet based on harness format
-    config_snippet = _build_config_snippet(harness, ide_info, ide_event, handler_type, actual_command, timeout)
+    config_snippet = adapter.format_hook_install_snippet(ide_event, handler_type, actual_command, timeout)
 
     # Determine config path
     config_path_val = ""
@@ -120,63 +125,14 @@ def generate_hook_install_config(
         if "{name}" in config_path_val:
             config_path_val = config_path_val.replace("{name}", hook_listing.name)
 
-    # Notes
-    notes: list[str] = []
-    if harness == "claude-code":
-        notes.append("Also works in Cursor via Third Party Hooks (enable in Cursor Settings → Features).")
-
     return {
         "config_snippet": config_snippet,
         "config_path": config_path_val,
         "files": files,
         "requirements": requirements,
         "source_fetch": source_fetch,
-        "notes": notes,
+        "notes": adapter.hook_install_notes(),
     }
-
-
-def _build_config_snippet(
-    harness: str,
-    ide_info: dict,
-    ide_event: str,
-    handler_type: str,
-    command: str,
-    timeout: int | None,
-) -> dict:
-    """Build the harness-specific config snippet."""
-
-    optic.trace("harness={}, harness_info={}", harness, ide_info)
-    if harness == "claude-code":
-        hook_entry: dict = {"type": handler_type, "command": command}
-        if timeout:
-            hook_entry["timeout"] = timeout
-        return {"hooks": {ide_event: [{"matcher": "*", "hooks": [hook_entry]}]}}
-
-    if harness == "cursor":
-        hook_entry = {"command": command}
-        return {"version": 1, "hooks": {ide_event: [hook_entry]}}
-
-    if harness in ("kiro", "kiro-cli"):
-        hook_entry = {"command": command}
-        return {"hooks": {ide_event: [hook_entry]}}
-
-    if harness in ("copilot", "copilot-cli"):
-        hook_entry = {"command": command}
-        return {"hooks": {ide_event: [hook_entry]}}
-
-    if harness == "codex":
-        # TOML format represented as dict
-        return {
-            "hooks": {ide_event: {"command": command}},
-            "_format": "toml",
-            "_note": f"Add to .codex/config.toml under [hooks.{ide_event}]",
-        }
-
-    # Fallback
-    hook_entry = {"command": command}
-    if timeout:
-        hook_entry["timeout"] = timeout
-    return {"hooks": {ide_event: [hook_entry]}}
 
 
 def _generate_plugin_instructions(hook_listing, ide_info: dict, ide_event: str) -> dict:

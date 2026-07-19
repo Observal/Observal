@@ -3,9 +3,7 @@
 
 """Baseline regression test for harness config generation.
 
-Captures the output of generate_agent_config and generate_harness_agent_profiles
-for all supported harnesses. This test must pass identically before and after
-the adapter refactoring (Phases 2-3).
+Captures canonical generate_agent_config output for every supported harness.
 """
 
 from __future__ import annotations
@@ -16,12 +14,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.agent_builder import (
-    AgentManifest,
-    ManifestComponent,
-    ManifestComponents,
-    generate_harness_agent_profiles,
-)
 from services.harness import generate_agent_config
 
 ALL_HARNESSES = [
@@ -62,33 +54,6 @@ def _make_agent(
     agent.components = components or []
     agent.external_mcps = external_mcps or []
     return agent
-
-
-def _make_manifest(
-    name: str = "baseline-agent",
-    description: str = "A baseline test agent for regression checks",
-    prompt: str = "You are a helpful coding assistant.",
-    model_name: str = "claude-sonnet-4",
-    mcps: list[ManifestComponent] | None = None,
-    skills: list[ManifestComponent] | None = None,
-    hooks: list[ManifestComponent] | None = None,
-    prompts: list[ManifestComponent] | None = None,
-    sandboxes: list[ManifestComponent] | None = None,
-) -> AgentManifest:
-    return AgentManifest(
-        name=name,
-        version="1.0.0",
-        description=description,
-        prompt=prompt,
-        model_name=model_name,
-        components=ManifestComponents(
-            mcps=mcps or [],
-            skills=skills or [],
-            hooks=hooks or [],
-            prompts=prompts or [],
-            sandboxes=sandboxes or [],
-        ),
-    )
 
 
 MCP_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -249,55 +214,6 @@ class TestGenerateAgentConfigBaseline:
             },
         )
         assert isinstance(result, dict)
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Test: generate_harness_agent_profiles (manifest-based builder) baseline
-# ═══════════════════════════════════════════════════════════════════
-
-
-# agent_builder supports these harnesses (copilot-cli is not separate)
-BUILDER_HARNESSES = [harness for harness in ALL_HARNESSES if harness != "copilot-cli"]
-
-
-class TestGenerateIdeAgentFilesBaseline:
-    """Test generate_harness_agent_profiles for each harness with manifests."""
-
-    @pytest.mark.parametrize("harness", BUILDER_HARNESSES)
-    def test_minimal_manifest(self, harness):
-        """Minimal manifest produces valid harness config."""
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, harness)
-        assert result is not None
-        # HarnessAgentConfig has agent_profiles and mcp_servers
-        assert hasattr(result, "agent_profiles") or hasattr(result, "mcp_servers")
-
-    @pytest.mark.parametrize("harness", BUILDER_HARNESSES)
-    def test_manifest_with_mcps(self, harness):
-        """Manifest with MCP components."""
-        mcp = ManifestComponent(
-            name="test-mcp",
-            version="1.0.0",
-            config_override={"command": "npx", "args": ["-y", "@test/server"]},
-        )
-        manifest = _make_manifest(mcps=[mcp])
-        result = generate_harness_agent_profiles(manifest, harness)
-        assert result is not None
-
-    @pytest.mark.parametrize("harness", BUILDER_HARNESSES)
-    def test_manifest_with_hooks(self, harness):
-        """Manifest with hook components."""
-        hook = ManifestComponent(
-            name="test-hook",
-            version="1.0.0",
-            event="PreToolUse",
-            handler_type="command",
-            handler_config={"command": "python3 guard.py", "timeout": 10},
-            config_override={},
-        )
-        manifest = _make_manifest(hooks=[hook])
-        result = generate_harness_agent_profiles(manifest, harness)
-        assert result is not None
 
 
 # ═══════════════════════════════════════════════════════════════════

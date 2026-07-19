@@ -193,5 +193,18 @@ class CursorAdapter(BaseAdapter):
     def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
         return super().shim_status(mcps)
 
+    def allow_home_agent_profile(self, is_user_scope: bool) -> bool:
+        return False
+
+    def patch_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _patch_cursor
+
+        return _patch_cursor(dry_run)
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _cleanup_cursor
+
+        return _cleanup_cursor(dry_run)
+
 
 register_adapter(CursorAdapter())

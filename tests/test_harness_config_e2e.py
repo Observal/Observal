@@ -85,17 +85,17 @@ class TestConstants:
         assert HARNESS_CAPABILITIES["copilot"] == {"mcp_servers", "hooks", "skills", "prompts"}
 
     def test_copilot_session_parser(self):
-        from observal_cli.harness_registry import HARNESS_REGISTRY
+        from observal_shared.harness_registry import HARNESS_REGISTRY
 
         assert HARNESS_REGISTRY["copilot"]["session_parser"] == "copilot-cli"
 
     def test_copilot_cli_session_parser(self):
-        from observal_cli.harness_registry import HARNESS_REGISTRY
+        from observal_shared.harness_registry import HARNESS_REGISTRY
 
         assert HARNESS_REGISTRY["copilot-cli"]["session_parser"] == "copilot-cli"
 
     def test_copilot_cli_hook_events_map(self):
-        from observal_cli.harness_registry import HARNESS_REGISTRY
+        from observal_shared.harness_registry import HARNESS_REGISTRY
 
         expected = {
             "SessionStart": "sessionStart",
@@ -107,7 +107,7 @@ class TestConstants:
         assert HARNESS_REGISTRY["copilot-cli"]["hook_events_map"] == expected
 
     def test_copilot_hook_events_map(self):
-        from observal_cli.harness_registry import HARNESS_REGISTRY
+        from observal_shared.harness_registry import HARNESS_REGISTRY
 
         expected = {
             "SessionStart": "SessionStart",
@@ -1316,3 +1316,50 @@ class TestMcpAuthHeadersInAgentPull:
         assert "auth-mcp" in servers
         entry = servers["auth-mcp"]
         assert "headers" not in entry
+
+
+@pytest.mark.parametrize(
+    "harness,expected_snippet",
+    [
+        (
+            "claude-code",
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {"matcher": "*", "hooks": [{"type": "command", "command": "python guard.py", "timeout": 10}]}
+                    ]
+                }
+            },
+        ),
+        ("cursor", {"version": 1, "hooks": {"preToolUse": [{"command": "python guard.py"}]}}),
+        ("kiro", {"hooks": {"preToolUse": [{"command": "python guard.py"}]}}),
+        ("copilot", {"hooks": {"PreToolUse": [{"command": "python guard.py"}]}}),
+        (
+            "codex",
+            {
+                "hooks": {"PreToolUse": {"command": "python guard.py"}},
+                "_format": "toml",
+                "_note": "Add to .codex/config.toml under [hooks.PreToolUse]",
+            },
+        ),
+    ],
+)
+def test_hook_install_format_is_owned_by_adapter(harness, expected_snippet):
+    from services.hook_install_generator import generate_hook_install_config
+
+    listing = MagicMock(
+        event="PreToolUse",
+        handler_type="command",
+        handler_config={"command": "python guard.py", "timeout": 10},
+        script_content=None,
+        script_filename=None,
+        source_url=None,
+        source_path=None,
+        source_ref=None,
+        resolved_sha=None,
+        requirements=[],
+    )
+    listing.name = "guard"
+
+    result = generate_hook_install_config(listing, harness)
+    assert result["config_snippet"] == expected_snippet

@@ -40,19 +40,19 @@ class TestRegistryAndFrontend:
 
     def test_copilot_session_parser(self):
         """Copilot session_parser is 'copilot-cli' (shares parser with Copilot CLI)."""
-        from observal_cli.harness_registry import HARNESS_REGISTRY
+        from observal_shared.harness_registry import HARNESS_REGISTRY
 
         assert HARNESS_REGISTRY["copilot"]["session_parser"] == "copilot-cli"
 
     def test_copilot_cli_session_parser(self):
         """Copilot CLI session_parser is 'copilot-cli'."""
-        from observal_cli.harness_registry import HARNESS_REGISTRY
+        from observal_shared.harness_registry import HARNESS_REGISTRY
 
         assert HARNESS_REGISTRY["copilot-cli"]["session_parser"] == "copilot-cli"
 
     def test_copilot_cli_hook_events_map(self):
         """Copilot CLI hook_events_map contains all 5 events with correct mappings."""
-        from observal_cli.harness_registry import HARNESS_REGISTRY
+        from observal_shared.harness_registry import HARNESS_REGISTRY
 
         expected = {
             "SessionStart": "sessionStart",
@@ -65,7 +65,7 @@ class TestRegistryAndFrontend:
 
     def test_copilot_hook_events_map(self):
         """Copilot hook_events_map contains PascalCase events."""
-        from observal_cli.harness_registry import HARNESS_REGISTRY
+        from observal_shared.harness_registry import HARNESS_REGISTRY
 
         expected = {
             "SessionStart": "SessionStart",

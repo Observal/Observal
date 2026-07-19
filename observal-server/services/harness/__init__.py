@@ -13,7 +13,7 @@ from typing import Any, Protocol, runtime_checkable
 class ConfigContext:
     """Shared pre-computed data passed to each harness adapter."""
 
-    agent: Any  # Agent model instance
+    agent: Any
     safe_name: str
     harness: str
     observal_url: str
@@ -24,7 +24,6 @@ class ConfigContext:
     options: dict = field(default_factory=dict)
     platform: str = ""
     compatibility_warnings: list = field(default_factory=list)
-    # Optional component listings (passed through for adapters that need them)
     mcp_listings: dict | None = None
     hook_listings: dict | None = None
     skill_listings: dict | None = None
@@ -33,18 +32,109 @@ class ConfigContext:
     component_names: dict | None = None
 
 
+@dataclass
+class McpConfigContext:
+    """Normalized MCP data formatted by a harness adapter."""
+
+    name: str
+    mcp_id: str
+    server_env: dict[str, str]
+    headers: dict[str, str]
+    transport: str
+    url: str | None
+    proxy_url: str | None
+    shim_args: list[str]
+    auto_approve: list[str]
+
+    def standard_entry(self) -> dict:
+        """Return the common MCP entry used by JSON-based harnesses."""
+        if self.url:
+            entry: dict = {"type": self.transport or "sse", "url": self.url}
+            if self.headers:
+                entry["headers"] = self.headers
+            if self.server_env:
+                entry["env"] = self.server_env
+            if self.auto_approve:
+                entry.update({"autoApprove": self.auto_approve, "disabled": False})
+            return entry
+        if self.proxy_url:
+            return {"url": self.proxy_url, "env": self.server_env}
+        entry = {"command": "observal-shim", "args": self.shim_args, "env": self.server_env}
+        if self.auto_approve:
+            entry.update({"autoApprove": self.auto_approve, "disabled": False})
+        return entry
+
+
 @runtime_checkable
 class HarnessAdapter(Protocol):
-    """Protocol defining the interface for harness-specific config generation."""
+    """Protocol defining harness-specific configuration behavior."""
 
     @property
-    def harness_name(self) -> str:
-        """Canonical harness name (e.g. 'claude-code', 'cursor')."""
-        ...
+    def harness_name(self) -> str: ...
 
-    def format_config(self, ctx: ConfigContext) -> dict:
-        """Format the pre-computed context into harness-specific config output."""
-        ...
+    def format_config(self, ctx: ConfigContext) -> dict: ...
+
+    def format_mcp_config(self, ctx: McpConfigContext) -> dict: ...
+
+    def agent_mcp_entry(self, ctx: McpConfigContext) -> dict | None: ...
+
+    def format_model(self, model: str, provider: str) -> str: ...
+
+    def default_model_candidate(self, model_name: str | None) -> str | None: ...
+
+    def format_hook_install_snippet(self, event: str, handler_type: str, command: str, timeout: int | None) -> dict: ...
+
+    def hook_install_notes(self) -> list[str]: ...
+
+    def format_hook_telemetry(self, hook_listing: Any, server_url: str, platform: str) -> dict: ...
+
+    def skill_hook_extra(self) -> dict: ...
+
+    def skill_frontmatter_extra(self, slash_command: str | None) -> dict: ...
+
+    def format_hook_component(self, command: str) -> dict: ...
+
+    def emits_prompt_files(self) -> bool: ...
+
+
+class BaseHarnessAdapter:
+    """Shared defaults for harness adapters."""
+
+    def format_mcp_config(self, ctx: McpConfigContext) -> dict:
+        return {"mcpServers": {ctx.name: ctx.standard_entry()}}
+
+    def agent_mcp_entry(self, ctx: McpConfigContext) -> dict:
+        return ctx.standard_entry()
+
+    def format_model(self, model: str, provider: str) -> str:
+        return model
+
+    def default_model_candidate(self, model_name: str | None) -> str | None:
+        return None
+
+    def format_hook_install_snippet(self, event: str, handler_type: str, command: str, timeout: int | None) -> dict:
+        entry: dict = {"command": command}
+        if timeout:
+            entry["timeout"] = timeout
+        return {"hooks": {event: [entry]}}
+
+    def hook_install_notes(self) -> list[str]:
+        return []
+
+    def format_hook_telemetry(self, hook_listing: Any, server_url: str, platform: str) -> dict:
+        return {"comment": f"harness '{self.harness_name}' requires manual hook setup. See Observal docs."}
+
+    def skill_hook_extra(self) -> dict:
+        return {}
+
+    def skill_frontmatter_extra(self, slash_command: str | None) -> dict:
+        return {}
+
+    def format_hook_component(self, command: str) -> dict:
+        return {"command": command}
+
+    def emits_prompt_files(self) -> bool:
+        return False
 
 
 # ── Adapter Registry ──────────────────────────────────────────────
@@ -65,6 +155,14 @@ def get_adapter(harness: str) -> HarnessAdapter | None:
 def get_all_adapters() -> dict[str, HarnessAdapter]:
     """Return all registered adapters."""
     return dict(_ADAPTER_REGISTRY)
+
+
+def ensure_loaded() -> None:
+    """Import every adapter exactly once."""
+    from observal_shared.harness_registry import HARNESS_REGISTRY
+
+    if len(_ADAPTER_REGISTRY) < len(HARNESS_REGISTRY):
+        import services.harness.load_all  # noqa: F401
 
 
 # ── Orchestrator ──────────────────────────────────────────────────
@@ -90,7 +188,7 @@ def generate_agent_config(
     This is the single entry point for all harness config generation.
     It builds a shared ConfigContext, resolves the adapter, and delegates.
     """
-    import services.harness.load_all  # noqa: F401
+    ensure_loaded()
     from services.harness.helpers import (
         _build_hook_configs,
         _build_mcp_configs,
@@ -100,6 +198,10 @@ def generate_agent_config(
         _check_harness_compatibility,
         _sanitize_name,
     )
+
+    adapter = get_adapter(harness)
+    if adapter is None:
+        raise ValueError(f"No adapter registered for harness: {harness!r}")
 
     safe_name = _sanitize_name(agent.name)
     mcp_configs = _build_mcp_configs(
@@ -111,10 +213,8 @@ def generate_agent_config(
         if sandbox_mcp:
             mcp_configs.update(sandbox_mcp)
 
-    # Harnesses with first-class prompt files (Copilot) emit the full template
-    # into .github/prompts/*.prompt.md, so keep the agent body to a name list
-    # to avoid duplicating the template.
-    emit_prompt_files = harness in ("copilot", "copilot-cli")
+    # Harnesses with first-class prompt files keep the agent body to a name list.
+    emit_prompt_files = adapter.emits_prompt_files()
     rules_content = _build_rules_content(
         agent,
         component_names,
@@ -125,10 +225,6 @@ def generate_agent_config(
     hook_configs = _build_hook_configs(agent, hook_listings)
     options = options or {}
     compatibility_warnings = _check_harness_compatibility(agent, harness)
-
-    adapter = get_adapter(harness)
-    if adapter is None:
-        raise ValueError(f"No adapter registered for harness: {harness!r}")
 
     ctx = ConfigContext(
         agent=agent,
@@ -166,7 +262,7 @@ async def generate_all_harness_configs(
     """Generate harness config files for all target harnesses from an AgentVersion."""
     import json as _json
 
-    from schemas.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     harnesses = target_harnesses or agent_version.supported_harnesses or list(HARNESS_REGISTRY.keys())
     result = {}

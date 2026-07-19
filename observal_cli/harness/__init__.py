@@ -22,7 +22,7 @@ from observal_cli.harness.protocol import (
     ScanResult,
     SessionSource,
 )
-from observal_cli.harness_registry import HARNESS_REGISTRY
+from observal_shared.harness_registry import HARNESS_REGISTRY
 
 __all__ = [
     "METHOD_FEATURE_MAP",

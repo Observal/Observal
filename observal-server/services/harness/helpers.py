@@ -17,16 +17,13 @@ from typing import TYPE_CHECKING
 
 from loguru import logger as optic
 
+from observal_shared.harness_registry import HARNESS_REGISTRY
 from schemas.constants import HARNESS_CAPABILITIES
-from schemas.harness_registry import HARNESS_REGISTRY
 from services.shared.utils import sanitize_name as _sanitize_name
 
 if TYPE_CHECKING:
     from models.agent import Agent
-from services.config_generator import (
-    _build_run_command,
-    generate_config,
-)
+from services.config_generator import _build_mcp_context
 
 # Map from internal PascalCase event names to Kiro camelCase event names.
 _KIRO_EVENT_MAP = {
@@ -340,50 +337,27 @@ def _build_mcp_configs(
         sum(1 for c in agent.components if c.component_type == "mcp"),
     )
 
+    from services.harness import ensure_loaded, get_adapter
+
+    ensure_loaded()
+    adapter = get_adapter(harness)
+    if adapter is None:
+        raise ValueError(f"No adapter registered for harness: {harness!r}")
+
     for comp in agent.components:
         if comp.component_type != "mcp":
             continue
         listing = mcp_listings.get(comp.component_id)
         if not listing:
             continue
-        mcp_env = env_values.get(str(listing.id), {})
-        mcp_headers = header_values.get(str(listing.id), {})
-        cfg = generate_config(
-            listing, harness, observal_url=observal_url, env_values=mcp_env, header_values=mcp_headers
+        ctx = _build_mcp_context(
+            listing,
+            env_values=env_values.get(str(listing.id), {}),
+            header_values=header_values.get(str(listing.id), {}),
         )
-        if "mcpServers" in cfg:
-            mcp_configs.update(cfg["mcpServers"])
-        elif "mcp" in cfg:
-            # OpenCode returns {"mcp": {name: entry}} — merge directly
-            mcp_configs.update(cfg["mcp"])
-        elif harness in ("claude-code", "claude_code"):
-            # generate_config returns shell commands for Claude Code, not
-            # an mcpServers dict. Build the shim entry directly so the
-            # agent file gets proper mcpServers frontmatter.
-            safe = _sanitize_name(listing.name)
-            if listing.url:
-                # SSE/streamable-http listing - no shim needed
-                entry: dict = {"type": (listing.transport or "sse").lower(), "url": listing.url}
-                if mcp_headers:
-                    entry["headers"] = mcp_headers
-                if mcp_env:
-                    entry["env"] = mcp_env
-                if listing.auto_approve:
-                    entry["autoApprove"] = listing.auto_approve
-                    entry["disabled"] = False
-                mcp_configs[safe] = entry
-            else:
-                mcp_id = str(listing.id)
-                run_cmd = _build_run_command(
-                    safe,
-                    listing.framework,
-                    listing.docker_image,
-                    mcp_env,
-                    stored_command=listing.command,
-                    stored_args=listing.args,
-                )
-                shim_args = ["--mcp-id", mcp_id, "--", *run_cmd]
-                mcp_configs[safe] = {"command": "observal-shim", "args": shim_args, "env": mcp_env}
+        entry = adapter.agent_mcp_entry(ctx)
+        if entry is not None:
+            mcp_configs[ctx.name] = entry
 
     for ext in agent.external_mcps or []:
         name = _sanitize_name(ext.get("name", ""))
@@ -490,21 +464,16 @@ def _get_hook_scripts_dir(harness: str) -> str:
     return HARNESS_REGISTRY.get(harness, {}).get("hook_scripts_dir", "")
 
 
-_HOOK_SCRIPTS_DIR: dict[str, str] = {
-    "cursor": ".cursor/hooks",
-    "codex": ".codex/hooks",
-    "copilot": ".github/hooks/scripts",
-    "copilot-cli": ".github/hooks/scripts",
-    "claude-code": ".claude/hooks",
-    "kiro": ".kiro/hooks",
-    "opencode": ".opencode/hooks",
-}
-
-
 def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[dict], harness: str) -> None:
     """Merge user-submitted hook components into the harness hooks config dict (in-place)."""
+    from services.harness import ensure_loaded, get_adapter
+
+    ensure_loaded()
+    adapter = get_adapter(harness)
+    if adapter is None:
+        raise ValueError(f"No adapter registered for harness: {harness!r}")
     events_map = _get_hook_events_map(harness)
-    scripts_dir = _HOOK_SCRIPTS_DIR.get(harness, "")
+    scripts_dir = _get_hook_scripts_dir(harness)
     hooks_dict = hooks_content.setdefault("hooks", {})
 
     for hc in hook_configs:
@@ -522,17 +491,12 @@ def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[d
         elif script_filename and scripts_dir:
             command = f"{scripts_dir}/{script_filename}"
 
-        if harness == "cursor":
-            hooks_dict.setdefault(ide_event, []).append({"command": command})
-        elif harness in ("copilot", "copilot-cli"):
-            hooks_dict.setdefault(ide_event, []).append({"type": "command", "command": command})
-        else:
-            hooks_dict.setdefault(ide_event, []).append({"command": command})
+        hooks_dict.setdefault(ide_event, []).append(adapter.format_hook_component(command))
 
 
 def _collect_hook_script_files(hook_configs: list[dict], hook_listings: dict | None, harness: str) -> list[dict]:
     """Collect script files from hook components that need to be written on install."""
-    scripts_dir = _HOOK_SCRIPTS_DIR.get(harness, "")
+    scripts_dir = _get_hook_scripts_dir(harness)
     if not scripts_dir:
         return []
 

@@ -14,7 +14,7 @@ Dispatch is **strict**: passing an unknown harness raises ``KeyError`` so new
 harnesses cannot silently fall through to a wrong classifier.  When adding
 support for a new harness:
 
-  1. Add its entry to ``schemas/harness_registry.py`` with a ``"session_parser"``
+  1. Add its entry to ``observal_shared/harness_registry.py`` with a ``"session_parser"``
      key referencing one of the parser IDs registered in ``_CLASSIFIERS`` below.
   2. If the harness has a novel JSONL format, implement ``_classify_<name>``,
      ``_preview_<name>``, and ``_tool_info_<name>`` and register them.
@@ -766,7 +766,7 @@ def get_classifier(harness: str) -> tuple:
     so new harnesses cannot silently fall through to a wrong classifier.
     Raises ``ValueError`` if the harness has session_parser=None (no parser configured).
     """
-    from schemas.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     parser_id = HARNESS_REGISTRY[harness]["session_parser"]  # KeyError = unknown harness
     if parser_id is None:
@@ -901,7 +901,7 @@ def extract_timestamp(harness: str, parsed: dict) -> str | None:
     Raises KeyError for unknown harnesses.
     Raises ValueError if the harness has session_parser=None (no parser configured).
     """
-    from schemas.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     parser_id = HARNESS_REGISTRY[harness]["session_parser"]  # KeyError = unknown harness
     if parser_id is None:
@@ -952,7 +952,7 @@ def get_extra_rows(
     Dispatches to per-harness handlers via session_parser ID.
     Unknown harnesses fall back to _no_extra_rows (fail-open).
     """
-    from schemas.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     parser_id = HARNESS_REGISTRY.get(harness, {}).get("session_parser", "claude-code")
     handler = _EXTRA_ROWS_HANDLERS.get(parser_id, _no_extra_rows)

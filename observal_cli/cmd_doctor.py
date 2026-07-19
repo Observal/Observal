@@ -27,7 +27,7 @@ from loguru import logger as optic
 from rich import print as rprint
 
 from observal_cli import config
-from observal_cli.harness_registry import get_home_mcp_configs, get_mcp_servers_key, get_valid_harnesses
+from observal_cli.harness import ensure_loaded, get_adapter
 from observal_cli.harness_specs.claude_code_hooks_spec import (
     MANAGED_ENV_KEYS,
     get_desired_hooks,
@@ -44,6 +44,7 @@ from observal_cli.shared.utils import (
 from observal_cli.shared.utils import (
     load_jsonc as _load_jsonc,
 )
+from observal_shared.harness_registry import get_home_mcp_configs, get_valid_harnesses
 
 doctor_app = typer.Typer(help="Diagnose and patch harness settings for Observal telemetry")
 
@@ -171,7 +172,7 @@ def doctor(
 
 def _check_observal_skill_missing() -> list[str]:
     """Return list of harness display names where the observal skill is not installed."""
-    from observal_cli.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     skill_source = Path(__file__).parent / "skills" / "observal" / "SKILL.md"
     if not skill_source.exists():
@@ -612,44 +613,20 @@ def doctor_cleanup(
       observal doctor cleanup --harness claude-code --dry-run  # Preview without changes
     """
     optic.trace("harness={}, exclude={}, dry_run={}", harness, exclude, dry_run)
-    all_harnesses = ["claude-code", "kiro", "cursor", "codex", "copilot", "copilot-cli", "opencode"]
-    targets = [harness] if harness else all_harnesses
+    targets = [harness] if harness else get_valid_harnesses()
     targets = [t for t in targets if t not in exclude]
     any_changes = False
 
     rprint("[bold]Observal Doctor - Cleanup[/bold]\n")
 
+    ensure_loaded()
     for target in targets:
-        if target in ("claude-code", "claude_code"):
-            changed = _cleanup_claude_code(dry_run)
-            any_changes = any_changes or changed
-
-        elif target in ("kiro", "kiro-cli"):
-            changed = _cleanup_kiro(dry_run)
-            any_changes = any_changes or changed
-
-        elif target == "cursor":
-            changed = _cleanup_cursor(dry_run)
-            any_changes = any_changes or changed
-
-        elif target == "codex":
-            changed = _cleanup_codex(dry_run)
-            any_changes = any_changes or changed
-
-        elif target == "copilot":
-            changed = _cleanup_copilot(dry_run)
-            any_changes = any_changes or changed
-
-        elif target == "copilot-cli":
-            changed = _cleanup_copilot_cli(dry_run)
-            any_changes = any_changes or changed
-
-        elif target == "opencode":
-            changed = _cleanup_opencode(dry_run)
-            any_changes = any_changes or changed
-
-        else:
+        try:
+            changed = get_adapter(target).cleanup_hooks(dry_run)
+        except KeyError:
             rprint(f"[yellow]Unknown harness: {target}[/yellow]")
+            continue
+        any_changes = changed or any_changes
 
     if any_changes and not dry_run:
         rprint("\n[green]✓ Cleanup complete.[/green] Restart your harness sessions to take effect.")
@@ -957,18 +934,10 @@ def _backup_config(config_path: Path) -> Path:
 
 
 def _parse_mcp_servers(config_data: dict, harness: str) -> dict[str, dict]:
-    """Extract MCP servers dict from harness config using registry-defined key."""
+    """Extract MCP servers through the harness adapter."""
     optic.trace("config_data={}, harness={}", config_data, harness)
-    key = get_mcp_servers_key(harness)
-    if key == "mcp.servers":
-        return config_data.get("mcp", {}).get("servers", {})
-    if key == "mcp":
-        return config_data.get("mcp", {})
-    if key == "servers":
-        return config_data.get("servers", config_data.get("mcpServers", {}))
-    if harness == "copilot-cli":
-        return config_data.get("mcpServers", {})
-    return config_data.get(key, config_data.get("servers", {}))
+    ensure_loaded()
+    return get_adapter(harness).extract_mcp_servers(config_data)
 
 
 def _shim_config_file(config_path: Path, harness: str, dry_run: bool) -> int:
@@ -1061,33 +1030,8 @@ def doctor_patch(
     for target in targets:
         # ── Hooks ──
         if do_hooks:
-            if target == "claude-code":
-                changed = _patch_claude_code(dry_run)
-                any_changes = any_changes or changed
-            elif target == "kiro":
-                changed = _patch_kiro(dry_run)
-                any_changes = any_changes or changed
-            elif target == "cursor":
-                changed = _patch_cursor(dry_run)
-                any_changes = any_changes or changed
-            elif target == "pi":
-                changed = _patch_pi(dry_run)
-                any_changes = any_changes or changed
-            elif target == "codex":
-                changed = _patch_codex(dry_run)
-                any_changes = any_changes or changed
-            elif target == "copilot":
-                changed = _patch_copilot(dry_run)
-                any_changes = any_changes or changed
-            elif target == "copilot-cli":
-                changed = _patch_copilot_cli(dry_run)
-                any_changes = any_changes or changed
-            elif target == "opencode":
-                changed = _patch_opencode(dry_run)
-                any_changes = any_changes or changed
-            elif target == "antigravity":
-                changed = _patch_antigravity(dry_run)
-                any_changes = any_changes or changed
+            ensure_loaded()
+            any_changes = get_adapter(target).patch_hooks(dry_run) or any_changes
 
         # ── Shims (all harnesses with home MCP config) ──
         if do_shims:

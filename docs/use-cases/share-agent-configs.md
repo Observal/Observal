@@ -88,7 +88,7 @@ observal agent pull <agent-id> --harness claude-code --tools Read,Write,Bash
 
 ## What portability actually means
 
-The harness feature matrix (defined in `observal_cli/harness_registry.py`) controls what each harness supports. If an agent uses skills and the target harness doesn't have skills, the installer:
+The harness feature matrix (defined in `packages/observal-shared/observal_shared/harness_registry.py`) controls what each harness supports. If an agent uses skills and the target harness doesn't have skills, the installer:
 
 * Installs the compatible parts cleanly
 * Warns about the unsupported parts

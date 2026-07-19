@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Verify that observal_cli.constants and harness_registry stay in sync with server."""
+"""Verify that duplicated CLI and server constants stay in sync."""
 
 import importlib
 
@@ -48,22 +48,3 @@ def test_harness_capability_matrix_match():
         assert server_val[harness] == cli_val[harness], (
             f"HARNESS_CAPABILITIES[{harness!r}] mismatch: server={server_val[harness]!r}, cli={cli_val[harness]!r}"
         )
-
-
-def test_harness_registry_match():
-    """HARNESS_REGISTRY must be harnessntical between server and CLI."""
-    server_reg = importlib.import_module("schemas.harness_registry")
-    cli_reg = importlib.import_module("observal_cli.harness_registry")
-    assert server_reg.HARNESS_REGISTRY.keys() == cli_reg.HARNESS_REGISTRY.keys(), (
-        f"HARNESS_REGISTRY key mismatch: "
-        f"server={sorted(server_reg.HARNESS_REGISTRY.keys())}, "
-        f"cli={sorted(cli_reg.HARNESS_REGISTRY.keys())}"
-    )
-    for harness in server_reg.HARNESS_REGISTRY:
-        server_spec = server_reg.HARNESS_REGISTRY[harness]
-        cli_spec = cli_reg.HARNESS_REGISTRY[harness]
-        for key in server_spec:
-            assert key in cli_spec, f"HARNESS_REGISTRY[{harness!r}] missing key {key!r} in CLI"
-            assert server_spec[key] == cli_spec[key], (
-                f"HARNESS_REGISTRY[{harness!r}][{key!r}] mismatch: server={server_spec[key]!r}, cli={cli_spec[key]!r}"
-            )

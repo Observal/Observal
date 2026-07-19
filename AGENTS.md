@@ -65,7 +65,7 @@ tests/e2e/             Playwright (19 specs)
 
 The codebase follows a strict adapter pattern for harness-specific logic. This is the most important architectural decision:
 
-**One adapter per harness, on both sides.** CLI adapters handle scanning and hook detection (`observal_cli/harness/<name>.py`). Server adapters handle config file generation (`observal-server/services/harness/<name>.py`). The harness registry (`harness_registry.py`, mirrored on both sides) defines paths, keys, features, and event maps.
+**One adapter per harness, on both sides.** CLI adapters handle scanning and hook detection (`observal_cli/harness/<name>.py`). Server adapters handle config file generation (`observal-server/services/harness/<name>.py`). The shared harness registry (`packages/observal-shared/observal_shared/harness_registry.py`) defines paths, keys, features, and event maps for both sides.
 
 **No if/elif chains for harness logic.** If you need harness-specific behavior, it goes in the adapter. The orchestrators (`cmd_scan.py`, `agent_builder.py`, `cmd_doctor.py`) call adapters via the registry, never with conditionals.
 

@@ -5,12 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for agent_config_generator and agent_builder harness generation.
-
-Covers the server-side code that converts an Agent model into
-harness-specific config files (rules, frontmatter, MCP configs) and
-the manifest-based builder that does the same from AgentManifest.
-"""
+"""Tests for canonical harness config generation."""
 
 from __future__ import annotations
 
@@ -20,12 +15,6 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-from services.agent_builder import (
-    AgentManifest,
-    ManifestComponent,
-    ManifestComponents,
-    generate_harness_agent_profiles,
-)
 from services.harness import generate_agent_config
 from services.harness.helpers import (
     _build_rules_content,
@@ -61,31 +50,6 @@ def _make_agent(
     agent.components = components or []
     agent.external_mcps = external_mcps or []
     return agent
-
-
-def _make_manifest(
-    name: str = "test-agent",
-    description: str = "A test agent",
-    prompt: str = "You are helpful.",
-    model_name: str = "claude-sonnet-4",
-    mcps: list[ManifestComponent] | None = None,
-    skills: list[ManifestComponent] | None = None,
-    hooks: list[ManifestComponent] | None = None,
-    prompts: list[ManifestComponent] | None = None,
-) -> AgentManifest:
-    return AgentManifest(
-        name=name,
-        version="1.0.0",
-        description=description,
-        prompt=prompt,
-        model_name=model_name,
-        components=ManifestComponents(
-            mcps=mcps or [],
-            skills=skills or [],
-            hooks=hooks or [],
-            prompts=prompts or [],
-        ),
-    )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -555,14 +519,12 @@ class TestExternalMcps:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# 11. generate_agent_config — MCP listings with Claude Code shim fallback
+# 11. generate_agent_config: MCP listings through the Claude Code adapter
 # ═══════════════════════════════════════════════════════════════════
 
 
-class TestMcpListingClaudeCodeFallback:
-    def test_builds_shim_entry_when_generate_config_lacks_mcpservers(self):
-        """When generate_config returns shell commands (no mcpServers key),
-        the Claude Code path should build shim entries directly."""
+class TestMcpListingClaudeCodeAdapter:
+    def test_builds_shim_entry(self):
         comp_id = uuid.uuid4()
         listing = MagicMock()
         listing.name = "my-mcp"
@@ -575,26 +537,12 @@ class TestMcpListingClaudeCodeFallback:
         listing.auto_approve = None
         listing.environment_variables = []
 
-        comp = _make_component("mcp", comp_id)
-        agent = _make_agent(components=[comp])
-
-        # Mock generate_config to return a shell-command dict (no mcpServers)
-        from unittest.mock import patch
-
-        with patch(
-            "services.harness.helpers.generate_config",
-            return_value={"command": "observal-shim", "args": ["--mcp-id", str(comp_id)]},
-        ):
-            cfg = generate_agent_config(
-                agent,
-                "claude-code",
-                mcp_listings={comp_id: listing},
-            )
+        agent = _make_agent(components=[_make_component("mcp", comp_id)])
+        cfg = generate_agent_config(agent, "claude-code", mcp_listings={comp_id: listing})
 
         content = cfg["agent_profile"]["content"]
         parts = content.split("---", 2)
         fm = yaml.safe_load(parts[1])
-        assert "mcpServers" in fm
         assert "my-mcp" in fm["mcpServers"]
         assert len(cfg["mcp_setup_commands"]) == 1
 
@@ -617,153 +565,6 @@ class TestNameSanitizationInOutput:
         cfg = generate_agent_config(agent, "kiro")
         path = cfg["agent_profile"]["path"]
         assert " " not in path
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 13. Agent Builder — generate_harness_agent_profiles (manifest-based)
-# ═══════════════════════════════════════════════════════════════════
-
-
-class TestBuilderClaudeCode:
-    def test_path_under_agents(self):
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, "claude-code")
-        paths = [f.path for f in result.files]
-        assert any(".claude/agents/" in p for p in paths)
-
-    def test_yaml_frontmatter_present(self):
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, "claude-code")
-        md_file = next(f for f in result.files if f.format == "markdown")
-        content = md_file.content
-        assert content.startswith("---\n")
-        parts = content.split("---", 2)
-        fm = yaml.safe_load(parts[1])
-        assert fm["name"] == "test-agent"
-
-    def test_mcpservers_in_frontmatter_when_mcps_present(self):
-        manifest = _make_manifest(
-            mcps=[ManifestComponent(name="my-srv", version="1.0.0", git_url="https://example.com")]
-        )
-        result = generate_harness_agent_profiles(manifest, "claude-code")
-        md_file = next(f for f in result.files if f.format == "markdown")
-        parts = md_file.content.split("---", 2)
-        fm = yaml.safe_load(parts[1])
-        assert "mcpServers" in fm
-        assert "my-srv" in fm["mcpServers"]
-
-    def test_setup_commands_generated(self):
-        manifest = _make_manifest(
-            mcps=[ManifestComponent(name="my-srv", version="1.0.0", git_url="https://example.com")]
-        )
-        result = generate_harness_agent_profiles(manifest, "claude-code")
-        assert len(result.setup_commands) == 1
-        assert result.setup_commands[0][:4] == ["claude", "mcp", "add", "my-srv"]
-
-
-class TestBuilderCursor:
-    def test_files_include_subagent_and_mcp_json(self):
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, "cursor")
-        paths = [f.path for f in result.files]
-        assert any(".cursor/agents/" in p for p in paths)
-        assert not any(".cursor/rules/" in p for p in paths)
-        assert any("mcp.json" in p for p in paths)
-
-
-class TestBuilderKiro:
-    def test_json_agent_profile(self):
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, "kiro")
-        json_file = next(f for f in result.files if f.format == "json")
-        assert "~/.kiro/agents/" in json_file.path
-        assert json_file.content["name"] == "test-agent"
-
-
-class TestBuilderCodex:
-    def test_agent_path(self):
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, "codex")
-        paths = [f.path for f in result.files]
-        assert ".codex/agents/test-agent.toml" in paths
-
-    def test_codex_only_agent_without_otlp_url(self):
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, "codex")
-        paths = [f.path for f in result.files]
-        assert ".codex/agents/test-agent.toml" in paths
-        assert len(paths) == 1
-
-
-class TestBuilderCopilot:
-    def test_rules_path(self):
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, "copilot")
-        paths = [f.path for f in result.files]
-        assert ".github/agents/test-agent.agent.md" in paths
-
-    def test_mcp_json_path(self):
-        manifest = _make_manifest(
-            mcps=[ManifestComponent(name="my-srv", version="1.0.0", git_url="https://a.com")],
-        )
-        result = generate_harness_agent_profiles(manifest, "copilot")
-        paths = [f.path for f in result.files]
-        assert ".vscode/mcp.json" in paths
-
-    def test_mcp_config_uses_servers_key(self):
-        manifest = _make_manifest(
-            mcps=[ManifestComponent(name="my-srv", version="1.0.0", git_url="https://a.com")],
-        )
-        result = generate_harness_agent_profiles(manifest, "copilot")
-        mcp_file = next(f for f in result.files if f.path == ".vscode/mcp.json")
-        content = mcp_file.content
-        assert "servers" in content
-        assert "mcpServers" not in content
-
-    def test_mcp_entries_have_type_stdio(self):
-        manifest = _make_manifest(
-            mcps=[ManifestComponent(name="my-srv", version="1.0.0", git_url="https://a.com")],
-        )
-        result = generate_harness_agent_profiles(manifest, "copilot")
-        mcp_file = next(f for f in result.files if f.path == ".vscode/mcp.json")
-        entry = mcp_file.content["servers"]["my-srv"]
-        assert entry["type"] == "stdio"
-        assert entry["command"] == "observal-shim"
-
-    def test_no_mcp_file_when_no_mcp_components(self):
-        manifest = _make_manifest()
-        result = generate_harness_agent_profiles(manifest, "copilot")
-        paths = [f.path for f in result.files]
-        assert ".vscode/mcp.json" not in paths
-
-
-class TestBuilderUnsupportedIde:
-    def test_raises_for_unknown_harness(self):
-        import pytest
-
-        manifest = _make_manifest()
-        with pytest.raises(ValueError, match="Unsupported harness"):
-            generate_harness_agent_profiles(manifest, "notepad")
-
-
-class TestBuilderRulesMarkdown:
-    def test_prompt_included_in_rules(self):
-        manifest = _make_manifest(prompt="Be concise and helpful.")
-        result = generate_harness_agent_profiles(manifest, "cursor")
-        md_file = next(f for f in result.files if f.format == "markdown")
-        assert "Be concise and helpful." in md_file.content
-
-    def test_component_summaries_in_rules(self):
-        manifest = _make_manifest(
-            mcps=[ManifestComponent(name="srv-a", version="1.0.0", git_url="https://a.com", description="Server A")],
-            skills=[ManifestComponent(name="skill-b", version="2.0.0", git_url="https://b.com", slash_command="doit")],
-        )
-        result = generate_harness_agent_profiles(manifest, "cursor")
-        md_file = next(f for f in result.files if f.format == "markdown")
-        assert "## MCP Servers" in md_file.content
-        assert "**srv-a**" in md_file.content
-        assert "## Skills" in md_file.content
-        assert "**skill-b**" in md_file.content
 
 
 # ═══════════════════════════════════════════════════════════════════

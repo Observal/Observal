@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from observal_shared.harness_registry import HARNESS_REGISTRY
 from schemas.constants import HARNESS_CAPABILITY_NAMES
-from schemas.harness_registry import HARNESS_REGISTRY
 
 REQUIRED_KEYS = {
     "display_name",

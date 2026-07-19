@@ -18,7 +18,7 @@ import services.dynamic_settings as ds_mod
 from api.deps import get_db
 from api.ratelimit import limiter
 from models.enterprise_config import EnterpriseConfig
-from schemas.harness_registry import HARNESS_REGISTRY
+from observal_shared.harness_registry import HARNESS_REGISTRY
 from schemas.sso_health import all_pass
 from services.oidc_health import run_oidc_checks
 from services.saml_health import run_saml_health_probe

@@ -205,5 +205,20 @@ class CopilotAdapter(BaseAdapter):
     def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
         return super().shim_status(mcps)
 
+    def rewrite_hooks(self, content: dict, agent_id: str) -> dict:
+        from observal_cli.cmd_pull import _rewrite_copilot_cli_hooks
+
+        return _rewrite_copilot_cli_hooks(content, agent_id=agent_id)
+
+    def patch_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _patch_copilot
+
+        return _patch_copilot(dry_run)
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _cleanup_copilot
+
+        return _cleanup_copilot(dry_run)
+
 
 register_adapter(CopilotAdapter())

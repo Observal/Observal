@@ -15,20 +15,41 @@ from __future__ import annotations
 
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from services.harness import ConfigContext, register_adapter
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import BaseHarnessAdapter, ConfigContext, McpConfigContext, register_adapter
 from services.harness.helpers import (
     _collect_hook_script_files,
     _collect_opencode_hook_plugins,
 )
 
 
-class OpenCodeAdapter:
+class OpenCodeAdapter(BaseHarnessAdapter):
     """OpenCode harness adapter."""
 
     @property
     def harness_name(self) -> str:
         return "opencode"
+
+    def agent_mcp_entry(self, ctx: McpConfigContext) -> dict:
+        if ctx.url:
+            entry: dict = {"type": "remote", "url": ctx.url}
+            if ctx.headers:
+                entry["headers"] = ctx.headers
+            if ctx.server_env:
+                entry["env"] = ctx.server_env
+            return entry
+        if ctx.proxy_url:
+            return {"type": "remote", "url": ctx.proxy_url, "env": ctx.server_env}
+        entry = {"type": "local", "command": ["observal-shim", *ctx.shim_args]}
+        if ctx.server_env:
+            entry["environment"] = ctx.server_env
+        return entry
+
+    def format_mcp_config(self, ctx: McpConfigContext) -> dict:
+        return {"mcp": {ctx.name: self.agent_mcp_entry(ctx)}}
+
+    def format_model(self, model: str, provider: str) -> str:
+        return model if "/" in model else f"{provider}/{model}"
 
     def format_config(self, ctx: ConfigContext) -> dict:
         optic.trace("ctx={}", ctx)

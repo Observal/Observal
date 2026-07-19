@@ -10,7 +10,7 @@ import json
 import pytest
 
 from observal_cli.harness import HookSpec, ScanResult, ensure_loaded, get_adapter
-from schemas.harness_registry import HARNESS_REGISTRY
+from observal_shared.harness_registry import HARNESS_REGISTRY
 
 
 @pytest.fixture(autouse=True)

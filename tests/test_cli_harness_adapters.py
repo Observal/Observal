@@ -18,7 +18,7 @@ from observal_cli.harness import (
     get_adapter,
     get_all_adapters,
 )
-from observal_cli.harness_registry import HARNESS_REGISTRY
+from observal_shared.harness_registry import HARNESS_REGISTRY
 
 
 @pytest.fixture(autouse=True)

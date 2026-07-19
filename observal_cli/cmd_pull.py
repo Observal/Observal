@@ -24,9 +24,10 @@ from loguru import logger as optic
 from rich import print as rprint
 
 from observal_cli import client, config
-from observal_cli.harness_registry import get_scope_aware_harnesses
+from observal_cli.harness import ensure_loaded, get_adapter
 from observal_cli.prompts import select_one, text_input
 from observal_cli.render import spinner
+from observal_shared.harness_registry import get_scope_aware_harnesses
 
 # Hook script names used as placeholders in server-generated agent configs.
 # Resolved to absolute paths client-side before writing to disk.
@@ -460,18 +461,8 @@ def _agent_saved_model(agent_detail: dict | None, harness: str) -> str | None:
     already chosen a model.
     """
     optic.trace("agent_detail={}, harness={}", agent_detail, harness)
-    if not agent_detail:
-        return None
-    raw = agent_detail.get("models_by_harness") if isinstance(agent_detail, dict) else None
-    if isinstance(raw, dict):
-        candidate = raw.get(harness)
-        if isinstance(candidate, str) and candidate.strip():
-            return candidate.strip()
-    if harness == "claude-code":
-        legacy = agent_detail.get("model_name") if isinstance(agent_detail, dict) else None
-        if isinstance(legacy, str) and legacy.strip():
-            return legacy.strip()
-    return None
+    ensure_loaded()
+    return get_adapter(harness).saved_model(agent_detail)
 
 
 def _collect_install_options(
@@ -499,8 +490,8 @@ def _collect_install_options(
     optic.trace("harness={}", harness)
     import sys
 
-    from observal_cli.harness_registry import get_default_scope, has_model_selection
     from observal_cli.render import format_model as _format_model
+    from observal_shared.harness_registry import get_default_scope, has_model_selection
 
     opts: dict = {}
     interactive = sys.stdin.isatty() and not no_prompt
@@ -553,9 +544,8 @@ def _collect_install_options(
                         opts["model"] = model_id
                         break
 
-    if harness == "claude-code" and tools:
-        opts["tools"] = tools
-
+    ensure_loaded()
+    get_adapter(harness).apply_install_options(opts, tools)
     return opts
 
 
@@ -618,6 +608,8 @@ def register_pull(app: typer.Typer):
         """
         resolved = config.resolve_alias(agent_id)
         target_dir = Path(directory).resolve()
+        ensure_loaded()
+        adapter = get_adapter(harness)
 
         # Parse --env flags into overrides dict
         env_overrides: dict[str, str] = {}
@@ -713,14 +705,7 @@ def register_pull(app: typer.Typer):
                     raw,
                 )
                 content = json.loads(raw)
-                # Copilot project hooks are one file per project; stamp the
-                # pulled agent's UUID so sessions attribute deterministically
-                # instead of relying on best-effort cwd matching.
-                if harness in ("copilot", "copilot-cli"):
-                    content = _rewrite_copilot_cli_hooks(
-                        content,
-                        agent_id=str(agent_detail.get("id", resolved)),
-                    )
+                content = adapter.rewrite_hooks(content, agent_id=str(agent_detail.get("id", resolved)))
             if dry_run:
                 written.append((str(p), "would write"))
             else:
@@ -733,15 +718,12 @@ def register_pull(app: typer.Typer):
             # Rewrite hook commands to use the current Python interpreter
             # so they work regardless of which directory Kiro is launched from.
             if isinstance(agent_profile.get("content"), dict):
-                agent_profile["content"] = _rewrite_kiro_hooks(
-                    agent_profile["content"],
-                    agent_id=str(agent_detail.get("id", resolved)),
+                agent_profile["content"] = adapter.rewrite_agent_profile(
+                    agent_profile["content"], agent_id=str(agent_detail.get("id", resolved))
                 )
             elif isinstance(agent_profile.get("content"), str):
                 agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
-            # Cursor only reads .cursor/agents/ from the project directory,
-            # never from ~/.cursor/agents/, so always resolve to project scope.
-            agent_profile_allow_home = is_user_scope and harness != "cursor"
+            agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
             p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
             if dry_run:
                 written.append((str(p), "would write"))
@@ -907,18 +889,7 @@ def register_pull(app: typer.Typer):
             except Exception:
                 pass  # Never block pull on snapshot failure
 
-            # For harnesses without a project-scoped cwd (e.g. pi), write the binding
-            # into the global config so the telemetry extension can attribute sessions.
-            if harness == "pi":
-                from observal_cli.config import load, save
-
-                cfg = load()
-                cfg["active_agent"] = {
-                    "id": str(agent_uuid),
-                    "name": agent_detail.get("name", resolved),
-                    "version": agent_version,
-                }
-                save(cfg)
+            adapter.persist_active_agent(str(agent_uuid), agent_detail.get("name", resolved), agent_version)
 
             from observal_cli.audit import emit_cli_audit
 

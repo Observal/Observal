@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from services.harness import ConfigContext, register_adapter
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import BaseHarnessAdapter, ConfigContext, register_adapter
 from services.harness.helpers import (
     _collect_hook_script_files,
     _cursor_hooks_config,
@@ -16,12 +16,19 @@ from services.harness.helpers import (
 )
 
 
-class CursorAdapter:
+class CursorAdapter(BaseHarnessAdapter):
     """Cursor harness adapter."""
 
     @property
     def harness_name(self) -> str:
         return "cursor"
+
+    def format_hook_install_snippet(self, event: str, handler_type: str, command: str, timeout: int | None) -> dict:
+        return {"version": 1, "hooks": {event: [{"command": command}]}}
+
+    def format_hook_telemetry(self, hook_listing, server_url: str, platform: str) -> dict:
+        entry = {"type": "http", "url": f"{server_url}/api/v1/telemetry/hooks", "timeout": 10}
+        return {"hooks": {str(hook_listing.event): [{"matcher": "*", "hooks": [entry]}]}}
 
     def format_config(self, ctx: ConfigContext) -> dict:
         optic.trace("ctx={}", ctx)

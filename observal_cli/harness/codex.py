@@ -205,5 +205,21 @@ class CodexAdapter(BaseAdapter):
     def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
         return super().shim_status(mcps)
 
+    def extract_mcp_servers(self, config: dict) -> dict:
+        mcp = config.get("mcp", {})
+        if isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict):
+            return mcp["servers"]
+        return super().extract_mcp_servers(config)
+
+    def patch_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _patch_codex
+
+        return _patch_codex(dry_run)
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _cleanup_codex
+
+        return _cleanup_codex(dry_run)
+
 
 register_adapter(CodexAdapter())

@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 
-from schemas.harness_registry import HARNESS_REGISTRY
+from observal_shared.harness_registry import HARNESS_REGISTRY
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 
 

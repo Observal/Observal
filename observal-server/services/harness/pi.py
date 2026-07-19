@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from services.harness import ConfigContext, register_adapter
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import BaseHarnessAdapter, ConfigContext, register_adapter
 
 
-class PiAdapter:
+class PiAdapter(BaseHarnessAdapter):
     """Pi harness adapter - harness-centric config generation."""
 
     @property

@@ -20,7 +20,7 @@ from models.hook import HookListing
 from models.mcp import McpListing
 from models.prompt import PromptListing
 from models.skill import SkillListing
-from schemas.harness_registry import HARNESS_REGISTRY
+from observal_shared.harness_registry import HARNESS_REGISTRY
 from services.harness import generate_agent_config
 
 if TYPE_CHECKING:

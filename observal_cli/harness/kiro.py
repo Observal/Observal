@@ -304,5 +304,23 @@ class KiroAdapter(BaseAdapter):
 
         return ScanResult(mcps=deduped, skills=skills, hooks=hooks, agents=agents)
 
+    def rewrite_agent_profile(self, content: dict, agent_id: str) -> dict:
+        from observal_cli.cmd_pull import _rewrite_kiro_hooks
+
+        return _rewrite_kiro_hooks(content, agent_id=agent_id)
+
+    def patch_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _patch_kiro
+
+        return _patch_kiro(dry_run)
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _cleanup_kiro
+
+        return _cleanup_kiro(dry_run)
+
+    def requires_explicit_agent_id(self) -> bool:
+        return True
+
 
 register_adapter(KiroAdapter())

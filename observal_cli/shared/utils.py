@@ -58,12 +58,6 @@ def load_jsonc(path: Path) -> dict:
 # MCP server extraction
 # ---------------------------------------------------------------------------
 
-# harness-specific top-level keys for MCP server maps.
-_MCP_KEY_BY_harness: dict[str, str] = {
-    "copilot": "servers",
-    "opencode": "mcp",
-}
-
 
 def resolve_wsl_windows_home() -> Path | None:
     """Return the Windows user home as a WSL path, or None if not on WSL.
@@ -154,27 +148,19 @@ def extract_mcp_servers(config: dict, harness: str = "") -> dict:
     if not isinstance(config, dict):
         raise TypeError(f"extract_mcp_servers expects dict, got {type(config).__name__!r}")
 
-    # Codex: nested mcp.servers
-    if harness == "codex":
-        mcp_block = config.get("mcp", {})
-        if isinstance(mcp_block, dict) and "servers" in mcp_block:
-            return mcp_block["servers"]
+    if not harness:
+        if isinstance(config.get("mcpServers"), dict):
+            return config["mcpServers"]
+        return {
+            name: entry
+            for name, entry in config.items()
+            if isinstance(entry, dict) and any(field in entry for field in ("command", "url", "type"))
+        }
 
-    # harness-specific top-level key
-    ide_key = _MCP_KEY_BY_harness.get(harness)
-    if ide_key and ide_key in config:
-        return config[ide_key]
+    from observal_cli.harness import ensure_loaded, get_adapter
 
-    # Default: mcpServers
-    if "mcpServers" in config:
-        return config["mcpServers"]
-
-    # Fallback: scan for server-shaped values
-    servers = {}
-    for key, val in config.items():
-        if isinstance(val, dict) and ("command" in val or "url" in val or "type" in val):
-            servers[key] = val
-    return servers
+    ensure_loaded()
+    return get_adapter(harness).extract_mcp_servers(config)
 
 
 # ---------------------------------------------------------------------------

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from services.harness import ConfigContext, register_adapter
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import BaseHarnessAdapter, ConfigContext, McpConfigContext, register_adapter
 from services.harness.helpers import (
     _collect_hook_script_files,
     _generate_prompt_files,
@@ -45,12 +45,30 @@ def _copilot_cli_hooks_config() -> dict:
     return {"version": 1, "hooks": hooks}
 
 
-class CopilotCliAdapter:
+class CopilotCliAdapter(BaseHarnessAdapter):
     """GitHub Copilot CLI harness adapter."""
 
     @property
     def harness_name(self) -> str:
         return "copilot-cli"
+
+    def format_hook_install_snippet(self, event: str, handler_type: str, command: str, timeout: int | None) -> dict:
+        return {"hooks": {event: [{"command": command}]}}
+
+    def format_hook_component(self, command: str) -> dict:
+        return {"type": "command", "command": command}
+
+    def emits_prompt_files(self) -> bool:
+        return True
+
+    def format_mcp_config(self, ctx: McpConfigContext) -> dict:
+        if ctx.url:
+            entry = {**ctx.standard_entry(), "tools": ["*"]}
+        elif ctx.proxy_url:
+            entry = {"type": "sse", "url": ctx.proxy_url, "env": ctx.server_env, "tools": ["*"]}
+        else:
+            entry = {"type": "stdio", **ctx.standard_entry(), "tools": ["*"]}
+        return {"mcpServers": {ctx.name: entry}}
 
     def format_config(self, ctx: ConfigContext) -> dict:
         optic.trace("ctx={}", ctx)

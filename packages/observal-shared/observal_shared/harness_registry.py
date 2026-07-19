@@ -3,38 +3,17 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Centralized harness registry -- CLI mirror of schemas/harness_registry.py.
-
-This is kept in sync with ``observal-server/schemas/harness_registry.py``
-by ``tests/test_constants_sync.py``.  When adding a new harness, update
-the server copy first, then mirror the change here.
-"""
+"""Canonical harness metadata shared by the CLI and server."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-
-def supported_model_ids(harness: str) -> list[str]:
-    try:
-        from observal_shared.harness_models import supported_model_ids as _ids
-
-        return _ids(harness)
-    except ModuleNotFoundError:
-        path = (
-            Path(__file__).resolve().parents[1]
-            / "packages/observal-shared/observal_shared/harness_models"
-            / f"{harness}.json"
-        )
-        return [row["id"] for row in json.loads(path.read_text()).get("models", [])]
-
+from .harness_models import supported_model_ids
 
 HARNESS_REGISTRY: dict[str, dict] = {
     "cursor": {
         "display_name": "Cursor",
-        "session_parser": "cursor",
         "capabilities": {"hooks", "mcp_servers"},
+        "session_parser": "cursor",
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.cursor/agents/)", "user (~/.cursor/agents/)"),
@@ -72,8 +51,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
     },
     "kiro": {
         "display_name": "Kiro",
-        "session_parser": "kiro",
         "capabilities": {"hooks", "mcp_servers"},
+        "session_parser": "kiro",
         "scopes": ["project", "user"],
         "default_scope": "user",
         "scope_labels": ("project (.kiro/agents/)", "user (~/.kiro/agents/)"),
@@ -110,8 +89,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
     },
     "claude-code": {
         "display_name": "Claude Code",
-        "session_parser": "claude-code",
         "capabilities": {"skills", "hooks", "mcp_servers"},
+        "session_parser": "claude-code",
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.claude/agents/)", "user (~/.claude/agents/)"),
@@ -150,8 +129,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
     },
     "codex": {
         "display_name": "Codex",
-        "session_parser": "codex",
         "capabilities": {"mcp_servers", "hooks", "skills"},
+        "session_parser": "codex",
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.codex/agents/)", "user (~/.codex/agents/)"),
@@ -187,8 +166,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
     },
     "copilot": {
         "display_name": "Copilot",
-        "session_parser": "copilot-cli",
         "capabilities": {"mcp_servers", "hooks", "skills", "prompts"},
+        "session_parser": "copilot-cli",
         "scopes": ["project"],
         "default_scope": "project",
         "scope_labels": None,
@@ -223,8 +202,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
     },
     "copilot-cli": {
         "display_name": "Copilot CLI",
-        "session_parser": "copilot-cli",
         "capabilities": {"mcp_servers", "hooks", "skills", "prompts"},
+        "session_parser": "copilot-cli",
         "scopes": ["project"],
         "default_scope": "project",
         "scope_labels": None,
@@ -447,10 +426,5 @@ def has_model_selection(harness: str) -> bool:
 
 
 def get_session_parser_id(harness: str) -> str:
-    """Return the session parser ID for an harness.
-
-    Raises KeyError for unknown harnesses. Callers must handle unrecognised harnesses
-    explicitly rather than silently falling back to a default parser.
-    """
-    entry = HARNESS_REGISTRY[harness]  # raises KeyError for unknown harness
-    return entry["session_parser"]  # raises KeyError if entry has no parser
+    """Return the registered session parser ID for a harness."""
+    return HARNESS_REGISTRY[harness]["session_parser"]

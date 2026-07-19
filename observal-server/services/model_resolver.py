@@ -7,48 +7,26 @@
 
 from __future__ import annotations
 
-import re
+from observal_shared.harness_registry import HARNESS_REGISTRY, has_model_selection
+from services.harness import ensure_loaded, get_adapter
 
-from schemas.harness_registry import HARNESS_REGISTRY, has_model_selection
 
-# Pre-compiled pattern: claude-<family>-<major>-<minor><optional-date-suffix>
-# All digit groups are bounded to prevent polynomial backtracking on adversarial input.
-_KIRO_MODEL_RE = re.compile(r"^(claude-[a-z]+-\d{1,3})-(\d{1,3})(-\d{8})?$")
+def _adapter_for(harness: str):
+    ensure_loaded()
+    adapter = get_adapter(harness)
+    if adapter is None:
+        raise KeyError(harness)
+    return adapter
 
 
 def _format_for_harness(model: str, provider: str, harness: str) -> str:
-    if harness == "claude-code":
-        lowered = model.lower()
-        for alias in ("opus", "sonnet", "haiku"):
-            if alias in lowered:
-                return alias
-    if harness == "opencode":
-        return model if "/" in model else f"{provider}/{model}"
-    if harness == "kiro":
-        return kiro_model_format(model)
-    return model
-
-
-def kiro_model_format(model: str) -> str:
-    """Convert canonical dash-version model IDs to kiro's dot-version format.
-
-    Kiro uses dots for minor versions (e.g. claude-sonnet-4.5) while the
-    canonical catalog uses dashes (claude-sonnet-4-5). This handles any
-    Claude family name (sonnet, opus, haiku, fable, mythos, etc.).
-    """
-    m = _KIRO_MODEL_RE.match(model)
-    if m:
-        suffix = m.group(3) or ""
-        return f"{m.group(1)}.{m.group(2)}{suffix}"
-    return model
+    return _adapter_for(harness).format_model(model, provider)
 
 
 def _candidate_for_harness(harness: str, models_by_harness: dict | None, model_name: str | None) -> str | None:
     if models_by_harness and models_by_harness.get(harness):
         return models_by_harness[harness]
-    if harness == "claude-code" and model_name:
-        return model_name
-    return None
+    return _adapter_for(harness).default_model_candidate(model_name)
 
 
 def _provider_for(harness: str, model: str) -> str:

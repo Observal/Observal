@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from loguru import logger as optic
 
-from schemas.harness_registry import HARNESS_REGISTRY
-from services.harness import ConfigContext, register_adapter
+from observal_shared.harness_registry import HARNESS_REGISTRY
+from services.harness import BaseHarnessAdapter, ConfigContext, McpConfigContext, register_adapter
 from services.harness.helpers import (
     _claude_code_hooks_frontmatter_lines,
     _collect_hook_script_files,
@@ -16,12 +16,69 @@ from services.harness.helpers import (
 )
 
 
-class ClaudeCodeAdapter:
+class ClaudeCodeAdapter(BaseHarnessAdapter):
     """Claude Code harness adapter."""
 
     @property
     def harness_name(self) -> str:
         return "claude-code"
+
+    def format_hook_install_snippet(self, event: str, handler_type: str, command: str, timeout: int | None) -> dict:
+        entry: dict = {"type": handler_type, "command": command}
+        if timeout:
+            entry["timeout"] = timeout
+        return {"hooks": {event: [{"matcher": "*", "hooks": [entry]}]}}
+
+    def hook_install_notes(self) -> list[str]:
+        return ["Also works in Cursor via Third Party Hooks (enable in Cursor Settings → Features)."]
+
+    def format_hook_telemetry(self, hook_listing, server_url: str, platform: str) -> dict:
+        entry = {
+            "type": "http",
+            "url": f"{server_url}/api/v1/telemetry/hooks",
+            "timeout": 10,
+            "allowedEnvVars": ["OBSERVAL_API_KEY"],
+        }
+        return {"hooks": {str(hook_listing.event): [{"matcher": "*", "hooks": [entry]}]}}
+
+    def skill_hook_extra(self) -> dict:
+        return {"allowedEnvVars": ["OBSERVAL_ACCESS_TOKEN"]}
+
+    def skill_frontmatter_extra(self, slash_command: str | None) -> dict:
+        if not slash_command:
+            return {}
+        from schemas.skill_commands import normalize_slash_command
+
+        return {"command": f"/{normalize_slash_command(slash_command)}"}
+
+    def format_mcp_config(self, ctx: McpConfigContext) -> dict:
+        if ctx.url:
+            entry = ctx.standard_entry()
+            return {
+                "command": ["claude", "mcp", "add", ctx.name, "--url", ctx.url],
+                "type": "shell_command",
+                "claude_settings_snippet": {"env": ctx.server_env} if ctx.server_env else {},
+                "mcpServers": {ctx.name: entry},
+            }
+        if ctx.proxy_url:
+            return {
+                "command": ["claude", "mcp", "add", ctx.name, "--url", ctx.proxy_url],
+                "type": "shell_command",
+            }
+        return {
+            "command": ["claude", "mcp", "add", ctx.name, "--", "observal-shim", *ctx.shim_args],
+            "type": "shell_command",
+        }
+
+    def default_model_candidate(self, model_name: str | None) -> str | None:
+        return model_name
+
+    def format_model(self, model: str, provider: str) -> str:
+        lowered = model.lower()
+        for alias in ("opus", "sonnet", "haiku"):
+            if alias in lowered:
+                return alias
+        return model
 
     def format_config(self, ctx: ConfigContext) -> dict:
         optic.trace("ctx={}", ctx)

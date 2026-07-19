@@ -5,11 +5,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import re
+from typing import TYPE_CHECKING
 
 from loguru import logger as optic
 
 from models.mcp import McpListing
 from services.shared.utils import sanitize_name as _sanitize_name
+
+if TYPE_CHECKING:
+    from services.harness import McpConfigContext
 
 _SHELL_META_RE = re.compile(r"[|;&`><\n\r]|\$\(|\$\{")
 _DANGEROUS_CMD_RE = re.compile(
@@ -97,6 +101,46 @@ def _build_server_env(listing: McpListing, env_values: dict[str, str] | None = N
     return env
 
 
+def _build_mcp_context(
+    listing: McpListing,
+    *,
+    proxy_port: int | None = None,
+    env_values: dict[str, str] | None = None,
+    header_values: dict[str, str] | None = None,
+) -> "McpConfigContext":
+    """Normalize a listing before harness-specific formatting."""
+    from services.harness import McpConfigContext
+
+    name = _sanitize_name(listing.name)
+    server_env = _build_server_env(listing, env_values)
+    transport = (listing.transport or "").lower()
+    url = listing.url if listing.url and transport in ("sse", "streamable-http", "") else None
+    proxy_url = f"http://localhost:{proxy_port}" if proxy_port is not None and not url else None
+    shim_args: list[str] = []
+    if not url and not proxy_url:
+        run_cmd = _build_run_command(
+            name,
+            listing.framework,
+            listing.docker_image,
+            server_env,
+            stored_command=listing.command,
+            stored_args=listing.args,
+        )
+        shim_args = ["--mcp-id", str(listing.id), "--", *run_cmd]
+
+    return McpConfigContext(
+        name=name,
+        mcp_id=str(listing.id),
+        server_env=server_env,
+        headers=dict(header_values or {}),
+        transport=transport or "sse",
+        url=url,
+        proxy_url=proxy_url,
+        shim_args=shim_args,
+        auto_approve=list(listing.auto_approve or []),
+    )
+
+
 def generate_config(
     listing: McpListing,
     harness: str,
@@ -105,134 +149,18 @@ def generate_config(
     env_values: dict[str, str] | None = None,
     header_values: dict[str, str] | None = None,
 ) -> dict:
+    """Generate one MCP configuration through the canonical harness adapter."""
+    from services.harness import ensure_loaded, get_adapter
+
     optic.debug("generating MCP config for harness={}", harness)
-    name = _sanitize_name(listing.name)
-    mcp_id = str(listing.id)
-    server_env = _build_server_env(listing, env_values)
-
-    # SSE / streamable-http transport: point harness at the remote URL
-    if listing.url and (listing.transport or "").lower() in ("sse", "streamable-http", ""):
-        transport_type = (listing.transport or "sse").lower()
-        config: dict = {"type": transport_type, "url": listing.url}
-        if header_values:
-            config["headers"] = header_values
-        if server_env:
-            config["env"] = server_env
-        if listing.auto_approve:
-            config["autoApprove"] = listing.auto_approve
-        config["disabled"] = False
-
-        if harness == "claude-code":
-            return {
-                "command": ["claude", "mcp", "add", name, "--url", listing.url],
-                "type": "shell_command",
-                "claude_settings_snippet": {"env": server_env} if server_env else {},
-                "mcpServers": {name: config},
-            }
-        if harness == "copilot":
-            return {"mcpServers": {name: {**config, "type": transport_type}}}
-        if harness == "copilot-cli":
-            return {"mcpServers": {name: {**config, "type": transport_type, "tools": ["*"]}}}
-        if harness == "opencode":
-            opencode_config: dict = {"type": "remote", "url": listing.url}
-            if header_values:
-                opencode_config["headers"] = header_values
-            if server_env:
-                opencode_config["env"] = server_env
-            return {"mcp": {name: opencode_config}}
-        if harness == "codex":
-            codex_entry: dict = {"url": listing.url}
-            if header_values:
-                codex_entry["headers"] = header_values
-            if server_env:
-                codex_entry["env"] = server_env
-            return {
-                "mcp_servers": {name: codex_entry},
-            }
-        return {"mcpServers": {name: config}}
-
-    # HTTP proxy transport (existing): point harness at the proxy URL
-    if proxy_port is not None:
-        proxy_url = f"http://localhost:{proxy_port}"
-        if harness == "claude-code":
-            return {
-                "command": ["claude", "mcp", "add", name, "--url", proxy_url],
-                "type": "shell_command",
-            }
-        if harness == "codex":
-            return {
-                "mcp_servers": {name: {"url": proxy_url, "env": server_env}},
-            }
-        if harness == "copilot":
-            return {"mcpServers": {name: {"type": "sse", "url": proxy_url, "env": server_env}}}
-        if harness == "copilot-cli":
-            return {"mcpServers": {name: {"type": "sse", "url": proxy_url, "env": server_env, "tools": ["*"]}}}
-        if harness == "opencode":
-            return {"mcp": {name: {"type": "remote", "url": proxy_url, "env": server_env}}}
-        return {"mcpServers": {name: {"url": proxy_url, "env": server_env}}}
-
-    # Stdio transport: shim wraps the original command
-    run_cmd = _build_run_command(
-        name,
-        listing.framework,
-        listing.docker_image,
-        server_env,
-        stored_command=listing.command,
-        stored_args=listing.args,
+    ensure_loaded()
+    adapter = get_adapter(harness)
+    if adapter is None:
+        raise ValueError(f"No adapter registered for harness: {harness!r}")
+    ctx = _build_mcp_context(
+        listing,
+        proxy_port=proxy_port,
+        env_values=env_values,
+        header_values=header_values,
     )
-    shim_args = ["--mcp-id", mcp_id, "--", *run_cmd]
-
-    auto_approve_fields: dict = {}
-    if listing.auto_approve:
-        auto_approve_fields = {"autoApprove": listing.auto_approve, "disabled": False}
-
-    if harness == "claude-code":
-        return {
-            "command": ["claude", "mcp", "add", name, "--", "observal-shim", *shim_args],
-            "type": "shell_command",
-        }
-    if harness == "codex":
-        return {
-            "mcp_servers": {
-                name: {"command": "observal-shim", "args": shim_args, "env": server_env, **auto_approve_fields}
-            },
-        }
-
-    if harness == "copilot":
-        return {
-            "mcpServers": {
-                name: {
-                    "type": "stdio",
-                    "command": "observal-shim",
-                    "args": shim_args,
-                    "env": server_env,
-                    **auto_approve_fields,
-                }
-            },
-        }
-
-    if harness == "copilot-cli":
-        return {
-            "mcpServers": {
-                name: {
-                    "type": "stdio",
-                    "command": "observal-shim",
-                    "args": shim_args,
-                    "env": server_env,
-                    "tools": ["*"],
-                    **auto_approve_fields,
-                }
-            },
-        }
-
-    if harness == "opencode":
-        flat_cmd = ["observal-shim", *shim_args]
-        entry: dict = {"type": "local", "command": flat_cmd}
-        if server_env:
-            entry["environment"] = server_env
-        return {"mcp": {name: entry}}
-
-    # cursor, kiro: telemetry collected via observal-shim
-    return {
-        "mcpServers": {name: {"command": "observal-shim", "args": shim_args, "env": server_env, **auto_approve_fields}}
-    }
+    return adapter.format_mcp_config(ctx)

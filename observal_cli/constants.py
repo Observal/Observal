@@ -9,15 +9,15 @@
 Mirror of ``observal-server/schemas/constants.py``.
 A sync test (``tests/test_constants_sync.py``) ensures these stay in lockstep.
 
-harness-specific data is defined in ``observal_cli/harness_registry.py``
-(mirror of ``observal-server/schemas/harness_registry.py``).
+harness-specific data is defined in
+``observal_shared/harness_registry.py``.
 """
 
 from __future__ import annotations
 
 import re
 
-from observal_cli.harness_registry import get_harness_capability_matrix, get_valid_harnesses
+from observal_shared.harness_registry import get_harness_capability_matrix, get_valid_harnesses
 
 # ── Name validation ───────────────────────────────────────────
 AGENT_NAME_REGEX = re.compile(r"^[a-z0-9][a-z0-9_-]*$")

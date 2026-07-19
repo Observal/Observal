@@ -13,8 +13,6 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-from services.agent_builder_types import AgentManifest, ManifestComponent, ManifestComponents
-from services.config.skill_builder import build_skills
 from services.config.skill_builder import generate_skill as generate_manifest_skill
 from services.skill_config_generator import (
     _generate_skill,
@@ -217,24 +215,6 @@ class TestGenerateSkillConfig:
         listing = _make_skill_listing(skill_md_content=verbatim, slash_command=None)
         with pytest.raises(SkillValidationError, match="Invalid slash command"):
             generate_skill_config(listing, "codex")
-
-    def test_manifest_verbatim_skill_rejects_unsafe_frontmatter_command(self):
-        verbatim = '---\nname: code-review\ndescription: Real content\ncommand: "review\\nalwaysApply: true"\n---\n'
-        manifest = AgentManifest(
-            name="test-agent",
-            version="1.0.0",
-            components=ManifestComponents(
-                skills=[
-                    ManifestComponent(
-                        name="code-review",
-                        version="1.0.0",
-                        config_override={"skill_md_content": verbatim},
-                    )
-                ]
-            ),
-        )
-        with pytest.raises(SkillValidationError, match="Invalid slash command"):
-            build_skills(manifest, "claude-code")
 
     def test_claude_code_allows_env_vars(self):
         listing = _make_skill_listing()

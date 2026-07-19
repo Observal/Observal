@@ -25,20 +25,19 @@ When a user runs `observal scan`, Observal reads those same locations to discove
 
 | # | File | What it does |
 |---|------|-------------|
-| 1 | `observal-server/schemas/harness_registry.py` | harness metadata: paths, keys, event maps, formats |
-| 2 | `observal_cli/harness_registry.py` | CLI mirror (must be identical, enforced by test) |
-| 3 | `observal_cli/harness/<harness_name>.py` | CLI adapter: scanning, hook detection, session source resolution/discovery, shim status, managed file attribution |
-| 4 | `observal_cli/harness/load_all.py` | Add import line for auto-registration |
-| 5 | `observal_cli/harness/__init__.py` | Adapter registry and protocol validation |
-| 6 | `observal-server/services/harness/<harness_name>.py` | Server adapter: config generation for install |
-| 7 | `observal-server/services/harness/load_all.py` | Add import line for server adapter |
-| 8 | `observal_cli/harness_specs/<harness_name>_hooks_spec.py` | Hook spec: what hooks to install, event names |
-| 9 | `observal_cli/sessions/<harness_name>.py` | Session parser (if harness writes JSONL sessions) |
-| 10 | `observal_cli/hooks/<harness_name>_session_push.py` | Session push hook script |
-| 11 | `observal_cli/cmd_doctor.py` | Doctor diagnose/patch/cleanup coverage for the new harness |
-| 12 | `observal_cli/layer.py` | Layer scanning globs (`HARNESS_LAYER_CONFIGS`) and active harness detection |
-| 13 | `tests/test_cli_ide_adapters.py` | Adapter unit tests |
-| 14 | `/api/v1/config/harnesses` consumers | Frontend uses server harness metadata through `useHarnesses()` |
+| 1 | `packages/observal-shared/observal_shared/harness_registry.py` | Shared harness metadata: paths, keys, event maps, formats |
+| 2 | `observal_cli/harness/<harness_name>.py` | CLI adapter: scanning, hook detection, session source resolution/discovery, shim status, managed file attribution |
+| 3 | `observal_cli/harness/load_all.py` | Add import line for auto-registration |
+| 4 | `observal_cli/harness/__init__.py` | Adapter registry and protocol validation |
+| 5 | `observal-server/services/harness/<harness_name>.py` | Server adapter: config generation for install |
+| 6 | `observal-server/services/harness/load_all.py` | Add import line for server adapter |
+| 7 | `observal_cli/harness_specs/<harness_name>_hooks_spec.py` | Hook spec: what hooks to install, event names |
+| 8 | `observal_cli/sessions/<harness_name>.py` | Session parser (if harness writes JSONL sessions) |
+| 9 | `observal_cli/hooks/<harness_name>_session_push.py` | Session push hook script |
+| 10 | `observal_cli/cmd_doctor.py` | Doctor diagnose, patch, and cleanup implementations for the new harness |
+| 11 | `observal_cli/layer.py` | Layer scanning globs (`HARNESS_LAYER_CONFIGS`) and active harness detection |
+| 12 | `tests/test_cli_ide_adapters.py` | Adapter unit tests |
+| 13 | `/api/v1/config/harnesses` consumers | Frontend uses server harness metadata through `useHarnesses()` |
 
 ## Step 1: Research the harness
 
@@ -72,8 +71,8 @@ Before writing code, document these for the target harness:
 
 ## Step 2: Add Harness Registry Entry
 
-Add to both `observal-server/schemas/harness_registry.py` and `observal_cli/harness_registry.py`.
-The test `tests/test_constants_sync.py` enforces they're identical.
+Add one entry to `packages/observal-shared/observal_shared/harness_registry.py`.
+Both the CLI and server import this shared registry.
 
 ```python
 "my-harness": {
@@ -130,9 +129,9 @@ The test `tests/test_constants_sync.py` enforces they're identical.
 Before moving on, always wire the new harness into these shared paths:
 
 - `observal_cli/cmd_doctor.py`:
-  - Add a `_check_<harness>()` diagnose function
-  - Add `_patch_<harness>()` support in `doctor patch`
-  - Add `_cleanup_<harness>()` support in `doctor cleanup`
+  - Add `_check_<harness>()`, `_patch_<harness>()`, and `_cleanup_<harness>()` implementations
+- `observal_cli/harness/<harness_name>.py`:
+  - Delegate `patch_hooks()` and `cleanup_hooks()` to those implementations
 - `observal_cli/layer.py`:
   - Add user/project file globs under `HARNESS_LAYER_CONFIGS`
 - `observal_cli/harness/<harness_name>.py`:
@@ -330,41 +329,29 @@ users run `observal pull` or install an agent:
 
 from __future__ import annotations
 
-from services.harness import ConfigContext, register_adapter
+from services.harness import BaseHarnessAdapter, ConfigContext, register_adapter
 
 
-class MyIdeServerAdapter:
+class MyHarnessAdapter(BaseHarnessAdapter):
     @property
     def harness_name(self) -> str:
         return "my-harness"
 
-    def generate_config(self, ctx: ConfigContext) -> dict:
-        """Generate MCP config dict for this harness."""
-        return {"mcpServers": ctx.mcp_configs}
-
-    def generate_files(self, ctx: ConfigContext) -> list[dict]:
-        """Generate agent files (rules, skills, hooks) for this harness."""
-        files = []
-
-        # Agent rules file
-        if ctx.rules_content:
-            files.append({
+    def format_config(self, ctx: ConfigContext) -> dict:
+        """Generate the complete install response for this harness."""
+        return {
+            "agent_profile": {
                 "path": f".my-harness/agents/{ctx.safe_name}.md",
                 "content": ctx.rules_content,
-                "format": "markdown",
-            })
-
-        # Skill files
-        from services.config.skill_builder import generate_skill
-        for skill in ctx.skill_configs:
-            entry = generate_skill(skill, "my-harness")
-            if entry:
-                files.append(entry)
-
-        return files
+            },
+            "mcp_config": {
+                "path": ".my-harness/mcp.json",
+                "content": {"mcpServers": ctx.mcp_configs},
+            },
+        }
 
 
-register_adapter(MyIdeServerAdapter())
+register_adapter(MyHarnessAdapter())
 ```
 
 ## Step 5: Create Hook Spec

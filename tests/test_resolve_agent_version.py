@@ -195,7 +195,7 @@ class TestResolveAgentVersionFromLockfile:
         }
 
         with (
-            patch("observal_cli.harness_registry.get_valid_harnesses", return_value=["kiro"]),
+            patch("observal_shared.harness_registry.get_valid_harnesses", return_value=["kiro"]),
             patch("observal_cli.lockfile.read_lockfile", return_value=data),
         ):
             entry = _lookup_lockfile_agent(str(tmp_path), agent_name="my-agent")
@@ -223,7 +223,7 @@ class TestResolveAgentVersionFromLockfile:
         }
 
         with (
-            patch("observal_cli.harness_registry.get_valid_harnesses", return_value=["kiro"]),
+            patch("observal_shared.harness_registry.get_valid_harnesses", return_value=["kiro"]),
             patch("observal_cli.lockfile.read_lockfile", return_value=data),
         ):
             entry = _lookup_lockfile_agent(str(tmp_path / "repo"), agent_name="my-agent")

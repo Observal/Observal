@@ -22,7 +22,7 @@ def install_observal_skill():
     """
     import json as _json
 
-    from observal_cli.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     skills_base = Path(__file__).parent / "skills"
     skill_dirs = [

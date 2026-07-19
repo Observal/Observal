@@ -4,11 +4,11 @@
 """Session JSONL parsers -- READ path (raw ClickHouse rows -> frontend events).
 
 Dispatches to format-specific parsers based on the ``session_parser`` key in
-``schemas/harness_registry.HARNESS_REGISTRY``.  Dispatch is **strict**: an unknown harness
+``observal_shared.harness_registry.HARNESS_REGISTRY``. Dispatch is **strict**: an unknown harness
 raises ``KeyError`` so new harnesses cannot silently fall through to a wrong parser.
 
 When adding a new harness:
-  1. Add its entry to ``schemas/harness_registry.py`` with a ``"session_parser"`` key.
+  1. Add its entry to ``observal_shared/harness_registry.py`` with a ``"session_parser"`` key.
   2. If the harness needs a new parser, add a module under ``session_parsers/`` and
      register it in ``_PARSERS`` below.
   3. If the harness re-uses an existing format (e.g. Claude Code), point its
@@ -59,7 +59,7 @@ def parse_raw_events(rows: list[dict]) -> list[dict]:
         return []
     harness = rows[0].get("harness", "")
 
-    from schemas.harness_registry import HARNESS_REGISTRY
+    from observal_shared.harness_registry import HARNESS_REGISTRY
 
     parser_id = HARNESS_REGISTRY[harness]["session_parser"]  # KeyError = unknown harness
     if parser_id is None:

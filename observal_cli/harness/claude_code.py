@@ -386,5 +386,26 @@ class ClaudeCodeAdapter(BaseAdapter):
 
         return ScanResult(mcps=mcps, skills=skills, hooks=hooks, agents=agents)
 
+    def saved_model(self, agent_detail: dict | None) -> str | None:
+        saved = super().saved_model(agent_detail)
+        if saved or not agent_detail:
+            return saved
+        legacy = agent_detail.get("model_name")
+        return legacy.strip() if isinstance(legacy, str) and legacy.strip() else None
+
+    def apply_install_options(self, options: dict, tools: str | None) -> None:
+        if tools:
+            options["tools"] = tools
+
+    def patch_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _patch_claude_code
+
+        return _patch_claude_code(dry_run)
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _cleanup_claude_code
+
+        return _cleanup_claude_code(dry_run)
+
 
 register_adapter(ClaudeCodeAdapter())
