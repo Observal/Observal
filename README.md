@@ -43,13 +43,13 @@ Observal is the control plane and system of record for internal AI components. E
 
 The cause is largely due to two problems:
 
-1) Lack of a discoverability layer
+1. **Lack of a discoverability layer**
 
-Organizations store their AI components and agents in siloed github repositories with little to no documentation. Users are not able to locate similar components and this results in multiple developers creating the same/similar components again.
+   Organizations store their AI components and agents in siloed github repositories with little to no documentation. Users are not able to locate similar components and this results in multiple developers creating the same/similar components again.
 
-2) Missing Feedback Loop
+2. **Missing feedback loop**
 
-Any software where usage patterns are not understood and the principle of user-centric development is violated tends to fade out. Such is the problem with development of MCPs, Skills and Agents. Developers publish and maintain these components with little visibility into how they're actually used. Additionally, AI failures don't trigger static error codes—they hallucinate or provide subtly incorrect answers. This leaves users clueless about what went wrong compounding the feedback problem.
+   Any software where usage patterns are not understood and the principle of user-centric development is violated tends to fade out. Such is the problem with development of MCPs, Skills and Agents. Developers publish and maintain these components with little visibility into how they're actually used. Additionally, AI failures don't trigger static error codes: they hallucinate or provide subtly incorrect answers. This leaves users clueless about what went wrong compounding the feedback problem.
 
 Observal solves this by providing a centralized discovery layer for AI components alongside useful insights into AI usage patterns. It turns silent failures into actionable feedback, ensuring internal AI tools are continuously optimized for the people using them.
 
@@ -57,7 +57,7 @@ Observal supports Claude Code, Cursor, Kiro, Pi, Copilot, Codex, OpenCode, and o
 
 ### Why teams use Observal
 
-- **Package workflows into reusable agents:** Bundle Skills, MCP servers, hooks, prompts, sandboxes, and policy into one versioned unit.
+- **Package components into reusable agents:** Bundle Skills, MCP servers, hooks, prompts, and sandboxes into one versioned unit.
 - **Run a governed registry:** Review submissions, approve internal agents, inspect version diffs, and give developers one trusted place to install from.
 - **Render across multiple Coding IDE/CLI:** Generate the correct config for each supported harness instead of maintaining separate setup instructions for every harness.
 - **Learn what works:** Use real adoption and session data to find which agents, tools, prompts, and workflows are helping teams.
