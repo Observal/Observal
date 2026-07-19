@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pi harness adapter - scanning, hook detection, shim status."""
+"""Pi harness adapter for scanning and hook detection."""
 
 from __future__ import annotations
 

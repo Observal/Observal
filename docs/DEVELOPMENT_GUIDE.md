@@ -52,7 +52,6 @@
   * [Screenshots for UI changes](DEVELOPMENT_GUIDE.md#screenshots-for-ui-changes)
 * [Working on the CLI](DEVELOPMENT_GUIDE.md#working-on-the-cli)
   * [Reinstalling after changes](DEVELOPMENT_GUIDE.md#reinstalling-after-changes)
-  * [Testing the shim](DEVELOPMENT_GUIDE.md#testing-the-shim)
 * [Harness Recommendations](DEVELOPMENT_GUIDE.md#harness-recommendations)
   * [VS Code](DEVELOPMENT_GUIDE.md#vs-code)
   * [PyCharm / IntelliJ](DEVELOPMENT_GUIDE.md#pycharm--intellij)

@@ -60,7 +60,7 @@ For the **CLI** (developer machines, not the server):
 ## Network
 
 * **Outbound HTTPS**: only needed to pull Docker images on first `docker compose up --build`. Not needed at runtime (the stack is fully self-contained).
-* **Inbound**: users hit the API (`:8000`) and web (`:3000`). Telemetry from the shim is received on the API port.
+* **Inbound**: users hit the API (`:8000`) and web (`:3000`). Session telemetry is received on the API port.
 * **Between services**: the private `observal-net` bridge handles all of it.
 
 ## TLS / HTTPS

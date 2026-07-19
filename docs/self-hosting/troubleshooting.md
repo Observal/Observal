@@ -103,31 +103,17 @@ Likely the `apidata` volume was recreated, so the JWT signing keys are new. Rest
 Run through, in order:
 
 ```bash
-# 1. Are traces arriving at all?
+# 1. Are sessions arriving at all?
 observal ops telemetry status
 
-# 2. Is the shim wired in?
+# 2. Are session hooks installed for the harness?
 observal doctor --harness <harness>
 
-# 3. Is the API reachable from where the shim runs?
+# 3. Is the API reachable from the harness environment?
 curl http://localhost/health
 ```
 
-If the shim is wrapped but traces aren't arriving, the API may be unreachable while telemetry remains buffered. Check `~/.observal/telemetry_buffer.db`; growth indicates pending delivery rather than silent loss.
-
-### `observal doctor patch` wraps 0 servers
-
-Your harness's MCP config may be empty or in a non-standard location. Check:
-
-```bash
-cat .kiro/settings/mcp.json         # Kiro project
-cat ~/.kiro/settings/mcp.json       # Kiro global
-cat ~/.claude/settings.json         # Claude Code
-cat .cursor/mcp.json                # Cursor
-cat .vscode/mcp.json                # VS Code
-```
-
-If none exist, configure at least one MCP server in your harness first, then re-run `doctor patch`.
+If hooks are missing, run `observal doctor patch --hook --harness <harness>`. If sessions still are not arriving, check `~/.observal/telemetry_buffer.db`; growth indicates pending session delivery rather than silent loss.
 
 ### ClickHouse not receiving data
 

@@ -110,7 +110,7 @@ Four entry points land on your `PATH`:
 | `observal`             | The main CLI                                             |
 | `observal-sandbox-run` | Sandbox runner invoked by Observal sandboxes             |
 
-You will almost never call the shim, proxy, or sandbox runner directly. The CLI wires them into your harness config for you.
+You will almost never call the sandbox runner directly. The CLI wires it into your harness config for you.
 
 ## Upgrade
 

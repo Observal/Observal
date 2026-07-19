@@ -14,7 +14,7 @@ When a user runs `observal pull <agent>`, Observal writes harness-specific files
 
 | Component | What gets written | Example |
 |-----------|------------------|---------|
-| MCP servers | JSON/TOML config with shim wrapping | `.cursor/mcp.json` |
+| MCP servers | Native JSON/TOML config with direct commands or URLs | `.cursor/mcp.json` |
 | Skills | Markdown skill files in harness's skill directory | `.claude/skills/my-skill/SKILL.md` |
 | Hooks | Telemetry hook config that fires on tool use, session start/stop | `settings.json` hooks section |
 | Sandboxes | MCP entry pointing to `observal-sandbox-run` | Added to MCP config |
@@ -26,7 +26,7 @@ When a user runs `observal scan`, Observal reads those same locations to discove
 | # | File | What it does |
 |---|------|-------------|
 | 1 | `packages/observal-shared/observal_shared/harness_registry.py` | Shared harness metadata: paths, keys, event maps, formats |
-| 2 | `observal_cli/harness/<harness_name>.py` | CLI adapter: scanning, hook detection, session source resolution/discovery, shim status, managed file attribution |
+| 2 | `observal_cli/harness/<harness_name>.py` | CLI adapter: scanning, hook detection, session source resolution/discovery, managed file attribution |
 | 3 | `observal_cli/harness/load_all.py` | Add import line for auto-registration |
 | 4 | `observal_cli/harness/__init__.py` | Adapter registry and protocol validation |
 | 5 | `observal-server/services/harness/<harness_name>.py` | Server adapter: config generation for install |
@@ -564,9 +564,9 @@ No additional sandbox-specific code is needed per harness.
 
 Other notes:
 
-- Adapters are self-contained: one file handles scanning, hook detection, session source discovery, and shim status
+- Adapters are self-contained: one file handles scanning, hook detection, session source discovery, and managed file attribution
 - Server parsers remain format-specific; transport, recovery, acknowledgement, and final audit behavior stay shared
-- Shared utilities in `observal_cli/shared/utils.py`: `extract_mcp_servers`, `parse_frontmatter_field`, `is_already_shimmed`, `_OBSERVAL_HOOK_MARKERS`
+- Shared utilities in `observal_cli/shared/utils.py`: `extract_mcp_servers`, `parse_frontmatter_field`, `_OBSERVAL_HOOK_MARKERS`
 - `BaseAdapter` in `observal_cli/harness/base.py` provides feature-gating via `_check_feature()`
 - `ensure_loaded()` guarantees all adapters are registered before cross-adapter operations
 - MCP deduplication in scan uses first-discovered-wins

@@ -103,7 +103,7 @@ Everything published is visible to the author immediately. Review controls what 
 
 ## Telemetry across the whole team
 
-Because every engineer's shim streams into the same server, `observal ops` becomes a team dashboard:
+Because every engineer's session telemetry flows into the same server, `observal ops` becomes a team dashboard:
 
 ```bash
 observal ops top --type agent           # most-used agents across the team
