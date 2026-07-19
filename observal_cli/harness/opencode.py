@@ -127,9 +127,6 @@ class OpenCodeAdapter(BaseAdapter):
 
         return "missing"
 
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
-
     # ── Internal helpers ──────────────────────────────────────────────
 
     def _scan_opencode_dir(self, opencode_dir: Path, source: str, home: Path | None = None) -> ScanResult:

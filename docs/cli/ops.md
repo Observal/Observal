@@ -3,7 +3,7 @@
 
 # observal ops
 
-Operational and observability commands: dashboards, traces, spans, metrics, feedback.
+Operational and observability commands for dashboards, sessions, events, metrics, and feedback.
 
 ## Subcommands
 
@@ -12,7 +12,7 @@ Operational and observability commands: dashboards, traces, spans, metrics, feed
 | [`ops metrics`](#observal-ops-metrics) | Metrics for one MCP or agent |
 | [`ops top`](#observal-ops-top) | Top items by usage |
 | [`ops traces`](#observal-ops-traces) | List recent traces |
-| [`ops spans`](#observal-ops-spans) | Spans for one trace |
+| [`ops spans`](#observal-ops-spans) | Detailed events for one session |
 | [`ops rate`](#observal-ops-rate) | Rate an MCP or agent (1–5 stars) |
 | [`ops feedback`](#observal-ops-feedback) | View feedback for an MCP or agent |
 | [`ops telemetry status`](#observal-ops-telemetry-status) | Telemetry pipeline status |
@@ -52,7 +52,7 @@ observal ops top --type agent --limit 20
 
 ## `observal ops traces`
 
-List recent traces (sessions). By default shows a summary table. Use `--turn` to unfold sessions into a tree showing prompts and tool calls, or `--span` for full detail.
+List recent sessions. By default shows a summary table. Use `--turn` to unfold prompts and tool calls, or `--span` for full event detail.
 
 ### Synopsis
 
@@ -74,7 +74,7 @@ observal ops traces --output json | jq
 
 ## `observal ops spans`
 
-Walk the spans inside a trace. Output is hierarchical (parent → children).
+Inspect detailed parsed events inside a session. The command name is retained as part of the CLI trace-view vocabulary.
 
 ```bash
 observal ops spans <trace-id>

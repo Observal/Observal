@@ -440,8 +440,8 @@ class TestGenerateCopilot:
         cfg = generate_agent_config(agent, "copilot")
         entry = cfg["mcp_config"]["content"]["servers"]["my-srv"]
         assert entry["type"] == "stdio"
-        assert entry["command"] == "observal-shim"
-        assert isinstance(entry["args"], list)
+        assert entry["command"] == "npx"
+        assert entry["args"] == ["-y", "my-srv"]
 
     def test_env_vars_preserved(self):
         ext = [{"name": "my-srv", "command": "npx", "args": [], "env": {"API_KEY": "secret"}}]
@@ -475,14 +475,13 @@ class TestExternalMcps:
         servers = cfg["mcp_config"]["content"]["mcpServers"]
         assert "ext-server" in servers
 
-    def test_external_mcp_wrapped_in_shim(self):
+    def test_external_mcp_keeps_original_command(self):
         ext = [{"name": "ext-server", "command": "npx", "args": ["-y", "ext"], "id": "ext-id"}]
         agent = _make_agent(external_mcps=ext)
         cfg = generate_agent_config(agent, "cursor")
         entry = cfg["mcp_config"]["content"]["mcpServers"]["ext-server"]
-        assert entry["command"] == "observal-shim"
-        assert "--mcp-id" in entry["args"]
-        assert "ext-id" in entry["args"]
+        assert entry["command"] == "npx"
+        assert entry["args"] == ["-y", "ext"]
 
     def test_external_mcp_string_args_split(self):
         ext = [{"name": "srv", "command": "node", "args": "serve.js --port 3000"}]
@@ -524,7 +523,7 @@ class TestExternalMcps:
 
 
 class TestMcpListingClaudeCodeAdapter:
-    def test_builds_shim_entry(self):
+    def test_builds_direct_entry(self):
         comp_id = uuid.uuid4()
         listing = MagicMock()
         listing.name = "my-mcp"
@@ -544,7 +543,9 @@ class TestMcpListingClaudeCodeAdapter:
         parts = content.split("---", 2)
         fm = yaml.safe_load(parts[1])
         assert "my-mcp" in fm["mcpServers"]
-        assert len(cfg["mcp_setup_commands"]) == 1
+        assert cfg["mcp_config"]["my-mcp"]["command"] == "npx"
+        assert cfg["mcp_config"]["my-mcp"]["args"] == ["-y", "my-mcp"]
+        assert cfg["mcp_setup_commands"] == [["claude", "mcp", "add", "my-mcp", "--", "npx", "-y", "my-mcp"]]
 
 
 # ═══════════════════════════════════════════════════════════════════

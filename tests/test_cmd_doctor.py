@@ -34,7 +34,6 @@ from observal_cli.cmd_doctor import (
     _cleanup_cursor,
     _cleanup_kiro,
     _cleanup_opencode,
-    _parse_mcp_servers,
     _patch_antigravity,
     _patch_claude_code,
     _patch_codex,
@@ -44,15 +43,9 @@ from observal_cli.cmd_doctor import (
     _patch_kiro,
     _patch_opencode,
     _patch_pi,
-    _shim_config_file,
-    _wrap_with_shim,
     doctor_patch,
 )
-from observal_cli.shared.utils import (
-    is_already_shimmed,
-    is_observal_hook_entry,
-    is_observal_matcher_group,
-)
+from observal_cli.shared.utils import is_observal_hook_entry, is_observal_matcher_group
 from observal_shared.opencode_plugin_source import OPENCODE_PLUGIN_SOURCE
 
 
@@ -71,58 +64,6 @@ def write_json(path: Path, data: dict) -> None:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-class TestShimHelpers:
-    def test_detects_shimmed_entries(self):
-        assert not is_already_shimmed({"command": "node", "args": ["server.js"]})
-        assert is_already_shimmed({"command": "observal-shim", "args": ["--mcp-id", "x", "--", "node"]})
-        assert is_already_shimmed({"command": "env", "args": ["observal-shim", "--", "node"]})
-
-    def test_wraps_stdio_mcp_without_touching_env(self):
-        entry = {"command": "python", "args": ["-m", "server"], "env": {"A": "B"}}
-
-        wrapped = _wrap_with_shim(entry, "py-server")
-
-        assert wrapped["command"] == "observal-shim"
-        assert wrapped["args"] == ["--mcp-id", "py-server", "--", "python", "-m", "server"]
-        assert wrapped["env"] == {"A": "B"}
-
-    def test_remote_mcp_is_not_wrapped(self):
-        entry = {"url": "https://example.com/mcp", "transport": "sse"}
-
-        assert _wrap_with_shim(entry, "remote") == entry
-
-    @pytest.mark.parametrize(
-        ("harness", "config_data", "expected"),
-        [
-            ("cursor", {"mcpServers": {"cursor-tool": {}}}, "cursor-tool"),
-            ("copilot", {"servers": {"copilot-tool": {}}}, "copilot-tool"),
-            ("copilot-cli", {"mcpServers": {"cli-tool": {}}}, "cli-tool"),
-            ("opencode", {"mcp": {"opencode-tool": {}}}, "opencode-tool"),
-            ("codex", {"mcp_servers": {"codex-tool": {}}}, "codex-tool"),
-        ],
-    )
-    def test_parse_mcp_servers_uses_harness_registry_keys(self, harness: str, config_data: dict, expected: str):
-        assert expected in _parse_mcp_servers(config_data, harness)
-
-    def test_shim_config_file_wraps_and_backs_up(self, tmp_path: Path):
-        config_path = tmp_path / "mcp.json"
-        write_json(config_path, {"mcpServers": {"tool": {"command": "node", "args": ["server.js"]}}})
-
-        assert _shim_config_file(config_path, "cursor", dry_run=False) == 1
-
-        data = read_json(config_path)
-        assert data["mcpServers"]["tool"]["command"] == "observal-shim"
-        assert list(tmp_path.glob("mcp.pre-observal.*.bak"))
-
-    def test_shim_config_file_dry_run_does_not_write(self, tmp_path: Path):
-        config_path = tmp_path / "mcp.json"
-        original = {"mcpServers": {"tool": {"command": "node"}}}
-        write_json(config_path, original)
-
-        assert _shim_config_file(config_path, "cursor", dry_run=True) == 1
-        assert read_json(config_path) == original
 
 
 class TestHookIdentification:
@@ -331,9 +272,9 @@ class TestPatchFunctions:
         assert "observal-telemetry" in read_json(config_dir / "hooks.json")
         assert _patch_antigravity(dry_run=False) is False
 
-    def test_doctor_patch_requires_mode_and_target(self):
+    def test_doctor_patch_requires_target(self):
         with pytest.raises(typer.Exit) as exc:
-            doctor_patch(hook=False, shim=False, all_=False, all_harnesses=False, harness=[], dry_run=False)
+            doctor_patch(all_harnesses=False, harness=[], dry_run=False)
 
         assert exc.value.exit_code == 1
 
@@ -342,7 +283,7 @@ class TestPatchFunctions:
             patch("observal_cli.cmd_doctor.config.load", return_value={"server_url": "http://server"}),
             pytest.raises(typer.Exit) as exc,
         ):
-            doctor_patch(hook=True, shim=False, all_=False, all_harnesses=False, harness=["wat"], dry_run=False)
+            doctor_patch(all_harnesses=False, harness=["wat"], dry_run=False)
 
         assert exc.value.exit_code == 1
 

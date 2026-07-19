@@ -97,69 +97,24 @@ If you already have MCP servers configured in Claude Code, Kiro, Cursor, VS Code
 observal scan
 ```
 
-Expected output:
+Expected output lists detected harnesses, MCP servers, skills, hooks, and agents. MCP commands and remote URLs are shown exactly as configured.
 
-```
-Claude Code (~/.claude/settings.json)
-  filesystem        npx @modelcontextprotocol/server-filesystem   not wrapped
-  github            npx @modelcontextprotocol/server-github       not wrapped
-
-Kiro (.kiro/settings/mcp.json)
-  mcp-obsidian      mcp-obsidian                                  not wrapped
-
-2 harness(s) found, 3 MCP server(s) total, 0 wrapped.
-```
-
-`scan` is read-only -- it shows what you have without modifying anything. Now instrument everything:
+`scan` is read-only: it shows what you have without modifying anything. Install session telemetry hooks:
 
 ```bash
-observal doctor patch --all --all-harnesses
+observal doctor patch --all-harnesses
 ```
 
-Expected output:
-
-```
-Patching Claude Code...
-  ✓ filesystem        wrapped  (was: npx @modelcontextprotocol/server-filesystem)
-  ✓ github            wrapped  (was: npx @modelcontextprotocol/server-github)
-  ✓ Telemetry hooks installed
-
-Patching Kiro...
-  ✓ mcp-obsidian      wrapped
-  ✓ Telemetry hooks installed
-
-Backups saved:
-  ~/.claude/settings.json.20260421_143055.bak
-  .kiro/settings/mcp.json.20260421_143055.bak
-
-3 server(s) instrumented, hooks installed across 2 harness(s).
-```
-
-What `doctor patch --all` did:
-
-* Found your existing MCP config files (`~/.claude/settings.json`, `.kiro/settings/mcp.json`, `.cursor/mcp.json`, etc.)
-* Rewrote the config so every MCP server runs through `observal-shim` (transparent -- no behavior change)
-* Installed telemetry hooks for session lifecycle events
-* Saved a timestamped `.bak` next to every file it touched
-
-Nothing broke. Your agents still work exactly as before. The only difference: every tool call now generates a span.
-
-Restart your harness to pick up the new config. The next MCP call will produce a trace.
+`doctor patch` installs supported session hooks and extensions. It does not rewrite MCP configuration. Restart your harness so the hook changes take effect, then begin a coding session.
 
 ## 5. See your first trace
 
-Open `http://localhost/traces` in your browser. Trigger anything in your harness that uses an MCP tool (ask Claude to list files, read a GitHub issue, whatever). Refresh, and you'll see the trace appear.
+Open `http://localhost/traces` in your browser. Start a prompt in your harness and let the session complete. Refresh to see the indexed session and its parsed events.
 
 Or use the CLI:
 
 ```bash
 observal ops traces --limit 5
-```
-
-Drill in:
-
-```bash
-observal ops spans <trace-id>
 ```
 
 ## 6. (Optional) Pull an agent
@@ -177,27 +132,27 @@ Install one into your harness:
 observal agent pull <agent-name> --harness <harness-name>
 ```
 
-This drops agent files, skills, hooks, and MCP configs into the right places for your harness and wires up telemetry automatically.
+This writes agent files, skills, hooks, and direct MCP configs into the right places for your harness.
 
 ## What you just built
 
 ```mermaid
 flowchart LR
     harness[Your harness]
-    shim[observal-shim]
-    mcp[MCP server]
-    api[Observal API]
+    transcript[Local session transcript]
+    hook[Session hook or extension]
+    api[Session ingest API]
     ch[(ClickHouse)]
     ui[Web UI]
 
-    harness <--> shim
-    shim <--> mcp
-    shim -->|fire and forget| api
+    harness --> transcript
+    hook --> transcript
+    hook --> api
     api --> ch
     ch --> ui
 ```
 
-Every MCP request/response is now a span. Spans group into traces. Traces form sessions.
+Observal indexes session transcript records into canonical events and aggregates.
 
 ## Where to next
 

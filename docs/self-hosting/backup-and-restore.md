@@ -11,7 +11,7 @@ What to back up, how often, and how to restore. Observal has three persistent st
 | --- | --- | --- | --- |
 | **Critical** | `apidata` | JWT signing keys | Every session invalidated. No recovery without the keys. |
 | **Critical** | `pgdata` | Users, RBAC, registry metadata, agents | All accounts and registry lost. |
-| **Important** | `chdata` | Traces, spans, scores | All telemetry lost. Accounts and registry survive. |
+| **Important** | `chdata` | Session events, aggregates, audit, and security events | All telemetry lost. Accounts and registry survive. |
 | **Low** | `grafanadata` | Custom Grafana dashboards | Custom dashboards lost; provisioned defaults come back automatically. |
 | **Low** | `redisdata` | Job queue state | In-flight jobs lost; they re-queue on next worker restart. |
 

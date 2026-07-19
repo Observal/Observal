@@ -23,7 +23,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal component`](component.md)                                                       | Manage component versions                                                             |
 | [`observal models`](models.md)                                                             | Browse and manage model configurations                                                |
 | [`observal agent`](agent.md)                                                               | Author and publish agents                                                             |
-| [`observal ops`](ops.md)                                                                   | Observability and operations (traces, spans, metrics, feedback)                       |
+| [`observal ops`](ops.md)                                                                   | Observability and operations (sessions, events, metrics, feedback)                    |
 | [`observal admin`](admin.md)                                                               | Admin operations (settings, users, review, security)                                  |
 | [`observal support`](https://github.com/Observal/Observal/blob/main/docs/cli/support.md) | Generate and inspect diagnostic support bundles                                       |
 | [`observal doctor`](doctor.md)                                                             | Diagnose harness compatibility; `doctor patch` applies instrumentation                |

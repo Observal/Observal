@@ -171,10 +171,10 @@ The sections below must be run **twice**, once per configuration:
 
 | Case | Global Tracing | Registered-Agents-Only | What it validates |
 |------|---------------|------------------------|-------------------|
-| **A** | ✅ On (default) | ❌ Off | All agents produce traces regardless of registry status |
-| **B** | ❌ Off | ✅ On | Only spans from registered agents are ingested; unregistered agent activity is silently dropped |
+| **A** | ✅ On (default) | ❌ Off | All agent sessions are eligible for attribution regardless of registry status |
+| **B** | ❌ Off | ✅ On | Only registered agents are attributed; unregistered session activity may remain unattributed |
 
-> **How to switch:** Log in as Admin → Settings → toggle "Registered Agents Only". The toggle takes effect immediately for new spans.
+> **How to switch:** Log in as Admin → Settings → toggle "Registered Agents Only". The toggle affects new session ingestion.
 
 Run sections 20–30 once with Case A, then reset and repeat with Case B.
 

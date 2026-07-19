@@ -62,7 +62,7 @@ def test_antigravity_adapter_registered():
 
 def test_antigravity_adapter_has_required_methods():
     adapter = get_adapter("antigravity")
-    for method in ("scan_home", "scan_project", "get_hook_spec", "generate_hook_config", "detect_hooks", "shim_status"):
+    for method in ("scan_home", "scan_project", "get_hook_spec", "generate_hook_config", "detect_hooks"):
         assert callable(getattr(adapter, method))
 
 
@@ -192,13 +192,6 @@ def test_detect_hooks_missing_when_no_observal_marker(tmp_path):
     (tmp_path / "hooks.json").write_text(json.dumps(hooks))
     result = get_adapter("antigravity").detect_hooks(tmp_path)
     assert result == "missing"
-
-
-# ── shim_status ───────────────────────────────────────────────────────────────
-
-
-def test_shim_status_no_mcps():
-    assert get_adapter("antigravity").shim_status([]) == "none"
 
 
 def test_scan_home_reads_agent_json(tmp_path):

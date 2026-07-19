@@ -36,7 +36,7 @@ When a user runs `observal scan`, Observal reads those same locations to discove
 | 9 | `observal_cli/hooks/<harness_name>_session_push.py` | Session push hook script |
 | 10 | `observal_cli/cmd_doctor.py` | Doctor diagnose, patch, and cleanup implementations for the new harness |
 | 11 | `observal_cli/layer.py` | Layer scanning globs (`HARNESS_LAYER_CONFIGS`) and active harness detection |
-| 12 | `tests/test_cli_ide_adapters.py` | Adapter unit tests |
+| 12 | `tests/test_cli_harness_adapters.py` | Adapter unit tests |
 | 13 | `/api/v1/config/harnesses` consumers | Frontend uses server harness metadata through `useHarnesses()` |
 
 ## Step 1: Research the harness
@@ -253,9 +253,6 @@ class MyHarnessAdapter(BaseAdapter):
                         found += 1
                         break
         return "installed" if found >= 3 else ("partial" if found > 0 else "missing")
-
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
 
     # ── Private helpers ───────────────────────────────────────
 
@@ -573,6 +570,6 @@ Other notes:
 - `BaseAdapter` in `observal_cli/harness/base.py` provides feature-gating via `_check_feature()`
 - `ensure_loaded()` guarantees all adapters are registered before cross-adapter operations
 - MCP deduplication in scan uses first-discovered-wins
-- The shim (`observal-shim`) is transport-agnostic: it wraps any stdio MCP server regardless of harness
-- Sandboxes are just MCP servers backed by `observal-sandbox-run`, so if MCP install works, sandboxes work automatically
+- MCP commands and remote URLs are emitted directly in each harness's native format
+- Sandboxes are MCP servers backed by `observal-sandbox-run`, so if MCP install works, sandboxes work automatically
 - Skills use the harness's native skill/rule file format, resolved from `skill` and `skill_format` in the registry

@@ -31,7 +31,6 @@ from observal_cli.harness import (
     get_all_adapters,
 )
 from observal_cli.render import console, spinner
-from observal_cli.shared.utils import is_already_shimmed as _is_already_shimmed
 
 # ── harness home directory paths (for status display) ────────────────
 
@@ -48,27 +47,6 @@ _HARNESS_HOME_DIRS: dict[str, str] = {
 }
 
 
-def _mcp_shim_status(mcps: list[DiscoveredMcp]) -> str:
-    """Return shim summary like '3 of 5 shimmed' or 'all shimmed'."""
-    total = 0
-    shimmed = 0
-    for m in mcps:
-        if m.url:
-            continue
-        total += 1
-        cmd = m.command or ""
-        args_str = " ".join(str(a) for a in m.args)
-        if "observal-shim" in cmd or "observal-shim" in args_str:
-            shimmed += 1
-    if total == 0:
-        return "n/a"
-    if shimmed == total:
-        return "all shimmed"
-    if shimmed == 0:
-        return "no shims"
-    return f"{shimmed} of {total} shimmed"
-
-
 # ── CLI command ─────────────────────────────────────────────
 
 
@@ -81,13 +59,13 @@ def register_scan(app: typer.Typer):
         """Show a read-only inventory of your local harness setup.
 
         Scans all harness home directories and the current project directory to
-        discover agents, MCP servers, skills, and hooks. Shows what's
-        instrumented (hooks/shims) and what's missing.
+        discover agents, MCP servers, skills, and hooks. Shows installed
+        session telemetry hooks.
 
         Use --harness to filter to a specific harness (e.g. --harness kiro).
 
-        This command never modifies files. To instrument, run:
-          observal doctor patch --all --all-harnesses
+        This command never modifies files. To install hooks, run:
+          observal doctor patch --all-harnesses
 
         Examples:
             observal scan
@@ -116,7 +94,7 @@ def register_scan(app: typer.Typer):
         all_hooks = []
         all_agents = []
         seen_mcp_names: set[str] = set()
-        ide_status: list[tuple[str, str, str]] = []  # (name, hooks, shims)
+        ide_status: list[tuple[str, str]] = []  # (name, hooks)
 
         for ide_name, adapter in adapters.items():
             home_label = _HARNESS_HOME_DIRS.get(ide_name, "")
@@ -154,8 +132,7 @@ def register_scan(app: typer.Typer):
                 hook_status = adapter.detect_hooks(config_dir)
             except NotSupportedError:
                 hook_status = "n/a"
-            shim_stat = _mcp_shim_status(home_result.mcps + proj_result.mcps)
-            ide_status.append((ide_name, hook_status, shim_stat))
+            ide_status.append((ide_name, hook_status))
 
         # Also scan home as project if different from cwd
         if project_dir != home:
@@ -181,7 +158,7 @@ def register_scan(app: typer.Typer):
         # In JSON mode, dump the raw discovered objects and exit before rendering rich tables
         if output == "json":
             out_data = {
-                "harnesses": [{"name": n, "hooks": h, "shims": s} for n, h, s in ide_status],
+                "harnesses": [{"name": name, "hooks": hooks} for name, hooks in ide_status],
                 "mcps": [vars(m) for m in all_mcps],
                 "skills": [vars(s) for s in all_skills],
                 "hooks": [vars(h) for h in all_hooks],
@@ -197,19 +174,9 @@ def register_scan(app: typer.Typer):
             tbl = Table(title="harnesses Detected", show_lines=False, padding=(0, 1))
             tbl.add_column("harness", style="bold")
             tbl.add_column("Hooks", style="cyan")
-            tbl.add_column("Shims", style="cyan")
-            for name, hooks_s, shims_s in ide_status:
+            for name, hooks_s in ide_status:
                 hooks_style = "green" if hooks_s == "installed" else ("yellow" if hooks_s == "partial" else "red")
-                shims_style = (
-                    "green"
-                    if shims_s == "all shimmed"
-                    else ("yellow" if "of" in shims_s else ("dim" if shims_s == "n/a" else "red"))
-                )
-                tbl.add_row(
-                    name,
-                    f"[{hooks_style}]{hooks_s}[/{hooks_style}]",
-                    f"[{shims_style}]{shims_s}[/{shims_style}]",
-                )
+                tbl.add_row(name, f"[{hooks_style}]{hooks_s}[/{hooks_style}]")
             console.print(tbl)
             rprint()
 
@@ -219,11 +186,8 @@ def register_scan(app: typer.Typer):
             tbl.add_column("Name", style="bold")
             tbl.add_column("Command/URL", style="dim")
             tbl.add_column("Source", style="cyan")
-            tbl.add_column("Shimmed", style="cyan")
             for m in all_mcps:
-                is_shimmed = _is_already_shimmed({"command": m.command or "", "args": m.args})
-                shimmed_label = "[green]yes[/green]" if is_shimmed else ("[dim]n/a[/dim]" if m.url else "[red]no[/red]")
-                tbl.add_row(m.name, m.display_cmd(), m.source, shimmed_label)
+                tbl.add_row(m.name, m.display_cmd(), m.source)
             console.print(tbl)
             rprint()
 
@@ -337,18 +301,11 @@ def register_scan(app: typer.Typer):
             pass
 
         # ── Footer with suggestions ──
-        missing_hooks = any(h == "missing" or h == "partial" for _, h, _ in ide_status)
-        missing_shims = any(s not in ("all shimmed", "n/a") for _, _, s in ide_status)
+        missing_hooks = any(h in ("missing", "partial") for _, h in ide_status)
 
         suggestions = []
-        if missing_hooks and missing_shims:
-            suggestions.append("Run [bold]observal doctor patch --all --all-harnesses[/bold] to instrument everything")
-        elif missing_hooks:
-            suggestions.append(
-                "Run [bold]observal doctor patch --hook --all-harnesses[/bold] to install telemetry hooks"
-            )
-        elif missing_shims:
-            suggestions.append("Run [bold]observal doctor patch --shim --all-harnesses[/bold] to wrap MCP servers")
+        if missing_hooks:
+            suggestions.append("Run [bold]observal doctor patch --all-harnesses[/bold] to install telemetry hooks")
 
         suggestions.append("Use [bold]observal registry <type> submit[/bold] to publish components to the registry")
 

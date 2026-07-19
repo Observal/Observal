@@ -60,7 +60,6 @@ def register_adapter(adapter: HarnessAdapter) -> None:
         "get_hook_spec",
         "generate_hook_config",
         "detect_hooks",
-        "shim_status",
         "resolve_session_source",
         "discover_session_sources",
         "related_session_sources",

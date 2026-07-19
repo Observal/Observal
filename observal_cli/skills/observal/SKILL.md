@@ -22,7 +22,7 @@ owner: observal
 7. **Pass `--yes` / `-y` on destructive commands** so they do not block on a confirmation prompt.
 8. **Resolve 409 conflicts deterministically:** `--update` for in-place edits, `--bump` for versioned releases.
 9. **Only fall back to local file writes** if a command exits with `Connection failed` or `Not configured`.
-10. **Never invent `OTEL_*` or `CLAUDE_CODE_ENABLE_TELEMETRY` environment variables.** Telemetry flows through `observal-shim` and session push hooks only.
+10. **Never invent `OTEL_*` or `CLAUDE_CODE_ENABLE_TELEMETRY` environment variables.** Telemetry flows through session push hooks and reconciliation only.
 
 ---
 
@@ -118,18 +118,16 @@ Reports: Observal config validity, server reachability, hook installation status
 
 ## Procedure: Doctor Patch
 
-Apply instrumentation. Run with `--dry-run` first when the user is unsure.
+Install session telemetry hooks. Run with `--dry-run` first when the user is unsure.
 
 ```bash
-observal doctor patch --all --all-harnesses --dry-run
-observal doctor patch --all --all-harnesses
-observal doctor patch --hook --shim --harness kiro
-observal doctor patch --all --harness claude-code
-observal doctor patch --hook --all-harnesses
-observal doctor patch --shim --all-harnesses
+observal doctor patch --all-harnesses --dry-run
+observal doctor patch --all-harnesses
+observal doctor patch --harness kiro
+observal doctor patch --harness claude-code
 ```
 
-**Required:** at least one of `--hook` / `--shim` / `--all`, AND at least one of `--all-harnesses` / `--harness`. Creates timestamped backups before modifying any file.
+**Required:** select `--all-harnesses` or at least one `--harness`. MCP commands and URLs are not modified.
 
 ---
 

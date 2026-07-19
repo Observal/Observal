@@ -500,13 +500,8 @@ class TestGenerateConfigDocker:
         listing = self._make_listing()
         cfg = generate_config(listing, "cursor", env_values={"GITHUB_PERSONAL_ACCESS_TOKEN": "tok"})
         server = cfg["mcpServers"]["github-mcp-server"]
-        assert server["command"] == "observal-shim"
-        # The run command after -- should be docker run
-        args = server["args"]
-        sep_idx = args.index("--")
-        run_cmd = args[sep_idx + 1 :]
-        assert run_cmd[0] == "docker"
-        assert "ghcr.io/github/github-mcp-server" in run_cmd
+        assert server["command"] == "docker"
+        assert "ghcr.io/github/github-mcp-server" in server["args"]
 
     def test_claude_code_docker_config(self):
         from services.config_generator import generate_config
@@ -570,9 +565,8 @@ class TestAgentConfigDockerMcp:
         mcp_config = cfg["mcp_config"]
         assert "github-mcp-server" in mcp_config
         mcp_entry = mcp_config["github-mcp-server"]
-        # Args should include docker run
+        assert mcp_entry["command"] == "docker"
         args_str = " ".join(mcp_entry["args"])
-        assert "docker" in args_str
         assert "ghcr.io/github/github-mcp-server" in args_str
 
     def test_claude_code_passes_env_vars(self):

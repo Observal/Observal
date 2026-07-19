@@ -17,9 +17,7 @@ push session JSONL incrementally to the server.
 import hashlib
 import json
 import os
-import shutil
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -33,9 +31,6 @@ from observal_cli.harness_specs.claude_code_hooks_spec import (
     get_desired_hooks,
 )
 from observal_cli.shared.utils import (
-    is_already_shimmed as _is_already_shimmed,
-)
-from observal_cli.shared.utils import (
     is_observal_hook_entry as _is_observal_hook_entry,
 )
 from observal_cli.shared.utils import (
@@ -44,7 +39,7 @@ from observal_cli.shared.utils import (
 from observal_cli.shared.utils import (
     load_jsonc as _load_jsonc,
 )
-from observal_shared.harness_registry import get_home_mcp_configs, get_valid_harnesses
+from observal_shared.harness_registry import get_valid_harnesses
 
 doctor_app = typer.Typer(help="Diagnose and patch harness settings for Observal telemetry")
 
@@ -910,67 +905,6 @@ def _cleanup_opencode(dry_run: bool) -> bool:
     return True
 
 
-# ── Shim helpers ────────────────────────────────────────────
-
-
-def _wrap_with_shim(entry: dict, mcp_id: str) -> dict:
-    """Wrap an MCP server entry with observal-shim for telemetry."""
-    optic.trace("entry={}, mcp_id={}", entry, mcp_id)
-    if entry.get("url"):
-        return entry
-    shimmed = dict(entry)
-    shimmed["command"] = "observal-shim"
-    shimmed["args"] = ["--mcp-id", mcp_id, "--", entry.get("command", ""), *entry.get("args", [])]
-    return shimmed
-
-
-def _backup_config(config_path: Path) -> Path:
-    """Create a timestamped backup of the config file."""
-    optic.trace("config_path={}", config_path)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup = config_path.with_suffix(f".pre-observal.{ts}.bak")
-    shutil.copy2(config_path, backup)
-    return backup
-
-
-def _parse_mcp_servers(config_data: dict, harness: str) -> dict[str, dict]:
-    """Extract MCP servers through the harness adapter."""
-    optic.trace("config_data={}, harness={}", config_data, harness)
-    ensure_loaded()
-    return get_adapter(harness).extract_mcp_servers(config_data)
-
-
-def _shim_config_file(config_path: Path, harness: str, dry_run: bool) -> int:
-    """Wrap un-shimmed MCP servers in a config file with observal-shim.
-
-    Returns count of newly shimmed entries.
-    """
-    optic.trace("config_path={}, harness={}", config_path, harness)
-    if not config_path.exists():
-        return 0
-    try:
-        data = json.loads(config_path.read_text())
-    except Exception:
-        return 0
-
-    servers = _parse_mcp_servers(data, harness)
-    shimmed = 0
-    for name, entry in servers.items():
-        if not _is_already_shimmed(entry) and not entry.get("url"):
-            if not dry_run:
-                servers[name] = _wrap_with_shim(entry, name)
-            shimmed += 1
-
-    if shimmed and not dry_run:
-        _backup_config(config_path)
-        config_path.write_text(json.dumps(data, indent=2) + "\n")
-
-    return shimmed
-
-
-_SHIM_TARGETS: dict[str, Path] = {
-    harness: Path(path).expanduser() for harness, path in get_home_mcp_configs().items() if path
-}
 _VALID_HARNESSES = get_valid_harnesses()
 
 
@@ -979,33 +913,19 @@ _VALID_HARNESSES = get_valid_harnesses()
 
 @doctor_app.command(name="patch")
 def doctor_patch(
-    hook: bool = typer.Option(False, "--hook", help="Install session push hooks (Claude Code + Kiro)"),
-    shim: bool = typer.Option(False, "--shim", help="Wrap MCP servers with observal-shim"),
-    all_: bool = typer.Option(False, "--all", help="Hooks + shims"),
     all_harnesses: bool = typer.Option(False, "--all-harnesses", help="Target every detected harness"),
     harness: list[str] = typer.Option([], "--harness", "-i", help="Target specific harness (repeatable)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would change without writing"),
 ):
-    """Instrument harnesses with Observal telemetry hooks and shims.
-
-    Requires at least one of --hook/--shim/--all AND one of --all-harnesses/--harness.
-    Session JSONL hooks (--hook) are only supported for Claude Code and Kiro.
-    MCP shim wrapping (--shim) works for all harnesses.
+    """Install Observal session telemetry hooks for selected harnesses.
 
     \b
     Examples:
-      observal doctor patch --all --all-harnesses           # Everything, everywhere
-      observal doctor patch --hook --harness claude-code   # Claude Code hooks only
-      observal doctor patch --shim --harness cursor        # Cursor shims only
-      observal doctor patch --all --all-harnesses --dry-run # Preview changes
+      observal doctor patch --all-harnesses
+      observal doctor patch --harness claude-code
+      observal doctor patch --all-harnesses --dry-run
     """
-    optic.trace("hook={}, shim={}", hook, shim)
-    do_hooks = hook or all_
-    do_shims = shim or all_
-
-    if not (hook or shim or all_):
-        rprint("[red]Specify at least one of --hook, --shim, or --all[/red]")
-        raise typer.Exit(1)
+    optic.trace("harnesses={}, all_harnesses={}", harness, all_harnesses)
 
     if not all_harnesses and not harness:
         rprint("[red]Specify --all-harnesses or --harness <name>[/red]")
@@ -1024,26 +944,11 @@ def doctor_patch(
             raise typer.Exit(1)
 
     any_changes = False
-    verb = "Would" if dry_run else "Done"
     rprint("[bold]Observal Doctor - Patch[/bold]\n")
 
+    ensure_loaded()
     for target in targets:
-        # ── Hooks ──
-        if do_hooks:
-            ensure_loaded()
-            any_changes = get_adapter(target).patch_hooks(dry_run) or any_changes
-
-        # ── Shims (all harnesses with home MCP config) ──
-        if do_shims:
-            shim_path = _SHIM_TARGETS.get(target)
-            if shim_path and shim_path.exists():
-                rprint(f"[cyan]{target} - shims[/cyan]")
-                count = _shim_config_file(shim_path, target, dry_run)
-                if count:
-                    any_changes = True
-                    rprint(f"  {verb}: shimmed {count} MCP entries in {shim_path}")
-                else:
-                    rprint("  [dim]All MCP servers already shimmed[/dim]")
+        any_changes = get_adapter(target).patch_hooks(dry_run) or any_changes
 
     if dry_run:
         rprint("\n[yellow]Dry run - no changes made.[/yellow]")
@@ -1054,7 +959,7 @@ def doctor_patch(
         emit_cli_audit(
             "doctor.patch",
             resource_type="harness",
-            detail=f"harnesses={','.join(targets)}, hooks={do_hooks}, shims={do_shims}",
+            detail=f"harnesses={','.join(targets)}, hooks=true",
             sensitivity="high",
         )
     else:
@@ -1237,8 +1142,6 @@ def _patch_pi(dry_run: bool) -> bool:
     data["packages"] = packages
 
     if not dry_run:
-        if settings_path.exists():
-            _backup_config(settings_path)
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(json.dumps(data, indent=2) + "\n")
 

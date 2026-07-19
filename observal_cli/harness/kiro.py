@@ -177,9 +177,6 @@ class KiroAdapter(BaseAdapter):
             return "installed"
         return "partial" if hooked > 0 else "missing"
 
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
-
     # ── Private scanning helpers ──────────────────────────────────
 
     def _scan_kiro_dir(self, kiro_dir: Path) -> ScanResult:

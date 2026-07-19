@@ -1,93 +1,51 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Debug agent failures
+# Debug agent failures from session evidence
 
-A user says the agent "didn't work." Without traces, you guess. With traces, you walk the exact sequence of events.
-
-## The workflow
-
-1. Find the session.
-2. Find the failing trace inside it.
-3. Walk the spans.
-4. Inspect the failure span: tool name, input, output, error.
-5. Reproduce locally, if needed.
+AI failures rarely produce one reliable error code. Observal preserves the session transcript so you can inspect what the user asked, which tools ran, what results the harness recorded, and how the agent responded.
 
 ## 1. Find the session
 
-Web UI: `http://localhost/traces` → filter by harness, user, and time range. Click a session to open every trace in it.
-
-CLI:
+Open `/traces` in the web UI or list recent sessions:
 
 ```bash
 observal ops traces --limit 50
 ```
 
-Every trace belongs to a `session_id`. Related traces (all from the same harness session) share it.
+Filter by harness, agent, user, model, or time range. Select the session that matches the reported failure.
 
-## 2. Find the failing trace
+## 2. Inspect the event sequence
 
-In the web UI the trace list colors errored traces red. In the CLI:
-
-```bash
-observal ops traces --turn --limit 50
-```
-
-Look for non-zero error counts in the summary.
-
-## 3. Walk the spans
+Expand the session to review prompts, assistant responses, tool calls, tool results, lifecycle events, and subagent activity in source order. The CLI can unfold the same session structure:
 
 ```bash
-observal ops spans <trace-id>
+observal ops traces --turn --limit 10
 ```
 
-Output is hierarchical: parent span first, then children indented. Each line includes name, duration, status, and error. The failure jumps out.
+Look for repeated tool calls, error results, missing inputs, unexpected model responses, or a stop event that occurred before the expected work completed.
 
-Example failure walk:
+## 3. Inspect recorded tool detail
 
-```
-trace 9a31...  agent: code-reviewer
-├── span: UserPromptSubmit           ok       1ms
-├── span: PreToolUse (github_mcp:pr) ok       0ms
-├── span: github_mcp:get_pr          ERROR    2412ms
-│     error: 404 Not Found - PR #5022 does not exist
-├── span: PostToolUse                ok       0ms
-└── span: Stop                       ok       0ms
-```
+The detail available for a tool call depends on the harness transcript. When present, Observal displays the tool name, input, result, and error indicators. Observal does not intercept MCP transport traffic or invent payload fields that the harness did not record.
 
-In 10 seconds you know: the user asked about a PR that doesn't exist, the MCP call returned 404, the agent stopped. The agent wasn't broken; the input was.
+## 4. Common patterns
 
-## 4. Inspect the span in detail
-
-The web UI span viewer shows the full input/output payload (pretty-printed JSON). On the CLI, open the span in the web UI via the link at the top of `observal ops spans`, or query GraphQL directly for the raw payload.
-
-## 5. Common failure patterns
-
-| Pattern in spans | Likely cause |
+| Session pattern | Likely cause |
 | --- | --- |
-| Same tool called 3+ times with identical args | Agent stuck in a loop. Prompt issue or tool result not being consumed. |
-| Long latency on one MCP call | External service slow/rate-limited. Check MCP server health. |
-| Tool returns success but agent "can't find" the result | Output format the agent doesn't parse. Prompt or tool schema mismatch. |
-| Consistent failures only for one user | Env var / auth / permissions issue. Check the user's install config. |
-| Agent never calls a tool you expect | Prompt isn't referencing it, or the tool is missing from the agent's config. |
+| Same tool called repeatedly with identical arguments | The agent is stuck in a retry loop or is not consuming the result |
+| Tool result records an error and the assistant continues | Prompt or recovery policy did not handle the failure |
+| Tool call has no matching result | Harness shutdown, interrupted process, or incomplete transcript delivery |
+| Session stops immediately after a prompt | Hook, model, permission, or harness configuration issue |
+| Expected MCP call never appears | The model did not select the tool, or the harness transcript omits that detail |
 
-## Alerts: find failures before users report them
+## 5. Recover incomplete delivery
 
-Create an alert rule in the web UI (`/settings/alerts`) or via the API. Rules fire on patterns like:
+If the local harness still contains the session source, run:
 
-* Error rate for MCP `github-mcp` exceeds 10% over 15 minutes
-* P95 latency for agent `code-reviewer` exceeds 8s
-* An agent session produces zero tool calls (probably broken)
+```bash
+observal reconcile
+```
 
-Alerts feed into your on-call channel via webhook.
-
-## When the trace isn't enough
-
-* **Enable debug logging on the CLI**: `observal --debug ...`
-* **Tail server logs**: `docker logs -f observal-api`
-* **Check the telemetry buffer**: `observal ops telemetry status`. If the buffer is large, traces may be delayed; the server was unreachable.
-* **Confirm the shim is actually wired up**: `observal doctor --harness claude-code`. Missed instrumentation = missing traces.
-
-## Next
-
-→ [Share agent configs across harnesses](share-agent-configs.md): package what works and ship it to your team.
+Reconciliation resumes from the acknowledged checkpoint and replays missing source records idempotently.

@@ -78,7 +78,7 @@ Tighten for higher-traffic deployments.
 DATA_RETENTION_DAYS=90
 ```
 
-Traces, spans, and scores older than this are TTL'd by ClickHouse. Set to `0` to disable retention (keep everything forever, and disk grows without bound). The minimum non-zero value enforced on startup is 7.
+Session events older than this are removed from ClickHouse. Set to `0` to disable retention. The minimum non-zero value enforced on startup is 7.
 
 ## JWT keys
 

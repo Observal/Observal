@@ -205,9 +205,6 @@ class ClaudeCodeAdapter(BaseAdapter):
                         break
         return "installed" if found >= 3 else ("partial" if found > 0 else "missing")
 
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
-
     # ── Private scanning helpers ──────────────────────────────────
 
     def _scan_claude_dir(self, claude_dir: Path) -> ScanResult:

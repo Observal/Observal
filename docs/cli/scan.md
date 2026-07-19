@@ -7,7 +7,7 @@
 
 Discover MCP servers, hooks, and telemetry configuration across your harness configs. `scan` is **read-only** -- it shows what you have without modifying any files.
 
-To actually instrument your harnesses (wrap MCP servers with `observal-shim` and install hooks), use [`observal doctor patch`](doctor.md).
+To install session telemetry hooks, use [`observal doctor patch`](doctor.md). MCP commands and URLs are never rewritten.
 
 ## Synopsis
 
@@ -32,8 +32,8 @@ If you run `observal scan` with no flags, it auto-detects every installed harnes
    * Copilot: `.vscode/mcp.json`
    * Antigravity: `.agents/mcp_config.json` or `~/.gemini/antigravity-cli/mcp_config.json`
    * Copilot CLI: `~/.copilot/mcp-config.json`
-2. Lists every MCP server found, its transport type, and whether it is already wrapped by `observal-shim`.
-3. Reports any installed telemetry hooks.
+2. Lists every MCP server found and its direct command or URL.
+3. Reports installed session telemetry hooks.
 
 No files are written. No servers are contacted. No registration happens.
 

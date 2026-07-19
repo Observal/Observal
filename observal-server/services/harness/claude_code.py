@@ -60,13 +60,8 @@ class ClaudeCodeAdapter(BaseHarnessAdapter):
                 "claude_settings_snippet": {"env": ctx.server_env} if ctx.server_env else {},
                 "mcpServers": {ctx.name: entry},
             }
-        if ctx.proxy_url:
-            return {
-                "command": ["claude", "mcp", "add", ctx.name, "--url", ctx.proxy_url],
-                "type": "shell_command",
-            }
         return {
-            "command": ["claude", "mcp", "add", ctx.name, "--", "observal-shim", *ctx.shim_args],
+            "command": ["claude", "mcp", "add", ctx.name, "--", ctx.command, *ctx.args],
             "type": "shell_command",
         }
 
@@ -95,7 +90,7 @@ class ClaudeCodeAdapter(BaseHarnessAdapter):
                 # SSE/streamable-http entry: preserve as-is (url, headers, env)
                 claude_mcps[name] = cfg
             else:
-                cmd = cfg.get("command", "observal-shim")
+                cmd = cfg.get("command", "")
                 args = cfg.get("args", [])
                 setup_commands.append(["claude", "mcp", "add", name, "--", cmd, *args])
                 claude_mcps[name] = {"command": cmd, "args": args, "env": cfg.get("env", {})}

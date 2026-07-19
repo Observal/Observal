@@ -177,7 +177,7 @@ class TestBuildChExportQuery:
     """Test _build_ch_export_query for ReplacingMergeTree vs MergeTree."""
 
     def test_replacing_engine_has_final_and_is_deleted(self):
-        cfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_export_query(cfg, 202501)
         assert "FINAL" in query
         assert "is_deleted = 0" in query
@@ -189,12 +189,12 @@ class TestBuildChExportQuery:
         assert "is_deleted" not in query
 
     def test_correct_time_column_used(self):
-        cfg = {"name": "spans", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "audit_log", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_export_query(cfg, 202503)
         assert "toYYYYMM(start_time) = 202503" in query
 
     def test_ends_with_format_parquet(self):
-        cfg = {"name": "scores", "engine": "replacing", "time_col": "timestamp", "fk_cols": []}
+        cfg = {"name": "security_events", "engine": "replacing", "time_col": "timestamp", "fk_cols": []}
         query = _build_ch_export_query(cfg, 202501)
         assert query.rstrip().endswith("FORMAT Parquet")
 
@@ -204,7 +204,7 @@ class TestBuildChExportQuery:
         assert query.rstrip().endswith("FORMAT Parquet")
 
     def test_cutoff_in_replacing_query(self):
-        cfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_export_query(cfg, 202501, cutoff="2025-01-15T00:00:00")
         assert "start_time < {cutoff:String}" in query
         assert "FINAL" in query
@@ -215,7 +215,7 @@ class TestBuildChExportQuery:
         assert "timestamp < {cutoff:String}" in query
 
     def test_no_cutoff_when_none(self):
-        cfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_export_query(cfg, 202501)
         assert "cutoff" not in query
 
@@ -227,17 +227,17 @@ class TestBuildChCountQuery:
     """Test _build_ch_count_query for count() AS cnt and FORMAT JSON."""
 
     def test_has_count_alias(self):
-        cfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_count_query(cfg, 202501)
         assert "count() AS cnt" in query
 
     def test_has_format_json(self):
-        cfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_count_query(cfg, 202501)
         assert "FORMAT JSON" in query
 
     def test_replacing_has_final(self):
-        cfg = {"name": "spans", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "audit_log", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_count_query(cfg, 202501)
         assert "FINAL" in query
         assert "is_deleted = 0" in query
@@ -262,13 +262,13 @@ class TestBuildChTimeRangeQuery:
     """Test _build_ch_time_range_query for min/max with aliases."""
 
     def test_has_min_max_aliases(self):
-        cfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_time_range_query(cfg)
         assert "AS min_t" in query
         assert "AS max_t" in query
 
     def test_replacing_has_final(self):
-        cfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_time_range_query(cfg)
         assert "FINAL" in query
         assert "is_deleted = 0" in query
@@ -381,8 +381,8 @@ class TestReadCount:
 class TestConstants:
     """Verify CLICKHOUSE_TABLES, FK_PG_TABLE_MAP, and EPOCH_SENTINELS."""
 
-    def test_clickhouse_tables_has_8_entries(self):
-        assert len(CLICKHOUSE_TABLES) == 8
+    def test_clickhouse_tables_has_4_entries(self):
+        assert len(CLICKHOUSE_TABLES) == 4
 
     def test_each_table_has_required_keys(self):
         for table_cfg in CLICKHOUSE_TABLES:
@@ -394,12 +394,8 @@ class TestConstants:
     def test_table_names(self):
         names = {t["name"] for t in CLICKHOUSE_TABLES}
         expected = {
-            "traces",
-            "spans",
-            "scores",
             "session_events",
             "audit_log",
-            "otel_logs",
             "security_events",
             "webhook_deliveries",
         }
@@ -409,16 +405,15 @@ class TestConstants:
         for t in CLICKHOUSE_TABLES:
             assert t["engine"] in ("replacing", "mergetree")
 
-    def test_replacing_tables(self):
+    def test_no_replacing_tables(self):
         replacing = [t["name"] for t in CLICKHOUSE_TABLES if t["engine"] == "replacing"]
-        assert set(replacing) == {"traces", "spans", "scores"}
+        assert replacing == []
 
     def test_mergetree_tables(self):
         mergetree = [t["name"] for t in CLICKHOUSE_TABLES if t["engine"] == "mergetree"]
         assert set(mergetree) == {
             "session_events",
             "audit_log",
-            "otel_logs",
             "security_events",
             "webhook_deliveries",
         }
@@ -440,11 +435,11 @@ class TestConstants:
         assert "name" in TableCfg.__annotations__
         assert "engine" in TableCfg.__annotations__
 
-    def test_fk_pg_table_map_has_5_entries(self):
-        assert len(FK_PG_TABLE_MAP) == 5
+    def test_fk_pg_table_map_has_3_entries(self):
+        assert len(FK_PG_TABLE_MAP) == 3
 
     def test_fk_pg_table_map_keys(self):
-        expected_keys = {"agent_id", "mcp_id", "mcp_server_id", "user_id", "actor_id"}
+        expected_keys = {"agent_id", "user_id", "actor_id"}
         assert set(FK_PG_TABLE_MAP.keys()) == expected_keys
 
     def test_epoch_sentinels_contains_expected(self):
@@ -464,7 +459,7 @@ class TestDataclasses:
         result = TelemetryExportResult(
             output_dir="/tmp/out",
             migration_id="abc-123",
-            table_results={"traces": {"files": [], "row_count": 0}},
+            table_results={"session_events": {"files": [], "row_count": 0}},
             total_rows=100,
             total_size_bytes=1024,
             duration_seconds=5.0,
@@ -479,20 +474,20 @@ class TestDataclasses:
         result = TelemetryImportResult(
             migration_id="abc-123",
             tables_imported=4,
-            tables_skipped=["scores"],
-            rows_imported={"traces": 500},
+            tables_skipped=["security_events"],
+            rows_imported={"session_events": 500},
             duration_seconds=10.0,
             warnings=["some warning"],
         )
         assert result.tables_imported == 4
-        assert result.tables_skipped == ["scores"]
-        assert result.rows_imported["traces"] == 500
+        assert result.tables_skipped == ["security_events"]
+        assert result.rows_imported["session_events"] == 500
         assert result.warnings == ["some warning"]
 
     def test_telemetry_validation_result_fields(self):
         result = TelemetryValidationResult(
             checksums_valid=True,
-            checksum_results={"traces_2025-01.parquet": True},
+            checksum_results={"session_events_2025-01.parquet": True},
             fk_results=None,
             row_count_results=None,
         )
@@ -861,7 +856,7 @@ class TestTelemetryManifestRoundTripProperty:
     @given(
         migration_id=st.uuids(),
         row_counts=st.dictionaries(
-            keys=st.sampled_from(["traces", "spans", "scores", "audit_log", "otel_logs"]),
+            keys=st.sampled_from(["session_events", "audit_log", "security_events", "audit_log", "webhook_deliveries"]),
             values=st.integers(min_value=0, max_value=1_000_000),
             min_size=1,
             max_size=5,
@@ -889,8 +884,6 @@ class TestTelemetryManifestRoundTripProperty:
             "fk_validation": {
                 "orphaned_agent_ids": [],
                 "orphaned_agent_ids_truncated": False,
-                "orphaned_mcp_ids": [],
-                "orphaned_mcp_ids_truncated": False,
                 "orphaned_user_ids": [],
                 "orphaned_user_ids_truncated": False,
                 "validated_at": None,
@@ -951,29 +944,20 @@ class TestFKValidationCompletenessProperty:
 
     @given(
         agent_ids=st.frozensets(st.uuids().map(str), min_size=0, max_size=20),
-        mcp_ids=st.frozensets(st.uuids().map(str), min_size=0, max_size=20),
         user_ids=st.frozensets(st.uuids().map(str), min_size=0, max_size=20),
         actor_ids=st.frozensets(st.uuids().map(str), min_size=0, max_size=20),
-        mcp_server_ids=st.frozensets(st.uuids().map(str), min_size=0, max_size=20),
     )
     @hsettings(max_examples=100)
-    def test_fk_collection_is_complete(self, agent_ids, mcp_ids, user_ids, actor_ids, mcp_server_ids):
-        """Verify the set logic for FK collection matches the union of all unique non-null values."""
-        # Simulate the FK collection logic from _validate_fk_references
+    def test_fk_collection_is_complete(self, agent_ids, user_ids, actor_ids):
+        """Verify FK collection merges audit actors into user references."""
         fk_values = {
             "agent_id": set(agent_ids),
-            "mcp_id": set(mcp_ids),
-            "mcp_server_id": set(mcp_server_ids),
             "user_id": set(user_ids),
             "actor_id": set(actor_ids),
         }
 
-        # Merge aliases (same logic as _validate_fk_references)
-        fk_values["mcp_id"] |= fk_values.pop("mcp_server_id", set())
         fk_values["user_id"] |= fk_values.pop("actor_id", set())
 
-        # Verify merged sets
-        assert fk_values["mcp_id"] == set(mcp_ids) | set(mcp_server_ids)
         assert fk_values["user_id"] == set(user_ids) | set(actor_ids)
         assert fk_values["agent_id"] == set(agent_ids)
 
@@ -1134,7 +1118,7 @@ class TestPartitionCheckAllEngines:
         """For replacing engines, the partition check should use FINAL WHERE is_deleted = 0."""
         # We test this indirectly by checking _ch_partition_has_data builds the right query.
         # The function is async, so we verify the query pattern via _build_ch_export_query.
-        cfg: TableCfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg: TableCfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_export_query(cfg, 202501)
         assert "FINAL" in query
         assert "is_deleted = 0" in query
@@ -1154,7 +1138,7 @@ class TestImportResumeState:
     def test_state_file_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / ".import_state.json"
-            completed = {"traces", "spans"}
+            completed = {"session_events", "audit_log"}
             state_path.write_text(
                 json.dumps({"completed": sorted(completed)}, indent=2),
                 encoding="utf-8",
@@ -1176,10 +1160,10 @@ class TestAtomicWritePattern:
 
     def test_tmp_suffix_construction(self):
         """Verify the tmp path is constructed correctly."""
-        original = Path("/tmp/traces_2025-01.parquet")
+        original = Path("/tmp/session_events_2025-01.parquet")
         tmp = original.with_suffix(original.suffix + ".tmp")
         assert str(tmp).endswith(".parquet.tmp")
-        assert tmp.name == "traces_2025-01.parquet.tmp"
+        assert tmp.name == "session_events_2025-01.parquet.tmp"
 
 
 # ── Exception Chaining ───────────────────────────────────
@@ -1285,9 +1269,28 @@ class TestCutoffInWhereClause:
         assert "count() AS cnt" in query
 
     def test_replacing_query_with_cutoff(self):
-        cfg: TableCfg = {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
+        cfg: TableCfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         cutoff = "2025-06-15T12:00:00+00:00"
         query = _build_ch_export_query(cfg, 202506, cutoff=cutoff)
         assert "start_time < {cutoff:String}" in query
         assert "FINAL" in query
         assert "is_deleted = 0" in query
+
+
+def test_exec_dashboard_queries_session_tables_only():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "observal-server/api/routes/exec_dashboard.py").read_text()
+    assert "FROM traces" not in source
+    assert "FROM spans" not in source
+    assert "JOIN traces" not in source
+    assert "JOIN spans" not in source
+    assert "session_stats_agg" in source
+
+
+def test_legacy_clickhouse_tables_are_dropped_but_not_exported():
+    root = Path(__file__).resolve().parents[1]
+    baseline = (root / "observal-server/clickhouse/migrations/001_baseline.sql").read_text()
+    constants = (root / "packages/observal-shared/observal_shared/migration/constants.py").read_text()
+    for table in ("traces", "spans", "scores", "otel_logs"):
+        assert f"DROP TABLE IF EXISTS {table}" in baseline
+        assert f'"name": "{table}"' not in constants

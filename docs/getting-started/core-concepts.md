@@ -11,37 +11,30 @@ The vocabulary you need to be productive with Observal. Read once; every other p
 ```mermaid
 flowchart TB
     harness["AI coding harness: Claude Code, Kiro, Cursor, Pi"]
-    sessions["Harness session sources - JSONL or native message APIs"]
-    hooks["harness hooks - session + lifecycle events"]
-    shim["observal-shim / proxy - MCP request + response capture"]
+    sessions["Harness session sources: JSONL or native message APIs"]
+    hooks["Harness hooks and extensions"]
     mcp[MCP servers]
-    cli["observal CLI - reconcile + push"]
-    api[Observal API]
-    pg["PostgreSQL - registry + users + review state"]
-    ch["ClickHouse - traces + spans + session events"]
+    cli["observal CLI: reconcile and push"]
+    api[Observal session ingest API]
+    pg["PostgreSQL: registry, users, and review state"]
+    ch["ClickHouse: session events and aggregates"]
 
     harness --> sessions
     harness --> hooks
-    harness <--> shim
-    shim <--> mcp
-    hooks --> api
-    shim --> api
+    harness <--> mcp
+    hooks --> cli
     sessions --> cli
     cli --> api
     api --> pg
     api --> ch
 ```
 
-Observal collects agent activity through three complementary paths:
-
-* **Session capture** reads harness JSONL transcripts or native message APIs and delivers indexed raw records for server-side parsing.
-* **harness hooks** capture lifecycle events such as session start, user prompt, tool use, stop, and notifications when the harness exposes them.
-* **MCP shims and proxies** capture MCP requests and responses without modifying the traffic.
+Observal reads harness session transcripts or native message APIs. Hooks and extensions wake the exporter during the session, while `observal reconcile` recovers records that were not delivered during the original hook run. MCP commands and remote URLs remain direct.
 
 Two data stores, two concerns:
 
 * **Postgres** holds the *registry*: users, accounts, agent configs, MCP listings, review state, and alert rules. Transactional, relational.
-* **ClickHouse** holds the *telemetry*: traces, spans, and session events. High-volume, time-series, fast analytical queries.
+* **ClickHouse** holds indexed session events, session aggregates, audit events, and security events. High-volume, time-series, fast analytical queries.
 
 ## The registry
 
@@ -58,32 +51,19 @@ Six component types. Agents bundle the other five.
 
 Anyone can publish. Admin review controls what appears in the public listing, but your own items are usable immediately without approval.
 
-## Telemetry: traces, spans, sessions
-
-### Span
-
-A single operation. Typically one MCP tool call or lifecycle event. Includes the name, input/output metadata, latency, status, and any error. Spans can nest via `parent_span_id`.
-
-### Trace
-
-A top-level operation that can contain many spans. Most traces are a single agent turn (one user prompt → the agent's response). Identified by `trace_id`.
+## Telemetry: sessions and events
 
 ### Session
 
-A logical grouping of related traces, typically one harness session or one user task. Identified by `session_id` in trace metadata. A long Claude Code session produces many traces that all share a `session_id`.
+A harness conversation or task identified by `session_id`. Observal stores each source record with its harness, user, agent attribution, and source offset.
 
-## The shim and the proxy
+### Event
 
-Observal intercepts MCP traffic without modifying it. Two flavors:
+A parsed record inside a session, such as a user prompt, assistant response, tool call, tool result, token update, lifecycle hook, or subagent event. The exact event detail depends on what the harness records in its transcript.
 
-| Component | Transport | When it's used |
-| --- | --- | --- |
-| `observal-shim` | stdio | The default for most MCP servers. Wraps the MCP server process and forwards stdin/stdout. |
-| `observal-proxy` | HTTP / SSE / streamable-HTTP | Used when an MCP server speaks HTTP instead of stdio. |
+### Aggregate
 
-You rarely call either one directly. `observal doctor patch --shim` (or `--all`) rewrites your harness config to route MCP servers through the appropriate one.
-
-Interception is **transparent**: nothing is changed on the wire, and an unreachable Observal server does not block the MCP tool call. Reliable session delivery is handled separately by the harness exporter.
+`session_stats_agg` summarizes event counts, prompts, tool calls, tool results, token totals, model names, harnesses, and session timing. Dashboards and insights derive adoption and usage metrics from these session aggregates.
 
 ## Durable session outboxes
 

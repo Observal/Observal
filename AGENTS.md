@@ -110,7 +110,7 @@ A stub harness has:
 
 ### General
 
-- **No OTLP env vars.** Telemetry flows through `observal-shim` (stdio proxy) and session push hooks. Never generate `OTEL_*` or `CLAUDE_CODE_ENABLE_TELEMETRY` vars.
+- **No telemetry wrappers or OTLP env vars.** MCP commands and remote URLs remain direct. Telemetry flows through session push hooks and reconciliation. Never generate `OTEL_*` or `CLAUDE_CODE_ENABLE_TELEMETRY` vars.
 - **Owner fallback on install.** Submitters can install their own items without admin approval. Approved items are preferred, but pending/rejected items are accessible to the submitter.
 - **UUID or name** everywhere. All API path params accept either. Server resolves via `resolve_listing()`.
 - **Hard rewrite policy.** No deprecation wrappers. When code moves, callers update in the same PR. Dead code is deleted immediately.
@@ -158,18 +158,17 @@ Sub-packages: `agent/` (crud, install, draft), `admin/` (enterprise_settings, us
 ## Database architecture
 
 - **PostgreSQL**: relational data (users, agents, components, feedback, settings). SQLAlchemy async.
-- **ClickHouse**: time-series telemetry (traces, spans, scores, audit events). HTTP interface, ReplacingMergeTree, bloom filter indexes. Schema changes use versioned SQL migrations in `observal-server/clickhouse/migrations/`. Runtime helpers stay in `services/clickhouse/`.
+- **ClickHouse**: session events, session aggregates, audit events, security events, and webhook deliveries. HTTP interface, MergeTree-family tables, bloom filter indexes. Schema changes use versioned SQL migrations in `observal-server/clickhouse/migrations/`. Runtime helpers stay in `services/clickhouse/`.
 - **Redis**: pub/sub for GraphQL subscriptions, arq job queue, dynamic settings cache, auth token revocation.
 
 ## Telemetry pipeline
 
 ```
-harness ──→ observal-shim (stdio proxy) ──→ POST /ingest ──→ ClickHouse
-harness ──→ session push hooks ──→ POST /hooks ──→ ClickHouse
-CLI ──→ observal reconcile ──→ POST /reconcile ──→ ClickHouse (enrichment)
+harness ──→ session push hooks ──→ POST /api/v1/ingest/session ──→ ClickHouse
+CLI ──→ observal reconcile ──→ POST /api/v1/ingest/session ──→ ClickHouse
 ```
 
-The shim never modifies messages, only observes. Telemetry is fire-and-forget; offline events queue in `~/.observal/telemetry_buffer.db` (SQLite) and flush on reconnect.
+Session delivery uses a local outbox and resumes after transient network failures.
 
 ## Auth model
 

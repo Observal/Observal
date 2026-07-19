@@ -64,8 +64,6 @@ class CopilotCliAdapter(BaseHarnessAdapter):
     def format_mcp_config(self, ctx: McpConfigContext) -> dict:
         if ctx.url:
             entry = {**ctx.standard_entry(), "tools": ["*"]}
-        elif ctx.proxy_url:
-            entry = {"type": "sse", "url": ctx.proxy_url, "env": ctx.server_env, "tools": ["*"]}
         else:
             entry = {"type": "stdio", **ctx.standard_entry(), "tools": ["*"]}
         return {"mcpServers": {ctx.name: entry}}
@@ -80,21 +78,11 @@ class CopilotCliAdapter(BaseHarnessAdapter):
 
         # Build MCP config entries with Copilot CLI format
         copilot_cli_configs = {}
-        for k, v in mcp_configs.items():
-            if v.get("url"):
-                transport_type = v.get("type", "sse")
-                copilot_cli_configs[k] = {"type": transport_type, "url": v["url"], "tools": ["*"]}
-                if "env" in v:
-                    copilot_cli_configs[k]["env"] = v["env"]
-            else:
-                copilot_cli_configs[k] = {
-                    "type": "stdio",
-                    "command": v["command"],
-                    "args": v.get("args", []),
-                    "tools": ["*"],
-                }
-                if "env" in v:
-                    copilot_cli_configs[k]["env"] = v["env"]
+        for name, config in mcp_configs.items():
+            entry = dict(config)
+            entry["type"] = config.get("type", "sse") if config.get("url") else "stdio"
+            entry["tools"] = ["*"]
+            copilot_cli_configs[name] = entry
 
         copilot_cli_spec = HARNESS_REGISTRY["copilot-cli"]
 

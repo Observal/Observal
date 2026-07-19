@@ -60,7 +60,6 @@ All `{id}` parameters accept a UUID or a name.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/telemetry/ingest` | Batch ingest traces, spans, scores |
 | `POST` | `/telemetry/events` | Legacy event ingestion |
 | `GET` | `/telemetry/status` | Data flow status |
 | `POST` | `/ingest/session` | Idempotently ingest indexed session source records and return the highest contiguous acknowledgement |
@@ -116,7 +115,7 @@ Single endpoint, query + subscription via WebSocket.
 
 | Path | Description |
 | --- | --- |
-| `/api/v1/graphql` | Traces, spans, scores, metrics (query + subscription) |
+| `/api/v1/graphql` | Session update subscriptions |
 
 Subscriptions use `graphql-ws` protocol.
 

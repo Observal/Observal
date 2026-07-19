@@ -151,9 +151,6 @@ class CopilotCliAdapter(BaseAdapter):
 
         return "missing"
 
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
-
     # ── Private helpers ───────────────────────────────────────
 
     def _scan_mcps_file(self, mcp_file: Path, source: str) -> list[DiscoveredMcp]:

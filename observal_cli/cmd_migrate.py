@@ -346,7 +346,7 @@ def export_telemetry_cmd(
 ) -> None:
     """Export ClickHouse telemetry data to Parquet files.
 
-    Phase 2 of migration: exports traces, spans, scores, and other telemetry
+    Phase 2 of migration: exports session, audit, security, and webhook telemetry
     tables as monthly Parquet partitions. Requires a completed Phase 1 export
     (the migration_manifest.json produced by 'observal migrate export').
 

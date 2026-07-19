@@ -158,8 +158,8 @@ class TestGenerateCodexConfig:
         agent = _make_agent(external_mcps=ext)
         cfg = generate_agent_config(agent, "codex")
         servers = cfg["mcp_config"]["content"]["mcp_servers"]
-        assert servers["my-server"]["command"] == "observal-shim"
-        assert "--mcp-id" in servers["my-server"]["args"]
+        assert servers["my-server"]["command"] == "npx"
+        assert servers["my-server"]["args"] == ["-y", "my-server"]
 
     def test_mcp_config_injects_agent_id(self):
         ext = [{"name": "srv", "command": "npx", "args": ["-y", "srv"]}]
@@ -215,7 +215,7 @@ class TestGenerateCopilotConfig:
         cfg = generate_agent_config(agent, "copilot")
         entry = cfg["mcp_config"]["content"]["servers"]["my-server"]
         assert entry["type"] == "stdio"
-        assert entry["command"] == "observal-shim"
+        assert entry["command"] == "npx"
         assert isinstance(entry["args"], list)
 
     def test_copilot_preserves_env_vars(self):
@@ -279,7 +279,7 @@ class TestGenerateCopilotCliConfig:
         cfg = generate_agent_config(agent, "copilot-cli")
         entry = cfg["mcp_config"]["content"]["mcpServers"]["my-server"]
         assert entry["type"] == "stdio"
-        assert entry["command"] == "observal-shim"
+        assert entry["command"] == "npx"
         assert isinstance(entry["args"], list)
         assert entry["tools"] == ["*"]
 
@@ -357,23 +357,14 @@ class TestGenerateOpenCodeConfig:
         entry = cfg["mcp_config"]["content"]["mcp"]["my-server"]
         assert entry["type"] == "local"
         assert isinstance(entry["command"], list)
-        assert entry["command"][0] == "observal-shim"
+        assert entry["command"][0] == "npx"
 
     def test_opencode_command_is_flat_array(self):
         ext = [{"name": "my-server", "command": "npx", "args": ["-y", "my-server"]}]
         agent = _make_agent(external_mcps=ext)
         cfg = generate_agent_config(agent, "opencode")
         entry = cfg["mcp_config"]["content"]["mcp"]["my-server"]
-        old_cmd = "npx"
-        old_args = ["-y", "my-server"]
-        full_cmd = [entry["command"][0], *entry["command"][1:]]
-        assert "--mcp-id" in entry["command"]
-        assert "--" in entry["command"]
-        idx_dash = entry["command"].index("--")
-        assert (
-            entry["command"][idx_dash + 1] == "observal-shim"
-            or entry["command"][idx_dash + 1 : idx_dash + 1 + 1 + len(old_args)]
-        )
+        assert entry["command"] == ["npx", "-y", "my-server"]
 
     def test_opencode_preserves_env_vars(self):
         ext = [{"name": "my-server", "command": "npx", "args": [], "env": {"FOO": "bar"}}]
@@ -558,12 +549,12 @@ class TestWriteFile:
     def test_merges_toml(self, tmp_path):
         p = tmp_path / "config.toml"
         p.write_text("[mcp_servers.old]\ncommand = 'echo'\n")
-        content = {"mcp_servers": {"new": {"command": "observal-shim"}}}
+        content = {"mcp_servers": {"new": {"command": "npx"}}}
         status = _write_file(p, content, merge_mcp=True)
         assert status == "merged"
         merged = p.read_text()
         assert "[mcp_servers.old]" in merged
-        assert "observal-shim" in merged
+        assert "npx" in merged
 
     def test_creates_parent_directories(self, tmp_path):
         p = tmp_path / ".codex" / "config.toml"
@@ -633,8 +624,8 @@ class TestPullCodex:
                     "content": {
                         "mcp_servers": {
                             "my-server": {
-                                "command": "observal-shim",
-                                "args": ["--mcp-id", "test", "--", "npx", "-y", "my-server"],
+                                "command": "npx",
+                                "args": ["-y", "my-server"],
                             }
                         }
                     },
@@ -654,7 +645,7 @@ class TestPullCodex:
         assert config.exists()
         content = config.read_text()
         assert "mcp_servers" in content
-        assert "observal-shim" in content
+        assert "npx" in content
 
     def test_writes_only_agent_when_no_mcp(self, tmp_path):
         snippet = {
@@ -687,8 +678,8 @@ class TestPullCopilot:
                         "servers": {
                             "my-server": {
                                 "type": "stdio",
-                                "command": "observal-shim",
-                                "args": ["--mcp-id", "test", "--", "npx", "-y", "my-server"],
+                                "command": "npx",
+                                "args": ["-y", "my-server"],
                             }
                         }
                     },
@@ -724,7 +715,7 @@ class TestPullOpenCode:
                         "mcp": {
                             "my-server": {
                                 "type": "local",
-                                "command": ["observal-shim", "--mcp-id", "test", "--", "npx", "-y", "my-server"],
+                                "command": ["npx", "-y", "my-server"],
                             }
                         }
                     },
@@ -825,14 +816,14 @@ class TestCodexTomlFormat:
     def test_toml_output_has_correct_structure(self):
         mcp_configs = {
             "my-server": {
-                "command": "observal-shim",
-                "args": ["--mcp-id", "abc", "--", "npx", "-y", "my-server"],
+                "command": "npx",
+                "args": ["-y", "my-server"],
                 "env": {"OBSERVAL_AGENT_ID": "agent-123"},
             }
         }
         toml = _dict_to_toml({"mcp_servers": mcp_configs})
         assert "[mcp_servers.my-server]" in toml
-        assert 'command = "observal-shim"' in toml
+        assert 'command = "npx"' in toml
         assert "OBSERVAL_AGENT_ID" in toml
 
     def test_toml_entry_with_no_env(self):
@@ -843,15 +834,15 @@ class TestCodexTomlFormat:
 
 
 class TestCopilotJsonFormat:
-    def test_copilot_config_wraps_with_type_stdio(self):
+    def test_copilot_config_uses_type_stdio(self):
         agent = _make_agent(external_mcps=[{"name": "my-srv", "command": "npx", "args": ["-y", "my-srv"]}])
         cfg = generate_agent_config(agent, "copilot")
         servers = cfg["mcp_config"]["content"]["servers"]
         entry = servers["my-srv"]
         assert entry["type"] == "stdio"
-        assert entry["command"] == "observal-shim"
+        assert entry["command"] == "npx"
         assert isinstance(entry["args"], list)
-        assert "--mcp-id" in entry["args"]
+        assert entry["args"] == ["-y", "my-srv"]
 
     def test_copilot_config_has_no_mcpservers_key(self):
         agent = _make_agent(external_mcps=[{"name": "my-srv", "command": "npx", "args": []}])
@@ -866,8 +857,8 @@ class TestOpenCodeJsonFormat:
         cfg = generate_agent_config(agent, "opencode")
         entry = cfg["mcp_config"]["content"]["mcp"]["my-srv"]
         assert isinstance(entry["command"], list)
-        assert entry["command"][0] == "observal-shim"
-        assert "--" in entry["command"]
+        assert entry["command"][0] == "npx"
+        assert entry["command"] == ["npx", "-y", "my-srv"]
 
     def test_opencode_has_no_args_key(self):
         agent = _make_agent(external_mcps=[{"name": "my-srv", "command": "npx", "args": ["-y", "my-srv"]}])
@@ -897,8 +888,8 @@ class TestConfigGeneratorCopilotCli:
         listing.docker_image = kw.get("docker_image")
         listing.framework = kw.get("framework")
         listing.environment_variables = kw.get("environment_variables", [])
-        listing.command = kw.get("command")
-        listing.args = kw.get("args")
+        listing.command = kw.get("command", "npx")
+        listing.args = kw.get("args", ["-y", name])
         listing.url = kw.get("url")
         listing.transport = kw.get("transport")
         listing.auto_approve = kw.get("auto_approve")
@@ -910,8 +901,8 @@ class TestConfigGeneratorCopilotCli:
         cfg = generate_config(self._make_listing(), "copilot-cli")
         server = cfg["mcpServers"]["my-mcp"]
         assert server["type"] == "stdio"
-        assert server["command"] == "observal-shim"
-        assert "--mcp-id" in server["args"]
+        assert server["command"] == "npx"
+        assert server["args"] == ["-y", "my-mcp"]
         assert server["tools"] == ["*"]
 
     def test_copilot_cli_sse_has_type_sse(self):
@@ -921,14 +912,6 @@ class TestConfigGeneratorCopilotCli:
         server = cfg["mcpServers"]["my-mcp"]
         assert server["type"] == "sse"
         assert server["url"] == "http://localhost:3000/sse"
-        assert server["tools"] == ["*"]
-
-    def test_copilot_cli_proxy_has_tools(self):
-        from services.config_generator import generate_config
-
-        cfg = generate_config(self._make_listing(), "copilot-cli", proxy_port=9999)
-        server = cfg["mcpServers"]["my-mcp"]
-        assert server["type"] == "sse"
         assert server["tools"] == ["*"]
 
     def test_copilot_cli_env_vars_preserved(self):
@@ -963,8 +946,8 @@ class TestConfigGeneratorCopilot:
         listing.docker_image = kw.get("docker_image")
         listing.framework = kw.get("framework")
         listing.environment_variables = kw.get("environment_variables", [])
-        listing.command = kw.get("command")
-        listing.args = kw.get("args")
+        listing.command = kw.get("command", "npx")
+        listing.args = kw.get("args", ["-y", name])
         listing.url = kw.get("url")
         listing.transport = kw.get("transport")
         listing.auto_approve = kw.get("auto_approve")
@@ -976,8 +959,8 @@ class TestConfigGeneratorCopilot:
         cfg = generate_config(self._make_listing(), "copilot")
         server = cfg["mcpServers"]["my-mcp"]
         assert server["type"] == "stdio"
-        assert server["command"] == "observal-shim"
-        assert "--mcp-id" in server["args"]
+        assert server["command"] == "npx"
+        assert server["args"] == ["-y", "my-mcp"]
 
     def test_copilot_sse_has_type_sse(self):
         from services.config_generator import generate_config
@@ -1019,8 +1002,8 @@ class TestConfigGeneratorOpenCode:
         listing.docker_image = kw.get("docker_image")
         listing.framework = kw.get("framework")
         listing.environment_variables = kw.get("environment_variables", [])
-        listing.command = kw.get("command")
-        listing.args = kw.get("args")
+        listing.command = kw.get("command", "npx")
+        listing.args = kw.get("args", ["-y", name])
         listing.url = kw.get("url")
         listing.transport = kw.get("transport")
         listing.auto_approve = kw.get("auto_approve")
@@ -1046,8 +1029,8 @@ class TestConfigGeneratorOpenCode:
         cfg = generate_config(self._make_listing(), "opencode")
         entry = cfg["mcp"]["my-mcp"]
         assert isinstance(entry["command"], list)
-        assert entry["command"][0] == "observal-shim"
-        assert "--mcp-id" in entry["command"]
+        assert entry["command"][0] == "npx"
+        assert entry["command"] == ["npx", "-y", "my-mcp"]
 
     def test_opencode_stdio_has_no_args_key(self):
         from services.config_generator import generate_config
@@ -1081,21 +1064,6 @@ class TestConfigGeneratorOpenCode:
         )
         entry = cfg["mcp"]["my-mcp"]
         assert "headers" in entry
-
-    def test_opencode_proxy_uses_mcp_key(self):
-        from services.config_generator import generate_config
-
-        cfg = generate_config(self._make_listing(), "opencode", proxy_port=9999)
-        assert "mcp" in cfg
-        assert "mcpServers" not in cfg
-
-    def test_opencode_proxy_type_is_remote(self):
-        from services.config_generator import generate_config
-
-        cfg = generate_config(self._make_listing(), "opencode", proxy_port=9999)
-        entry = cfg["mcp"]["my-mcp"]
-        assert entry["type"] == "remote"
-        assert "localhost:9999" in entry["url"]
 
     def test_opencode_env_vars_preserved(self):
         from services.config_generator import generate_config
@@ -1172,7 +1140,7 @@ class TestConfigGeneratorCodexFormat:
         assert "mcp_servers" in cfg
         assert "mcpServers" not in cfg
 
-    def test_stdio_codex_has_observal_shim(self):
+    def test_stdio_codex_keeps_original_command(self):
         from services.config_generator import generate_config
 
         listing = self._make_listing(command="npx", args=["-y", "my-mcp"])
@@ -1180,15 +1148,7 @@ class TestConfigGeneratorCodexFormat:
         servers = cfg["mcp_servers"]
         assert len(servers) == 1
         entry = next(iter(servers.values()))
-        assert entry["command"] == "observal-shim"
-
-    def test_proxy_codex_uses_mcp_servers_key(self):
-        from services.config_generator import generate_config
-
-        listing = self._make_listing(command="npx", args=["-y", "my-mcp"])
-        cfg = generate_config(listing, "codex", proxy_port=9000)
-        assert "mcp_servers" in cfg
-        assert "mcpServers" not in cfg
+        assert entry["command"] == "npx"
 
     def test_sse_codex_uses_mcp_servers_key(self):
         from services.config_generator import generate_config
@@ -1212,10 +1172,10 @@ class TestConfigGeneratorCodexFormat:
         """The mcp_servers dict should produce valid Codex TOML."""
         from observal_cli.cmd_pull import _dict_to_toml
 
-        servers = {"mcp_servers": {"my-server": {"command": "observal-shim", "args": ["--mcp-id", "abc", "--", "npx"]}}}
+        servers = {"mcp_servers": {"my-server": {"command": "npx", "args": ["-y", "my-server"]}}}
         toml = _dict_to_toml(servers)
         assert "[mcp_servers.my-server]" in toml
-        assert 'command = "observal-shim"' in toml
+        assert 'command = "npx"' in toml
 
 
 class TestCodexInstallCliPathHint:

@@ -175,9 +175,6 @@ class AntigravityAdapter(BaseAdapter):
             return "missing"
         return "installed" if _OBSERVAL_HOOK_NAME in data else "missing"
 
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
-
     # -- Private helpers ---------------------------------------------------
 
     def _scan_mcps(self, mcp_file: Path, source: str) -> list[DiscoveredMcp]:

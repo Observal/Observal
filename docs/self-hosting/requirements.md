@@ -31,13 +31,13 @@ ClickHouse is the memory-hungry one. On a long-running team server, bump it to 2
 
 ## Disk: where the data goes
 
-The heaviest user of disk is **ClickHouse** (traces, spans, scores). Growth depends on:
+The heaviest user of disk is **ClickHouse**. Growth depends on:
 
-* Number of agents
-* Traces per agent per day
-* `DATA_RETENTION_DAYS` (default 90; TTL handled by ClickHouse)
+* Number and length of harness sessions
+* Raw transcript record size
+* `DATA_RETENTION_DAYS`
 
-Rule of thumb: **~1 KB per span**. A team running 10K spans/day at 90-day retention will accumulate ~900 MB of ClickHouse data. Plan 2–3× headroom.
+Session transcripts vary significantly by harness and tool output size. Measure representative workloads and plan 2 to 3 times headroom over observed growth.
 
 Postgres stays under 500 MB for most deployments; it holds only registry metadata and user accounts.
 

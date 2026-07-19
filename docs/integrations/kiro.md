@@ -35,7 +35,7 @@ only new lines since the last push and sends them to Observal.
 | Guidance files | Scanned from steering files and `AGENTS.md`, not overwritten |
 | Skills | `.kiro/skills/{name}/SKILL.md` and `~/.kiro/skills/{name}/SKILL.md` |
 | Session parsing | Kiro JSONL parser |
-| Telemetry | MCP telemetry through `observal-shim`; session telemetry through hooks |
+| Telemetry | Kiro session transcripts delivered through hooks and reconciliation |
 | Model selection | Registry-backed Kiro model catalog |
 
 ---

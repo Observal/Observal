@@ -69,7 +69,7 @@ Limits telemetry to agents that are registered in the Observal registry.
 | Value | Effect |
 |-------|--------|
 | `false` (default) | Accept telemetry from any agent, registered or not |
-| `true` | Only registered agents are traced. Unregistered agent activity may be missing from traces |
+| `true` | Only registered agents are attributed. Unregistered agent activity may be missing from session views |
 
 **Status:** This control is unstable. Enable it only after confirming all team agents are registered and harness patching is current.
 

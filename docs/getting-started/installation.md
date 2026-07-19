@@ -107,8 +107,6 @@ Four entry points land on your `PATH`:
 | Command                | Purpose                                              |
 | ---------------------- | ---------------------------------------------------- |
 | `observal`             | The main CLI                                         |
-| `observal-shim`        | stdio shim between your harness and stdio MCP servers    |
-| `observal-proxy`       | HTTP proxy between your harness and HTTP/SSE MCP servers |
 | `observal-sandbox-run` | Sandbox runner invoked by Observal sandboxes         |
 
 You will almost never call the shim, proxy, or sandbox runner directly. The CLI wires them into your harness config for you.

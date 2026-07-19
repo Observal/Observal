@@ -12,7 +12,7 @@ harness lacks the required feature.
 
 Method → Feature mapping:
     generate_hook_config, detect_hooks, get_hook_spec → "hooks"
-    scan_home, scan_project, shim_status              → "mcp_servers"
+    scan_home, scan_project                            → "mcp_servers"
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ METHOD_FEATURE_MAP: dict[str, str] = {
     "get_hook_spec": "hooks",
     "scan_home": "mcp_servers",
     "scan_project": "mcp_servers",
-    "shim_status": "mcp_servers",
 }
 
 
@@ -248,20 +247,6 @@ class HarnessAdapter(Protocol):
 
         Raises:
             NotSupportedError: If this harness does not have hooks feature.
-        """
-        ...
-
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        """Check whether MCP servers are wrapped with observal-shim.
-
-        Args:
-            mcps: List of discovered MCP servers.
-
-        Returns:
-            Status string: "all", "partial", "none".
-
-        Raises:
-            NotSupportedError: If this harness does not have mcp_servers feature.
         """
         ...
 

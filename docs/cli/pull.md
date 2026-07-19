@@ -39,7 +39,7 @@ Varies by harness. For Claude Code:
 | --- | --- |
 | `~/.claude/agents/<name>.json` (user scope) | Sub-agent definition with instructions, model, tools |
 | `.claude/agents/<name>.json` (project scope) | Project-scoped version of the above |
-| `~/.claude/settings.json` | Telemetry hooks, MCP servers wrapped via `observal-shim` |
+| `~/.claude/settings.json` | Telemetry hooks and direct MCP server configuration |
 | `.claude/skills/<skill-name>/` | Every skill referenced by the agent |
 
 For Kiro:
@@ -48,7 +48,7 @@ For Kiro:
 | --- | --- |
 | `~/.kiro/agents/<name>.json` | Agent config with Observal telemetry hooks |
 | `.kiro/steering/<name>.md` | Steering file (the agent's system instructions) |
-| `.kiro/settings/mcp.json` | MCP servers, wrapped via `observal-shim` |
+| `.kiro/settings/mcp.json` | MCP servers with their original commands and URLs |
 
 For Cursor, VS Code, Copilot, and OpenCode: primarily MCP config plus rules or agent files at the appropriate path.
 

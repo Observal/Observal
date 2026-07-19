@@ -114,10 +114,6 @@ function isHookEvent(eventName: string): boolean {
 	return eventName.startsWith("hook_");
 }
 
-function isShimEvent(eventName: string): boolean {
-	return eventName.startsWith("shim_");
-}
-
 function getEventName(evt: RawSessionEvent): string {
 	return evt.attributes?.["event.name"] || evt.event_name;
 }
@@ -153,7 +149,6 @@ function eventIcon(eventName: string) {
 		eventName === "hook_elicitationresult"
 	)
 		return Globe;
-	if (isShimEvent(eventName)) return Globe;
 	if (eventName === "hook_token_usage") return Zap;
 	if (isHookEvent(eventName)) return Zap;
 	return FileText;
@@ -193,7 +188,6 @@ function eventColor(eventName: string): string {
 		eventName === "hook_elicitationresult"
 	)
 		return "text-teal-500";
-	if (isShimEvent(eventName)) return "text-teal-500";
 	if (isHookEvent(eventName)) return "text-orange-500";
 	return "text-muted-foreground";
 }
@@ -239,7 +233,6 @@ const FILTER_CATEGORIES: FilterCategory[] = [
 				"hook_posttooluse",
 				"hook_pretooluse",
 				"hook_posttoolusefailure",
-				"shim_tool_call",
 			].includes(e),
 		color: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20",
 	},
@@ -796,61 +789,12 @@ function EventSummary({ event }: { event: RawSessionEvent }) {
 		);
 	}
 
-	if (isShimEvent(eName)) {
-		const schemaValid = attrs.tool_schema_valid === "1";
-		return (
-			<div className="flex items-center gap-3 flex-wrap">
-				<Badge variant={attrs.mcp_status === "error" ? "warning" : "success"}>
-					{attrs.tool_name || eName.replace("shim_", "")}
-				</Badge>
-				{attrs.mcp_id && (
-					<span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
-						<Globe className="h-3 w-3" />
-						{attrs.mcp_id}
-					</span>
-				)}
-				{attrs.mcp_latency_ms && (
-					<Stat
-						label="MCP"
-						value={formatDuration(attrs.mcp_latency_ms)}
-						icon={Clock}
-					/>
-				)}
-				{attrs.tool_schema_valid && (
-					<span
-						className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${schemaValid ? "text-success" : "text-destructive"}`}
-					>
-						{schemaValid ? (
-							<CheckCircle2 className="h-3 w-3" />
-						) : (
-							<XCircle className="h-3 w-3" />
-						)}
-						schema
-					</span>
-				)}
-				{attrs.mcp_status === "error" && <Badge variant="warning">error</Badge>}
-			</div>
-		);
-	}
-
 	if (isHookEvent(eName)) {
-		const hasShim = attrs._sources?.includes("shim");
 		return (
 			<div className="flex items-center gap-3 flex-wrap">
 				<Badge>
 					{attrs.tool_name || attrs.agent_type || eName.replace("hook_", "")}
 				</Badge>
-				{hasShim && (
-					<span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/20">
-						shim
-					</span>
-				)}
-				{hasShim && attrs.mcp_id && (
-					<span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
-						<Globe className="h-3 w-3" />
-						{attrs.mcp_id}
-					</span>
-				)}
 			</div>
 		);
 	}
@@ -1087,24 +1031,6 @@ function ContentBlock({ label, content }: { label: string; content: string }) {
 function EventDetail({ event }: { event: RawSessionEvent }) {
 	const attrs = event.attributes ?? {};
 	const eName = getEventName(event);
-
-	// Shim event detail: show MCP input/output
-	if (isShimEvent(eName) && (attrs.mcp_input || attrs.mcp_output)) {
-		return (
-			<div className="ml-6 mr-3 mb-2 mt-1 space-y-3">
-				{attrs.mcp_input && (
-					<ContentBlock label="MCP Input" content={attrs.mcp_input} />
-				)}
-				{attrs.mcp_output && (
-					<ContentBlock label="MCP Output" content={attrs.mcp_output} />
-				)}
-				{attrs.mcp_error && (
-					<ContentBlock label="MCP Error" content={attrs.mcp_error} />
-				)}
-				<HookMetaGrid attrs={attrs} />
-			</div>
-		);
-	}
 
 	if (isHookEvent(eName) && (attrs.tool_input || attrs.tool_response)) {
 		// Try to render a diff view for Edit tool events
@@ -1357,7 +1283,6 @@ function eventLabel(evt: RawSessionEvent): string {
 	if (eName === "hook_subagentstart") return attrs.agent_type || "agent+";
 	if (eName === "hook_subagentstop") return attrs.agent_type || "agent-";
 	if (eName === "hook_stop") return attrs.stop_reason || "end_turn";
-	if (isShimEvent(eName)) return attrs.tool_name || eName.replace("shim_", "");
 	if (isHookEvent(eName)) return attrs.tool_name || eName.replace("hook_", "");
 	return eName;
 }

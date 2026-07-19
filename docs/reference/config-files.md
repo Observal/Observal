@@ -62,7 +62,7 @@ Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
 
 | Path | Purpose |
 | --- | --- |
-| `~/.claude/settings.json` | Hooks, MCP servers (wrapped via `observal-shim`), telemetry config |
+| `~/.claude/settings.json` | Hooks, MCP servers, telemetry config |
 | `~/.claude/agents/<name>.json` | User-scoped sub-agent definitions |
 | `.claude/agents/<name>.json` | Project-scoped sub-agent definitions |
 | `.claude/skills/<skill>/` | Installed skills (SKILL.md + assets) |
@@ -72,7 +72,7 @@ Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
 
 | Path | Purpose |
 | --- | --- |
-| `.kiro/settings/mcp.json` | Project-level MCP servers (wrapped via `observal-shim`) |
+| `.kiro/settings/mcp.json` | Project-level MCP servers with direct commands or URLs |
 | `~/.kiro/settings/mcp.json` | Global MCP servers |
 | `.kiro/agents/<name>.json` | Project-level agent config with telemetry hooks |
 | `~/.kiro/agents/<name>.json` | Global agent config |
@@ -85,7 +85,7 @@ Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
 
 | Path | Purpose |
 | --- | --- |
-| `.cursor/mcp.json` | MCP servers (wrapped via `observal-shim`) |
+| `.cursor/mcp.json` | MCP servers with direct commands or URLs |
 | `.cursor/rules/` | Cursor rules |
 | `AGENTS.md` | Rules |
 
@@ -93,7 +93,7 @@ Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
 
 | Path | Purpose |
 | --- | --- |
-| `.vscode/mcp.json` | MCP servers (wrapped via `observal-shim`) |
+| `.vscode/mcp.json` | MCP servers with direct commands or URLs |
 | `AGENTS.md` | Rules loaded into context |
 
 ### Codex CLI

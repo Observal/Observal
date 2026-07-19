@@ -36,12 +36,7 @@ class CopilotAdapter(BaseHarnessAdapter):
         return True
 
     def format_mcp_config(self, ctx: McpConfigContext) -> dict:
-        if ctx.url:
-            entry = ctx.standard_entry()
-        elif ctx.proxy_url:
-            entry = {"type": "sse", "url": ctx.proxy_url, "env": ctx.server_env}
-        else:
-            entry = {"type": "stdio", **ctx.standard_entry()}
+        entry = ctx.standard_entry() if ctx.url else {"type": "stdio", **ctx.standard_entry()}
         return {"mcpServers": {ctx.name: entry}}
 
     def format_config(self, ctx: ConfigContext) -> dict:
@@ -51,16 +46,10 @@ class CopilotAdapter(BaseHarnessAdapter):
         rules_content = ctx.rules_content
 
         copilot_configs = {}
-        for k, v in mcp_configs.items():
-            if v.get("url"):
-                transport_type = v.get("type", "sse")
-                copilot_configs[k] = {"type": transport_type, "url": v["url"]}
-                if "env" in v:
-                    copilot_configs[k]["env"] = v["env"]
-            else:
-                copilot_configs[k] = {"type": "stdio", "command": v["command"], "args": v.get("args", [])}
-                if "env" in v:
-                    copilot_configs[k]["env"] = v["env"]
+        for name, config in mcp_configs.items():
+            entry = dict(config)
+            entry["type"] = config.get("type", "sse") if config.get("url") else "stdio"
+            copilot_configs[name] = entry
 
         copilot_spec = HARNESS_REGISTRY["copilot"]
 

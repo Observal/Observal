@@ -15,7 +15,6 @@ from typing import Any
 
 from observal_cli.harness.protocol import (
     METHOD_FEATURE_MAP,
-    DiscoveredMcp,
     HookSpec,
     NotSupportedError,
     ScanResult,
@@ -82,19 +81,6 @@ class BaseAdapter:
     def detect_hooks(self, config_dir: Path) -> str:
         _check_feature(self.harness_name, "detect_hooks")
         return "none"
-
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        _check_feature(self.harness_name, "shim_status")
-        if not mcps:
-            return "none"
-        from observal_cli.shared.utils import is_already_shimmed
-
-        shimmed = sum(1 for m in mcps if m.command and is_already_shimmed({"command": m.command, "args": m.args}))
-        if shimmed == 0:
-            return "none"
-        if shimmed == len(mcps):
-            return "all"
-        return "partial"
 
     def is_installed(self, home: Path | None = None) -> bool:
         """Return whether this harness has a detectable home config marker."""

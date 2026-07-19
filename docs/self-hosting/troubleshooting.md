@@ -29,16 +29,6 @@ observal auth login
 
 The server already has users, so bootstrap is disabled. Use `observal auth login` with an email + password or an API key, not a fresh bootstrap flow.
 
-### `observal-shim` not found
-
-The shim didn't end up on your `PATH`. Reinstall:
-
-```bash
-uv tool install --force observal-cli
-which observal-shim           # macOS/Linux
-where observal-shim           # Windows
-```
-
 ## Docker and networking
 
 ### `port is already allocated`
@@ -154,7 +144,7 @@ Verify ClickHouse itself:
 
 ```bash
 docker compose -f docker/docker-compose.yml exec observal-clickhouse \
-  clickhouse-client --query "SELECT count() FROM observal.spans"
+  clickhouse-client --query "SELECT count() FROM observal.session_events"
 ```
 
 ## Web UI

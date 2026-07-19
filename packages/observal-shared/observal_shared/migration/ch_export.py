@@ -312,8 +312,6 @@ async def export_ch(
             "fk_validation": {
                 "orphaned_agent_ids": [],
                 "orphaned_agent_ids_truncated": False,
-                "orphaned_mcp_ids": [],
-                "orphaned_mcp_ids_truncated": False,
                 "orphaned_user_ids": [],
                 "orphaned_user_ids_truncated": False,
                 "validated_at": None,

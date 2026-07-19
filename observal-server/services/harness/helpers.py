@@ -368,9 +368,7 @@ def _build_mcp_configs(
         if isinstance(args, str):
             args = args.split()
         env = ext.get("env", {})
-        ext_mcp_id = ext.get("id", name)
-        shim_args = ["--mcp-id", ext_mcp_id, "--", cmd, *args]
-        mcp_configs[name] = {"command": "observal-shim", "args": shim_args, "env": env}
+        mcp_configs[name] = {"command": cmd, "args": args, "env": env}
 
     _inject_agent_id(mcp_configs, str(agent.id))
     return mcp_configs

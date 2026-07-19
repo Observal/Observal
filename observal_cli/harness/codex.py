@@ -202,9 +202,6 @@ class CodexAdapter(BaseAdapter):
                             return "installed"
         return "missing"
 
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
-
     def extract_mcp_servers(self, config: dict) -> dict:
         mcp = config.get("mcp", {})
         if isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict):

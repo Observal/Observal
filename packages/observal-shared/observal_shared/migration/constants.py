@@ -109,21 +109,14 @@ class TableCfg(TypedDict):
 
 
 CLICKHOUSE_TABLES: list[TableCfg] = [
-    {"name": "traces", "engine": "replacing", "time_col": "start_time", "fk_cols": ["agent_id", "mcp_id", "user_id"]},
-    {"name": "spans", "engine": "replacing", "time_col": "start_time", "fk_cols": ["agent_id", "mcp_id", "user_id"]},
-    {"name": "scores", "engine": "replacing", "time_col": "timestamp", "fk_cols": ["agent_id", "mcp_id", "user_id"]},
     {"name": "session_events", "engine": "mergetree", "time_col": "timestamp", "fk_cols": ["agent_id", "user_id"]},
     {"name": "audit_log", "engine": "mergetree", "time_col": "timestamp", "fk_cols": ["actor_id"]},
-    # otel_logs DDL uses capital-T "Timestamp" (OpenTelemetry convention)
-    {"name": "otel_logs", "engine": "mergetree", "time_col": "Timestamp", "fk_cols": []},
     {"name": "security_events", "engine": "mergetree", "time_col": "timestamp", "fk_cols": []},
     {"name": "webhook_deliveries", "engine": "mergetree", "time_col": "timestamp", "fk_cols": []},
 ]
 
 FK_PG_TABLE_MAP: dict[str, str] = {
     "agent_id": "agents",
-    "mcp_id": "mcp_listings",
-    "mcp_server_id": "mcp_listings",
     "user_id": "users",
     "actor_id": "users",
 }

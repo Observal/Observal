@@ -11,31 +11,6 @@ import pytest
 from pydantic import ValidationError
 
 
-def _trace(trace_id: str = "trace-1") -> dict:
-    return {
-        "trace_id": trace_id,
-        "start_time": "2026-01-01T00:00:00Z",
-    }
-
-
-def _span(span_id: str = "span-1") -> dict:
-    return {
-        "span_id": span_id,
-        "trace_id": "trace-1",
-        "type": "tool_call",
-        "name": "Read",
-        "start_time": "2026-01-01T00:00:00Z",
-    }
-
-
-def _score(score_id: str = "score-1") -> dict:
-    return {
-        "score_id": score_id,
-        "name": "overall",
-        "value": 1.0,
-    }
-
-
 def _info():
     info = MagicMock()
     info.context = {"project_id": "default"}
@@ -52,8 +27,7 @@ def _query_bound(default, name: str):
 
 
 def test_session_ingest_rejects_oversized_batches_and_lines():
-    from api.routes.ingest import MAX_SESSION_LINES, SessionIngestRequest
-    from schemas.telemetry import MAX_TEXT_LENGTH
+    from api.routes.ingest import MAX_SESSION_LINES, MAX_TEXT_LENGTH, SessionIngestRequest
 
     with pytest.raises(ValidationError):
         SessionIngestRequest(session_id="session-1", lines=["{}"] * (MAX_SESSION_LINES + 1))
@@ -166,85 +140,6 @@ def test_mcp_validator_env_var_controls_allowed_schemes_at_import():
         else:
             os.environ["MCP_ALLOW_HTTP_GIT"] = original_env
         importlib.reload(mcp_validator)
-
-
-def test_telemetry_ingest_batch_rejects_oversized_scores_list():
-    from schemas.telemetry import MAX_INGEST_SCORES, IngestBatch
-
-    with pytest.raises(ValidationError):
-        IngestBatch(scores=[_score(str(i)) for i in range(MAX_INGEST_SCORES + 1)])
-
-
-def test_telemetry_ingest_rejects_remaining_oversized_string_fields():
-    from schemas.telemetry import MAX_TEXT_LENGTH, ScoreIngest, SpanIngest, TraceIngest
-
-    oversize_text = "x" * (MAX_TEXT_LENGTH + 1)
-
-    with pytest.raises(ValidationError):
-        TraceIngest(**_trace(), output=oversize_text)
-
-    with pytest.raises(ValidationError):
-        SpanIngest(**_span(), input=oversize_text)
-
-    with pytest.raises(ValidationError):
-        SpanIngest(**_span(), output=oversize_text)
-
-    with pytest.raises(ValidationError):
-        ScoreIngest(**_score(), string_value=oversize_text)
-
-    with pytest.raises(ValidationError):
-        ScoreIngest(**_score(), comment=oversize_text)
-
-
-def test_telemetry_ingest_rejects_oversized_span_metadata_and_metadata_keys():
-    from schemas.telemetry import MAX_METADATA_ENTRIES, MAX_SHORT_STRING_LENGTH, SpanIngest, TraceIngest
-
-    with pytest.raises(ValidationError):
-        SpanIngest(**_span(), metadata={str(i): "v" for i in range(MAX_METADATA_ENTRIES + 1)})
-
-    # Metadata keys are bounded by MAX_SHORT_STRING_LENGTH via the validator.
-    long_key = "k" * (MAX_SHORT_STRING_LENGTH + 1)
-    with pytest.raises(ValidationError):
-        TraceIngest(**_trace(), metadata={long_key: "v"})
-
-    with pytest.raises(ValidationError):
-        SpanIngest(**_span(), metadata={long_key: "v"})
-
-
-def test_telemetry_ingest_accepts_maximum_valid_sizes():
-    """Boundary regression: exact-limit payloads must remain accepted."""
-    from schemas.telemetry import (
-        MAX_INGEST_SCORES,
-        MAX_INGEST_SPANS,
-        MAX_INGEST_TRACES,
-        MAX_METADATA_ENTRIES,
-        MAX_TAGS,
-        MAX_TEXT_LENGTH,
-        IngestBatch,
-        ScoreIngest,
-        SpanIngest,
-        TraceIngest,
-    )
-
-    batch = IngestBatch(
-        traces=[_trace(str(i)) for i in range(MAX_INGEST_TRACES)],
-        spans=[_span(str(i)) for i in range(MAX_INGEST_SPANS)],
-        scores=[_score(str(i)) for i in range(MAX_INGEST_SCORES)],
-    )
-    assert len(batch.traces) == MAX_INGEST_TRACES
-    assert len(batch.spans) == MAX_INGEST_SPANS
-    assert len(batch.scores) == MAX_INGEST_SCORES
-
-    edge_text = "x" * MAX_TEXT_LENGTH
-    TraceIngest(**_trace(), input=edge_text, output=edge_text)
-    SpanIngest(**_span(), input=edge_text, output=edge_text, error=edge_text)
-    ScoreIngest(**_score(), string_value=edge_text, comment=edge_text)
-
-    TraceIngest(
-        **_trace(),
-        tags=[str(i) for i in range(MAX_TAGS)],
-        metadata={str(i): "v" for i in range(MAX_METADATA_ENTRIES)},
-    )
 
 
 def test_session_ingest_rejects_oversized_short_string_fields():

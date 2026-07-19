@@ -190,9 +190,6 @@ class CursorAdapter(BaseAdapter):
     def detect_hooks(self, config_dir: Path) -> str:
         return "none"
 
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
-
     def allow_home_agent_profile(self, is_user_scope: bool) -> bool:
         return False
 

@@ -292,7 +292,7 @@ Observal is a monorepo:
 
 ```
 observal-server/    FastAPI backend (Python)
-observal_cli/       CLI, shim, and proxy (Python)
+observal_cli/       CLI and session exporters (Python)
 web/                Next.js 16 / React 19 frontend (TypeScript)
 tests/              Shared test suite (~1500 tests, 96 files)
 docker/             Docker Compose and Dockerfiles
@@ -303,7 +303,7 @@ scripts/            Dev tooling scripts
 **Databases:**
 
 * **PostgreSQL**, relational data (users, agents, registry, feedback)
-* **ClickHouse**, time-series telemetry (traces, spans, scores)
+* **ClickHouse**, session events, aggregates, audit events, and security events
 
 They are not interchangeable. Never write telemetry to Postgres or relational data to ClickHouse.
 
@@ -480,7 +480,7 @@ http://localhost:8123/play
 Or query from the terminal:
 
 ```bash
-curl -s "http://localhost:8123/?query=SELECT+count()+FROM+spans" \
+curl -s "http://localhost:8123/?query=SELECT+count()+FROM+session_events" \
   -u "default:"
 ```
 
@@ -570,16 +570,17 @@ The CLI is installed as a uv tool. Changes to source files are reflected immedia
 uv tool install --editable . --reinstall
 ```
 
-### Testing the shim
+### Testing session delivery
 
-The shim (`observal-shim`) is a transparent stdio JSON-RPC proxy that sits between an harness and an MCP server. To test it manually:
+Run a harness session with hooks installed, then reconcile and inspect exporter status:
 
 ```bash
-# Wrap a real MCP server command
-observal-shim -- uvx mcp-server-filesystem /tmp
+observal reconcile --dry-run
+observal auth status
+observal ops telemetry status
 ```
 
-Telemetry will be buffered to `~/.observal/telemetry_buffer.db` if the server is not running, and flushed on reconnect.
+Session records remain in the local outbox until the server acknowledges them.
 
 ***
 

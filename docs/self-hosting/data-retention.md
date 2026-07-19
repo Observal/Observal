@@ -13,7 +13,7 @@ The **Purge Traces & Insights** danger-zone action permanently deletes telemetry
 
 It removes:
 
-- ClickHouse telemetry traces, spans, scores, session events, and session aggregates for the current project.
+- ClickHouse session events and session aggregates for the current project.
 - Agent insight reports and insight caches/facets for agents in the current organization.
 
 It does **not** delete registry agents, versions, skills, hooks, prompts, users, reviews, or audit/security logs.
@@ -22,7 +22,7 @@ Use this only when you intentionally need a clean telemetry slate, for example b
 
 ## Data Retention {#data-retention}
 
-Maximum age, in days, for telemetry data such as traces, spans, scores, and derived analytics.
+Maximum age, in days, for session events and derived session analytics.
 
 | Value | Effect |
 |-------|--------|

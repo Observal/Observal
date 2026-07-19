@@ -37,13 +37,12 @@ class McpConfigContext:
     """Normalized MCP data formatted by a harness adapter."""
 
     name: str
-    mcp_id: str
+    command: str
+    args: list[str]
     server_env: dict[str, str]
     headers: dict[str, str]
     transport: str
     url: str | None
-    proxy_url: str | None
-    shim_args: list[str]
     auto_approve: list[str]
 
     def standard_entry(self) -> dict:
@@ -57,9 +56,7 @@ class McpConfigContext:
             if self.auto_approve:
                 entry.update({"autoApprove": self.auto_approve, "disabled": False})
             return entry
-        if self.proxy_url:
-            return {"url": self.proxy_url, "env": self.server_env}
-        entry = {"command": "observal-shim", "args": self.shim_args, "env": self.server_env}
+        entry = {"command": self.command, "args": self.args, "env": self.server_env}
         if self.auto_approve:
             entry.update({"autoApprove": self.auto_approve, "disabled": False})
         return entry

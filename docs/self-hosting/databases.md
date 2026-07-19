@@ -105,13 +105,7 @@ Do not put ClickHouse DDL in startup code. Add a new migration file instead.
 
 ### Capacity planning
 
-Rule of thumb: **~1 KB per span**.
-
-* 10K spans/day × 90-day retention ≈ 900 MB
-* 100K spans/day × 90-day retention ≈ 9 GB
-* 1M spans/day × 90-day retention ≈ 90 GB
-
-Plan 2–3× headroom for merges and replicas.
+Session record size depends on harness transcript detail and tool output size. Measure representative sessions, apply the configured raw-line retention window, and plan 2 to 3 times headroom for merges and replicas.
 
 ### External ClickHouse
 

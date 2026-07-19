@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from observal_cli.harness import (
-    DiscoveredMcp,
     HookSpec,
     ScanResult,
     SessionSource,
@@ -56,7 +55,6 @@ class TestAdapterRegistry:
             "get_hook_spec",
             "generate_hook_config",
             "detect_hooks",
-            "shim_status",
             "resolve_session_source",
             "discover_session_sources",
             "related_session_sources",
@@ -340,23 +338,6 @@ class TestAdapterProtocol:
         result = adapter.detect_hooks(tmp_path)
         assert result in ("installed", "partial", "none", "missing")
 
-    @pytest.mark.parametrize(
-        "harness_name",
-        [
-            "claude-code",
-            "cursor",
-            "kiro",
-            "codex",
-            "copilot",
-            "copilot-cli",
-            "opencode",
-        ],
-    )
-    def test_shim_status_returns_string(self, harness_name):
-        adapter = get_adapter(harness_name)
-        result = adapter.shim_status([])
-        assert result in ("all", "partial", "none")
-
 
 class TestClaudeCodeAdapter:
     """Tests specific to the Claude Code adapter (full implementation)."""
@@ -427,64 +408,6 @@ class TestKiroAdapter:
         assert any(m.name == "my-mcp" for m in result.mcps)
 
 
-class TestShimStatus:
-    """Test shim status detection."""
-
-    def test_empty_mcps_returns_none(self):
-        adapter = get_adapter("claude-code")
-        assert adapter.shim_status([]) == "none"
-
-    def test_shimmed_mcp_detected(self):
-        adapter = get_adapter("claude-code")
-        mcps = [
-            DiscoveredMcp(
-                name="test",
-                command="observal-shim",
-                args=["--", "node", "server.js"],
-                url=None,
-                description="test",
-                source="test",
-            )
-        ]
-        assert adapter.shim_status(mcps) == "all"
-
-    def test_unshimmed_mcp_detected(self):
-        adapter = get_adapter("claude-code")
-        mcps = [
-            DiscoveredMcp(
-                name="test",
-                command="node",
-                args=["server.js"],
-                url=None,
-                description="test",
-                source="test",
-            )
-        ]
-        assert adapter.shim_status(mcps) == "none"
-
-    def test_partial_shim_detected(self):
-        adapter = get_adapter("claude-code")
-        mcps = [
-            DiscoveredMcp(
-                name="shimmed",
-                command="observal-shim",
-                args=["--", "node", "a.js"],
-                url=None,
-                description="",
-                source="",
-            ),
-            DiscoveredMcp(
-                name="raw",
-                command="node",
-                args=["b.js"],
-                url=None,
-                description="",
-                source="",
-            ),
-        ]
-        assert adapter.shim_status(mcps) == "partial"
-
-
 class TestFeatureGating:
     """Test that harness registry capabilities gate method access."""
 
@@ -511,14 +434,8 @@ class TestFeatureGating:
         result = adapter.scan_home(home=Path(tempfile.mkdtemp()))
         assert isinstance(result, ScanResult)
 
-    def test_codex_has_mcp_servers_allows_shim_status(self):
-        adapter = get_adapter("codex")
-        # Should not raise, codex has mcp_servers feature
-        assert adapter.shim_status([]) == "none"
-
     def test_claude_code_has_all_features_no_gating(self):
         adapter = get_adapter("claude-code")
         # All methods should work without raising
         spec = adapter.get_hook_spec()
         assert len(spec.events) > 0
-        assert adapter.shim_status([]) == "none"

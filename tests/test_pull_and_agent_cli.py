@@ -178,7 +178,7 @@ def _opencode_snippet() -> dict:
                     "mcp": {
                         "my-server": {
                             "type": "local",
-                            "command": ["observal-shim", "--mcp-id", "xyz", "--", "npx", "-y", "my-server"],
+                            "command": ["npx", "-y", "my-server"],
                         }
                     }
                 },

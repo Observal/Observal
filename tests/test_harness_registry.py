@@ -26,7 +26,6 @@ REQUIRED_KEYS = {
     "mcp_servers_key",
     "skills",
     "skill_format",
-    "home_mcp_config",
     "hook_type",
     "config_dir",
 }

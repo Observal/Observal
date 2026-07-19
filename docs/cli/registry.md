@@ -604,7 +604,7 @@ observal registry prompt install @tpl --harness cursor --raw > prompt.json
 
 ### `observal registry prompt render`
 
-Render a prompt template with variable substitution. Sends key=value pairs to the server, which substitutes them into the template and returns the rendered output. Also emits a `prompt_render` telemetry span.
+Render a prompt template with variable substitution. Sends key=value pairs to the server, which substitutes them into the template and returns the rendered output.
 
 ```bash
 observal registry prompt render <id-or-name> --var key=value [--var key2=value2 ...]

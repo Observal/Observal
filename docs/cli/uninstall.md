@@ -42,7 +42,7 @@ The command requires you to type `confirm` before proceeding. If the input does 
 
 ## Safety notes
 
-- This action is **irreversible**. Database volumes are destroyed along with all stored traces, spans, and user data.
+- This action is **irreversible**. Database volumes are destroyed along with all stored session telemetry and user data.
 - The command will not proceed if it cannot locate the repo directory (either via `--repo-dir` or by walking up from CWD). This prevents accidental partial uninstalls.
 - On Windows, if the cleanup script fails to launch, the command prints manual instructions for completing removal.
 - If `docker` is not found on PATH, the container teardown step is skipped with a warning.

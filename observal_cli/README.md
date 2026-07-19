@@ -14,21 +14,20 @@ The CLI is packaged as a Python project. From the repo root:
 uv pip install -e .
 ```
 
-This installs four entry points:
+This installs three entry points:
 
-| Command                | Purpose                                             |
-| ---------------------- | --------------------------------------------------- |
-| `observal`             | Main CLI                                            |
-| `observal-shim`        | Telemetry wrapper that sits in front of MCP servers |
-| `observal-proxy`       | HTTP proxy for MCP servers                          |
-| `observal-sandbox-run` | Sandbox execution runner                            |
+| Command                | Purpose                                  |
+| ---------------------- | ---------------------------------------- |
+| `observal`             | Main CLI                                 |
+| `observal-sandbox-run` | Sandbox execution runner                 |
+| `observal-sandbox-mcp` | MCP interface for configured sandboxes   |
 
 ## Quick Start
 
 ```bash
 observal auth login                  # connect to your Observal server
 observal scan                        # discover what's installed across your harnesses (read-only)
-observal doctor patch --all --all-harnesses  # instrument everything (hooks + shims)
+observal doctor patch --all-harnesses        # install session telemetry hooks
 observal agent pull my-agent --harness cursor  # fetch agent config for Cursor
 observal doctor                      # check harness compatibility
 ```
@@ -86,9 +85,8 @@ observal ops metrics <id>          # metrics for an MCP or agent
 ```
 observal agent pull <agent> --harness <harness>             # write agent config to harness files
 observal scan [--harness <harness>]                          # discover what's installed (read-only)
-observal doctor patch --all --all-harnesses               # instrument everything (hooks + shims)
-observal doctor patch --hook --harness <harness>             # install hooks for a specific harness
-observal doctor patch --shim --harness <harness>             # wrap MCP servers for a specific harness
+observal doctor patch --all-harnesses                       # install hooks for every harness
+observal doctor patch --harness <harness>                    # install hooks for a specific harness
 observal use <profile>                               # swap harness config from a profile
 observal doctor                                      # diagnose harness/Observal issues
 observal config show                                 # show current config
@@ -114,14 +112,11 @@ All CLI state lives in `~/.observal/`:
 | `config.json`            | Server URL, tokens, user ID               |
 | `aliases.json`           | User-defined name-to-UUID aliases         |
 | `last_results.json`      | Cached list results for numeric shorthand |
-| `telemetry_buffer.db`    | SQLite buffer for offline event queuing   |
 | `keys/server_public.pem` | Server public key for payload encryption  |
 
 ## Telemetry
 
-When `observal doctor patch --shim` wraps an MCP server, tool calls flow through `observal-shim` which records usage events. If the server is unreachable, events are retried automatically on the next hook fire.
-
-Hook scripts in `observal_cli/hooks/` capture harness-level events (prompts, tool use, subagent spawning) and forward them to the server.
+Hook scripts in `observal_cli/hooks/` locate local harness session transcripts and deliver new JSONL records to the session ingest endpoint. `observal reconcile` recovers records that were not delivered during the original hook run. MCP commands and remote URLs are left unchanged.
 
 ## Directory Layout
 
@@ -147,8 +142,6 @@ observal_cli/
 ├── cmd_ops.py               # Operations commands
 ├── cmd_profile.py           # Profile swapping
 ├── cmd_uninstall.py         # Uninstall command
-├── shim.py                  # observal-shim entrypoint
-├── proxy.py                 # observal-proxy entrypoint
 ├── sandbox_runner.py        # observal-sandbox-run entrypoint
 └── hooks/                   # Telemetry hook scripts
 ```

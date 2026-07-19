@@ -202,9 +202,6 @@ class CopilotAdapter(BaseAdapter):
 
         return "missing"
 
-    def shim_status(self, mcps: list[DiscoveredMcp]) -> str:
-        return super().shim_status(mcps)
-
     def rewrite_hooks(self, content: dict, agent_id: str) -> dict:
         from observal_cli.cmd_pull import _rewrite_copilot_cli_hooks
 

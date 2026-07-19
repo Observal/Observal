@@ -45,7 +45,7 @@ All volumes are named and managed by Docker. They survive `docker compose down` 
 | Volume | Mount point | Contents | Loss impact |
 | --- | --- | --- | --- |
 | `pgdata` | `/var/lib/postgresql/data` | Postgres data (users, registry, RBAC) | Catastrophic - all accounts, agents, MCPs lost |
-| `chdata` | `/var/lib/clickhouse` | ClickHouse data (traces, spans, scores) | High - all telemetry lost; accounts and registry survive |
+| `chdata` | `/var/lib/clickhouse` | ClickHouse session, audit, and security data | High: all telemetry lost; accounts and registry survive |
 | `redisdata` | `/data` | Redis persistence | Low - job queue lost; pending jobs need to be re-kicked |
 | `grafanadata`, optional | `/var/lib/grafana` | Grafana dashboards and config | Medium - custom dashboards lost; defaults are re-provisioned |
 | `apidata` | `/data` (API container) | **JWT signing keys** | Catastrophic - every session invalidated, users must re-login; backup/restore required |

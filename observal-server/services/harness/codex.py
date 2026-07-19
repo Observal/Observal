@@ -57,10 +57,6 @@ class CodexAdapter(BaseHarnessAdapter):
             "_note": f"Add to .codex/config.toml under [hooks.{event}]",
         }
 
-    def agent_mcp_entry(self, ctx: McpConfigContext) -> None:
-        # Agent installs historically omit Codex MCP entries. Preserve that output here.
-        return None
-
     def format_mcp_config(self, ctx: McpConfigContext) -> dict:
         if ctx.url:
             entry: dict = {"url": ctx.url}
@@ -68,8 +64,6 @@ class CodexAdapter(BaseHarnessAdapter):
                 entry["headers"] = ctx.headers
             if ctx.server_env:
                 entry["env"] = ctx.server_env
-        elif ctx.proxy_url:
-            entry = {"url": ctx.proxy_url, "env": ctx.server_env}
         else:
             entry = ctx.standard_entry()
         return {"mcp_servers": {ctx.name: entry}}

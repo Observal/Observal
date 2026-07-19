@@ -36,7 +36,7 @@ lines, and sends them to Observal.
 | Agent prompt | Registry prompts are written into the generated OpenCode agent profile |
 | Skills | `.opencode/skills/{name}/SKILL.md` and `~/.config/opencode/skills/{name}/SKILL.md` |
 | Session parsing | OpenCode plugin exports JSONL-compatible session lines |
-| Telemetry | MCP telemetry through `observal-shim`; session telemetry through the plugin |
+| Telemetry | OpenCode session transcripts delivered through the plugin and reconciliation |
 | Model selection | Registry-backed OpenCode model catalog |
 
 ---

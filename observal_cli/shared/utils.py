@@ -164,25 +164,6 @@ def extract_mcp_servers(config: dict, harness: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Shim detection
-# ---------------------------------------------------------------------------
-
-
-def is_already_shimmed(entry: dict) -> bool:
-    """Return True if an MCP server entry is already wrapped with observal-shim.
-
-    Raises TypeError if *entry* is not a dict.
-    """
-    if not isinstance(entry, dict):
-        raise TypeError(f"is_already_shimmed expects dict, got {type(entry).__name__!r}")
-    cmd = entry.get("command", "")
-    args = entry.get("args", [])
-    if cmd == "observal-shim" or "observal-shim" in cmd:
-        return True
-    return bool(any("observal-shim" in str(a) for a in args))
-
-
-# ---------------------------------------------------------------------------
 # Hook marker detection
 # ---------------------------------------------------------------------------
 

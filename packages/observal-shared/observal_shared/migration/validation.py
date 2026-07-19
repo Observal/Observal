@@ -38,8 +38,6 @@ async def _validate_fk_references(
 
     fk_values: dict[str, set[str]] = {
         "agent_id": set(),
-        "mcp_id": set(),
-        "mcp_server_id": set(),
         "user_id": set(),
         "actor_id": set(),
     }
@@ -63,8 +61,7 @@ async def _validate_fk_references(
                         if val is not None and val != "":
                             fk_values[col].add(str(val))
 
-    # Merge aliases
-    fk_values["mcp_id"] |= fk_values.pop("mcp_server_id", set())
+    # Audit events identify users through actor_id.
     fk_values["user_id"] |= fk_values.pop("actor_id", set())
 
     # Filter to valid UUIDs only
@@ -73,7 +70,7 @@ async def _validate_fk_references(
 
     # Check against PostgreSQL
     orphaned: dict[str, list[str] | bool] = {}
-    for fk_col, pg_table in [("agent_id", "agents"), ("mcp_id", "mcp_listings"), ("user_id", "users")]:
+    for fk_col, pg_table in [("agent_id", "agents"), ("user_id", "users")]:
         ids = fk_values.get(fk_col, set())
         if not ids:
             orphaned[f"orphaned_{fk_col}s"] = []

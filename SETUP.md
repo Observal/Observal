@@ -62,7 +62,7 @@ First build pulls images and compiles the Vite frontend. Expect 3 to 5 minutes. 
 | `observal-worker`     | internal                | Background jobs (arq)                    |
 | `observal-init`       | internal                | Runs DB migrations on startup then exits |
 | `observal-db`         | `localhost:5432`        | PostgreSQL 16 (registry data)            |
-| `observal-clickhouse` | `localhost:8123`        | ClickHouse (traces, spans, scores)       |
+| `observal-clickhouse` | `localhost:8123`        | ClickHouse (session and audit events)    |
 | `observal-redis`      | `localhost:6379`        | Job queue + pub/sub                      |
 | `observal-prometheus` | `http://localhost:9090` | Metrics scraping                         |
 | `observal-grafana`    | `http://localhost:3001` | Metrics dashboards                       |
@@ -166,15 +166,15 @@ All tests mock external services. No Docker or live databases needed to run test
 
 ## 7. Instrument your harnesses
 
-Already have MCP servers configured in Claude Code, Kiro, Cursor, or another harness? Bring them into Observal without changing how they work:
+Already have Claude Code, Kiro, Cursor, or another harness configured? Install session telemetry hooks without changing MCP commands:
 
 ```bash
 observal scan                              # read-only: see what's installed
-observal doctor patch --all --all-harnesses    # wrap MCPs with observal-shim, install hooks
-observal doctor                           # verify everything wired correctly
+observal doctor patch --all-harnesses      # install session telemetry hooks
+observal doctor                            # verify everything wired correctly
 ```
 
-`scan` never modifies files. `doctor patch` creates timestamped backups before touching anything.
+`scan` never modifies files. `doctor patch` only manages session telemetry hooks.
 
 ---
 

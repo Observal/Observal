@@ -2,94 +2,62 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Observe MCP traffic
+# Observe MCP activity in sessions
 
-Your agents are making tool calls every session. You have no idea how many, which ones fail, which ones are slow, or which ones are never used. This is the first and cheapest thing Observal does for you.
+Observal identifies MCP and tool activity from the session transcript recorded by each coding harness. It does not intercept MCP transport traffic.
 
 ## What you get
 
-Every MCP tool call becomes a span with:
+When the harness records the relevant detail, session events can include:
 
-* Tool name and input parameters
-* Response payload
-* Latency (ms)
-* Status (success / error) and error message
-* Token counts and cost (where the harness exposes them; Claude Code does, Kiro gives credits only)
-* A `trace_id` that groups calls from the same agent turn, and a `session_id` that groups calls across an harness session
+- Tool or MCP name
+- Tool input and result
+- Event ordering within the session
+- Harness, user, agent, and model attribution
+- Token totals and timing derived from the session
 
-Spans stream into ClickHouse in near real-time. You query them from the web UI or the CLI.
+Coverage varies by harness because Observal can only index fields present in the local transcript or native message API. Transport-level latency and payload data are not synthesized when the harness does not record them.
 
-## Discover and instrument an existing setup
-
-If you already have MCP servers configured in Claude Code, Kiro, Cursor, VS Code, or Copilot, first see what's there:
+## Discover and install session hooks
 
 ```bash
 observal scan
+observal doctor patch --all-harnesses
 ```
 
-`scan` is read-only -- it lists your MCP servers without modifying anything. Then instrument them:
+`scan` is read-only. `doctor patch` installs supported session hooks or extensions and leaves every MCP command and remote URL unchanged.
+
+Scope hook installation to selected harnesses:
 
 ```bash
-observal doctor patch --all --all-harnesses
+observal doctor patch --harness claude-code
+observal doctor patch --harness kiro
+observal doctor patch --harness copilot-cli
 ```
 
-This:
-
-1. Finds every MCP config file on your machine (`~/.claude/settings.json`, `.kiro/settings/mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `~/.copilot/mcp-config.json`).
-2. Rewrites each config so every server runs through `observal-shim`.
-3. Installs telemetry hooks for session lifecycle events.
-4. Saves a timestamped `.bak` next to every file it modified.
-
-Scope to specific harnesses:
+Restart the harness after hook changes, then run a coding session. If a hook was missed or the machine was offline, reconcile local session sources:
 
 ```bash
-observal doctor patch --all --harness claude-code
-observal doctor patch --all --harness kiro
-observal doctor patch --all --harness copilot-cli
+observal reconcile
 ```
 
-## Observability at zero cost to your agents
+## Query collected sessions
 
-The shim is transparent - it forwards every byte unchanged. If it can't reach the Observal server, the tool call **still succeeds** and telemetry is buffered locally in `~/.observal/telemetry_buffer.db`, flushed on the next successful contact. See [Core Concepts → Durable session outboxes](../getting-started/core-concepts.md#durable-session-outboxes).
+Open `/traces` in the web UI to filter sessions by harness, agent, user, model, and time range. Expand a session to inspect parsed prompts, responses, tool calls, tool results, and lifecycle events.
 
-Restart your harness after `doctor patch`. The next MCP call produces a trace.
-
-## Query what you collected
-
-**Web UI**: open `http://localhost/traces`. Filter by harness, agent, MCP, or time range.
-
-**CLI**: list recent traces and drill into spans:
+The CLI can list recent sessions and unfold their events:
 
 ```bash
-# Last 20 traces
 observal ops traces --limit 20
-
-# Unfold to see tool calls
 observal ops traces --turn --limit 10
-
-# Dive into a specific trace
-observal ops spans <trace-id>
-
-# Ranking dashboard - which MCP servers are hottest?
-observal ops top --type mcp
-
-# Metrics for one MCP (live-updating)
-observal ops metrics github-mcp --type mcp --watch
 ```
-
-## What this unlocks
-
-Once traces are flowing you can:
-
-* **Find the bottleneck.** `observal ops top --type mcp` → which servers are called most and which are slowest.
-* **Spot errors early.** Alert rules fire on error-rate spikes. See the Alerts page in the web UI.
-* **Plan removals.** A tool nobody uses after a week is a tool you can delete from the agent config.
 
 ## Caveats
 
-* Token counts and cost are only as good as what the harness exposes. Claude Code provides both. Kiro exposes billing credits instead of token counts; Observal shows credits for Kiro sessions.
-* HTTP/SSE MCP servers route through `observal-proxy`, not `observal-shim`. `doctor patch` picks the right one automatically based on the transport field.
+- MCP visibility depends on the harness transcript format.
+- Observal does not modify, proxy, or wrap MCP traffic.
+- Monetary cost and structured transport errors are unavailable unless the harness records equivalent session fields.
 
 ## Next
 
-→ [Debug agent failures](debug-agent-failures.md): now that you have traces, here's how to actually use them when something breaks.
+[Debug agent failures](debug-agent-failures.md) explains how to investigate failures using session evidence.

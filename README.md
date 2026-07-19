@@ -269,7 +269,7 @@ Start here for deployment and operations:
 | Databases | PostgreSQL 16 (registry), ClickHouse (telemetry) |
 | Queue | Redis + arq |
 | CLI | Python, Typer, Rich |
-| Telemetry | Session hooks, stdio shims, push-based ingest |
+| Telemetry | Session hooks, local transcript reconciliation, push-based ingest |
 | Deployment | Docker Compose (10 services), Kubernetes (Helm) |
 
 ## Contributing

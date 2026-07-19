@@ -111,7 +111,7 @@ The model (or model role) that breaks a trace into logical sections and summariz
 
 The model that combines all section summaries into a single narrative explanation of the entire trace.
 
-**Affects:** The top-level "Summary" paragraph shown in the Insights panel. Uses fewer tokens (max 4096 output) since it operates on pre-summarized sections, not raw spans.
+**Affects:** The top-level "Summary" paragraph shown in the Insights panel. It operates on pre-summarized session sections rather than raw transcript records.
 
 **Values:**
 
@@ -125,7 +125,7 @@ The model that combines all section summaries into a single narrative explanatio
 
 #### Facets Model {#facets-model}
 
-The model used for facet-level analysis. Facets are structured data points extracted from each session by this model. They identify anomalies, extract key attributes, and classify span behavior within each section. For example: "tool_call_failed: true", "response_latency: slow", "user_sentiment: frustrated". These are then aggregated across sessions to surface patterns in Insight reports.
+The model used for facet-level analysis. Facets are structured data points extracted from each session. They identify anomalies, extract key attributes, and classify event behavior within each section. For example: "tool_call_failed: true", "response_latency: slow", "user_sentiment: frustrated". These are then aggregated across sessions to surface patterns in Insight reports.
 
 **Affects:** Anomaly detection accuracy and the richness of per-facet metadata tags. Runs once per facet (trace section), so cost scales with the number of facets per trace.
 
@@ -134,7 +134,7 @@ The model used for facet-level analysis. Facets are structured data points extra
 | Value | Effect |
 |-------|--------|
 | `anthropic/claude-sonnet-4-20250514` (recommended) | Reliable anomaly detection with good classification |
-| `anthropic/claude-haiku-4-5-20251001` | Faster, cheaper; may miss subtle anomalies in complex spans |
+| `anthropic/claude-haiku-4-5-20251001` | Faster, cheaper; may miss subtle anomalies in complex sessions |
 | `anthropic/claude-opus-4-20250514` | Highest anomaly detection recall; justified for safety-critical workloads |
 
 **When to set:** When anomaly detection is missing issues you care about (upgrade), or when you're paying too much for facet analysis on simple traces (downgrade).

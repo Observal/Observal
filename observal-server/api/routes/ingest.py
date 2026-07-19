@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from api.deps import get_project_id, require_role
 from api.ratelimit import limiter
 from models.user import User, UserRole
-from schemas.telemetry import MAX_SHORT_STRING_LENGTH, MAX_TEXT_LENGTH
+
+MAX_SHORT_STRING_LENGTH = 512
+MAX_TEXT_LENGTH = 1_048_576
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 

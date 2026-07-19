@@ -32,7 +32,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.cursor/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.cursor/mcp.json",
         "hook_type": "command",
         "hooks": {
             "project": ".cursor/hooks.json",
@@ -71,7 +70,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.kiro/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.kiro/settings/mcp.json",
         "hook_type": "command",
         "hooks": {
             "project": ".kiro/hooks/{name}.json",
@@ -109,7 +107,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.claude/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.claude.json",
         "hook_type": "command",
         "hooks": {
             "project": ".claude/settings.json",
@@ -149,7 +146,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.agents/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.codex/config.toml",
         "hook_type": "command",
         "hooks": {
             "project": ".codex/hooks.json",
@@ -184,7 +180,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.copilot/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.vscode/mcp.json",
         "hook_type": "command",
         "hooks": {
             "project": ".github/hooks/{name}.json",
@@ -220,7 +215,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.copilot/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.copilot/mcp-config.json",
         "hook_type": "command",
         "hooks": {
             "project": ".github/hooks/{name}.json",
@@ -258,7 +252,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.config/opencode/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.config/opencode/opencode.json",
         "hook_type": "plugin",
         "hooks": {
             "project": ".opencode/plugins/{name}.ts",
@@ -296,7 +289,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.gemini/antigravity-cli/skills/{name}.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.gemini/antigravity-cli/mcp_config.json",
         "hook_type": "command",
         "hooks": {
             "project": ".agents/hooks.json",
@@ -334,7 +326,6 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.pi/agent/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
-        "home_mcp_config": "~/.pi/agent/mcp.json",
         "hook_type": "extension",
         "hooks": {
             "user": "~/.pi/agent/settings.json",
@@ -396,18 +387,6 @@ def get_harness_display_names() -> dict[str, str]:
 def get_scope_aware_harnesses() -> dict[str, tuple[str, str]]:
     """Return harnesses that support project/user scope selection, with labels."""
     return {harness: spec["scope_labels"] for harness, spec in HARNESS_REGISTRY.items() if spec.get("scope_labels")}
-
-
-def get_home_mcp_configs() -> dict[str, str]:
-    """Return {harness: home_mcp_config} for harnesses with home-level MCP config."""
-    return {
-        harness: spec["home_mcp_config"] for harness, spec in HARNESS_REGISTRY.items() if spec.get("home_mcp_config")
-    }
-
-
-def get_mcp_servers_key(harness: str) -> str:
-    """Return the JSON key used for MCP servers in this harness's config."""
-    return HARNESS_REGISTRY.get(harness, {}).get("mcp_servers_key", "mcpServers")
 
 
 def get_default_scope(harness: str) -> str:

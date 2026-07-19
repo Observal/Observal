@@ -5,94 +5,62 @@
 
 # Telemetry pipeline
 
-How agent session data becomes traces, turns, spans, and insight-ready session artifacts in Observal.
+How local harness session data becomes indexed events and insight-ready aggregates in Observal.
 
-## Three capture paths
+## Session ingestion
 
 ```mermaid
 flowchart TB
     harness["AI coding harness"]
-    sessionFiles["Harness session sources - JSONL / native message APIs"]
-    reconcile["Acknowledged exporter / observal reconcile"]
-    hooks["harness hooks - session lifecycle events"]
-    shim["observal-shim / proxy - MCP requests + responses"]
-    api["Observal API"]
-    ch["ClickHouse - traces, turns, spans, events"]
-    sessionStore["Canonical indexed session records"]
+    source["Local JSONL or native message source"]
+    wakeup["Harness hook or extension"]
+    exporter["Acknowledged exporter or observal reconcile"]
+    api["POST /api/v1/ingest/session"]
+    events["ClickHouse session_events"]
+    stats["ClickHouse session_stats_agg"]
 
-    harness --> sessionFiles
-    sessionFiles --> reconcile
-    reconcile --> api
-    harness --> hooks
-    hooks --> api
-    harness --> shim
-    shim --> api
-    api --> ch
-    api --> sessionStore
+    harness --> source
+    harness --> wakeup
+    wakeup --> exporter
+    source --> exporter
+    exporter --> api
+    api --> events
+    events --> stats
 ```
 
-Observal presents activity in the UI as **sessions**, **traces / turns**, and **spans**:
+MCP commands and remote URLs remain direct. Observal does not intercept MCP transport traffic.
 
-- A **session** is a full coding-agent conversation or task window.
-- A **trace / turn** is usually one user prompt and the agent work that follows.
-- A **span** is one operation inside a turn, commonly a tool call, MCP request, hook event, model step, or parser event.
+## Source discovery and delivery
 
-For insights, Observal keeps canonical indexed source records and their parsed session events. These preserve conversation order while ClickHouse also provides the normalized analytical layer used by trace views, dashboards, and queries.
+Each harness adapter resolves its local session source. Claude Code, Kiro, Codex, Cursor, Copilot, Copilot CLI, and Antigravity use the shared Python exporter. OpenCode and Pi implement the same ingest contract through native extensions.
 
-## Path 1: session sources
+Observed records are staged in a durable local outbox before upload. The source cursor advances only after the server acknowledges a contiguous checkpoint. Retries and overlapping batches converge because records are identified by project, user, harness, session, and source offset.
 
-This is the primary path for full-session reconstruction. Coding agents expose local JSONL transcripts or equivalent history. The harness adapter resolves those sources, while Observal sends indexed raw records for harness-specific classification on the server.
+Hooks wake the exporter at lifecycle boundaries such as prompt submission and session stop. `observal reconcile` uses the same adapters and delivery engine to recover sessions that were missed or only partially delivered.
 
-Claude Code, Kiro, Codex, Cursor, Copilot, Copilot CLI, and Antigravity use the shared Python acknowledged exporter: each observed batch is written to `~/.observal/telemetry_buffer.db` before upload, retries are idempotent, and the local source cursor advances only after the server returns a contiguous line/byte checkpoint. OpenCode and Pi implement the same wire contract with native durable outboxes. On Stop, a delayed stable-file pass captures records written after Python hooks; Kiro credit metadata uses the same durable path. Outboxes survive CLI and harness restarts, but cannot cover records deleted before Observal observes them.
+## Server processing
 
-Outboxes drain before source scans. Background recovery and `observal reconcile` use the same harness adapter registry and delivery engine. Missing or corrupt local state is rebuilt from `GET /api/v1/ingest/session/checkpoint`. Finalization alone computes a whole-session SHA-256 audit hash. Missing or mismatched ranges rewind the server and local checkpoints and are replayed idempotently; normal prompt-boundary uploads never scan or hash full history.
+The ingest service stores source records in `session_events` and classifies them through the parser registered for the harness. Parsed event types include prompts, assistant responses, tool calls, tool results, token updates, lifecycle events, and subagent activity when the harness records them.
 
-This path preserves the conversation shape needed for insight reports: prompts, assistant messages, tool calls, timing, and ordering.
+`session_stats_agg` stores session-level counts, timing, token totals, model names, harnesses, users, and agent attribution. Dashboards and insights query these session tables rather than a separate trace or span store.
 
-## Path 2: harness hooks
+## Installation
 
-Hooks capture lifecycle events as they happen:
-
-- `SessionStart` / `Stop`: session boundaries
-- `UserPromptSubmit`: user prompt boundaries
-- `PreToolUse` / `PostToolUse`: tool calls when the harness exposes them
-- `SubagentStop`: Claude Code sub-agent lifecycle
-- `Notification`: harness notifications
-
-Full schema and handler types: [Hooks specification](../reference/hooks-spec.md).
-
-`observal agent pull` and `observal doctor patch --hook` wire hooks into the appropriate file:
-
-- Claude Code: `~/.claude/settings.json`
-- Kiro: agent JSON at `.kiro/agents/<name>.json` or `~/.kiro/agents/<name>.json`
-
-## Path 3: MCP shim and proxy traffic
-
-The shim and proxy are transparent interceptors that forward MCP traffic unchanged while recording MCP requests and responses asynchronously.
-
-Operational knobs:
-
-- **Server address**: `OBSERVAL_SERVER_URL` on the CLI user's machine. The shim picks this up from `~/.observal/config.json` or the env var.
-- **API key**: the shim uses the user's stored credentials. No extra setup.
-- **Offline behavior**: if the server is unreachable, Python telemetry is buffered at `~/.observal/telemetry_buffer.db`; native exporters retain their own pending files. Check Python buffer size with `observal ops telemetry status`.
-
-## High-volume tuning
-
-For teams generating thousands of spans per minute:
-
-1. **ClickHouse writes.** Observal batches inserts already. If you see ingest backpressure, bump `CLICKHOUSE_*` memory limits or consider external ClickHouse.
-2. **Redis queue.** `arq` uses Redis for the background job queue. Redis at 256 MB is fine for most deployments.
-3. **Session artifacts.** Keep retention aligned with your insights needs. Sessions are richer than spans and can grow quickly for long coding-agent conversations.
-
-## Verifying the pipeline
+`observal agent pull` installs agent files and harness-specific session hooks. To install or repair hooks without pulling an agent:
 
 ```bash
-# Fire a test event from the CLI
-observal ops telemetry test
+observal doctor patch --all-harnesses
+```
 
-# Confirm arrival
+The patch command does not modify MCP configuration.
+
+## Verification
+
+```bash
+observal auth status
 observal ops telemetry status
+observal reconcile --dry-run
 observal ops traces --limit 5
 ```
 
-End-to-end smoke test done.
+If records are missing, confirm the harness source exists, the hook or extension is installed, and the local outbox can reach the session ingest endpoint.

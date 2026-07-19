@@ -38,9 +38,7 @@ class OpenCodeAdapter(BaseHarnessAdapter):
             if ctx.server_env:
                 entry["env"] = ctx.server_env
             return entry
-        if ctx.proxy_url:
-            return {"type": "remote", "url": ctx.proxy_url, "env": ctx.server_env}
-        entry = {"type": "local", "command": ["observal-shim", *ctx.shim_args]}
+        entry = {"type": "local", "command": [ctx.command, *ctx.args]}
         if ctx.server_env:
             entry["environment"] = ctx.server_env
         return entry

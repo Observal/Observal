@@ -88,7 +88,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal doctor support bundle`: Generate a diagnostic support bundle. No customer data or row contents included.
   - `observal doctor support inspect`: Inspect a support bundle.
   - `observal doctor cleanup`: Remove ALL Observal hooks, env vars, and legacy telemetry config.
-  - `observal doctor patch`: Instrument harnesses with Observal telemetry hooks and shims.
+  - `observal doctor patch`: Install Observal session telemetry hooks for selected harnesses.
 
 **`observal ops`**: Observability and operational commands (traces, telemetry, dashboard, feedback)
 

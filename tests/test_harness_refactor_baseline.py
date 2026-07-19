@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from services.config_generator import generate_config
 from services.harness import generate_agent_config
 
 ALL_HARNESSES = [
@@ -24,6 +25,8 @@ ALL_HARNESSES = [
     "copilot",
     "copilot-cli",
     "opencode",
+    "antigravity",
+    "pi",
 ]
 
 
@@ -69,7 +72,10 @@ def _make_mcp_listing():
     listing.name = "test-mcp-server"
     listing.command = "npx"
     listing.args = ["-y", "@test/mcp-server"]
-    listing.env_vars = {"API_KEY": "test-key"}
+    listing.environment_variables = [{"name": "API_KEY"}]
+    listing.framework = "typescript"
+    listing.docker_image = None
+    listing.auto_approve = ["read"]
     listing.transport = "stdio"
     listing.url = None
     return listing
@@ -163,6 +169,17 @@ class TestGenerateAgentConfigBaseline:
             assert agent_content.get("mcpServers"), f"No MCP config for {harness}"
         elif harness != "opencode":
             assert mcp_config or "mcp_servers" in str(result), f"No MCP config for {harness}"
+
+    @pytest.mark.parametrize("harness", ALL_HARNESSES)
+    def test_original_mcp_command_is_never_wrapped(self, harness):
+        result = generate_config(_make_mcp_listing(), harness, env_values={"API_KEY": "secret"})
+        serialized = json.dumps(result)
+        assert "observal-shim" not in serialized
+        assert "observal-proxy" not in serialized
+        assert "npx" in serialized
+        assert "@test/mcp-server" in serialized
+        if harness != "claude-code":
+            assert "API_KEY" in serialized
 
     @pytest.mark.parametrize("harness", ALL_HARNESSES)
     def test_agent_with_hooks(self, harness):

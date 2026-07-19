@@ -104,7 +104,6 @@ def _build_server_env(listing: McpListing, env_values: dict[str, str] | None = N
 def _build_mcp_context(
     listing: McpListing,
     *,
-    proxy_port: int | None = None,
     env_values: dict[str, str] | None = None,
     header_values: dict[str, str] | None = None,
 ) -> "McpConfigContext":
@@ -115,10 +114,10 @@ def _build_mcp_context(
     server_env = _build_server_env(listing, env_values)
     transport = (listing.transport or "").lower()
     url = listing.url if listing.url and transport in ("sse", "streamable-http", "") else None
-    proxy_url = f"http://localhost:{proxy_port}" if proxy_port is not None and not url else None
-    shim_args: list[str] = []
-    if not url and not proxy_url:
-        run_cmd = _build_run_command(
+    run_cmd = (
+        []
+        if url
+        else _build_run_command(
             name,
             listing.framework,
             listing.docker_image,
@@ -126,17 +125,16 @@ def _build_mcp_context(
             stored_command=listing.command,
             stored_args=listing.args,
         )
-        shim_args = ["--mcp-id", str(listing.id), "--", *run_cmd]
+    )
 
     return McpConfigContext(
         name=name,
-        mcp_id=str(listing.id),
+        command=run_cmd[0] if run_cmd else "",
+        args=run_cmd[1:],
         server_env=server_env,
         headers=dict(header_values or {}),
         transport=transport or "sse",
         url=url,
-        proxy_url=proxy_url,
-        shim_args=shim_args,
         auto_approve=list(listing.auto_approve or []),
     )
 
@@ -144,7 +142,6 @@ def _build_mcp_context(
 def generate_config(
     listing: McpListing,
     harness: str,
-    proxy_port: int | None = None,
     observal_url: str = "",
     env_values: dict[str, str] | None = None,
     header_values: dict[str, str] | None = None,
@@ -159,7 +156,6 @@ def generate_config(
         raise ValueError(f"No adapter registered for harness: {harness!r}")
     ctx = _build_mcp_context(
         listing,
-        proxy_port=proxy_port,
         env_values=env_values,
         header_values=header_values,
     )

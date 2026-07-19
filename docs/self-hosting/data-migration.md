@@ -10,7 +10,7 @@ Only super admins can start migration jobs.
 ## What can be moved
 
 - **Registry data**: users, agents, components, versions, settings, review records, and related PostgreSQL data.
-- **Telemetry data**: trace and span history stored in ClickHouse.
+- **Telemetry data**: session events, audit events, security events, and webhook delivery history stored in ClickHouse.
 - **Registry + telemetry**: a full instance move when both stores are available.
 
 ## Before you start
@@ -59,7 +59,7 @@ Do not import artifacts that fail checksum validation.
 5. Review the target organization and project IDs.
 6. Click **Start import**.
 7. Wait for the job to finish.
-8. Check agents, components, users, and traces in the target instance.
+8. Check agents, components, users, and sessions in the target instance.
 
 Imports are idempotent where possible. Existing rows are skipped rather than overwritten.
 
