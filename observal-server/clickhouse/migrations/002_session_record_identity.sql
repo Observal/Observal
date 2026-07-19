@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS session_events_v2 (
     INDEX idx_se_line_hash line_hash TYPE bloom_filter(0.001) GRANULARITY 1,
     INDEX idx_se_parent_session_id parent_session_id TYPE set(0) GRANULARITY 1
 ) ENGINE = ReplacingMergeTree(ingested_at)
-PARTITION BY toYYYYMM(timestamp)
+PARTITION BY sipHash64(project_id, user_id, harness, session_id) % 64
 ORDER BY (project_id, user_id, harness, session_id, line_offset);
 
 INSERT INTO session_events_v2
