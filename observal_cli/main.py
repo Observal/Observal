@@ -98,11 +98,31 @@ def main(
     elif verbose:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
+    _migrate_legacy_mcp_configs()
+
     # Auto-update on minor/patch releases (non-blocking, exempt self/server commands)
     _try_auto_update()
 
     # One-time migration: .observal/agent markers → lockfile.json
     _try_lockfile_migration()
+
+
+def _migrate_legacy_mcp_configs() -> None:
+    """Rewrite legacy wrapped MCP entries before running a command."""
+    from rich import print as rprint
+
+    from observal_cli.config import migrate_shimmed_mcp_configs
+
+    try:
+        migrated = migrate_shimmed_mcp_configs()
+    except RuntimeError as exc:
+        rprint(f"[red]MCP config migration failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if migrated:
+        rprint(f"[green]Migrated {len(migrated)} legacy MCP config file(s) to direct commands.[/green]")
+        for path in migrated:
+            rprint(f"  [dim]{path}[/dim]")
 
 
 def _try_auto_update() -> None:

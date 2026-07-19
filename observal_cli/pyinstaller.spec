@@ -4,8 +4,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for building the observal CLI binary.
 
-Produces a single-file executable containing the main CLI, shim, proxy,
-and sandbox runner entry points.
+Produces a single-file executable containing the main CLI and sandbox runner support.
 """
 
 import sys
@@ -27,8 +26,6 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
-        "observal_cli.shim",
-        "observal_cli.proxy",
         "observal_cli.sandbox_runner",
         "typer",
         "typer.main",

@@ -99,6 +99,8 @@ observal self upgrade
 
 The CLI speaks a stable contract with the server. A newer CLI works against an older server and vice versa, within a release or two.
 
+On the first command after upgrading from a release that generated `observal-shim` entries, the CLI restores the original MCP command in known home and current-project config files. It writes a `.pre-unshim.bak` copy before each change. A malformed wrapped entry stops the command with a visible migration error rather than guessing at the original executable.
+
 ## Zero-downtime for the web UI
 
 The web UI is a static Vite build and restarts instantly. Users see a brief reload if they are on the page during the deploy. No special handling required.

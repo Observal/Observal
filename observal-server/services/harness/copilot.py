@@ -4,8 +4,7 @@
 
 """Copilot (VS Code) harness adapter for agent config generation.
 
-Copilot in VS Code does not support hooks. Telemetry flows via OTel export
-(opt-in) and MCP shim wrapping (always-on). This adapter generates:
+Copilot in VS Code does not support hooks. This adapter generates:
 - .github/agents/{name}.agent.md (agent file with YAML frontmatter)
 - .vscode/mcp.json (MCP server config with "servers" key)
 """

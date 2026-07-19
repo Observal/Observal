@@ -246,12 +246,3 @@ class TestCliRetry:
 
         with patch("httpx.get", return_value=mock_resp), pytest.raises(httpx.HTTPStatusError):
             _request_with_retry("get", "http://test/api", {"Authorization": "Bearer test-token"})
-
-
-# ---------------------------------------------------------------------------
-# Shim explicit timeout
-# ---------------------------------------------------------------------------
-
-
-class TestShimTimeout:
-    """Verify the shim uses an explicit timeout on httpx calls."""

@@ -100,7 +100,7 @@ observal scan --harness kiro
 observal scan --harness claude-code
 ```
 
-Reports: detected harnesses, MCP servers (with shimmed status), skills, hooks, agents, and unregistered components.
+Reports: detected harnesses, MCP servers, skills, hooks, agents, and unregistered components.
 
 ---
 
