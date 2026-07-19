@@ -310,17 +310,6 @@ def test_final_hash_mismatch_rewinds_and_repairs_source_range(tmp_path: Path, mo
             "integrity_ok": True,
         }
 
-    assert not base.drain_session_source(
-        source,
-        config(),
-        hook_event="Stop",
-        final=True,
-        home=tmp_path,
-        db_path=db,
-        post=audit,
-    )
-    assert base.read_cursor("session", home=tmp_path) == (8, 1)
-
     assert base.drain_session_source(
         source,
         config(),

@@ -19,6 +19,7 @@ fs.writeFileSync(sessionFile, `${lines.join("\n")}\n`);
 const ingestPayloads = [];
 let serverAcknowledgedLine = -1;
 let serverAcknowledgedOffset = 0;
+let repairFinalOnce = false;
 const server = http.createServer((request, response) => {
   response.setHeader("Content-Type", "application/json");
   if (request.method === "GET" && request.url?.startsWith("/api/v1/ingest/session/checkpoint")) {
@@ -42,6 +43,18 @@ const server = http.createServer((request, response) => {
     ingestPayloads.push(payload);
     if (ingestPayloads.length === 2) {
       response.end(JSON.stringify({ ingested: payload.lines.length })); // HTTP success without acknowledgement.
+      return;
+    }
+    if (repairFinalOnce && payload.final) {
+      repairFinalOnce = false;
+      serverAcknowledgedLine = 499;
+      serverAcknowledgedOffset = ingestPayloads[0].end_byte_offsets.at(-1);
+      response.end(JSON.stringify({
+        acknowledged_line: serverAcknowledgedLine,
+        acknowledged_offset: serverAcknowledgedOffset,
+        integrity_ok: false,
+        repair_from_line: 500,
+      }));
       return;
     }
     if (payload.lines.length > 0) {
@@ -135,11 +148,15 @@ cursor = JSON.parse(fs.readFileSync(statePath, "utf-8"))["pi-session"];
 assert.equal(cursor.line_count, 501, "missing local state recovers from the server checkpoint");
 assert.equal(ingestPayloads.length, 3, "checkpoint recovery avoids replaying acknowledged history");
 
+repairFinalOnce = true;
 await recoveredHandlers.get("session_shutdown")({}, context);
 cursor = JSON.parse(fs.readFileSync(statePath, "utf-8"))["pi-session"];
 assert.equal(cursor.finalized, true, "finality also requires a server acknowledgement");
 assert.equal(ingestPayloads[3].final, true);
 assert.deepEqual(ingestPayloads[3].lines, []);
+assert.equal(ingestPayloads[4].start_offset, 500, "repair rewinds and replays in the same finalizer");
+assert.deepEqual(ingestPayloads[4].lines, [lines[500]]);
+assert.equal(ingestPayloads[4].final, true);
 
 await new Promise((resolve) => server.close(resolve));
 fs.rmSync(home, { recursive: true, force: true });

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def test_generated_plugin_uses_durable_acknowledged_delivery():
-    assert OPENCODE_PLUGIN_VERSION == "5"
+    assert OPENCODE_PLUGIN_VERSION == "6"
     assert "saveSessionState(state); // Durable before network delivery." in OPENCODE_PLUGIN_SOURCE
     assert "acknowledged_line" in OPENCODE_PLUGIN_SOURCE
     assert "pushedMessageIds" not in OPENCODE_PLUGIN_SOURCE
@@ -62,6 +62,19 @@ state = plugin.loadSessionState("session");
 assert.equal(state.pending, null);
 assert.equal(state.acknowledgedLine, 1);
 
+let repair = plugin.newSessionState("repair");
+repair.pending = { ...state.pending, startLine: 2, endLine: 2, lines: ["three"], final: true };
+assert.equal(plugin.applyAcknowledgement(repair, {
+  acknowledged_line: 0,
+  acknowledged_offset: 4,
+  repair_from_line: 1,
+}), "repair");
+repair = plugin.loadSessionState("repair");
+assert.equal(repair.acknowledgedLine, 0);
+assert.equal(repair.pending, null);
+assert.equal(repair.needsReplay, true);
+assert.equal(repair.repairFinal, true);
+
 writeFileSync(path, "not-json");
 state = plugin.loadSessionState("session");
 assert.equal(state.acknowledgedLine, -1);
@@ -78,26 +91,41 @@ writeFileSync(join(observalDir, "config.json"), JSON.stringify({
 writeFileSync(join(observalDir, "lockfile.json"), JSON.stringify({
   harnesses: { opencode: { agents: [{ name: "custom", id: "agent-id", version: "1.0.0", scope: "user" }] } },
 }));
+let clientMessages = [
+  { info: { id: "m1", role: "user", timestamp: "2026-01-01T00:00:00Z" }, parts: [{ type: "text", text: "hello" }] },
+  { info: { id: "m2", role: "assistant", timestamp: "2026-01-01T00:00:01Z" }, parts: [{ type: "text", text: "hi" }] },
+];
 const client = {
   app: { log: async () => {} },
-  session: { messages: async () => ({ data: [
-    { info: { id: "m1", role: "user", timestamp: "2026-01-01T00:00:00Z" }, parts: [{ type: "text", text: "hello" }] },
-    { info: { id: "m2", role: "assistant", timestamp: "2026-01-01T00:00:01Z" }, parts: [{ type: "text", text: "hi" }] },
-  ] }) },
+  session: { messages: async () => ({ data: clientMessages }) },
 };
 let shouldFail = true;
+let repairFinalOnce = false;
 let requests = 0;
 let ingestRequests = 0;
 let checkpointLine = -1;
+const ingestPayloads = [];
 globalThis.fetch = async (_url, options = {}) => {
   requests += 1;
   if (!options.method || options.method === "GET") {
     return { ok: true, json: async () => ({ acknowledged_line: checkpointLine, acknowledged_offset: 0 }) };
   }
   ingestRequests += 1;
+  const payload = JSON.parse(options.body);
+  ingestPayloads.push(payload);
   if (shouldFail) return { ok: false, status: 503 };
-  checkpointLine = 1;
-  return { ok: true, json: async () => ({ acknowledged_line: 1, acknowledged_offset: 0 }) };
+  if (repairFinalOnce && payload.final) {
+    repairFinalOnce = false;
+    checkpointLine = 499;
+    return { ok: true, json: async () => ({
+      acknowledged_line: 499,
+      acknowledged_offset: 0,
+      repair_from_line: 500,
+      integrity_ok: false,
+    }) };
+  }
+  checkpointLine = payload.start_offset + payload.lines.length - 1;
+  return { ok: true, json: async () => ({ acknowledged_line: checkpointLine, acknowledged_offset: 0 }) };
 };
 const hooks = await plugin.ObservalPlugin({ client, directory: "/work" });
 await hooks.event({ event: { type: "session.created", properties: { sessionID: "delivery", agent: "custom" } } });
@@ -121,6 +149,24 @@ const recovered = plugin.loadSessionState("recovered");
 assert.equal(recovered.acknowledgedLine, 1);
 assert.equal(recovered.pending, null);
 assert.equal(ingestRequests, 2);
+
+checkpointLine = -1;
+repairFinalOnce = true;
+clientMessages = Array.from({ length: 1001 }, (_, index) => ({
+  info: { id: `large-${index}`, role: index % 2 ? "assistant" : "user", timestamp: "2026-01-01T00:00:00Z" },
+  parts: [{ type: "text", text: String(index) }],
+}));
+await hooks.event({ event: { type: "session.created", properties: { sessionID: "large", agent: "custom" } } });
+await hooks.event({ event: { type: "message.updated", properties: { sessionID: "large" } } });
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "large", final: true } } });
+const large = plugin.loadSessionState("large");
+assert.equal(large.acknowledgedLine, 1000);
+assert.equal(large.pending, null);
+assert.equal(large.needsReplay, false);
+const largePayloads = ingestPayloads.slice(2);
+assert.deepEqual(largePayloads.map((payload) => payload.lines.length), [500, 500, 1, 500, 1]);
+assert.deepEqual(largePayloads.map((payload) => payload.start_offset), [0, 500, 1000, 500, 1000]);
+assert.equal(largePayloads.at(-1).final, true);
 """
     )
     env = os.environ | {"HOME": str(tmp_path)}

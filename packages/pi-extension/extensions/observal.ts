@@ -596,7 +596,10 @@ export default function (pi: ExtensionAPI) {
     try { fs.unlinkSync(pendingPath(sessionId)); } catch { }
   }
 
-  async function deliverPending(config: ObservalConfig, pending: PendingBatch): Promise<boolean> {
+  async function deliverPending(
+    config: ObservalConfig,
+    pending: PendingBatch,
+  ): Promise<"delivered" | "repair" | false> {
     if (pending.destination.replace(/\/$/, "") !== config.server_url.replace(/\/$/, "")) return false;
     if (pending.user_id && pending.user_id !== config.user_id) return false;
 
@@ -606,10 +609,17 @@ export default function (pi: ExtensionAPI) {
       JSON.stringify(pending.payload),
       TIMEOUT_MS,
     );
+    if (Number.isInteger(acknowledgement?.repair_from_line)) {
+      const repairFromLine = Number(acknowledgement.repair_from_line);
+      const acknowledgedOffset = Number(acknowledgement.acknowledged_offset || 0);
+      if (!writeCursor(pending.session_id, acknowledgedOffset, repairFromLine, false)) return false;
+      removePending(pending.session_id);
+      return "repair";
+    }
     if (!acknowledgementCovers(acknowledgement, pending)) return false;
     if (!writeCursor(pending.session_id, pending.end_offset, pending.end_line + 1, pending.final)) return false;
     removePending(pending.session_id);
-    return true;
+    return "delivered";
   }
 
   function hashSessionFile(sessionFile: string): { hash: string; lineCount: number } {
@@ -685,7 +695,10 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  async function pushNewLines(s: ObservalState, opts: { final: boolean }): Promise<void> {
+  async function pushNewLines(
+    s: ObservalState,
+    opts: { final: boolean; repairAttempted?: boolean },
+  ): Promise<void> {
     if (!s.config || !s.sessionFile) return;
 
     const gen = ++s.generation;
@@ -694,7 +707,8 @@ export default function (pi: ExtensionAPI) {
       let cursor = readCursor(s.sessionId);
       const storedPending = readPending(s.sessionId);
       if (storedPending) {
-        if (!(await deliverPending(s.config, storedPending))) return;
+        const result = await deliverPending(s.config, storedPending);
+        if (!result) return;
         if (s.generation !== gen) return;
         cursor = readCursor(s.sessionId);
       }
@@ -771,7 +785,10 @@ export default function (pi: ExtensionAPI) {
           final: true,
         };
         if (!writePending(pending)) return;
-        await deliverPending(s.config, pending);
+        const result = await deliverPending(s.config, pending);
+        if (result === "repair" && !opts.repairAttempted) {
+          await pushNewLines(s, { final: true, repairAttempted: true });
+        }
         return;
       }
 
@@ -814,7 +831,14 @@ export default function (pi: ExtensionAPI) {
           final: opts.final && isLastChunk,
         };
         if (!writePending(pending)) return;
-        if (!(await deliverPending(s.config, pending))) return;
+        const result = await deliverPending(s.config, pending);
+        if (!result) return;
+        if (result === "repair") {
+          if (!opts.repairAttempted) {
+            await pushNewLines(s, { final: opts.final, repairAttempted: true });
+          }
+          return;
+        }
         if (s.generation !== gen) return;
         s.byteOffset = endOffset;
         s.lineCount = endLine + 1;

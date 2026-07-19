@@ -379,6 +379,7 @@ def drain_outbox(
     home: Path | None = None,
     db_path: Path | None = None,
     post: Callable[[dict, dict], dict | None] | None = None,
+    repairs: list[tuple[str, str]] | None = None,
 ) -> bool:
     """Drain durable batches for the configured server/user until blocked."""
     from observal_cli import telemetry_buffer
@@ -414,11 +415,13 @@ def drain_outbox(
             write_cursor(
                 item.checkpoint_key,
                 acknowledged_offset,
-                acknowledged_line + 1,
+                repair_from_line,
                 home=home,
                 preserve_finalized=False,
             )
             telemetry_buffer.accept_item(item.id, db_path=db_path)
+            if repairs is not None:
+                repairs.append((item.harness, item.session_id))
             return False
         if acknowledged_line < item.end_line:
             return False
@@ -457,6 +460,7 @@ def drain_session_source(
     db_path: Path | None = None,
     post: Callable[[dict, dict], dict | None] | None = None,
     checkpoint_fetch: Callable[[SessionSource, dict], dict | None] | None = None,
+    _repair_attempts: int = 0,
 ) -> bool:
     """Spool all complete source records, then deliver them through the outbox."""
     from observal_cli import telemetry_buffer
@@ -526,7 +530,23 @@ def drain_session_source(
             )
         if spool_only:
             return True
-        delivered = drain_outbox(config, home=home, db_path=db_path, post=post)
+        repairs: list[tuple[str, str]] = []
+        delivered = drain_outbox(config, home=home, db_path=db_path, post=post, repairs=repairs)
+        if final and (source.harness, source.session_id) in repairs and _repair_attempts < 1:
+            return drain_session_source(
+                source,
+                config,
+                hook_event=hook_event,
+                final=True,
+                extra_fields=extra_fields,
+                extra_records=extra_records,
+                recover_from_server=recover_from_server,
+                home=home,
+                db_path=db_path,
+                post=post,
+                checkpoint_fetch=checkpoint_fetch,
+                _repair_attempts=_repair_attempts + 1,
+            )
         if bytes_read or (final and delivered):
             write_cursor(
                 source.checkpoint_key,
@@ -580,7 +600,24 @@ def drain_session_source(
 
     if spool_only:
         return True
-    return drain_outbox(config, home=home, db_path=db_path, post=post)
+    repairs = []
+    delivered = drain_outbox(config, home=home, db_path=db_path, post=post, repairs=repairs)
+    if final and (source.harness, source.session_id) in repairs and _repair_attempts < 1:
+        return drain_session_source(
+            source,
+            config,
+            hook_event=hook_event,
+            final=True,
+            extra_fields=extra_fields,
+            extra_records=extra_records,
+            recover_from_server=recover_from_server,
+            home=home,
+            db_path=db_path,
+            post=post,
+            checkpoint_fetch=checkpoint_fetch,
+            _repair_attempts=_repair_attempts + 1,
+        )
+    return delivered
 
 
 # ---------------------------------------------------------------------------
