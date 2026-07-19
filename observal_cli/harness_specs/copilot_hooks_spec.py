@@ -48,10 +48,7 @@ def build_copilot_hooks(hooks_dir: str = ".github/hooks", bash_cmd: str | None =
     win_cmd = f"powershell -ExecutionPolicy Bypass -File {ps1_path}"
 
     if bash_cmd is None:
-        bash_cmd = (
-            f'"{sys.executable}" -m observal_cli.hooks.session_push '
-            "--harness copilot --json-response"
-        )
+        bash_cmd = f'"{sys.executable}" -m observal_cli.hooks.session_push --harness copilot --json-response'
 
     hooks: dict[str, list[dict]] = {}
     for event in COPILOT_HOOK_EVENTS:

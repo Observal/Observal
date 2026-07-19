@@ -407,12 +407,12 @@ async def ingest_session_lines(
         max_batch_offset,
     )
     line_hashes = [xxhash.xxh128(line.encode("utf-8", errors="replace")).hexdigest() for line in lines]
-    conflicts = [start_offset + i for i, digest in enumerate(line_hashes) if existing.get(start_offset + i, digest) != digest]
+    conflicts = [
+        start_offset + i for i, digest in enumerate(line_hashes) if existing.get(start_offset + i, digest) != digest
+    ]
     repair_offsets: set[int] = set()
     if existing:
-        checkpoint_line, _checkpoint_offset = await query_session_checkpoint(
-            session_id, project_id, user_id, harness
-        )
+        checkpoint_line, _checkpoint_offset = await query_session_checkpoint(session_id, project_id, user_id, harness)
         blocked = [offset for offset in conflicts if offset <= checkpoint_line]
         if blocked:
             raise SessionRecordConflictError(blocked)
@@ -466,13 +466,17 @@ async def ingest_session_lines(
         preview = redact_secrets(preview_fn(parsed, event_type)) if rendered else ""
         tool_name, tool_id = tool_info_fn(parsed) if rendered else (None, None)
         uuid, parent_uuid = _extract_uuid(parsed, harness) if parsed else (None, None)
-        usage = _extract_usage_tokens(parsed, harness) if parsed else {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-            "model": "",
-        }
+        usage = (
+            _extract_usage_tokens(parsed, harness)
+            if parsed
+            else {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "model": "",
+            }
+        )
         rows.append(
             {
                 "session_id": session_id,
@@ -528,9 +532,7 @@ async def advance_session_checkpoint(
     harness: str,
 ) -> tuple[int, int]:
     """Advance and return the highest contiguous canonical source position."""
-    acknowledged_line, acknowledged_offset = await query_session_checkpoint(
-        session_id, project_id, user_id, harness
-    )
+    acknowledged_line, acknowledged_offset = await query_session_checkpoint(session_id, project_id, user_id, harness)
     while True:
         records = await query_source_records_after(
             session_id,

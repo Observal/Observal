@@ -109,7 +109,13 @@ class TestCopilotAdapterDetectHooks:
         hooks_dir.mkdir(parents=True)
         (hooks_dir / "observal.json").write_text(
             json.dumps(
-                {"hooks": {"UserPromptSubmit": [{"bash": "python -m observal_cli.hooks.session_push --harness copilot-cli"}]}}
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {"bash": "python -m observal_cli.hooks.session_push --harness copilot-cli"}
+                        ]
+                    }
+                }
             )
         )
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -225,7 +231,10 @@ class TestCopilotCliAdapterDetectHooks:
                     "version": 1,
                     "hooks": {
                         "sessionStart": [
-                            {"type": "command", "bash": "python -m observal_cli.hooks.session_push --harness copilot-cli"}
+                            {
+                                "type": "command",
+                                "bash": "python -m observal_cli.hooks.session_push --harness copilot-cli",
+                            }
                         ]
                     },
                 }
@@ -250,7 +259,10 @@ class TestCopilotCliAdapterDetectHooks:
                     "version": 1,
                     "hooks": {
                         "preToolUse": [
-                            {"type": "command", "bash": "python -m observal_cli.hooks.session_push --harness copilot-cli"}
+                            {
+                                "type": "command",
+                                "bash": "python -m observal_cli.hooks.session_push --harness copilot-cli",
+                            }
                         ]
                     },
                 }

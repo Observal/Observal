@@ -33,14 +33,17 @@ def test_outbox_survives_reopen_and_acknowledges_only_contiguous_batches(tmp_pat
     restarted = outbox.pending(destination="http://server", user_id="user", db_path=db)
     assert [(item.start_line, item.end_line) for item in restarted] == [(0, 1), (2, 2)]
 
-    assert outbox.acknowledge(
-        destination="http://server",
-        user_id="user",
-        harness="claude-code",
-        session_id="session",
-        acknowledged_line=1,
-        db_path=db,
-    ) == 1
+    assert (
+        outbox.acknowledge(
+            destination="http://server",
+            user_id="user",
+            harness="claude-code",
+            session_id="session",
+            acknowledged_line=1,
+            db_path=db,
+        )
+        == 1
+    )
     assert [item.start_line for item in outbox.pending(destination="http://server", user_id="user", db_path=db)] == [2]
 
 
@@ -110,9 +113,7 @@ def test_requeue_rejects_different_content_for_same_source_range(tmp_path: Path)
     with pytest.raises(outbox.OutboxConflictError):
         outbox.enqueue(payload(0, ["changed"]), destination="http://server", user_id="user", db_path=db)
 
-    assert outbox.pending(destination="http://server", user_id="user", db_path=db)[0].payload["lines"] == [
-        "original"
-    ]
+    assert outbox.pending(destination="http://server", user_id="user", db_path=db)[0].payload["lines"] == ["original"]
 
 
 def test_spooled_checkpoint_advances_across_pending_ranges(tmp_path: Path):

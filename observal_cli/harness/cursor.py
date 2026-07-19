@@ -37,9 +37,7 @@ class CursorAdapter(BaseAdapter):
     def resolve_session_source(self, event: dict, home: Path | None = None) -> SessionSource | None:
         from observal_cli.sessions.cursor import find_cursor_jsonl, get_parent_session_id, project_key_from_cwd
 
-        session_id = str(
-            event.get("conversationId") or event.get("conversation_id") or event.get("session_id") or ""
-        )
+        session_id = str(event.get("conversationId") or event.get("conversation_id") or event.get("session_id") or "")
         if not session_id:
             return None
         transcript = str(event.get("transcriptPath") or event.get("transcript_path") or "")

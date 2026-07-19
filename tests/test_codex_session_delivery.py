@@ -83,16 +83,11 @@ def test_codex_stop_uses_shared_engine_and_finalizer(tmp_path: Path, monkeypatch
     )
 
     assert drained == [(SESSION_ID, False)]
-    assert spawned == [(('--finalize-session', SESSION_ID, '--cwd', '/work'), "codex")]
+    assert spawned == [(("--finalize-session", SESSION_ID, "--cwd", "/work"), "codex")]
 
 
 def test_codex_hook_spec_uses_shared_engine():
     hooks = build_codex_hooks()["hooks"]
-    commands = {
-        hook["command"]
-        for groups in hooks.values()
-        for group in groups
-        for hook in group["hooks"]
-    }
+    commands = {hook["command"] for groups in hooks.values() for group in groups for hook in group["hooks"]}
     assert len(commands) == 1
     assert "observal_cli.hooks.session_push --harness codex" in commands.pop()
