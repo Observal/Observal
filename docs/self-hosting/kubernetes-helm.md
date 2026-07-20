@@ -1,9 +1,10 @@
 <!-- SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Kubernetes Deployment with Helm
 
-Deploy Observal onto a Kubernetes cluster using the official Helm chart located in `infra/helm/observal`.
+Deploy Observal onto a Kubernetes cluster using the official Helm chart.
 
 > [!WARNING]
 > **Production Notice**: The in-cluster PostgreSQL, ClickHouse, and Redis StatefulSets deployed by this chart are intended for evaluation, development, and small-scale testing. For production workloads, set `postgresql.enabled=false`, `clickhouse.enabled=false`, and `redis.enabled=false`, then provide `postgresql.externalUrl`, `clickhouse.externalUrl`, and `redis.externalUrl` for managed services such as AWS RDS, Cloud SQL, ClickHouse Cloud, or ElastiCache.
@@ -17,6 +18,25 @@ Deploy Observal onto a Kubernetes cluster using the official Helm chart located 
 - Default `StorageClass` supporting dynamic volume provisioning (PV/PVC)
 
 ## Quick Start
+
+Use the hosted OCI chart after the first release that includes Helm chart publishing has completed:
+
+1. Install the chart into a dedicated namespace:
+   ```bash
+   kubectl create namespace observal
+   helm install observal oci://ghcr.io/observal/charts/observal \
+     --version <version> \
+     --namespace observal
+   ```
+
+2. Verify all workloads are running and completed:
+   ```bash
+   kubectl get pods -n observal
+   ```
+
+## Local Chart Development
+
+To test unreleased chart changes directly from a clone:
 
 1. Clone the repository:
    ```bash
@@ -40,7 +60,10 @@ Deploy Observal onto a Kubernetes cluster using the official Helm chart located 
 You can customize the deployment by passing a custom values file (`-f values.yaml`) or setting flags via `--set`.
 
 ```bash
-helm install observal ./infra/helm/observal --namespace observal -f custom-values.yaml
+helm install observal oci://ghcr.io/observal/charts/observal \
+  --version <version> \
+  --namespace observal \
+  -f custom-values.yaml
 ```
 
 ### Parameters Reference Table
@@ -90,7 +113,8 @@ Open `http://localhost:3000` in your browser.
 Enable ingress and configure TLS termination using `cert-manager`:
 
 ```bash
-helm upgrade --install observal ./infra/helm/observal \
+helm upgrade --install observal oci://ghcr.io/observal/charts/observal \
+  --version <version> \
   --namespace observal \
   --set ingress.enabled=true \
   --set ingress.host=observal.mycompany.com \
@@ -107,7 +131,10 @@ helm upgrade --install observal ./infra/helm/observal \
 To apply configuration changes or update to a newer chart version:
 
 ```bash
-helm upgrade observal ./infra/helm/observal --namespace observal -f custom-values.yaml
+helm upgrade observal oci://ghcr.io/observal/charts/observal \
+  --version <version> \
+  --namespace observal \
+  -f custom-values.yaml
 ```
 
 ### Rollback
@@ -132,3 +159,17 @@ helm uninstall observal --namespace observal
 
 > [!NOTE]
 > Persistent Volume Claims (PVCs) for PostgreSQL, ClickHouse, Redis, and API data are retained by default to prevent accidental data loss. To delete them permanently, execute: `kubectl delete pvc -l app.kubernetes.io/instance=observal -n observal`.
+
+## Chart Publishing
+
+Official releases publish the Helm chart as an OCI artifact to GitHub Container Registry:
+
+```text
+oci://ghcr.io/observal/charts/observal
+```
+
+Helm OCI registries do not use `helm repo add`; install and upgrade commands reference the `oci://` chart URL directly.
+
+After the first release publishes the package, make the GHCR chart package public in the repository package settings if it is not already public.
+
+ArtifactHub should be registered against the OCI chart URL. OCI repositories require one ArtifactHub repository per chart. The release workflow pushes `infra/helm/artifacthub-repo.yml` to GHCR with the special `artifacthub.io` tag. After ArtifactHub creates the repository record, copy the repository ID from the ArtifactHub control panel into `infra/helm/artifacthub-repo.yml` as `repositoryID` to enable Verified Publisher status on the next chart release.

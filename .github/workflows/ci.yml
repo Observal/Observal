@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       web: ${{ steps.filter.outputs.web }}
       docker: ${{ steps.filter.outputs.docker }}
+      helm: ${{ steps.filter.outputs.helm }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v4
@@ -63,6 +65,11 @@ jobs:
             web:
               - 'web/**'
               - '.github/workflows/ci.yml'
+            helm:
+              - 'infra/helm/**'
+              - 'docs/self-hosting/kubernetes-helm.md'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release.yml'
             docker:
               - 'docker/**'
               - 'observal_cli/**'
@@ -217,6 +224,32 @@ jobs:
       - name: TypeScript typecheck
         if: needs.changes.outputs.web == 'true'
         run: pnpm run typecheck
+
+# ── Job 5: Helm chart lint ───────────────────────────────────────────────────
+  helm-lint:
+    name: helm-lint
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - name: Skip if no Helm changes
+        if: needs.changes.outputs.helm != 'true'
+        run: |
+          echo "::notice::No Helm changes detected, skipping helm-lint"
+          echo "This job reports success to satisfy branch protection"
+
+      - uses: actions/checkout@v6
+        if: needs.changes.outputs.helm == 'true'
+
+      - uses: azure/setup-helm@v4
+        if: needs.changes.outputs.helm == 'true'
+
+      - name: Lint chart
+        if: needs.changes.outputs.helm == 'true'
+        run: helm lint infra/helm/observal
+
+      - name: Render chart
+        if: needs.changes.outputs.helm == 'true'
+        run: helm template observal infra/helm/observal --namespace observal
 
 # ── Job 6: Docker build ───────────────────────────────────────────────────────
   docker-build:

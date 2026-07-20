@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 apiVersion: v2
@@ -9,6 +10,7 @@ description: >
 type: application
 version: 0.1.0
 appVersion: "latest"
+icon: https://raw.githubusercontent.com/Observal/Observal/main/docs/logo.svg
 keywords:
   - observal
   - ai-agents
@@ -19,4 +21,15 @@ sources:
   - https://github.com/Observal/Observal
 maintainers:
   - name: Observal Contributors
+    email: contact@observal.io
     url: https://github.com/Observal/Observal
+annotations:
+  artifacthub.io/category: monitoring-logging
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://github.com/Observal/Observal/tree/main/docs/self-hosting
+    - name: Source
+      url: https://github.com/Observal/Observal
+    - name: Support
+      url: https://github.com/Observal/Observal/issues

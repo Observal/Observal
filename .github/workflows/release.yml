@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # Automated release pipeline for Observal.
@@ -365,10 +366,63 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # ── Job 6: Helm chart to GHCR (after approval) ────────────
+  helm-chart:
+    name: Publish Helm chart
+    needs: [preflight, approve]
+    if: needs.approve.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v4
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Lint and package chart
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}"
+          mkdir -p chart-dist
+
+          helm lint infra/helm/observal
+          helm package infra/helm/observal \
+            --destination chart-dist \
+            --version "$VERSION" \
+            --app-version "$VERSION"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: observal-helm-chart-v${{ needs.preflight.outputs.version }}
+          path: chart-dist/observal-${{ needs.preflight.outputs.version }}.tgz
+
+      - name: Publish chart to GHCR
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}"
+          HELM_OCI_REPO="oci://ghcr.io/observal/charts"
+          HELM_OCI_REF="ghcr.io/observal/charts/observal"
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+          helm push "chart-dist/observal-${VERSION}.tgz" "$HELM_OCI_REPO"
+
+          oras push "${HELM_OCI_REF}:artifacthub.io" \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            infra/helm/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
+
   # ── Final: Create GitHub Release with all artifacts ────────
   release:
     name: GitHub Release
-    needs: [preflight, cli-binaries, docker-merge, server-package, pypi, npm, approve]
+    needs: [preflight, cli-binaries, docker-merge, server-package, pypi, npm, helm-chart, approve]
     if: needs.approve.result == 'success'
     runs-on: ubuntu-latest
     steps:
