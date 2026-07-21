@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import (
+    commit_or_name_conflict,
     get_current_user,
     get_db,
     get_effective_agent_permission,
@@ -179,7 +180,7 @@ async def transfer_ownership(
         )
 
     previous_owner, previous_owner_id = transfer_entity_owner(entity, entity_type, current_user, target_user)
-    await db.commit()
+    await commit_or_name_conflict(db, entity_type[:-1])
     await db.refresh(entity)
     return TransferOwnershipResponse(
         id=str(entity.id),

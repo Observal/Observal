@@ -5,7 +5,7 @@
 name: observal
 command: observal
 description: "Core Observal CLI operations: pull agents into your harness, scan installed components, diagnose and patch harness configs, authenticate, manage CLI settings, and discuss agent insights. Use when the user wants to install an agent, check setup, login, configure the CLI, or ask how an agent is doing."
-version: 2.1.0
+version: 2.2.0
 owner: observal
 ---
 
@@ -20,9 +20,10 @@ owner: observal
 5. **When in doubt about a flag, run `<command> --help` first.** Never guess flag names.
 6. **Pass `--output json` on every list/show command.** It is stable and machine readable.
 7. **Pass `--yes` / `-y` on destructive commands** so they do not block on a confirmation prompt.
-8. **Resolve 409 conflicts deterministically:** `--update` for in-place edits, `--bump` for versioned releases.
-9. **Only fall back to local file writes** if a command exits with `Connection failed` or `Not configured`.
-10. **Never invent `OTEL_*` or `CLAUDE_CODE_ENABLE_TELEMETRY` environment variables.** Telemetry flows through session push hooks and reconciliation only.
+8. **Use canonical registry identities:** prefer the returned `qualified_name` (`namespace/slug`) for agent and component show, install, pull, archive, and transfer commands. Bare names work only when unambiguous.
+9. **Resolve 409 conflicts deterministically:** if the error says a name is ambiguous, retry with `namespace/slug`; otherwise use `--update` for in-place edits or `--bump` for versioned releases.
+10. **Only fall back to local file writes** if a command exits with `Connection failed` or `Not configured`.
+11. **Never invent `OTEL_*` or `CLAUDE_CODE_ENABLE_TELEMETRY` environment variables.** Telemetry flows through session push hooks and reconciliation only.
 
 ---
 
@@ -36,19 +37,19 @@ observal registry skill list --search 'frontend design' --output json
 observal registry mcp list --search 'github docker' --output json
 ```
 
-Summarize the top matches by name, description, and why they fit. If no results, retry with fewer keywords.
+Summarize the top matches by `qualified_name`, description, and why they fit. If no results, retry with fewer keywords.
 
 ## Procedure: Pull Agent
 
 Install an agent's full config (rules, MCP servers, hooks, skills, sandboxes, prompts) into a local harness.
 
 ```bash
-observal agent pull AGENT_NAME --harness kiro --no-prompt --dir .
+observal agent pull NAMESPACE/AGENT_SLUG --harness kiro --no-prompt --dir .
 ```
 
 **For Pi (`--harness pi`):**
-When pulling for Pi, the CLI natively downloads the agent's files into isolated profiles at `~/.pi/agent/agents/<AGENT_NAME>`.
-**Crucial:** After running `observal agent pull <AGENT_NAME> --harness pi`, you MUST run `/agent <AGENT_NAME>` inside Pi to actually swap into the newly downloaded profile!
+When pulling for Pi, the CLI downloads the agent into an isolated profile using its stable slug. If two installed namespaces use the same slug, the CLI qualifies the local profile name to avoid a collision.
+**Crucial:** After pulling, run `/agent <local-profile-name>` inside Pi using the exact local profile name printed by the CLI.
 
 **Flags:**
 - `--harness` (required): `claude-code`, `kiro`, `cursor`, `vscode`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `pi`
@@ -157,7 +158,7 @@ observal auth change-password
 observal auth set-username new-handle
 ```
 
-On a fresh server, `auth login` auto-bootstraps an admin from localhost (no prompts needed).
+On a fresh server, `auth login` auto-bootstraps an admin from localhost (no prompts needed). A username becomes the user's registry namespace and cannot be changed after the user owns an agent or component.
 
 ---
 
@@ -220,7 +221,8 @@ Keep the answer grounded in the JSON. Say when the report is missing a section o
 | `Connection failed` | Server unreachable. Use the `observal-advanced` skill's Local Fallback procedure |
 | `Not configured` / `No server` | Run `observal auth login` |
 | `403 Forbidden` | Check `observal auth whoami`; user lacks required role |
-| `404 Not found` | Verify name with `observal agent list --output json` |
+| `404 Not found` | Verify `qualified_name` with `observal agent list --output json` |
+| `409 Ambiguous` | Retry with the returned `namespace/slug` identity |
 
 ---
 
