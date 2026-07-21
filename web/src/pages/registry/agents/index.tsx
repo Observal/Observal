@@ -281,7 +281,7 @@ const columns: ColumnDef<RegistryItem>[] = [
             to="/agents/$agentId" params={{ agentId: row.original.id }}
             className="font-medium text-sm hover:underline underline-offset-4"
           >
-            {row.original.name}
+            {row.original.qualified_name ?? row.original.name}
           </Link>
           {row.original.status && row.original.status !== "approved" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning ring-1 ring-warning/20">
@@ -567,7 +567,7 @@ function AgentListContent() {
                   <div key={draft.id} className="flex items-center gap-4 px-4 py-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">{draft.name}</p>
+                        <p className="truncate text-sm font-medium">{draft.qualified_name ?? draft.name}</p>
                         {(draft.status === "rejected" || draft.status === "pending") && (
                           <StatusBadge status={draft.status} />
                         )}
@@ -652,7 +652,7 @@ function AgentListContent() {
                   <div key={agent.id} className="flex items-center gap-4 px-4 py-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">{agent.name}</p>
+                        <p className="truncate text-sm font-medium">{agent.qualified_name ?? agent.name}</p>
                         <StatusBadge status="archived" />
                       </div>
                       {agent.description && (
@@ -709,7 +709,7 @@ function AgentListContent() {
                   <div key={agent.id} className="flex items-center gap-4 px-4 py-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">{agent.name}</p>
+                        <p className="truncate text-sm font-medium">{agent.qualified_name ?? agent.name}</p>
                         <StatusBadge status="deleted" />
                       </div>
                       {agent.description && (

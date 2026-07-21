@@ -21,6 +21,7 @@ from api.deps import (
     get_db,
     get_effective_component_permission,
     optional_current_user,
+    registry_identity,
     require_role,
     resolve_listing,
 )
@@ -45,6 +46,7 @@ from schemas.mcp import (
 from services.config_generator import generate_config
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 from services.mcp_validator import analyze_repo, run_validation
+from services.registry_namespace import identity_exists
 
 router = APIRouter(prefix="/api/v1/mcps", tags=["mcp"])
 
@@ -125,19 +127,24 @@ async def submit_mcp(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    # Names are global. The original submitter can replace a draft, but nobody
-    # can take another user's name.
     optic.debug("mcp submit: name={}", req.name)
-    existing = (await db.execute(select(McpListing).where(McpListing.name == req.name))).scalars().first()
+    namespace, slug = registry_identity(current_user, req.name)
+    existing = (
+        (await db.execute(select(McpListing).where(McpListing.namespace == namespace, McpListing.slug == slug)))
+        .scalars()
+        .first()
+    )
     if existing:
         if existing.submitted_by == current_user.id and existing.status != ListingStatus.approved:
             await db.delete(existing)
             await db.flush()
         else:
-            raise HTTPException(status_code=409, detail=f"An approved listing named '{req.name}' already exists")
+            raise HTTPException(status_code=409, detail=f"Approved MCP server '{namespace}/{slug}' already exists")
 
     listing = McpListing(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         category=req.category,
         owner=req.owner,
         submitted_by=current_user.id,
@@ -307,6 +314,7 @@ async def install_mcp(
         observal_url=endpoints["api"],
         env_values=req.env_values,
         header_values=req.header_values,
+        local_name=req.local_name,
     )
     return McpInstallResponse(listing_id=listing.id, harness=req.harness, config_snippet=snippet, warnings=warnings)
 
@@ -318,8 +326,13 @@ async def save_mcp_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("req={}", req)
+    namespace, slug = registry_identity(current_user, req.name)
+    if await identity_exists(db, McpListing, namespace, slug):
+        raise HTTPException(status_code=409, detail=f"MCP server '{namespace}/{slug}' already exists")
     listing = McpListing(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         category=req.category,
         owner=req.owner or current_user.username or current_user.email,
         submitted_by=current_user.id,

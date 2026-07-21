@@ -90,6 +90,28 @@ def _empty_lockfile() -> dict:
     }
 
 
+def local_registry_name(
+    harness: str,
+    component_type: str,
+    namespace: str,
+    slug: str,
+    *,
+    scope: str = "user",
+    directory: str | None = None,
+) -> str:
+    """Use the bare slug unless another installed namespace already uses it."""
+    section = read_lockfile().get("harnesses", {}).get(harness, {})
+    entries = section.get("agents", []) if component_type == "agent" else section.get("standalone", [])
+    for entry in entries:
+        if component_type != "agent" and entry.get("type") != component_type:
+            continue
+        if scope == "project" and directory and entry.get("directory") != directory:
+            continue
+        if entry.get("slug") == slug and entry.get("namespace") not in (None, namespace):
+            return f"{namespace}-{slug}"
+    return slug
+
+
 def _ensure_harness(data: dict, harness: str) -> dict:
     """Ensure the harness section exists in the lock file data."""
     harnesses = data.setdefault("harnesses", {})
@@ -116,6 +138,9 @@ def upsert_agent(
     scope: str = "project",
     directory: str | None = None,
     components: list[dict] | None = None,
+    namespace: str | None = None,
+    slug: str | None = None,
+    local_name: str | None = None,
 ) -> None:
     """Add or update an agent entry in the lock file.
 
@@ -138,6 +163,12 @@ def upsert_agent(
         entry["directory"] = directory
     if components:
         entry["components"] = components
+    if namespace:
+        entry["namespace"] = namespace
+    if slug:
+        entry["slug"] = slug
+    if local_name:
+        entry["local_name"] = local_name
 
     # Find existing entry to update
     existing_idx = _find_agent_idx(agents, agent_id, scope, directory)
@@ -194,6 +225,9 @@ def upsert_standalone(
     scope: str = "user",
     directory: str | None = None,
     integrity: str | None = None,
+    namespace: str | None = None,
+    slug: str | None = None,
+    local_name: str | None = None,
 ) -> None:
     """Add or update a standalone component (MCP, skill, hook, etc.) in the lock file."""
     optic.debug("upsert_standalone: harness={}, type={}, name={}", harness, component_type, name)
@@ -213,6 +247,12 @@ def upsert_standalone(
         entry["directory"] = directory
     if integrity:
         entry["integrity"] = integrity
+    if namespace:
+        entry["namespace"] = namespace
+    if slug:
+        entry["slug"] = slug
+    if local_name:
+        entry["local_name"] = local_name
 
     # Find existing entry to update (match on type + id + scope + directory)
     existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)

@@ -11,9 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User
-
-# Same pattern as validation
-USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$")
+from services.registry_namespace import validate_namespace
 
 
 async def generate_unique_username(
@@ -50,7 +48,11 @@ async def generate_unique_username(
         base = "user"
 
     # Try base name first if it passes regex validation
-    if USERNAME_RE.match(base):
+    try:
+        base = validate_namespace(base)
+    except ValueError:
+        pass
+    else:
         result = await db.execute(select(User.username).where(User.username == base))
         if not result.scalar_one_or_none():
             return base
@@ -65,8 +67,9 @@ async def generate_unique_username(
         if len(candidate) > 32:
             candidate = candidate[:32]
 
-        # Verify it matches our regex
-        if not USERNAME_RE.match(candidate):
+        try:
+            candidate = validate_namespace(candidate)
+        except ValueError:
             continue
 
         # Check if available

@@ -13,12 +13,14 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from loguru import logger as optic
 
 from observal_shared.harness_registry import HARNESS_REGISTRY
 from schemas.constants import HARNESS_CAPABILITIES
+from services.shared.utils import registry_item_slug
 from services.shared.utils import sanitize_name as _sanitize_name
 
 if TYPE_CHECKING:
@@ -258,6 +260,18 @@ def _inject_agent_id(mcp_config: dict, agent_id: str):
             cfg["env"]["OBSERVAL_AGENT_ID"] = agent_id
 
 
+def _local_registry_names(listings: dict) -> dict:
+    """Use bare slugs unless this install contains the same slug from multiple namespaces."""
+    slugs = Counter(registry_item_slug(listing) for listing in listings.values())
+    duplicates = {slug for slug, count in slugs.items() if count > 1}
+    names = {}
+    for listing_id, listing in listings.items():
+        slug = registry_item_slug(listing)
+        namespace = getattr(listing, "namespace", "")
+        names[listing_id] = f"{namespace}-{slug}" if slug in duplicates and isinstance(namespace, str) else slug
+    return names
+
+
 def _sandbox_str(value, default: str = "") -> str:
     return value if isinstance(value, str) else default
 
@@ -272,6 +286,7 @@ def _build_sandbox_mcp_entry(sandbox_listings: dict, harness: str) -> dict:
         return {}
 
     sandboxes_json = []
+    local_names = _local_registry_names(sandbox_listings)
     for _lid, listing in sandbox_listings.items():
         resource_limits = getattr(listing, "resource_limits", {}) or {}
         if not isinstance(resource_limits, dict):
@@ -282,7 +297,7 @@ def _build_sandbox_mcp_entry(sandbox_listings: dict, harness: str) -> dict:
         sandboxes_json.append(
             {
                 "id": str(_lid),
-                "name": _sandbox_str(getattr(listing, "name", "")),
+                "name": local_names[_lid],
                 "runtime_type": _sandbox_str(getattr(listing, "runtime_type", "docker"), "docker") or "docker",
                 "image": _sandbox_str(getattr(listing, "image", "")),
                 "resource_limits": resource_limits,
@@ -344,6 +359,7 @@ def _build_mcp_configs(
     if adapter is None:
         raise ValueError(f"No adapter registered for harness: {harness!r}")
 
+    local_names = _local_registry_names(mcp_listings)
     for comp in agent.components:
         if comp.component_type != "mcp":
             continue
@@ -354,6 +370,7 @@ def _build_mcp_configs(
             listing,
             env_values=env_values.get(str(listing.id), {}),
             header_values=header_values.get(str(listing.id), {}),
+            local_name=local_names.get(comp.component_id),
         )
         entry = adapter.agent_mcp_entry(ctx)
         if entry is not None:
@@ -385,6 +402,7 @@ def _build_skill_configs(
     """
     skill_listings = skill_listings or {}
     skills: list[dict] = []
+    local_names = _local_registry_names(skill_listings)
 
     for comp in agent.components:
         if comp.component_type != "skill":
@@ -394,7 +412,7 @@ def _build_skill_configs(
             continue
         skills.append(
             {
-                "name": _sanitize_name(listing.name),
+                "name": _sanitize_name(local_names[comp.component_id]),
                 "description": getattr(listing, "description", "") or "",
                 "slash_command": getattr(listing, "slash_command", None),
                 "task_type": getattr(listing, "task_type", ""),
@@ -432,6 +450,7 @@ def _build_hook_configs(
     """
     hook_listings = hook_listings or {}
     hooks: list[dict] = []
+    local_names = _local_registry_names(hook_listings)
 
     for comp in agent.components:
         if comp.component_type != "hook":
@@ -443,7 +462,7 @@ def _build_hook_configs(
             "event": getattr(listing, "event", None),
             "handler_type": getattr(listing, "handler_type", "command"),
             "handler_config": getattr(listing, "handler_config", {}) or {},
-            "name": getattr(listing, "name", ""),
+            "name": local_names[comp.component_id],
             "script_filename": getattr(listing, "script_filename", None),
             "script_content": getattr(listing, "script_content", None),
         }
@@ -764,6 +783,7 @@ def _generate_prompt_files(
         return []
     names = component_names or {}
     files: list[dict] = []
+    local_names = _local_registry_names(prompt_listings)
     for comp in getattr(agent, "components", []):
         if comp.component_type != "prompt":
             continue
@@ -773,7 +793,10 @@ def _generate_prompt_files(
         template = getattr(listing, "template", "") or ""
         if not template:
             continue
-        raw_name = getattr(listing, "name", "") or names.get(str(comp.component_id), str(comp.component_id)[:8])
+        raw_name = local_names.get(
+            comp.component_id,
+            names.get(str(comp.component_id), str(comp.component_id)[:8]),
+        )
         safe = _sanitize_name(raw_name)
         description = getattr(listing, "description", "") or raw_name
         # Keep the YAML description on one line and quote-safe.

@@ -58,6 +58,9 @@ class PromptUpdateRequest(BaseModel):
 class PromptListingResponse(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     owner: str
@@ -85,6 +88,9 @@ class PromptListingResponse(BaseModel):
 class PromptListingSummary(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     category: str

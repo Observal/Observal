@@ -119,6 +119,9 @@ class SandboxUpdateRequest(BaseModel):
 class SandboxListingResponse(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     owner: str
@@ -158,6 +161,9 @@ class SandboxListingResponse(BaseModel):
 class SandboxListingSummary(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     runtime_type: str

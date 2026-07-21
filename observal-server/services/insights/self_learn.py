@@ -38,6 +38,7 @@ from models.mcp import ListingStatus
 from models.prompt import PromptListing, PromptVersion
 from models.skill import SkillListing, SkillVersion
 from models.user import User
+from services.registry_namespace import slugify
 from services.versioning import bump_version
 
 # Separator appended before auto-generated additions to the system prompt
@@ -811,8 +812,8 @@ async def _create_skill_listing(
     # Check for existing
     existing = await db.execute(
         select(SkillListing).where(
-            SkillListing.name == name,
-            SkillListing.submitted_by == submitter_id,
+            SkillListing.namespace == agent.namespace,
+            SkillListing.slug == slugify(name),
         )
     )
     if existing.scalar_one_or_none():
@@ -820,6 +821,8 @@ async def _create_skill_listing(
 
     listing = SkillListing(
         name=validated.name,
+        namespace=agent.namespace,
+        slug=slugify(validated.name),
         owner=validated.owner,
         submitted_by=submitter_id,
         owner_org_id=agent.owner_org_id,
@@ -934,8 +937,8 @@ async def _create_hook_listing(
     # Check for existing
     existing = await db.execute(
         select(HookListing).where(
-            HookListing.name == name,
-            HookListing.submitted_by == submitter_id,
+            HookListing.namespace == agent.namespace,
+            HookListing.slug == slugify(name),
         )
     )
     if existing.scalar_one_or_none():
@@ -943,6 +946,8 @@ async def _create_hook_listing(
 
     listing = HookListing(
         name=validated.name,
+        namespace=agent.namespace,
+        slug=slugify(validated.name),
         owner=validated.owner,
         submitted_by=submitter_id,
         owner_org_id=agent.owner_org_id,
@@ -1114,8 +1119,8 @@ async def _create_prompt_listing(
     # Check for existing
     existing = await db.execute(
         select(PromptListing).where(
-            PromptListing.name == name,
-            PromptListing.submitted_by == submitter_id,
+            PromptListing.namespace == agent.namespace,
+            PromptListing.slug == slugify(name),
         )
     )
     if existing.scalar_one_or_none():
@@ -1123,6 +1128,8 @@ async def _create_prompt_listing(
 
     listing = PromptListing(
         name=validated.name,
+        namespace=agent.namespace,
+        slug=slugify(validated.name),
         owner=validated.owner,
         submitted_by=submitter_id,
         owner_org_id=agent.owner_org_id,

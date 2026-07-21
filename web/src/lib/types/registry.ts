@@ -12,6 +12,9 @@
 export interface RegistryItem {
 	id: string;
 	name: string;
+	namespace?: string;
+	slug?: string;
+	qualified_name?: string;
 	description?: string;
 	status?: string;
 	rejection_reason?: string;
@@ -25,6 +28,9 @@ export interface RegistryItem {
 export interface TopAgentItem {
 	id: string;
 	name: string;
+	namespace?: string;
+	slug?: string;
+	qualified_name?: string;
 	description: string;
 	owner: string;
 	created_by_username?: string | null;

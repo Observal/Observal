@@ -153,7 +153,7 @@ def skill_submit(
         raise typer.Exit(code=1)
 
     if submit_draft:
-        resolved = config.resolve_alias(submit_draft)
+        resolved = client.resolve_registry_reference("skill", submit_draft)
         with spinner("Submitting draft for review..."):
             result = client.post(f"/api/v1/skills/{resolved}/submit")
         rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
@@ -309,7 +309,7 @@ def skill_list(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {item['name']}  v{item.get('version', '?')}")
+            rprint(f"{item['id']}  {client.canonical_name(item)}  v{item.get('version', '?')}")
         return
     table = Table(title=f"Skills ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -321,7 +321,7 @@ def skill_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -354,7 +354,7 @@ def skill_my(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['name']}  v{item.get('version', '?')}  {item.get('status', '')}")
+            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
         return
     table = Table(title=f"My Skills ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -366,7 +366,7 @@ def skill_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -394,7 +394,7 @@ def skill_show(
         observal registry skill show 1
         observal registry skill show @refactor-skill --output json
     """
-    resolved = config.resolve_alias(skill_id)
+    resolved = client.resolve_registry_reference("skill", skill_id)
     with spinner():
         item = client.get(f"/api/v1/skills/{resolved}")
     if output == "json":
@@ -402,7 +402,7 @@ def skill_show(
         return
     console.print(
         kv_panel(
-            f"{item['name']} v{item.get('version', '?')}",
+            f"{client.canonical_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Validated", "✓" if item.get("validated") else "✗"),
@@ -499,9 +499,21 @@ def skill_install(
         observal registry skill install 2 --harness cursor --raw > config.json
         observal registry skill install my-skill --harness opencode --no-write
     """
-    resolved = config.resolve_alias(skill_id)
+    resolved = client.resolve_registry_reference("skill", skill_id)
+    listing = client.get(f"/api/v1/skills/{resolved}")
+    from observal_cli.lockfile import local_registry_name
+
+    directory = str(Path.cwd()) if scope == "project" else None
+    local_name = local_registry_name(
+        harness,
+        "skill",
+        listing["namespace"],
+        listing["slug"],
+        scope=scope,
+        directory=directory,
+    )
     with spinner(f"Generating {harness} config..."):
-        install_body = {"harness": harness, "scope": scope}
+        install_body = {"harness": harness, "scope": scope, "local_name": local_name}
         if version:
             install_body["version"] = version
         result = client.post(f"/api/v1/skills/{resolved}/install", install_body)
@@ -549,7 +561,10 @@ def skill_install(
                 component_id=str(skill_info.get("id", resolved)),
                 version=version or skill_info.get("version") or skill_info.get("latest_version"),
                 scope=scope,
-                directory=str(Path.cwd()) if scope == "project" else None,
+                directory=directory,
+                namespace=listing.get("namespace"),
+                slug=listing.get("slug"),
+                local_name=local_name,
             )
         except Exception:
             pass  # Never block install on lockfile failure
@@ -748,7 +763,7 @@ def skill_edit(
         observal registry skill edit @sk --git-url https://github.com/org/new-repo
         observal registry skill edit 2 --version 2.0.0 --task-type debugging
     """
-    resolved = config.resolve_alias(skill_id)
+    resolved = client.resolve_registry_reference("skill", skill_id)
     if from_file:
         try:
             with open(from_file) as f:

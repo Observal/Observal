@@ -30,7 +30,9 @@ Notes:
 - `my` is available for `mcp`, `skill`, and `prompt`. Hooks and sandboxes do not have a `my` subcommand.
 - Prompts also support [`render`](#observal-registry-prompt-render).
 
-All `<id-or-name>` arguments accept: a UUID, a component name, a row number from the last `list` output, or an `@alias`.
+All registry references accept a UUID, canonical `namespace/slug`, a unique legacy bare name, a row number from the last `list` output, or an `@alias`. If the same bare slug exists in multiple namespaces, qualify it (for example, `alice/search` instead of `search`).
+
+The namespace is the publisher's username. Usernames cannot change after the account owns a registry listing. Transferring ownership moves the item to the recipient's namespace and fails if that `namespace/slug` already exists.
 
 ---
 

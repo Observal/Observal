@@ -102,7 +102,7 @@ function makeColumns(activeType: RegistryType): ColumnDef<RegistryItem>[] {
             to="/components/$componentId" params={{ componentId: row.original.id }} search={{ type: activeType }}
             className="font-medium text-sm hover:underline underline-offset-4"
           >
-            {row.original.name}
+            {row.original.qualified_name ?? row.original.name}
           </Link>
           {row.original.description && (
             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-xs">
@@ -411,7 +411,7 @@ export default function ComponentsPage() {
                     <StatusBadge status={item.status ?? "draft"} />
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">
-                        {item.name}
+                        {item.qualified_name ?? item.name}
                       </p>
                       {item.description && (
                         <p className="text-xs text-muted-foreground truncate max-w-xs">

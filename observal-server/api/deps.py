@@ -16,7 +16,7 @@ import jwt
 from fastapi import Depends, Header, HTTPException
 from loguru import logger as optic
 from redis.exceptions import RedisError
-from sqlalchemy import String, cast, select
+from sqlalchemy import String, cast, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -26,6 +26,7 @@ from models.organization import Organization
 from models.user import User, UserRole
 from services.jwt_service import decode_access_token
 from services.redis import get_redis
+from services.registry_namespace import _namespace_slug_parts, identity_for_user
 from services.security_events import (
     EventType,
     SecurityEvent,
@@ -252,14 +253,23 @@ def get_effective_component_permission(listing, user: User | None) -> str:
 require_super_admin = require_role(UserRole.super_admin)
 
 
+def registry_identity(user: User, name: str) -> tuple[str, str]:
+    try:
+        return identity_for_user(user, name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 async def commit_or_name_conflict(db: AsyncSession, item_type: str) -> None:
     try:
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         detail = str(exc.orig).lower()
-        if "name" in detail and ("unique" in detail or "duplicate" in detail):
-            raise HTTPException(status_code=409, detail=f"A {item_type} with this name already exists")
+        if ("namespace" in detail or "slug" in detail or "name" in detail) and (
+            "unique" in detail or "duplicate" in detail
+        ):
+            raise HTTPException(status_code=409, detail=f"A {item_type} with this namespace and slug already exists")
         raise
 
 
@@ -313,26 +323,43 @@ async def require_password_auth() -> None:
 
 
 async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_status=None):
-    """Resolve a listing by UUID or name. Returns most recent if duplicates exist."""
+    """Resolve a listing by UUID, canonical name, or unambiguous legacy bare name."""
 
-    if isinstance(identifier, _uuid.UUID):
-        stmt = select(model).where(model.id == identifier)
+    value = str(identifier).strip()
+    try:
+        uid = identifier if isinstance(identifier, _uuid.UUID) else _uuid.UUID(value)
+    except ValueError:
+        uid = None
+
+    if uid is not None:
+        stmt = select(model).where(model.id == uid)
+        ambiguous_label = None
+    elif parts := _namespace_slug_parts(value):
+        namespace, slug = parts
+        stmt = select(model).where(model.namespace == namespace, model.slug == slug)
+        ambiguous_label = None
     else:
-        try:
-            uid = _uuid.UUID(identifier)
-            stmt = select(model).where(model.id == uid)
-        except ValueError:
-            stmt = select(model).where(model.name == identifier)
+        stmt = select(model).where(or_(model.slug == value.lower(), model.name == value))
+        ambiguous_label = value
+
     if require_status is not None:
         version_model = model.__mapper__.relationships["latest_version"].entity.class_
         stmt = stmt.join(version_model, model.latest_version_id == version_model.id).where(
             version_model.status == require_status
         )
-    # Order by created_at desc so duplicates resolve to the most recent entry
-    if hasattr(model, "created_at"):
-        stmt = stmt.order_by(model.created_at.desc())
-    result = await db.execute(stmt)
-    return result.scalars().first()
+    result = await db.execute(stmt.limit(2))
+    scalars = result.scalars()
+    matches = scalars.all()
+    if not isinstance(matches, (list, tuple)):
+        first = scalars.first()
+        matches = [first] if first is not None else []
+    if ambiguous_label is not None and len(matches) > 1:
+        choices = ", ".join(item.qualified_name for item in matches)
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{ambiguous_label}' is ambiguous; use one of: {choices}",
+        )
+    return matches[0] if matches else None
 
 
 MIN_ID_PREFIX_LENGTH = 4

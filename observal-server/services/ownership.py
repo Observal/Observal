@@ -12,6 +12,7 @@ def transfer_entity_owner(entity, entity_type: str, current_user, target_user):
     new_owner = target_user.username or target_user.email
 
     entity.owner = new_owner
+    entity.namespace = target_user.username
     entity.owner_org_id = target_user.org_id
     if entity_type == "agents":
         entity.created_by = target_user.id

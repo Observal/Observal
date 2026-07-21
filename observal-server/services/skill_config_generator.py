@@ -14,6 +14,7 @@ from loguru import logger as optic
 
 from observal_shared.harness_registry import HARNESS_REGISTRY
 from services.harness import ensure_loaded, get_adapter
+from services.shared.utils import registry_item_slug
 from services.shared.utils import sanitize_name as _sanitize_name
 from services.skill_validator import validate_skill_md_content_frontmatter
 
@@ -101,6 +102,7 @@ def generate_skill_config(
     server_url: str = "http://localhost:8000",
     scope: str = "project",
     version_override=None,
+    local_name: str | None = None,
 ) -> dict:
     """Generate config snippet for skill install: telemetry hooks + skill file.
 
@@ -109,7 +111,7 @@ def generate_skill_config(
     """
     optic.trace("generating skill frontmatter for {} on {}", skill_listing.name, harness)
     skill_id = str(skill_listing.id)
-    skill_name = str(skill_listing.name)
+    skill_name = _sanitize_name(local_name or registry_item_slug(skill_listing))
 
     hook_entry = {
         "type": "http",

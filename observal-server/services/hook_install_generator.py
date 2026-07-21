@@ -14,12 +14,15 @@ from loguru import logger as optic
 
 from observal_shared.harness_registry import HARNESS_REGISTRY
 from services.harness import ensure_loaded, get_adapter
+from services.shared.utils import registry_item_slug
+from services.shared.utils import sanitize_name as _sanitize_name
 
 
 def generate_hook_install_config(
     hook_listing,
     harness: str,
     server_url: str = "http://localhost:8000",
+    local_name: str | None = None,
 ) -> dict:
     """Generate a complete install response for a registry hook.
 
@@ -32,6 +35,7 @@ def generate_hook_install_config(
       - notes: human-readable notes
     """
     optic.debug("generating hook install config: hook={}, harness={}", hook_listing.name, harness)
+    hook_name = _sanitize_name(local_name or registry_item_slug(hook_listing))
     ide_info = HARNESS_REGISTRY.get(harness)
     if not ide_info:
         return {
@@ -73,7 +77,7 @@ def generate_hook_install_config(
 
     # OpenCode uses plugins, not command hooks - manual setup only
     if hook_type == "plugin":
-        return _generate_plugin_instructions(hook_listing, ide_info, ide_event)
+        return _generate_plugin_instructions(hook_listing, ide_info, ide_event, hook_name)
 
     # Build handler info
     handler_type = str(getattr(hook_listing, "handler_type", "command") or "command")
@@ -112,9 +116,9 @@ def generate_hook_install_config(
             "path": source_path,
             "ref": source_ref or "main",
             "sha": resolved_sha,
-            "target_dir": f"{hook_scripts_dir}/{hook_listing.name}",
+            "target_dir": f"{hook_scripts_dir}/{hook_name}",
         }
-        actual_command = f"{hook_scripts_dir}/{hook_listing.name}/{command}"
+        actual_command = f"{hook_scripts_dir}/{hook_name}/{command}"
 
     config_snippet = adapter.format_hook_install_snippet(ide_event, handler_type, actual_command, timeout)
 
@@ -123,7 +127,7 @@ def generate_hook_install_config(
     if hooks:
         config_path_val = hooks.get("project", "") or hooks.get("user", "") or ""
         if "{name}" in config_path_val:
-            config_path_val = config_path_val.replace("{name}", hook_listing.name)
+            config_path_val = config_path_val.replace("{name}", hook_name)
 
     return {
         "config_snippet": config_snippet,
@@ -135,7 +139,7 @@ def generate_hook_install_config(
     }
 
 
-def _generate_plugin_instructions(hook_listing, ide_info: dict, ide_event: str) -> dict:
+def _generate_plugin_instructions(hook_listing, ide_info: dict, ide_event: str, hook_name: str) -> dict:
     """Generate manual setup instructions for plugin-based harnesses (OpenCode)."""
     optic.trace("hook_listing={}, ide_info={}", hook_listing, ide_info)
     handler_config = getattr(hook_listing, "handler_config", {}) or {}
@@ -146,14 +150,14 @@ def _generate_plugin_instructions(hook_listing, ide_info: dict, ide_event: str) 
             "_manual_setup": True,
             "_instructions": [
                 "OpenCode uses a plugin system for hooks.",
-                f"Create a plugin file in .opencode/plugins/{hook_listing.name}.ts",
+                f"Create a plugin file in .opencode/plugins/{hook_name}.ts",
                 f"Register the '{ide_event}' event handler.",
                 f"Command to execute: {command}",
             ],
             "event": ide_event,
             "command": command,
         },
-        "config_path": f".opencode/plugins/{hook_listing.name}.ts",
+        "config_path": f".opencode/plugins/{hook_name}.ts",
         "files": [],
         "requirements": getattr(hook_listing, "requirements", None) or [],
         "source_fetch": None,

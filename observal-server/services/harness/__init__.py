@@ -195,12 +195,14 @@ def generate_agent_config(
         _check_harness_compatibility,
         _sanitize_name,
     )
+    from services.shared.utils import registry_item_slug
 
     adapter = get_adapter(harness)
     if adapter is None:
         raise ValueError(f"No adapter registered for harness: {harness!r}")
 
-    safe_name = _sanitize_name(agent.name)
+    options = options or {}
+    safe_name = _sanitize_name(options.get("local_name") or registry_item_slug(agent))
     mcp_configs = _build_mcp_configs(
         agent, harness, observal_url, mcp_listings=mcp_listings, env_values=env_values, header_values=header_values
     )
@@ -220,7 +222,6 @@ def generate_agent_config(
     )
     skill_configs = _build_skill_configs(agent, skill_listings)
     hook_configs = _build_hook_configs(agent, hook_listings)
-    options = options or {}
     compatibility_warnings = _check_harness_compatibility(agent, harness)
 
     ctx = ConfigContext(

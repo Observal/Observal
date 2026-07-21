@@ -63,6 +63,9 @@ def _listing_mock(status=ListingStatus.approved, submitted_by=None):
     m = MagicMock()
     m.id = uuid.uuid4()
     m.name = "test-listing"
+    m.namespace = "testowner"
+    m.slug = "test-listing"
+    m.qualified_name = "testowner/test-listing"
     m.version = "1.0.0"
     m.description = "A test listing"
     m.owner = "testowner"

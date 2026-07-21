@@ -933,7 +933,7 @@ def _list_impl(category, search, limit, sort, output, interactive=False):
 
         def _display(item: dict) -> str:
             optic.trace("item={}", item)
-            return f"{item['name']}  v{item.get('version', '?')}  [{item.get('category', '')}]  {item.get('owner', '')}"
+            return f"{client.canonical_name(item)}  v{item.get('version', '?')}  [{item.get('category', '')}]  {item.get('owner', '')}"
 
         selected = fuzzy_select(data, _display, label="Select MCP server")
         if selected:
@@ -954,7 +954,9 @@ def _list_impl(category, search, limit, sort, output, interactive=False):
 
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {item['name']}  v{item.get('version', '?')}  [{item.get('category', '')}]")
+            rprint(
+                f"{item['id']}  {client.canonical_name(item)}  v{item.get('version', '?')}  [{item.get('category', '')}]"
+            )
         return
 
     table = Table(title=f"MCP Servers ({len(data)})", show_lines=False, padding=(0, 1))
@@ -968,7 +970,7 @@ def _list_impl(category, search, limit, sort, output, interactive=False):
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("version", ""),
             item.get("category", ""),
             item.get("owner", ""),
@@ -980,7 +982,7 @@ def _list_impl(category, search, limit, sort, output, interactive=False):
 
 def _show_impl(mcp_id, output):
     optic.trace("mcp_id={}, output={}", mcp_id, output)
-    resolved = config.resolve_alias(mcp_id)
+    resolved = client.resolve_registry_reference("mcp", mcp_id)
     with spinner():
         item = client.get(f"/api/v1/mcps/{resolved}")
 
@@ -990,7 +992,7 @@ def _show_impl(mcp_id, output):
 
     console.print(
         kv_panel(
-            f"{item['name']} v{item.get('version', '?')}",
+            f"{client.canonical_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Category", item.get("category", "N/A")),
@@ -1028,7 +1030,7 @@ def _install_impl(
     optic.trace("mcp_id={}, harness={}, version={}", mcp_id, harness, version)
     import json as _json
 
-    resolved = config.resolve_alias(mcp_id)
+    resolved = client.resolve_registry_reference("mcp", mcp_id)
 
     # Fetch listing details to check for required env vars
     with spinner("Fetching server details..."):
@@ -1127,8 +1129,16 @@ def _install_impl(
             else:
                 header_values[h["name"]] = f"<{h['name']}>"
 
+    from observal_cli.lockfile import local_registry_name
+
+    local_name = local_registry_name(harness, "mcp", listing["namespace"], listing["slug"])
     with spinner(f"Generating {harness} config..."):
-        install_body = {"harness": harness, "env_values": env_values, "header_values": header_values}
+        install_body = {
+            "harness": harness,
+            "local_name": local_name,
+            "env_values": env_values,
+            "header_values": header_values,
+        }
         if version:
             install_body["version"] = version
         result = client.post(
@@ -1152,6 +1162,9 @@ def _install_impl(
             component_id=str(listing.get("id", resolved)),
             version=version or listing.get("version") or listing.get("latest_version"),
             scope="user",
+            namespace=listing.get("namespace"),
+            slug=listing.get("slug"),
+            local_name=local_name,
         )
     except Exception:
         pass  # Never block install on lockfile failure
@@ -1358,7 +1371,7 @@ def mcp_my(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['name']}  v{item.get('version', '?')}  {item.get('status', '')}")
+            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
         return
     table = Table(title=f"My MCPs ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -1370,7 +1383,7 @@ def mcp_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -1516,7 +1529,7 @@ def edit_mcp(
         observal registry mcp edit my-server --git-url https://github.com/org/new-repo
     """
     optic.trace("mcp_id={}, from_file={}", mcp_id, from_file)
-    resolved = config.resolve_alias(mcp_id)
+    resolved = client.resolve_registry_reference("mcp", mcp_id)
     if from_file:
         try:
             with open(from_file) as f:

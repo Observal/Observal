@@ -22,6 +22,7 @@ from api.deps import (
     get_db,
     get_effective_component_permission,
     optional_current_user,
+    registry_identity,
     require_role,
     resolve_listing,
 )
@@ -42,6 +43,7 @@ from schemas.skill import (
 )
 from schemas.skill_commands import normalize_slash_command
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
+from services.registry_namespace import identity_exists
 from services.skill_validator import SkillValidationError, validate_skill_md, validate_skill_md_content_frontmatter
 
 router = APIRouter(prefix="/api/v1/skills", tags=["skills"])
@@ -61,10 +63,6 @@ async def submit_skill(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("submitting skill: {}", req.name)
-    existing = await db.execute(select(SkillListing).where(SkillListing.name == req.name))
-    if existing.scalars().first():
-        raise HTTPException(status_code=409, detail=f"A skill named '{req.name}' already exists")
-
     # Resolve name/description/slash_command - frontmatter wins when caller omits them.
     skill_md_content = req.skill_md_content
     validated = False
@@ -129,14 +127,14 @@ async def submit_skill(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"Invalid slash_command: {exc}") from exc
 
-    # Re-check uniqueness with resolved name (may differ from req.name when auto-filled).
-    if name != req.name:
-        dup = await db.execute(select(SkillListing).where(SkillListing.name == name))
-        if dup.scalars().first():
-            raise HTTPException(status_code=409, detail=f"A skill named '{name}' already exists")
+    namespace, slug = registry_identity(current_user, name)
+    if await identity_exists(db, SkillListing, namespace, slug):
+        raise HTTPException(status_code=409, detail=f"Skill '{namespace}/{slug}' already exists")
 
     listing = SkillListing(
         name=name,
+        namespace=namespace,
+        slug=slug,
         owner=req.owner,
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,
@@ -317,6 +315,7 @@ async def install_skill(
         server_url=endpoints["api"],
         scope=req.scope,
         version_override=version_override,
+        local_name=req.local_name,
     )
     return SkillInstallResponse(listing_id=listing.id, harness=req.harness, config_snippet=config, warnings=warnings)
 
@@ -331,8 +330,13 @@ async def save_skill_draft(
     content_analysis = _validate_stored_skill_md(req.skill_md_content, req.slash_command)
     slash_command = content_analysis.slash_command
 
+    namespace, slug = registry_identity(current_user, req.name)
+    if await identity_exists(db, SkillListing, namespace, slug):
+        raise HTTPException(status_code=409, detail=f"Skill '{namespace}/{slug}' already exists")
     listing = SkillListing(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         owner=req.owner or current_user.username or current_user.email,
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,

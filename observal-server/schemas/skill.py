@@ -91,6 +91,9 @@ class SkillUpdateRequest(BaseModel):
 class SkillListingResponse(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     owner: str
@@ -125,6 +128,9 @@ class SkillListingResponse(BaseModel):
 class SkillListingSummary(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     task_type: str
@@ -139,6 +145,7 @@ class SkillListingSummary(BaseModel):
 class SkillInstallRequest(BaseModel):
     harness: str
     scope: str = "project"
+    local_name: str | None = None
     version: str | None = None  # Specific version to install (None = latest)
 
 

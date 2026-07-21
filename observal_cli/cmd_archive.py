@@ -8,7 +8,7 @@ from __future__ import annotations
 import typer
 from rich import print as rprint
 
-from observal_cli import client, config
+from observal_cli import client
 
 _ENTITY_LABELS = {
     "mcps": "MCP server",
@@ -20,7 +20,7 @@ _ENTITY_LABELS = {
 
 
 def _archive_component(entity_type: str, entity_id: str, yes: bool) -> None:
-    resolved = config.resolve_alias(entity_id)
+    resolved = client.resolve_registry_reference(entity_type, entity_id)
     label = _ENTITY_LABELS.get(entity_type, entity_type)
     if not yes:
         item = client.get(f"/api/v1/{entity_type}/{resolved}")
@@ -31,7 +31,7 @@ def _archive_component(entity_type: str, entity_id: str, yes: bool) -> None:
 
 
 def _unarchive_component(entity_type: str, entity_id: str, yes: bool) -> None:
-    resolved = config.resolve_alias(entity_id)
+    resolved = client.resolve_registry_reference(entity_type, entity_id)
     label = _ENTITY_LABELS.get(entity_type, entity_type)
     if not yes:
         item = client.get(f"/api/v1/{entity_type}/{resolved}")

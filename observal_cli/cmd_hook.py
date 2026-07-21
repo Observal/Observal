@@ -131,7 +131,7 @@ def hook_submit(
         )
         raise typer.Exit(code=1)
     if submit_draft:
-        resolved = config.resolve_alias(submit_draft)
+        resolved = client.resolve_registry_reference("hook", submit_draft)
         with spinner("Submitting draft for review..."):
             result = client.post(f"/api/v1/hooks/{resolved}/submit")
         rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
@@ -318,7 +318,7 @@ def hook_list(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {item['name']}  {item.get('event', '?')}")
+            rprint(f"{item['id']}  {client.canonical_name(item)}  {item.get('event', '?')}")
         return
     table = Table(title=f"Hooks ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -331,7 +331,7 @@ def hook_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("event", ""),
             item.get("execution_mode", ""),
             item.get("owner", ""),
@@ -359,7 +359,7 @@ def hook_show(
       observal registry hook show @guard         # Using alias
       observal registry hook show abc123 -o json
     """
-    resolved = config.resolve_alias(hook_id)
+    resolved = client.resolve_registry_reference("hook", hook_id)
     with spinner():
         item = client.get(f"/api/v1/hooks/{resolved}")
     if output == "json":
@@ -385,7 +385,7 @@ def hook_show(
         rows.insert(5, ("Requires", ", ".join(item["requirements"])))
     console.print(
         kv_panel(
-            f"{item['name']} v{item.get('version', '?')}",
+            f"{client.canonical_name(item)} v{item.get('version', '?')}",
             rows,
             border_style="magenta",
         )
@@ -413,9 +413,24 @@ def hook_install(
       observal registry hook install my-hook --harness cursor --raw
       observal registry hook install my-hook --harness claude-code --platform darwin
     """
-    resolved = config.resolve_alias(hook_id)
+    resolved = client.resolve_registry_reference("hook", hook_id)
+    listing = client.get(f"/api/v1/hooks/{resolved}")
+    project_dir = Path(directory) if directory else Path.cwd()
+    from observal_cli.lockfile import local_registry_name
+
+    local_name = local_registry_name(
+        harness,
+        "hook",
+        listing["namespace"],
+        listing["slug"],
+        scope="project",
+        directory=str(project_dir.resolve()),
+    )
     with spinner(f"Generating {harness} config..."):
-        result = client.post(f"/api/v1/hooks/{resolved}/install", {"harness": harness, "platform": platform})
+        result = client.post(
+            f"/api/v1/hooks/{resolved}/install",
+            {"harness": harness, "platform": platform, "local_name": local_name},
+        )
 
     config_snippet = result.get("config_snippet", {})
     files = result.get("files", [])
@@ -427,8 +442,6 @@ def hook_install(
     if raw:
         print(_json.dumps(result, indent=2))
         return
-
-    project_dir = Path(directory) if directory else Path.cwd()
 
     # Write script files to disk
     if files:
@@ -480,6 +493,24 @@ def hook_install(
     for note in notes:
         rprint(f"[dim]i {note}[/dim]")
 
+    try:
+        from observal_cli.lockfile import upsert_standalone
+
+        upsert_standalone(
+            harness,
+            component_type="hook",
+            name=listing.get("name", resolved),
+            component_id=str(listing.get("id", resolved)),
+            version=listing.get("version"),
+            scope="project",
+            directory=str(project_dir.resolve()),
+            namespace=listing.get("namespace"),
+            slug=listing.get("slug"),
+            local_name=local_name,
+        )
+    except Exception:
+        pass
+
     rprint(f"\n[green]✓ Hook installed for {harness}![/green]")
 
 
@@ -505,7 +536,7 @@ def hook_edit(
       observal registry hook edit @guard --from-file updated-hook.json
       observal registry hook edit 1 --name new-name
     """
-    resolved = config.resolve_alias(hook_id)
+    resolved = client.resolve_registry_reference("hook", hook_id)
     if from_file:
         try:
             with open(from_file) as f:

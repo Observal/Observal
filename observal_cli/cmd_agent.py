@@ -472,7 +472,7 @@ def agent_list(
         def _display(item: dict) -> str:
             email = item.get("created_by_email", "")
             suffix = f"  by {email}" if email else ""
-            return f"{item['name']}  v{item.get('version', '?')}  {item.get('model_name', '')}{suffix}"
+            return f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('model_name', '')}{suffix}"
 
         selected = fuzzy_select(data, _display, label="Select agent")
         if selected:
@@ -498,7 +498,7 @@ def agent_list(
 
     if output == "plain":
         for item in data:
-            rprint(f"{item['name']}  v{item.get('version', '?')}  {item.get('model_name', '')}")
+            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('model_name', '')}")
         return
 
     include_id = show_id or full_id
@@ -516,7 +516,7 @@ def agent_list(
         table.add_column("ID", style="dim", no_wrap=full_id)
     for i, item in enumerate(data, 1):
         creator = item.get("created_by_username") or item.get("created_by_email", "")
-        row = [str(i), item["name"], item.get("version", ""), item.get("model_name", ""), creator]
+        row = [str(i), client.canonical_name(item), item.get("version", ""), item.get("model_name", ""), creator]
         if include_id:
             row.append(str(item["id"]) if full_id else f"{str(item['id'])[:8]}…")
         table.add_row(*row)
@@ -559,7 +559,7 @@ def agent_my(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['name']}  v{item.get('version', '?')}  {item.get('status', '')}")
+            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
         return
     table = Table(title=f"My Agents ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -571,7 +571,7 @@ def agent_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("version", ""),
             item.get("model_name", ""),
             status_badge(item.get("status", "")),
@@ -598,7 +598,7 @@ def agent_show(
       observal agent show @myalias
       observal agent show a1b2c3d4-... --output json
     """
-    resolved = config.resolve_alias(agent_id)
+    resolved = client.resolve_registry_reference("agent", agent_id)
     with spinner():
         item = client.get(f"/api/v1/agents/{resolved}")
 
@@ -608,7 +608,7 @@ def agent_show(
 
     console.print(
         kv_panel(
-            f"{item['name']} v{item.get('version', '?')}",
+            f"{client.canonical_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Model", f"[bold]{item.get('model_name', 'N/A')}[/bold]"),
@@ -649,7 +649,7 @@ def agent_install(
       observal agent install my-agent --harness cursor --raw > config.json
       observal agent install @myalias --harness opencode
     """
-    resolved = config.resolve_alias(agent_id)
+    resolved = client.resolve_registry_reference("agent", agent_id)
     with spinner(f"Generating {harness} config..."):
         result = client.post(f"/api/v1/agents/{resolved}/install", {"harness": harness})
 
@@ -703,7 +703,7 @@ def agent_install(
 
 
 def _archive_agent(agent_id: str, yes: bool) -> None:
-    resolved = config.resolve_alias(agent_id)
+    resolved = client.resolve_registry_reference("agent", agent_id)
     if not yes:
         with spinner():
             item = client.get(f"/api/v1/agents/{resolved}")
@@ -752,7 +752,7 @@ def agent_unarchive(
       observal agent unarchive my-agent --yes
       observal agent unarchive a1b2c3d4-...
     """
-    resolved = config.resolve_alias(agent_id)
+    resolved = client.resolve_registry_reference("agent", agent_id)
     if not yes:
         with spinner():
             item = client.get(f"/api/v1/agents/{resolved}")
@@ -972,7 +972,7 @@ def agent_publish(
         )
         raise typer.Exit(code=1)
     if submit:
-        resolved = config.resolve_alias(submit)
+        resolved = client.resolve_registry_reference("agent", submit)
         with spinner("Submitting draft for review..."):
             result = client.post(f"/api/v1/agents/{resolved}/submit")
         rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
@@ -1069,7 +1069,7 @@ def agent_release(
     dir_path = Path(directory)
     data = _load_agent_yaml(dir_path)
 
-    resolved = config.resolve_alias(name)
+    resolved = client.resolve_registry_reference("agent", name)
     with spinner("Looking up agent..."):
         agent = client.get(f"/api/v1/agents/{resolved}")
     agent_id = agent["id"]
@@ -1131,7 +1131,7 @@ def agent_versions(
       observal agent versions my-agent --output json
       observal agent versions @myalias
     """
-    resolved = config.resolve_alias(name)
+    resolved = client.resolve_registry_reference("agent", name)
 
     with spinner("Fetching versions..."):
         data = client.get(f"/api/v1/agents/{resolved}/versions", params={"page": 1, "page_size": 50})

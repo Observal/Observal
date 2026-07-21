@@ -83,6 +83,8 @@ class Agent(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    namespace: Mapped[str] = mapped_column(String(32), nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
     owner_org_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
@@ -105,8 +107,9 @@ class Agent(Base):
 
     __table_args__ = (
         Index(
-            "uq_agents_active_name",
-            "name",
+            "uq_agents_active_namespace_slug",
+            "namespace",
+            "slug",
             unique=True,
             postgresql_where=deleted_at.is_(None),
             sqlite_where=deleted_at.is_(None),
@@ -122,6 +125,10 @@ class Agent(Base):
     latest_version: Mapped["AgentVersion | None"] = relationship(
         foreign_keys=[latest_version_id], lazy="selectin", uselist=False, post_update=True
     )
+
+    @property
+    def qualified_name(self) -> str:
+        return f"{self.namespace}/{self.slug}"
 
     # ------------------------------------------------------------------
     # Deprecated compatibility properties - delegate to latest_version.

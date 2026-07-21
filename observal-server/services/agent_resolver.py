@@ -18,6 +18,7 @@ from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
 from models.sandbox import SandboxListing
 from models.skill import SkillListing
+from services.shared.utils import registry_item_slug
 
 ComponentType = Literal["mcp", "skill", "hook", "prompt", "sandbox"]
 
@@ -213,7 +214,7 @@ async def resolve_agent(
             ResolvedComponent(
                 component_type=comp.component_type,
                 component_id=comp.component_id,
-                name=listing.name,
+                name=registry_item_slug(listing),
                 version=listing.version,
                 git_url=getattr(listing, "git_url", None),
                 git_ref=getattr(listing, "git_ref", None),
@@ -229,7 +230,7 @@ async def resolve_agent(
     models_by_harness = raw_models_by_harness if isinstance(raw_models_by_harness, dict) else {}
     return ResolvedAgent(
         agent_id=agent.id,
-        agent_name=agent.name,
+        agent_name=registry_item_slug(agent),
         agent_version=agent.version,
         agent_prompt=agent.prompt or "",
         agent_description=agent.description or "",

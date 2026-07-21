@@ -15,7 +15,13 @@ from sqlalchemy import select
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_current_user, get_db, get_effective_agent_permission, get_effective_component_permission
+from api.deps import (
+    get_current_user,
+    get_db,
+    get_effective_agent_permission,
+    get_effective_component_permission,
+    resolve_listing,
+)
 from models.agent import Agent, AgentVersion
 from models.hook import HookListing, HookVersion
 from models.mcp import McpListing, McpVersion
@@ -24,6 +30,7 @@ from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing, SkillVersion
 from models.user import User
 from services.ownership import transfer_entity_owner
+from services.registry_namespace import identity_exists
 
 router = APIRouter(prefix="/api/v1", tags=["co-authors"])
 
@@ -73,6 +80,9 @@ class TransferOwnershipResponse(BaseModel):
     owner_id: str
     previous_owner: str
     previous_owner_id: str
+    namespace: str
+    slug: str
+    qualified_name: str
 
 
 async def _get_entity_and_check_permission(
@@ -107,13 +117,7 @@ async def _get_entity_for_transfer(entity_type: str, entity_id: str, current_use
     if not model:
         raise HTTPException(status_code=400, detail=f"Invalid entity type: {entity_type}")
 
-    try:
-        parsed_id = _uuid.UUID(entity_id)
-    except ValueError:
-        result = await db.execute(select(model).where(model.name == entity_id))
-        entity = result.scalar_one_or_none()
-    else:
-        entity = await db.get(model, parsed_id)
+    entity = await resolve_listing(model, entity_id, db)
 
     if not entity:
         raise HTTPException(status_code=404, detail=f"{entity_type[:-1].title()} not found")
@@ -167,6 +171,13 @@ async def transfer_ownership(
     if target_user.id == current_user.id:
         raise HTTPException(status_code=422, detail="You already own this item")
 
+    model = ENTITY_MODELS[entity_type]
+    if await identity_exists(db, model, target_user.username, entity.slug, exclude_id=entity.id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{target_user.username}/{entity.slug} already exists",
+        )
+
     previous_owner, previous_owner_id = transfer_entity_owner(entity, entity_type, current_user, target_user)
     await db.commit()
     await db.refresh(entity)
@@ -176,6 +187,9 @@ async def transfer_ownership(
         owner_id=str(target_user.id),
         previous_owner=previous_owner,
         previous_owner_id=str(previous_owner_id),
+        namespace=entity.namespace,
+        slug=entity.slug,
+        qualified_name=entity.qualified_name,
     )
 
 

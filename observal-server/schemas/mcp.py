@@ -148,6 +148,9 @@ class McpValidationResultResponse(BaseModel):
 class McpListingResponse(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     git_url: str | None = None
     description: str
@@ -188,6 +191,9 @@ class McpListingResponse(BaseModel):
 class McpListingSummary(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     category: str
@@ -202,6 +208,7 @@ class McpListingSummary(BaseModel):
 
 class McpInstallRequest(BaseModel):
     harness: str
+    local_name: str | None = None
     env_values: dict[str, str] = {}
     header_values: dict[str, str] = {}
     version: str | None = None  # Specific version to install (None = latest)

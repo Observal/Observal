@@ -4,15 +4,13 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-import re
 import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, field_validator
 
 from models.user import UserRole
-
-USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$")
+from services.registry_namespace import validate_namespace
 
 
 def _normalize_email(v: str) -> str:
@@ -23,10 +21,7 @@ def _normalize_email(v: str) -> str:
 def _validate_username(v: str | None) -> str | None:
     if v is None:
         return None
-    v = v.strip().lower()
-    if not USERNAME_RE.match(v):
-        raise ValueError("Username must be 3-32 chars, lowercase alphanumeric and hyphens only")
-    return v
+    return validate_namespace(v)
 
 
 class InitRequest(BaseModel):
@@ -76,7 +71,7 @@ class RegisterRequest(BaseModel):
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
-    username: str | None = None
+    username: str
     name: str
     role: UserRole
     avatar_url: str | None = None

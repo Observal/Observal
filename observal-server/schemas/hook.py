@@ -100,6 +100,9 @@ class HookUpdateRequest(BaseModel):
 class HookListingResponse(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     owner: str
@@ -131,6 +134,9 @@ class HookListingResponse(BaseModel):
 class HookListingSummary(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     event: str
@@ -144,6 +150,7 @@ class HookListingSummary(BaseModel):
 
 class HookInstallRequest(BaseModel):
     harness: str
+    local_name: str | None = None
     platform: str = ""  # e.g. "win32", "darwin", "linux" - empty = Unix default
 
 

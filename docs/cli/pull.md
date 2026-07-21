@@ -10,14 +10,14 @@ Install a complete agent (MCP servers, skills, hooks, prompts, sandboxes, and ha
 ## Synopsis
 
 ```bash
-observal agent pull <agent-id-or-name> --harness <harness> [OPTIONS]
+observal agent pull <agent-reference> --harness <harness> [OPTIONS]
 ```
 
 ## Required
 
 | Argument / option | Description |
 | --- | --- |
-| `<agent-id-or-name>` | Agent UUID, name, `@alias`, or row number from last `agent list` |
+| `<agent-reference>` | Agent UUID, `namespace/slug`, unique bare name, `@alias`, or row number from last `agent list` |
 | `--harness <harness>` | Target harness: `cursor`, `kiro`, `claude-code`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `pi` |
 
 ## Options

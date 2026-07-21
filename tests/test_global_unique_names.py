@@ -11,21 +11,21 @@ from models.sandbox import SandboxListing
 from models.skill import SkillListing
 
 
-def test_registry_models_have_global_name_constraints():
+def test_registry_models_have_namespace_slug_constraints():
     expected = {
-        McpListing: "uq_mcp_listings_name",
-        SkillListing: "uq_skill_listings_name",
-        HookListing: "uq_hook_listings_name",
-        PromptListing: "uq_prompt_listings_name",
-        SandboxListing: "uq_sandbox_listings_name",
+        McpListing: "uq_mcp_listings_namespace_slug",
+        SkillListing: "uq_skill_listings_namespace_slug",
+        HookListing: "uq_hook_listings_namespace_slug",
+        PromptListing: "uq_prompt_listings_namespace_slug",
+        SandboxListing: "uq_sandbox_listings_namespace_slug",
     }
 
     agent_indexes = {index.name: index for index in Agent.__table__.indexes if isinstance(index, Index)}
-    assert "uq_agents_active_name" in agent_indexes
-    assert agent_indexes["uq_agents_active_name"].unique is True
-    assert {column.name for column in agent_indexes["uq_agents_active_name"].columns} == {"name"}
+    index = agent_indexes["uq_agents_active_namespace_slug"]
+    assert index.unique is True
+    assert {column.name for column in index.columns} == {"namespace", "slug"}
 
     for model, constraint_name in expected.items():
         constraints = {constraint.name: constraint for constraint in model.__table__.constraints}
         assert constraint_name in constraints
-        assert {column.name for column in constraints[constraint_name].columns} == {"name"}
+        assert {column.name for column in constraints[constraint_name].columns} == {"namespace", "slug"}

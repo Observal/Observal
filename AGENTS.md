@@ -112,7 +112,7 @@ A stub harness has:
 
 - **No telemetry wrappers or OTLP env vars.** MCP commands and remote URLs remain direct. Telemetry flows through session push hooks and reconciliation. Never generate `OTEL_*` or `CLAUDE_CODE_ENABLE_TELEMETRY` vars.
 - **Owner fallback on install.** Submitters can install their own items without admin approval. Approved items are preferred, but pending/rejected items are accessible to the submitter.
-- **UUID or name** everywhere. All API path params accept either. Server resolves via `resolve_listing()`.
+- **Canonical registry identity is `namespace/slug`.** UUIDs remain accepted; legacy bare names resolve only when unambiguous. CLI slash-qualified references resolve to UUIDs before using existing action routes.
 - **Hard rewrite policy.** No deprecation wrappers. When code moves, callers update in the same PR. Dead code is deleted immediately.
 - **Tests mock externals.** No Docker needed to run the test suite. E2E specs in `tests/e2e/` are the exception (require running stack).
 

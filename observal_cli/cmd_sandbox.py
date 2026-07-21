@@ -121,7 +121,7 @@ def sandbox_submit(
         )
         raise typer.Exit(code=1)
     if submit_draft:
-        resolved = config.resolve_alias(submit_draft)
+        resolved = client.resolve_registry_reference("sandbox", submit_draft)
         with spinner("Submitting draft for review..."):
             result = client.post(f"/api/v1/sandboxes/{resolved}/submit")
         rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
@@ -255,7 +255,7 @@ def sandbox_list(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {item['name']}  v{item.get('version', '?')}")
+            rprint(f"{item['id']}  {client.canonical_name(item)}  v{item.get('version', '?')}")
         return
     table = Table(title=f"Sandboxes ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -267,7 +267,7 @@ def sandbox_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -292,7 +292,7 @@ def sandbox_show(
         observal registry sandbox show 1
         observal registry sandbox show @dev-env --output json
     """
-    resolved = config.resolve_alias(sandbox_id)
+    resolved = client.resolve_registry_reference("sandbox", sandbox_id)
     with spinner():
         item = client.get(f"/api/v1/sandboxes/{resolved}")
     if output == "json":
@@ -300,7 +300,7 @@ def sandbox_show(
         return
     console.print(
         kv_panel(
-            f"{item['name']} v{item.get('version', '?')}",
+            f"{client.canonical_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Runtime", item.get("runtime_type", "N/A")),
@@ -340,7 +340,7 @@ def sandbox_edit(
         observal registry sandbox edit abc123 --from-file updates.json
         observal registry sandbox edit @env --runtime-type docker --version 2.0.0
     """
-    resolved = config.resolve_alias(sandbox_id)
+    resolved = client.resolve_registry_reference("sandbox", sandbox_id)
     if from_file:
         try:
             with open(from_file) as f:
