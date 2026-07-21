@@ -7,6 +7,9 @@ Revision ID: 016_registry_publish_loop
 Revises: 015_sandbox_runtime_config
 """
 
+import re
+from collections import defaultdict
+
 import sqlalchemy as sa
 
 from alembic import op
@@ -60,58 +63,61 @@ def _backfill_usernames() -> None:
     )
 
 
+def _migration_slug(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9_-]+", "-", name.strip().lower()).strip("-_")
+    return (slug or "item")[:64].rstrip("-_")
+
+
+def _next_slug(base: str, used: set[str], *, reserved: bool = False) -> str:
+    number = 1 if reserved else None
+    while True:
+        suffix = f"-{number}" if number is not None else ""
+        candidate = f"{base[: 64 - len(suffix)].rstrip('-_')}{suffix}"
+        if candidate not in used:
+            used.add(candidate)
+            return candidate
+        number = 1 if number is None else number + 1
+
+
+def _listing_identities(table: str, rows):
+    used_by_namespace: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        namespace = row["username"]
+        if namespace is None:
+            raise RuntimeError(f"Cannot backfill {table} namespace: orphaned listing {row['id']}")
+        base = _migration_slug(row["name"])
+        slug = _next_slug(base, used_by_namespace[namespace], reserved=base in _RESERVED_SLUGS)
+        yield row["id"], namespace, slug
+
+
 def _backfill_listing(table: str, creator_column: str) -> None:
-    # A missing creator means ownership cannot be reconstructed safely. PostgreSQL
-    # FKs normally make this impossible, but imported databases may have disabled them.
-    op.execute(
-        f"""
-        DO $$
-        DECLARE orphan_id UUID;
-        BEGIN
-            SELECT listing.id INTO orphan_id
-            FROM {table} AS listing
-            LEFT JOIN users ON users.id = listing.{creator_column}
-            WHERE users.id IS NULL
-            LIMIT 1;
-            IF orphan_id IS NOT NULL THEN
-                RAISE EXCEPTION 'Cannot backfill {table} namespace: orphaned listing %', orphan_id;
-            END IF;
-        END $$;
-        """
+    listing = sa.table(
+        table,
+        sa.column("id"),
+        sa.column("name"),
+        sa.column("created_at"),
+        sa.column(creator_column),
+        sa.column("namespace"),
+        sa.column("slug"),
     )
-    reserved = ", ".join(f"'{word}'" for word in _RESERVED_SLUGS)
-    op.execute(
-        f"""
-        WITH normalized AS (
-            SELECT listing.id,
-                   users.username AS namespace,
-                   trim(both '-_' from regexp_replace(lower(listing.name), '[^a-z0-9_-]+', '-', 'g')) AS value
-            FROM {table} AS listing
-            JOIN users ON users.id = listing.{creator_column}
-        ), generated AS (
-            SELECT id,
-                   namespace,
-                   CASE
-                       WHEN value = '' THEN 'item-' || left(replace(id::text, '-', ''), 8)
-                       WHEN value !~ '^[a-z0-9]' THEN 'item-' || value
-                       ELSE value
-                   END AS clean_slug
-            FROM normalized
-        )
-        UPDATE {table} AS listing
-        SET namespace = generated.namespace,
-            slug = left(
-                CASE
-                    WHEN generated.clean_slug IN ({reserved})
-                        THEN generated.clean_slug || '-' || left(replace(listing.id::text, '-', ''), 8)
-                    ELSE generated.clean_slug
-                END,
-                64
+    users = sa.table("users", sa.column("id"), sa.column("username"))
+    rows = (
+        op.get_bind()
+        .execute(
+            sa.select(
+                listing.c.id,
+                listing.c.name,
+                users.c.username.label("username"),
             )
-        FROM generated
-        WHERE generated.id = listing.id
-        """
+            .select_from(listing.outerjoin(users, listing.c[creator_column] == users.c.id))
+            .order_by(listing.c.created_at, listing.c.id)
+        )
+        .mappings()
+        .all()
     )
+
+    for listing_id, namespace, slug in _listing_identities(table, rows):
+        op.execute(listing.update().where(listing.c.id == listing_id).values(namespace=namespace, slug=slug))
 
 
 def _dedupe_names_for_downgrade(table: str, *, active_only: bool = False) -> None:

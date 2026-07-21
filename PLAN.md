@@ -22,7 +22,7 @@ Repository tracing also found three non-obvious constraints:
 ### Identity and migration
 
 - Add `namespace` (user handle), stable `slug`, and computed `qualified_name` (`namespace/slug`) to agents and all five component listings. Keep `name` as display text; changing it does not change the slug.
-- Backfill null usernames deterministically, make usernames non-null, derive listing namespaces from their creator/submitter, and slugify existing names. Abort with the affected table/ID if an orphaned creator is detected rather than inventing ownership. Preserve existing usernames during upgrade; reject reserved handles only for new registrations/renames, and deterministically suffix legacy item slugs that collide with reserved route words.
+- Backfill null usernames deterministically, make usernames non-null, derive listing namespaces from their creator/submitter, and slugify existing names. Abort with the affected table/ID if an orphaned creator is detected rather than inventing ownership. Preserve existing usernames during upgrade; reject reserved handles only for new registrations/renames, and deterministically number legacy item slugs that collide within a namespace or with reserved route words (`search`, `search-1`, `search-2`).
 - Replace global name uniqueness with `(namespace, slug)`: a partial active index for soft-deleted agents and full uniqueness for components because archived components remain addressable.
 
 ### Runtime ownership and resolution

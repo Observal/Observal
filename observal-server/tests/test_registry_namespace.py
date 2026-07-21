@@ -1,7 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import importlib.util
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -10,7 +12,11 @@ from fastapi import HTTPException
 
 from api.deps import resolve_listing
 from models.agent import Agent
+from models.hook import HookListing
 from models.mcp import McpListing
+from models.prompt import PromptListing
+from models.sandbox import SandboxListing
+from models.skill import SkillListing
 from services.ownership import transfer_entity_owner
 from services.registry_namespace import (
     _namespace_slug_parts,
@@ -31,15 +37,45 @@ def test_identity_validation_and_formatting():
         slugify("install")
 
 
+def test_migration_numbers_colliding_slugs_per_namespace():
+    migration_path = Path(__file__).parents[1] / "alembic/versions/016_registry_publish_loop.py"
+    spec = importlib.util.spec_from_file_location("registry_publish_loop_migration", migration_path)
+    assert spec and spec.loader
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    rows = [
+        {"id": 1, "name": "Search", "username": "alice"},
+        {"id": 2, "name": "Search!", "username": "alice"},
+        {"id": 3, "name": "Search?", "username": "alice"},
+        {"id": 4, "name": "Search", "username": "bob"},
+        {"id": 5, "name": "Install", "username": "alice"},
+    ]
+    assert list(migration._listing_identities("agents", rows)) == [
+        (1, "alice", "search"),
+        (2, "alice", "search-1"),
+        (3, "alice", "search-2"),
+        (4, "bob", "search"),
+        (5, "alice", "install-1"),
+    ]
+    long_slug = "x" * 64
+    used: set[str] = set()
+    assert migration._next_slug(long_slug, used) == long_slug
+    assert migration._next_slug(long_slug, used) == f"{'x' * 62}-1"
+    with pytest.raises(RuntimeError, match="orphaned listing 6"):
+        list(migration._listing_identities("agents", [{"id": 6, "name": "Lost", "username": None}]))
+
+
 def test_models_enforce_qualified_uniqueness():
     agent_index = next(index for index in Agent.__table__.indexes if index.name == "uq_agents_active_namespace_slug")
     assert [column.name for column in agent_index.columns] == ["namespace", "slug"]
-    constraint = next(
-        constraint
-        for constraint in McpListing.__table__.constraints
-        if constraint.name == "uq_mcp_listings_namespace_slug"
-    )
-    assert [column.name for column in constraint.columns] == ["namespace", "slug"]
+    for model in (McpListing, SkillListing, HookListing, PromptListing, SandboxListing):
+        constraint = next(
+            constraint
+            for constraint in model.__table__.constraints
+            if constraint.name == f"uq_{model.__tablename__}_namespace_slug"
+        )
+        assert [column.name for column in constraint.columns] == ["namespace", "slug"]
 
 
 class _Scalars:
