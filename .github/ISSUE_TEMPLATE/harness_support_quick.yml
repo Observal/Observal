@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+name: Quick Harness Request
+description: Request a harness by providing its name and official links
+title: "Add harness support: "
+labels: ["enhancement", "harness-support"]
+body:
+  - type: input
+    id: harness_name
+    attributes:
+      label: Harness name
+      placeholder: Pi
+    validations:
+      required: true
+
+  - type: input
+    id: official_docs
+    attributes:
+      label: Official documentation
+      placeholder: https://pi.dev/docs
+    validations:
+      required: true
+
+  - type: input
+    id: product_or_source
+    attributes:
+      label: Official site or source repository
+      description: Link to the harness website or source repository.
+      placeholder: https://pi.dev
+    validations:
+      required: true
