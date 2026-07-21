@@ -196,6 +196,7 @@ async def submit_mcp(
 async def list_mcps(
     response: Response,
     category: str | None = Query(None),
+    namespace: str | None = Query(None),
     search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -210,12 +211,17 @@ async def list_mcps(
     )
     if category:
         stmt = stmt.where(McpListing.category == category)
+    if namespace:
+        stmt = stmt.where(McpListing.namespace == namespace.strip().lower())
     search_rank = None
     if search:
         search_filter, search_rank = keyword_search(
             search,
             [
                 McpListing.name,
+                McpListing.slug,
+                McpListing.namespace,
+                McpListing.owner,
                 McpListing.category,
                 McpVersion.description,
                 McpVersion.framework,

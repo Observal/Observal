@@ -228,6 +228,8 @@ async def create_agent(
 async def list_agents(
     response: Response,
     search: str | None = Query(None),
+    namespace: str | None = Query(None),
+    category: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200, description="Page size (1-200)"),
     offset: int = Query(0, ge=0, description="Items to skip"),
     db: AsyncSession = Depends(get_db),
@@ -242,7 +244,15 @@ async def list_agents(
     if search:
         search_filter, search_rank = keyword_search(
             search,
-            [Agent.name, AgentVersion.description, AgentVersion.model_name],
+            [
+                Agent.name,
+                Agent.slug,
+                Agent.namespace,
+                Agent.owner,
+                Agent.category,
+                AgentVersion.description,
+                AgentVersion.model_name,
+            ],
             name_field=Agent.name,
         )
 
@@ -256,18 +266,16 @@ async def list_agents(
     count_stmt = (
         select(func.count(Agent.id)).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(base_filter)
     )
-    if search_filter is not None:
-        count_stmt = count_stmt.where(search_filter)
-    if org_filter is not None:
-        count_stmt = count_stmt.where(org_filter)
+    filters = [condition for condition in (search_filter, org_filter) if condition is not None]
+    if namespace:
+        filters.append(Agent.namespace == namespace.strip().lower())
+    if category:
+        filters.append(Agent.category == category)
+    count_stmt = count_stmt.where(*filters)
     total = (await db.execute(count_stmt)).scalar_one()
     response.headers["X-Total-Count"] = str(total)
 
-    stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(base_filter)
-    if search_filter is not None:
-        stmt = stmt.where(search_filter)
-    if org_filter is not None:
-        stmt = stmt.where(org_filter)
+    stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(base_filter, *filters)
     order_by = [Agent.created_at.desc()]
     if search_rank is not None:
         order_by.insert(0, search_rank.desc())

@@ -87,3 +87,31 @@ async def test_authenticated_user_can_list_agents():
         assert r.status_code == 200
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_agent_list_applies_parameterized_search_filters():
+    from fastapi import Response
+
+    from api.routes.agent.crud import list_agents
+
+    mock = _mock_db()
+    user = _user()
+    user.org_id = None
+    await list_agents(
+        response=Response(),
+        search="review",
+        namespace="Alice",
+        category="Testing",
+        limit=50,
+        offset=0,
+        db=mock,
+        current_user=user,
+    )
+
+    statements = [call.args[0] for call in mock.execute.await_args_list]
+    sql = " ".join(str(statement) for statement in statements)
+    params = {value for statement in statements for value in statement.compile().params.values()}
+    assert "agents.namespace" in sql
+    assert "agents.category" in sql
+    assert {"alice", "Testing"}.issubset(params)

@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Search,
@@ -17,9 +17,12 @@ import {
   Plus,
   Send,
   FileEdit,
+  X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PickerSelect } from "@/components/ui/picker-select";
+import { UserSearchInput } from "@/components/shared/user-search-input";
 import {
   useRegistryList,
   useMyComponents,
@@ -33,7 +36,15 @@ import {
 import { useAuthGuard } from "@/hooks/use-auth";
 import type { RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
-import { SubmitComponentDialog } from "@/components/registry/submit-component-dialog";
+import {
+  HOOK_EVENTS,
+  HOOK_SCOPES,
+  MCP_CATEGORIES,
+  PROMPT_CATEGORIES,
+  SANDBOX_RUNTIME_TYPES,
+  SKILL_TASK_TYPES,
+  SubmitComponentDialog,
+} from "@/components/registry/submit-component-dialog";
 import {
   Table,
   TableBody,
@@ -75,6 +86,28 @@ const TYPE_PLURAL_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 type ViewMode = "table" | "grid";
+type FilterKey = "category" | "task_type" | "event" | "scope" | "runtime_type";
+
+type TypeFilter = {
+  key: FilterKey;
+  label: string;
+  options: string[];
+};
+
+const TYPE_FILTERS: Partial<Record<RegistryType, TypeFilter[]>> = {
+  mcps: [{ key: "category", label: "Category", options: MCP_CATEGORIES }],
+  skills: [{ key: "task_type", label: "Task type", options: SKILL_TASK_TYPES }],
+  hooks: [
+    { key: "event", label: "Event", options: HOOK_EVENTS },
+    { key: "scope", label: "Scope", options: HOOK_SCOPES },
+  ],
+  prompts: [{ key: "category", label: "Category", options: PROMPT_CATEGORIES }],
+  sandboxes: [{ key: "runtime_type", label: "Runtime", options: SANDBOX_RUNTIME_TYPES }],
+};
+
+function formatOption(value: string): string {
+  return value.replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
 function SortIcon({ column }: { column: Column<RegistryItem> }) {
   const sorted = column.getIsSorted();
@@ -155,10 +188,12 @@ function makeColumns(activeType: RegistryType): ColumnDef<RegistryItem>[] {
 
 export default function ComponentsPage() {
   const router = useRouter();
+  const searchParams = useSearch({ from: "/_authed/components/" });
   const { ready: authReady, role } = useAuthGuard();
-  const [activeType, setActiveType] = useState<RegistryType>("mcps");
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const activeType = searchParams.type ?? "mcps";
+  const [search, setSearch] = useState(searchParams.search ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.search ?? "");
+  const [publisherQuery, setPublisherQuery] = useState(searchParams.namespace ? `@${searchParams.namespace}` : "");
   const [view, setView] = useState<ViewMode>("table");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -174,10 +209,21 @@ export default function ComponentsPage() {
     };
   }, [search]);
 
-  const { data, isLoading, isError, error, refetch } = useRegistryList(
-    activeType,
-    debouncedSearch ? { search: debouncedSearch } : undefined,
-  );
+  useEffect(() => {
+    setPublisherQuery(searchParams.namespace ? `@${searchParams.namespace}` : "");
+  }, [searchParams.namespace]);
+
+  const typeFilters = TYPE_FILTERS[activeType] ?? [];
+  const registryFilters: Record<string, string> = {
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(searchParams.namespace ? { namespace: searchParams.namespace } : {}),
+  };
+  for (const filter of typeFilters) {
+    const value = searchParams[filter.key];
+    if (value) registryFilters[filter.key] = value;
+  }
+
+  const { data, isLoading, isError, error, refetch } = useRegistryList(activeType, registryFilters);
 
   const { data: myItems } = useMyComponents(activeType);
   const myDrafts = useMemo(
@@ -237,6 +283,35 @@ export default function ComponentsPage() {
     [router, activeType],
   );
 
+  function updateFilters(next: Partial<typeof searchParams>) {
+    router.navigate({
+      to: "/components",
+      search: { ...searchParams, ...next },
+      replace: true,
+    });
+  }
+
+  function clearFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+    setPublisherQuery("");
+    updateFilters({
+      search: undefined,
+      namespace: undefined,
+      category: undefined,
+      task_type: undefined,
+      event: undefined,
+      scope: undefined,
+      runtime_type: undefined,
+    });
+  }
+
+  const hasFilters = !!(
+    search ||
+    searchParams.namespace ||
+    typeFilters.some((filter) => searchParams[filter.key])
+  );
+
   return (
     <>
       <PageHeader
@@ -249,42 +324,101 @@ export default function ComponentsPage() {
 
       <div className="p-6 lg:p-8 w-full mx-auto space-y-5">
         {/* Toolbar */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative max-w-sm flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder={`Search ${TYPE_PLURAL_LABELS[activeType] ?? activeType}...`}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9"
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative max-w-md flex-1 min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                aria-label={`Search ${TYPE_PLURAL_LABELS[activeType] ?? activeType}`}
+                placeholder="Search name, slug, or description..."
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  updateFilters({ search: event.target.value || undefined });
+                }}
+                className="pl-9 h-9"
+              />
+            </div>
+            <UserSearchInput
+              value={publisherQuery}
+              onValueChange={(value) => {
+                setPublisherQuery(value);
+                if (searchParams.namespace && value !== searchParams.namespace && value !== `@${searchParams.namespace}`) {
+                  updateFilters({ namespace: undefined });
+                }
+              }}
+              onSelect={(user) => {
+                if (!user.username) return;
+                setPublisherQuery(`@${user.username}`);
+                updateFilters({ namespace: user.username });
+              }}
+              placeholder="Publisher"
+              className="h-9 w-[220px]"
             />
+            {typeFilters.map((filter) => (
+              <PickerSelect
+                key={filter.key}
+                value={searchParams[filter.key] ?? ""}
+                onValueChange={(value) => updateFilters({ [filter.key]: value || undefined })}
+                options={[
+                  { value: "", label: `Any ${filter.label.toLowerCase()}` },
+                  ...filter.options.map((option) => ({ value: option, label: formatOption(option) })),
+                ]}
+                placeholder={filter.label}
+                className="w-[180px]"
+                inputClassName="h-9"
+              />
+            ))}
+            {authReady && role && (
+              <Button size="sm" className="h-9" onClick={() => { setEditItem(null); setSubmitOpen(true); }}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                Create
+              </Button>
+            )}
+            <div className="flex items-center border border-border rounded-md overflow-hidden ml-auto">
+              <Button
+                variant={view === "table" ? "secondary" : "ghost"}
+                size="sm"
+                className="rounded-none h-8 px-2.5"
+                onClick={() => setView("table")}
+                aria-label="Table view"
+              >
+                <TableProperties className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={view === "grid" ? "secondary" : "ghost"}
+                size="sm"
+                className="rounded-none h-8 px-2.5"
+                onClick={() => setView("grid")}
+                aria-label="Grid view"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          {authReady && role && (
-            <Button size="sm" className="h-9" onClick={() => { setEditItem(null); setSubmitOpen(true); }}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Create
-            </Button>
+          {hasFilters && (
+            <div className="flex min-h-7 items-center gap-2 flex-wrap" aria-label="Active filters">
+              {searchParams.namespace && (
+                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ namespace: undefined })}>
+                  Publisher: @{searchParams.namespace}
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+              {typeFilters.map((filter) => {
+                const value = searchParams[filter.key];
+                if (!value) return null;
+                return (
+                  <Button key={filter.key} variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ [filter.key]: undefined })}>
+                    {filter.label}: {formatOption(value)}
+                    <X className="h-3 w-3" />
+                  </Button>
+                );
+              })}
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={clearFilters}>
+                Clear all
+              </Button>
+            </div>
           )}
-          <div className="flex items-center border border-border rounded-md overflow-hidden ml-auto">
-            <Button
-              variant={view === "table" ? "secondary" : "ghost"}
-              size="sm"
-              className="rounded-none h-8 px-2.5"
-              onClick={() => setView("table")}
-              aria-label="Table view"
-            >
-              <TableProperties className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={view === "grid" ? "secondary" : "ghost"}
-              size="sm"
-              className="rounded-none h-8 px-2.5"
-              onClick={() => setView("grid")}
-              aria-label="Grid view"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
 
         {/* Type filter tabs */}
@@ -293,7 +427,14 @@ export default function ComponentsPage() {
             <button
               key={t.value}
               onClick={() => {
-                setActiveType(t.value);
+                updateFilters({
+                  type: t.value,
+                  category: undefined,
+                  task_type: undefined,
+                  event: undefined,
+                  scope: undefined,
+                  runtime_type: undefined,
+                });
                 setSorting([]);
               }}
               className={cn(
@@ -325,8 +466,8 @@ export default function ComponentsPage() {
             icon={Puzzle}
             title={`No ${TYPE_PLURAL_LABELS[activeType] ?? activeType} found`}
             description={
-              debouncedSearch
-                ? `No ${TYPE_PLURAL_LABELS[activeType] ?? activeType} match "${debouncedSearch}". Try a different search.`
+              hasFilters
+                ? `No ${TYPE_PLURAL_LABELS[activeType] ?? activeType} match the active search and filters.`
                 : `No ${TYPE_PLURAL_LABELS[activeType] ?? activeType} have been registered yet.`
             }
             actionLabel="Back to Registry"

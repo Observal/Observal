@@ -106,6 +106,7 @@ async def list_hooks(
     response: Response,
     event: str | None = Query(None),
     scope: str | None = Query(None),
+    namespace: str | None = Query(None),
     search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -122,11 +123,22 @@ async def list_hooks(
         stmt = stmt.where(HookVersion.event == event)
     if scope:
         stmt = stmt.where(HookVersion.scope == scope)
+    if namespace:
+        stmt = stmt.where(HookListing.namespace == namespace.strip().lower())
     search_rank = None
     if search:
         search_filter, search_rank = keyword_search(
             search,
-            [HookListing.name, HookVersion.description, HookVersion.event, HookVersion.scope, HookVersion.handler_type],
+            [
+                HookListing.name,
+                HookListing.slug,
+                HookListing.namespace,
+                HookListing.owner,
+                HookVersion.description,
+                HookVersion.event,
+                HookVersion.scope,
+                HookVersion.handler_type,
+            ],
             name_field=HookListing.name,
         )
         if search_filter is not None:

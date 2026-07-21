@@ -97,6 +97,7 @@ async def submit_sandbox(
 async def list_sandboxes(
     response: Response,
     runtime_type: str | None = Query(None),
+    namespace: str | None = Query(None),
     search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -111,12 +112,17 @@ async def list_sandboxes(
     )
     if runtime_type:
         stmt = stmt.where(SandboxVersion.runtime_type == runtime_type)
+    if namespace:
+        stmt = stmt.where(SandboxListing.namespace == namespace.strip().lower())
     search_rank = None
     if search:
         search_filter, search_rank = keyword_search(
             search,
             [
                 SandboxListing.name,
+                SandboxListing.slug,
+                SandboxListing.namespace,
+                SandboxListing.owner,
                 SandboxVersion.description,
                 SandboxVersion.runtime_type,
                 SandboxVersion.image,

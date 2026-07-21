@@ -96,6 +96,7 @@ async def submit_prompt(
 async def list_prompts(
     response: Response,
     category: str | None = Query(None),
+    namespace: str | None = Query(None),
     search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -110,11 +111,21 @@ async def list_prompts(
     )
     if category:
         stmt = stmt.where(PromptVersion.category == category)
+    if namespace:
+        stmt = stmt.where(PromptListing.namespace == namespace.strip().lower())
     search_rank = None
     if search:
         search_filter, search_rank = keyword_search(
             search,
-            [PromptListing.name, PromptVersion.description, PromptVersion.category, PromptVersion.template],
+            [
+                PromptListing.name,
+                PromptListing.slug,
+                PromptListing.namespace,
+                PromptListing.owner,
+                PromptVersion.description,
+                PromptVersion.category,
+                PromptVersion.template,
+            ],
             name_field=PromptListing.name,
         )
         if search_filter is not None:

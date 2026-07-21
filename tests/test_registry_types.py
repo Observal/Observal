@@ -684,7 +684,53 @@ class TestFeedbackExtension:
 
 
 # ═══════════════════════════════════════════════════════════
-# 6. TestCLICommands
+# 6. TestParameterizedSearch
+# ═══════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_component_lists_apply_namespace_and_type_filters():
+    from fastapi import Response
+
+    from api.routes.hook import list_hooks
+    from api.routes.mcp import list_mcps
+    from api.routes.prompt import list_prompts
+    from api.routes.sandbox import list_sandboxes
+    from api.routes.skill import list_skills
+
+    cases = [
+        (list_mcps.__wrapped__, {"category": "developer-tools"}, "developer-tools"),
+        (list_skills.__wrapped__, {"task_type": "testing", "target_agent": None}, "testing"),
+        (list_hooks.__wrapped__, {"event": "Stop", "scope": None}, "Stop"),
+        (list_prompts.__wrapped__, {"category": "testing"}, "testing"),
+        (list_sandboxes.__wrapped__, {"runtime_type": "docker"}, "docker"),
+    ]
+
+    for list_items, filters, expected in cases:
+        db = _mock_db()
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        db.execute.return_value = result
+        db.scalar.return_value = 0
+        await list_items(
+            response=Response(),
+            namespace="Alice",
+            search=None,
+            limit=50,
+            offset=0,
+            db=db,
+            current_user=None,
+            **filters,
+        )
+        statement = db.execute.await_args.args[0]
+        sql = str(statement)
+        params = set(statement.compile().params.values())
+        assert ".namespace" in sql
+        assert {"alice", expected}.issubset(params)
+
+
+# ═══════════════════════════════════════════════════════════
+# 7. TestCLICommands
 # ═══════════════════════════════════════════════════════════
 
 

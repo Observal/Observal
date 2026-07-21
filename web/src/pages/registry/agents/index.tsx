@@ -25,9 +25,12 @@ import {
   Send,
   ChevronDown,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PickerSelect } from "@/components/ui/picker-select";
+import { UserSearchInput } from "@/components/shared/user-search-input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRegistryList, useMyAgents, useArchivedAgents, useDeletedAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useDeleteAgent, useRestoreDeletedAgent, useSubmitDraft } from "@/hooks/use-api";
@@ -60,6 +63,19 @@ import {
 import type { RegistryItem } from "@/lib/types";
 
 type ViewMode = "table" | "grid";
+
+const AGENT_CATEGORIES = [
+  "Code Review",
+  "Testing",
+  "Documentation",
+  "DevOps",
+  "Security",
+  "Data",
+  "Incident Response",
+  "Deployment",
+  "Cost Optimization",
+  "Other",
+];
 
 const roleSub = (cb: () => void) => {
   window.addEventListener("storage", cb);
@@ -406,11 +422,12 @@ export default function AgentListPage() {
 }
 
 function AgentListContent() {
-  const { search: searchParam } = useSearch({ from: "/_authed/agents/" });
+  const { search: searchParam, namespace, category } = useSearch({ from: "/_authed/agents/" });
   const router = useRouter();
   const initialSearch = searchParam ?? "";
   const [search, setSearch] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
+  const [publisherQuery, setPublisherQuery] = useState(namespace ? `@${namespace}` : "");
   const [view, setView] = useState<ViewMode>("table");
   const [sorting, setSorting] = useState<SortingState>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -424,16 +441,21 @@ function AgentListContent() {
     };
   }, [search]);
 
+  useEffect(() => {
+    setPublisherQuery(namespace ? `@${namespace}` : "");
+  }, [namespace]);
+
   const {
     data: agents,
     isLoading,
     isError,
     error,
     refetch,
-  } = useRegistryList(
-    "agents",
-    debouncedSearch ? { search: debouncedSearch } : undefined,
-  );
+  } = useRegistryList("agents", {
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(namespace ? { namespace } : {}),
+    ...(category ? { category } : {}),
+  });
 
   const { data: myAgents } = useMyAgents();
   const isAdmin = useSyncExternalStore(roleSub, () => hasMinRole(getUserRole(), "admin"), () => false);
@@ -499,6 +521,23 @@ function AgentListContent() {
     }
   }
 
+  function updateFilters(next: { search?: string; namespace?: string; category?: string }) {
+    router.navigate({
+      to: "/agents",
+      search: (current) => ({ ...current, ...next }),
+      replace: true,
+    });
+  }
+
+  function clearFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+    setPublisherQuery("");
+    updateFilters({ search: undefined, namespace: undefined, category: undefined });
+  }
+
+  const hasFilters = !!(search || namespace || category);
+
   return (
     <>
       <PageHeader
@@ -511,36 +550,88 @@ function AgentListContent() {
 
       <div className="p-6 lg:p-8 w-full mx-auto space-y-5">
         {/* Toolbar */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative max-w-sm flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search agents..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9"
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative max-w-md flex-1 min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                aria-label="Search agents"
+                placeholder="Search name, slug, or description..."
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  updateFilters({ search: event.target.value || undefined });
+                }}
+                className="pl-9 h-9"
+              />
+            </div>
+            <UserSearchInput
+              value={publisherQuery}
+              onValueChange={(value) => {
+                setPublisherQuery(value);
+                if (namespace && value !== namespace && value !== `@${namespace}`) {
+                  updateFilters({ namespace: undefined });
+                }
+              }}
+              onSelect={(user) => {
+                if (!user.username) return;
+                setPublisherQuery(`@${user.username}`);
+                updateFilters({ namespace: user.username });
+              }}
+              placeholder="Publisher"
+              className="h-9 w-[220px]"
             />
+            <PickerSelect
+              value={category ?? ""}
+              onValueChange={(value) => updateFilters({ category: value || undefined })}
+              options={[
+                { value: "", label: "All categories" },
+                ...AGENT_CATEGORIES.map((item) => ({ value: item, label: item })),
+              ]}
+              placeholder="Category"
+              className="w-[190px]"
+              inputClassName="h-9"
+            />
+            <div className="flex items-center border border-border rounded-md overflow-hidden ml-auto">
+              <Button
+                variant={view === "table" ? "secondary" : "ghost"}
+                size="sm"
+                className="rounded-none h-8 px-2.5"
+                onClick={() => setView("table")}
+                aria-label="Table view"
+              >
+                <TableProperties className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={view === "grid" ? "secondary" : "ghost"}
+                size="sm"
+                className="rounded-none h-8 px-2.5"
+                onClick={() => setView("grid")}
+                aria-label="Grid view"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center border border-border rounded-md overflow-hidden ml-auto">
-            <Button
-              variant={view === "table" ? "secondary" : "ghost"}
-              size="sm"
-              className="rounded-none h-8 px-2.5"
-              onClick={() => setView("table")}
-              aria-label="Table view"
-            >
-              <TableProperties className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={view === "grid" ? "secondary" : "ghost"}
-              size="sm"
-              className="rounded-none h-8 px-2.5"
-              onClick={() => setView("grid")}
-              aria-label="Grid view"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-          </div>
+          {hasFilters && (
+            <div className="flex min-h-7 items-center gap-2 flex-wrap" aria-label="Active filters">
+              {namespace && (
+                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ namespace: undefined })}>
+                  Publisher: @{namespace}
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+              {category && (
+                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ category: undefined })}>
+                  Category: {category}
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={clearFilters}>
+                Clear all
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* My Drafts */}
@@ -764,8 +855,8 @@ function AgentListContent() {
             icon={Bot}
             title="No agents published yet"
             description={
-              debouncedSearch
-                ? `No agents match "${debouncedSearch}". Try a different search term.`
+              hasFilters
+                ? "No agents match the active search and filters."
                 : "No agents have been submitted yet. Be the first to publish one."
             }
             actionLabel="Back to Registry"

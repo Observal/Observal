@@ -32,7 +32,7 @@ import { parseMcpConfigJson, applyParsedConfig } from "@/lib/mcp-parser";
 import type { EnvVar } from "@/lib/mcp-parser";
 import { useHelp } from "@/components/wiki/help-context";
 
-const MCP_CATEGORIES = [
+export const MCP_CATEGORIES = [
 	"browser-automation",
 	"cloud-platforms",
 	"code-execution",
@@ -80,7 +80,7 @@ function mcpExampleConfig(isEditMode: boolean, name: string) {
 }`;
 }
 
-const SKILL_TASK_TYPES = [
+export const SKILL_TASK_TYPES = [
 	"code-review",
 	"code-generation",
 	"testing",
@@ -93,7 +93,7 @@ const SKILL_TASK_TYPES = [
 	"general",
 ];
 
-const HOOK_EVENTS = [
+export const HOOK_EVENTS = [
 	"PreToolUse",
 	"PostToolUse",
 	"Notification",
@@ -105,9 +105,9 @@ const HOOK_EVENTS = [
 
 const HOOK_HANDLER_TYPES = ["command", "http"];
 const HOOK_EXECUTION_MODES = ["async", "sync", "blocking"];
-const HOOK_SCOPES = ["agent", "session", "global"];
+export const HOOK_SCOPES = ["agent", "session", "global"];
 
-const PROMPT_CATEGORIES = [
+export const PROMPT_CATEGORIES = [
 	"system-prompt",
 	"code-review",
 	"code-generation",
@@ -117,7 +117,7 @@ const PROMPT_CATEGORIES = [
 	"general",
 ];
 
-const SANDBOX_RUNTIME_TYPES = ["docker", "lxc", "firecracker", "wasm"];
+export const SANDBOX_RUNTIME_TYPES = ["docker", "lxc", "firecracker", "wasm"];
 const SANDBOX_NETWORK_POLICIES = ["none", "host", "bridge", "restricted"];
 
 const COMPONENT_HELP_DOCS = {

@@ -177,6 +177,7 @@ async def list_skills(
     response: Response,
     task_type: str | None = Query(None),
     target_agent: str | None = Query(None),
+    namespace: str | None = Query(None),
     search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -191,6 +192,8 @@ async def list_skills(
     )
     if task_type:
         stmt = stmt.where(SkillVersion.task_type == task_type)
+    if namespace:
+        stmt = stmt.where(SkillListing.namespace == namespace.strip().lower())
     target_agents_text = cast(SkillVersion.target_agents, String)
     if target_agent:
         target_filter, _ = keyword_search(target_agent, [target_agents_text])
@@ -200,7 +203,15 @@ async def list_skills(
     if search:
         search_filter, search_rank = keyword_search(
             search,
-            [SkillListing.name, SkillVersion.description, SkillVersion.task_type, target_agents_text],
+            [
+                SkillListing.name,
+                SkillListing.slug,
+                SkillListing.namespace,
+                SkillListing.owner,
+                SkillVersion.description,
+                SkillVersion.task_type,
+                target_agents_text,
+            ],
             name_field=SkillListing.name,
         )
         if search_filter is not None:
