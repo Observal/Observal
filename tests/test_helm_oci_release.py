@@ -60,6 +60,41 @@ def test_artifacthub_repo_metadata_is_ready_for_verified_publisher_id():
     assert "00000000-0000-0000-0000-000000000000" in metadata_text
 
 
+def test_app_workload_image_tags_default_to_chart_app_version():
+    values = _load_yaml("infra/helm/observal/values.yaml")
+    helpers_text = (ROOT / "infra/helm/observal/templates/_helpers.tpl").read_text()
+
+    assert values["api"]["image"]["tag"] == ""
+    assert values["worker"]["image"]["tag"] == ""
+    assert values["web"]["image"]["tag"] == ""
+    assert '$tag := .image.tag | default (.appVersion | default "latest")' in helpers_text
+
+    for template_path in (
+        "infra/helm/observal/templates/api-deployment.yaml",
+        "infra/helm/observal/templates/init-job.yaml",
+        "infra/helm/observal/templates/worker-deployment.yaml",
+        "infra/helm/observal/templates/web-deployment.yaml",
+    ):
+        assert '"appVersion" .Chart.AppVersion' in (ROOT / template_path).read_text()
+
+
+def test_ci_asserts_packaged_chart_uses_app_version_image_tags():
+    workflow_text = (ROOT / ".github/workflows/ci.yml").read_text()
+
+    assert "helm package infra/helm/observal" in workflow_text
+    assert '--app-version "$VERSION"' in workflow_text
+    assert 'helm template observal "chart-dist/observal-${VERSION}.tgz"' in workflow_text
+    assert 'API_IMAGE_COUNT="$(grep -c "image: ghcr.io/observal/observal-api:${VERSION}"' in workflow_text
+    assert 'test "$API_IMAGE_COUNT" -ge 3' in workflow_text
+    assert 'grep -q "image: ghcr.io/observal/observal-web:${VERSION}"' in workflow_text
+    assert "--set api.image.tag=custom-api" in workflow_text
+    assert "--set worker.image.tag=custom-worker" in workflow_text
+    assert "--set web.image.tag=custom-web" in workflow_text
+    assert 'grep -q "image: ghcr.io/observal/observal-api:custom-api"' in workflow_text
+    assert 'grep -q "image: ghcr.io/observal/observal-api:custom-worker"' in workflow_text
+    assert 'grep -q "image: ghcr.io/observal/observal-web:custom-web"' in workflow_text
+
+
 def test_helm_docs_use_oci_install_instead_of_repo_add():
     docs_text = (ROOT / "docs/self-hosting/kubernetes-helm.md").read_text()
     chart_readme_text = (ROOT / "infra/helm/observal/README.md").read_text()

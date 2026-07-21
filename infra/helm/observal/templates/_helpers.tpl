@@ -1,5 +1,6 @@
 {{/*
 SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 SPDX-License-Identifier: Apache-2.0
 */}}
 
@@ -90,12 +91,13 @@ Name of the ConfigMap holding non-sensitive env vars.
 {{- end }}
 
 {{/*
-Image pull policy helper. Takes a dict with repository, tag, pullPolicy.
+Image pull policy helper. Takes a dict with repository, tag, pullPolicy,
+and optional appVersion fallback.
 */}}
 {{- define "observal.image" -}}
 {{- $registry := .global.imageRegistry -}}
 {{- $repo := .image.repository -}}
-{{- $tag := .image.tag | default "latest" -}}
+{{- $tag := .image.tag | default (.appVersion | default "latest") -}}
 {{- if $registry -}}
 {{- printf "%s/%s:%s" $registry $repo $tag -}}
 {{- else -}}

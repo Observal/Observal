@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # =============================================================================
@@ -12,7 +13,7 @@ global:
 api:
   image:
     repository: ghcr.io/observal/observal-api
-    tag: latest
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   workers: 2
@@ -26,7 +27,7 @@ api:
 worker:
   image:
     repository: ghcr.io/observal/observal-api
-    tag: latest
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   resources:
@@ -39,7 +40,7 @@ worker:
 web:
   image:
     repository: ghcr.io/observal/observal-web
-    tag: latest
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   resources:

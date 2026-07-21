@@ -73,10 +73,14 @@ helm install observal oci://ghcr.io/observal/charts/observal \
 | `global.imageRegistry` | Global image registry prefix | `""` |
 | `global.imagePullSecrets` | Global image pull secrets list | `[]` |
 | `api.image.repository` | API container image repository | `ghcr.io/observal/observal-api` |
-| `api.image.tag` | API container image tag | `latest` |
+| `api.image.tag` | API container image tag. Defaults to the chart app version when empty. | `""` |
 | `api.replicas` | Replicas for API deployment | `1` |
 | `api.workers` | Uvicorn worker count per API pod | `2` |
+| `worker.image.repository` | Worker container image repository | `ghcr.io/observal/observal-api` |
+| `worker.image.tag` | Worker container image tag. Defaults to the chart app version when empty. | `""` |
 | `worker.replicas` | Replicas for background job worker | `1` |
+| `web.image.repository` | Web UI container image repository | `ghcr.io/observal/observal-web` |
+| `web.image.tag` | Web UI container image tag. Defaults to the chart app version when empty. | `""` |
 | `web.replicas` | Replicas for Web UI deployment | `1` |
 | `postgresql.enabled` | Deploy embedded PostgreSQL StatefulSet | `true` |
 | `postgresql.externalUrl` | PostgreSQL URL used when embedded PostgreSQL is disabled | `""` |

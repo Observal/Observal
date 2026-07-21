@@ -251,6 +251,33 @@ jobs:
         if: needs.changes.outputs.helm == 'true'
         run: helm template observal infra/helm/observal --namespace observal
 
+      - name: Verify packaged chart appVersion image tags
+        if: needs.changes.outputs.helm == 'true'
+        run: |
+          VERSION="1.2.3-test"
+          mkdir -p chart-dist
+
+          helm package infra/helm/observal \
+            --destination chart-dist \
+            --version "$VERSION" \
+            --app-version "$VERSION"
+          helm template observal "chart-dist/observal-${VERSION}.tgz" \
+            --namespace observal > chart-dist/rendered.yaml
+
+          API_IMAGE_COUNT="$(grep -c "image: ghcr.io/observal/observal-api:${VERSION}" chart-dist/rendered.yaml)"
+          test "$API_IMAGE_COUNT" -ge 3
+          grep -q "image: ghcr.io/observal/observal-web:${VERSION}" chart-dist/rendered.yaml
+
+          helm template observal "chart-dist/observal-${VERSION}.tgz" \
+            --namespace observal \
+            --set api.image.tag=custom-api \
+            --set worker.image.tag=custom-worker \
+            --set web.image.tag=custom-web > chart-dist/rendered-overrides.yaml
+
+          grep -q "image: ghcr.io/observal/observal-api:custom-api" chart-dist/rendered-overrides.yaml
+          grep -q "image: ghcr.io/observal/observal-api:custom-worker" chart-dist/rendered-overrides.yaml
+          grep -q "image: ghcr.io/observal/observal-web:custom-web" chart-dist/rendered-overrides.yaml
+
 # ── Job 6: Docker build ───────────────────────────────────────────────────────
   docker-build:
     name: docker-build
