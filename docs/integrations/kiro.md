@@ -136,8 +136,7 @@ per-agent hook command is the source of truth.
    `OBSERVAL_AGENT_ID`.
 2. The shared session hook reads that UUID when Kiro fires `userPromptSubmit` or
    `stop`.
-3. The CLI looks up the UUID in `~/.observal/lockfile.json` under the `kiro`
-   harness.
+3. The CLI selects the active server URL under `registries` in `~/.observal/lockfile.json`, then looks up the UUID under that registry's `kiro` harness.
 4. The session payload is sent with the lockfile agent id and version.
 5. If the UUID is missing or no lockfile entry exists, the session is left
    unattributed instead of guessing from the current directory.

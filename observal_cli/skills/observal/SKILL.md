@@ -5,7 +5,7 @@
 name: observal
 command: observal
 description: "Core Observal CLI operations: pull agents into your harness, scan installed components, diagnose and patch harness configs, authenticate, manage CLI settings, and discuss agent insights. Use when the user wants to install an agent, check setup, login, configure the CLI, or ask how an agent is doing."
-version: 2.2.0
+version: 2.3.0
 owner: observal
 ---
 
@@ -113,7 +113,7 @@ Diagnose only. Does not fix anything.
 observal doctor
 ```
 
-Reports: Observal config validity, server reachability, hook installation status per harness, skill presence. Exits non-zero if issues found.
+Reports: Observal config validity, server reachability, lockfile metadata drift against the active registry, hook installation status per harness, and skill presence. The repair prompt updates canonical lockfile metadata and Observal-managed harness hooks, including UUID-attributed Kiro agent hooks. Installed version pins remain unchanged. Exits non-zero if issues remain.
 
 ---
 

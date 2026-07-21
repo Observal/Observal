@@ -68,12 +68,28 @@ def doctor(
 
     issues: list[str] = []
     warnings: list[str] = []
+    lockfile_plan = None
 
     rprint("[bold]Observal Doctor[/bold]\n")
 
     # 1. Check Observal config
     rprint("[cyan]Checking Observal config...[/cyan]")
     _check_observal_config(issues, warnings)
+
+    rprint("[cyan]Checking registry lockfile...[/cyan]")
+    try:
+        from observal_cli.lockfile_reconcile import plan_lockfile_reconciliation
+
+        lockfile_plan = plan_lockfile_reconciliation()
+        if lockfile_plan.changes:
+            warnings.append(f"Registry metadata drift found in {len(lockfile_plan.changes)} lockfile field(s).")
+            for change in lockfile_plan.changes[:10]:
+                rprint(f"  [dim]{change.label}: {change.field} {change.old!r} → {change.new!r}[/dim]")
+            if len(lockfile_plan.changes) > 10:
+                rprint(f"  [dim]...and {len(lockfile_plan.changes) - 10} more change(s)[/dim]")
+        issues.extend(lockfile_plan.warnings)
+    except Exception as exc:
+        issues.append(f"Lockfile reconciliation failed: {exc}")
 
     # 2. Check Claude Code
     rprint("[cyan]Checking Claude Code...[/cyan]")
@@ -145,6 +161,10 @@ def doctor(
         )
     if fixable and should_fix:
         import subprocess
+
+        if lockfile_plan and lockfile_plan.changes:
+            lockfile_plan.apply()
+            rprint(f"[green]✓ Reconciled {len(lockfile_plan.changes)} lockfile field(s)[/green]")
 
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         subprocess.run(
@@ -992,11 +1012,51 @@ def _patch_claude_code(dry_run: bool) -> bool:
 
 
 def _patch_kiro(dry_run: bool) -> bool:
-    """Kiro hooks are installed per pulled agent so they can carry the agent UUID."""
+    """Repair UUID-attributed hooks for Kiro agents in the current registry lockfile."""
+    from observal_cli.lockfile import read_registry_lockfile
+
     optic.trace("dry_run={}", dry_run)
     rprint("[cyan]Kiro - session push hooks[/cyan]")
-    rprint("  [dim]Skipped: Kiro telemetry hooks are installed by `observal agent pull` per agent.[/dim]")
-    return False
+    _, registry = read_registry_lockfile()
+    agents = registry.get("harnesses", {}).get("kiro", {}).get("agents", [])
+    if not agents:
+        rprint("  [dim]No locked Kiro agents[/dim]")
+        return False
+
+    ensure_loaded()
+    adapter = get_adapter("kiro")
+    changed = False
+    for entry in agents:
+        local_name = entry.get("local_name") or entry.get("slug") or entry.get("name")
+        agent_id = str(entry.get("id") or "")
+        if not local_name or not agent_id:
+            continue
+        if entry.get("scope") == "user":
+            profile = Path.home() / ".kiro" / "agents" / f"{local_name}.json"
+        else:
+            directory = entry.get("directory")
+            if not directory:
+                continue
+            profile = Path(directory) / ".kiro" / "agents" / f"{local_name}.json"
+        if not profile.exists():
+            rprint(f"  [yellow]Missing locked profile: {profile}[/yellow]")
+            continue
+        try:
+            current = json.loads(profile.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            rprint(f"  [yellow]Cannot read {profile}: {exc}[/yellow]")
+            continue
+        desired = adapter.rewrite_agent_profile(json.loads(json.dumps(current)), agent_id=agent_id)
+        if desired == current:
+            continue
+        changed = True
+        verb = "Would repair" if dry_run else "Repaired"
+        rprint(f"  {verb} {profile}")
+        if not dry_run:
+            profile.write_text(json.dumps(desired, indent=2) + "\n")
+    if not changed:
+        rprint("  [dim]Already up to date[/dim]")
+    return changed
 
 
 def _patch_cursor(dry_run: bool) -> bool:

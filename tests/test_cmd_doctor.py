@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
@@ -56,6 +56,8 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr("observal_cli.settings_reconciler.CLAUDE_SETTINGS_PATH", tmp_path / ".claude/settings.json")
     monkeypatch.setattr("observal_cli.settings_reconciler.config.save", lambda updates: None)
+    monkeypatch.setattr("observal_cli.lockfile.LOCKFILE_PATH", tmp_path / ".observal/lockfile.json")
+    monkeypatch.setattr("observal_cli.lockfile._LOCKFILE_LOCK", tmp_path / ".observal/lockfile.lock")
     return tmp_path
 
 
@@ -194,11 +196,36 @@ class TestPatchFunctions:
         assert "hooks" in read_json(settings_path)
         assert _patch_claude_code(dry_run=False) is False
 
-    def test_patch_kiro_is_skipped_because_pull_installs_agent_hooks(self, tmp_path: Path):
+    def test_patch_kiro_skips_without_locked_agents(self, tmp_path: Path):
         write_json(tmp_path / ".kiro/agents/default.json", {})
 
         assert _patch_kiro(dry_run=False) is False
         assert read_json(tmp_path / ".kiro/agents/default.json") == {}
+
+    def test_patch_kiro_repairs_locked_agent_uuid_hooks(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        from observal_cli import config, lockfile
+
+        agent_id = "00000000-0000-0000-0000-000000000123"
+        monkeypatch.setattr(
+            config,
+            "load",
+            lambda: {"server_url": "http://localhost:80", "access_token": "test-token"},
+        )
+        write_json(tmp_path / ".kiro/agents/test-agent.json", {"name": "test-agent", "hooks": {}})
+        lockfile.upsert_agent(
+            "kiro",
+            name="test-agent",
+            agent_id=agent_id,
+            version="1.0.0",
+            scope="user",
+            local_name="test-agent",
+        )
+
+        assert _patch_kiro(dry_run=False) is True
+        profile = read_json(tmp_path / ".kiro/agents/test-agent.json")
+        commands = [entry["command"] for entries in profile["hooks"].values() for entry in entries]
+        assert commands
+        assert all(agent_id in command for command in commands)
 
     def test_patch_cursor_writes_hooks_and_preserves_foreign_entries(self, tmp_path: Path):
         hooks_path = tmp_path / ".cursor/hooks.json"
@@ -278,6 +305,10 @@ class TestPatchFunctions:
         (tmp_path / ".cursor").mkdir()
         with (
             patch("observal_cli.cmd_doctor._check_observal_config"),
+            patch(
+                "observal_cli.lockfile_reconcile.plan_lockfile_reconciliation",
+                return_value=MagicMock(changes=[], warnings=[]),
+            ),
             patch("subprocess.run") as run,
             patch("observal_cli.skill_installer.install_observal_skill"),
         ):

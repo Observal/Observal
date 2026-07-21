@@ -41,10 +41,10 @@ def _warn_component_conflicts(harness: str, agent_name: str, components: list[di
     name but at a different version. Prints a warning but never blocks.
     """
     try:
-        from observal_cli.lockfile import read_lockfile
+        from observal_cli.lockfile import read_registry_lockfile
 
-        data = read_lockfile()
-        harness_section = data.get("harnesses", {}).get(harness, {})
+        _, registry = read_registry_lockfile()
+        harness_section = registry.get("harnesses", {}).get(harness, {})
         other_agents = harness_section.get("agents", [])
 
         # Build map of component name → (version, owning agent) from other agents
@@ -339,9 +339,7 @@ def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
     observal_cli when installed in a project-local virtual environment.
     """
     optic.trace("content={}", content)
-    hooks = content.get("hooks")
-    if not hooks:
-        return content
+    hooks = content.get("hooks") or {}
 
     from observal_cli.harness_specs.kiro_hooks_spec import build_kiro_hooks
 

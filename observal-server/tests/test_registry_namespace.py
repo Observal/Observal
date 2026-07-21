@@ -95,6 +95,53 @@ class _Result:
     def scalars(self):
         return _Scalars(self.rows)
 
+    def all(self):
+        return self.rows
+
+
+@pytest.mark.asyncio
+async def test_reconcile_batches_by_type_and_returns_canonical_metadata():
+    from api.routes.registry import RegistryReconcileRequest, reconcile_registry_items
+    from models.agent import AgentStatus
+    from models.mcp import ListingStatus
+    from models.user import UserRole
+
+    agent_id = uuid.uuid4()
+    mcp_id = uuid.uuid4()
+    agent = SimpleNamespace(
+        id=agent_id,
+        name="Agent",
+        namespace="alice",
+        slug="agent",
+        qualified_name="alice/agent",
+        deleted_at=None,
+    )
+    mcp = SimpleNamespace(
+        id=mcp_id,
+        name="MCP",
+        namespace="alice",
+        slug="mcp",
+        qualified_name="alice/mcp",
+    )
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                _Result([(agent, AgentStatus.approved, "2.0.0")]),
+                _Result([(mcp, ListingStatus.approved, "3.0.0")]),
+            ]
+        )
+    )
+    user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user, org_id=None)
+    request = RegistryReconcileRequest(items=[{"type": "agent", "id": agent_id}, {"type": "mcp", "id": mcp_id}])
+
+    results = await reconcile_registry_items(request, db, user)
+
+    assert db.execute.await_count == 2
+    assert [(item.qualified_name, item.latest_version) for item in results] == [
+        ("alice/agent", "2.0.0"),
+        ("alice/mcp", "3.0.0"),
+    ]
+
 
 @pytest.mark.asyncio
 async def test_resolver_accepts_qualified_and_rejects_ambiguous_bare_names():
