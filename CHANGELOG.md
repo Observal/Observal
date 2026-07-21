@@ -10,7 +10,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.10.2] - 2026-07-21
+## [1.10.3] - 2026-07-21
 
 ### Added
 
@@ -965,6 +965,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- add repo id and contact info for artifacthub (**helm**) ([942f837](https://github.com/Observal/Observal/commit/942f83722084881137eab0aae143a58b3447a9fc))
 - default app images to chart version (**helm**) ([179e481](https://github.com/Observal/Observal/commit/179e481378561fa125714bc4f4cdfca5bd9e9fac))
 - address delivery audit findings (**telemetry**) ([0493e7c](https://github.com/Observal/Observal/commit/0493e7cc709166b1d80b688d57918a64214ef9b8))
 - migrate wrapped configs (**telemetry**) ([9a59b8d](https://github.com/Observal/Observal/commit/9a59b8de39c1163187da8980f2ab79693fadc1b2))
