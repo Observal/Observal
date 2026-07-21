@@ -2,9 +2,8 @@
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-# Add the ArtifactHub repository ID here after the repository is registered to
-# enable the Verified Publisher badge.
-# repositoryID: 00000000-0000-0000-0000-000000000000
+
+repositoryID: bcccc095-d7e6-4ae3-b40c-b5c2b6fb2f80
 owners:
   - name: Observal
-    email: contact@observal.io
+    email: harisrini21@gmail.com

@@ -51,13 +51,15 @@ def test_chart_has_artifacthub_metadata_for_oci_listing():
     assert "Documentation" in chart["annotations"]["artifacthub.io/links"]
 
 
-def test_artifacthub_repo_metadata_is_ready_for_verified_publisher_id():
+def test_artifacthub_repo_metadata_has_registerd_verified_publisher_id():
     metadata_text = (ROOT / "infra/helm/artifacthub-repo.yml").read_text()
     metadata = yaml.safe_load(metadata_text)
 
-    assert metadata["owners"] == [{"name": "Observal", "email": "contact@observal.io"}]
-    assert "repositoryID:" in metadata_text
-    assert "00000000-0000-0000-0000-000000000000" in metadata_text
+    # assert metadata["owners"] == [{"name": "Observal", "email": "contact@observal.io"}]
+    # assert "repositoryID:" in metadata_text
+    # assert "00000000-0000-0000-0000-000000000000" in metadata_text
+    assert metadata["owners"] == [{"name": "Observal", "email": "harisrini21@gmail.com"}]
+    assert metadata["repositoryID"] == "bcccc095-d7e6-4ae3-b40c-b5c2b6fb2f80"
 
 
 def test_app_workload_image_tags_default_to_chart_app_version():
