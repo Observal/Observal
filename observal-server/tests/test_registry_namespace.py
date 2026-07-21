@@ -17,7 +17,6 @@ from models.mcp import McpListing
 from models.prompt import PromptListing
 from models.sandbox import SandboxListing
 from models.skill import SkillListing
-from services.ownership import transfer_entity_owner
 from services.registry_namespace import (
     _namespace_slug_parts,
     identity_for_user,
@@ -142,10 +141,110 @@ async def test_username_change_is_blocked_after_publish():
     assert user.username == "alice"
 
 
-def test_transfer_moves_namespace_and_keeps_slug():
+class _TransferEntity(SimpleNamespace):
+    @property
+    def qualified_name(self):
+        return f"{self.namespace}/{self.slug}"
+
+
+@pytest.mark.parametrize(
+    ("entity_type", "owner_field"),
+    [
+        ("agents", "created_by"),
+        ("mcps", "submitted_by"),
+        ("skills", "submitted_by"),
+        ("hooks", "submitted_by"),
+        ("prompts", "submitted_by"),
+        ("sandboxes", "submitted_by"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_transfer_moves_every_listing_type_to_target_namespace(entity_type, owner_field):
+    from api.routes.co_authors import ENTITY_MODELS, TransferOwnershipRequest, transfer_ownership
+
     current = SimpleNamespace(id=uuid.uuid4())
-    target = SimpleNamespace(id=uuid.uuid4(), username="bob", email="bob@example.com", org_id=None)
-    entity = SimpleNamespace(
+    target = SimpleNamespace(
+        id=uuid.uuid4(),
+        username="bob",
+        email="bob@example.com",
+        org_id=uuid.uuid4(),
+        auth_provider="local",
+    )
+    other_coauthor = uuid.uuid4()
+    entity = _TransferEntity(
+        id=uuid.uuid4(),
+        owner="alice",
+        namespace="alice",
+        slug="tool",
+        co_authors=[str(current.id), str(target.id), str(other_coauthor)],
+        owner_org_id=None,
+        **{owner_field: current.id},
+    )
+    db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
+    collision_check = AsyncMock(return_value=False)
+
+    with (
+        patch("api.routes.co_authors._get_entity_for_transfer", new=AsyncMock(return_value=entity)),
+        patch("api.routes.co_authors._resolve_target_user", new=AsyncMock(return_value=target)),
+        patch("api.routes.co_authors.identity_exists", new=collision_check),
+    ):
+        response = await transfer_ownership(
+            entity_type,
+            "alice/tool",
+            TransferOwnershipRequest(username="bob"),
+            db,
+            current,
+        )
+
+    collision_check.assert_awaited_once_with(
+        db,
+        ENTITY_MODELS[entity_type],
+        "bob",
+        "tool",
+        exclude_id=entity.id,
+    )
+    assert entity.namespace == "bob"
+    assert entity.slug == "tool"
+    assert getattr(entity, owner_field) == target.id
+    assert entity.owner_org_id == target.org_id
+    assert entity.co_authors == [str(other_coauthor)]
+    assert response.qualified_name == "bob/tool"
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(entity)
+
+
+@pytest.mark.parametrize(
+    ("entity_type", "owner_field"),
+    [("agents", "created_by"), ("mcps", "submitted_by")],
+)
+@pytest.mark.asyncio
+async def test_transfer_requires_current_owner(entity_type, owner_field):
+    from api.routes.co_authors import _get_entity_for_transfer
+
+    current = SimpleNamespace(id=uuid.uuid4())
+    entity = SimpleNamespace(**{owner_field: uuid.uuid4()})
+    with (
+        patch("api.routes.co_authors.resolve_listing", new=AsyncMock(return_value=entity)),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await _get_entity_for_transfer(entity_type, "alice/tool", current, SimpleNamespace())
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_transfer_rejects_target_namespace_collision_without_mutating_listing():
+    from api.routes.co_authors import TransferOwnershipRequest, transfer_ownership
+
+    current = SimpleNamespace(id=uuid.uuid4())
+    target = SimpleNamespace(
+        id=uuid.uuid4(),
+        username="bob",
+        email="bob@example.com",
+        org_id=None,
+        auth_provider="local",
+    )
+    entity = _TransferEntity(
+        id=uuid.uuid4(),
         owner="alice",
         namespace="alice",
         slug="tool",
@@ -153,7 +252,69 @@ def test_transfer_moves_namespace_and_keeps_slug():
         co_authors=[],
         owner_org_id=None,
     )
-    transfer_entity_owner(entity, "agents", current, target)
-    assert entity.namespace == "bob"
-    assert entity.slug == "tool"
-    assert entity.created_by == target.id
+    db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
+
+    with (
+        patch("api.routes.co_authors._get_entity_for_transfer", new=AsyncMock(return_value=entity)),
+        patch("api.routes.co_authors._resolve_target_user", new=AsyncMock(return_value=target)),
+        patch("api.routes.co_authors.identity_exists", new=AsyncMock(return_value=True)),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await transfer_ownership(
+            "agents",
+            "alice/tool",
+            TransferOwnershipRequest(username="bob"),
+            db,
+            current,
+        )
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "bob/tool already exists"
+    assert entity.namespace == "alice"
+    assert entity.created_by == current.id
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_transfer_converts_database_uniqueness_race_to_conflict():
+    from sqlalchemy.exc import IntegrityError
+
+    from api.routes.co_authors import TransferOwnershipRequest, transfer_ownership
+
+    current = SimpleNamespace(id=uuid.uuid4())
+    target = SimpleNamespace(
+        id=uuid.uuid4(),
+        username="bob",
+        email="bob@example.com",
+        org_id=None,
+        auth_provider="local",
+    )
+    entity = _TransferEntity(
+        id=uuid.uuid4(),
+        owner="alice",
+        namespace="alice",
+        slug="tool",
+        created_by=current.id,
+        co_authors=[],
+        owner_org_id=None,
+    )
+    conflict = IntegrityError("UPDATE agents", {}, Exception("duplicate key value violates namespace slug unique"))
+    db = SimpleNamespace(commit=AsyncMock(side_effect=conflict), rollback=AsyncMock(), refresh=AsyncMock())
+
+    with (
+        patch("api.routes.co_authors._get_entity_for_transfer", new=AsyncMock(return_value=entity)),
+        patch("api.routes.co_authors._resolve_target_user", new=AsyncMock(return_value=target)),
+        patch("api.routes.co_authors.identity_exists", new=AsyncMock(return_value=False)),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await transfer_ownership(
+            "agents",
+            "alice/tool",
+            TransferOwnershipRequest(username="bob"),
+            db,
+            current,
+        )
+
+    assert exc.value.status_code == 409
+    db.rollback.assert_awaited_once()
+    db.refresh.assert_not_awaited()
