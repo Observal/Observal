@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,6 +44,7 @@ from observal_cli.cmd_doctor import (
     _patch_kiro,
     _patch_opencode,
     _patch_pi,
+    doctor_app,
     doctor_patch,
 )
 from observal_cli.shared.utils import is_observal_hook_entry, is_observal_matcher_group
@@ -271,6 +273,18 @@ class TestPatchFunctions:
 
         assert "observal-telemetry" in read_json(config_dir / "hooks.json")
         assert _patch_antigravity(dry_run=False) is False
+
+    def test_doctor_yes_runs_supported_patch_command(self, tmp_path: Path):
+        (tmp_path / ".cursor").mkdir()
+        with (
+            patch("observal_cli.cmd_doctor._check_observal_config"),
+            patch("subprocess.run") as run,
+            patch("observal_cli.skill_installer.install_observal_skill"),
+        ):
+            result = CliRunner().invoke(doctor_app, ["--yes"])
+
+        assert result.exit_code == 0
+        assert run.call_args.args[0][-2:] == ["patch", "--all-harnesses"]
 
     def test_doctor_patch_requires_target(self):
         with pytest.raises(typer.Exit) as exc:

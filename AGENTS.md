@@ -76,7 +76,7 @@ The codebase follows a strict adapter pattern for harness-specific logic. This i
 ### What "first-class" means concretely
 
 A first-class harness has all of:
-- A hook spec in `harness_specs/` (defines what `doctor patch --hook` installs)
+- A hook spec in `harness_specs/` (defines what `doctor patch` installs)
 - A session parser in `services/session_parsers/` (enables `observal reconcile`)
 - Full scanning implementation in its CLI adapter (discovers MCPs, skills, hooks, agents)
 - E2E test coverage in `tests/e2e/`

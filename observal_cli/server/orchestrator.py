@@ -666,7 +666,7 @@ class Orchestrator:
     def _install_hooks(self) -> None:
         """Install harness telemetry hooks (Claude Code, Kiro, etc.) if not already present.
 
-        Runs the equivalent of `observal doctor patch --hook --all-harnesses` non-interactively.
+        Runs the equivalent of `observal doctor patch --all-harnesses` non-interactively.
         This ensures traces flow to the embedded server without manual setup.
         """
         # Claude Code hooks

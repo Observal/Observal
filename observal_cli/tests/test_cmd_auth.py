@@ -371,6 +371,15 @@ class TestPostLoginHarnessDetection:
 
         patch_doctor.assert_called_once_with("opencode")
 
+    def test_doctor_patch_uses_current_flags(self) -> None:
+        from observal_cli.cmd_auth import _run_doctor_patch
+
+        completed = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=completed) as run:
+            _run_doctor_patch("cursor")
+
+        assert run.call_args.args[0][-3:] == ["patch", "--harness", "cursor"]
+
 
 if __name__ == "__main__":  # pragma: no cover - manual debug entry point
     pytest.main([__file__, "-v"])

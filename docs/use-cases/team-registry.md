@@ -78,7 +78,7 @@ After logging in, they can:
 observal agent list                           # see every agent the team has published
 observal agent pull team-reviewer --harness claude-code # install one
 observal scan                                 # discover what they have installed
-observal doctor patch --all --all-harnesses        # instrument everything
+observal doctor patch --all-harnesses        # instrument everything
 ```
 
 ## Review workflow

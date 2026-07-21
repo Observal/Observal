@@ -148,8 +148,8 @@
 
 ## 17. CLI -- Scan, Doctor & Patch
 - [ ] Run `observal scan` to discover harness configs (read-only)
-- [ ] Run `observal doctor patch --all --all-harnesses --dry-run` to preview instrumentation
-- [ ] Run `observal doctor patch --all --all-harnesses` to instrument harnesses
+- [ ] Run `observal doctor patch --all-harnesses --dry-run` to preview instrumentation
+- [ ] Run `observal doctor patch --all-harnesses` to instrument harnesses
 - [ ] Run `observal self doctor` to check harness compatibility
 
 ## 18. Admin - Agent Registry Management
@@ -284,7 +284,7 @@ Run sections 20–30 once with Case A, then reset and repeat with Case B.
 - [ ] Use an harness with an **unregistered** agent (any agent not in the registry) → generate activity
 - [ ] Verify **no trace** is ingested for the unregistered agent
 - [ ] Run `observal scan` → verify it warns/skips unregistered agents
-- [ ] Run `observal doctor patch --all --all-harnesses` → verify it only instruments registered agents
+- [ ] Run `observal doctor patch --all-harnesses` → verify it only instruments registered agents
 - [ ] Switch to Admin → verify traces only exist for registered agent activity
 
 ---

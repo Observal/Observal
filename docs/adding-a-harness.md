@@ -354,7 +354,7 @@ register_adapter(MyHarnessAdapter())
 ## Step 5: Create Hook Spec
 
 Create `observal_cli/harness_specs/my_harness_hooks_spec.py`. This defines what
-hooks `observal doctor patch --hook` installs:
+hooks `observal doctor patch` installs:
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
@@ -542,7 +542,7 @@ cd observal-server && uv run pytest ../tests/test_agent_config_generator.py -q
 observal pull <some-agent> --harness my-harness --dry-run
 
 # Hooks install correctly
-observal doctor patch --hook --harness my-harness --dry-run
+observal doctor patch --harness my-harness --dry-run
 
 # Recovery discovers and drains an unfinished fixture through the shared engine
 observal reconcile --harness my-harness --dry-run

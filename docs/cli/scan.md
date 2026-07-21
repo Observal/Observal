@@ -67,17 +67,14 @@ observal scan --harness claude-code
 Once you see what's installed, instrument it:
 
 ```bash
-# Instrument everything (hooks + shims) across all harnesses
-observal doctor patch --all --all-harnesses
+# Install session telemetry hooks across all harnesses
+observal doctor patch --all-harnesses
 
 # Or target a specific harness
-observal doctor patch --all --harness kiro
-
-# Or only install hooks
-observal doctor patch --hook --harness claude-code
+observal doctor patch --harness kiro
 
 # Preview changes without writing anything
-observal doctor patch --all --all-harnesses --dry-run
+observal doctor patch --all-harnesses --dry-run
 ```
 
 ## Exit codes

@@ -960,7 +960,7 @@ def _post_auth_onboarding():
                 parts.append(f"{mcps} MCP{'s' if mcps != 1 else ''}")
             rprint(f"  [bold]{label}[/bold] - {', '.join(parts)} found")
         rprint()
-        rprint("[dim]Run `observal doctor patch --all --all-harnesses` to instrument telemetry.[/dim]")
+        rprint("[dim]Run `observal doctor patch --all-harnesses` to instrument telemetry.[/dim]")
 
     except Exception:
         pass
@@ -988,7 +988,7 @@ def _install_observal_skill():
 
 
 def _run_doctor_patch(ide_name: str):
-    """Run 'observal doctor patch --all --harness <name>' as a subprocess."""
+    """Run 'observal doctor patch --harness <name>' as a subprocess."""
     optic.trace("ide_name={}", ide_name)
     import subprocess
     import sys
@@ -996,7 +996,7 @@ def _run_doctor_patch(ide_name: str):
     try:
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         result = subprocess.run(
-            [sys.executable, "-m", "observal_cli.main", "doctor", "patch", "--all", "--harness", ide_name],
+            [sys.executable, "-m", "observal_cli.main", "doctor", "patch", "--harness", ide_name],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1010,7 +1010,7 @@ def _run_doctor_patch(ide_name: str):
             rprint(f"[yellow]{result.stderr.rstrip()}[/yellow]")
     except Exception as e:
         rprint(f"[yellow]Could not run doctor patch: {e}[/yellow]")
-        rprint(f"Run [bold]observal doctor patch --all --harness {ide_name}[/bold] manually.")
+        rprint(f"Run [bold]observal doctor patch --harness {ide_name}[/bold] manually.")
 
 
 def _configure_cursor(server_url: str):
@@ -1033,7 +1033,7 @@ def _configure_cursor(server_url: str):
 
     except Exception as e:
         rprint(f"\n[yellow]Could not configure Cursor automatically: {e}[/yellow]")
-        rprint("Run [bold]observal doctor patch --all --harness cursor[/bold] to set up manually.")
+        rprint("Run [bold]observal doctor patch --harness cursor[/bold] to set up manually.")
 
 
 def _configure_kiro(server_url: str):
@@ -1056,7 +1056,7 @@ def _configure_kiro(server_url: str):
 
     except Exception as e:
         rprint(f"\n[yellow]Could not configure Kiro automatically: {e}[/yellow]")
-        rprint("Run [bold]observal doctor patch --all --harness kiro[/bold] to set up manually.")
+        rprint("Run [bold]observal doctor patch --harness kiro[/bold] to set up manually.")
 
 
 def _configure_codex(server_url: str):
@@ -1079,7 +1079,7 @@ def _configure_codex(server_url: str):
 
     except Exception as e:
         rprint(f"\n[yellow]Could not configure Codex automatically: {e}[/yellow]")
-        rprint("Run [bold]observal doctor patch --all --harness codex[/bold] manually.")
+        rprint("Run [bold]observal doctor patch --harness codex[/bold] manually.")
 
 
 def _configure_copilot(server_url: str):
@@ -1160,7 +1160,7 @@ def _configure_claude_code(server_url: str, access_token: str):
     """Check for Claude Code and configure telemetry via doctor patch.
 
     Fetches a long-lived hooks token first (needed by the patch command),
-    then delegates to 'observal doctor patch --all --harness claude-code'.
+    then delegates to 'observal doctor patch --harness claude-code'.
     """
     optic.trace("server_url={}", server_url)
     claude_dir = Path.home() / ".claude"
@@ -1187,7 +1187,7 @@ def _configure_claude_code(server_url: str, access_token: str):
 
     except Exception as e:
         rprint(f"\n[yellow]Could not configure Claude Code automatically: {e}[/yellow]")
-        rprint("Run [bold]observal doctor patch --all --harness claude-code[/bold] manually.")
+        rprint("Run [bold]observal doctor patch --harness claude-code[/bold] manually.")
 
 
 def _fetch_hooks_token(server_url: str, access_token: str) -> str:

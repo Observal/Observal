@@ -113,7 +113,7 @@ observal doctor --harness <harness>
 curl http://localhost/health
 ```
 
-If hooks are missing, run `observal doctor patch --hook --harness <harness>`. If sessions still are not arriving, check `~/.observal/telemetry_buffer.db`; growth indicates pending session delivery rather than silent loss.
+If hooks are missing, run `observal doctor patch --harness <harness>`. If sessions still are not arriving, check `~/.observal/telemetry_buffer.db`; growth indicates pending session delivery rather than silent loss.
 
 ### ClickHouse not receiving data
 

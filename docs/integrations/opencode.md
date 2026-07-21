@@ -79,7 +79,7 @@ Project agents are written to `.opencode/agents/{name}.md`.
 ### 4. Install or refresh the OpenCode plugin
 
 ```bash
-observal doctor patch --all --harness opencode
+observal doctor patch --harness opencode
 ```
 
 This installs or updates `observal-plugin.ts` when the plugin is missing, stale,

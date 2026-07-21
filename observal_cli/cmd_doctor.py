@@ -148,7 +148,7 @@ def doctor(
 
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         subprocess.run(
-            [sys.executable, "-m", "observal_cli.main", "doctor", "patch", "--all", "--all-harnesses"],
+            [sys.executable, "-m", "observal_cli.main", "doctor", "patch", "--all-harnesses"],
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -160,7 +160,7 @@ def doctor(
 
         install_observal_skill()
     elif fixable and not should_fix:
-        rprint("[dim]  Run [bold]observal doctor patch --all --all-harnesses[/bold] anytime to fix.[/dim]")
+        rprint("[dim]  Run [bold]observal doctor patch --all-harnesses[/bold] anytime to fix.[/dim]")
 
     raise typer.Exit(1 if issues else 0)
 
@@ -253,7 +253,7 @@ def _check_claude_code(issues: list, warnings: list):
     if not has_session_push:
         warnings.append(
             "Claude Code session push hooks not installed. "
-            "Run `observal doctor patch --all --harness claude-code` to inject them."
+            "Run `observal doctor patch --harness claude-code` to inject them."
         )
 
     # Check for stale legacy hooks
@@ -347,7 +347,7 @@ def _check_cursor(issues: list, warnings: list):
 
     if not hooks_path.exists():
         warnings.append(
-            "Cursor session push hooks not installed. Run `observal doctor patch --all --harness cursor` to inject them."
+            "Cursor session push hooks not installed. Run `observal doctor patch --harness cursor` to inject them."
         )
         return
 
@@ -367,7 +367,7 @@ def _check_cursor(issues: list, warnings: list):
 
     if not has_session_push:
         warnings.append(
-            "Cursor session push hooks not installed. Run `observal doctor patch --all --harness cursor` to inject them."
+            "Cursor session push hooks not installed. Run `observal doctor patch --harness cursor` to inject them."
         )
 
 
@@ -399,7 +399,7 @@ def _check_codex(issues: list, warnings: list):
 
     if not has_session_push:
         warnings.append(
-            "Codex session push hooks not installed. Run `observal doctor patch --all --harness codex` to inject them."
+            "Codex session push hooks not installed. Run `observal doctor patch --harness codex` to inject them."
         )
 
     # Check codex_hooks flag
@@ -447,7 +447,7 @@ def _check_copilot(issues: list, warnings: list):
     if not has_hooks:
         warnings.append(
             "Copilot (VS Code) session push hooks not installed. "
-            "Run `observal doctor patch --all --harness copilot` to inject them."
+            "Run `observal doctor patch --harness copilot` to inject them."
         )
 
 
@@ -463,7 +463,7 @@ def _check_copilot_cli(issues: list, warnings: list):
     if not hooks_path.exists():
         warnings.append(
             "Copilot CLI session push hooks not installed. "
-            "Run `observal doctor patch --all --harness copilot-cli` to inject them."
+            "Run `observal doctor patch --harness copilot-cli` to inject them."
         )
         return
 
@@ -485,7 +485,7 @@ def _check_copilot_cli(issues: list, warnings: list):
     if not has_session_push:
         warnings.append(
             "Copilot CLI session push hooks not installed. "
-            "Run `observal doctor patch --all --harness copilot-cli` to inject them."
+            "Run `observal doctor patch --harness copilot-cli` to inject them."
         )
 
 
@@ -500,7 +500,7 @@ def _check_opencode(issues: list, warnings: list):
     plugin_path = opencode_dir / "plugins" / "observal-plugin.ts"
     if not plugin_path.exists():
         warnings.append(
-            "OpenCode observal plugin not installed. Run `observal doctor patch --all --harness opencode` to inject it."
+            "OpenCode observal plugin not installed. Run `observal doctor patch --harness opencode` to inject it."
         )
         return
 
@@ -515,13 +515,13 @@ def _check_opencode(issues: list, warnings: list):
         if "offline stub" in current or "event: async () => {}" in current:
             warnings.append(
                 "OpenCode observal plugin is an offline stub. "
-                "Run `observal doctor patch --all --harness opencode` to update it."
+                "Run `observal doctor patch --harness opencode` to update it."
             )
             return
         if f'OBSERVAL_PLUGIN_VERSION = "{OPENCODE_PLUGIN_VERSION}"' not in current or current_hash != desired_hash:
             warnings.append(
                 "OpenCode observal plugin is stale or modified. "
-                "Run `observal doctor patch --all --harness opencode` to update it."
+                "Run `observal doctor patch --harness opencode` to update it."
             )
     except OSError as e:
         issues.append(f"{plugin_path}: failed to read OpenCode plugin: {e}")
@@ -541,7 +541,7 @@ def _check_antigravity(issues: list, warnings: list):
     if not hooks_path.exists():
         warnings.append(
             "Antigravity session push hooks not installed. "
-            "Run `observal doctor patch --all --harness antigravity` to inject them."
+            "Run `observal doctor patch --harness antigravity` to inject them."
         )
         return
 
@@ -554,7 +554,7 @@ def _check_antigravity(issues: list, warnings: list):
     if not isinstance(group, dict):
         warnings.append(
             "Antigravity session push hooks not installed. "
-            "Run `observal doctor patch --all --harness antigravity` to inject them."
+            "Run `observal doctor patch --harness antigravity` to inject them."
         )
         return
 
@@ -570,7 +570,7 @@ def _check_antigravity(issues: list, warnings: list):
     if not has_hook:
         warnings.append(
             "Antigravity session push hooks not installed. "
-            "Run `observal doctor patch --all --harness antigravity` to inject them."
+            "Run `observal doctor patch --harness antigravity` to inject them."
         )
 
 
