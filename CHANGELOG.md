@@ -4,17 +4,17 @@
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
-<!-- SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Changelog
 
 All notable changes to this project will be documented in this file.
 
-## [1.10.1] - 2026-07-19
+## [1.10.2] - 2026-07-21
 
 ### Added
 
+- publish Helm chart as OCI artifact (**release**) ([9834ed4](https://github.com/Observal/Observal/commit/9834ed42501090de9edaf6905dc383bc8144e191))
 - verify finalized session integrity (**telemetry**) ([d1c7b1a](https://github.com/Observal/Observal/commit/d1c7b1a798d938b99a7ccbfea63a381ac5c85f66))
 - recover session cursors from server checkpoints (**telemetry**) ([7192330](https://github.com/Observal/Observal/commit/719233009ef13ec0070445ae90f453e3e34a55fa))
 - add durable session delivery engine (**cli**) ([d9f9539](https://github.com/Observal/Observal/commit/d9f953983a538d381c023c174e8cb957d3af53c9))
@@ -965,6 +965,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- default app images to chart version (**helm**) ([179e481](https://github.com/Observal/Observal/commit/179e481378561fa125714bc4f4cdfca5bd9e9fac))
 - address delivery audit findings (**telemetry**) ([0493e7c](https://github.com/Observal/Observal/commit/0493e7cc709166b1d80b688d57918a64214ef9b8))
 - migrate wrapped configs (**telemetry**) ([9a59b8d](https://github.com/Observal/Observal/commit/9a59b8de39c1163187da8980f2ab79693fadc1b2))
 - replay integrity repairs (**telemetry**) ([b266291](https://github.com/Observal/Observal/commit/b266291adef1ab3b1786765ff9adc9646139d8df))
@@ -1976,3 +1977,4 @@ All notable changes to this project will be documented in this file.
 ### Ui
 
 - brighter borders, responsive text scaling, observal favicon ([86ef640](https://github.com/Observal/Observal/commit/86ef64027e651fd70027932de4533d83acd08125))
+
