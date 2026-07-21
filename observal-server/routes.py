@@ -29,6 +29,7 @@ from api.routes.logs_stream import router as logs_stream_router
 from api.routes.mcp import router as mcp_router
 from api.routes.preview import router as preview_router
 from api.routes.prompt import router as prompt_router
+from api.routes.registry import router as registry_router
 from api.routes.review import router as review_router
 from api.routes.sandbox import router as sandbox_router
 from api.routes.scim import router as scim_router
@@ -46,6 +47,7 @@ REST_ROUTERS = (
     device_auth_router,
     jwks_router,
     mcp_router,
+    registry_router,
     review_router,
     agent_router,
     preview_router,

@@ -8,7 +8,7 @@ from loguru import logger as optic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, get_effective_agent_permission, require_role
+from api.deps import commit_or_name_conflict, get_db, get_effective_agent_permission, registry_identity, require_role
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.agent_component import AgentComponent
 from models.skill import SkillListing
@@ -35,8 +35,11 @@ async def save_draft(
 ):
     """Create an agent as a draft (relaxed validation, not submitted for review)."""
     optic.trace("req={}", req)
+    namespace, slug = registry_identity(current_user, req.name)
     agent = Agent(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         owner=req.owner or current_user.username or current_user.email,
         created_by=current_user.id,
         owner_org_id=current_user.org_id,
@@ -119,7 +122,7 @@ async def save_draft(
 
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
 
-    await db.commit()
+    await commit_or_name_conflict(db, "agent")
     agent = await _load_agent(db, str(agent.id))
     return _agent_to_response(agent, created_by_email=current_user.email, created_by_username=current_user.username)
 

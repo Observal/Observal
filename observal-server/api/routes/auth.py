@@ -52,6 +52,7 @@ from schemas.sso_health import make_check
 from services import sso_diagnostics
 from services.jwt_service import create_access_token, create_refresh_token, decode_access_token, decode_refresh_token
 from services.redis import get_redis
+from services.registry_namespace import user_has_listings
 from services.security_events import (
     EventType,
     SecurityEvent,
@@ -1801,9 +1802,13 @@ async def set_username(
 ):
     """Set or update the current user's username."""
     optic.trace("req={}", req)
-    existing = await db.execute(select(User).where(User.username == req.username))
+    if req.username == current_user.username:
+        return current_user
+    existing = await db.execute(select(User).where(User.username == req.username, User.id != current_user.id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Username already taken")
+    if await user_has_listings(db, current_user.id):
+        raise HTTPException(status_code=409, detail="Username cannot change after publishing a registry item")
 
     current_user.username = req.username
     try:

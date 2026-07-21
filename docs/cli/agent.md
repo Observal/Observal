@@ -5,7 +5,7 @@
 
 # observal agent
 
-Create, author, and publish agents. An agent bundles registry components (MCPs, skills, hooks, prompts, sandboxes) into one installable YAML. Agent names are globally unique.
+Create, author, and publish agents. An agent bundles registry components (MCPs, skills, hooks, prompts, sandboxes) into one installable YAML. Public identities use `namespace/slug`; different users may publish the same slug.
 
 ## Subcommands
 
@@ -118,7 +118,7 @@ observal agent my --output plain
 ## `observal agent show`
 
 ```bash
-observal agent show <id-or-name>
+observal agent show <uuid|namespace/slug|unique-bare-name>
 ```
 
 Prints the agent's metadata and every bundled component.
@@ -130,7 +130,7 @@ Prints the agent's metadata and every bundled component.
 Get install config for an agent.
 
 ```bash
-observal agent install <id-or-name> --harness <harness>
+observal agent install <uuid|namespace/slug|unique-bare-name> --harness <harness>
 ```
 
 ---
@@ -140,7 +140,7 @@ observal agent install <id-or-name> --harness <harness>
 Fetch agent config and write harness files to disk.
 
 ```bash
-observal agent pull <id-or-name> --harness <harness>
+observal agent pull <uuid|namespace/slug|unique-bare-name> --harness <harness>
 ```
 
 ---

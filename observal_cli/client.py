@@ -242,6 +242,30 @@ def _request_with_retry(
     return r  # unreachable but satisfies type checker
 
 
+def resolve_registry_reference(item_type: str, reference: str) -> str:
+    """Resolve a slash-qualified registry reference to a UUID; preserve all other shortcuts."""
+    resolved = config.resolve_alias(reference)
+    if "/" not in resolved:
+        return resolved
+    item_type = {
+        "agents": "agent",
+        "mcps": "mcp",
+        "skills": "skill",
+        "hooks": "hook",
+        "prompts": "prompt",
+        "sandboxes": "sandbox",
+    }.get(item_type, item_type)
+    data = get(
+        "/api/v1/registry/resolve",
+        params={"type": item_type, "identifier": resolved},
+    )
+    return str(data["id"])
+
+
+def canonical_name(item: dict) -> str:
+    return item.get("qualified_name") or item.get("name", "")
+
+
 def get(path: str, params: dict | None = None) -> dict:
     optic.trace("path={}, params={}", path, params)
     base, headers = _client()

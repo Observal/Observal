@@ -6,7 +6,7 @@
 import uuid
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import resolve_prefix_id
@@ -17,6 +17,8 @@ from schemas.agent import (
     ComponentLinkResponse,
     McpLinkResponse,
 )
+from services.registry_namespace import _namespace_slug_parts
+from services.shared.utils import registry_item_slug
 
 
 async def _load_agent(
@@ -48,28 +50,27 @@ async def _load_agent(
     except HTTPException:
         pass
 
-    # Try the caller's own agent first
-    if prefer_user_id is not None:
-        stmt = select(Agent).where(Agent.name == agent_id, Agent.created_by == prefer_user_id)
-        if conditions:
-            stmt = stmt.where(*conditions)
-        mine = (await db.execute(stmt)).scalar_one_or_none()
-        if mine:
-            return mine
-
-    # Fall back to global name lookup
-    stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(Agent.name == agent_id)
+    parts = _namespace_slug_parts(agent_id)
+    identity_filter = (
+        (Agent.namespace == parts[0]) & (Agent.slug == parts[1])
+        if parts
+        else or_(Agent.slug == agent_id.lower(), Agent.name == agent_id)
+    )
+    stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(identity_filter)
     if not include_all_statuses:
-        stmt = stmt.where(AgentVersion.status == AgentStatus.approved)
+        visible_status = AgentVersion.status == AgentStatus.approved
+        if prefer_user_id is not None:
+            visible_status = visible_status | (Agent.created_by == prefer_user_id)
+        stmt = stmt.where(visible_status)
     if conditions:
         stmt = stmt.where(*conditions)
     if org_id is not None:
         stmt = stmt.where(Agent.owner_org_id == org_id)
-    results = (await db.execute(stmt)).scalars().all()
-    if len(results) == 1:
-        return results[0]
-
-    return None
+    results = (await db.execute(stmt.limit(2))).scalars().all()
+    if not parts and len(results) > 1:
+        choices = ", ".join(item.qualified_name for item in results)
+        raise HTTPException(status_code=409, detail=f"'{agent_id}' is ambiguous; use one of: {choices}")
+    return results[0] if results else None
 
 
 def _agent_to_response(
@@ -125,6 +126,13 @@ def _agent_to_response(
         agent_dict[field] = getattr(agent, field)
     if not isinstance(agent_dict.get("models_by_harness"), dict):
         agent_dict["models_by_harness"] = {}
+    namespace = agent_dict.get("namespace")
+    if not isinstance(namespace, str):
+        namespace = created_by_username or str(agent.owner)
+    slug = registry_item_slug(agent)
+    agent_dict["namespace"] = namespace
+    agent_dict["slug"] = slug
+    agent_dict["qualified_name"] = f"{namespace}/{slug}"
     agent_dict["mcp_links"] = mcp_links
     agent_dict["component_links"] = component_links
     agent_dict["created_by_email"] = created_by_email

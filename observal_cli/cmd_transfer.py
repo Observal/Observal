@@ -8,7 +8,7 @@ from __future__ import annotations
 import typer
 from rich import print as rprint
 
-from observal_cli import client, config
+from observal_cli import client
 
 _ENTITY_LABELS = {
     "agents": "agent",
@@ -39,6 +39,6 @@ def add_transfer_owner_command(app: typer.Typer, entity_type: str) -> None:
         ):
             raise typer.Exit(1)
 
-        resolved = config.resolve_alias(entity_id)
+        resolved = client.resolve_registry_reference(entity_type, entity_id)
         resp = client.post(f"/api/v1/{entity_type}/{resolved}/transfer-ownership", json_data={"username": target})
         rprint(f"[green]Ownership transferred to:[/green] @{resp.get('owner', target)}")

@@ -68,6 +68,8 @@ def _make_agent(
     agent = Agent(
         id=agent_id,
         name=name,
+        namespace=user.username,
+        slug=name,
         owner="test-owner",
         created_by=user.id,
         owner_org_id=org.id if org else user.org_id,

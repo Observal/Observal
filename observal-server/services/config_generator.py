@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from loguru import logger as optic
 
 from models.mcp import McpListing
+from services.shared.utils import registry_item_slug
 from services.shared.utils import sanitize_name as _sanitize_name
 
 if TYPE_CHECKING:
@@ -106,11 +107,12 @@ def _build_mcp_context(
     *,
     env_values: dict[str, str] | None = None,
     header_values: dict[str, str] | None = None,
+    local_name: str | None = None,
 ) -> "McpConfigContext":
     """Normalize a listing before harness-specific formatting."""
     from services.harness import McpConfigContext
 
-    name = _sanitize_name(listing.name)
+    name = _sanitize_name(local_name or registry_item_slug(listing))
     server_env = _build_server_env(listing, env_values)
     transport = (listing.transport or "").lower()
     url = listing.url if listing.url and transport in ("sse", "streamable-http", "") else None
@@ -145,6 +147,7 @@ def generate_config(
     observal_url: str = "",
     env_values: dict[str, str] | None = None,
     header_values: dict[str, str] | None = None,
+    local_name: str | None = None,
 ) -> dict:
     """Generate one MCP configuration through the canonical harness adapter."""
     from services.harness import ensure_loaded, get_adapter
@@ -158,5 +161,6 @@ def generate_config(
         listing,
         env_values=env_values,
         header_values=header_values,
+        local_name=local_name,
     )
     return adapter.format_mcp_config(ctx)

@@ -10,7 +10,7 @@ from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
 
-from observal_cli import client, config
+from observal_cli import client
 from observal_cli.render import console, output_json, relative_time, spinner, status_badge
 
 insights_app = typer.Typer(help="Agent insight reports")
@@ -18,7 +18,7 @@ insights_app = typer.Typer(help="Agent insight reports")
 
 def _resolve_agent_id(agent_id: str) -> str:
     """Resolve an agent UUID, name, or alias to the canonical UUID."""
-    resolved = config.resolve_alias(agent_id)
+    resolved = client.resolve_registry_reference("agent", agent_id)
     agent = client.get(f"/api/v1/agents/{resolved}")
     return str(agent.get("id") or resolved)
 

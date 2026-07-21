@@ -27,6 +27,8 @@ def _user(**kw):
     u = MagicMock(spec=User)
     u.id = kw.get("id", uuid.uuid4())
     u.role = kw.get("role", UserRole.user)
+    u.username = kw.get("username", "testuser")
+    u.email = kw.get("email", "test@example.com")
     u.org_id = kw.get("org_id")
     return u
 

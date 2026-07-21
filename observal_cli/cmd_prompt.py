@@ -61,7 +61,7 @@ def prompt_submit(
         )
         raise typer.Exit(code=1)
     if submit_draft:
-        resolved = config.resolve_alias(submit_draft)
+        resolved = client.resolve_registry_reference("prompt", submit_draft)
         with spinner("Submitting draft for review..."):
             result = client.post(f"/api/v1/prompts/{resolved}/submit")
         rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
@@ -163,7 +163,7 @@ def prompt_list(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {item['name']}  v{item.get('version', '?')}")
+            rprint(f"{item['id']}  {client.canonical_name(item)}  v{item.get('version', '?')}")
         return
     table = Table(title=f"Prompts ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -175,7 +175,7 @@ def prompt_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -208,7 +208,7 @@ def prompt_my(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['name']}  v{item.get('version', '?')}  {item.get('status', '')}")
+            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
         return
     table = Table(title=f"My Prompts ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -220,7 +220,7 @@ def prompt_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item["name"],
+            client.canonical_name(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -245,7 +245,7 @@ def prompt_show(
         observal registry prompt show @refactor-prompt
         observal registry prompt show abc123 --output json
     """
-    resolved = config.resolve_alias(prompt_id)
+    resolved = client.resolve_registry_reference("prompt", prompt_id)
     with spinner():
         item = client.get(f"/api/v1/prompts/{resolved}")
     if output == "json":
@@ -253,7 +253,7 @@ def prompt_show(
         return
     console.print(
         kv_panel(
-            f"{item['name']} v{item.get('version', '?')}",
+            f"{client.canonical_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Category", item.get("category", "N/A")),
@@ -284,7 +284,7 @@ def prompt_render(
         observal registry prompt render my-prompt --var lang=python
         observal registry prompt render @tpl --var file=main.py --var task=refactor
     """
-    resolved = config.resolve_alias(prompt_id)
+    resolved = client.resolve_registry_reference("prompt", prompt_id)
     variables = {}
     for v in var:
         k, _, val = v.partition("=")
@@ -316,7 +316,7 @@ def prompt_edit(
         observal registry prompt edit @tpl --template "New template: {{var}}"
         observal registry prompt edit 2 --version 2.0.0 --category debugging
     """
-    resolved = config.resolve_alias(prompt_id)
+    resolved = client.resolve_registry_reference("prompt", prompt_id)
     if from_file:
         try:
             with open(from_file) as f:

@@ -671,7 +671,7 @@ export default function AgentDetailPage() {
   const canManageLifecycle = isAdmin || isOwner;
   const agentStatus = a?.status as string | undefined;
   const canEdit = (isAdmin || a?.user_permission === "owner" || a?.user_permission === "edit") && ["approved", "pending", "draft", "rejected"].includes(agentStatus ?? "");
-  const agentName = a?.name ?? id.slice(0, 8);
+  const agentName = (a?.qualified_name as string | undefined) ?? a?.name ?? id.slice(0, 8);
   const totalDownloads = downloadData?.total ?? a?.download_count;
   const uniqueUsers = downloadData?.unique_users;
   const archivedComponents = components.filter((component) => component.status === "archived");
@@ -708,7 +708,7 @@ export default function AgentDetailPage() {
               <div className="space-y-2">
                 <div className="flex items-start gap-3 flex-wrap">
                   <h1 className="text-2xl font-display font-bold tracking-tight">
-                    {a.name}
+                    {(a.qualified_name as string | undefined) ?? a.name}
                   </h1>
                   {a.status && <StatusBadge status={a.status} />}
                   {versions.length > 0 ? (
@@ -758,7 +758,7 @@ export default function AgentDetailPage() {
               {/* Pull command (mobile only) */}
               <div className="lg:hidden">
                 <PullCommand
-                  agentName={a.name}
+                  agentName={(a.qualified_name as string | undefined) ?? a.name}
                   currentVersion={effectiveVersion}
                   latestVersion={latestApprovedVersion ?? a.version}
                 />
@@ -925,7 +925,7 @@ export default function AgentDetailPage() {
             {/* Sidebar (desktop) */}
             <aside className="hidden lg:block space-y-5 animate-in stagger-1">
               <PullCommand
-                agentName={a.name}
+                agentName={(a.qualified_name as string | undefined) ?? a.name}
                 currentVersion={effectiveVersion}
                 latestVersion={latestApprovedVersion ?? a.version}
               />

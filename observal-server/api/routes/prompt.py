@@ -21,6 +21,7 @@ from api.deps import (
     get_db,
     get_effective_component_permission,
     optional_current_user,
+    registry_identity,
     require_role,
     resolve_listing,
 )
@@ -40,6 +41,7 @@ from schemas.prompt import (
     PromptUpdateRequest,
 )
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
+from services.registry_namespace import identity_exists
 
 router = APIRouter(prefix="/api/v1/prompts", tags=["prompts"])
 
@@ -51,12 +53,14 @@ async def submit_prompt(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("prompt submit: name={}", req.name)
-    existing = await db.execute(select(PromptListing).where(PromptListing.name == req.name))
-    if existing.scalars().first():
-        raise HTTPException(status_code=409, detail=f"A prompt named '{req.name}' already exists")
+    namespace, slug = registry_identity(current_user, req.name)
+    if await identity_exists(db, PromptListing, namespace, slug):
+        raise HTTPException(status_code=409, detail=f"Prompt '{namespace}/{slug}' already exists")
 
     listing = PromptListing(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         owner=req.owner,
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,
@@ -195,8 +199,13 @@ async def save_prompt_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("req={}", req)
+    namespace, slug = registry_identity(current_user, req.name)
+    if await identity_exists(db, PromptListing, namespace, slug):
+        raise HTTPException(status_code=409, detail=f"Prompt '{namespace}/{slug}' already exists")
     listing = PromptListing(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         owner=req.owner or current_user.username or current_user.email,
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,

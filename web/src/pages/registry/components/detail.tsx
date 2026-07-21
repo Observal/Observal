@@ -126,7 +126,7 @@ export default function ComponentDetailPage() {
       : item
     : undefined;
 
-  const componentName = item?.name ?? id.slice(0, 8);
+  const componentName = item?.qualified_name ?? item?.name ?? id.slice(0, 8);
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;
   const metricsEntries: [string, string][] = rawMetrics && typeof rawMetrics === "object"
@@ -167,7 +167,7 @@ export default function ComponentDetailPage() {
             {/* Header */}
             <div className="space-y-2">
               <div className="flex items-start gap-3 flex-wrap">
-                <h1 className="text-2xl font-display font-bold tracking-tight">{item.name}</h1>
+                <h1 className="text-2xl font-display font-bold tracking-tight">{item.qualified_name ?? item.name}</h1>
                 <Badge variant="outline" className="text-xs">{singularType}</Badge>
                 {item.status && (
                   <Badge
@@ -362,7 +362,7 @@ export default function ComponentDetailPage() {
             <aside className="hidden lg:block space-y-5">
               {/* Install command (MCPs, Skills, Hooks only) */}
               {(singularType === "mcp" || singularType === "skill" || singularType === "hook") && (
-                <ComponentInstallCommand componentType={singularType} componentName={item.name} />
+                <ComponentInstallCommand componentType={singularType} componentName={item.qualified_name ?? item.name} />
               )}
 
               {/* Stats */}

@@ -7,7 +7,7 @@ from loguru import logger as optic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, require_role
+from api.deps import get_db, registry_identity, require_role
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.agent_component import AgentComponent
 from models.user import User, UserRole
@@ -17,10 +17,17 @@ from services.registry_telemetry import emit_registry_event
 router = APIRouter(prefix="/api/v1/bulk", tags=["bulk"])
 
 
-async def _agent_name_exists(name: str, user_id, db: AsyncSession) -> bool:
-    """Check whether the authenticated user already owns an agent with the given name."""
-    optic.trace("name={}, user_id={}", name, user_id)
-    result = await db.execute(select(Agent.id).where(Agent.name == name, Agent.created_by == user_id))
+async def _agent_name_exists(name: str, user: User, db: AsyncSession) -> bool:
+    """Check whether the authenticated user's namespace already contains the slug."""
+    namespace, slug = registry_identity(user, name)
+    optic.trace("namespace={}, slug={}", namespace, slug)
+    result = await db.execute(
+        select(Agent.id).where(
+            Agent.namespace == namespace,
+            Agent.slug == slug,
+            Agent.deleted_at.is_(None),
+        )
+    )
     return result.scalar_one_or_none() is not None
 
 
@@ -31,8 +38,11 @@ async def _create_single_agent(
 ) -> Agent:
     """Create a single Agent + AgentVersion row (with components and goal template)."""
     optic.trace("name={}, user_id={}", item.name, user.id)
+    namespace, slug = registry_identity(user, item.name)
     agent = Agent(
         name=item.name,
+        namespace=namespace,
+        slug=slug,
         owner=item.owner or user.email,
         created_by=user.id,
         owner_org_id=user.org_id,
@@ -100,7 +110,7 @@ async def bulk_create_agents(
 
     for item in request.agents:
         # Check for duplicate name
-        if await _agent_name_exists(item.name, current_user.id, db):
+        if await _agent_name_exists(item.name, current_user, db):
             results.append(
                 BulkResultItem(name=item.name, status="skipped", error="Agent with this name already exists")
             )

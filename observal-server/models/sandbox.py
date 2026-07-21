@@ -18,12 +18,15 @@ from models.mcp import ListingStatus
 class SandboxListing(Base):
     __tablename__ = "sandbox_listings"
     __table_args__ = (
-        UniqueConstraint("name", name="uq_sandbox_listings_name"),
+        UniqueConstraint("namespace", "slug", name="uq_sandbox_listings_namespace_slug"),
+        Index("ix_sandbox_listings_namespace", "namespace"),
         Index("ix_sandbox_listings_submitted_by", "submitted_by"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    namespace: Mapped[str] = mapped_column(String(32), nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
     is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     owner_org_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -54,6 +57,10 @@ class SandboxListing(Base):
     latest_version: Mapped[SandboxVersion | None] = relationship(
         foreign_keys=[latest_version_id], lazy="selectin", uselist=False
     )
+
+    @property
+    def qualified_name(self) -> str:
+        return f"{self.namespace}/{self.slug}"
 
     # ------------------------------------------------------------------
     # Deprecated compatibility properties - delegate to latest_version.

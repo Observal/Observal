@@ -17,7 +17,7 @@ from loguru import logger as optic
 from rich import print as rprint
 from rich.table import Table
 
-from observal_cli import client, config
+from observal_cli import client
 from observal_cli.prompts import text_input
 from observal_cli.render import console, output_json, relative_time, spinner, status_badge
 
@@ -104,7 +104,7 @@ def version_publish(
             rprint(f"[red]Error:[/red] --extra is not valid JSON: {exc}")
             raise typer.Exit(code=1)
 
-    resolved = config.resolve_alias(listing)
+    resolved = client.resolve_registry_reference(component_type, listing)
     plural = _PLURAL[component_type]
 
     # If --version omitted, fetch suggestions and prompt
@@ -170,7 +170,7 @@ def version_list(
     """
     _require_valid_type(component_type)
 
-    resolved = config.resolve_alias(listing)
+    resolved = client.resolve_registry_reference(component_type, listing)
     plural = _PLURAL[component_type]
 
     with spinner("Fetching versions..."):

@@ -24,6 +24,8 @@ def _user(**kw):
     u = MagicMock(spec=User)
     u.id = kw.get("id", uuid.uuid4())
     u.role = kw.get("role", UserRole.admin)
+    u.username = kw.get("username", "testuser")
+    u.email = kw.get("email", "test@example.com")
     u.org_id = kw.get("org_id")
     return u
 
@@ -51,6 +53,9 @@ def _listing_mock(model_cls, status=ListingStatus.pending, **extra):
     m = MagicMock()
     m.id = uuid.uuid4()
     m.name = "test-listing"
+    m.namespace = "testuser"
+    m.slug = "test-listing"
+    m.qualified_name = "testuser/test-listing"
     m.version = "1.0.0"
     m.description = "A test listing description that is long enough"
     m.owner = "testowner"
@@ -212,6 +217,9 @@ class TestSchemas:
         obj = self._ns(
             id=uuid.uuid4(),
             name="p",
+            namespace="testuser",
+            slug="p",
+            qualified_name="testuser/p",
             version="1.0",
             description="d",
             owner="o",

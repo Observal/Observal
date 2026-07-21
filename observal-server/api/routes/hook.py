@@ -21,6 +21,7 @@ from api.deps import (
     get_db,
     get_effective_component_permission,
     optional_current_user,
+    registry_identity,
     require_role,
     resolve_listing,
 )
@@ -41,6 +42,7 @@ from schemas.hook import (
     HookUpdateRequest,
 )
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
+from services.registry_namespace import identity_exists
 
 router = APIRouter(prefix="/api/v1/hooks", tags=["hooks"])
 
@@ -52,12 +54,14 @@ async def submit_hook(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("hook submit: name={}", req.name)
-    existing = await db.execute(select(HookListing).where(HookListing.name == req.name))
-    if existing.scalars().first():
-        raise HTTPException(status_code=409, detail=f"A hook named '{req.name}' already exists")
+    namespace, slug = registry_identity(current_user, req.name)
+    if await identity_exists(db, HookListing, namespace, slug):
+        raise HTTPException(status_code=409, detail=f"Hook '{namespace}/{slug}' already exists")
 
     listing = HookListing(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         owner=req.owner,
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,
@@ -209,7 +213,7 @@ async def install_hook(
 
     from services.hook_install_generator import generate_hook_install_config
 
-    result = generate_hook_install_config(listing, req.harness)
+    result = generate_hook_install_config(listing, req.harness, local_name=req.local_name)
     return HookInstallResponse(
         listing_id=listing.id,
         harness=req.harness,
@@ -230,8 +234,13 @@ async def save_hook_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("req={}", req)
+    namespace, slug = registry_identity(current_user, req.name)
+    if await identity_exists(db, HookListing, namespace, slug):
+        raise HTTPException(status_code=409, detail=f"Hook '{namespace}/{slug}' already exists")
     listing = HookListing(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         owner=req.owner or current_user.username or current_user.email,
         submitted_by=current_user.id,
         owner_org_id=current_user.org_id,

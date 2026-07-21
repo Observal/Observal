@@ -135,6 +135,9 @@ class ComponentLinkResponse(BaseModel):
 class AgentResponse(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     owner: str
@@ -166,6 +169,9 @@ class AgentResponse(BaseModel):
 class AgentSummary(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str
+    slug: str
+    qualified_name: str
     version: str
     description: str
     owner: str

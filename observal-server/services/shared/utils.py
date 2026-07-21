@@ -15,6 +15,12 @@ import re
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
+def registry_item_slug(item) -> str:
+    """Return a listing's stable slug, falling back for transient/test objects."""
+    slug = getattr(item, "slug", None)
+    return slug if isinstance(slug, str) and slug else item.name
+
+
 def sanitize_name(name: str) -> str:
     """Normalise an arbitrary string to a safe identifier (alphanumeric, hyphens, underscores).
 

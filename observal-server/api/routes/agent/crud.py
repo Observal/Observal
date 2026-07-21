@@ -16,6 +16,7 @@ from api.deps import (
     ROLE_HIERARCHY,
     get_db,
     get_effective_agent_permission,
+    registry_identity,
     require_role,
 )
 from api.search import keyword_search
@@ -37,6 +38,7 @@ from schemas.agent import (
 from services.cache import invalidate_namespace
 from services.config_generator import validate_mcp_command
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
+from services.registry_namespace import identity_exists, slugify
 from services.registry_telemetry import emit_registry_event
 
 from ._router import router
@@ -94,18 +96,22 @@ async def create_agent(
         except ValueError as e:
             raise HTTPException(status_code=422, detail=f"Invalid MCP command: {e}")
 
-    # Pre-check uniqueness before insert for a clean 409 (the DB constraint
-    # remains the source of truth, but checking first avoids triggering an
-    # IntegrityError mid-flush which would corrupt the savepoint state).
-    existing = await db.execute(select(Agent.id).where(Agent.name == req.name, Agent.deleted_at.is_(None)))
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"An agent named '{req.name}' already exists. Pick a different name.",
+    # The database remains the source of truth; this pre-check gives a clean 409.
+    namespace, slug = registry_identity(current_user, req.name)
+    existing = await db.execute(
+        select(Agent.id).where(
+            Agent.namespace == namespace,
+            Agent.slug == slug,
+            Agent.deleted_at.is_(None),
         )
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail=f"Agent '{namespace}/{slug}' already exists")
 
     agent = Agent(
         name=req.name,
+        namespace=namespace,
+        slug=slug,
         owner=req.owner or current_user.username or current_user.email,
         category=req.category,
         created_by=current_user.id,
@@ -196,11 +202,8 @@ async def create_agent(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        if "uq_agents_active_name" in str(exc.orig) or "uq_agents_name" in str(exc.orig):
-            raise HTTPException(
-                status_code=409,
-                detail=f"An agent named '{req.name}' already exists. Pick a different name.",
-            )
+        if "uq_agents_active_namespace_slug" in str(exc.orig):
+            raise HTTPException(status_code=409, detail=f"Agent '{namespace}/{slug}' already exists")
         raise
 
     agent = await _load_agent(db, str(agent.id))
@@ -296,6 +299,9 @@ async def list_agents(
         AgentSummary(
             id=a.id,
             name=a.name,
+            namespace=a.namespace,
+            slug=a.slug,
+            qualified_name=a.qualified_name,
             version=a.version,
             description=a.description,
             owner=a.owner,
@@ -345,6 +351,9 @@ async def my_agents(
         AgentSummary(
             id=a.id,
             name=a.name,
+            namespace=a.namespace,
+            slug=a.slug,
+            qualified_name=a.qualified_name,
             version=a.version,
             description=a.description,
             owner=a.owner,
@@ -407,6 +416,9 @@ async def archived_agents(
         AgentSummary(
             id=a.id,
             name=a.name,
+            namespace=a.namespace,
+            slug=a.slug,
+            qualified_name=a.qualified_name,
             version=a.version,
             description=a.description,
             owner=a.owner,
@@ -468,6 +480,9 @@ async def deleted_agents(
         AgentSummary(
             id=a.id,
             name=a.name,
+            namespace=a.namespace,
+            slug=a.slug,
+            qualified_name=a.qualified_name,
             version=a.version,
             description=a.description,
             owner=a.owner,
@@ -800,13 +815,15 @@ async def restore_deleted_agent(
         raise HTTPException(status_code=403, detail="Not authorized")
 
     restore_name = req.name if req and req.name else agent.name
-    existing = await db.execute(
-        select(Agent.id).where(Agent.name == restore_name, Agent.deleted_at.is_(None), Agent.id != agent.id)
-    )
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="An active agent already uses this name. Restore with a new name.")
+    restore_slug = slugify(restore_name) if req and req.name else agent.slug
+    if await identity_exists(db, Agent, agent.namespace, restore_slug, exclude_id=agent.id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Agent '{agent.namespace}/{restore_slug}' already exists. Restore with a new name.",
+        )
 
     agent.name = restore_name
+    agent.slug = restore_slug
     agent.deleted_at = None
     await db.commit()
     await invalidate_namespace("dashboard")

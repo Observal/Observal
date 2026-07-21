@@ -606,7 +606,7 @@ def register_pull(app: typer.Typer):
           observal agent pull my-agent --harness kiro --no-prompt --env API_KEY=sk-123 --env SECRET=abc
           observal agent pull my-agent --harness cursor --header Authorization="Bearer sk-123"
         """
-        resolved = config.resolve_alias(agent_id)
+        resolved = client.resolve_registry_reference("agent", agent_id)
         target_dir = Path(directory).resolve()
         ensure_loaded()
         adapter = get_adapter(harness)
@@ -653,6 +653,20 @@ def register_pull(app: typer.Typer):
         is_user_scope = options.get("scope") == "user"
         if is_user_scope:
             rprint("  [dim]Files will be written to your home directory (user scope).[/dim]")
+
+        from observal_cli.lockfile import local_registry_name
+
+        namespace = agent_detail.get("namespace", "")
+        slug = agent_detail.get("slug") or agent_detail.get("name", "agent")
+        local_name = local_registry_name(
+            harness,
+            "agent",
+            namespace,
+            slug,
+            scope=options.get("scope", "project"),
+            directory=str(target_dir),
+        )
+        options["local_name"] = local_name
 
         with spinner(f"Pulling {harness} config for agent {resolved[:8]}..."):
             install_body: dict = {
@@ -877,6 +891,9 @@ def register_pull(app: typer.Typer):
                     scope=options.get("scope", "project"),
                     directory=str(target_dir),
                     components=lock_components,
+                    namespace=agent_detail.get("namespace"),
+                    slug=agent_detail.get("slug"),
+                    local_name=local_name,
                 )
             except Exception:
                 pass  # Never block pull on lockfile failure

@@ -9,6 +9,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
+from services.registry_namespace import validate_namespace
+
 
 class EnterpriseConfigResponse(BaseModel):
     key: str
@@ -57,6 +59,11 @@ class UserCreateRequest(BaseModel):
     @classmethod
     def _normalize_email(cls, v: str) -> str:
         return v.strip().lower() if isinstance(v, str) else v
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _validate_username(cls, v: str | None) -> str | None:
+        return validate_namespace(v) if v is not None else None
 
 
 class UserCreateResponse(BaseModel):
