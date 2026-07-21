@@ -156,6 +156,12 @@ def login(
     """
     welcome_banner()
 
+    from observal_cli.lockfile import migrate_lockfile_v1
+
+    previous_server = config.load().get("server_url")
+    if previous_server:
+        migrate_lockfile_v1(str(previous_server))
+
     server_url = server or text_input("Server URL", default="") or "http://localhost:80"
     server_url = server_url.rstrip("/")
 
@@ -825,6 +831,12 @@ def register_config(app: typer.Typer):
             observal config set server_url http://observal.internal:80
         """
         optic.trace("key={}, value={}", key, value)
+        if key == "server_url":
+            from observal_cli.lockfile import migrate_lockfile_v1
+
+            previous_server = config.load().get("server_url")
+            if previous_server:
+                migrate_lockfile_v1(str(previous_server))
         if key == "color":
             config.save({key: value.lower() in ("true", "1", "yes")})
         else:

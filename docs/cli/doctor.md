@@ -10,14 +10,16 @@ Diagnose harness compatibility and session telemetry setup. Run this when sessio
 ## Synopsis
 
 ```bash
-observal doctor [--harness <harness>] [--fix]
+observal doctor [--yes]
 ```
 
 ## What it checks
 
-- The harness is installed.
-- Observal session hooks or extensions are present.
 - The Observal server is configured and reachable.
+- Every UUID in the active registry's lockfile section still resolves on the server.
+- Canonical names, namespaces, slugs, and statuses match server metadata.
+- Observal session hooks or extensions are present.
+- UUID-attributed Kiro hooks match their locked agents.
 - Local session delivery state is healthy.
 
 MCP commands and remote URLs are not inspected or rewritten for telemetry.
@@ -26,11 +28,12 @@ MCP commands and remote URLs are not inspected or rewritten for telemetry.
 
 ```bash
 observal doctor
-observal doctor --harness claude-code
-observal doctor --harness kiro --fix
+observal doctor --yes
 ```
 
-`--fix` applies supported hook repairs. Problems such as an unreachable server or a missing harness executable are reported with a remediation step.
+Doctor asks before applying repairs. `--yes` confirms them non-interactively. Canonical registry metadata is updated from the server without changing installed version pins. Harness repairs only replace Observal-managed hooks and preserve user hooks.
+
+The version 2 lockfile groups installations under normalized server URLs in a top-level `registries` object. Switching servers selects a separate registry section while preserving installations from other registries.
 
 ## Exit codes
 
@@ -69,7 +72,7 @@ observal doctor patch --harness kiro --harness copilot-cli
 observal doctor patch --all-harnesses --dry-run
 ```
 
-The command is idempotent. Existing Observal hooks are retained, missing hooks are installed, and MCP configuration is left untouched. Restart the harness after applying hook changes.
+The command is idempotent. Existing Observal hooks are retained, missing hooks are installed, stale Kiro UUID hooks are repaired, and MCP configuration is left untouched. Restart the harness after applying hook changes.
 
 ## Related
 

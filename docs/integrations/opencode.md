@@ -134,8 +134,7 @@ id and installed version.
    reads the active OpenCode agent name.
 3. Built-in OpenCode agents such as `build`, `plan`, `general`, `explore`,
    `scout`, `compaction`, `title`, and `summary` are ignored.
-4. The plugin searches `~/.observal/lockfile.json` under the `opencode` harness
-   for an entry whose `name` or `id` matches the active agent.
+4. The plugin selects the configured server URL under `registries` in `~/.observal/lockfile.json`, then searches that registry's `opencode` harness for an entry whose `name` or `id` matches the active agent.
 5. If multiple entries match, a project-scoped entry for the current directory
    wins, then a user-scoped entry, then the first match.
 6. The session payload is sent with the resolved `agent_id` and

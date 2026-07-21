@@ -398,10 +398,10 @@ def build_layer_manifest(
     manifest: list[dict[str, Any]] = []
 
     # Load lockfile to determine source (observal vs user)
-    from observal_cli.lockfile import read_lockfile
+    from observal_cli.lockfile import read_registry_lockfile
 
-    lockfile_data = read_lockfile()
-    observal_files = _get_observal_managed_files(lockfile_data, harness, project_dir)
+    _, registry = read_registry_lockfile()
+    observal_files = _get_observal_managed_files(registry, harness, project_dir)
 
     for abs_path, display_path in files:
         file_hash, size = _hash_file(abs_path, cache)
@@ -646,14 +646,14 @@ def build_upload_payload(harness: str | None = None, project_dir: str | None = N
     all_hash_entries.sort()
     layer_hash = hashlib.sha256(json.dumps(all_hash_entries, sort_keys=True).encode()).hexdigest()[:16]
 
-    from observal_cli.lockfile import compute_lockfile_hash, read_lockfile
+    from observal_cli.lockfile import compute_lockfile_hash, read_registry_lockfile
 
     # Embed exact version pins from lockfile
-    lockfile_data = read_lockfile()
-    pinned_versions = _extract_pinned_versions(lockfile_data)
+    _, registry = read_registry_lockfile()
+    pinned_versions = _extract_pinned_versions(registry)
 
     # Determine canonical vs dirty state
-    drift_info = _compute_drift(lockfile_data, harnesses_section)
+    drift_info = _compute_drift(registry, harnesses_section)
 
     return {
         "hash": layer_hash,

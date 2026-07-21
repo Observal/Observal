@@ -14,7 +14,8 @@ if TYPE_CHECKING:
 
 
 def test_generated_plugin_uses_durable_acknowledged_delivery():
-    assert OPENCODE_PLUGIN_VERSION == "6"
+    assert OPENCODE_PLUGIN_VERSION == "7"
+    assert "data.registries?.[registryKey(config.server_url)]" in OPENCODE_PLUGIN_SOURCE
     assert "saveSessionState(state); // Durable before network delivery." in OPENCODE_PLUGIN_SOURCE
     assert "acknowledged_line" in OPENCODE_PLUGIN_SOURCE
     assert "pushedMessageIds" not in OPENCODE_PLUGIN_SOURCE
@@ -89,7 +90,13 @@ writeFileSync(join(observalDir, "config.json"), JSON.stringify({
   user_id: "user",
 }));
 writeFileSync(join(observalDir, "lockfile.json"), JSON.stringify({
-  harnesses: { opencode: { agents: [{ name: "custom", id: "agent-id", version: "1.0.0", scope: "user" }] } },
+  lock_version: 2,
+  registries: {
+    "http://server": {
+      server_url: "http://server",
+      harnesses: { opencode: { agents: [{ name: "custom", id: "agent-id", version: "1.0.0", scope: "user" }] } },
+    },
+  },
 }));
 let clientMessages = [
   { info: { id: "m1", role: "user", timestamp: "2026-01-01T00:00:00Z" }, parts: [{ type: "text", text: "hello" }] },

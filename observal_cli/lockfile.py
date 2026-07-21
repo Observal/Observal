@@ -20,6 +20,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from loguru import logger as optic
 
@@ -29,7 +30,7 @@ LOCKFILE_PATH = CONFIG_DIR / "lockfile.json"
 _LOCKFILE_LOCK = CONFIG_DIR / "lockfile.lock"
 
 # Schema version: bump when the structure changes in a breaking way
-LOCK_VERSION = 1
+LOCK_VERSION = 2
 
 
 # ---------------------------------------------------------------------------
@@ -37,35 +38,80 @@ LOCK_VERSION = 1
 # ---------------------------------------------------------------------------
 
 
+def normalize_server_url(server_url: str) -> str:
+    """Return the stable registry key for a server URL."""
+    value = server_url.strip()
+    parts = urlsplit(value if "://" in value else f"http://{value}")
+    if not parts.hostname:
+        raise ValueError("A configured server URL is required for lockfile operations")
+    scheme = parts.scheme.lower()
+    port = parts.port
+    default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    host = parts.hostname.lower()
+    netloc = host if port is None or default_port else f"{host}:{port}"
+    return urlunsplit((scheme, netloc, parts.path.rstrip("/"), "", ""))
+
+
+def current_registry_url() -> str:
+    from observal_cli import config
+
+    return normalize_server_url(str(config.load().get("server_url") or ""))
+
+
+def migrate_lockfile_v1(server_url: str | None = None) -> bool:
+    """Assign a version 1 lockfile to its previously configured registry."""
+    if not LOCKFILE_PATH.exists():
+        return False
+    try:
+        data = json.loads(LOCKFILE_PATH.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(f"Cannot read {LOCKFILE_PATH}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Invalid lockfile structure in {LOCKFILE_PATH}")
+    if data.get("lock_version") != 1:
+        return False
+    registry_url = normalize_server_url(server_url) if server_url else current_registry_url()
+    write_lockfile(
+        {
+            "lock_version": LOCK_VERSION,
+            "updated_at": datetime.now(UTC).isoformat(),
+            "registries": {
+                registry_url: {
+                    "server_url": registry_url,
+                    "harnesses": data.get("harnesses", {}),
+                }
+            },
+        }
+    )
+    return True
+
+
 def read_lockfile() -> dict:
-    """Read and return the lock file contents, or an empty structure if missing/corrupt."""
+    """Read the complete multi-registry lockfile, migrating version 1 once."""
+    migrate_lockfile_v1()
     if not LOCKFILE_PATH.exists():
         return _empty_lockfile()
     try:
         data = json.loads(LOCKFILE_PATH.read_text())
-        if not isinstance(data, dict) or data.get("lock_version") != LOCK_VERSION:
-            optic.warning("lockfile version mismatch or corrupt, returning empty")
-            return _empty_lockfile()
-        return data
-    except (json.JSONDecodeError, OSError) as e:
-        optic.warning("failed to read lockfile: {}", e)
-        return _empty_lockfile()
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(f"Cannot read {LOCKFILE_PATH}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Invalid lockfile structure in {LOCKFILE_PATH}")
+    if data.get("lock_version") != LOCK_VERSION or not isinstance(data.get("registries"), dict):
+        raise RuntimeError(f"Unsupported lockfile version in {LOCKFILE_PATH}")
+    return data
 
 
 def write_lockfile(data: dict) -> None:
-    """Write the lock file atomically with file locking (prevents concurrent overwrites)."""
+    """Write the complete lockfile atomically with file locking."""
     data["updated_at"] = datetime.now(UTC).isoformat()
     data["lock_version"] = LOCK_VERSION
 
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Acquire exclusive lock to prevent concurrent read-modify-write races
+    LOCKFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     lock_fd = None
     try:
         lock_fd = open(_LOCKFILE_LOCK, "w")  # noqa: SIM115
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
-
-        # Atomic write: write to temp file then rename
         tmp_path = LOCKFILE_PATH.with_suffix(".tmp")
         try:
             tmp_path.write_text(json.dumps(data, indent=2) + "\n")
@@ -81,12 +127,23 @@ def write_lockfile(data: dict) -> None:
     optic.debug("lockfile written: {}", LOCKFILE_PATH)
 
 
+def read_registry_lockfile(*, create: bool = False) -> tuple[dict, dict]:
+    """Return the complete lockfile and the current registry section."""
+    data = read_lockfile()
+    server_url = current_registry_url()
+    registry = data["registries"].get(server_url)
+    if registry is None:
+        registry = {"server_url": server_url, "harnesses": {}}
+        if create:
+            data["registries"][server_url] = registry
+    return data, registry
+
+
 def _empty_lockfile() -> dict:
-    """Return an empty lock file structure."""
     return {
         "lock_version": LOCK_VERSION,
         "updated_at": datetime.now(UTC).isoformat(),
-        "harnesses": {},
+        "registries": {},
     }
 
 
@@ -100,16 +157,30 @@ def local_registry_name(
     directory: str | None = None,
 ) -> str:
     """Use the bare slug unless another installed namespace already uses it."""
-    section = read_lockfile().get("harnesses", {}).get(harness, {})
-    entries = section.get("agents", []) if component_type == "agent" else section.get("standalone", [])
-    for entry in entries:
-        if component_type != "agent" and entry.get("type") != component_type:
-            continue
-        if scope == "project" and directory and entry.get("directory") != directory:
-            continue
-        if entry.get("slug") == slug and entry.get("namespace") not in (None, namespace):
-            return f"{namespace}-{slug}"
-    return slug
+    data = read_lockfile()
+    current_url = current_registry_url()
+    matching_entries: list[tuple[str, dict]] = []
+    for registry_url, registry in data.get("registries", {}).items():
+        section = registry.get("harnesses", {}).get(harness, {})
+        entries = section.get("agents", []) if component_type == "agent" else section.get("standalone", [])
+        for entry in entries:
+            if component_type != "agent" and entry.get("type") != component_type:
+                continue
+            if scope == "project" and directory and entry.get("directory") != directory:
+                continue
+            matching_entries.append((registry_url, entry))
+
+    collision = any(
+        entry.get("slug") == slug and (entry.get("namespace") not in (None, namespace) or registry_url != current_url)
+        for registry_url, entry in matching_entries
+    )
+    if not collision:
+        return slug
+    candidate = f"{namespace}-{slug}"
+    if not any(entry.get("local_name") == candidate for _, entry in matching_entries):
+        return candidate
+    host = urlsplit(current_url).hostname or "registry"
+    return f"{host.replace('.', '-')}-{candidate}"
 
 
 def _ensure_harness(data: dict, harness: str) -> dict:
@@ -148,8 +219,8 @@ def upsert_agent(
     (harness, agent_id) for user-scoped.
     """
     optic.debug("upsert_agent: harness={}, name={}, version={}", harness, name, version)
-    data = read_lockfile()
-    harness_section = _ensure_harness(data, harness)
+    data, registry = read_registry_lockfile(create=True)
+    harness_section = _ensure_harness(registry, harness)
     agents = harness_section["agents"]
 
     entry = {
@@ -167,6 +238,8 @@ def upsert_agent(
         entry["namespace"] = namespace
     if slug:
         entry["slug"] = slug
+    if namespace and slug:
+        entry["qualified_name"] = f"{namespace}/{slug}"
     if local_name:
         entry["local_name"] = local_name
 
@@ -182,8 +255,8 @@ def upsert_agent(
 
 def remove_agent(harness: str, agent_id: str, directory: str | None = None) -> bool:
     """Remove an agent entry. Returns True if found and removed."""
-    data = read_lockfile()
-    harness_section = _ensure_harness(data, harness)
+    data, registry = read_registry_lockfile(create=True)
+    harness_section = _ensure_harness(registry, harness)
     agents = harness_section["agents"]
 
     for i, agent in enumerate(agents):
@@ -231,8 +304,8 @@ def upsert_standalone(
 ) -> None:
     """Add or update a standalone component (MCP, skill, hook, etc.) in the lock file."""
     optic.debug("upsert_standalone: harness={}, type={}, name={}", harness, component_type, name)
-    data = read_lockfile()
-    harness_section = _ensure_harness(data, harness)
+    data, registry = read_registry_lockfile(create=True)
+    harness_section = _ensure_harness(registry, harness)
     standalone = harness_section["standalone"]
 
     entry: dict[str, Any] = {
@@ -251,6 +324,8 @@ def upsert_standalone(
         entry["namespace"] = namespace
     if slug:
         entry["slug"] = slug
+    if namespace and slug:
+        entry["qualified_name"] = f"{namespace}/{slug}"
     if local_name:
         entry["local_name"] = local_name
 
@@ -266,8 +341,8 @@ def upsert_standalone(
 
 def remove_standalone(harness: str, component_type: str, component_id: str, directory: str | None = None) -> bool:
     """Remove a standalone component entry. Returns True if found and removed."""
-    data = read_lockfile()
-    harness_section = _ensure_harness(data, harness)
+    data, registry = read_registry_lockfile(create=True)
+    harness_section = _ensure_harness(registry, harness)
     standalone = harness_section["standalone"]
 
     for i, item in enumerate(standalone):
@@ -309,8 +384,8 @@ def get_agent_for_directory(harness: str, directory: str) -> dict | None:
 
     Used by session push to attribute sessions to agents.
     """
-    data = read_lockfile()
-    harness_section = data.get("harnesses", {}).get(harness, {})
+    _, registry = read_registry_lockfile()
+    harness_section = registry.get("harnesses", {}).get(harness, {})
     for agent in harness_section.get("agents", []):
         if agent.get("directory") == directory:
             return agent
@@ -319,8 +394,8 @@ def get_agent_for_directory(harness: str, directory: str) -> dict | None:
 
 def get_agent_by_id(agent_id: str, harness: str | None = None) -> dict | None:
     """Find a lockfile agent by UUID, optionally scoped to one harness."""
-    data = read_lockfile()
-    for harness_name, harness_section in data.get("harnesses", {}).items():
+    _, registry = read_registry_lockfile()
+    for harness_name, harness_section in registry.get("harnesses", {}).items():
         if harness and harness_name != harness:
             continue
         for agent in harness_section.get("agents", []):
@@ -335,10 +410,10 @@ def get_all_entries(harness: str | None = None) -> list[dict]:
     Returns a flat list of entries with 'harness' and 'entry_type' fields added.
     Used by `observal outdated`.
     """
-    data = read_lockfile()
+    _, registry = read_registry_lockfile()
     entries: list[dict] = []
 
-    for harness_name, harness_section in data.get("harnesses", {}).items():
+    for harness_name, harness_section in registry.get("harnesses", {}).items():
         if harness and harness_name != harness:
             continue
         for agent in harness_section.get("agents", []):
@@ -355,18 +430,12 @@ def get_all_entries(harness: str | None = None) -> list[dict]:
 
 
 def compute_lockfile_hash() -> str:
-    """Compute a short hash of the lock file contents.
-
-    Returns a 16-char hex string. Used as part of layer_hash computation
-    and embedded in layer snapshots.
-    """
+    """Compute a short hash for the current registry section."""
     if not LOCKFILE_PATH.exists():
         return "0" * 16
-    try:
-        content = LOCKFILE_PATH.read_bytes()
-        return hashlib.sha256(content).hexdigest()[:16]
-    except OSError:
-        return "0" * 16
+    _, registry = read_registry_lockfile()
+    content = json.dumps(registry, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(content).hexdigest()[:16]
 
 
 def compute_integrity(content: str) -> str:

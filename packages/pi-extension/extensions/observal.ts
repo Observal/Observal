@@ -328,6 +328,22 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
+  function currentRegistryLockfile(): Record<string, any> | null {
+    try {
+      const config = loadConfig();
+      if (!config || !fs.existsSync(LOCKFILE_PATH)) return null;
+      const url = new URL(config.server_url);
+      url.hash = "";
+      url.search = "";
+      url.pathname = url.pathname.replace(/\/$/, "");
+      const key = url.toString().replace(/\/$/, "");
+      const data = JSON.parse(fs.readFileSync(LOCKFILE_PATH, "utf-8"));
+      return data.registries?.[key] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   function resolvePiAgentBinding(agent: string, rawName?: unknown, rawVersion?: unknown): { id: string; name: string; version?: string } {
     const name = typeof rawName === "string" && rawName.trim() ? rawName.trim() : agent;
     const entry = findPiLockfileAgent(agent, name);
@@ -340,9 +356,7 @@ export default function (pi: ExtensionAPI) {
 
   function findPiLockfileAgent(agent: string, name: string): Record<string, any> | null {
     try {
-      if (!fs.existsSync(LOCKFILE_PATH)) return null;
-      const data = JSON.parse(fs.readFileSync(LOCKFILE_PATH, "utf-8"));
-      const agents = data.harnesses?.pi?.agents;
+      const agents = currentRegistryLockfile()?.harnesses?.pi?.agents;
       if (!Array.isArray(agents)) return null;
       const keys = new Set([agent, name, safeAgentName(agent), safeAgentName(name)].filter(Boolean));
       return agents.find((item) => keys.has(String(item?.id ?? "")))
@@ -463,21 +477,17 @@ export default function (pi: ExtensionAPI) {
   }
 
   function computeLockfileHash(): string {
-    try {
-      if (!fs.existsSync(LOCKFILE_PATH)) return "0".repeat(16);
-      return sha256(fs.readFileSync(LOCKFILE_PATH)).slice(0, 16);
-    } catch {
-      return "0".repeat(16);
-    }
+    const registry = currentRegistryLockfile();
+    return registry ? sha256(Buffer.from(JSON.stringify(registry))).slice(0, 16) : "0".repeat(16);
   }
 
   function readPinnedVersions(): Record<string, unknown> {
     try {
-      if (!fs.existsSync(LOCKFILE_PATH)) return { agents: [], standalone: [] };
-      const data = JSON.parse(fs.readFileSync(LOCKFILE_PATH, "utf-8"));
+      const registry = currentRegistryLockfile();
+      if (!registry) return { agents: [], standalone: [] };
       const agents: Record<string, unknown>[] = [];
       const standalone: Record<string, unknown>[] = [];
-      for (const [harness, section] of Object.entries((data.harnesses ?? {}) as Record<string, any>)) {
+      for (const [harness, section] of Object.entries((registry.harnesses ?? {}) as Record<string, any>)) {
         for (const agent of section.agents ?? []) {
           agents.push({ ...agent, harness });
         }

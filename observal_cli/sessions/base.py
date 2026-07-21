@@ -721,9 +721,9 @@ def _is_layer_canonical() -> bool | None:
     """
     try:
         from observal_cli.layer import _compute_drift, _detect_active_harnesses, build_layer_manifest
-        from observal_cli.lockfile import read_lockfile
+        from observal_cli.lockfile import read_registry_lockfile
 
-        lockfile_data = read_lockfile()
+        _, lockfile_data = read_registry_lockfile()
         harnesses_section: dict = {}
         for scan_harness in _detect_active_harnesses():
             harnesses_section[scan_harness] = build_layer_manifest(scan_harness, include_content=False)
@@ -866,10 +866,10 @@ def _lookup_lockfile_agent_by_id(agent_id: str, harness: str | None = None) -> d
 def _lookup_lockfile_agent(cwd: str, agent_name: str | None = None) -> dict | None:
     """Find the lockfile agent for a directory and optional agent name."""
     try:
-        from observal_cli.lockfile import read_lockfile
+        from observal_cli.lockfile import read_registry_lockfile
         from observal_shared.harness_registry import get_valid_harnesses
 
-        data = read_lockfile()
+        _, data = read_registry_lockfile()
         name_matches: list[dict] = []
         for harness in get_valid_harnesses():
             for agent in data.get("harnesses", {}).get(harness, {}).get("agents", []):
