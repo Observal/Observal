@@ -3,16 +3,16 @@
 
 """Add success_criteria to agent_versions.
 
-Revision ID: 016_agent_success_criteria
-Revises: 015_sandbox_runtime_config
+Revision ID: 017_agent_success_criteria
+Revises: 016_registry_publish_loop
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "016_agent_success_criteria"
-down_revision = "015_sandbox_runtime_config"
+revision = "017_agent_success_criteria"
+down_revision = "016_registry_publish_loop"
 branch_labels = None
 depends_on = None
 
