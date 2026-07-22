@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedTeamspacesRouteImport } from './routes/_authed/teamspaces'
 import { Route as AuthedLeaderboardRouteImport } from './routes/_authed/leaderboard'
 import { Route as AuthedUserRouteImport } from './routes/_authed/_user'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/_admin'
@@ -44,6 +45,11 @@ const AuthedRoute = AuthedRouteImport.update({
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedTeamspacesRoute = AuthedTeamspacesRouteImport.update({
+  id: '/teamspaces',
+  path: '/teamspaces',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedLeaderboardRoute = AuthedLeaderboardRouteImport.update({
@@ -179,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof authLoginRoute
   '/register': typeof authRegisterRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
+  '/teamspaces': typeof AuthedTeamspacesRoute
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
@@ -205,6 +212,7 @@ export interface FileRoutesByTo {
   '/register': typeof authRegisterRoute
   '/': typeof AuthedIndexRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
+  '/teamspaces': typeof AuthedTeamspacesRoute
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
@@ -234,6 +242,7 @@ export interface FileRoutesById {
   '/_authed/_admin': typeof AuthedAdminRouteWithChildren
   '/_authed/_user': typeof AuthedUserRouteWithChildren
   '/_authed/leaderboard': typeof AuthedLeaderboardRoute
+  '/_authed/teamspaces': typeof AuthedTeamspacesRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/_admin/audit-log': typeof AuthedAdminAuditLogRoute
   '/_authed/_admin/dashboard': typeof AuthedAdminDashboardRoute
@@ -263,6 +272,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/leaderboard'
+    | '/teamspaces'
     | '/audit-log'
     | '/dashboard'
     | '/diagnostics'
@@ -289,6 +299,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/'
     | '/leaderboard'
+    | '/teamspaces'
     | '/audit-log'
     | '/dashboard'
     | '/diagnostics'
@@ -317,6 +328,7 @@ export interface FileRouteTypes {
     | '/_authed/_admin'
     | '/_authed/_user'
     | '/_authed/leaderboard'
+    | '/_authed/teamspaces'
     | '/_authed/'
     | '/_authed/_admin/audit-log'
     | '/_authed/_admin/dashboard'
@@ -360,6 +372,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/teamspaces': {
+      id: '/_authed/teamspaces'
+      path: '/teamspaces'
+      fullPath: '/teamspaces'
+      preLoaderRoute: typeof AuthedTeamspacesRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/leaderboard': {
@@ -598,6 +617,7 @@ interface AuthedRouteChildren {
   AuthedAdminRoute: typeof AuthedAdminRouteWithChildren
   AuthedUserRoute: typeof AuthedUserRouteWithChildren
   AuthedLeaderboardRoute: typeof AuthedLeaderboardRoute
+  AuthedTeamspacesRoute: typeof AuthedTeamspacesRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedAgentsAgentIdRoute: typeof AuthedAgentsAgentIdRouteWithChildren
   AuthedAgentsBuilderRoute: typeof AuthedAgentsBuilderRoute
@@ -612,6 +632,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminRoute: AuthedAdminRouteWithChildren,
   AuthedUserRoute: AuthedUserRouteWithChildren,
   AuthedLeaderboardRoute: AuthedLeaderboardRoute,
+  AuthedTeamspacesRoute: AuthedTeamspacesRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedAgentsAgentIdRoute: AuthedAgentsAgentIdRouteWithChildren,
   AuthedAgentsBuilderRoute: AuthedAgentsBuilderRoute,

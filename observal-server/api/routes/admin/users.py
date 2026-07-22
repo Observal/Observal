@@ -73,7 +73,10 @@ async def create_user(
         default_org = await get_or_create_default_org(db)
         org_id = default_org.id
 
-    username = req.username or await generate_unique_username(req.email, db)
+    try:
+        username = await generate_unique_username(req.email, db, explicit=req.username)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     user = User(email=req.email, username=username, name=req.name, role=role, org_id=org_id)
     user.set_password(password)
     db.add(user)

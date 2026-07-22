@@ -41,6 +41,8 @@ FEATURE_VERSIONS: dict[str, str] = {
     "self_upgrade": "1.0.0",
     "server_upgrade": "1.0.0",
     "version_negotiation": "1.0.0",
+    # v1.11.0
+    "teamspaces": "1.11.0",
 }
 
 
