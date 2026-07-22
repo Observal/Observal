@@ -10,6 +10,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.4] - 2026-07-22
+
+### Fixed
+
+- remove silent CLI auto-update that reverted deliberate downgrades (**cli**) ([7960b39](https://github.com/Observal/Observal/commit/7960b396b))
+- surface version notices (upgrade and downgrade) without mutating the binary (**cli**)
+
 ## [1.10.3] - 2026-07-21
 
 ### Added
