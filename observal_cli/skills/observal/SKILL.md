@@ -162,6 +162,16 @@ On a fresh server, `auth login` auto-bootstraps an admin from localhost (no prom
 
 ---
 
+## Procedure: Teamspaces
+
+```bash
+observal team create 'Platform Tools' --handle platform-tools -d '...'  # reviewer+; creator=owner; handle reserved vs usernames
+observal team members list|add|remove HANDLE_OR_ID USER [--role ROLE]
+observal team delete|leave HANDLE_OR_ID                          # owner/admin; last owner protected
+```
+
+---
+
 ## Procedure: CLI Config
 
 ```bash

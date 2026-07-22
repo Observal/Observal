@@ -70,6 +70,9 @@ import type {
 	ExecTimeToValueResponse,
 	ExecAIInsightsResponse,
 	UserSearchResult,
+	Team,
+	TeamMember,
+	TeamRole,
 } from "./types";
 
 const API = "/api/v1";
@@ -534,6 +537,25 @@ export const users = {
 		if (params.limit) qs.set("limit", String(params.limit));
 		return get<UserSearchResult[]>(`/users/search?${qs}`);
 	},
+};
+
+// ── Teamspaces ──────────────────────────────────────────────────────
+export const teams = {
+	list: () => get<Team[]>("/teams"),
+	listAll: () => get<Team[]>("/teams/all"),
+	get: (id: string) => get<Team>(`/teams/${id}`),
+	create: (body: { name: string; handle?: string; description?: string }) =>
+		post<Team>("/teams", body),
+	update: (id: string, body: { name?: string; description?: string }) =>
+		put<Team>(`/teams/${id}`, body),
+	delete: (id: string) => del(`/teams/${id}`),
+	members: (id: string) => get<TeamMember[]>(`/teams/${id}/members`),
+	upsertMember: (
+		id: string,
+		body: { email?: string; username?: string; user_id?: string; role?: TeamRole },
+	) => post<TeamMember>(`/teams/${id}/members`, body),
+	removeMember: (id: string, userId: string) => del(`/teams/${id}/members/${userId}`),
+	leave: (id: string) => post(`/teams/${id}/leave`),
 };
 
 // ── Dashboard ───────────────────────────────────────────────────────

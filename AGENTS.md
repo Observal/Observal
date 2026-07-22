@@ -136,6 +136,7 @@ observal
 │   └── models               #   list (public model catalog)
 ├── component                # version commands (list-versions, publish, show-version)
 ├── agent                    # create, list, show, install, delete, init, add, build, publish, co-authors
+├── team                     # list, show, create, delete, leave, members (list/add/remove)
 ├── ops                      # overview, metrics, top, rate, feedback
 │   └── telemetry            #   status, test
 ├── admin                    # settings, set, users, review (list/show/approve/reject)

@@ -1,5 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
 
 """Auto-generate unique usernames from email addresses."""
 
@@ -7,82 +9,62 @@ import hashlib
 import re
 
 from loguru import logger as optic
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.user import User
 from services.registry_namespace import validate_namespace
+from services.teamspace import reserve_handle
 
 
 async def generate_unique_username(
     email: str,
     db: AsyncSession,
     max_attempts: int = 10,
+    *,
+    explicit: str | None = None,
 ) -> str:
-    """Generate a unique username from email with collision handling.
+    """Return a username unique across users and teams.
 
-    Algorithm:
-    1. Extract base from email (before @)
-    2. Sanitize: lowercase, replace invalid chars with hyphens
-    3. Try base name if it passes validation (e.g., "john.doe@example.com" → "john-doe")
-    4. If taken, append deterministic suffix (e.g., "john-doe-a1b2c3")
-    5. Suffix uses SHA256(email + attempt)[:6] for deterministic uniqueness
-
-    Returns a valid username that passes USERNAME_RE validation and is unique in DB.
+    When ``explicit`` is provided, validate it and confirm it is free in both
+    the users and teams handle pools; raise ValueError on collision. Otherwise
+    derive a base from the email and append deterministic suffixes until a free
+    handle is found.
     """
     optic.trace("generating unique username from email")
-    # Extract and sanitize base
     email_lower = email.lower().strip()
-    base = email_lower.split("@")[0]  # Get part before @
 
-    # Replace invalid chars: dots, underscores, spaces → hyphens
-    # Keep only alphanumeric and hyphens
+    if explicit:
+        # reserve_handle slugifies, validates, and checks both pools.
+        return await reserve_handle(db, explicit)
+
+    base = email_lower.split("@")[0]
     base = re.sub(r"[^a-z0-9\-]", "-", base)
-    # Remove leading/trailing hyphens and collapse multiple hyphens
     base = re.sub(r"-+", "-", base).strip("-")
-    # Truncate to max reasonable length (leaving room for suffix)
     base = base[:20]
-
-    # Ensure base is at least 1 char and doesn't start/end with hyphen
     if not base or base[0] == "-" or base[-1] == "-":
         base = "user"
 
-    # Try base name first if it passes regex validation
+    # Try the cleaned base, then deterministic suffixes, all through the shared
+    # cross-table reservation check.
     try:
         base = validate_namespace(base)
     except ValueError:
         pass
     else:
-        result = await db.execute(select(User.username).where(User.username == base))
-        if not result.scalar_one_or_none():
-            return base
-
-    # Try with deterministic suffixes
-    for attempt in range(max_attempts):
-        hash_input = f"{email_lower}-{attempt}".encode()
-        suffix = hashlib.sha256(hash_input).hexdigest()[:6]
-        candidate = f"{base}-{suffix}"
-
-        # Ensure we stay within 32 char limit
-        if len(candidate) > 32:
-            candidate = candidate[:32]
-
         try:
-            candidate = validate_namespace(candidate)
+            return await reserve_handle(db, base)
+        except ValueError:
+            pass
+
+    for attempt in range(max_attempts):
+        suffix = hashlib.sha256(f"{email_lower}-{attempt}".encode()).hexdigest()[:6]
+        candidate = f"{base}-{suffix}"[:32]
+        try:
+            return await reserve_handle(db, candidate)
         except ValueError:
             continue
 
-        # Check if available
-        result = await db.execute(select(User.username).where(User.username == candidate))
-        if not result.scalar_one_or_none():
-            return candidate
-
-    # Fallback: use full hash for maximum entropy
-    hash_input = f"{email_lower}-fallback".encode()
-    suffix = hashlib.sha256(hash_input).hexdigest()[:8]
-    candidate = f"user-{suffix}"
-    result = await db.execute(select(User.username).where(User.username == candidate))
-    if not result.scalar_one_or_none():
-        return candidate
-    # Should never be reached in practice
-    raise RuntimeError(f"Could not generate a unique username after {max_attempts} attempts for {email!r}")
+    candidate = f"user-{hashlib.sha256(f'{email_lower}-fallback'.encode()).hexdigest()[:8]}"
+    try:
+        return await reserve_handle(db, candidate)
+    except ValueError as exc:
+        raise RuntimeError(f"Could not generate a unique username after {max_attempts} attempts for {email!r}") from exc

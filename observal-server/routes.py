@@ -38,6 +38,7 @@ from api.routes.skill import router as skill_router
 from api.routes.sso_saml import router as sso_saml_router
 from api.routes.sso_saml import saml_health_probe
 from api.routes.support import router as support_router
+from api.routes.teams import router as teams_router
 from api.routes.telemetry import router as telemetry_router
 from api.routes.users import router as users_router
 from services.saml_health import register_saml_health_probe
@@ -68,6 +69,7 @@ REST_ROUTERS = (
     co_authors_router,
     config_router,
     support_router,
+    teams_router,
     layer_snapshot_router,
     logs_stream_router,
     audit_router,

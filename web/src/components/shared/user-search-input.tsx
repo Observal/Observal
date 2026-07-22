@@ -50,7 +50,7 @@ export function UserSearchInput({
 	return (
 		<Popover open={open && showPopover} onOpenChange={setOpen}>
 			<PopoverAnchor asChild>
-				<div className="relative">
+				<div className={cn("relative", className)}>
 					<Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
 					<Input
 						id={id}
@@ -62,7 +62,7 @@ export function UserSearchInput({
 						}}
 						onFocus={() => setOpen(true)}
 						disabled={disabled}
-						className={cn("pl-8", className)}
+						className="pl-8 w-full"
 					/>
 				</div>
 			</PopoverAnchor>
