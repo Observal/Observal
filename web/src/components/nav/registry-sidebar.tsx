@@ -67,6 +67,12 @@ const registryNav: NavItem[] = [
 	{ title: "Leaderboard", href: "/leaderboard", icon: Trophy },
 	{ title: "Components", href: "/components", icon: Blocks },
 	{
+		title: "Teamspaces",
+		href: "/teamspaces",
+		icon: Users,
+		requiresAuth: true,
+	},
+	{
 		title: "Builder",
 		href: "/agents/builder",
 		icon: Hammer,

@@ -31,6 +31,7 @@ from models.sandbox import SandboxDownload, SandboxListing
 from models.scim_token import ScimToken
 from models.skill import SkillDownload, SkillListing
 from models.submission import Submission
+from models.team import Team, TeamMembership, TeamRole
 from models.user import User, UserRole
 from models.user_group import UserGroup
 
@@ -74,6 +75,9 @@ __all__ = [
     "SkillDownload",
     "SkillListing",
     "Submission",
+    "Team",
+    "TeamMembership",
+    "TeamRole",
     "User",
     "UserGroup",
     "UserRole",

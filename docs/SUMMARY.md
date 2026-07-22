@@ -22,6 +22,7 @@
 * [Share agent configs across harnesses](use-cases/share-agent-configs.md)
 * [Debug agent failures](use-cases/debug-agent-failures.md)
 * [Run a team-wide agent registry](use-cases/team-registry.md)
+* [Teamspaces](use-cases/teamspaces.md)
 
 ## CLI Reference
 

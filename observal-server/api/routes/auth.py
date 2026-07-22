@@ -60,6 +60,7 @@ from services.security_events import (
     _extract_request_info,
     emit_security_event,
 )
+from services.teamspace import reserve_handle as reserve_team_handle
 from services.username_generator import generate_unique_username
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -255,7 +256,10 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="System already initialized")
 
     default_org = await get_or_create_default_org(db)
-    username = req.username or await generate_unique_username(req.email, db)
+    try:
+        username = await generate_unique_username(req.email, db, explicit=req.username)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     user = User(
         email=req.email,
         username=username,
@@ -332,7 +336,10 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
     _validate_password_strength(req.password)
     source_ip, user_agent = _extract_request_info(request)
     default_org = await get_or_create_default_org(db)
-    username = req.username or await generate_unique_username(req.email, db)
+    try:
+        username = await generate_unique_username(req.email, db, explicit=req.username)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     user = User(
         email=req.email,
         username=username,
@@ -1804,11 +1811,13 @@ async def set_username(
     optic.trace("req={}", req)
     if req.username == current_user.username:
         return current_user
-    existing = await db.execute(select(User).where(User.username == req.username, User.id != current_user.id))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Username already taken")
     if await user_has_listings(db, current_user.id):
         raise HTTPException(status_code=409, detail="Username cannot change after publishing a registry item")
+    # Reserve across users and teams so a username never collides with a teamspace.
+    try:
+        await reserve_team_handle(db, req.username, exclude_user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     current_user.username = req.username
     try:

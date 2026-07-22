@@ -78,9 +78,12 @@ migrate-clickhouse:  ## Run ClickHouse migrations manually
 check-migrations:  ## Validate alembic migration chain (no duplicates, no forks)
 	python3 scripts/check_migrations.py
 
-new-migration:  ## Create a new migration: make new-migration MSG="add foo to bar"
+new-migration:  ## Autogenerate a new migration (requires running stack): make new-migration MSG="add foo to bar"
 	@test -n "$(MSG)" || (echo 'Usage: make new-migration MSG="description"' && exit 1)
-	./scripts/new_migration.sh "$(MSG)"
+	cd observal-server && DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/observal" uv run alembic revision --autogenerate -m "$(MSG)"
+	@echo ""
+	@echo "Migration generated in observal-server/alembic/versions/."
+	@echo "Inspect the file, then apply with: make migrate"
 
 rebuild:  ## Rebuild and restart Docker stack (runs migrations automatically)
 	cd docker && docker compose $(COMPOSE_FILES) up --build -d

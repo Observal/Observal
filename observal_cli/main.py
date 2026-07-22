@@ -197,6 +197,7 @@ from observal_cli.cmd_sandbox import sandbox_app
 from observal_cli.cmd_scan import register_scan
 from observal_cli.cmd_skill import skill_app
 from observal_cli.cmd_support import support_app
+from observal_cli.cmd_team import team_app
 from observal_cli.cmd_transfer import add_transfer_owner_command
 from observal_cli.cmd_uninstall import register_uninstall
 
@@ -252,6 +253,7 @@ register_pull(agent_app)
 # ── Subgroups ─────────────────────────────────────────────
 app.add_typer(registry_app, name="registry")
 app.add_typer(agent_app, name="agent")
+app.add_typer(team_app, name="team")
 app.add_typer(ops_app, name="ops")
 app.add_typer(admin_app, name="admin")
 app.add_typer(self_app, name="self")
