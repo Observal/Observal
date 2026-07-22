@@ -75,6 +75,11 @@ def upgrade_command(target_version: str, install_info: InstallInfo | None = None
     return f"observal self upgrade --version {target_version} --force"
 
 
+def downgrade_command(target_version: str) -> str:
+    """Return the command users should run to downgrade the CLI to a specific version."""
+    return f"observal self downgrade --version {target_version} --force"
+
+
 def _detect_from_path(binary_path: Path, path_str: str) -> InstallInfo:
     """Internal detection logic, separated for testability."""
 
