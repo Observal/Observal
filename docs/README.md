@@ -2,7 +2,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com> -->
-<!-- SPDX-FileCopyrightText: 2026 Subramania Raja Piramuthu Raja <contact@observal.io> -->
+<!-- SPDX-FileCopyrightText: 2026 Subramania Raja <dhanpraja231@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Installation

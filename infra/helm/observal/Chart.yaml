@@ -21,7 +21,7 @@ sources:
   - https://github.com/Observal/Observal
 maintainers:
   - name: Observal Contributors
-    email: contact@observal.io
+    email: harisrini21@gmail.com
     url: https://github.com/Observal/Observal
 annotations:
   artifacthub.io/category: monitoring-logging

@@ -212,4 +212,4 @@ All code is licensed under [Apache-2.0](LICENSE).
 
 ## Contributor License Agreement (CLA)
 
-The [CLA-assistant](https://cla-assistant.io) bot will prompt you to sign the [Observal CLA](https://github.com/Observal/Observal/blob/main/CLA.md) on your first PR. You only need to sign once. For corporate contributions, contact contact@observal.io.
+The [CLA-assistant](https://cla-assistant.io) bot will prompt you to sign the [Observal CLA](https://github.com/Observal/Observal/blob/main/CLA.md) on your first PR. You only need to sign once. For corporate contributions, contact harisrini21@gmail.com.

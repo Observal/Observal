@@ -74,10 +74,10 @@ This Agreement shall be governed by and construed in accordance with the laws of
 
 This CLA is managed via [CLA-assistant.io](https://cla-assistant.io). When you open a pull request against this repository for the first time, the CLA-assistant bot will prompt you to sign this agreement electronically. You do not need to sign anything manually.
 
-If you are contributing on behalf of a company or organization, please contact us at contact@observal.io to arrange a Corporate CLA.
+If you are contributing on behalf of a company or organization, please contact us at harisrini21@gmail.com to arrange a Corporate CLA.
 
 ---
 
 *Observal*
 *Registered Office: Chennai, Tamil Nadu, India*
-*Contact: contact@observal.io*
+*Contact: harisrini21@gmail.com*

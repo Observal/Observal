@@ -45,7 +45,7 @@ def test_chart_has_artifacthub_metadata_for_oci_listing():
     chart = _load_yaml("infra/helm/observal/Chart.yaml")
 
     assert chart["icon"] == "https://raw.githubusercontent.com/Observal/Observal/main/docs/logo.svg"
-    assert chart["maintainers"][0]["email"] == "contact@observal.io"
+    assert chart["maintainers"][0]["email"] == "harisrini21@gmail.com"
     assert chart["annotations"]["artifacthub.io/category"] == "monitoring-logging"
     assert chart["annotations"]["artifacthub.io/license"] == "Apache-2.0"
     assert "Documentation" in chart["annotations"]["artifacthub.io/links"]
@@ -55,7 +55,7 @@ def test_artifacthub_repo_metadata_has_registerd_verified_publisher_id():
     metadata_text = (ROOT / "infra/helm/artifacthub-repo.yml").read_text()
     metadata = yaml.safe_load(metadata_text)
 
-    # assert metadata["owners"] == [{"name": "Observal", "email": "contact@observal.io"}]
+    # assert metadata["owners"] == [{"name": "Observal", "email": "harisrini21@gmail.com"}]
     # assert "repositoryID:" in metadata_text
     # assert "00000000-0000-0000-0000-000000000000" in metadata_text
     assert metadata["owners"] == [{"name": "Observal", "email": "harisrini21@gmail.com"}]
