@@ -130,11 +130,14 @@ def _try_auto_update() -> None:
 
     Runs silently. Logs a message on success so the user knows the next
     invocation will use the new version.
-    Exempt: self/server subcommands, CI, non-TTY.
+    Exempt: self/server/auth subcommands, CI, non-TTY.
     """
-    # Skip exempt subcommands (check positional args, not flags)
+    # Skip exempt subcommands (check positional args, not flags).
+    # `auth` is exempt so a deliberate `self downgrade` to match an older
+    # server is not reverted by GitHub-latest auto-upgrade during the login
+    # that establishes the server relationship (server not in config yet).
     positional_args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    if positional_args and positional_args[0] in ("self", "server"):
+    if positional_args and positional_args[0] in ("self", "server", "auth"):
         return
     if os.environ.get("CI") or os.environ.get("OBSERVAL_NO_UPDATE_CHECK"):
         return
