@@ -82,6 +82,7 @@ def _version_to_detail(ver: AgentVersion) -> dict:
             "harness_configs": ver.harness_configs,
             "required_capabilities": ver.required_capabilities,
             "inferred_supported_harnesses": ver.inferred_supported_harnesses,
+            "success_criteria": ver.success_criteria,
         }
     )
     d["components"] = [
@@ -249,6 +250,7 @@ async def _create_agent_version(
         status=initial_status,
         released_by=current_user.id,
         released_at=now,
+        success_criteria=req.success_criteria.model_dump() if req.success_criteria else None,
     )
     db.add(ver)
     await db.flush()

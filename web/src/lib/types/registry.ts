@@ -91,6 +91,18 @@ export interface AgentComponentReference {
 	status?: string;
 }
 
+export interface SuccessMetric {
+	name: string;
+	target: string;
+	measurement: string;
+}
+
+export interface SuccessCriteria {
+	intended_purpose: string;
+	success_metrics: SuccessMetric[];
+	evaluation_notes: string;
+}
+
 export interface AgentVersionDetail extends AgentVersionSummary {
 	prompt: string;
 	model_name: string;
@@ -102,6 +114,7 @@ export interface AgentVersionDetail extends AgentVersionSummary {
 	required_capabilities?: string[];
 	inferred_supported_harnesses?: string[];
 	components: AgentComponentReference[];
+	success_criteria?: SuccessCriteria | null;
 }
 
 // ── Component Versions ─────────────────────────────────────────────
@@ -324,6 +337,7 @@ export interface ReviewItem {
 	required_capabilities?: string[];
 	component_count?: number;
 	components?: { component_type: string; component_id: string }[];
+	success_criteria?: SuccessCriteria | null;
 }
 
 // ── Scores ──────────────────────────────────────────────────────────

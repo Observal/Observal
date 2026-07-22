@@ -118,5 +118,7 @@ async def build_yaml_snapshot(ver: AgentVersion, db: AsyncSession) -> str:
     }
     if ver.model_config_json:
         data["model_config_json"] = ver.model_config_json
+    if ver.success_criteria:
+        data["success_criteria"] = ver.success_criteria
     header = "# Auto-generated snapshot - review the structured fields above and the prompt below.\n"
     return header + yaml.safe_dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True)

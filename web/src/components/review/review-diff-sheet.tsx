@@ -279,6 +279,8 @@ function buildCleanYaml(
 	if (byHarness && Object.keys(byHarness).length) obj.models_by_harness = byHarness;
 	const harnesses = detail.supported_harnesses as string[] | undefined;
 	if (harnesses?.length) obj.supported_harnesses = harnesses;
+	const sc = detail.success_criteria as Record<string, unknown> | null | undefined;
+	if (sc && sc.intended_purpose) obj.success_criteria = sc;
 	if (comps.length) {
 		obj.components = comps.map((c) => {
 			const cached = componentDataMap?.get(String(c.component_id ?? "")) as
@@ -607,6 +609,7 @@ function DiffDialogBody({
 	);
 	const supportedIdes =
 		(detail?.supported_harnesses as string[]) || item.supported_harnesses || [];
+	const successCriteria = detail?.success_criteria as { intended_purpose?: string; success_metrics?: { name: string; target: string; measurement: string }[]; evaluation_notes?: string } | null | undefined;
 	const components =
 		(detail?.components as {
 			component_type: string;
@@ -826,6 +829,44 @@ function DiffDialogBody({
 									<pre className="text-xs font-[family-name:var(--font-mono)] whitespace-pre-wrap break-words bg-muted/40 rounded p-3 leading-relaxed max-h-64 overflow-y-auto">
 										{prompt}
 									</pre>
+								</div>
+							</>
+						)}
+
+						{/* Success Criteria */}
+						{isAgent && successCriteria?.intended_purpose && (
+							<>
+								<Separator />
+								<div className="space-y-2">
+									<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+										Success Criteria
+									</h4>
+									<div className="space-y-2 text-xs">
+										<div>
+											<span className="text-[10px] font-medium text-muted-foreground uppercase">Purpose</span>
+											<p className="whitespace-pre-wrap">{successCriteria.intended_purpose}</p>
+										</div>
+										{(successCriteria.success_metrics?.length ?? 0) > 0 && (
+											<div>
+												<span className="text-[10px] font-medium text-muted-foreground uppercase">Metrics</span>
+												<div className="mt-1 space-y-1">
+													{successCriteria.success_metrics!.map((m, i) => (
+														<div key={i} className="flex flex-wrap gap-x-2 rounded bg-muted/50 px-2 py-1">
+															<span className="font-medium">{m.name}</span>
+															<span className="text-muted-foreground">target: <span className="font-mono">{m.target}</span></span>
+															<span className="text-muted-foreground">via: {m.measurement}</span>
+														</div>
+													))}
+												</div>
+											</div>
+										)}
+										{successCriteria.evaluation_notes && (
+											<div>
+												<span className="text-[10px] font-medium text-muted-foreground uppercase">Evaluation Notes</span>
+												<p className="whitespace-pre-wrap">{successCriteria.evaluation_notes}</p>
+											</div>
+										)}
+									</div>
 								</div>
 							</>
 						)}

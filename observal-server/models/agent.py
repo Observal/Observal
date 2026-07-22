@@ -68,6 +68,7 @@ class AgentVersion(Base):
     editing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     editing_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     gaming_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    success_criteria: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     agent: Mapped["Agent"] = relationship(back_populates="versions", foreign_keys=[agent_id])
     components: Mapped[list["AgentComponent"]] = relationship(
@@ -263,6 +264,10 @@ class Agent(Base):
     @property
     def components(self) -> list:
         return self.latest_version.components if self.latest_version else []
+
+    @property
+    def success_criteria(self) -> dict | None:
+        return self.latest_version.success_criteria if self.latest_version else None
 
 
 from models.agent_component import AgentComponent  # noqa: E402

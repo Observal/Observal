@@ -493,6 +493,7 @@ async def get_review(
             "components_ready": components_ready,
             "component_blockers": blocking,
             "gaming_flags": ver.gaming_flags if ver else None,
+            "success_criteria": (ver.success_criteria if ver else None),
             "components": [
                 {
                     "component_type": c.component_type,

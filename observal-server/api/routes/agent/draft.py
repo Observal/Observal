@@ -56,6 +56,7 @@ async def save_draft(
         supported_harnesses=req.supported_harnesses,
         status=AgentStatus.draft,
         released_by=current_user.id,
+        success_criteria=req.success_criteria.model_dump() if req.success_criteria else None,
     )
     db.add(version)
     await db.flush()
@@ -160,6 +161,9 @@ async def update_draft(
         val = getattr(req, field)
         if val is not None:
             setattr(version, field, val)
+
+    if req.success_criteria is not None:
+        version.success_criteria = req.success_criteria.model_dump()
 
     if req.external_mcps is not None:
         for _mcp in req.external_mcps:

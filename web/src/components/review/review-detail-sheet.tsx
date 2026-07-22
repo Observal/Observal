@@ -184,6 +184,47 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 				value={detail.required_capabilities}
 			/>
 			<DetailField label="Model Config" value={detail.model_config_json} />
+			{detail.prompt && (
+				<div className="col-span-full">
+					<dt className="text-xs font-medium text-muted-foreground">Prompt</dt>
+					<dd className="mt-0.5">
+						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] font-mono leading-relaxed break-words whitespace-pre-wrap">
+							{detail.prompt}
+						</pre>
+					</dd>
+				</div>
+			)}
+			{detail.success_criteria && detail.success_criteria.intended_purpose && (
+				<div className="col-span-full">
+					<dt className="text-xs font-medium text-muted-foreground">Success Criteria</dt>
+					<dd className="mt-0.5 space-y-2 text-sm">
+						<div>
+							<span className="text-[10px] font-medium text-muted-foreground uppercase">Purpose</span>
+							<p className="text-xs whitespace-pre-wrap">{detail.success_criteria.intended_purpose}</p>
+						</div>
+						{(detail.success_criteria.success_metrics?.length ?? 0) > 0 && (
+							<div>
+								<span className="text-[10px] font-medium text-muted-foreground uppercase">Metrics</span>
+								<div className="mt-1 space-y-1">
+									{detail.success_criteria.success_metrics.map((m, i) => (
+										<div key={i} className="flex flex-wrap gap-x-2 text-xs rounded bg-muted/50 px-2 py-1">
+											<span className="font-medium">{m.name}</span>
+											<span className="text-muted-foreground">target: <span className="font-mono">{m.target}</span></span>
+											<span className="text-muted-foreground">via: {m.measurement}</span>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+						{detail.success_criteria.evaluation_notes && (
+							<div>
+								<span className="text-[10px] font-medium text-muted-foreground uppercase">Evaluation Notes</span>
+								<p className="text-xs whitespace-pre-wrap">{detail.success_criteria.evaluation_notes}</p>
+							</div>
+						)}
+					</dd>
+				</div>
+			)}
 			{detail.components && detail.components.length > 0 && (
 				<div className="col-span-full">
 					<dt className="text-xs font-medium text-muted-foreground mb-1">
@@ -221,16 +262,6 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 								</div>
 							);
 						})}
-					</dd>
-				</div>
-			)}
-			{detail.prompt && (
-				<div className="col-span-full">
-					<dt className="text-xs font-medium text-muted-foreground">Prompt</dt>
-					<dd className="mt-0.5">
-						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] font-mono leading-relaxed break-words">
-							{detail.prompt}
-						</pre>
 					</dd>
 				</div>
 			)}
