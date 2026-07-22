@@ -14,8 +14,8 @@ runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
-def disable_auto_update(monkeypatch):
-    """Disable auto-update and version checks in all self-command tests."""
+def disable_version_check(monkeypatch):
+    """Disable version checks in all self-command tests."""
     monkeypatch.setenv("OBSERVAL_NO_UPDATE_CHECK", "1")
 
 
