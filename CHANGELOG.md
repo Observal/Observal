@@ -10,6 +10,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.5] - 2026-07-22
+
+### Other
+
+- tidy license refs, branding, and contact details ([3e6e289](https://github.com/Observal/Observal/commit/3e6e2896f84e760f49b8b2bea86cc8b42d62f3c1))
+
 ## [1.10.4] - 2026-07-22
 
 ### Fixed
