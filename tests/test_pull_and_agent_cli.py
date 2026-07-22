@@ -12,9 +12,11 @@ from __future__ import annotations
 import json
 import re
 import sys
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+import pytest
 import typer
 import yaml
 from typer.testing import CliRunner
@@ -39,9 +41,20 @@ def _plain(text: str) -> str:
 _FAKE_CONFIG = {"server_url": "http://localhost:8000", "api_key": "test-key"}
 
 
+@contextmanager
 def _patch_config():
-    """Patch config.get_or_exit so the CLI doesn't need real credentials."""
-    return patch("observal_cli.config.get_or_exit", return_value=_FAKE_CONFIG)
+    """Patch config access so the CLI doesn't need real credentials."""
+    with (
+        patch("observal_cli.config.get_or_exit", return_value=_FAKE_CONFIG),
+        patch("observal_cli.config.load", return_value=_FAKE_CONFIG),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def isolated_lockfile(tmp_path, monkeypatch):
+    monkeypatch.setattr("observal_cli.lockfile.LOCKFILE_PATH", tmp_path / ".observal/lockfile.json")
+    monkeypatch.setattr("observal_cli.lockfile._LOCKFILE_LOCK", tmp_path / ".observal/lockfile.lock")
 
 
 def _patch_post(return_value: dict):

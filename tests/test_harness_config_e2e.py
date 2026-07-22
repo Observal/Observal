@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -590,8 +591,19 @@ runner = CliRunner()
 _FAKE_CONFIG = {"server_url": "http://localhost:8000", "api_key": "test-key"}
 
 
+@contextmanager
 def _patch_config():
-    return patch("observal_cli.config.get_or_exit", return_value=_FAKE_CONFIG)
+    with (
+        patch("observal_cli.config.get_or_exit", return_value=_FAKE_CONFIG),
+        patch("observal_cli.config.load", return_value=_FAKE_CONFIG),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def isolated_lockfile(tmp_path, monkeypatch):
+    monkeypatch.setattr("observal_cli.lockfile.LOCKFILE_PATH", tmp_path / ".observal/lockfile.json")
+    monkeypatch.setattr("observal_cli.lockfile._LOCKFILE_LOCK", tmp_path / ".observal/lockfile.lock")
 
 
 def _patch_post(return_value):

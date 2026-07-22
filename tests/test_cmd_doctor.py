@@ -197,7 +197,10 @@ class TestPatchFunctions:
         assert "hooks" in read_json(settings_path)
         assert _patch_claude_code(dry_run=False) is False
 
-    def test_patch_kiro_skips_without_locked_agents(self, tmp_path: Path):
+    def test_patch_kiro_skips_without_locked_agents(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        from observal_cli import config
+
+        monkeypatch.setattr(config, "load", lambda: {"server_url": "http://localhost:80"})
         write_json(tmp_path / ".kiro/agents/default.json", {})
 
         assert _patch_kiro(dry_run=False) is False

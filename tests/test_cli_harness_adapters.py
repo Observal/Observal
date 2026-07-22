@@ -243,6 +243,8 @@ class TestActiveIdeDetection:
         from observal_cli.layer import build_layer_manifest
 
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr("observal_cli.config.load", lambda: {"server_url": "http://localhost:80"})
+        monkeypatch.setattr("observal_cli.lockfile.LOCKFILE_PATH", tmp_path / ".observal/lockfile.json")
         pi_home = tmp_path / ".pi" / "agent"
         (pi_home / "agents" / "my-agent" / "skills" / "pi-skill").mkdir(parents=True)
         (pi_home / "agents" / "my-agent" / "AGENTS.md").write_text("# Agent")
