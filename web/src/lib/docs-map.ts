@@ -137,14 +137,14 @@ export const SECTION_DOCS: Record<string, DocRef> = {
  */
 export const PAGE_DOCS: Record<string, DocRef> = {
 	// Traces
-	"traces": { file: "self-hosting/telemetry-pipeline.md", label: "Telemetry Pipeline" },
+	"traces": { file: "core-concepts/session-tracking.md", label: "Session Tracking" },
 	"traces.detail": { file: "self-hosting/telemetry.md", label: "Telemetry Configuration" },
 
 	// Registry
-	"agents": { file: "getting-started/core-concepts.md", label: "Core Concepts" },
-	"agents.builder": { file: "getting-started/core-concepts.md", label: "Core Concepts" },
+	"agents": { file: "core-concepts/README.md", label: "Core Concepts" },
+	"agents.builder": { file: "core-concepts/README.md", label: "Core Concepts" },
 	"agents.install": { file: "getting-started/quickstart.md", label: "Quickstart" },
-	"components": { file: "getting-started/core-concepts.md", label: "Core Concepts" },
+	"components": { file: "core-concepts/README.md", label: "Core Concepts" },
 
 	// Admin
 	"audit-log": { file: "reference/api-endpoints.md", label: "API Reference" },

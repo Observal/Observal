@@ -78,4 +78,4 @@ The command is idempotent. Existing Observal hooks are retained, missing hooks a
 
 - [`observal scan`](scan.md): read-only local inventory
 - [`observal agent pull`](pull.md): install a complete agent
-- [Telemetry pipeline](../self-hosting/telemetry-pipeline.md): session ingestion architecture
+- [Session tracking and reconciliation](../core-concepts/session-tracking.md): session ingestion architecture

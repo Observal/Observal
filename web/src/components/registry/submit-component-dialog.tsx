@@ -126,7 +126,7 @@ const COMPONENT_HELP_DOCS = {
 	hooks: { file: "registry-hook-helper.md", label: "Hook helper" },
 	sandboxes: { file: "registry-sandbox-helper.md", label: "Sandbox helper" },
 	prompts: { file: "cli/prompt.md", label: "Prompt helper" },
-	agents: { file: "getting-started/core-concepts.md", label: "Agent helper" },
+	agents: { file: "core-concepts/README.md", label: "Agent helper" },
 } as const;
 
 interface SubmitComponentDialogProps {

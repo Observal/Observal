@@ -9,7 +9,11 @@
 
 * [Installation](README.md)
 * [Quickstart](getting-started/quickstart.md)
-* [Core Concepts](getting-started/core-concepts.md)
+
+## Core Concepts
+
+* [Overview](core-concepts/README.md)
+* [Session tracking and reconciliation](core-concepts/session-tracking.md)
 
 ## Use Cases
 
@@ -52,7 +56,6 @@
 * [Ports and volumes](self-hosting/ports-and-volumes.md)
 * [Databases](self-hosting/databases.md)
 * [Authentication and SSO](self-hosting/authentication.md)
-* [Telemetry pipeline](self-hosting/telemetry-pipeline.md)
 * [Upgrades](self-hosting/upgrades.md)
 * [Backup and restore](self-hosting/backup-and-restore.md)
 * [Troubleshooting](self-hosting/troubleshooting.md)

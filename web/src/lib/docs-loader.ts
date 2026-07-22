@@ -7,7 +7,8 @@
  */
 
 const VISIBLE_DOC_PATHS = [
-	"getting-started/core-concepts.md",
+	"core-concepts/README.md",
+	"core-concepts/session-tracking.md",
 	"getting-started/installation.md",
 	"getting-started/quickstart.md",
 	"cli/prompt.md",
@@ -35,7 +36,6 @@ const VISIBLE_DOC_PATHS = [
 	"self-hosting/resource-tuning.md",
 	"self-hosting/miscellaneous.md",
 	"self-hosting/telemetry.md",
-	"self-hosting/telemetry-pipeline.md",
 	"self-hosting/databases.md",
 	"self-hosting/docker-compose.md",
 	"self-hosting/ports-and-volumes.md",
@@ -54,7 +54,8 @@ const VISIBLE_DOC_PATHS = [
 ];
 
 const docModules = import.meta.glob<string>([
-	"../../../docs/getting-started/core-concepts.md",
+	"../../../docs/core-concepts/README.md",
+	"../../../docs/core-concepts/session-tracking.md",
 	"../../../docs/getting-started/installation.md",
 	"../../../docs/getting-started/quickstart.md",
 	"../../../docs/cli/prompt.md",
@@ -82,7 +83,6 @@ const docModules = import.meta.glob<string>([
 	"../../../docs/self-hosting/resource-tuning.md",
 	"../../../docs/self-hosting/miscellaneous.md",
 	"../../../docs/self-hosting/telemetry.md",
-	"../../../docs/self-hosting/telemetry-pipeline.md",
 	"../../../docs/self-hosting/databases.md",
 	"../../../docs/self-hosting/docker-compose.md",
 	"../../../docs/self-hosting/ports-and-volumes.md",

@@ -270,4 +270,4 @@ See `docs/self-hosting/sso-cli.md` for SSO CLI commands.
 
 ## Next
 
-→ [Telemetry pipeline](telemetry-pipeline.md)
+→ [Session tracking and reconciliation](../core-concepts/session-tracking.md)

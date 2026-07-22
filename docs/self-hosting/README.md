@@ -78,7 +78,7 @@ Choose the deployment model that fits your team:
 | See every port and volume at a glance | [Ports and volumes](ports-and-volumes.md)   |
 | Understand the DBs and retention      | [Databases](databases.md)                   |
 | Set up SSO, JWT keys, demo accounts   | [Authentication and SSO](authentication.md) |
-| Understand the telemetry pipeline     | [Telemetry pipeline](telemetry-pipeline.md) |
+| Understand session delivery           | [Session tracking and reconciliation](../core-concepts/session-tracking.md) |
 | Upgrade safely                        | [Upgrades](upgrades.md)                     |
 | Back up and restore                   | [Backup and restore](backup-and-restore.md) |
 | Fix something that's broken           | [Troubleshooting](troubleshooting.md)       |

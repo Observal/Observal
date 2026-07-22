@@ -157,4 +157,4 @@ A sync test (`tests/test_constants_sync.py`) ensures CLI and server stay in lock
 ## Related
 
 * [`observal registry hook`](../cli/registry.md)
-* [Telemetry pipeline](../self-hosting/telemetry-pipeline.md)
+* [Session tracking and reconciliation](../core-concepts/session-tracking.md)

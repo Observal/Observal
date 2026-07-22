@@ -158,7 +158,8 @@ Observal indexes session transcript records into canonical events and aggregates
 
 | You want to...                      | Go to                             |
 | ----------------------------------- | --------------------------------- |
-| Understand the data model           | [Core Concepts](core-concepts.md) |
+| Understand registry identity        | [Core concepts](../core-concepts/) |
+| Understand session tracking         | [Session tracking and reconciliation](../core-concepts/session-tracking.md) |
 | Learn what to do with traces        | [Use Cases](../use-cases/)        |
 | Configure the server for production | [Self-Hosting](../self-hosting/)  |
 | Deep-dive on a CLI command          | [CLI Reference](../cli/)          |
