@@ -330,31 +330,63 @@ def _check_kiro(issues: list, warnings: list):
         )
 
 
+def _pi_extension_source() -> str:
+    bundled = Path(__file__).parent / "_bundled" / "observal.ts"
+    source_tree = Path(__file__).parents[1] / "packages" / "pi-extension" / "extensions" / "observal.ts"
+    for path in (bundled, source_tree):
+        if path.exists():
+            return path.read_text()
+    raise FileNotFoundError("Bundled Pi telemetry extension is missing")
+
+
+def _pi_extension_path() -> Path:
+    return Path.home() / ".pi" / "agent" / "extensions" / "observal.ts"
+
+
+def _is_legacy_pi_package(package) -> bool:
+    if isinstance(package, str):
+        source = package
+    elif isinstance(package, dict):
+        source = package.get("source", "")
+    else:
+        return False
+    return source == "npm:observal-pi" or source.startswith("npm:observal-pi@")
+
+
 def _check_pi(issues: list, warnings: list):
-    """Check if Observal pi extension is installed."""
+    """Check whether the bundled Pi telemetry extension is current."""
     optic.debug("_check_pi")
     pi_dir = Path.home() / ".pi" / "agent"
     if not pi_dir.exists():
         rprint("  [dim]Pi not detected[/dim]")
         return
 
+    try:
+        expected = _pi_extension_source()
+    except OSError as exc:
+        issues.append(str(exc))
+        return
+    extension_path = _pi_extension_path()
+    try:
+        current = extension_path.read_text() if extension_path.exists() else None
+    except OSError as exc:
+        issues.append(f"{extension_path}: {exc}")
+        return
+
     settings_path = pi_dir / "settings.json"
-    if not settings_path.exists():
-        rprint("  [dim]No ~/.pi/agent/settings.json found[/dim]")
-        return
+    legacy_registered = False
+    if settings_path.exists():
+        settings = _load_json(settings_path)
+        if settings is None:
+            issues.append(f"{settings_path}: not valid JSON.")
+            return
+        legacy_registered = any(_is_legacy_pi_package(package) for package in settings.get("packages", []))
 
-    data = _load_json(settings_path)
-    if data is None:
-        issues.append(f"{settings_path}: not valid JSON.")
-        return
-
-    packages = data.get("packages", [])
-    has_observal = any("observal-pi" in (p if isinstance(p, str) else p.get("source", "")) for p in packages)
-
-    if not has_observal:
-        warnings.append(
-            "Observal pi extension not installed. Run `pi install npm:observal-pi` to enable session telemetry."
-        )
+    if current != expected:
+        state = "stale" if current is not None else "not installed"
+        warnings.append(f"Observal Pi extension is {state}. Doctor can install {extension_path} directly.")
+    elif legacy_registered:
+        warnings.append("Legacy npm:observal-pi registration remains. Doctor can remove it.")
 
 
 def _check_cursor(issues: list, warnings: list):
@@ -603,7 +635,7 @@ def doctor_cleanup(
         None,
         "--harness",
         "-i",
-        help="Target harness only (claude-code, kiro, cursor, codex, copilot, copilot-cli, opencode). Default: all.",
+        help="Target harness only (claude-code, kiro, cursor, codex, copilot, copilot-cli, opencode, antigravity, pi). Default: all.",
     ),
     exclude: list[str] = typer.Option(
         [],
@@ -615,10 +647,9 @@ def doctor_cleanup(
 ):
     """Remove ALL Observal hooks, env vars, and legacy telemetry config.
 
-    Strips Observal-managed hooks and env vars from Claude Code and
-    Kiro settings. Leaves non-Observal hooks untouched. Useful when you
-    want to fully uninstall Observal instrumentation from an harness without
-    removing the harness config files themselves.
+    Removes Observal-managed hooks, plugins, and extensions while preserving
+    unrelated harness configuration. Useful when you want to uninstall
+    Observal instrumentation without removing harness config files.
 
     \b
     Examples:
@@ -754,6 +785,38 @@ def _cleanup_kiro(dry_run: bool) -> bool:
     if not changed:
         rprint("  [dim]No Observal artifacts found in Kiro agents[/dim]")
 
+    return changed
+
+
+def _cleanup_pi(dry_run: bool) -> bool:
+    rprint("[cyan]Pi[/cyan]")
+    extension_path = _pi_extension_path()
+    settings_path = Path.home() / ".pi" / "agent" / "settings.json"
+    changed = extension_path.exists()
+    if extension_path.exists():
+        verb = "Would remove" if dry_run else "Removed"
+        rprint(f"  {verb} {extension_path}")
+        if not dry_run:
+            extension_path.unlink()
+
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            rprint(f"  [red]Cannot read {settings_path}: {exc}[/red]")
+            return changed
+        packages = settings.get("packages", [])
+        cleaned = [package for package in packages if not _is_legacy_pi_package(package)]
+        if cleaned != packages:
+            changed = True
+            verb = "Would remove" if dry_run else "Removed"
+            rprint(f"  {verb} legacy npm:observal-pi package registration")
+            if not dry_run:
+                settings["packages"] = cleaned
+                settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+
+    if not changed:
+        rprint("  [dim]No Observal Pi extension found[/dim]")
     return changed
 
 
@@ -1167,9 +1230,8 @@ def _patch_antigravity(dry_run: bool) -> bool:
 
 
 def _patch_pi(dry_run: bool) -> bool:
-    """Install observal-pi into ~/.pi/agent/settings.json packages."""
+    """Install the bundled telemetry extension directly into Pi's user directory."""
     optic.trace("dry_run={}", dry_run)
-
     rprint("[cyan]Pi - session telemetry extension[/cyan]")
 
     pi_dir = Path.home() / ".pi" / "agent"
@@ -1177,36 +1239,41 @@ def _patch_pi(dry_run: bool) -> bool:
         rprint("  [dim]No ~/.pi/agent/ directory - skipping[/dim]")
         return False
 
-    settings_path = pi_dir / "settings.json"
-    package_spec = "npm:observal-pi"
+    source = _pi_extension_source()
+    extension_path = _pi_extension_path()
+    current = extension_path.read_text() if extension_path.exists() else None
+    extension_changed = current != source
 
-    # Load existing settings
-    data: dict = {}
+    settings_path = pi_dir / "settings.json"
+    settings: dict = {}
     if settings_path.exists():
         try:
-            data = json.loads(settings_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            data = {}
+            settings = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            raise RuntimeError(f"Cannot update {settings_path}: {exc}") from exc
+    packages = settings.get("packages", [])
+    cleaned_packages = [package for package in packages if not _is_legacy_pi_package(package)]
+    settings_changed = cleaned_packages != packages
 
-    packages = data.get("packages", [])
-
-    # Check if already installed
-    already_installed = any(package_spec in (p if isinstance(p, str) else p.get("source", "")) for p in packages)
-
-    if already_installed:
-        rprint("  [dim]Already installed[/dim]")
+    if not extension_changed and not settings_changed:
+        rprint("  [dim]Already up to date[/dim]")
         return False
 
-    # Add the package
-    packages.append(package_spec)
-    data["packages"] = packages
+    if extension_changed:
+        verb = "Would install" if current is None else "Would update"
+        if not dry_run:
+            extension_path.parent.mkdir(parents=True, exist_ok=True)
+            extension_path.write_text(source)
+            verb = "Installed" if current is None else "Updated"
+        rprint(f"  {verb} {extension_path}")
 
-    if not dry_run:
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(json.dumps(data, indent=2) + "\n")
+    if settings_changed:
+        if not dry_run:
+            settings["packages"] = cleaned_packages
+            settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+        verb = "Would remove" if dry_run else "Removed"
+        rprint(f"  {verb} legacy npm:observal-pi package registration")
 
-    verb = "Would install" if dry_run else "Installed"
-    rprint(f"  {verb} {package_spec} in {settings_path}")
     rprint("  [dim]Restart pi or run /reload to activate[/dim]")
     return True
 

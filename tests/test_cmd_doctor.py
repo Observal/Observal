@@ -35,6 +35,7 @@ from observal_cli.cmd_doctor import (
     _cleanup_cursor,
     _cleanup_kiro,
     _cleanup_opencode,
+    _cleanup_pi,
     _patch_antigravity,
     _patch_claude_code,
     _patch_codex,
@@ -117,13 +118,13 @@ class TestChecks:
 
         assert any("Kiro acknowledged session hooks not installed" in warning for warning in warnings)
 
-    def test_pi_warns_when_extension_package_missing(self, tmp_path: Path):
+    def test_pi_warns_when_direct_extension_is_missing(self, tmp_path: Path):
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": []})
         warnings: list[str] = []
 
         _check_pi([], warnings)
 
-        assert any("observal-pi" in warning for warning in warnings)
+        assert any("extensions/observal.ts" in warning for warning in warnings)
 
     def test_cursor_warns_when_hooks_file_missing(self, tmp_path: Path):
         (tmp_path / ".cursor").mkdir()
@@ -238,11 +239,16 @@ class TestPatchFunctions:
         assert any("hooks.session_push --harness cursor" in command for command in commands)
         assert _patch_cursor(dry_run=False) is False
 
-    def test_patch_pi_adds_package_and_is_idempotent(self, tmp_path: Path):
-        write_json(tmp_path / ".pi/agent/settings.json", {"packages": []})
+    def test_patch_pi_installs_direct_extension_and_removes_legacy_package(self, tmp_path: Path):
+        from observal_cli.cmd_doctor import _pi_extension_source
+
+        settings = tmp_path / ".pi/agent/settings.json"
+        write_json(settings, {"packages": ["npm:@observal/pi-insights", "npm:observal-pi"]})
 
         assert _patch_pi(dry_run=False) is True
-        assert "npm:observal-pi" in read_json(tmp_path / ".pi/agent/settings.json")["packages"]
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        assert extension.read_text() == _pi_extension_source()
+        assert read_json(settings)["packages"] == ["npm:@observal/pi-insights"]
         assert _patch_pi(dry_run=False) is False
 
     def test_patch_codex_writes_hooks_and_enables_flag(self, tmp_path: Path):
@@ -357,6 +363,17 @@ class TestCleanupFunctions:
         assert _cleanup_kiro(dry_run=False) is True
 
         assert read_json(agent_path)["hooks"]["userPromptSubmit"] == [foreign]
+
+    def test_cleanup_pi_removes_direct_extension_and_legacy_package(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("extension")
+        settings = tmp_path / ".pi/agent/settings.json"
+        write_json(settings, {"packages": ["npm:observal-pi", "npm:@observal/pi-insights"]})
+
+        assert _cleanup_pi(dry_run=False) is True
+        assert not extension.exists()
+        assert read_json(settings)["packages"] == ["npm:@observal/pi-insights"]
 
     def test_cleanup_cursor_preserves_foreign_hooks(self, tmp_path: Path):
         hooks_path = tmp_path / ".cursor/hooks.json"

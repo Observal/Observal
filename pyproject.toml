@@ -67,6 +67,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["observal_cli", "packages/observal-shared/observal_shared"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"packages/pi-extension/extensions/observal.ts" = "observal_cli/_bundled/observal.ts"
+
 # ── Ruff ─────────────────────────────────────────────────
 
 [tool.ruff]

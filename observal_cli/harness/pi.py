@@ -68,22 +68,8 @@ class PiAdapter(BaseAdapter):
         )
 
     def detect_hooks(self, config_dir: Path) -> str:
-        """Check if observal-pi is in settings.json packages."""
-        settings = config_dir / "settings.json"
-        if not settings.exists():
-            return "missing"
-        try:
-            data = json.loads(settings.read_text())
-        except (json.JSONDecodeError, OSError):
-            return "missing"
-
-        packages = data.get("packages", [])
-        has_observal = any(
-            "observal-pi" in (p if isinstance(p, str) else p.get("source", ""))
-            or "pi-extension" in (p if isinstance(p, str) else p.get("source", ""))
-            for p in packages
-        )
-        return "installed" if has_observal else "missing"
+        """Check for the user-global Observal TypeScript extension."""
+        return "installed" if (config_dir / "extensions" / "observal.ts").is_file() else "missing"
 
     # ── Private helpers ───────────────────────────────────────
 
@@ -142,6 +128,11 @@ class PiAdapter(BaseAdapter):
         from observal_cli.cmd_doctor import _patch_pi
 
         return _patch_pi(dry_run)
+
+    def cleanup_hooks(self, dry_run: bool) -> bool:
+        from observal_cli.cmd_doctor import _cleanup_pi
+
+        return _cleanup_pi(dry_run)
 
 
 register_adapter(PiAdapter())
