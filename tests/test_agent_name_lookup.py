@@ -83,6 +83,7 @@ def _agent_mock(status=AgentStatus.approved, created_by=None, **extra):
     m.deleted_at = None
     m.updated_at = datetime.now(UTC)
     m.components = extra.get("components", [])
+    m.success_criteria = None
     col_keys = [
         "id",
         "name",
