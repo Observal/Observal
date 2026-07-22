@@ -100,9 +100,6 @@ def main(
 
     _migrate_legacy_mcp_configs()
 
-    # Auto-update on minor/patch releases (non-blocking, exempt self/server commands)
-    _try_auto_update()
-
     # One-time migration: .observal/agent markers → lockfile.json
     _try_lockfile_migration()
 
@@ -123,36 +120,6 @@ def _migrate_legacy_mcp_configs() -> None:
         rprint(f"[green]Migrated {len(migrated)} legacy MCP config file(s) to direct commands.[/green]")
         for path in migrated:
             rprint(f"  [dim]{path}[/dim]")
-
-
-def _try_auto_update() -> None:
-    """Attempt auto-update for minor/patch releases on startup.
-
-    Runs silently. Logs a message on success so the user knows the next
-    invocation will use the new version.
-    Exempt: self/server/auth subcommands, CI, non-TTY.
-    """
-    # Skip exempt subcommands (check positional args, not flags).
-    # `auth` is exempt so a deliberate `self downgrade` to match an older
-    # server is not reverted by GitHub-latest auto-upgrade during the login
-    # that establishes the server relationship (server not in config yet).
-    positional_args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    if positional_args and positional_args[0] in ("self", "server", "auth"):
-        return
-    if os.environ.get("CI") or os.environ.get("OBSERVAL_NO_UPDATE_CHECK"):
-        return
-    if not sys.stdout.isatty():
-        return  # Never auto-update in non-interactive environments
-
-    try:
-        from observal_cli.version_check import auto_update_if_needed
-
-        if auto_update_if_needed():
-            from rich import print as _rprint
-
-            _rprint("[dim]Updated. The new version will be used on your next command.[/dim]")
-    except Exception:
-        pass  # Never crash the CLI for auto-update
 
 
 def _try_lockfile_migration() -> None:
@@ -288,11 +255,12 @@ except ImportError:
 
 
 def _show_update_banner() -> None:
-    """Post-command hook: show major version notification only.
+    """Post-command hook: notify when a different CLI version is recommended.
 
-    Minor/patch mismatches are handled by auto-update.
-    Major.minor mismatches are hard-blocked by the version enforcement gate.
-    This banner only fires for major upgrades available in community mode.
+    Never mutates the installed binary. Surfaces both upgrades (community
+    GitHub-latest) and downgrades (server recommends an older version) as a
+    notice with the explicit command to run. Version mismatches that block
+    operation are still enforced by the version enforcement gate.
     """
     import sys as _sys
 
@@ -310,21 +278,20 @@ def _show_update_banner() -> None:
         if not update:
             return
 
-        from packaging.version import Version
         from rich import print as _rprint
 
-        from observal_cli.install_detector import upgrade_command
+        from observal_cli.install_detector import downgrade_command, upgrade_command
 
-        # Only show banner for major version upgrades (community mode)
-        # Hard block already handles minor mismatches; auto-update handles patches
-        if update.source == "github":
-            current_v = Version(update.current)
-            latest_v = Version(update.latest)
-            if latest_v.major > current_v.major:
-                _rprint(
-                    f"\n[yellow]Major update available: v{update.current} \u2192 v{update.latest}[/yellow]\n"
-                    f"  Run: [bold cyan]{upgrade_command(update.latest)}[/bold cyan]"
-                )
+        if update.direction == "downgrade":
+            _rprint(
+                f"\n[yellow]CLI v{update.current} is ahead of server v{update.latest}.[/yellow]\n"
+                f"  Downgrade to match: [bold cyan]{downgrade_command(update.latest)}[/bold cyan]"
+            )
+        else:
+            _rprint(
+                f"\n[green]Update available: v{update.current} \u2192 v{update.latest}[/green]\n"
+                f"  Run: [bold cyan]{upgrade_command(update.latest)}[/bold cyan]"
+            )
     except Exception:
         pass  # Never crash the CLI for a version check
 

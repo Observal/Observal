@@ -40,7 +40,6 @@ FEATURE_VERSIONS: dict[str, str] = {
     "version_enforcement": "1.0.0",
     "self_upgrade": "1.0.0",
     "server_upgrade": "1.0.0",
-    "auto_update": "1.0.0",
     "version_negotiation": "1.0.0",
 }
 
