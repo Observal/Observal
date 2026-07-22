@@ -11,8 +11,10 @@ Session telemetry extension for [Pi](https://pi.dev) that pushes conversation tr
 ## Install
 
 ```bash
-pi install npm:observal-pi
+observal doctor patch --harness pi
 ```
+
+Doctor installs the bundled TypeScript extension directly at `~/.pi/agent/extensions/observal.ts`. It removes the legacy `npm:observal-pi` package registration to prevent duplicate loading.
 
 ## Prerequisites
 

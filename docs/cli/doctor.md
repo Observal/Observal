@@ -72,7 +72,7 @@ observal doctor patch --harness kiro --harness copilot-cli
 observal doctor patch --all-harnesses --dry-run
 ```
 
-The command is idempotent. Existing Observal hooks are retained, missing hooks are installed, stale Kiro UUID hooks are repaired, and MCP configuration is left untouched. Restart the harness after applying hook changes.
+The command is idempotent. Existing Observal hooks are retained, missing hooks are installed, stale Kiro UUID hooks are repaired, and MCP configuration is left untouched. For Pi, Doctor copies the bundled TypeScript extension directly to `~/.pi/agent/extensions/observal.ts` and removes the legacy npm package registration. Restart the harness after applying changes.
 
 ## Related
 

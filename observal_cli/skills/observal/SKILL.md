@@ -128,7 +128,7 @@ observal doctor patch --harness kiro
 observal doctor patch --harness claude-code
 ```
 
-**Required:** select `--all-harnesses` or at least one `--harness`. MCP commands and URLs are not modified.
+**Required:** select `--all-harnesses` or at least one `--harness`. MCP commands and URLs are not modified. For Pi, Doctor installs the bundled TypeScript extension directly at `~/.pi/agent/extensions/observal.ts` and removes the legacy npm package registration.
 
 ---
 
