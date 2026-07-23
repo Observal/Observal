@@ -27,9 +27,10 @@ from observal_cli.constants import AGENT_NAME_REGEX, VALID_HARNESSES
 from observal_cli.prompts import fuzzy_select, select_many, select_one, text_input
 from observal_cli.render import (
     console,
+    display_name,
+    handle,
     ide_tags,
     kv_panel,
-    name_block,
     name_inline,
     output_json,
     relative_time,
@@ -513,12 +514,11 @@ def agent_list(
     table.add_column("Name", style="bold cyan", no_wrap=True)
     table.add_column("Version", style="green")
     table.add_column("Model")
-    table.add_column("Created By", style="dim")
+    table.add_column("Namespace", style="dim")
     if include_id:
         table.add_column("ID", style="dim", no_wrap=full_id)
     for i, item in enumerate(data, 1):
-        creator = item.get("created_by_username") or item.get("created_by_email", "")
-        row = [str(i), name_block(item), item.get("version", ""), item.get("model_name", ""), creator]
+        row = [str(i), display_name(item), item.get("version", ""), item.get("model_name", ""), handle(item)]
         if include_id:
             row.append(str(item["id"]) if full_id else f"{str(item['id'])[:8]}…")
         table.add_row(*row)
@@ -568,14 +568,16 @@ def agent_my(
     table.add_column("Name", style="bold cyan", no_wrap=True)
     table.add_column("Version", style="green")
     table.add_column("Model")
+    table.add_column("Namespace", style="dim")
     table.add_column("Status")
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            name_block(item),
+            display_name(item),
             item.get("version", ""),
             item.get("model_name", ""),
+            handle(item),
             status_badge(item.get("status", "")),
             str(item["id"])[:8] + "…",
         )
@@ -610,11 +612,11 @@ def agent_show(
 
     console.print(
         kv_panel(
-            f"{name_inline(item)} v{item.get('version', '?')}",
+            f"{display_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Model", f"[bold]{item.get('model_name', 'N/A')}[/bold]"),
-                ("Owner", item.get("owner", "N/A")),
+                ("Namespace", handle(item) or "N/A"),
                 ("Created By", item.get("created_by_username") or item.get("created_by_email", "")),
                 ("Description", item.get("description", "")),
                 ("harnesses", ide_tags(item.get("supported_harnesses", []))),

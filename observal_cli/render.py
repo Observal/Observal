@@ -87,14 +87,19 @@ def registry_identity(item: dict) -> tuple[str, str | None]:
     return name or (item.get("name") or "").strip(), namespace
 
 
-def name_block(item: dict) -> str:
-    """Two-line cell for tables: the name over a dimmed ``@namespace``."""
-    name, namespace = registry_identity(item)
-    return f"{name}\n[not bold dim]@{namespace}[/not bold dim]" if namespace else name
+def display_name(item: dict) -> str:
+    """The bare item name, never namespace-qualified."""
+    return registry_identity(item)[0]
+
+
+def handle(item: dict) -> str:
+    """The owning namespace as ``@namespace``, for its own table column or field."""
+    namespace = registry_identity(item)[1]
+    return f"@{namespace}" if namespace else ""
 
 
 def name_inline(item: dict) -> str:
-    """Single-line form for panel titles and plain output: ``name @namespace``."""
+    """``name @namespace`` for plain output, which has no columns to separate them."""
     name, namespace = registry_identity(item)
     return f"{name} [dim]@{namespace}[/dim]" if namespace else name
 
