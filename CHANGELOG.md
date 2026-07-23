@@ -10,24 +10,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.6] - 2026-07-23
+
+### Added
+
+- allow dots in namespaces (**registry**) ([7c0a460](https://github.com/Observal/Observal/commit/7c0a460d6fd00dbc87cd9d75d36c3af4167d3622))
+- show bare names over @namespace handles (**registry**) ([3673baa](https://github.com/Observal/Observal/commit/3673baaa8903dca92738d3b4006b4e3e5134ec78))
+
+### Changed
+
+- move namespace into its own column (**cli**) ([c64d4b8](https://github.com/Observal/Observal/commit/c64d4b838d8c4dbbc9a9a4210aa3bc8b5537222c))
 ## [1.10.5] - 2026-07-22
 
 ### Other
 
 - tidy license refs, branding, and contact details ([3e6e289](https://github.com/Observal/Observal/commit/3e6e2896f84e760f49b8b2bea86cc8b42d62f3c1))
-
 ## [1.10.4] - 2026-07-22
+
+### Added
+
+- reconcile multi-registry lockfiles (**doctor**) ([af4f9dc](https://github.com/Observal/Observal/commit/af4f9dc9b730888e730b4dcaf33e633186903eb3))
+- add parameterized search filters (**registry**) ([ef70cf5](https://github.com/Observal/Observal/commit/ef70cf5b87b89a6b64de3cbd3355db9b6e674786))
+- add canonical namespaces (**registry**) ([cd5c067](https://github.com/Observal/Observal/commit/cd5c06750de32b3ed3782a46443c6038b5314989))
+
+### Documentation
+
+- document tracking and reconciliation (**sessions**) ([80ec049](https://github.com/Observal/Observal/commit/80ec049c44a4a6638e9787a846d496929df2f3d5))
+- add registry community badges (**readme**) ([8896842](https://github.com/Observal/Observal/commit/8896842ef8a67a87079e73a17241422b6bf42e30))
+- add harness support GitHub issue form ([9a0426a](https://github.com/Observal/Observal/commit/9a0426a686fdf06f38f575f795582b0af6da74ce))
 
 ### Fixed
 
-- remove silent CLI auto-update that reverted deliberate downgrades (**cli**) ([7960b39](https://github.com/Observal/Observal/commit/7960b396b))
-- surface version notices (upgrade and downgrade) without mutating the binary (**cli**)
+- remove silent auto-update, surface version notices instead (**cli**) ([8927cbd](https://github.com/Observal/Observal/commit/8927cbdf1e236db0965f969ab67dd762550928c1))
+- exempt auth from auto-update so downgrades stick (**cli**) ([87fa842](https://github.com/Observal/Observal/commit/87fa8429167f6589fe90018e9fae9a0350d0b59d))
+- update vulnerable dependencies (**deps**) ([2d7b4d4](https://github.com/Observal/Observal/commit/2d7b4d4e102a25dc84d4ce2500c9e8e412e9617c))
+- install telemetry extension directly (**pi**) ([11b056d](https://github.com/Observal/Observal/commit/11b056d817dfecb3d368ce4cf58ce8e6becfb58d))
+- remove stale patch flags (**doctor**) ([2d2e055](https://github.com/Observal/Observal/commit/2d2e0558c2d80224077617d160a5ce8c539dbee1))
+- make namespace slug backfill unique (**registry**) ([993e8cf](https://github.com/Observal/Observal/commit/993e8cf156bc202c9b546a53fde0b641a6d05743))
+- simplify harness issue template ([1fe0121](https://github.com/Observal/Observal/commit/1fe0121486400175b0724463a518db84b406bad7))
 
+### Testing
+
+- complete namespace verification (**registry**) ([3c90d78](https://github.com/Observal/Observal/commit/3c90d78bce86cebdb8b3254ba3a8d91c7cc9ccda))
+- cover namespace ownership transfers (**registry**) ([438fcba](https://github.com/Observal/Observal/commit/438fcbade204196410b37c56071746d3d42346bf))
 ## [1.10.3] - 2026-07-21
+
+### Fixed
+
+- add repo id and contact info for artifacthub (**helm**) ([942f837](https://github.com/Observal/Observal/commit/942f83722084881137eab0aae143a58b3447a9fc))
+## [1.10.2] - 2026-07-21
 
 ### Added
 
 - publish Helm chart as OCI artifact (**release**) ([9834ed4](https://github.com/Observal/Observal/commit/9834ed42501090de9edaf6905dc383bc8144e191))
+
+### Fixed
+
+- default app images to chart version (**helm**) ([179e481](https://github.com/Observal/Observal/commit/179e481378561fa125714bc4f4cdfca5bd9e9fac))
+## [1.10.0] - 2026-07-19
+
+### Added
+
 - verify finalized session integrity (**telemetry**) ([d1c7b1a](https://github.com/Observal/Observal/commit/d1c7b1a798d938b99a7ccbfea63a381ac5c85f66))
 - recover session cursors from server checkpoints (**telemetry**) ([7192330](https://github.com/Observal/Observal/commit/719233009ef13ec0070445ae90f453e3e34a55fa))
 - add durable session delivery engine (**cli**) ([d9f9539](https://github.com/Observal/Observal/commit/d9f953983a538d381c023c174e8cb957d3af53c9))
@@ -843,7 +886,7 @@ All notable changes to this project will be documented in this file.
 - explain reliable session delivery ([413e654](https://github.com/Observal/Observal/commit/413e65411758f6d22d20f462f38797abf53dc2e7))
 - remove commercial product language ([3e1a61b](https://github.com/Observal/Observal/commit/3e1a61be99239d9405351ac722dcb4a86aa40ee1))
 - describe fully open-source distribution ([17c32bb](https://github.com/Observal/Observal/commit/17c32bbd048e5400d627f60ed4db4d1bcf2a4778))
-- remove legacy branding references ([c85654e](https://github.com/Observal/Observal/commit/c85654e2716932ba5924cdbd02972cb4aeaea3d9))
+- remove BlazeUp references ([c85654e](https://github.com/Observal/Observal/commit/c85654e2716932ba5924cdbd02972cb4aeaea3d9))
 - add license commitment ([78a2cd8](https://github.com/Observal/Observal/commit/78a2cd8a41e9ed166f812520ecc7e8f123f2be84))
 - remove outdated rules references (**cursor**) ([ffa5ae1](https://github.com/Observal/Observal/commit/ffa5ae171b561a009642f050e9a1bbc8c139fbbb))
 - add Cursor integration to summary ([1f53cc2](https://github.com/Observal/Observal/commit/1f53cc23f143a4d767dd7db9667ad43c2f543579))
@@ -978,8 +1021,6 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- add repo id and contact info for artifacthub (**helm**) ([942f837](https://github.com/Observal/Observal/commit/942f83722084881137eab0aae143a58b3447a9fc))
-- default app images to chart version (**helm**) ([179e481](https://github.com/Observal/Observal/commit/179e481378561fa125714bc4f4cdfca5bd9e9fac))
 - address delivery audit findings (**telemetry**) ([0493e7c](https://github.com/Observal/Observal/commit/0493e7cc709166b1d80b688d57918a64214ef9b8))
 - migrate wrapped configs (**telemetry**) ([9a59b8d](https://github.com/Observal/Observal/commit/9a59b8de39c1163187da8980f2ab79693fadc1b2))
 - replay integrity repairs (**telemetry**) ([b266291](https://github.com/Observal/Observal/commit/b266291adef1ab3b1786765ff9adc9646139d8df))
@@ -1301,7 +1342,7 @@ All notable changes to this project will be documented in this file.
 - update postgres volume mount for v18 compatibility (**docker**) ([39f053e](https://github.com/Observal/Observal/commit/39f053eda0764693536c2c0ea3e79ae1655da00e))
 - trigger EC2 deploy on push to main instead of tags (**deploy**) ([4aff940](https://github.com/Observal/Observal/commit/4aff9400887af7b735a744661b27c657c061a141))
 - trigger EC2 deploy on push to main instead of tags (**deploy**) ([b6c509b](https://github.com/Observal/Observal/commit/b6c509b97a3551b16a648832e4149aad12f88393))
-- align license references across the repo ([401cdf0](https://github.com/Observal/Observal/commit/401cdf0f39fa48f39d9a97f6ebbb268593b79f51))
+- replace all Apache 2.0 references with AGPL-3.0 ([401cdf0](https://github.com/Observal/Observal/commit/401cdf0f39fa48f39d9a97f6ebbb268593b79f51))
 - update redis image assertion to 8-alpine (**tests**) ([6313db2](https://github.com/Observal/Observal/commit/6313db271c8623c00bc73aff27be9749b44616e1))
 - capture post-Stop tail lines via delayed flush subprocess (**cli**) ([99eb44f](https://github.com/Observal/Observal/commit/99eb44f650c7e792c1fc53a91c5a928ae04faa80))
 - exclude subagent sessions from top-level list (**sessions**) ([2e70239](https://github.com/Observal/Observal/commit/2e702395b7915861700bd1845246411b28b7bb6d))
@@ -1845,7 +1886,7 @@ All notable changes to this project will be documented in this file.
 - auto-run alembic migrations on rebuild (**make**) ([06ea01a](https://github.com/Observal/Observal/commit/06ea01a88de01c5b8c14b61ae777d591ba023c4c))
 - remove web/CLAUDE.md in favor of AGENTS.md ([e7dc7ec](https://github.com/Observal/Observal/commit/e7dc7ecf27fe10819b465723b043c7f594d2eaac))
 - remove CLAUDE.md from repo and add to .gitignore ([598027c](https://github.com/Observal/Observal/commit/598027c03642ac6e8835288358a9b15cb438c41d))
-- add license notice for ee ([a7b7c6f](https://github.com/Observal/Observal/commit/a7b7c6ff19fc3c7b9ebe63b835f5feb91b1baadd))
+- add AGPL notice for ee ([a7b7c6f](https://github.com/Observal/Observal/commit/a7b7c6ff19fc3c7b9ebe63b835f5feb91b1baadd))
 - update demo README, docker-compose, and scan API route ([855f8a5](https://github.com/Observal/Observal/commit/855f8a5ebe89216f8edc6990bdf74e06e021f532))
 - project lint ([579218d](https://github.com/Observal/Observal/commit/579218df7d08cd6612e7edeca8a66f1ffb8ee53c))
 - setup pull request template ([4e6415e](https://github.com/Observal/Observal/commit/4e6415e75ca16bcb0bb96ff874a0cb3f46db0993))
@@ -1853,7 +1894,7 @@ All notable changes to this project will be documented in this file.
 - drop Windsurf IDE support ([bb6af74](https://github.com/Observal/Observal/commit/bb6af74d633b4597d44b95c34c81a3ea67371a70))
 - update readme & issue template ([d519ae3](https://github.com/Observal/Observal/commit/d519ae3e9e501d52de0e43a05166e4ba7dde47d6))
 - remove outdated docs and update README to match current state ([50c4778](https://github.com/Observal/Observal/commit/50c4778ae21a7af07d48a14a93054d181f58ef92))
-- add project license ([bb22bc9](https://github.com/Observal/Observal/commit/bb22bc9210b9ca6db339548f701c009c2a67c893))
+- add AGPL-3.0 license ([bb22bc9](https://github.com/Observal/Observal/commit/bb22bc9210b9ca6db339548f701c009c2a67c893))
 - add linting, pre-commit hooks, and OSS project scaffolding ([b31319d](https://github.com/Observal/Observal/commit/b31319d9ca0b06396a843a888efd9990ab15e91b))
 
 ### Performance
