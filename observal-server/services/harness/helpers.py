@@ -264,11 +264,25 @@ def _local_registry_names(listings: dict) -> dict:
     """Use bare slugs unless this install contains the same slug from multiple namespaces."""
     slugs = Counter(registry_item_slug(listing) for listing in listings.values())
     duplicates = {slug for slug, count in slugs.items() if count > 1}
-    names = {}
+    names: dict = {}
+    used: set[str] = set()
     for listing_id, listing in listings.items():
         slug = registry_item_slug(listing)
         namespace = getattr(listing, "namespace", "")
-        names[listing_id] = f"{namespace}-{slug}" if slug in duplicates and isinstance(namespace, str) else slug
+        if slug in duplicates and isinstance(namespace, str):
+            # Local names become harness config keys and on-disk names, where a dot
+            # reads as a file extension, so flatten it out of the qualifier.
+            candidate = f"{namespace.replace('.', '-')}-{slug}"
+        else:
+            candidate = slug
+        # Flattening can make `a.b` and `a-b` land on the same qualifier; a harness
+        # config keyed by name silently drops the loser, so keep them distinct.
+        unique, attempt = candidate, 2
+        while unique in used:
+            unique = f"{candidate}-{attempt}"
+            attempt += 1
+        used.add(unique)
+        names[listing_id] = unique
     return names
 
 

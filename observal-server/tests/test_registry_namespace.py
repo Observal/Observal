@@ -171,6 +171,21 @@ def test_harness_names_only_qualify_real_slug_collisions():
     }
 
 
+def test_harness_local_names_flatten_dots_without_colliding():
+    """Local names key harness configs and land on disk, so dots are flattened —
+    which makes `a.b` and `a-b` collapse together unless kept distinct."""
+    from services.harness.helpers import _local_registry_names
+
+    listings = {
+        1: SimpleNamespace(name="Tool", namespace="legacy.handle", slug="tool"),
+        2: SimpleNamespace(name="Tool", namespace="legacy-handle", slug="tool"),
+    }
+    names = _local_registry_names(listings)
+    assert names[1] == "legacy-handle-tool"
+    assert names[2] != names[1]
+    assert "." not in names[1] and "." not in names[2]
+
+
 @pytest.mark.asyncio
 async def test_username_change_is_blocked_after_publish():
     from api.routes.auth import set_username
@@ -188,16 +203,48 @@ async def test_username_change_is_blocked_after_publish():
     assert user.username == "alice"
 
 
-def test_username_that_is_not_a_namespace_names_itself_and_the_way_out():
-    from services.registry_namespace import is_valid_namespace, namespace_for_user
+def test_dotted_handles_are_valid_namespaces():
+    """Handles carried over from before namespace validation stay usable."""
+    from services.registry_namespace import is_valid_namespace, namespace_for_user, validate_namespace
 
+    assert is_valid_namespace("legacy.handle")
     assert is_valid_namespace("legacy-handle")
-    assert not is_valid_namespace("legacy.handle")
-    assert not is_valid_namespace(None)
+    assert validate_namespace("Legacy.Handle") == "legacy.handle"
+    assert namespace_for_user(SimpleNamespace(username="legacy.handle")) == "legacy.handle"
+    assert identity_for_user(SimpleNamespace(username="legacy.handle"), "Task Creator") == (
+        "legacy.handle",
+        "task-creator",
+    )
+
+
+@pytest.mark.parametrize(
+    "handle",
+    [
+        None,
+        "",
+        "ab",  # under three characters
+        ".alice",  # dot may not lead
+        "alice.",  # …or trail
+        "a..b",  # `..` reaches path-ish contexts
+        "alice ms",
+        "alice_ms",  # underscores belong to slugs, not namespaces
+        "alice/ms",  # the qualified-name separator
+        "alice@ms",
+        "a" * 33,
+    ],
+)
+def test_namespaces_that_stay_invalid(handle):
+    from services.registry_namespace import is_valid_namespace
+
+    assert not is_valid_namespace(handle)
+
+
+def test_username_that_is_not_a_namespace_names_itself_and_the_way_out():
+    from services.registry_namespace import namespace_for_user
 
     with pytest.raises(ValueError) as exc:
-        namespace_for_user(SimpleNamespace(username="legacy.handle"))
-    assert "legacy.handle" in str(exc.value)
+        namespace_for_user(SimpleNamespace(username="Bad Handle"))
+    assert "Bad Handle" in str(exc.value)
     assert "set-username" in str(exc.value)
 
 
@@ -208,7 +255,7 @@ async def test_publish_lock_does_not_trap_a_username_that_can_never_publish():
     from api.routes.auth import set_username
     from schemas.auth import UsernameUpdateRequest
 
-    user = SimpleNamespace(id=uuid.uuid4(), username="legacy.handle")
+    user = SimpleNamespace(id=uuid.uuid4(), username="Legacy Handle")
     free = SimpleNamespace(scalar_one_or_none=lambda: None)
     db = SimpleNamespace(execute=AsyncMock(return_value=free), commit=AsyncMock(), refresh=AsyncMock())
     renamed = AsyncMock(return_value=3)
@@ -223,7 +270,7 @@ async def test_publish_lock_does_not_trap_a_username_that_can_never_publish():
     assert user.username == "legacy-handle"
     lock.assert_not_awaited()
     # Listings left behind in the old namespace would be unreachable.
-    renamed.assert_awaited_once_with(db, "legacy.handle", "legacy-handle")
+    renamed.assert_awaited_once_with(db, "Legacy Handle", "legacy-handle")
     db.commit.assert_awaited_once()
     response.model_validate.assert_called_once_with(user)
 

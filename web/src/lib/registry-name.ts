@@ -11,6 +11,25 @@
  * copy-pasted into a shell.
  */
 
+/**
+ * Canonical namespace charset: 3-32 chars, starting and ending alphanumeric,
+ * hyphens and dots inside. Mirrors `observal_shared/namespace_rules.py` — keep
+ * the two in sync.
+ */
+const NAMESPACE_RE = /^[a-z0-9][a-z0-9.-]{1,30}[a-z0-9]$/;
+
+export const NAMESPACE_RULE_TEXT =
+	"Namespaces must be 3-32 characters using lowercase letters, numbers, " +
+	"hyphens, and dots, and must start and end with a letter or number";
+
+/** Whether a username can be used verbatim as a registry namespace. */
+export function isValidNamespace(handle: string | null | undefined): boolean {
+	if (!handle) return false;
+	const value = handle.trim().toLowerCase();
+	if (value.includes("..")) return false;
+	return NAMESPACE_RE.test(value);
+}
+
 /** Any shape carrying some subset of the canonical identity fields. */
 export interface QualifiedIdentity {
 	name?: string;

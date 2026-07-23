@@ -31,6 +31,7 @@ from observal_cli import client, config
 from observal_cli.branding import welcome_banner
 from observal_cli.prompts import password_input, quick_choice, text_input
 from observal_cli.render import console, kv_panel, spinner, status_badge
+from observal_shared.namespace_rules import NAMESPACE_RULE_TEXT, is_valid_namespace
 
 # ── Auth subgroup ───────────────────────────────────────────
 
@@ -489,13 +490,14 @@ def change_password():
 
 @auth_app.command(name="set-username")
 def set_username(
-    username: str = typer.Argument(..., help="Username (3-32 chars, lowercase alphanumeric and hyphens)"),
+    username: str = typer.Argument(..., help="Username (3-32 chars, lowercase alphanumeric, hyphens and dots)"),
 ):
     """Set or update your username.
 
-    Usernames must be 3 to 32 characters, lowercase alphanumeric with
-    hyphens allowed. Once set, your username can be used for login, doubles
-    as your registry namespace, and is displayed as @username in the UI.
+    Usernames must be 3 to 32 characters of lowercase letters, numbers,
+    hyphens, and dots, starting and ending with a letter or number. Once set,
+    your username can be used for login, doubles as your registry namespace,
+    and is displayed as @username in the UI.
 
     The server locks the username once you have published a registry item.
     The exception is a username that is not a valid namespace (one carried
@@ -505,15 +507,13 @@ def set_username(
     Examples:
         observal auth set-username alice
         observal auth set-username my-dev-handle
+        observal auth set-username my.dev.handle
     """
     optic.trace("username={}", username)
     from observal_cli import client as _client
 
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,30}[a-z0-9]", username):
-        rprint(
-            "[red]Failed:[/red] Username must be 3-32 characters using lowercase letters, "
-            "numbers, and hyphens, and start and end with a letter or number."
-        )
+    if not is_valid_namespace(username):
+        rprint(f"[red]Failed:[/red] {NAMESPACE_RULE_TEXT}.")
         raise typer.Exit(1)
 
     try:
