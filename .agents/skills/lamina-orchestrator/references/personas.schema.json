@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lamina.dev/schemas/personas-v2.json",
+  "title": "Lamina evidence-grounded personas",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "personas"],
+  "properties": {
+    "contract_version": { "const": "2.0" },
+    "personas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role", "goals", "constraints", "evidence", "confidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "role": { "type": "string" },
+          "goals": { "type": "array", "items": { "type": "string" } },
+          "constraints": { "type": "array", "items": { "type": "string" } },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "confidence": { "enum": ["low", "medium", "high"] },
+          "actor_refs": { "type": "array", "items": { "type": "string", "pattern": "^actor\\.[A-Za-z0-9_-]+$" } },
+          "primary": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

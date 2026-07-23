@@ -1,0 +1,82 @@
+{
+  "contract_version": "2.0",
+  "personas": [
+    {
+      "id": "agent-consumer",
+      "role": "AI coding developer who discovers and installs shared agents into their harness",
+      "primary": true,
+      "goals": [
+        "Find a trusted internal agent or component instead of rebuilding it",
+        "Install into the correct harness with one command and keep working",
+        "Diagnose when an agent or tool fails using traces or doctor guidance"
+      ],
+      "constraints": [
+        "Limited patience for multi-harness setup and broken config",
+        "Works primarily inside a coding harness (Claude Code, Cursor, Kiro, Pi, etc.)",
+        "Prefers approved registry items but may need own pending submissions"
+      ],
+      "confidence": "medium",
+      "evidence": [
+        "README.md: What is Observal / Why teams use Observal / Quick Start",
+        "AGENTS.md: pull as primary workflow; CLI / web / skill interaction modes"
+      ]
+    },
+    {
+      "id": "agent-author",
+      "role": "Internal agent or component author who publishes and maintains shared packages",
+      "goals": [
+        "Package MCP servers, skills, hooks, prompts, and sandboxes into a versioned agent",
+        "Get submissions reviewed and adopted across harnesses",
+        "Learn from usage and insight reports what to improve or deprecate"
+      ],
+      "constraints": [
+        "Must satisfy admin review before broad install (except owner fallback)",
+        "Must keep versions and harness compatibility coherent",
+        "Lacks visibility when usage feedback is missing"
+      ],
+      "confidence": "medium",
+      "evidence": [
+        "README.md: Agents are portable context packages; registry; insights; review diffs",
+        "AGENTS.md: agent create/build/publish; component types; owner-install fallback"
+      ]
+    },
+    {
+      "id": "platform-admin",
+      "role": "Platform or org admin who governs the registry and user access",
+      "goals": [
+        "Review, approve, or reject submissions with enough context to decide safely",
+        "Keep a trusted catalog and audit trail for internal AI components",
+        "Manage users, org settings, and policy without blocking legitimate owners"
+      ],
+      "constraints": [
+        "Accountable for what becomes installable org-wide",
+        "Needs diffs, prompts, and audit signals—not anecdote-only review",
+        "Must balance speed-to-publish against safety and compliance expectations"
+      ],
+      "confidence": "medium",
+      "evidence": [
+        "README.md: Review and Governance; audit logs; SSO/SCIM mentions",
+        "AGENTS.md: admin review routes; audit system; auth model"
+      ]
+    },
+    {
+      "id": "stack-operator",
+      "role": "Operator who deploys and maintains the self-hosted Observal stack",
+      "goals": [
+        "Stand up and upgrade a reliable Docker-based control plane",
+        "Keep auth, databases, ingest, and web healthy",
+        "Back up, restore, and diagnose failures without data loss"
+      ],
+      "constraints": [
+        "Owns Postgres, ClickHouse, Redis, and compose topology complexity",
+        "Must follow migration and upgrade docs; Redis fail-closed affects auth",
+        "Not the primary registry end user day-to-day"
+      ],
+      "confidence": "medium",
+      "evidence": [
+        "README.md: Deploy the server; self-hosting docs links",
+        "AGENTS.md: Docker stack services; ClickHouse migrations; Redis auth fail-closed"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1074 @@
+{
+  "contract_version": "2.0",
+  "id": "management-dashboard",
+  "status": "complete",
+  "stage": "shape",
+  "hook": "audit",
+  "target": "management-dashboard",
+  "intent": {
+    "problem": "Audit the management dashboard for empty states, failure recovery, permission boundaries, and admin task success",
+    "outcome": "Platform admins can govern registry and ops from the management dashboard with clear empty/failure/permission states",
+    "users": [
+      "platform-admin"
+    ],
+    "critical_promises": [
+      {
+        "id": "admin-only-access",
+        "promise": "Only admin-tier actors can reach and load Executive Dashboard metrics; denied actors get an explicit permission outcome",
+        "criticality": "critical",
+        "source": "repository",
+        "confidence": "high",
+        "relevance_reason": "Exec APIs require admin; nav hides Dashboard from non-admins; mismatch with page guard is in scope"
+      },
+      {
+        "id": "honest-empty-setup",
+        "promise": "When adoption/cost/department data is missing, the dashboard shows actionable empty or setup guidance that routes to reachable admin surfaces",
+        "criticality": "critical",
+        "source": "repository",
+        "confidence": "high",
+        "relevance_reason": "Onboarding wizard and per-tab empty states are the primary first-run admin experience"
+      },
+      {
+        "id": "recoverable-load-failures",
+        "promise": "When exec metrics fail to load, admins see an accurate failure reason and a reachable recovery path",
+        "criticality": "critical",
+        "source": "repository",
+        "confidence": "high",
+        "relevance_reason": "Every major tab implements isError branches; audit targets failure recovery"
+      }
+    ],
+    "success_signals": [
+      "Admin can open /dashboard and see Adoption KPIs or honest empty guidance",
+      "Non-admin cannot load exec metrics as if authorized",
+      "Failed fetches offer retry or refresh without blaming the wrong cause"
+    ],
+    "constraints": [
+      "Grounding mode: static UI/API source (live authenticated dashboard not available in this session)",
+      "Full-flow UX lenses applied; no lens truncation"
+    ],
+    "scope": {
+      "in": [
+        "Route /dashboard under _authed/_admin",
+        "Executive Dashboard tabs: adoption, cost, investments, insights, departments, velocity",
+        "Sidebar Admin > Dashboard entry",
+        "Exec API permission boundary"
+      ],
+      "out": [
+        "Registry home metrics unrelated to exec dashboard",
+        "CLI ops overview",
+        "Implementing product fixes in this turn"
+      ]
+    }
+  },
+  "decisions": {
+    "assumptions": [
+      {
+        "id": "static-grounding",
+        "class": "evidence_backed",
+        "source": "repository",
+        "confidence": "high",
+        "statement": "Audit is grounded in web/src pages/admin/dashboard and observal-server exec_dashboard routes because no authenticated live UI was available"
+      }
+    ],
+    "forks": []
+  },
+  "actors": [
+    {
+      "id": "platform-admin",
+      "goal": "Govern org AI adoption, cost, and insights from the Executive Dashboard",
+      "authority": "Server-side UserRole.admin (or super_admin) via require_role on /api/v1/exec/*; client role from auth profile",
+      "entry_path": "Login \u2192 Admin sidebar Dashboard (/dashboard) when role >= admin",
+      "persona_refs": [
+        "persona.platform-admin"
+      ],
+      "owns": [
+        "entity.exec-dashboard-view",
+        "entity.exec-config"
+      ],
+      "permissions": [
+        "view-exec-metrics",
+        "update-exec-baselines",
+        "generate-exec-ai-insights"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Primary operator of the audited surface"
+    },
+    {
+      "id": "reviewer",
+      "goal": "Review registry submissions without executive org analytics",
+      "authority": "UserRole.reviewer; _admin layout RoleGuard minRole=reviewer",
+      "entry_path": "Login \u2192 Review; may deep-link /dashboard because layout guard is reviewer-scoped",
+      "persona_refs": [
+        "persona.agent-author"
+      ],
+      "owns": [],
+      "permissions": [
+        "review-submissions"
+      ],
+      "criticality": "supporting",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Exposes permission boundary mismatch with exec APIs"
+    }
+  ],
+  "entities": [
+    {
+      "id": "exec-dashboard-view",
+      "identity": "Authenticated admin session viewing /dashboard?tab=&range=",
+      "attributes": [
+        {
+          "name": "active_tab",
+          "contract": "One of adoption|cost|investments|insights|departments|velocity; URL search param tab"
+        },
+        {
+          "name": "range",
+          "contract": "7d|30d|90d search param driving range-scoped queries"
+        },
+        {
+          "name": "onboarding_dismissed",
+          "contract": "localStorage observal_dash_onboarding_dismissed == 1"
+        }
+      ],
+      "states": [
+        "loading",
+        "ready",
+        "empty-setup",
+        "error",
+        "denied"
+      ],
+      "relationships": [
+        {
+          "to": "entity.exec-config",
+          "cardinality": "0..1",
+          "lifecycle": "Cost tab requires configured baselines before savings view"
+        }
+      ],
+      "lifecycle_consequences": [
+        "error hides tab KPIs behind connection-style message",
+        "empty-setup shows onboarding or baselines form",
+        "denied should redirect or explain permission failure"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Primary surface state machine for the audit"
+    },
+    {
+      "id": "exec-config",
+      "identity": "org-scoped exec_dashboard_config row",
+      "attributes": [
+        {
+          "name": "hourly_dev_cost",
+          "contract": "number used for hours reclaimed"
+        },
+        {
+          "name": "pre_ai_baselines",
+          "contract": "map category\u2192pre-AI cost"
+        }
+      ],
+      "states": [
+        "missing",
+        "configured"
+      ],
+      "relationships": [],
+      "lifecycle_consequences": [
+        "missing forces Cost tab into BaselinesConfigForm",
+        "configured unlocks savings KPIs and ROI projections"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Gate for Cost Intelligence honesty"
+    }
+  ],
+  "operations": [
+    {
+      "id": "open-dashboard",
+      "actor_refs": [
+        "actor.platform-admin",
+        "actor.reviewer"
+      ],
+      "preconditions": [
+        "Authenticated session",
+        "Client RoleGuard allows _admin layout"
+      ],
+      "enforces": [
+        "invariant.admin-api-boundary"
+      ],
+      "effects": [
+        "Navigate to /dashboard",
+        "Mount Executive Dashboard shell"
+      ],
+      "failures": [
+        {
+          "code": "role-denied-client",
+          "when": "role below layout minRole",
+          "effect": "toast + redirect to /"
+        },
+        {
+          "code": "role-api-denied",
+          "when": "reviewer passes layout but APIs require admin",
+          "effect": "tab isError with connection-style copy"
+        }
+      ],
+      "recovery": "Elevate to admin or leave dashboard; toast explains client deny",
+      "outcome": "Dashboard shell visible for permitted layout roles",
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Entry path and permission probe"
+    },
+    {
+      "id": "load-exec-metrics",
+      "actor_refs": [
+        "actor.platform-admin"
+      ],
+      "preconditions": [
+        "Admin API role",
+        "ClickHouse/session data or empty aggregates"
+      ],
+      "enforces": [
+        "invariant.admin-api-boundary"
+      ],
+      "effects": [
+        "Populate adoption/cost/insights/etc. queries"
+      ],
+      "failures": [
+        {
+          "code": "network-or-5xx",
+          "effect": "isError empty-state message"
+        },
+        {
+          "code": "403",
+          "effect": "Same isError connection message (not permission-labeled)"
+        }
+      ],
+      "recovery": "Page Refresh invalidates exec queries except ai-insights; error panels lack dedicated Retry",
+      "outcome": "KPI cards, charts, or empty guidance",
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Core read path for every tab"
+    },
+    {
+      "id": "configure-cost-baselines",
+      "actor_refs": [
+        "actor.platform-admin"
+      ],
+      "preconditions": [
+        "Admin role",
+        "Cost tab active",
+        "config missing or edit mode"
+      ],
+      "enforces": [
+        "invariant.admin-api-boundary"
+      ],
+      "transitions": [
+        {
+          "entity_ref": "entity.exec-config",
+          "from": "missing",
+          "to": "configured"
+        }
+      ],
+      "effects": [
+        "PUT /exec/config",
+        "refetch cost summary"
+      ],
+      "failures": [
+        {
+          "code": "save-failed",
+          "effect": "toast.error Failed to save baselines"
+        }
+      ],
+      "recovery": "Retry Save Baselines",
+      "outcome": "Cost Intelligence KPIs unlock",
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Primary setup mutation on the dashboard"
+    },
+    {
+      "id": "generate-ai-insights",
+      "actor_refs": [
+        "actor.platform-admin"
+      ],
+      "preconditions": [
+        "Admin role",
+        "Insights tab",
+        "optional prior cache"
+      ],
+      "enforces": [
+        "invariant.admin-api-boundary"
+      ],
+      "effects": [
+        "POST /exec/ai-insights",
+        "cache report in query client"
+      ],
+      "failures": [
+        {
+          "code": "generate-failed",
+          "effect": "toast.error"
+        }
+      ],
+      "recovery": "Retry Generate report",
+      "outcome": "Cached executive insight sections",
+      "criticality": "supporting",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Supporting admin action with good empty CTA"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "view-adoption-overview",
+      "actor_ref": "actor.platform-admin",
+      "steps": [
+        {
+          "operation_ref": "operation.open-dashboard"
+        },
+        {
+          "operation_ref": "operation.load-exec-metrics"
+        }
+      ],
+      "dependency_refs": [
+        "dependency.exec-api",
+        "dependency.session-telemetry"
+      ],
+      "terminal_outcomes": [
+        "Adoption KPIs and charts shown",
+        "Honest empty chart/list copy when no traces",
+        "Error panel when loads fail"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Default tab journey"
+    },
+    {
+      "id": "setup-cost-intelligence",
+      "actor_ref": "actor.platform-admin",
+      "steps": [
+        {
+          "operation_ref": "operation.open-dashboard"
+        },
+        {
+          "operation_ref": "operation.configure-cost-baselines"
+        },
+        {
+          "operation_ref": "operation.load-exec-metrics"
+        }
+      ],
+      "dependency_refs": [
+        "dependency.exec-api"
+      ],
+      "terminal_outcomes": [
+        "Baselines saved and savings view unlocked"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Setup path for Cost tab"
+    },
+    {
+      "id": "denied-or-mismatched-access",
+      "actor_ref": "actor.reviewer",
+      "steps": [
+        {
+          "operation_ref": "operation.open-dashboard"
+        },
+        {
+          "operation_ref": "operation.load-exec-metrics"
+        }
+      ],
+      "dependency_refs": [
+        "dependency.exec-api"
+      ],
+      "terminal_outcomes": [
+        "Client redirect if below layout role",
+        "API failures if layout allows but API denies"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Permission boundary audit"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "admin-api-boundary",
+      "rule": "All /api/v1/exec/* handlers use Depends(require_role(UserRole.admin)); client UI must not present successful metrics to non-admins",
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Authoritative permission boundary"
+    },
+    {
+      "id": "empty-not-zero-lie",
+      "rule": "Missing telemetry or departments must show empty/setup guidance rather than invented non-zero executive claims",
+      "criticality": "critical",
+      "source": "derived",
+      "confidence": "medium",
+      "relevance_reason": "Trust for executive metrics"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "exec-api",
+      "type": "reachability",
+      "from": "workflow.view-adoption-overview",
+      "to": "operation.load-exec-metrics",
+      "condition": "Authenticated admin token accepted by FastAPI require_role(admin)",
+      "fulfillment": "observal-server/api/routes/exec_dashboard.py endpoints under /api/v1/exec",
+      "unmet_behavior": "Queries enter isError; tabs show Failed to load \u2026 Check your connection",
+      "verification": "Static: require_role(UserRole.admin) on handlers; UI isError branches in tab components",
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Dashboard is API-bound"
+    },
+    {
+      "id": "session-telemetry",
+      "type": "data",
+      "from": "workflow.view-adoption-overview",
+      "to": "entity.exec-dashboard-view",
+      "condition": "Session/trace aggregates exist in ClickHouse for org",
+      "fulfillment": "Ingest/reconcile pipeline feeding exec queries",
+      "unmet_behavior": "Charts/lists show No \u2026 data yet empty copy; KPIs may be zeros",
+      "verification": "Adoption/Investments/Departments empty branches in tab source",
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Empty-state honesty depends on telemetry presence"
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "executive-dashboard",
+      "purpose": "Admin executive analytics across adoption, cost, investments, insights, departments, velocity",
+      "primary_actor_refs": [
+        "actor.platform-admin"
+      ],
+      "graph_refs": [
+        "entity.exec-dashboard-view",
+        "entity.exec-config",
+        "invariant.admin-api-boundary"
+      ],
+      "workflow_refs": [
+        "workflow.view-adoption-overview",
+        "workflow.setup-cost-intelligence",
+        "workflow.denied-or-mismatched-access"
+      ],
+      "operation_refs": [
+        "operation.open-dashboard",
+        "operation.load-exec-metrics",
+        "operation.configure-cost-baselines"
+      ],
+      "contract": [
+        "loading: pulse skeletons on tabs",
+        "denial: RoleGuard toast+redirect for insufficient layout role; API denial currently looks like connection failure",
+        "stale: Refresh invalidates exec queries except ai-insights",
+        "recovery: Cost save toast retry; Insights generate retry; tab error panels lack Retry CTA",
+        "empty: onboarding wizard, baselines form, departments/investments empty copy"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Audited surface"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "reviewer-deep-link",
+      "risk_key": "authority-boundary-mismatch",
+      "when": {
+        "operation_ref": "operation.open-dashboard"
+      },
+      "covers": [
+        "operation.open-dashboard",
+        "operation.load-exec-metrics",
+        "workflow.denied-or-mismatched-access",
+        "invariant.admin-api-boundary",
+        "dependency.exec-api"
+      ],
+      "then": [
+        "Layout may allow reviewer",
+        "Sidebar hides Dashboard for non-admin",
+        "Exec API returns 403 while UI says connection failure"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Permission mismatch between layout, nav, and API"
+    },
+    {
+      "id": "no-departments",
+      "risk_key": "empty-setup-misroute",
+      "when": {
+        "operation_ref": "operation.load-exec-metrics"
+      },
+      "covers": [
+        "operation.load-exec-metrics",
+        "workflow.view-adoption-overview",
+        "invariant.empty-not-zero-lie",
+        "dependency.session-telemetry"
+      ],
+      "then": [
+        "Departments tab shows empty guidance",
+        "Copy may point to Settings though admin assignment lives under Users"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Empty-state routing accuracy"
+    },
+    {
+      "id": "metrics-load-fail",
+      "risk_key": "failure-recovery-gap",
+      "when": {
+        "operation_ref": "operation.load-exec-metrics"
+      },
+      "covers": [
+        "operation.load-exec-metrics",
+        "workflow.view-adoption-overview",
+        "invariant.admin-api-boundary",
+        "dependency.exec-api"
+      ],
+      "then": [
+        "Tab shows Failed to load \u2026 Check your connection",
+        "No in-panel Retry; page Refresh may recover"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Failure recovery audit"
+    },
+    {
+      "id": "missing-baselines",
+      "risk_key": "unmet-dependency-baselines",
+      "when": {
+        "operation_ref": "operation.configure-cost-baselines"
+      },
+      "covers": [
+        "operation.configure-cost-baselines",
+        "workflow.setup-cost-intelligence",
+        "invariant.empty-not-zero-lie",
+        "dependency.exec-api"
+      ],
+      "then": [
+        "Cost tab shows baselines form instead of fabricated savings"
+      ],
+      "criticality": "critical",
+      "source": "repository",
+      "confidence": "high",
+      "relevance_reason": "Honest cost setup"
+    }
+  ],
+  "proof_budget": {
+    "strategy": "smallest_complete_slice",
+    "max_critical_promises": 3,
+    "max_active_operations": 10,
+    "max_active_workflows": 6,
+    "max_active_dependencies": 6,
+    "max_active_surfaces": 6,
+    "max_proofs": 12,
+    "rationale": "Brownfield static audit of Executive Dashboard entry, metrics load, and cost setup only"
+  },
+  "proofs": [
+    {
+      "id": "proof-admin-access",
+      "promise_refs": [
+        "promise.admin-only-access"
+      ],
+      "workflow_ref": "workflow.denied-or-mismatched-access",
+      "operation_refs": [
+        "operation.open-dashboard",
+        "operation.load-exec-metrics"
+      ],
+      "invariant_refs": [
+        "invariant.admin-api-boundary"
+      ],
+      "dependency_refs": [
+        "dependency.exec-api"
+      ],
+      "surface_refs": [
+        "surface.executive-dashboard"
+      ],
+      "given": [
+        "Actor role is reviewer",
+        "Deep-link to /dashboard"
+      ],
+      "action": "Open dashboard and observe layout vs API vs nav",
+      "then": [
+        "Sidebar does not list Dashboard for reviewer",
+        "Layout RoleGuard minRole is reviewer so page can mount",
+        "Exec endpoints require admin"
+      ],
+      "authoritative_state": "require_role(UserRole.admin) on exec_dashboard handlers",
+      "visible_outcome": "isError connection copy rather than permission denial",
+      "recovery": "Use admin account or align RoleGuard to admin",
+      "evidence_levels": [
+        "boundary",
+        "journey"
+      ],
+      "test_requirements": [
+        "separate_actor_contexts",
+        "accessibility"
+      ]
+    },
+    {
+      "id": "proof-adoption-load",
+      "promise_refs": [
+        "promise.recoverable-load-failures",
+        "promise.honest-empty-setup"
+      ],
+      "workflow_ref": "workflow.view-adoption-overview",
+      "operation_refs": [
+        "operation.open-dashboard",
+        "operation.load-exec-metrics"
+      ],
+      "invariant_refs": [
+        "invariant.empty-not-zero-lie"
+      ],
+      "dependency_refs": [
+        "dependency.exec-api",
+        "dependency.session-telemetry"
+      ],
+      "surface_refs": [
+        "surface.executive-dashboard"
+      ],
+      "given": [
+        "Admin session",
+        "Adoption tab default"
+      ],
+      "action": "Load adoption metrics and inspect empty/error branches",
+      "then": [
+        "Loading skeletons appear",
+        "Empty charts use No \u2026 data yet copy",
+        "Errors use Failed to load adoption data"
+      ],
+      "authoritative_state": "TanStack Query results for exec.adoption and related hooks",
+      "visible_outcome": "KPI row or empty/error panel",
+      "recovery": "Header Refresh invalidates exec queries",
+      "evidence_levels": [
+        "domain",
+        "boundary",
+        "journey"
+      ],
+      "test_requirements": [
+        "restart_or_reload",
+        "responsive",
+        "dependency_failure"
+      ]
+    },
+    {
+      "id": "proof-cost-setup",
+      "promise_refs": [
+        "promise.honest-empty-setup"
+      ],
+      "workflow_ref": "workflow.setup-cost-intelligence",
+      "operation_refs": [
+        "operation.configure-cost-baselines",
+        "operation.load-exec-metrics"
+      ],
+      "invariant_refs": [
+        "invariant.empty-not-zero-lie"
+      ],
+      "dependency_refs": [
+        "dependency.exec-api"
+      ],
+      "surface_refs": [
+        "surface.executive-dashboard"
+      ],
+      "given": [
+        "Admin session",
+        "exec config missing"
+      ],
+      "action": "Open Cost tab and save baselines",
+      "then": [
+        "Baselines form shown",
+        "Save calls PUT /exec/config",
+        "Failure toasts"
+      ],
+      "authoritative_state": "exec_dashboard_config for org",
+      "visible_outcome": "Savings KPIs after configured=true",
+      "recovery": "Retry Save Baselines after toast error",
+      "evidence_levels": [
+        "boundary",
+        "journey"
+      ],
+      "test_requirements": [
+        "accessibility",
+        "responsive"
+      ]
+    }
+  ],
+  "persona_findings": [
+    {
+      "id": "pf-consumer-authority-mismatch",
+      "persona_ref": "persona.agent-consumer",
+      "classification": "contradiction",
+      "finding": "Executive Dashboard access is gated at three incompatible tiers: layout reviewer, nav admin, API admin\u2014producing mismatched permission outcomes.",
+      "graph_refs": [
+        "workflow.denied-or-mismatched-access",
+        "invariant.admin-api-boundary"
+      ],
+      "severity": "high",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-consumer-metrics-no-recovery",
+      "persona_ref": "persona.agent-consumer",
+      "classification": "missing_recovery",
+      "finding": "Tab metric failures show generic connection copy with no retry action.",
+      "graph_refs": [
+        "operation.load-exec-metrics",
+        "workflow.view-adoption-overview"
+      ],
+      "severity": "medium",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-consumer-empty-tier-split",
+      "persona_ref": "persona.agent-consumer",
+      "classification": "structural_defect",
+      "finding": "Departments empty directs to Settings (super_admin) while Users is the admin path\u2014authority-dishonest empty recovery.",
+      "graph_refs": [
+        "workflow.view-adoption-overview",
+        "surface.executive-dashboard"
+      ],
+      "severity": "medium",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-consumer-graph-gap",
+      "persona_ref": "persona.agent-consumer",
+      "classification": "research_hypothesis",
+      "finding": "Primary consumer goals (registry install/diagnose) are outside this admin dashboard graph; panel inclusion reflects primary-persona selection not surface ownership.",
+      "graph_refs": [
+        "surface.executive-dashboard"
+      ],
+      "severity": "low",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-admin-guard-api-mismatch",
+      "persona_ref": "persona.platform-admin",
+      "classification": "structural_defect",
+      "finding": "Reviewer-scoped RoleGuard lets non-admins open /dashboard then fail API loads without an explicit permission denial.",
+      "graph_refs": [
+        "workflow.denied-or-mismatched-access",
+        "scenario.reviewer-deep-link",
+        "operation.open-dashboard"
+      ],
+      "severity": "high",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-admin-no-retry",
+      "persona_ref": "persona.platform-admin",
+      "classification": "missing_recovery",
+      "finding": "Metrics error panels lack operation-scoped retry; recovery is only via page Refresh.",
+      "graph_refs": [
+        "operation.load-exec-metrics",
+        "scenario.metrics-load-fail",
+        "surface.executive-dashboard"
+      ],
+      "severity": "high",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-admin-empty-settings",
+      "persona_ref": "persona.platform-admin",
+      "classification": "contradiction",
+      "finding": "Departments empty routes to Settings instead of Users, conflicting with honest-empty-setup.",
+      "graph_refs": [
+        "scenario.no-departments",
+        "surface.executive-dashboard"
+      ],
+      "severity": "medium",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-admin-export-audit",
+      "persona_ref": "persona.platform-admin",
+      "classification": "structural_defect",
+      "finding": "Export via DOM scrape + alert() sits outside auditable server-backed export boundaries.",
+      "graph_refs": [
+        "workflow.view-adoption-overview",
+        "surface.executive-dashboard"
+      ],
+      "severity": "medium",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-admin-setup-asymmetry",
+      "persona_ref": "persona.platform-admin",
+      "classification": "research_hypothesis",
+      "finding": "Cost baselines have a coherent setup path while other empty modules feel less guided.",
+      "graph_refs": [
+        "workflow.setup-cost-intelligence",
+        "workflow.view-adoption-overview"
+      ],
+      "severity": "low",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-ops-boundary-mismatch",
+      "persona_ref": "persona.stack-operator",
+      "classification": "structural_defect",
+      "finding": "Layout vs API tier mismatch yields non-explicit permission outcomes on the surface operators may use to sanity-check the stack.",
+      "graph_refs": [
+        "workflow.denied-or-mismatched-access",
+        "invariant.admin-api-boundary"
+      ],
+      "severity": "high",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-ops-failure-taxonomy",
+      "persona_ref": "persona.stack-operator",
+      "classification": "structural_defect",
+      "finding": "Failures collapse 403/5xx/empty ClickHouse into connection blame, blocking accurate ops diagnosis.",
+      "graph_refs": [
+        "operation.load-exec-metrics",
+        "scenario.metrics-load-fail",
+        "dependency.session-telemetry"
+      ],
+      "severity": "high",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-ops-empty-vs-outage",
+      "persona_ref": "persona.stack-operator",
+      "classification": "contradiction",
+      "finding": "Undifferentiated errors make empty telemetry indistinguishable from broken ingest.",
+      "graph_refs": [
+        "workflow.view-adoption-overview",
+        "dependency.session-telemetry"
+      ],
+      "severity": "high",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-ops-no-panel-retry",
+      "persona_ref": "persona.stack-operator",
+      "classification": "missing_recovery",
+      "finding": "No in-panel retry on metrics fail.",
+      "graph_refs": [
+        "operation.load-exec-metrics",
+        "surface.executive-dashboard"
+      ],
+      "severity": "medium",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-ops-refresh-excludes-insights",
+      "persona_ref": "persona.stack-operator",
+      "classification": "structural_defect",
+      "finding": "Refresh invalidation excludes ai-insights cache, so partial faults can persist.",
+      "graph_refs": [
+        "operation.load-exec-metrics",
+        "dependency.exec-api",
+        "surface.executive-dashboard"
+      ],
+      "severity": "medium",
+      "source": "persona_hypothesis"
+    },
+    {
+      "id": "pf-ops-redis-unsurfaced",
+      "persona_ref": "persona.stack-operator",
+      "classification": "research_hypothesis",
+      "finding": "Redis fail-closed auth symptoms may surface as dashboard access/load failures without naming the dependency.",
+      "graph_refs": [
+        "workflow.denied-or-mismatched-access",
+        "invariant.admin-api-boundary"
+      ],
+      "severity": "low",
+      "source": "persona_hypothesis"
+    }
+  ],
+  "traceability": [
+    {
+      "promise_ref": "promise.admin-only-access",
+      "graph_refs": [
+        "actor.platform-admin",
+        "entity.exec-dashboard-view",
+        "operation.open-dashboard",
+        "workflow.denied-or-mismatched-access",
+        "invariant.admin-api-boundary",
+        "surface.executive-dashboard",
+        "scenario.reviewer-deep-link"
+      ]
+    },
+    {
+      "promise_ref": "promise.honest-empty-setup",
+      "graph_refs": [
+        "actor.platform-admin",
+        "entity.exec-config",
+        "operation.configure-cost-baselines",
+        "workflow.setup-cost-intelligence",
+        "invariant.empty-not-zero-lie",
+        "surface.executive-dashboard",
+        "scenario.no-departments"
+      ]
+    },
+    {
+      "promise_ref": "promise.recoverable-load-failures",
+      "graph_refs": [
+        "actor.platform-admin",
+        "entity.exec-dashboard-view",
+        "operation.load-exec-metrics",
+        "workflow.view-adoption-overview",
+        "invariant.admin-api-boundary",
+        "surface.executive-dashboard",
+        "scenario.metrics-load-fail"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "FIND-role-guard-mismatch",
+      "severity": "high",
+      "fix_target": "product",
+      "title": "Align /dashboard RoleGuard with admin API and nav",
+      "graph_refs": [
+        "workflow.denied-or-mismatched-access",
+        "invariant.admin-api-boundary",
+        "operation.open-dashboard",
+        "surface.executive-dashboard"
+      ],
+      "evidence": "@web/src/routes/_authed/_admin.tsx RoleGuard minRole=reviewer; @web/src/components/nav/registry-sidebar.tsx Dashboard minRole=admin; @observal-server/api/routes/exec_dashboard.py require_role(UserRole.admin)",
+      "acceptance": [
+        "Non-admin users cannot mount Executive Dashboard UI",
+        "Denied users see an explicit permission message (not connection failure)",
+        "Sidebar visibility matches route guard and API role"
+      ]
+    },
+    {
+      "id": "FIND-error-taxonomy-retry",
+      "severity": "high",
+      "fix_target": "product",
+      "title": "Distinguish permission/network/data failures and add in-panel Retry",
+      "graph_refs": [
+        "operation.load-exec-metrics",
+        "scenario.metrics-load-fail",
+        "workflow.view-adoption-overview",
+        "surface.executive-dashboard"
+      ],
+      "evidence": "@web/src/pages/admin/dashboard/components/adoption-tab.tsx lines 19-24 identical connection copy; same pattern in cost/investments/departments/velocity/insights tabs; Refresh in index.tsx excludes ai-insights",
+      "acceptance": [
+        "403 shows permission denial copy",
+        "5xx/network shows retryable error with Retry button calling refetch",
+        "Empty successful aggregates still use empty-state copy (not error)"
+      ]
+    },
+    {
+      "id": "FIND-command-menu-role-leak",
+      "severity": "medium",
+      "fix_target": "product",
+      "title": "Filter Cmd+K navigate items by role like the sidebar",
+      "graph_refs": [
+        "workflow.denied-or-mismatched-access",
+        "invariant.admin-api-boundary",
+        "operation.open-dashboard",
+        "surface.executive-dashboard"
+      ],
+      "evidence": "@web/src/components/nav/command-menu.tsx maps allNavItems with no hasMinRole filter; sidebar in registry-sidebar.tsx filters adminNav by role. Confirmed by explore map of management dashboard.",
+      "acceptance": [
+        "Cmd+K Navigate group only lists routes the current role can access",
+        "Reviewer/user cannot jump to /dashboard or Settings via command menu when unauthorized",
+        "Selecting a hidden-admin route is not offered; denial remains explicit if deep-linked"
+      ]
+    },
+    {
+      "id": "FIND-departments-empty-misroute",
+      "severity": "medium",
+      "fix_target": "product",
+      "title": "Point Departments empty state to Users (or SSO), not Settings",
+      "graph_refs": [
+        "scenario.no-departments",
+        "surface.executive-dashboard"
+      ],
+      "evidence": "@web/src/pages/admin/dashboard/components/departments-tab.tsx empty copy cites Settings; @web/src/pages/admin/dashboard/index.tsx onboarding correctly cites Users; Settings nav minRole=super_admin",
+      "acceptance": [
+        "Empty departments copy links or names Users (and optional SSO) as the assignment path",
+        "Does not send admins to Settings unless they are super_admin and that is the correct surface"
+      ]
+    },
+    {
+      "id": "FIND-export-a11y-trust",
+      "severity": "medium",
+      "fix_target": "product",
+      "title": "Replace alert()-based export with accessible, trustworthy export UX",
+      "graph_refs": [
+        "surface.executive-dashboard",
+        "workflow.view-adoption-overview"
+      ],
+      "evidence": "@web/src/pages/admin/dashboard/index.tsx ExportDropdown uses document.querySelectorAll('table') and alert() for no tables; menu lacks aria attributes",
+      "acceptance": [
+        "No window.alert for empty export",
+        "Export control is keyboard accessible with announced menu state",
+        "Empty export uses inline feedback on the active tab"
+      ]
+    },
+    {
+      "id": "FIND-token-colors",
+      "severity": "low",
+      "fix_target": "product",
+      "title": "Replace raw hex chart/status colors with design tokens",
+      "graph_refs": [
+        "surface.executive-dashboard"
+      ],
+      "evidence": "@web/src/pages/admin/dashboard/components/cost-tab.tsx uses #16a34a/#e11d48; investments-tab.tsx COLORS hex array \u2014 contradicts web AGENTS.md OKLCH token rule",
+      "acceptance": [
+        "Dashboard charts and badges use semantic CSS tokens only"
+      ]
+    },
+    {
+      "id": "FIND-contract-naming",
+      "severity": "low",
+      "fix_target": "contract",
+      "title": "Canonicalize product name: Executive Dashboard vs management dashboard vs nav Dashboard",
+      "graph_refs": [
+        "surface.executive-dashboard"
+      ],
+      "evidence": "PageHeader title Executive Dashboard; sidebar Dashboard; user brief management dashboard; README executive dashboard",
+      "acceptance": [
+        "run.json target/surface naming and UI chrome use one agreed label in docs and nav"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "kind": "static_source",
+      "path": "web/src/pages/admin/dashboard/index.tsx",
+      "note": "Executive Dashboard shell, onboarding, range/export/refresh"
+    },
+    {
+      "kind": "static_source",
+      "path": "web/src/routes/_authed/_admin.tsx",
+      "note": "RoleGuard minRole=reviewer for all admin routes including dashboard"
+    },
+    {
+      "kind": "static_source",
+      "path": "web/src/components/nav/registry-sidebar.tsx",
+      "note": "Dashboard nav item minRole=admin"
+    },
+    {
+      "kind": "static_source",
+      "path": "observal-server/api/routes/exec_dashboard.py",
+      "note": "require_role(UserRole.admin) on exec endpoints"
+    },
+    {
+      "kind": "grounding_mode",
+      "note": "static_source \u2014 localhost:8080 reachable but no authenticated admin session for live walkthrough"
+    },
+    {
+      "kind": "static_source",
+      "path": "web/src/components/nav/command-menu.tsx",
+      "note": "Cmd+K lists allNavItems without role filtering (follow-up from dashboard explore)"
+    }
+  ]
+}

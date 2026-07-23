@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "skills": {
+    "lamina": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina/SKILL.md",
+      "computedHash": "75a2383c309ffdf9c663e5ba6d69c2f659834b2a443790db392defdd702ff02c"
+    },
+    "lamina-accessibility": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-accessibility/SKILL.md",
+      "computedHash": "ee29938e0bb76c730d911ef1ba744585c1cc262533e041583d25ba40e56ddeef"
+    },
+    "lamina-business-context": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-business-context/SKILL.md",
+      "computedHash": "0f41becdc10d03582a61b79850aa78519765a064bf2bdecea2d046712fe9a606"
+    },
+    "lamina-competitive-analysis": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-competitive-analysis/SKILL.md",
+      "computedHash": "5bba48b9dc519af04a8655a679fda144a34930a605c4f6d3f322299f9c7f36ad"
+    },
+    "lamina-consistency-guarantees": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-consistency-guarantees/SKILL.md",
+      "computedHash": "6f28918c7833c0ddec09b357e4973bdc335655543650bab4416b20337c7a35e2"
+    },
+    "lamina-content-design": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-content-design/SKILL.md",
+      "computedHash": "043ded42aa0c0e9c7c0a8df3a7c886dddf1b5402fcec86c96d9c35b0975174eb"
+    },
+    "lamina-controls-and-menus": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-controls-and-menus/SKILL.md",
+      "computedHash": "b38f8caf7207a2d2ba9407dac8c937ee322c3d24e4a4313f75232bfd5d79a7f6"
+    },
+    "lamina-core": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-core/SKILL.md",
+      "computedHash": "59cd20fe48cd6d03022744582d70b8a21ea82661d83cb2cd66f33da06fdc33ba"
+    },
+    "lamina-decision-making": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-decision-making/SKILL.md",
+      "computedHash": "714451f86c46e42e4ed830dd052d90b8ba0e9636f99c2a8bdd931403dd35e436"
+    },
+    "lamina-dependencies": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-dependencies/SKILL.md",
+      "computedHash": "581d5b8c1e7beeeaf60e635bde6c2abdc007323cb3c3af5f5cd4cbb7d353411c"
+    },
+    "lamina-design": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-design/SKILL.md",
+      "computedHash": "04a57c32c21f5617ce695cc3839123df44c52d55417760747a8461ffe3e7cf91"
+    },
+    "lamina-design-process": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-design-process/SKILL.md",
+      "computedHash": "809e3cd2de047cd8b0b639b7a74ea1cad3f6bbfe972c09f8fab22d5fbbc04a97"
+    },
+    "lamina-discoverability": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-discoverability/SKILL.md",
+      "computedHash": "6d09497eb27c4cd4aa54b466f62b4bd4ad66916496e11c6a529a827e19956687"
+    },
+    "lamina-edge-cases": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-edge-cases/SKILL.md",
+      "computedHash": "9906e43c748d25d8e6cc2935ff179d782aa53ceb990ed2ef03326a4f729d6172"
+    },
+    "lamina-empty-states": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-empty-states/SKILL.md",
+      "computedHash": "3eb49b010f351634562d598e3fae158b72bba34f72267bc4522dfe5877df26df"
+    },
+    "lamina-error-handling": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-error-handling/SKILL.md",
+      "computedHash": "05708ad64d7e31b8048cdfe9468cef07498fab70750afa1d5aeecb4406b9c2c8"
+    },
+    "lamina-evolutionary-rules": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-evolutionary-rules/SKILL.md",
+      "computedHash": "1d35d5826d06e134503d6930fd159c544d9cd12f9b5c094247e95620cdba2638"
+    },
+    "lamina-feature-discovery": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-feature-discovery/SKILL.md",
+      "computedHash": "c3a6142d35ede048b33888a9f5cf2dbc75eb1258beaebeda9bfdfe2305f4f3db"
+    },
+    "lamina-feature-prioritization": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-feature-prioritization/SKILL.md",
+      "computedHash": "dbcfc415afb501b3ebadcd3300f3c9cdc9d196057b22fe51ab64766c82fd2c5e"
+    },
+    "lamina-feedback-and-status": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-feedback-and-status/SKILL.md",
+      "computedHash": "849bb5f287355d1fb6bc9426cb374618ca80c1f86e83b59a06578736a45de950"
+    },
+    "lamina-feedback-loops": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-feedback-loops/SKILL.md",
+      "computedHash": "5127ee639527e227477d565ab073f4f92fc8c4a4baceefc3b5f8595dc5e28715"
+    },
+    "lamina-field-research": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-field-research/SKILL.md",
+      "computedHash": "32a096ebff5a9380368a2aa6fec0aa44b6b1301e592aae5492eacab2859e360e"
+    },
+    "lamina-flow-design": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-flow-design/SKILL.md",
+      "computedHash": "649b31a13a00918a33f5a937b9a6d6cd0c30c4ab5d6457eb1ae2c17bb781d07b"
+    },
+    "lamina-forms": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-forms/SKILL.md",
+      "computedHash": "77e1c5999b8a18bec00fb1173fb74d373531bdf195030770f3751ba269340445"
+    },
+    "lamina-heuristic-review": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-heuristic-review/SKILL.md",
+      "computedHash": "73a4458e8d05816917d139cbb946b272ea7356f00d4c0b8dc0af6e32e68d53bd"
+    },
+    "lamina-idempotency-concurrency": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-idempotency-concurrency/SKILL.md",
+      "computedHash": "df337b257bccd444fa2ed48551bc983504b99b30a14a161ba3c83e5dd0c07137"
+    },
+    "lamina-information-architecture": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-information-architecture/SKILL.md",
+      "computedHash": "9d7ff742e04cc3ae550556285b481b55eec506c37a86cfc78c3d0243a9b246e5"
+    },
+    "lamina-init": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-init/SKILL.md",
+      "computedHash": "856bcfe353df78df79a97acca1dacbd435036255a669ffb920624f0c0c6f10bd"
+    },
+    "lamina-interview-design": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-interview-design/SKILL.md",
+      "computedHash": "b395a31424f04b234c86de7d18a2962f697f788b2b0418bc67b7db2a49a50a54"
+    },
+    "lamina-interview-documentation": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-interview-documentation/SKILL.md",
+      "computedHash": "36cc3d2ae29b5aafe5bc3753647b5b1d60be2728e3c91eacacdd830585bec18c"
+    },
+    "lamina-invariants": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-invariants/SKILL.md",
+      "computedHash": "b53b6a865500c9a7208144cbe08987ec31438ca683411a482286aa11b9ab0d9e"
+    },
+    "lamina-leverage-points": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-leverage-points/SKILL.md",
+      "computedHash": "244f7382eb1972735151f5b2830ed795fc148f754d176a0e4d277dec100e4eae"
+    },
+    "lamina-modularity-boundaries": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-modularity-boundaries/SKILL.md",
+      "computedHash": "99bda0a7bbacc57d35e05ba20caedd333814a1a68059db1e798210aa6bfe19ff"
+    },
+    "lamina-multi-view-integrity": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-multi-view-integrity/SKILL.md",
+      "computedHash": "57c00b296833c2aed6d63e3ddfc640f9547bb9b6a37aab6665211e53e2c62317"
+    },
+    "lamina-navigation": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-navigation/SKILL.md",
+      "computedHash": "1992b1e7ada8faef9468aee6b69a1dbed102a3568ed69711929f526c347019da"
+    },
+    "lamina-onboarding": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-onboarding/SKILL.md",
+      "computedHash": "fcf908a90a4eb7e4ff3f5f7ae53db8663522d1b3fe6714051a6191dc5cfd971e"
+    },
+    "lamina-orchestrator": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-orchestrator/SKILL.md",
+      "computedHash": "f2060c1ee95ed7d04886a7843d884086ef1d217ec5f194a5a32d333a2e3f434c"
+    },
+    "lamina-persuasion-and-groups": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-persuasion-and-groups/SKILL.md",
+      "computedHash": "8ffa5d16c781f8502668539a7708e9d074a346d189bf125e90f412cd2f2b17ec"
+    },
+    "lamina-platform-posture": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-platform-posture/SKILL.md",
+      "computedHash": "acefe3a4605cf3db63c790054283e149a1ed482e0df543713ccebc3e19b4a9ed"
+    },
+    "lamina-problem-framing": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-problem-framing/SKILL.md",
+      "computedHash": "0019d0b1baa1111ca392f5cb62d44c5eb5e5907ee6726b78544f7192191c6f96"
+    },
+    "lamina-product-behavior": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-product-behavior/SKILL.md",
+      "computedHash": "db7bb1d49282ae80dee5354e5a67c440c806702cac6133150071d44cbcca9528"
+    },
+    "lamina-progressive-disclosure": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-progressive-disclosure/SKILL.md",
+      "computedHash": "0a5b7c6452841c3f901d2b912016428cc62d4e884a9b543b2067831470963b35"
+    },
+    "lamina-quantitative-validation": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-quantitative-validation/SKILL.md",
+      "computedHash": "5b6566953d9ec7c3790d504acc3014f1c449d1a7cf1dc157850c84750e849c50"
+    },
+    "lamina-requirements-definition": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-requirements-definition/SKILL.md",
+      "computedHash": "61581747a6c8fa31c4f39551189e962605816969418675971c33a1aedfdd51ca"
+    },
+    "lamina-research-communication": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-research-communication/SKILL.md",
+      "computedHash": "45186bbf2b963d493ef6022eca36da07af575ea04b2ed2119201c677e88be0a5"
+    },
+    "lamina-research-planning": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-research-planning/SKILL.md",
+      "computedHash": "b2e6e2ee49c46ffc9f5b9499fb29f6649b803d37822e830d2486a0f404cacb76"
+    },
+    "lamina-research-scoping": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-research-scoping/SKILL.md",
+      "computedHash": "93e235071ab54438fd0765a89de47210c7938f1c05d3de6a3a3f715cc46950c0"
+    },
+    "lamina-research-synthesis": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-research-synthesis/SKILL.md",
+      "computedHash": "8a7e0a5e33dd8b2072cbce05a728750116d23dfae4cb38c6b92ff08044205463"
+    },
+    "lamina-side-effects": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-side-effects/SKILL.md",
+      "computedHash": "350d0b1fac3cb7d58aa45aa5a3964c8c11c539157c5cbfa19c0f594913786a7a"
+    },
+    "lamina-stakeholder-alignment": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-stakeholder-alignment/SKILL.md",
+      "computedHash": "99ccbe4e83c6d2a0582a31179f202a5d5ae9a91d98074d510cb466910b99aa53"
+    },
+    "lamina-system-structure": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-system-structure/SKILL.md",
+      "computedHash": "218e321800a4a5241cbb2f0a02f36a1f98f05634464dc18daac1469330b23590"
+    },
+    "lamina-system-traps": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-system-traps/SKILL.md",
+      "computedHash": "b97282b2c994218836c9d12bd4d94c890b1c86169ebc9926dd7ab9eddc04b2d7"
+    },
+    "lamina-task-analysis": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-task-analysis/SKILL.md",
+      "computedHash": "b7827aaea8fb740a36b735542bf7ced6993d4c625eaa11ebaeb989da3cd4455d"
+    },
+    "lamina-time-semantics": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-time-semantics/SKILL.md",
+      "computedHash": "fa605d5a1308bb43feedbc96e2ad15db2a370c8ed9de1d5c1acba92ff3cb2e6c"
+    },
+    "lamina-tradeoffs": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-tradeoffs/SKILL.md",
+      "computedHash": "ff1c4606c481682bfb0fa9ab6498da9456c5eafaa8d332e3f8804edf238a07b1"
+    },
+    "lamina-trust": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-trust/SKILL.md",
+      "computedHash": "e1d0843877068e75e8c66d819ba18a838c1a92172ee4ad9e29f2d90806bbf825"
+    },
+    "lamina-usability-evaluation": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-usability-evaluation/SKILL.md",
+      "computedHash": "4529af7fea7560afaa560a5f53ed177c6bd771a7ba5b4c316cb9de7e3c60b1f0"
+    },
+    "lamina-user-modeling": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-user-modeling/SKILL.md",
+      "computedHash": "3fc2fd5ed77e793cdba399b26e6396e0e4dba539cd691eba23ad5ab28bbd43f5"
+    },
+    "lamina-verify": {
+      "source": "aryaniyaps/lamina",
+      "sourceType": "github",
+      "skillPath": "skills/lamina-verify/SKILL.md",
+      "computedHash": "f9d51a278eef85281e8e810edade0e67ef7713ac155c7dd625a311b27410bd71"
+    }
+  }
+}

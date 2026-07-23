@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lamina.dev/schemas/run-v2.json",
+  "title": "Lamina minimum sufficient product graph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "id", "status", "stage", "hook", "intent", "decisions", "actors", "entities", "operations", "workflows", "invariants", "dependencies", "surfaces", "scenarios", "proof_budget", "proofs", "persona_findings", "traceability", "findings", "evidence"],
+  "properties": {
+    "contract_version": { "const": "2.0" },
+    "id": { "$ref": "#/$defs/id" },
+    "status": { "enum": ["draft", "needs_input", "ready_to_build", "verifying", "complete"] },
+    "stage": { "enum": ["spark", "shape", "harden"] },
+    "hook": { "enum": ["design", "verify", "audit"] },
+    "target": { "type": "string" },
+    "intent": {
+      "type": "object",
+      "required": ["problem", "outcome", "users", "critical_promises", "success_signals", "constraints", "scope"],
+      "properties": {
+        "problem": { "type": "string", "minLength": 1 },
+        "outcome": { "type": "string", "minLength": 1 },
+        "users": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "critical_promises": { "type": "array", "items": { "$ref": "#/$defs/promise" } },
+        "success_signals": { "type": "array", "items": { "type": "string" } },
+        "constraints": { "type": "array", "items": { "type": "string" } },
+        "scope": { "type": "object", "required": ["in", "out"], "properties": { "in": { "type": "array", "items": { "type": "string" } }, "out": { "type": "array", "items": { "type": "string" } } } }
+      }
+    },
+    "decisions": { "type": "object", "required": ["assumptions", "forks"], "properties": { "assumptions": { "type": "array", "items": { "$ref": "#/$defs/decision" } }, "forks": { "type": "array", "items": { "$ref": "#/$defs/decision" } } } },
+    "actors": { "type": "array", "description": "Ready critical actors declare goal, ownership, permissions, trusted authority, and a reachable entry or provisioning path.", "items": { "$ref": "#/$defs/actor" } },
+    "entities": { "type": "array", "description": "Ready critical entities declare stable identity, key field contracts, lifecycle states, relationships, and lifecycle consequences.", "items": { "$ref": "#/$defs/entity" } },
+    "operations": { "type": "array", "description": "Ready critical operations declare actors, preconditions, trusted enforcement, transitions or durable effects, failures, recovery, and visible outcome.", "items": { "$ref": "#/$defs/operation" } },
+    "workflows": { "type": "array", "description": "End-to-end reachable actor journeys with dependency refs and explicit terminal outcomes.", "items": { "$ref": "#/$defs/workflow" } },
+    "invariants": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "dependencies": { "type": "array", "description": "Required product, platform, data, lifecycle, and reachability edges with concrete fulfillment, unmet behavior, and verification.", "items": { "$ref": "#/$defs/dependency" } },
+    "surfaces": { "type": "array", "description": "User-visible realization of workflows, including actor scope, operations, journey continuity, loading, denial, stale, and recovery behavior.", "items": { "$ref": "#/$defs/surface" } },
+    "scenarios": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "proof_budget": { "$ref": "#/$defs/proof_budget" },
+    "proofs": { "type": "array", "description": "Compact executable proof obligations that bind critical promises to trusted state and visible journeys.", "items": { "$ref": "#/$defs/proof" } },
+    "persona_findings": { "type": "array", "items": { "type": "object" } },
+    "traceability": { "type": "array", "items": { "type": "object" } },
+    "findings": { "type": "array", "items": { "type": "object" } },
+    "evidence": { "type": "array", "items": { "type": "object" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
+    "metadata": {
+      "type": "object",
+      "required": ["criticality", "source", "confidence", "relevance_reason"],
+      "properties": {
+        "criticality": { "enum": ["critical", "supporting", "deferred"] },
+        "source": { "enum": ["user", "repository", "derived", "assumed", "persona_hypothesis"] },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "relevance_reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "node": {
+      "allOf": [
+        { "$ref": "#/$defs/metadata" },
+        { "type": "object", "required": ["id"], "properties": { "id": { "$ref": "#/$defs/id" } }, "additionalProperties": true }
+      ]
+    },
+    "actor": {
+      "allOf": [
+        { "$ref": "#/$defs/node" },
+        { "type": "object", "properties": {
+          "goal": { "type": "string" },
+          "authority": { "type": "string", "description": "Trusted identity and authorization basis; a public identifier or client-side selector is not authentication." },
+          "entry_path": { "type": "string", "description": "Reachable enrollment, provisioning, activation, or operational-start path for this actor in the current product slice, including the local adapter for an external platform dependency." },
+          "persona_refs": { "type": "array", "description": "Known links to persona IDs used to route bounded perspective reviews.", "items": { "type": "string", "pattern": "^persona\\.[A-Za-z0-9_-]+$" } },
+          "owns": { "type": "array", "items": { "type": "string" } },
+          "permissions": { "type": "array", "items": { "type": "string" } }
+        } }
+      ]
+    },
+    "entity": {
+      "allOf": [
+        { "$ref": "#/$defs/node" },
+        { "type": "object", "properties": {
+          "identity": { "type": "string" },
+          "attributes": {
+            "type": "array",
+            "description": "Key field contracts needed to implement identity, authority, lifecycle, time, privacy, versioning, and durable audit behavior without inference.",
+            "items": {
+              "type": "object",
+              "required": ["name", "contract"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "contract": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "states": { "type": "array", "items": { "type": "string" } },
+          "relationships": { "type": "array", "items": { "type": "object" } },
+          "lifecycle_consequences": { "type": "array", "items": { "type": "string" } }
+        } }
+      ]
+    },
+    "operation": {
+      "allOf": [
+        { "$ref": "#/$defs/node" },
+        { "type": "object", "properties": {
+          "actor_refs": { "type": "array", "items": { "type": "string" } },
+          "preconditions": { "type": "array", "items": { "type": "string" } },
+          "enforces": { "type": "array", "items": { "type": "string" } },
+          "transitions": { "type": "array", "items": { "type": "object" } },
+          "effects": { "type": "array", "items": { "type": "string" } },
+          "failures": { "type": "array", "items": {} },
+          "recovery": { "type": "string" },
+          "outcome": { "type": "string" }
+        } }
+      ]
+    },
+    "workflow": {
+      "allOf": [
+        { "$ref": "#/$defs/node" },
+        { "type": "object", "properties": {
+          "actor_ref": { "type": "string" },
+          "steps": { "type": "array", "items": { "type": "object" } },
+          "dependency_refs": { "type": "array", "items": { "type": "string" } },
+          "terminal_outcomes": { "type": "array", "items": { "type": "string" } }
+        } }
+      ]
+    },
+    "surface": {
+      "allOf": [
+        { "$ref": "#/$defs/node" },
+        { "type": "object", "properties": {
+          "purpose": { "type": "string" },
+          "primary_actor_refs": { "type": "array", "items": { "type": "string" } },
+          "graph_refs": { "type": "array", "items": { "type": "string" } },
+          "workflow_refs": { "type": "array", "items": { "type": "string" } },
+          "operation_refs": { "type": "array", "items": { "type": "string" } },
+          "contract": { "type": "array", "items": { "type": "string" } }
+        } }
+      ]
+    },
+    "dependency": {
+      "allOf": [
+        { "$ref": "#/$defs/node" },
+        { "type": "object", "properties": {
+          "type": { "enum": ["prerequisite", "data", "lifecycle", "reachability"] },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "condition": { "type": "string" },
+          "fulfillment": { "type": "string", "description": "Concrete current-slice mechanism that makes the dependency available, including owner, activation path, cadence or tolerance when operational, and any local adapter." },
+          "unmet_behavior": { "type": "string" },
+          "verification": { "type": "string", "description": "Observable proof for both met and unmet behavior." }
+        } }
+      ]
+    },
+    "proof_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "max_critical_promises", "max_active_operations", "max_active_workflows", "max_active_dependencies", "max_active_surfaces", "max_proofs", "rationale"],
+      "properties": {
+        "strategy": { "const": "smallest_complete_slice" },
+        "max_critical_promises": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "max_active_operations": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "max_active_workflows": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "max_active_dependencies": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "max_active_surfaces": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "max_proofs": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "promise_refs", "workflow_ref", "operation_refs", "invariant_refs", "dependency_refs", "surface_refs", "given", "action", "then", "authoritative_state", "visible_outcome", "recovery", "evidence_levels", "test_requirements"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "promise_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^promise\\.[A-Za-z0-9_-]+$" } },
+        "workflow_ref": { "type": "string", "pattern": "^workflow\\.[A-Za-z0-9_-]+$" },
+        "operation_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^operation\\.[A-Za-z0-9_-]+$" } },
+        "invariant_refs": { "type": "array", "items": { "type": "string", "pattern": "^invariant\\.[A-Za-z0-9_-]+$" } },
+        "dependency_refs": { "type": "array", "items": { "type": "string", "pattern": "^dependency\\.[A-Za-z0-9_-]+$" } },
+        "surface_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^surface\\.[A-Za-z0-9_-]+$" } },
+        "given": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "action": { "type": "string", "minLength": 1 },
+        "then": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "authoritative_state": { "type": "string", "minLength": 1 },
+        "visible_outcome": { "type": "string", "minLength": 1 },
+        "recovery": { "type": "string", "minLength": 1 },
+        "evidence_levels": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "enum": ["domain", "boundary", "journey"] } },
+        "test_requirements": { "type": "array", "uniqueItems": true, "items": { "enum": ["controlled_clock", "separate_actor_contexts", "restart_or_reload", "dependency_failure", "replay_or_concurrency", "responsive", "accessibility"] } }
+      }
+    },
+    "promise": {
+      "allOf": [
+        { "$ref": "#/$defs/metadata" },
+        { "type": "object", "required": ["id", "promise"], "properties": { "id": { "$ref": "#/$defs/id" }, "promise": { "type": "string", "minLength": 1 } } }
+      ]
+    },
+    "decision": {
+      "type": "object",
+      "required": ["id", "class", "source", "confidence", "statement"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "class": { "enum": ["structural", "safety_integrity", "reversible_default", "policy_fork", "desirability_hypothesis", "evidence_backed"] },
+        "source": { "enum": ["user", "repository", "derived", "assumed", "persona_hypothesis"] },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "statement": { "type": "string", "minLength": 1 },
+        "blocking": { "type": "boolean" },
+        "status": { "enum": ["proposed", "confirmed", "resolved", "unresolved"] }
+      }
+    }
+  }
+}

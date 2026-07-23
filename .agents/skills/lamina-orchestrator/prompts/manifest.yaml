@@ -1,0 +1,20 @@
+outputs/design:
+  path: outputs/design.md
+outputs/implement:
+  path: outputs/implement.md
+outputs/verify:
+  path: outputs/verify.md
+outputs/fix:
+  path: outputs/fix.md
+outputs/init:
+  path: outputs/init.md
+outputs/clarify:
+  path: outputs/clarify.md
+subagents/persona-panel-spawn:
+  path: subagents/persona-panel-spawn.md
+subagents/walkthrough-capturer:
+  path: subagents/walkthrough-capturer.md
+subagents/screen-describer:
+  path: subagents/screen-describer.md
+checkpoints/continue-or-revise:
+  path: checkpoints/continue-or-revise.md

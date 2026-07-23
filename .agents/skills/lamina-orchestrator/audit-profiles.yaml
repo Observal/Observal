@@ -1,0 +1,135 @@
+profiles:
+  design-domain:
+    skills:
+      - lamina-system-structure
+      - lamina-invariants
+      - lamina-dependencies
+      - lamina-modularity-boundaries
+      - lamina-tradeoffs
+      - lamina-business-context
+
+  design-actors:
+    skills:
+      - lamina-user-modeling
+      - lamina-multi-view-integrity
+      - lamina-task-analysis
+
+  design-workflows:
+    skills:
+      - lamina-flow-design
+      - lamina-dependencies
+      - lamina-side-effects
+      - lamina-task-analysis
+
+  design-time:
+    skills:
+      - lamina-time-semantics
+      - lamina-dependencies
+      - lamina-side-effects
+      - lamina-idempotency-concurrency
+
+  design-scenarios:
+    skills:
+      - lamina-edge-cases
+      - lamina-dependencies
+      - lamina-invariants
+      - lamina-idempotency-concurrency
+      - lamina-error-handling
+      - lamina-empty-states
+      - lamina-system-traps
+
+  design-ux:
+    skills:
+      - lamina-information-architecture
+      - lamina-navigation
+      - lamina-forms
+      - lamina-feedback-and-status
+      - lamina-discoverability
+      - lamina-product-behavior
+      - lamina-content-design
+      - lamina-onboarding
+      - lamina-trust
+      - lamina-progressive-disclosure
+
+  design-risks:
+    skills:
+      - lamina-decision-making
+      - lamina-tradeoffs
+      - lamina-evolutionary-rules
+
+  verify-contract:
+    skills:
+      - lamina-system-structure
+      - lamina-invariants
+      - lamina-dependencies
+      - lamina-consistency-guarantees
+
+  verify-grounding:
+    skills:
+      - lamina-flow-design
+      - lamina-field-research
+      - lamina-interview-documentation
+
+  verify-actors:
+    skills:
+      - lamina-user-modeling
+      - lamina-multi-view-integrity
+
+  verify-integrity:
+    skills:
+      - lamina-invariants
+      - lamina-dependencies
+      - lamina-idempotency-concurrency
+      - lamina-edge-cases
+      - lamina-consistency-guarantees
+
+  verify-time:
+    skills:
+      - lamina-time-semantics
+      - lamina-side-effects
+      - lamina-consistency-guarantees
+      - lamina-idempotency-concurrency
+
+  verify-a11y:
+    skills:
+      - lamina-accessibility
+
+  verify-findings:
+    skills:
+      - lamina-decision-making
+      - lamina-error-handling
+
+  init:
+    skills:
+      - lamina-business-context
+      - lamina-system-structure
+      - lamina-user-modeling
+      - lamina-problem-framing
+      - lamina-feature-discovery
+      - lamina-research-scoping
+      - lamina-stakeholder-alignment
+      - lamina-feature-prioritization
+
+  design-intake:
+    skills:
+      - lamina-problem-framing
+      - lamina-feature-discovery
+      - lamina-requirements-definition
+      - lamina-competitive-analysis
+      - lamina-platform-posture
+
+  design-evidence:
+    skills:
+      - lamina-research-scoping
+      - lamina-field-research
+      - lamina-interview-documentation
+
+  verify-simulation:
+    skills:
+      - lamina-research-planning
+      - lamina-interview-design
+      - lamina-usability-evaluation
+      - lamina-research-synthesis
+      - lamina-research-communication
+      - lamina-heuristic-review
+      - lamina-persuasion-and-groups
