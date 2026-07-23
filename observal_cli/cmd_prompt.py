@@ -20,8 +20,9 @@ from observal_cli.constants import VALID_PROMPT_CATEGORIES
 from observal_cli.prompts import select_one, text_input
 from observal_cli.render import (
     console,
+    display_name,
+    handle,
     kv_panel,
-    name_block,
     name_inline,
     output_json,
     relative_time,
@@ -178,15 +179,15 @@ def prompt_list(
     table.add_column("#", style="dim", width=3)
     table.add_column("Name", style="bold cyan", no_wrap=True)
     table.add_column("Version", style="green")
-    table.add_column("Owner", style="dim")
+    table.add_column("Namespace", style="dim")
     table.add_column("Status")
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            name_block(item),
+            display_name(item),
             item.get("version", ""),
-            item.get("owner", ""),
+            handle(item),
             status_badge(item.get("status", "")),
             str(item["id"])[:8] + "…",
         )
@@ -223,15 +224,15 @@ def prompt_my(
     table.add_column("#", style="dim", width=3)
     table.add_column("Name", style="bold cyan", no_wrap=True)
     table.add_column("Version", style="green")
-    table.add_column("Owner", style="dim")
+    table.add_column("Namespace", style="dim")
     table.add_column("Status")
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            name_block(item),
+            display_name(item),
             item.get("version", ""),
-            item.get("owner", ""),
+            handle(item),
             status_badge(item.get("status", "")),
             str(item["id"])[:8] + "…",
         )
@@ -262,11 +263,11 @@ def prompt_show(
         return
     console.print(
         kv_panel(
-            f"{name_inline(item)} v{item.get('version', '?')}",
+            f"{display_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Category", item.get("category", "N/A")),
-                ("Owner", item.get("owner", "N/A")),
+                ("Namespace", handle(item) or "N/A"),
                 ("Description", item.get("description", "")),
                 ("Created", relative_time(item.get("created_at"))),
                 ("ID", f"[dim]{item['id']}[/dim]"),

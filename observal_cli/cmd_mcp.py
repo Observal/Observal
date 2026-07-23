@@ -26,9 +26,10 @@ from observal_cli.constants import VALID_HARNESSES, VALID_MCP_CATEGORIES
 from observal_cli.prompts import fuzzy_select, select_one, text_input
 from observal_cli.render import (
     console,
+    display_name,
+    handle,
     ide_tags,
     kv_panel,
-    name_block,
     name_inline,
     output_json,
     relative_time,
@@ -964,16 +965,16 @@ def _list_impl(category, search, limit, sort, output, interactive=False):
     table.add_column("Name", style="bold cyan", no_wrap=True)
     table.add_column("Version", style="green")
     table.add_column("Category")
-    table.add_column("Owner", style="dim")
+    table.add_column("Namespace", style="dim")
     table.add_column("harnesses")
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            name_block(item),
+            display_name(item),
             item.get("version", ""),
             item.get("category", ""),
-            item.get("owner", ""),
+            handle(item),
             ide_tags(item.get("supported_harnesses", [])),
             str(item["id"])[:8] + "…",
         )
@@ -992,11 +993,11 @@ def _show_impl(mcp_id, output):
 
     console.print(
         kv_panel(
-            f"{name_inline(item)} v{item.get('version', '?')}",
+            f"{display_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Category", item.get("category", "N/A")),
-                ("Owner", item.get("owner", "N/A")),
+                ("Namespace", handle(item) or "N/A"),
                 ("Description", item.get("description", "")),
                 ("harnesses", ide_tags(item.get("supported_harnesses", []))),
                 ("Git", f"[link={item.get('git_url', '')}]{item.get('git_url', 'N/A')}[/link]"),
@@ -1377,15 +1378,15 @@ def mcp_my(
     table.add_column("#", style="dim", width=3)
     table.add_column("Name", style="bold cyan", no_wrap=True)
     table.add_column("Version", style="green")
-    table.add_column("Owner", style="dim")
+    table.add_column("Namespace", style="dim")
     table.add_column("Status")
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            name_block(item),
+            display_name(item),
             item.get("version", ""),
-            item.get("owner", ""),
+            handle(item),
             status_badge(item.get("status", "")),
             str(item["id"])[:8] + "…",
         )
