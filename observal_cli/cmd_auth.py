@@ -494,8 +494,13 @@ def set_username(
     """Set or update your username.
 
     Usernames must be 3 to 32 characters, lowercase alphanumeric with
-    hyphens allowed. Once set, your username can be used for login and
-    is displayed as @username in the UI.
+    hyphens allowed. Once set, your username can be used for login, doubles
+    as your registry namespace, and is displayed as @username in the UI.
+
+    The server locks the username once you have published a registry item.
+    The exception is a username that is not a valid namespace (one carried
+    over from before namespace validation) — that one can never publish, so
+    it stays changeable and anything already published moves with you.
 
     Examples:
         observal auth set-username alice
@@ -503,6 +508,13 @@ def set_username(
     """
     optic.trace("username={}", username)
     from observal_cli import client as _client
+
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,30}[a-z0-9]", username):
+        rprint(
+            "[red]Failed:[/red] Username must be 3-32 characters using lowercase letters, "
+            "numbers, and hyphens, and start and end with a letter or number."
+        )
+        raise typer.Exit(1)
 
     try:
         with spinner("Updating username..."):

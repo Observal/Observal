@@ -29,6 +29,8 @@ from observal_cli.render import (
     console,
     ide_tags,
     kv_panel,
+    name_block,
+    name_inline,
     output_json,
     relative_time,
     spinner,
@@ -472,7 +474,7 @@ def agent_list(
         def _display(item: dict) -> str:
             email = item.get("created_by_email", "")
             suffix = f"  by {email}" if email else ""
-            return f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('model_name', '')}{suffix}"
+            return f"{name_inline(item)}  v{item.get('version', '?')}  {item.get('model_name', '')}{suffix}"
 
         selected = fuzzy_select(data, _display, label="Select agent")
         if selected:
@@ -498,7 +500,7 @@ def agent_list(
 
     if output == "plain":
         for item in data:
-            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('model_name', '')}")
+            rprint(f"{name_inline(item)}  v{item.get('version', '?')}  {item.get('model_name', '')}")
         return
 
     include_id = show_id or full_id
@@ -516,7 +518,7 @@ def agent_list(
         table.add_column("ID", style="dim", no_wrap=full_id)
     for i, item in enumerate(data, 1):
         creator = item.get("created_by_username") or item.get("created_by_email", "")
-        row = [str(i), client.canonical_name(item), item.get("version", ""), item.get("model_name", ""), creator]
+        row = [str(i), name_block(item), item.get("version", ""), item.get("model_name", ""), creator]
         if include_id:
             row.append(str(item["id"]) if full_id else f"{str(item['id'])[:8]}…")
         table.add_row(*row)
@@ -559,7 +561,7 @@ def agent_my(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
+            rprint(f"{name_inline(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
         return
     table = Table(title=f"My Agents ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -571,7 +573,7 @@ def agent_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            client.canonical_name(item),
+            name_block(item),
             item.get("version", ""),
             item.get("model_name", ""),
             status_badge(item.get("status", "")),
@@ -608,7 +610,7 @@ def agent_show(
 
     console.print(
         kv_panel(
-            f"{client.canonical_name(item)} v{item.get('version', '?')}",
+            f"{name_inline(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Model", f"[bold]{item.get('model_name', 'N/A')}[/bold]"),

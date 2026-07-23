@@ -22,7 +22,16 @@ from rich.table import Table
 from observal_cli import client, config
 from observal_cli.constants import VALID_SKILL_TASK_TYPES
 from observal_cli.prompts import select_one, text_input
-from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
+from observal_cli.render import (
+    console,
+    kv_panel,
+    name_block,
+    name_inline,
+    output_json,
+    relative_time,
+    spinner,
+    status_badge,
+)
 from observal_cli.shared.utils import sanitize_name as _sanitize_name
 
 skill_app = typer.Typer(help="Skill registry commands")
@@ -309,7 +318,7 @@ def skill_list(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {client.canonical_name(item)}  v{item.get('version', '?')}")
+            rprint(f"{item['id']}  {name_inline(item)}  v{item.get('version', '?')}")
         return
     table = Table(title=f"Skills ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -321,7 +330,7 @@ def skill_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            client.canonical_name(item),
+            name_block(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -354,7 +363,7 @@ def skill_my(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
+            rprint(f"{name_inline(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
         return
     table = Table(title=f"My Skills ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -366,7 +375,7 @@ def skill_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            client.canonical_name(item),
+            name_block(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -402,7 +411,7 @@ def skill_show(
         return
     console.print(
         kv_panel(
-            f"{client.canonical_name(item)} v{item.get('version', '?')}",
+            f"{name_inline(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Validated", "✓" if item.get("validated") else "✗"),

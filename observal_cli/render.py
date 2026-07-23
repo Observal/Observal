@@ -61,6 +61,44 @@ def relative_time(iso: str | None) -> str:
         return iso[:19] if iso else "--"
 
 
+# ── Registry identities ──────────────────────────────────
+# The API returns the canonical ``namespace/slug`` in ``qualified_name``. That
+# form is what commands take (``observal agent pull alice/reviewer``), but it
+# reads poorly in listings, so we show the bare name with the owning namespace
+# beneath it as ``@alice``. Use ``client.canonical_name()`` for anything a user
+# is meant to paste back into a command.
+
+
+def registry_identity(item: dict) -> tuple[str, str | None]:
+    """Split a registry item into ``(name, namespace)``.
+
+    Prefers the explicit ``namespace``/``slug`` fields and falls back to parsing
+    ``qualified_name`` so older server payloads still resolve a namespace.
+    """
+    namespace = (item.get("namespace") or "").strip() or None
+    name = (item.get("slug") or "").strip() or None
+
+    qualified = (item.get("qualified_name") or "").strip()
+    if (not namespace or not name) and "/" in qualified:
+        head, _, tail = qualified.partition("/")
+        namespace = namespace or head
+        name = name or tail
+
+    return name or (item.get("name") or "").strip(), namespace
+
+
+def name_block(item: dict) -> str:
+    """Two-line cell for tables: the name over a dimmed ``@namespace``."""
+    name, namespace = registry_identity(item)
+    return f"{name}\n[not bold dim]@{namespace}[/not bold dim]" if namespace else name
+
+
+def name_inline(item: dict) -> str:
+    """Single-line form for panel titles and plain output: ``name @namespace``."""
+    name, namespace = registry_identity(item)
+    return f"{name} [dim]@{namespace}[/dim]" if namespace else name
+
+
 # ── Stars ────────────────────────────────────────────────
 
 

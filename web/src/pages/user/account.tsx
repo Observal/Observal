@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useSyncExternalStore } from "react";
 import { useTheme } from "@/lib/theme";
-import { Check, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
 	getUserName,
@@ -214,6 +214,12 @@ function ChangeUsernameSection() {
 		() => "",
 	);
 
+	// A username that is not a valid namespace predates namespace validation.
+	// Publishing rejects it, so surface why rather than letting them find out
+	// at submit time.
+	const namespaceInvalid =
+		!!currentUsername && !/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(currentUsername);
+
 	const handleSubmit = useCallback(async () => {
 		if (!newUsername.trim()) {
 			toast.error("Username cannot be empty");
@@ -270,6 +276,16 @@ function ChangeUsernameSection() {
 			</h3>
 			<Card>
 				<CardContent className="p-4 space-y-3">
+					{namespaceInvalid && (
+						<div className="flex items-start gap-2 rounded-md border border-dark-yellow/30 bg-light-yellow px-3 py-2 text-dark-yellow">
+							<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+							<p className="text-xs">
+								<span className="font-medium">@{currentUsername}</span> cannot be used as a
+								registry namespace, so publishing agents and components is blocked. Choose a
+								valid username below — anything you already published moves with you.
+							</p>
+						</div>
+					)}
 					<div>
 						<label className="text-xs text-muted-foreground mb-1 block">
 							Current Username

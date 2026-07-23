@@ -8,11 +8,15 @@ import { Link } from "@tanstack/react-router";
 import { ArrowDownToLine, Puzzle, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
+import { RegistryName } from "@/components/registry/registry-name";
 import { compactNumber } from "@/lib/utils";
 
 interface AgentCardProps {
   id: string;
   name: string;
+  namespace?: string;
+  slug?: string;
+  qualified_name?: string;
   description?: string;
   model_name?: string;
   owner?: string;
@@ -30,6 +34,9 @@ interface AgentCardProps {
 export function AgentCard({
   id,
   name,
+  namespace,
+  slug,
+  qualified_name,
   description,
   owner,
   created_by_username,
@@ -53,9 +60,10 @@ export function AgentCard({
       ].join(" ")}
     >
       <div className="flex items-start justify-between gap-3">
-        <h3 className="font-display text-sm font-semibold leading-tight truncate">
-          {name}
-        </h3>
+        <RegistryName
+          item={{ name, namespace, slug, qualified_name }}
+          nameClassName="font-display text-sm font-semibold leading-tight"
+        />
         {version && (
           <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
             {version}
@@ -69,7 +77,9 @@ export function AgentCard({
         </p>
       )}
 
-      {(created_by_username || owner) && (
+      {/* The namespace under the name already reads as @owner, so only fall back
+          to the creator line when the item carries no namespace. */}
+      {!namespace && !qualified_name?.includes("/") && (created_by_username || owner) && (
         <p className="mt-2 text-[11px] text-muted-foreground/70 truncate">
           {created_by_username ? `@${created_by_username}` : owner}
         </p>

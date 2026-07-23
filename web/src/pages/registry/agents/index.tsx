@@ -50,6 +50,7 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { AgentCard } from "@/components/registry/agent-card";
+import { RegistryName } from "@/components/registry/registry-name";
 import { compactNumber } from "@/lib/utils";
 import {
   useReactTable,
@@ -292,12 +293,12 @@ const columns: ColumnDef<RegistryItem>[] = [
     ),
     cell: ({ row }) => (
       <div className="min-w-[160px]">
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           <Link
             to="/agents/$agentId" params={{ agentId: row.original.id }}
-            className="font-medium text-sm hover:underline underline-offset-4"
+            className="min-w-0 hover:underline underline-offset-4"
           >
-            {row.original.qualified_name ?? row.original.name}
+            <RegistryName item={row.original} nameClassName="font-medium text-sm" />
           </Link>
           {row.original.status && row.original.status !== "approved" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning ring-1 ring-warning/20">
@@ -657,8 +658,8 @@ function AgentListContent() {
                 {drafts.map((draft) => (
                   <div key={draft.id} className="flex items-center gap-4 px-4 py-3">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">{draft.qualified_name ?? draft.name}</p>
+                      <div className="flex items-start gap-2">
+                        <RegistryName item={draft} nameClassName="text-sm font-medium" />
                         {(draft.status === "rejected" || draft.status === "pending") && (
                           <StatusBadge status={draft.status} />
                         )}
@@ -742,8 +743,8 @@ function AgentListContent() {
                 {archivedAgents.map((agent) => (
                   <div key={agent.id} className="flex items-center gap-4 px-4 py-3">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">{agent.qualified_name ?? agent.name}</p>
+                      <div className="flex items-start gap-2">
+                        <RegistryName item={agent} nameClassName="text-sm font-medium" />
                         <StatusBadge status="archived" />
                       </div>
                       {agent.description && (
@@ -799,8 +800,8 @@ function AgentListContent() {
                 {deletedAgents.map((agent) => (
                   <div key={agent.id} className="flex items-center gap-4 px-4 py-3">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">{agent.qualified_name ?? agent.name}</p>
+                      <div className="flex items-start gap-2">
+                        <RegistryName item={agent} nameClassName="text-sm font-medium" />
                         <StatusBadge status="deleted" />
                       </div>
                       {agent.description && (
@@ -914,6 +915,9 @@ function AgentListContent() {
                 key={agent.id}
                 id={agent.id}
                 name={agent.name}
+                namespace={agent.namespace}
+                slug={agent.slug}
+                qualified_name={agent.qualified_name}
                 description={agent.description as string | undefined}
                 owner={agent.owner as string | undefined}
                 version={agent.version as string | undefined}

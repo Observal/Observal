@@ -28,6 +28,8 @@ from observal_cli.render import (
     console,
     ide_tags,
     kv_panel,
+    name_block,
+    name_inline,
     output_json,
     relative_time,
     spinner,
@@ -933,7 +935,7 @@ def _list_impl(category, search, limit, sort, output, interactive=False):
 
         def _display(item: dict) -> str:
             optic.trace("item={}", item)
-            return f"{client.canonical_name(item)}  v{item.get('version', '?')}  [{item.get('category', '')}]  {item.get('owner', '')}"
+            return f"{name_inline(item)}  v{item.get('version', '?')}  [{item.get('category', '')}]  {item.get('owner', '')}"
 
         selected = fuzzy_select(data, _display, label="Select MCP server")
         if selected:
@@ -954,9 +956,7 @@ def _list_impl(category, search, limit, sort, output, interactive=False):
 
     if output == "plain":
         for item in data:
-            rprint(
-                f"{item['id']}  {client.canonical_name(item)}  v{item.get('version', '?')}  [{item.get('category', '')}]"
-            )
+            rprint(f"{item['id']}  {name_inline(item)}  v{item.get('version', '?')}  [{item.get('category', '')}]")
         return
 
     table = Table(title=f"MCP Servers ({len(data)})", show_lines=False, padding=(0, 1))
@@ -970,7 +970,7 @@ def _list_impl(category, search, limit, sort, output, interactive=False):
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            client.canonical_name(item),
+            name_block(item),
             item.get("version", ""),
             item.get("category", ""),
             item.get("owner", ""),
@@ -992,7 +992,7 @@ def _show_impl(mcp_id, output):
 
     console.print(
         kv_panel(
-            f"{client.canonical_name(item)} v{item.get('version', '?')}",
+            f"{name_inline(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Category", item.get("category", "N/A")),
@@ -1371,7 +1371,7 @@ def mcp_my(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{client.canonical_name(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
+            rprint(f"{name_inline(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
         return
     table = Table(title=f"My MCPs ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -1383,7 +1383,7 @@ def mcp_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            client.canonical_name(item),
+            name_block(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),

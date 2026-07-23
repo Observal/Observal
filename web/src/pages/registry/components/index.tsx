@@ -62,6 +62,7 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { ComponentCard } from "@/components/registry/component-card";
+import { RegistryName } from "@/components/registry/registry-name";
 import {
   useReactTable,
   getCoreRowModel,
@@ -133,9 +134,9 @@ function makeColumns(activeType: RegistryType): ColumnDef<RegistryItem>[] {
         <div className="min-w-[160px]">
           <Link
             to="/components/$componentId" params={{ componentId: row.original.id }} search={{ type: activeType }}
-            className="font-medium text-sm hover:underline underline-offset-4"
+            className="block min-w-0 hover:underline underline-offset-4"
           >
-            {row.original.qualified_name ?? row.original.name}
+            <RegistryName item={row.original} nameClassName="font-medium text-sm" />
           </Link>
           {row.original.description && (
             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-xs">
@@ -525,6 +526,9 @@ export default function ComponentsPage() {
                 key={item.id}
                 id={item.id}
                 name={item.name}
+                namespace={item.namespace}
+                slug={item.slug}
+                qualified_name={item.qualified_name}
                 type={activeType}
                 description={item.description}
                 version={item.version as string | undefined}
@@ -551,9 +555,7 @@ export default function ComponentsPage() {
                   <div className="flex items-center gap-3 min-w-0">
                     <StatusBadge status={item.status ?? "draft"} />
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {item.qualified_name ?? item.name}
-                      </p>
+                      <RegistryName item={item} nameClassName="text-sm font-medium" />
                       {item.description && (
                         <p className="text-xs text-muted-foreground truncate max-w-xs">
                           {item.description}

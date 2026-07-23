@@ -17,7 +17,16 @@ from rich.table import Table
 from observal_cli import client, config
 from observal_cli.constants import VALID_HARNESSES, VALID_SANDBOX_NETWORK_POLICIES, VALID_SANDBOX_RUNTIME_TYPES
 from observal_cli.prompts import select_one, text_input
-from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
+from observal_cli.render import (
+    console,
+    kv_panel,
+    name_block,
+    name_inline,
+    output_json,
+    relative_time,
+    spinner,
+    status_badge,
+)
 
 sandbox_app = typer.Typer(help="Sandbox registry commands")
 
@@ -255,7 +264,7 @@ def sandbox_list(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {client.canonical_name(item)}  v{item.get('version', '?')}")
+            rprint(f"{item['id']}  {name_inline(item)}  v{item.get('version', '?')}")
         return
     table = Table(title=f"Sandboxes ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -267,7 +276,7 @@ def sandbox_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            client.canonical_name(item),
+            name_block(item),
             item.get("version", ""),
             item.get("owner", ""),
             status_badge(item.get("status", "")),
@@ -300,7 +309,7 @@ def sandbox_show(
         return
     console.print(
         kv_panel(
-            f"{client.canonical_name(item)} v{item.get('version', '?')}",
+            f"{name_inline(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
                 ("Runtime", item.get("runtime_type", "N/A")),

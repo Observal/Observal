@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layouts/page-header";
+import { RegistryName } from "@/components/registry/registry-name";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useLeaderboard, useComponentLeaderboard } from "@/hooks/use-api";
@@ -209,13 +210,16 @@ export default function LeaderboardPage() {
                           {i + 1}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium truncate block group-hover:underline underline-offset-4">
-                            {item.name}
-                          </span>
-                          <span className="text-xs text-muted-foreground/70 truncate block">
-                            {item.created_by_username ? `@${item.created_by_username}` : item.owner}
-                            {item.description && ` — ${item.description}`}
-                          </span>
+                          <RegistryName
+                            item={item}
+                            nameClassName="text-sm font-medium group-hover:underline underline-offset-4"
+                            handleClassName="text-xs text-muted-foreground/70"
+                          />
+                          {item.description && (
+                            <span className="text-xs text-muted-foreground/70 truncate block">
+                              {item.description}
+                            </span>
+                          )}
                         </div>
                         <span className="w-24 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground font-mono">
                           <ArrowDownToLine className="h-3 w-3" />
