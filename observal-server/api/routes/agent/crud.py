@@ -132,6 +132,7 @@ async def create_agent(
         supported_harnesses=req.supported_harnesses,
         status=AgentStatus.pending,
         released_by=current_user.id,
+        success_criteria=req.success_criteria.model_dump() if req.success_criteria else None,
     )
     db.add(version)
     await db.flush()
@@ -642,6 +643,11 @@ async def update_agent(
             except ValueError as e:
                 raise HTTPException(status_code=422, detail=f"Invalid MCP command: {e}")
         agent.external_mcps = [m.model_dump() for m in req.external_mcps]
+
+    if req.success_criteria is not None:
+        if not agent.latest_version:
+            raise HTTPException(status_code=400, detail="Agent has no version to update")
+        agent.latest_version.success_criteria = req.success_criteria.model_dump()
 
     if req.components is not None:
         # New components field replaces ALL components (type validated by Pydantic Literal)

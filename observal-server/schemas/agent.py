@@ -29,6 +29,50 @@ class ExternalMcp(BaseModel):
     url: str | None = None  # source URL for reference
 
 
+class SuccessMetric(BaseModel):
+    name: str
+    target: str
+    measurement: str
+
+    @field_validator("name", "target", "measurement")
+    @classmethod
+    def _not_blank_and_bounded(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Must not be blank")
+        if len(v) > 200:
+            raise ValueError("Must be at most 200 characters")
+        return v.strip()
+
+
+class SuccessCriteria(BaseModel):
+    intended_purpose: str
+    success_metrics: list[SuccessMetric] = []
+    evaluation_notes: str = ""
+
+    @field_validator("intended_purpose")
+    @classmethod
+    def _purpose_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Intended purpose must not be blank")
+        if len(v) > 2000:
+            raise ValueError("Intended purpose must be at most 2000 characters")
+        return v.strip()
+
+    @field_validator("success_metrics")
+    @classmethod
+    def _max_metrics(cls, v: list[SuccessMetric]) -> list[SuccessMetric]:
+        if len(v) > 10:
+            raise ValueError("At most 10 success metrics allowed")
+        return v
+
+    @field_validator("evaluation_notes")
+    @classmethod
+    def _notes_bounded(cls, v: str) -> str:
+        if len(v) > 2000:
+            raise ValueError("Evaluation notes must be at most 2000 characters")
+        return v.strip()
+
+
 ComponentType = Literal["mcp", "skill", "hook", "prompt", "sandbox"]
 
 
@@ -54,6 +98,7 @@ class AgentCreateRequest(BaseModel):
     mcp_server_ids: list[uuid.UUID] = []  # kept for backwards compat
     components: list[ComponentRef] = []  # new: all component types
     external_mcps: list[ExternalMcp] = []
+    success_criteria: SuccessCriteria | None = None
 
     _validate_name = field_validator("name")(make_name_validator("name"))
 
@@ -89,6 +134,7 @@ class AgentUpdateRequest(BaseModel):
     mcp_server_ids: list[uuid.UUID] | None = None  # kept for backwards compat
     components: list[ComponentRef] | None = None  # new: all component types
     external_mcps: list[ExternalMcp] | None = None
+    success_criteria: SuccessCriteria | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -149,6 +195,7 @@ class AgentResponse(BaseModel):
     supported_harnesses: list[str]
     required_capabilities: list[str] = []
     inferred_supported_harnesses: list[str] = []
+    success_criteria: dict | None = None
     status: AgentStatus
     rejection_reason: str | None = None
     created_by: uuid.UUID
@@ -241,6 +288,7 @@ class AgentVersionCreateRequest(BaseModel):
     yaml_snapshot: str | None = None
     is_prerelease: bool = False
     save_as_draft: bool = False
+    success_criteria: SuccessCriteria | None = None
 
     @field_validator("version")
     @classmethod

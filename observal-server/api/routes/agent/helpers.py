@@ -122,6 +122,7 @@ def _agent_to_response(
         "inferred_supported_harnesses",
         "status",
         "rejection_reason",
+        "success_criteria",
     ):
         agent_dict[field] = getattr(agent, field)
     if not isinstance(agent_dict.get("models_by_harness"), dict):

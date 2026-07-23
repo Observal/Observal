@@ -44,11 +44,13 @@ import {
 import type {
   AgentVersionDetail,
   RegistryItem,
+  SuccessCriteria,
   ValidationResult,
 } from "@/lib/types";
 import type { RegistryType } from "@/lib/api";
 import { ModelPicker } from "@/components/builder/model-picker";
 import { SortableComponentList } from "@/components/builder/sortable-component-list";
+import { SuccessCriteriaSection } from "@/components/builder/success-criteria-section";
 import { ValidationPanel } from "@/components/builder/validation-panel";
 import { COMPONENT_TYPES, REVERSE_TYPE_MAP, TYPE_MAP } from "@/components/registry/agent-component-constants";
 import { ComponentPicker } from "@/components/registry/component-picker";
@@ -116,6 +118,9 @@ export function AgentEditForm({
     Record<string, RegistryItem[]>
   >({ mcps: [], skills: [], hooks: [], prompts: [], sandboxes: [] });
   const [prompt, setPrompt] = useState<string>(initialPrompt);
+  const [successCriteria, setSuccessCriteria] = useState<SuccessCriteria | null>(
+    vd?.success_criteria ?? null
+  );
 
   // ── Dialog / loading state ────────────────────────────────────
   const [showVersionDialog, setShowVersionDialog] = useState(false);
@@ -130,6 +135,7 @@ export function AgentEditForm({
     modelsByHarness: initialModelsByIde,
     prompt: initialPrompt,
     selectedComponents: {} as Record<string, RegistryItem[]>,
+    successCriteria: (vd?.success_criteria ?? null) as SuccessCriteria | null,
   });
   const [isDirty, setIsDirty] = useState(false);
 
@@ -154,6 +160,7 @@ export function AgentEditForm({
         versionDetail?.models_by_harness,
         versionDetail?.prompt,
         versionDetail?.components,
+        versionDetail?.success_criteria,
       ]),
     [agent.name, currentVersion, versionDetail],
   );
@@ -190,6 +197,7 @@ export function AgentEditForm({
     // Load goal template sections
 
     setPrompt(initialPrompt);
+    setSuccessCriteria(vd?.success_criteria ?? null);
 
     // Sync initial state ref so dirty detection works correctly after re-init
     initialStateRef.current = {
@@ -198,6 +206,7 @@ export function AgentEditForm({
       modelsByHarness: initialModelsByIde,
       prompt: initialPrompt,
       selectedComponents: grouped,
+      successCriteria: vd?.success_criteria ?? null,
     };
     setIsDirty(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,14 +215,17 @@ export function AgentEditForm({
   // ── Dirty detection ───────────────────────────────────────────
   useEffect(() => {
     const init = initialStateRef.current;
+    const normalizeCriteria = (c: SuccessCriteria | null) =>
+      c?.intended_purpose?.trim() ? c : null;
     const dirty =
       description !== init.description ||
       modelName !== init.modelName ||
       JSON.stringify(modelsByHarness) !== JSON.stringify(init.modelsByHarness) ||
       prompt !== init.prompt ||
-      JSON.stringify(selectedComponents) !== JSON.stringify(init.selectedComponents);
+      JSON.stringify(selectedComponents) !== JSON.stringify(init.selectedComponents) ||
+      JSON.stringify(normalizeCriteria(successCriteria)) !== JSON.stringify(normalizeCriteria(init.successCriteria));
     setIsDirty(dirty);
-  }, [description, modelName, modelsByHarness, prompt, selectedComponents]);
+  }, [description, modelName, modelsByHarness, prompt, selectedComponents, successCriteria]);
 
   // ── Debounced validation ──────────────────────────────────────
   useEffect(() => {
@@ -309,6 +321,15 @@ export function AgentEditForm({
       }
     }
 
+    const normalizedCriteria = successCriteria?.intended_purpose?.trim()
+      ? {
+          ...successCriteria,
+          success_metrics: successCriteria.success_metrics.filter(
+            (m) => m.name.trim() && m.target.trim() && m.measurement.trim(),
+          ),
+        }
+      : null;
+
     return {
       version,
       description: description.trim(),
@@ -321,6 +342,7 @@ export function AgentEditForm({
       components: components.length > 0 ? components : [],
       yaml_snapshot: null,
       is_prerelease: false,
+      success_criteria: normalizedCriteria,
     };
   }
 
@@ -337,6 +359,7 @@ export function AgentEditForm({
         modelsByHarness,
         prompt,
         selectedComponents,
+        successCriteria,
       };
       setIsDirty(false);
       onSuccess?.();
@@ -359,6 +382,7 @@ export function AgentEditForm({
         modelsByHarness,
         prompt,
         selectedComponents,
+        successCriteria,
       };
       setIsDirty(false);
       onSuccess?.();
@@ -381,6 +405,7 @@ export function AgentEditForm({
     setModelName(init.modelName);
     setModelsByIde(init.modelsByHarness);
     setPrompt(init.prompt ?? "");
+    setSuccessCriteria(init.successCriteria ?? null);
     setSelectedComponents(
       Object.keys(init.selectedComponents).length > 0
         ? init.selectedComponents
@@ -450,6 +475,12 @@ export function AgentEditForm({
         />
         <p className="text-xs text-muted-foreground">Required. Or link a Prompt component in the Components section below.</p>
       </section>
+
+      {/* Success Criteria */}
+      <SuccessCriteriaSection
+        value={successCriteria}
+        onChange={setSuccessCriteria}
+      />
 
       <Separator />
 

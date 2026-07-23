@@ -50,6 +50,7 @@ import type {
   AgentVersionSummary,
   FeedbackItem,
   InsightReportListItem,
+  SuccessCriteria,
 } from "@/lib/types";
 import { PullCommand } from "@/components/registry/pull-command";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
@@ -212,15 +213,48 @@ function ArchivedComponentsBanner({ components }: { components: ComponentLink[] 
   );
 }
 
+function PromptSection({ prompt }: { prompt: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lineCount = prompt.split("\n").length;
+  const isLong = lineCount > 12;
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold font-display">Agent Prompt</h3>
+      <div className="relative">
+        <pre
+          className={`select-text rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm font-mono whitespace-pre-wrap break-words leading-relaxed text-foreground ${isLong && !expanded ? "max-h-[280px] overflow-hidden" : ""}`}
+        >
+          {prompt}
+        </pre>
+        {isLong && !expanded && (
+          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-surface-sunken to-transparent rounded-b-md flex items-end justify-center pb-2">
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="text-xs font-medium text-primary hover:text-primary/80 bg-background/80 backdrop-blur-sm rounded px-2 py-1 border border-border/50"
+            >
+              Show full prompt
+            </button>
+          </div>
+        )}
+        {isLong && expanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="mt-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            Collapse
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AgentVersionContents({
-  description,
-  modelName,
-  prompt,
   components,
 }: {
-  description?: string;
-  modelName?: string;
-  prompt?: string;
   components: ComponentLink[];
 }) {
   const [activeTab, setActiveTab] = useState<ComponentGroupKey>("mcps");
@@ -228,46 +262,6 @@ function AgentVersionContents({
 
   return (
     <div className="space-y-6">
-      <section className="space-y-4">
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium">Description</h3>
-          <div className="min-h-20 max-w-lg select-text rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm leading-relaxed text-foreground cursor-default">
-            {description ? (
-              <p className="whitespace-pre-wrap">{description}</p>
-            ) : (
-              <p className="text-muted-foreground">No description provided.</p>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-2 max-w-xs">
-          <h3 className="text-sm font-medium">Model</h3>
-          <div className="select-text rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm cursor-default">
-            {modelName ? (
-              <code className="font-mono text-foreground">{modelName}</code>
-            ) : (
-              <span className="text-muted-foreground">No model specified.</span>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="space-y-2">
-        <h3 className="text-sm font-medium">Agent Prompt</h3>
-        <div className="min-h-40 select-text rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm cursor-default">
-          {prompt ? (
-            <pre className="whitespace-pre-wrap break-words font-mono leading-relaxed text-foreground">{prompt}</pre>
-          ) : (
-            <p className="text-muted-foreground">No inline prompt provided.</p>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Version-specific system prompt. Prompt components, when linked, are listed below.
-        </p>
-      </section>
-
-      <Separator />
-
       <section className="space-y-4">
         <div>
           <h3 className="text-sm font-medium font-display">Components</h3>
@@ -619,6 +613,8 @@ export default function AgentDetailPage() {
   const { data: versionsData } = useAgentVersions(id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const { data: versionDetail, isLoading: isVersionDetailLoading } = useAgentVersionDetail(id, selectedVersion);
+  const effectiveVersionForDetail = selectedVersion ?? versionsData?.items?.find(v => v.status === "approved")?.version ?? (agent as unknown as AgentDetail | undefined)?.version ?? null;
+  const { data: effectiveVersionDetail } = useAgentVersionDetail(id, effectiveVersionForDetail);
 
   // Co-authors
   const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
@@ -652,8 +648,8 @@ export default function AgentDetailPage() {
   const latestApprovedVersion = useMemo(() => getLatestApprovedVersion(versions), [versions]);
   const effectiveVersion = selectedVersion ?? latestApprovedVersion ?? a?.version;
   const selectedVersionSummary = versions.find((v) => v.version === effectiveVersion);
-  const vd = versionDetail;
-  const isVersionContentLoading = !!selectedVersion && !vd && isVersionDetailLoading;
+  const vd = versionDetail ?? effectiveVersionDetail;
+  const isVersionContentLoading = !!selectedVersion && !versionDetail && isVersionDetailLoading;
   const baseComponents: ComponentLink[] = a?.component_links ?? a?.mcp_links ?? [];
   const versionComponents = selectedVersion ? normalizeVersionComponents(vd?.components) : undefined;
   const components: ComponentLink[] = selectedVersion ? (versionComponents ?? []) : baseComponents;
@@ -666,6 +662,7 @@ export default function AgentDetailPage() {
   const versionSupportedIdes = vd?.supported_harnesses ?? selectedVersionSummary?.supported_harnesses ?? a?.supported_harnesses;
   const versionRequiredFeatures = vd?.required_capabilities ?? (selectedVersion ? undefined : a?.required_capabilities);
   const versionInferredIdes = vd?.inferred_supported_harnesses ?? (selectedVersion ? undefined : a?.inferred_supported_harnesses);
+  const versionSuccessCriteria = (vd?.success_criteria ?? (selectedVersion ? undefined : a?.success_criteria)) as SuccessCriteria | null | undefined;
   const isOwner = !!(whoami?.id && a?.created_by && whoami.id === String(a.created_by));
   const canTransferOwnership = isOwner;
   const canManageLifecycle = isAdmin || isOwner;
@@ -801,6 +798,44 @@ export default function AgentDetailPage() {
                     </div>
                   )}
 
+                  {versionPrompt && (
+                    <PromptSection prompt={versionPrompt} />
+                  )}
+
+                  {versionSuccessCriteria && versionSuccessCriteria.intended_purpose && (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-semibold font-display">
+                        Success Criteria
+                      </h3>
+                      <div className="space-y-3 rounded-md border border-border bg-surface-sunken px-4 py-3 text-sm">
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Purpose</p>
+                          <p className="text-foreground whitespace-pre-wrap">{versionSuccessCriteria.intended_purpose}</p>
+                        </div>
+                        {(versionSuccessCriteria.success_metrics?.length ?? 0) > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Metrics</p>
+                            <div className="space-y-2">
+                              {versionSuccessCriteria.success_metrics.map((m, i) => (
+                                <div key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded border border-border/50 bg-background/50 px-3 py-2">
+                                  <span className="font-medium text-foreground">{m.name}</span>
+                                  <span className="text-xs text-muted-foreground">target: <span className="text-foreground font-mono">{m.target}</span></span>
+                                  <span className="text-xs text-muted-foreground">via: <span className="text-foreground">{m.measurement}</span></span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {versionSuccessCriteria.evaluation_notes && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Evaluation Notes</p>
+                            <p className="text-foreground whitespace-pre-wrap">{versionSuccessCriteria.evaluation_notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {versionModelName && (
                     <div className="space-y-1">
                       <h3 className="text-sm font-semibold font-display">
@@ -812,8 +847,7 @@ export default function AgentDetailPage() {
                     </div>
                   )}
 
-
-                  {!versionDescription && (
+                  {!versionDescription && !versionPrompt && !versionSuccessCriteria?.intended_purpose && (
                     <p className="text-sm text-muted-foreground">
                       No additional details provided for this agent.
                     </p>
@@ -826,9 +860,6 @@ export default function AgentDetailPage() {
                       <VersionContentLoading />
                     ) : (
                       <AgentVersionContents
-                        description={versionDescription}
-                        modelName={versionModelName}
-                        prompt={versionPrompt}
                         components={components}
                       />
                     )}

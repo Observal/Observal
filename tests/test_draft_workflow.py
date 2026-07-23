@@ -84,6 +84,7 @@ def _agent_mock(status=AgentStatus.draft, created_by=None, **extra):
     m.deleted_at = None
     m.updated_at = datetime.now(UTC)
     m.components = extra.get("components", [])
+    m.success_criteria = None
     # Edit-lock fields on the latest_version mock
     m.latest_version.is_editing = False
     m.latest_version.editing_by = None

@@ -55,6 +55,7 @@ def _mock_version(*, models_by_harness: dict | None = None, supported_harnesses:
     ver.models_by_harness = models_by_harness if models_by_harness is not None else {}
     ver.supported_harnesses = supported_harnesses or ["claude-code", "kiro"]
     ver.external_mcps = []
+    ver.success_criteria = None
     return ver
 
 
