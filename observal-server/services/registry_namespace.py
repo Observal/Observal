@@ -10,12 +10,14 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select, union_all, update
 
+# The namespace charset is shared with the CLI, which enforces it client-side.
+from observal_shared.namespace_rules import NAMESPACE_RULE_TEXT, is_valid_namespace
+
 if TYPE_CHECKING:
     import uuid
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-NAMESPACE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 RESERVED_NAMESPACES = frozenset({"admin", "api", "auth", "registry", "root", "system", "teams", "users"})
 RESERVED_SLUGS = frozenset({"archive", "draft", "install", "resolve", "restore", "submit", "unarchive", "versions"})
@@ -23,8 +25,8 @@ RESERVED_SLUGS = frozenset({"archive", "draft", "install", "resolve", "restore",
 
 def validate_namespace(handle: str, *, allow_reserved: bool = False) -> str:
     value = handle.strip().lower()
-    if not NAMESPACE_RE.fullmatch(value):
-        raise ValueError("Namespace must be 3-32 characters using lowercase letters, numbers, and hyphens")
+    if not is_valid_namespace(value):
+        raise ValueError(NAMESPACE_RULE_TEXT)
     if not allow_reserved and value in RESERVED_NAMESPACES:
         raise ValueError(f"Namespace '{value}' is reserved")
     return value
@@ -52,22 +54,18 @@ def validate_slug(slug: str, *, allow_reserved: bool = False) -> str:
     return value
 
 
-def is_valid_namespace(handle: str | None) -> bool:
-    """Whether a username can be used verbatim as a registry namespace."""
-    return bool(handle) and NAMESPACE_RE.fullmatch(handle.strip().lower()) is not None
-
-
 def namespace_for_user(user) -> str:
     if not user.username:
         raise ValueError("A username is required before publishing registry items")
     if not is_valid_namespace(user.username):
-        # Usernames predating namespace validation (dots, uppercase, …) were kept
-        # verbatim by migration 016, so they only fail here, on the write path.
-        # Name the offender and the way out — the generic regex message reads as a
-        # dead end, and set_username lets these users rename despite the lock.
+        # Usernames predating namespace validation (spaces, underscores, ``..``)
+        # were kept verbatim by migration 016, so they only fail here, on the write
+        # path; case is normalised rather than rejected. Name the offender and the
+        # way out, since the bare rule reads as a dead end and set_username lets
+        # exactly these users rename despite the publish lock.
         raise ValueError(
             f"Your username '{user.username}' cannot be used as a registry namespace. "
-            "Namespaces must be 3-32 characters using lowercase letters, numbers, and hyphens. "
+            f"{NAMESPACE_RULE_TEXT}. "
             "Pick a valid username first: `observal auth set-username <name>`, or Account "
             "settings in the web UI."
         )

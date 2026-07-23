@@ -26,6 +26,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layouts/page-header";
 import { AvatarEditable } from "@/components/account/avatar-upload";
+import { NAMESPACE_RULE_TEXT, isValidNamespace } from "@/lib/registry-name";
 
 // ── Theme definitions ──────────────────────────────────────────────────────
 // Swatches: [bg, accent, fg] in oklch — derived from globals.css
@@ -217,8 +218,7 @@ function ChangeUsernameSection() {
 	// A username that is not a valid namespace predates namespace validation.
 	// Publishing rejects it, so surface why rather than letting them find out
 	// at submit time.
-	const namespaceInvalid =
-		!!currentUsername && !/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(currentUsername);
+	const namespaceInvalid = !!currentUsername && !isValidNamespace(currentUsername);
 
 	const handleSubmit = useCallback(async () => {
 		if (!newUsername.trim()) {
@@ -233,10 +233,8 @@ function ChangeUsernameSection() {
 			toast.error("Username must be at most 32 characters");
 			return;
 		}
-		if (!/^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$/.test(newUsername)) {
-			toast.error(
-				"Username must be lowercase alphanumeric with hyphens (3-32 chars, start/end with alphanumeric)",
-			);
+		if (!isValidNamespace(newUsername)) {
+			toast.error(NAMESPACE_RULE_TEXT);
 			return;
 		}
 		if (newUsername === currentUsername) {
@@ -306,15 +304,12 @@ function ChangeUsernameSection() {
 							value={newUsername}
 							onChange={(e) => setNewUsername(e.target.value.toLowerCase())}
 							className="h-8 text-sm"
-							placeholder="3-32 chars, lowercase alphanumeric + hyphens"
+							placeholder="3-32 chars, lowercase alphanumeric + hyphens/dots"
 							onKeyDown={(e) => {
 								if (e.key === "Enter") handleSubmit();
 							}}
 						/>
-						<p className="text-xs text-muted-foreground mt-1.5">
-							Must be 3-32 characters, lowercase alphanumeric and hyphens only.
-							Must start and end with alphanumeric.
-						</p>
+						<p className="text-xs text-muted-foreground mt-1.5">{NAMESPACE_RULE_TEXT}.</p>
 					</div>
 					<Button
 						size="sm"

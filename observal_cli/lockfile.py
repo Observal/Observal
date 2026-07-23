@@ -176,7 +176,9 @@ def local_registry_name(
     )
     if not collision:
         return slug
-    candidate = f"{namespace}-{slug}"
+    # Local names become harness config keys and on-disk names, where a dot reads
+    # as a file extension — flattened the same way the registry host is below.
+    candidate = f"{namespace.replace('.', '-')}-{slug}"
     if not any(entry.get("local_name") == candidate for _, entry in matching_entries):
         return candidate
     host = urlsplit(current_url).hostname or "registry"

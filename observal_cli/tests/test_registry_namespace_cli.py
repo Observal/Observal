@@ -28,6 +28,29 @@ def test_namespace_falls_back_to_the_qualified_name_and_degrades_without_one():
     assert render.name_inline({"name": "Legacy"}) == "Legacy"
 
 
+def test_dotted_namespaces_are_valid_but_flattened_in_local_install_names(tmp_path, monkeypatch):
+    from observal_shared.namespace_rules import is_valid_namespace
+
+    assert is_valid_namespace("legacy.handle")
+    assert not is_valid_namespace("a..b")
+
+    monkeypatch.setattr(config, "load", lambda: {"server_url": "https://registry.example.com"})
+    monkeypatch.setattr(lockfile, "LOCKFILE_PATH", tmp_path / "lockfile.json")
+    monkeypatch.setattr(lockfile, "_LOCKFILE_LOCK", tmp_path / "lockfile.lock")
+    lockfile.upsert_agent(
+        "kiro",
+        name="tool",
+        agent_id="00000000-0000-0000-0000-000000000001",
+        version="1.0.0",
+        namespace="alice",
+        slug="tool",
+        local_name="tool",
+    )
+
+    # A dot would read as a file extension once this reaches disk or a config key.
+    assert lockfile.local_registry_name("kiro", "agent", "legacy.handle", "tool") == "legacy-handle-tool"
+
+
 def test_qualified_reference_resolves_once(monkeypatch):
     calls = []
     monkeypatch.setattr(config, "resolve_alias", lambda value: value)
