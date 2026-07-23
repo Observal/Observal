@@ -3,7 +3,29 @@
 
 import json
 
-from observal_cli import client, config, lockfile
+from observal_cli import client, config, lockfile, render
+
+
+def test_listings_render_the_bare_name_over_an_at_handle():
+    item = {
+        "name": "Task Creator",
+        "namespace": "alice",
+        "slug": "task-creator",
+        "qualified_name": "alice/task-creator",
+    }
+
+    assert render.registry_identity(item) == ("task-creator", "alice")
+    assert render.name_block(item) == "task-creator\n[not bold dim]@alice[/not bold dim]"
+    assert render.name_inline(item) == "task-creator [dim]@alice[/dim]"
+    # Commands still need the slash form.
+    assert client.canonical_name(item) == "alice/task-creator"
+
+
+def test_namespace_falls_back_to_the_qualified_name_and_degrades_without_one():
+    assert render.registry_identity({"name": "x", "qualified_name": "bob/search"}) == ("search", "bob")
+    assert render.registry_identity({"name": "Legacy"}) == ("Legacy", None)
+    assert render.name_block({"name": "Legacy"}) == "Legacy"
+    assert render.name_inline({"name": "Legacy"}) == "Legacy"
 
 
 def test_qualified_reference_resolves_once(monkeypatch):

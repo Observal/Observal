@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select, union_all
+from sqlalchemy import select, union_all, update
 
 if TYPE_CHECKING:
     import uuid
@@ -52,9 +52,25 @@ def validate_slug(slug: str, *, allow_reserved: bool = False) -> str:
     return value
 
 
+def is_valid_namespace(handle: str | None) -> bool:
+    """Whether a username can be used verbatim as a registry namespace."""
+    return bool(handle) and NAMESPACE_RE.fullmatch(handle.strip().lower()) is not None
+
+
 def namespace_for_user(user) -> str:
     if not user.username:
         raise ValueError("A username is required before publishing registry items")
+    if not is_valid_namespace(user.username):
+        # Usernames predating namespace validation (dots, uppercase, …) were kept
+        # verbatim by migration 016, so they only fail here, on the write path.
+        # Name the offender and the way out — the generic regex message reads as a
+        # dead end, and set_username lets these users rename despite the lock.
+        raise ValueError(
+            f"Your username '{user.username}' cannot be used as a registry namespace. "
+            "Namespaces must be 3-32 characters using lowercase letters, numbers, and hyphens. "
+            "Pick a valid username first: `observal auth set-username <name>`, or Account "
+            "settings in the web UI."
+        )
     # Existing deployments may already contain a now-reserved username. It remains
     # usable so migration does not silently rename login identities.
     return validate_namespace(user.username, allow_reserved=True)
@@ -97,6 +113,27 @@ async def user_has_listings(db: AsyncSession, user_id: uuid.UUID) -> bool:
         select(SandboxListing.id.label("id")).where(SandboxListing.submitted_by == user_id),
     ).subquery()
     return (await db.execute(select(ownership.c.id).limit(1))).first() is not None
+
+
+async def rename_namespace(db: AsyncSession, old: str, new: str) -> int:
+    """Re-point every listing in ``old`` to ``new``. Returns the row count.
+
+    A namespace is always a username, and usernames are unique, so every row in
+    ``old`` belongs to the single user who holds it — matching on namespace alone
+    leaves no listing stranded in a namespace nobody owns. Does not commit.
+    """
+    from models.agent import Agent
+    from models.hook import HookListing
+    from models.mcp import McpListing
+    from models.prompt import PromptListing
+    from models.sandbox import SandboxListing
+    from models.skill import SkillListing
+
+    moved = 0
+    for model in (Agent, McpListing, SkillListing, HookListing, PromptListing, SandboxListing):
+        result = await db.execute(update(model).where(model.namespace == old).values(namespace=new))
+        moved += result.rowcount or 0
+    return moved
 
 
 async def identity_exists(

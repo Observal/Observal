@@ -24,6 +24,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AgentCard } from "@/components/registry/agent-card";
+import { RegistryName } from "@/components/registry/registry-name";
+import { registryIdentity, registryNameWithHandle } from "@/lib/registry-name";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -254,8 +256,10 @@ function AgentImpactRow({ agent, index }: { agent: RegistryItem; index: number }
     >
       <span className="text-right font-mono text-xs font-medium text-muted-foreground">{index + 1}</span>
       <div className="min-w-0">
-        <span className="block truncate font-medium text-foreground">{agent.name}</span>
-        <span className="block truncate text-xs text-muted-foreground">{getAgentOwner(agent) || "Owned agent"}</span>
+        <RegistryName item={agent} nameClassName="font-medium text-foreground" />
+        {!registryIdentity(agent).handle && (
+          <span className="block truncate text-xs text-muted-foreground">{getAgentOwner(agent) || "Owned agent"}</span>
+        )}
       </div>
       <span className="inline-flex items-center justify-end gap-1 font-mono text-xs text-muted-foreground">
         <ArrowDownToLine className="h-3 w-3" />
@@ -329,7 +333,7 @@ function RankSummary({
     >
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">Best 7 day rank</p>
-        <p className="mt-1 truncate text-sm font-medium text-foreground">{rank.item.name}</p>
+        <RegistryName item={rank.item} className="mt-1" nameClassName="text-sm font-medium text-foreground" />
       </div>
       <div className="text-right">
         <p className="font-mono text-3xl font-semibold tracking-tight text-foreground">#{rank.rank}</p>
@@ -515,7 +519,7 @@ export default function RegistryHome() {
               <BriefMetric
                 label="Best rank"
                 value={leaderboardLoading ? "..." : bestRank ? `#${bestRank.rank}` : "Unranked"}
-                detail={bestRank ? bestRank.item.name : "7 day board"}
+                detail={bestRank ? registryNameWithHandle(bestRank.item) : "7 day board"}
               />
               <BriefMetric
                 label="Owned installs"
@@ -667,6 +671,9 @@ export default function RegistryHome() {
                     key={item.id}
                     id={item.id}
                     name={item.name}
+                    namespace={item.namespace}
+                    slug={item.slug}
+                    qualified_name={item.qualified_name}
                     downloads={item.download_count}
                     score={item.average_rating ?? undefined}
                     description={item.description}
@@ -707,6 +714,9 @@ export default function RegistryHome() {
                     key={agent.id}
                     id={agent.id}
                     name={agent.name}
+                    namespace={agent.namespace}
+                    slug={agent.slug}
+                    qualified_name={agent.qualified_name}
                     description={agent.description as string | undefined}
                     owner={agent.owner as string | undefined}
                     version={agent.version as string | undefined}

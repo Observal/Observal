@@ -5,11 +5,15 @@
 import { Link } from "@tanstack/react-router";
 import { GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { RegistryName } from "@/components/registry/registry-name";
 import type { RegistryType } from "@/lib/api";
 
 interface ComponentCardProps {
   id: string;
   name: string;
+  namespace?: string;
+  slug?: string;
+  qualified_name?: string;
   type: RegistryType;
   description?: string;
   version?: string;
@@ -29,6 +33,9 @@ const TYPE_LABELS: Record<string, string> = {
 export function ComponentCard({
   id,
   name,
+  namespace,
+  slug,
+  qualified_name,
   type,
   description,
   version,
@@ -48,9 +55,10 @@ export function ComponentCard({
       ].join(" ")}
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-display text-sm font-semibold leading-tight truncate">
-          {name}
-        </h3>
+        <RegistryName
+          item={{ name, namespace, slug, qualified_name }}
+          nameClassName="font-display text-sm font-semibold leading-tight"
+        />
         <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0">
           {TYPE_LABELS[type] ?? type}
         </Badge>

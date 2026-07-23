@@ -52,7 +52,7 @@ from schemas.sso_health import make_check
 from services import sso_diagnostics
 from services.jwt_service import create_access_token, create_refresh_token, decode_access_token, decode_refresh_token
 from services.redis import get_redis
-from services.registry_namespace import user_has_listings
+from services.registry_namespace import is_valid_namespace, rename_namespace, user_has_listings
 from services.security_events import (
     EventType,
     SecurityEvent,
@@ -1807,10 +1807,18 @@ async def set_username(
     existing = await db.execute(select(User).where(User.username == req.username, User.id != current_user.id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Username already taken")
-    if await user_has_listings(db, current_user.id):
+
+    # A username that isn't a valid namespace (dots, uppercase, … kept verbatim by
+    # migration 016) can never publish, so the publish lock would trap the user
+    # for good. Let them out, and carry any pre-validation listings across so the
+    # old namespace is not left orphaned.
+    stuck_namespace = None if is_valid_namespace(current_user.username) else current_user.username
+    if stuck_namespace is None and await user_has_listings(db, current_user.id):
         raise HTTPException(status_code=409, detail="Username cannot change after publishing a registry item")
 
     current_user.username = req.username
+    if stuck_namespace is not None:
+        await rename_namespace(db, stuck_namespace, req.username)
     try:
         await db.commit()
     except IntegrityError:

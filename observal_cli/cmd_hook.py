@@ -23,7 +23,16 @@ from observal_cli.constants import (
     VALID_HOOK_SCOPES,
 )
 from observal_cli.prompts import select_one, text_input
-from observal_cli.render import console, kv_panel, output_json, relative_time, spinner, status_badge
+from observal_cli.render import (
+    console,
+    kv_panel,
+    name_block,
+    name_inline,
+    output_json,
+    relative_time,
+    spinner,
+    status_badge,
+)
 
 hook_app = typer.Typer(help="Hook registry commands")
 
@@ -318,7 +327,7 @@ def hook_list(
         return
     if output == "plain":
         for item in data:
-            rprint(f"{item['id']}  {client.canonical_name(item)}  {item.get('event', '?')}")
+            rprint(f"{item['id']}  {name_inline(item)}  {item.get('event', '?')}")
         return
     table = Table(title=f"Hooks ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -331,7 +340,7 @@ def hook_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            client.canonical_name(item),
+            name_block(item),
             item.get("event", ""),
             item.get("execution_mode", ""),
             item.get("owner", ""),
@@ -385,7 +394,7 @@ def hook_show(
         rows.insert(5, ("Requires", ", ".join(item["requirements"])))
     console.print(
         kv_panel(
-            f"{client.canonical_name(item)} v{item.get('version', '?')}",
+            f"{name_inline(item)} v{item.get('version', '?')}",
             rows,
             border_style="magenta",
         )

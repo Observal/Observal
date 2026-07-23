@@ -24,12 +24,14 @@ import {
 import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
 import { compactNumber } from "@/lib/utils";
+import { registryIdentity } from "@/lib/registry-name";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ReviewForm } from "@/components/registry/review-form";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { ComponentEditForm } from "@/components/registry/component-edit-form";
 import { ComponentInstallCommand } from "@/components/registry/component-install-command";
+import { RegistryName } from "@/components/registry/registry-name";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -126,7 +128,11 @@ export default function ComponentDetailPage() {
       : item
     : undefined;
 
-  const componentName = item?.qualified_name ?? item?.name ?? id.slice(0, 8);
+  // Header/breadcrumb show the bare name; the install command needs the
+  // canonical `namespace/slug` the CLI resolves.
+  const identity = registryIdentity(item, id.slice(0, 8));
+  const componentName = identity.name;
+  const componentRef = identity.qualified;
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;
   const metricsEntries: [string, string][] = rawMetrics && typeof rawMetrics === "object"
@@ -167,7 +173,12 @@ export default function ComponentDetailPage() {
             {/* Header */}
             <div className="space-y-2">
               <div className="flex items-start gap-3 flex-wrap">
-                <h1 className="text-2xl font-display font-bold tracking-tight">{item.qualified_name ?? item.name}</h1>
+                <RegistryName
+                  item={item}
+                  as="h1"
+                  nameClassName="text-2xl font-display font-bold tracking-tight"
+                  handleClassName="text-sm text-muted-foreground"
+                />
                 <Badge variant="outline" className="text-xs">{singularType}</Badge>
                 {item.status && (
                   <Badge
@@ -362,7 +373,7 @@ export default function ComponentDetailPage() {
             <aside className="hidden lg:block space-y-5">
               {/* Install command (MCPs, Skills, Hooks only) */}
               {(singularType === "mcp" || singularType === "skill" || singularType === "hook") && (
-                <ComponentInstallCommand componentType={singularType} componentName={item.qualified_name ?? item.name} />
+                <ComponentInstallCommand componentType={singularType} componentName={componentRef} />
               )}
 
               {/* Stats */}

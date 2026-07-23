@@ -52,6 +52,8 @@ import type {
   InsightReportListItem,
 } from "@/lib/types";
 import { PullCommand } from "@/components/registry/pull-command";
+import { RegistryName } from "@/components/registry/registry-name";
+import { registryIdentity, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
@@ -671,7 +673,11 @@ export default function AgentDetailPage() {
   const canManageLifecycle = isAdmin || isOwner;
   const agentStatus = a?.status as string | undefined;
   const canEdit = (isAdmin || a?.user_permission === "owner" || a?.user_permission === "edit") && ["approved", "pending", "draft", "rejected"].includes(agentStatus ?? "");
-  const agentName = (a?.qualified_name as string | undefined) ?? a?.name ?? id.slice(0, 8);
+  // Header/breadcrumb show the bare name; the pull command needs the canonical
+  // `namespace/slug` the CLI resolves.
+  const agentIdentity = registryIdentity(a as QualifiedIdentity | undefined, id.slice(0, 8));
+  const agentName = agentIdentity.name;
+  const agentRef = agentIdentity.qualified;
   const totalDownloads = downloadData?.total ?? a?.download_count;
   const uniqueUsers = downloadData?.unique_users;
   const archivedComponents = components.filter((component) => component.status === "archived");
@@ -707,9 +713,12 @@ export default function AgentDetailPage() {
               {/* Header */}
               <div className="space-y-2">
                 <div className="flex items-start gap-3 flex-wrap">
-                  <h1 className="text-2xl font-display font-bold tracking-tight">
-                    {(a.qualified_name as string | undefined) ?? a.name}
-                  </h1>
+                  <RegistryName
+                    item={a as QualifiedIdentity}
+                    as="h1"
+                    nameClassName="text-2xl font-display font-bold tracking-tight"
+                    handleClassName="text-sm text-muted-foreground"
+                  />
                   {a.status && <StatusBadge status={a.status} />}
                   {versions.length > 0 ? (
                     <VersionDropdown
@@ -758,7 +767,7 @@ export default function AgentDetailPage() {
               {/* Pull command (mobile only) */}
               <div className="lg:hidden">
                 <PullCommand
-                  agentName={(a.qualified_name as string | undefined) ?? a.name}
+                  agentName={agentRef}
                   currentVersion={effectiveVersion}
                   latestVersion={latestApprovedVersion ?? a.version}
                 />
@@ -925,7 +934,7 @@ export default function AgentDetailPage() {
             {/* Sidebar (desktop) */}
             <aside className="hidden lg:block space-y-5 animate-in stagger-1">
               <PullCommand
-                agentName={(a.qualified_name as string | undefined) ?? a.name}
+                agentName={agentRef}
                 currentVersion={effectiveVersion}
                 latestVersion={latestApprovedVersion ?? a.version}
               />

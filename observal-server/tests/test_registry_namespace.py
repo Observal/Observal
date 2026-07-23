@@ -188,6 +188,69 @@ async def test_username_change_is_blocked_after_publish():
     assert user.username == "alice"
 
 
+def test_username_that_is_not_a_namespace_names_itself_and_the_way_out():
+    from services.registry_namespace import is_valid_namespace, namespace_for_user
+
+    assert is_valid_namespace("legacy-handle")
+    assert not is_valid_namespace("legacy.handle")
+    assert not is_valid_namespace(None)
+
+    with pytest.raises(ValueError) as exc:
+        namespace_for_user(SimpleNamespace(username="legacy.handle"))
+    assert "legacy.handle" in str(exc.value)
+    assert "set-username" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_publish_lock_does_not_trap_a_username_that_can_never_publish():
+    """A username that fails namespace validation cannot publish, so the
+    post-publish lock must not apply — otherwise the user is stuck for good."""
+    from api.routes.auth import set_username
+    from schemas.auth import UsernameUpdateRequest
+
+    user = SimpleNamespace(id=uuid.uuid4(), username="legacy.handle")
+    free = SimpleNamespace(scalar_one_or_none=lambda: None)
+    db = SimpleNamespace(execute=AsyncMock(return_value=free), commit=AsyncMock(), refresh=AsyncMock())
+    renamed = AsyncMock(return_value=3)
+
+    with (
+        patch("api.routes.auth.user_has_listings", new=AsyncMock(return_value=True)) as lock,
+        patch("api.routes.auth.rename_namespace", new=renamed),
+        patch("api.routes.auth.UserResponse") as response,
+    ):
+        await set_username(UsernameUpdateRequest(username="legacy-handle"), db, user)
+
+    assert user.username == "legacy-handle"
+    lock.assert_not_awaited()
+    # Listings left behind in the old namespace would be unreachable.
+    renamed.assert_awaited_once_with(db, "legacy.handle", "legacy-handle")
+    db.commit.assert_awaited_once()
+    response.model_validate.assert_called_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_rename_namespace_moves_every_listing_type():
+    from models.agent import Agent
+    from models.hook import HookListing
+    from models.mcp import McpListing
+    from models.prompt import PromptListing
+    from models.sandbox import SandboxListing
+    from models.skill import SkillListing
+    from services.registry_namespace import rename_namespace
+
+    statements = []
+
+    async def execute(stmt):
+        statements.append(stmt)
+        return SimpleNamespace(rowcount=2)
+
+    db = SimpleNamespace(execute=execute)
+    assert await rename_namespace(db, "old.handle", "new-handle") == 12
+    assert [stmt.table.name for stmt in statements] == [
+        model.__tablename__ for model in (Agent, McpListing, SkillListing, HookListing, PromptListing, SandboxListing)
+    ]
+
+
 class _TransferEntity(SimpleNamespace):
     @property
     def qualified_name(self):
