@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Test encryption and key rotation with 250+ realistic fake API keys.
+"""Test encryption and key rotation with 500+ realistic fake API keys.
 
 This file is intentionally named with 'fake' so gitleaks allowlist skips it.
 All keys below are FAKE and generated deterministically; none are real credentials.
@@ -45,7 +45,7 @@ def _deterministic_base64ish(index: int, length: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 260 fake API keys across 13 provider formats (20 per provider)
+# 500 fake API keys across 25 provider formats (20 per provider)
 # ---------------------------------------------------------------------------
 
 FAKE_KEYS: list[tuple[str, str]] = []
@@ -167,7 +167,122 @@ for i in range(20):
         )
     )
 
-assert len(FAKE_KEYS) == 260, f"Expected 260 keys, got {len(FAKE_KEYS)}"
+# ===========================================================================
+# Round 2: 240 more fake keys across 12 additional provider formats (20 each)
+# Formats sourced from primary provider docs via the regextokens catalog.
+# ===========================================================================
+
+# --- GitHub classic PAT (ghp_..., 36 chars) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "github_pat_classic",
+            f"ghp_{_deterministic_alnum(1300 + i, 36)}",
+        )
+    )
+
+# --- GitHub fine-grained PAT (github_pat_..., 82 chars) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "github_pat_finegrained",
+            f"github_pat_{_deterministic_alnum(1400 + i, 82)}",
+        )
+    )
+
+# --- GitLab PAT (glpat-..., 20 chars) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "gitlab_pat",
+            f"glpat-{_deterministic_alnum(1500 + i, 20)}",
+        )
+    )
+
+# --- Slack bot token (xoxb-<11>-<11>-<24>) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "slack_bot",
+            f"xoxb-{_deterministic_alnum(1600 + i, 11)}-"
+            f"{_deterministic_alnum(1650 + i, 11)}-"
+            f"{_deterministic_alnum(1690 + i, 24)}",
+        )
+    )
+
+# --- Stripe secret key (sk_live_..., 24+ chars) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "stripe_secret",
+            f"sk_live_{_deterministic_alnum(1700 + i, 50)}",
+        )
+    )
+
+# --- Twilio account SID (AC + 32 hex) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "twilio_sid",
+            f"AC{_deterministic_hex(1800 + i, 32).upper()}",
+        )
+    )
+
+# --- SendGrid API key (SG.<22>.<43>) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "sendgrid",
+            f"SG.{_deterministic_alnum(1900 + i, 22)}.{_deterministic_alnum(1950 + i, 43)}",
+        )
+    )
+
+# --- Notion integration token (ntn_..., 40-60 chars) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "notion",
+            f"ntn_{_deterministic_alnum(2100 + i, 50)}",
+        )
+    )
+
+# --- Linear API key (lin_api_..., 40 chars) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "linear",
+            f"lin_api_{_deterministic_alnum(2200 + i, 40)}",
+        )
+    )
+
+# --- Vercel access token (vcp_..., 24 chars) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "vercel",
+            f"vcp_{_deterministic_alnum(2300 + i, 24)}",
+        )
+    )
+
+# --- DigitalOcean PAT (dop_v1_ + 64 hex) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "digitalocean",
+            f"dop_v1_{_deterministic_hex(2400 + i, 64)}",
+        )
+    )
+
+# --- Mailgun private API key (key- + 32 hex) ---
+for i in range(20):
+    FAKE_KEYS.append(
+        (
+            "mailgun",
+            f"key-{_deterministic_hex(2500 + i, 32)}",
+        )
+    )
+
+assert len(FAKE_KEYS) == 500, f"Expected 500 keys, got {len(FAKE_KEYS)}"
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +464,7 @@ class TestBulkRotation:
 
             rotated_count += 1
 
-        assert rotated_count == 260
+        assert rotated_count == 500
 
     @pytest.mark.asyncio
     async def test_idempotent_reencrypt(self, _rotated_keys):
