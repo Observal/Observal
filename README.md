@@ -32,6 +32,7 @@
   <a href="https://discord.gg/SFPjnTWddk"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FSFPjnTWddk%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&label=Discord&logo=discord&color=5865F2&style=flat-square" alt="Discord Server"></a>
   <a href="https://github.com/orgs/Observal/packages?repo_name=Observal"><img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Haz3-jolt/b28aba6d0efebb0b430d43c8068feb91/raw/ghcr-pulls.json&style=flat-square" alt="GHCR pulls"></a>
   <a href="https://artifacthub.io/packages/search?repo=observal"><img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/observal" alt="Artifact Hub"></a>
+  <a href="https://cla-assistant.io/Observal/Observal"><img src="https://cla-assistant.io/readme/badge/Observal/Observal" alt="CLA assistant" /></a>
 </p>
 
 > If you find Observal useful, please consider giving it a star. It helps others discover the project and keeps development going.
