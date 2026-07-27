@@ -4,20 +4,23 @@
 """Test encryption and key rotation with 500+ realistic fake API keys.
 
 This file is intentionally named with 'fake' so gitleaks allowlist skips it.
-All keys below are FAKE and generated deterministically; none are real credentials.
+All keys are FAKE and generated deterministically; none are real credentials.
+The 500 keys live in tests/fixtures/fake_api_keys.json (static, pre-generated).
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import string
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 # ---------------------------------------------------------------------------
-# Fake key generators (deterministic, format-realistic, never real)
+# Deterministic helpers (used for edge-case special values below)
 # ---------------------------------------------------------------------------
 
 _RNG_SEED = "observal-test-fake-keys-seed-2026"
@@ -45,244 +48,14 @@ def _deterministic_base64ish(index: int, length: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 500 fake API keys across 25 provider formats (20 per provider)
+# 500 fake API keys across 25 provider formats (20 per provider), pre-generated
 # ---------------------------------------------------------------------------
 
-FAKE_KEYS: list[tuple[str, str]] = []
-
-# --- OpenAI (sk-..., 51 chars after prefix) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "openai",
-            f"sk-{_deterministic_alnum(i, 48)}",
-        )
-    )
-
-# --- OpenAI Project keys (sk-proj-..., 48 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "openai_project",
-            f"sk-proj-{_deterministic_alnum(100 + i, 44)}",
-        )
-    )
-
-# --- Anthropic (sk-ant-api03-..., 93 chars total) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "anthropic",
-            f"sk-ant-api03-{_deterministic_base64ish(200 + i, 80)}",
-        )
-    )
-
-# --- OpenRouter (sk-or-v1-..., 64 hex chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "openrouter",
-            f"sk-or-v1-{_deterministic_hex(300 + i, 64)}",
-        )
-    )
-
-# --- Google AI / Gemini (AIza..., 39 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "google_ai",
-            f"AIza{_deterministic_alnum(400 + i, 35)}",
-        )
-    )
-
-# --- AWS Access Key ID (AKIA..., 20 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "aws_access_key",
-            f"AKIA{_deterministic_alnum(500 + i, 16).upper()}",
-        )
-    )
-
-# --- AWS Secret Access Key (40 chars, mixed) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "aws_secret_key",
-            _deterministic_base64ish(600 + i, 40),
-        )
-    )
-
-# --- Cohere (bearer token style, 40 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "cohere",
-            _deterministic_alnum(700 + i, 40),
-        )
-    )
-
-# --- Mistral (48 char alnum) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "mistral",
-            _deterministic_alnum(800 + i, 48),
-        )
-    )
-
-# --- Hugging Face (hf_..., 37 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "huggingface",
-            f"hf_{_deterministic_alnum(900 + i, 34)}",
-        )
-    )
-
-# --- Replicate (r8_..., 40 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "replicate",
-            f"r8_{_deterministic_alnum(1000 + i, 37)}",
-        )
-    )
-
-# --- Together AI (64 hex chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "together",
-            _deterministic_hex(1100 + i, 64),
-        )
-    )
-
-# --- Groq (gsk_..., 56 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "groq",
-            f"gsk_{_deterministic_alnum(1200 + i, 52)}",
-        )
-    )
-
-# ===========================================================================
-# Round 2: 240 more fake keys across 12 additional provider formats (20 each)
-# Formats sourced from primary provider docs via the regextokens catalog.
-# ===========================================================================
-
-# --- GitHub classic PAT (ghp_..., 36 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "github_pat_classic",
-            f"ghp_{_deterministic_alnum(1300 + i, 36)}",
-        )
-    )
-
-# --- GitHub fine-grained PAT (github_pat_..., 82 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "github_pat_finegrained",
-            f"github_pat_{_deterministic_alnum(1400 + i, 82)}",
-        )
-    )
-
-# --- GitLab PAT (glpat-..., 20 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "gitlab_pat",
-            f"glpat-{_deterministic_alnum(1500 + i, 20)}",
-        )
-    )
-
-# --- Slack bot token (xoxb-<11>-<11>-<24>) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "slack_bot",
-            f"xoxb-{_deterministic_alnum(1600 + i, 11)}-"
-            f"{_deterministic_alnum(1650 + i, 11)}-"
-            f"{_deterministic_alnum(1690 + i, 24)}",
-        )
-    )
-
-# --- Stripe secret key (sk_live_..., 24+ chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "stripe_secret",
-            f"sk_live_{_deterministic_alnum(1700 + i, 50)}",
-        )
-    )
-
-# --- Twilio account SID (AC + 32 hex) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "twilio_sid",
-            f"AC{_deterministic_hex(1800 + i, 32).upper()}",
-        )
-    )
-
-# --- SendGrid API key (SG.<22>.<43>) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "sendgrid",
-            f"SG.{_deterministic_alnum(1900 + i, 22)}.{_deterministic_alnum(1950 + i, 43)}",
-        )
-    )
-
-# --- Notion integration token (ntn_..., 40-60 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "notion",
-            f"ntn_{_deterministic_alnum(2100 + i, 50)}",
-        )
-    )
-
-# --- Linear API key (lin_api_..., 40 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "linear",
-            f"lin_api_{_deterministic_alnum(2200 + i, 40)}",
-        )
-    )
-
-# --- Vercel access token (vcp_..., 24 chars) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "vercel",
-            f"vcp_{_deterministic_alnum(2300 + i, 24)}",
-        )
-    )
-
-# --- DigitalOcean PAT (dop_v1_ + 64 hex) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "digitalocean",
-            f"dop_v1_{_deterministic_hex(2400 + i, 64)}",
-        )
-    )
-
-# --- Mailgun private API key (key- + 32 hex) ---
-for i in range(20):
-    FAKE_KEYS.append(
-        (
-            "mailgun",
-            f"key-{_deterministic_hex(2500 + i, 32)}",
-        )
-    )
-
-assert len(FAKE_KEYS) == 500, f"Expected 500 keys, got {len(FAKE_KEYS)}"
+_FIXTURE = Path(__file__).parent / "fixtures" / "fake_api_keys.json"
+with _FIXTURE.open() as _f:
+    _RAW = json.load(_f)
+FAKE_KEYS: list[tuple[str, str]] = [(row["provider"], row["key"]) for row in _RAW]
+assert len(FAKE_KEYS) == 500, f"Expected 500 keys in {_FIXTURE}, got {len(FAKE_KEYS)}"
 
 
 # ---------------------------------------------------------------------------
