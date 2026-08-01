@@ -25,11 +25,11 @@ export function useTeam(id?: string) {
 	});
 }
 
-export function useTeamMembers(teamId?: string) {
+export function useTeamMembers(teamId?: string, enabled = true) {
 	return useQuery({
 		queryKey: ["teams", teamId, "members"],
 		queryFn: () => teams.members(teamId || ""),
-		enabled: !!teamId,
+		enabled: !!teamId && enabled,
 	});
 }
 
