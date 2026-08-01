@@ -90,7 +90,7 @@ def _user(role=UserRole.user, username="alice"):
 def test_slugify_handle_targets_namespace_regex():
     assert slugify_handle("Platform Tools!") == "platform-tools"
     assert slugify_handle("A B") == "a-b"
-    assert slugify_handle("ab") == "ab0"
+    assert slugify_handle("ab") == "ab-team"
     assert slugify_handle("") == "team"
     # underscores are stripped (NAMESPACE_RE has no underscores)
     assert slugify_handle("my_team") == "my-team"

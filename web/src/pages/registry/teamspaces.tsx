@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
-import { Building2, Loader2, LogOut, Plus, RefreshCw, Search, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
+import { Building2, Loader2, LogOut, Plus, RefreshCw, Search, ShieldCheck, Terminal, Trash2, UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { UserSearchInput } from "@/components/shared/user-search-input";
@@ -47,7 +47,7 @@ const CONTROL_CLASS_NAME =
 
 function slugifyHandle(value: string) {
 	const base = value.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
-	return base ? base.padEnd(3, "0") : "";
+	return base && base.length < 3 ? `${base}-team` : base;
 }
 
 function TeamDetail({ team }: { team: Team }) {
@@ -75,7 +75,7 @@ function TeamDetail({ team }: { team: Team }) {
 
 	return (
 		<main className="min-h-0 flex-1 overflow-y-auto bg-surface-sunken/30">
-			<div className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-10">
+			<div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
 				<header className="flex flex-col gap-5 border-b border-border/80 pb-6 sm:flex-row sm:items-start sm:justify-between">
 					<div className="flex min-w-0 items-start gap-3">
 						<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-accent/25 bg-primary-accent/10 text-primary-accent">
@@ -108,7 +108,7 @@ function TeamDetail({ team }: { team: Team }) {
 					</div>
 				</header>
 
-				<section className="mt-6 min-h-[360px] overflow-hidden rounded-xl border border-border/80 bg-card/70">
+				<section className="mt-6 flex min-h-[calc(100dvh-11rem)] flex-col overflow-hidden rounded-xl border border-border/80 bg-card/70">
 					<div className="flex flex-col gap-1 border-b border-border/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 						<div>
 							<h3 className="text-sm font-semibold">Members</h3>
@@ -149,7 +149,7 @@ function TeamDetail({ team }: { team: Team }) {
 						</div>
 					)}
 
-					<div className="p-5">
+					<div className="flex-1 p-5">
 						{!canViewMembers ? (
 							<div className="rounded-lg border border-dashed border-border/80 px-5 py-8 text-center">
 								<ShieldCheck className="mx-auto h-6 w-6 text-muted-foreground/70" />
@@ -201,6 +201,17 @@ function TeamDetail({ team }: { team: Team }) {
 							</div>
 						)}
 					</div>
+
+					<footer className="flex flex-col gap-3 border-t border-border/70 bg-background/20 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+						<div className="flex items-start gap-2.5">
+							<Terminal className="mt-0.5 h-4 w-4 shrink-0 text-primary-accent" />
+							<div>
+								<p className="text-xs font-medium text-foreground">Publishing namespace</p>
+								<p className="mt-1 text-xs text-muted-foreground">Use this identity when installing an agent or component from the team.</p>
+							</div>
+						</div>
+						<code className="rounded-md border border-border/80 bg-background px-3 py-2 font-mono text-xs text-foreground">observal pull {team.handle}/agent-name</code>
+					</footer>
 				</section>
 			</div>
 
@@ -320,7 +331,7 @@ function CreatePanel({ onCreated, onCancel, firstTeamspace = false }: { onCreate
 										aria-describedby="team-handle-help"
 										className={`${CONTROL_CLASS_NAME} h-11 font-mono text-base`}
 									/>
-									<p id="team-handle-help" className="text-xs leading-5 text-muted-foreground">Generated live from the name. Edit it only when you need a different stable slug.</p>
+									<p id="team-handle-help" className="text-xs leading-5 text-muted-foreground">Generated live from the name. Short names use a readable `-team` suffix to meet namespace rules.</p>
 								</div>
 								<div className="space-y-2 md:col-span-2">
 									<Label htmlFor="team-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label>

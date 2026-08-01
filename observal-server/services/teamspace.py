@@ -23,15 +23,16 @@ _HANDLE_STRIP_RE = re.compile(r"[^a-z0-9-]+")
 
 
 def slugify_handle(raw: str, *, fallback: str = "team") -> str:
-    """Reduce raw text to a namespace-valid handle (NAMESPACE_RE: 3-32, [a-z0-9-])."""
+    """Reduce raw text to a namespace-valid handle (3-32 lowercase chars)."""
     base = _HANDLE_STRIP_RE.sub("-", (raw or "").strip().lower()).strip("-")
     if not base:
         base = fallback
-    # NAMESPACE_RE requires 3-32 chars and alnum start/end; clip and pad.
+    # Namespaces require 3-32 chars. Keep short names recognizable instead of
+    # appending an opaque character.
     if len(base) > 32:
         base = base[:32].rstrip("-")
     if len(base) < 3:
-        base = base + "0" * (3 - len(base))
+        base = f"{base}-team"
     return validate_namespace(base, allow_reserved=True)
 
 
