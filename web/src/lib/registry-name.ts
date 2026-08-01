@@ -22,6 +22,28 @@ export const NAMESPACE_RULE_TEXT =
 	"Namespaces must be 3-32 characters using lowercase letters, numbers, " +
 	"hyphens, and dots, and must start and end with a letter or number";
 
+export interface SlugifyRegistryTextOptions {
+	allowUnderscore?: boolean;
+	maxLength?: number;
+	preserveTrailingSeparator?: boolean;
+}
+
+/** Normalize human input to a lowercase registry slug without adding padding. */
+export function slugifyRegistryText(raw: string, options: SlugifyRegistryTextOptions = {}): string {
+	const separatorPattern = options.allowUnderscore ? /[^a-z0-9_-]+/g : /[^a-z0-9-]+/g;
+	let slug = raw
+		.trimStart()
+		.toLowerCase()
+		.replace(separatorPattern, "-")
+		.replace(/-+/g, "-")
+		.replace(/^-+/, "");
+
+	if (options.maxLength !== undefined) {
+		slug = slug.slice(0, options.maxLength);
+	}
+	return options.preserveTrailingSeparator ? slug : slug.replace(/-+$/, "");
+}
+
 /** Whether a username can be used verbatim as a registry namespace. */
 export function isValidNamespace(handle: string | null | undefined): boolean {
 	if (!handle) return false;

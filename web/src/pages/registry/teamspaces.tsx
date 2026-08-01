@@ -34,6 +34,7 @@ import {
 	useUpsertTeamMember,
 } from "@/hooks/use-teams-api";
 import { getUserRole } from "@/lib/api";
+import { slugifyRegistryText } from "@/lib/registry-name";
 import type { Team, TeamMember, TeamRole } from "@/lib/types";
 
 const ROLE_OPTIONS = [
@@ -46,7 +47,7 @@ const CONTROL_CLASS_NAME =
 	"bg-background/80 border-input/90 placeholder:text-muted-foreground/80 hover:border-primary-accent/50 focus-visible:border-primary-accent focus-visible:ring-primary-accent/30";
 
 function slugifyHandle(value: string) {
-	const base = value.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+	const base = slugifyRegistryText(value, { maxLength: 32 });
 	return base && base.length < 3 ? `${base}-team` : base;
 }
 
@@ -258,12 +259,12 @@ function CreatePanel({ onCreated, onCancel, firstTeamspace = false }: { onCreate
 	const [handleEdited, setHandleEdited] = useState(false);
 	const [description, setDescription] = useState("");
 	const generatedHandle = slugifyHandle(name);
-	const effectiveHandle = handleEdited ? handle : generatedHandle;
-	const previewHandle = effectiveHandle || "team";
+	const submittedHandle = handleEdited ? slugifyHandle(handle) : generatedHandle;
+	const previewHandle = submittedHandle || "team";
 
 	function submit() {
 		createTeam.mutate(
-			{ name: name.trim(), handle: effectiveHandle || undefined, description: description.trim() || undefined },
+			{ name: name.trim(), handle: submittedHandle || undefined, description: description.trim() || undefined },
 			{
 				onSuccess: () => {
 					setName("");
@@ -341,7 +342,7 @@ function CreatePanel({ onCreated, onCancel, firstTeamspace = false }: { onCreate
 									<Input
 										id="team-handle"
 										value={handleEdited ? handle : generatedHandle}
-										onChange={(event) => { setHandle(slugifyHandle(event.target.value)); setHandleEdited(true); }}
+										onChange={(event) => { setHandle(slugifyRegistryText(event.target.value, { maxLength: 32, preserveTrailingSeparator: true })); setHandleEdited(true); }}
 										placeholder="platform-tools"
 										aria-describedby="team-handle-help"
 										className={`${CONTROL_CLASS_NAME} h-11 font-mono text-base`}

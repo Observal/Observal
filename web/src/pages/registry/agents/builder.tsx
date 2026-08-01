@@ -37,6 +37,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { useRegistryItem, useAgentValidation, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
+import { slugifyRegistryText } from "@/lib/registry-name";
 import type { RegistryItem } from "@/lib/types";
 import type { ValidationResult } from "@/lib/types";
 
@@ -64,15 +65,6 @@ const CATEGORIES = [
   "Cost Optimization",
   "Other",
 ];
-
-function slugifyName(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-/, "");
-}
 
 export default function AgentBuilderPage() {
   return (
@@ -440,7 +432,7 @@ function AgentBuilderInner() {
 
 
     return {
-      name: name.trim(),
+      name: slugifyRegistryText(name, { allowUnderscore: true }),
       version: (versionOverride ?? version).trim() || "1.0.0",
       description: description.trim(),
       category: category || undefined,
@@ -465,7 +457,8 @@ function AgentBuilderInner() {
       toast.error("An agent prompt is required.");
       return;
     }
-    if (!AGENT_NAME_REGEX.test(name)) {
+    const normalizedName = slugifyRegistryText(name, { allowUnderscore: true });
+    if (!AGENT_NAME_REGEX.test(normalizedName)) {
       toast.error(
         "Invalid agent name. Must start with a letter/digit, only lowercase letters, digits, hyphens, underscores.",
       );
@@ -595,7 +588,7 @@ function AgentBuilderInner() {
                   placeholder="my-agent"
                   value={name}
                   onChange={(e) => {
-                    const slugged = slugifyName(e.target.value);
+                    const slugged = slugifyRegistryText(e.target.value, { allowUnderscore: true, preserveTrailingSeparator: true });
                     setName(slugged);
                     if (slugged && !AGENT_NAME_REGEX.test(slugged)) {
                       setNameError(
