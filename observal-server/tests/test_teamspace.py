@@ -270,6 +270,33 @@ async def test_upsert_member_requires_owner_or_admin(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_upsert_member_updates_existing_role(monkeypatch):
+    mod = _import_routes()
+    team = SimpleNamespace(id=uuid.uuid4(), handle="t", name="T", description=None, created_at=None)
+    owner = _user(UserRole.user, username="owner")
+    target = _user(UserRole.user, username="member")
+    owner_membership = SimpleNamespace(role=TeamRole.owner, team_id=team.id, user_id=owner.id)
+    target_membership = SimpleNamespace(role=TeamRole.member, team_id=team.id, user_id=target.id)
+
+    async def _get(model, pk):
+        return team
+
+    async def _membership(db, tid, uid):
+        return owner_membership if uid == owner.id else target_membership
+
+    db = _FakeDB([])
+    db.get = AsyncMock(side_effect=_get)
+    monkeypatch.setattr(mod, "team_membership", _membership)
+    monkeypatch.setattr(mod, "_resolve_member", AsyncMock(return_value=target))
+    req = mod.TeamMemberUpsertRequest(user_id=target.id, role=TeamRole.reviewer)
+
+    resp = await mod.upsert_team_member(team.id, req, db, owner)
+
+    assert target_membership.role == TeamRole.reviewer
+    assert resp.role == TeamRole.reviewer.value
+
+
+@pytest.mark.asyncio
 async def test_remove_last_owner_blocked(monkeypatch):
     mod = _import_routes()
     team = SimpleNamespace(id=uuid.uuid4(), handle="t", name="T", description=None, created_at=None)

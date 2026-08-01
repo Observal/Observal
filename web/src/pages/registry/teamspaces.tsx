@@ -181,7 +181,22 @@ function TeamDetail({ team }: { team: Team }) {
 											{member.name && <p className="truncate text-xs text-muted-foreground">{member.name}</p>}
 										</div>
 										<div className="flex shrink-0 items-center gap-2">
-											<Badge variant="outline" className="capitalize px-2 py-0.5 text-[11px]">{member.role}</Badge>
+											{canManageMembers ? (
+												<PickerSelect
+													value={member.role}
+													onValueChange={(value) => {
+														const nextRole = value as TeamRole;
+														if (nextRole !== member.role) upsert.mutate({ user_id: member.id, role: nextRole });
+													}}
+													options={ROLE_OPTIONS}
+													ariaLabel={`Change role for ${member.username ? `@${member.username}` : member.email}`}
+													className="w-28"
+													inputClassName="h-8 bg-background/80 px-2 text-xs"
+													disabled={upsert.isPending}
+												/>
+											) : (
+												<Badge variant="outline" className="capitalize px-2 py-0.5 text-[11px]">{member.role}</Badge>
+											)}
 											{canManageMembers && (
 												<Button
 													variant="ghost"

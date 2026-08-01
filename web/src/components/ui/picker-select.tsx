@@ -23,6 +23,7 @@ interface PickerSelectProps {
   disabled?: boolean;
   className?: string;
   inputClassName?: string;
+  ariaLabel?: string;
 }
 
 export function PickerSelect({
@@ -34,6 +35,7 @@ export function PickerSelect({
   disabled,
   className,
   inputClassName,
+  ariaLabel,
 }: PickerSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -75,6 +77,7 @@ export function PickerSelect({
               if (event.key === "Escape") setOpen(false);
             }}
             placeholder={placeholder}
+            aria-label={ariaLabel}
             disabled={disabled}
             className={cn("pr-9", inputClassName)}
           />
