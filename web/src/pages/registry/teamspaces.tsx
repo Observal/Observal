@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
-import { Building2, Loader2, LogOut, Plus, Search, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
+import { Building2, Loader2, LogOut, Plus, RefreshCw, Search, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { UserSearchInput } from "@/components/shared/user-search-input";
@@ -46,7 +46,8 @@ const CONTROL_CLASS_NAME =
 	"bg-background/80 border-input/90 placeholder:text-muted-foreground/80 hover:border-primary-accent/50 focus-visible:border-primary-accent focus-visible:ring-primary-accent/30";
 
 function slugifyHandle(value: string) {
-	return value.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+	const base = value.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+	return base ? base.padEnd(3, "0") : "";
 }
 
 function TeamDetail({ team }: { team: Team }) {
@@ -74,7 +75,7 @@ function TeamDetail({ team }: { team: Team }) {
 
 	return (
 		<main className="min-h-0 flex-1 overflow-y-auto bg-surface-sunken/30">
-			<div className="mx-auto w-full max-w-4xl p-4 sm:p-6 lg:p-10">
+			<div className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-10">
 				<header className="flex flex-col gap-5 border-b border-border/80 pb-6 sm:flex-row sm:items-start sm:justify-between">
 					<div className="flex min-w-0 items-start gap-3">
 						<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-accent/25 bg-primary-accent/10 text-primary-accent">
@@ -107,7 +108,7 @@ function TeamDetail({ team }: { team: Team }) {
 					</div>
 				</header>
 
-				<section className="mt-6 overflow-hidden rounded-xl border border-border/80 bg-card/70">
+				<section className="mt-6 min-h-[360px] overflow-hidden rounded-xl border border-border/80 bg-card/70">
 					<div className="flex flex-col gap-1 border-b border-border/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 						<div>
 							<h3 className="text-sm font-semibold">Members</h3>
@@ -228,15 +229,20 @@ function CreatePanel({ onCreated, onCancel, firstTeamspace = false }: { onCreate
 	const createTeam = useCreateTeam();
 	const [name, setName] = useState("");
 	const [handle, setHandle] = useState("");
+	const [handleEdited, setHandleEdited] = useState(false);
 	const [description, setDescription] = useState("");
+	const generatedHandle = slugifyHandle(name);
+	const effectiveHandle = handleEdited ? handle : generatedHandle;
+	const previewHandle = effectiveHandle || "team";
 
 	function submit() {
 		createTeam.mutate(
-			{ name: name.trim(), handle: slugifyHandle(handle || name) || undefined, description: description.trim() || undefined },
+			{ name: name.trim(), handle: effectiveHandle || undefined, description: description.trim() || undefined },
 			{
 				onSuccess: () => {
 					setName("");
 					setHandle("");
+					setHandleEdited(false);
 					setDescription("");
 					onCreated();
 				},
@@ -246,70 +252,97 @@ function CreatePanel({ onCreated, onCancel, firstTeamspace = false }: { onCreate
 
 	return (
 		<main className="min-h-0 flex-1 overflow-y-auto bg-surface-sunken/30">
-			<div className="mx-auto flex min-h-full w-full max-w-3xl items-start justify-center p-4 sm:p-6 lg:p-10">
-				<section className="w-full max-w-2xl overflow-hidden rounded-xl border border-border/80 bg-card">
-					<header className="flex items-start justify-between gap-4 border-b border-border/70 px-6 py-5">
-						<div className="flex min-w-0 items-start gap-3">
-							<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-accent/25 bg-primary-accent/10 text-primary-accent">
-								<Building2 className="h-5 w-5" />
+			<div className="mx-auto flex min-h-full w-full max-w-6xl items-start p-4 sm:p-6 lg:p-8 xl:p-10">
+				<section className="grid min-h-[620px] w-full overflow-hidden rounded-lg border border-border/80 bg-card 2xl:grid-cols-[minmax(260px,0.82fr)_minmax(0,1.5fr)]">
+					<aside className="grid gap-8 border-b border-border/70 bg-primary-accent/[0.04] p-5 sm:p-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)] 2xl:flex 2xl:flex-col 2xl:justify-between 2xl:border-b-0 2xl:border-r">
+						<div>
+							<div className="flex items-center gap-2 text-xs font-medium text-primary-accent">
+								<Building2 className="h-4 w-4" /> Registry identity
 							</div>
-							<div>
-								<h2 className="text-xl font-semibold tracking-tight">{firstTeamspace ? "Create your first teamspace" : "Create a teamspace"}</h2>
-								<p className="mt-1 max-w-xl text-sm leading-5 text-muted-foreground">Create a shared namespace for publishing agents and components with your team.</p>
-							</div>
+							<h2 className="mt-6 max-w-xs text-2xl font-semibold tracking-tight">{firstTeamspace ? "Give your team a home." : "Define the namespace your team will publish from."}</h2>
+							<p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">The name is for people. The handle is the stable slug that travels with every install command.</p>
 						</div>
-						{onCancel && <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
-					</header>
 
-					<form onSubmit={(event) => { event.preventDefault(); submit(); }}>
-						<div className="grid gap-5 p-6 sm:grid-cols-2">
-							<div className="space-y-2">
-								<Label htmlFor="team-name">Name</Label>
-								<Input
-									id="team-name"
-									autoFocus={firstTeamspace}
-									required
-									value={name}
-									onChange={(event) => {
-										setName(event.target.value);
-										if (!handle) setHandle(slugifyHandle(event.target.value));
-									}}
-									placeholder="Platform Tools"
-									className={CONTROL_CLASS_NAME}
-								/>
+						<div className="self-center" aria-live="polite" aria-atomic="true">
+							<p className="text-xs font-medium text-muted-foreground">Live install identity</p>
+							<div className="mt-3 min-h-16 border-b border-primary-accent/20 pb-4 font-mono text-xl tracking-tight 2xl:text-2xl">
+								<span className="text-primary-accent/70">observal pull </span>
+								<span key={previewHandle} className="inline-block text-foreground motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-200 motion-reduce:animate-none">{previewHandle}</span>
+								<span className="text-muted-foreground">/agent-name</span>
 							</div>
-							<div className="space-y-2">
-								<Label htmlFor="team-handle">Handle</Label>
-								<Input
-									id="team-handle"
-									value={handle}
-									onChange={(event) => setHandle(slugifyHandle(event.target.value))}
-									placeholder="platform-tools"
-									aria-describedby="team-handle-help"
-									className={`${CONTROL_CLASS_NAME} font-mono`}
-								/>
-								<p id="team-handle-help" className="text-xs leading-5 text-muted-foreground">Used as the namespace in install commands, such as <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">platform-tools/agent</code>.</p>
-							</div>
-							<div className="space-y-2 sm:col-span-2">
-								<Label htmlFor="team-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label>
-								<Textarea
-									id="team-description"
-									value={description}
-									onChange={(event) => setDescription(event.target.value)}
-									rows={4}
-									placeholder="What this team publishes and who it serves"
-									className={CONTROL_CLASS_NAME}
-								/>
-							</div>
+							<p className="mt-3 text-xs leading-5 text-muted-foreground">This preview updates as you type and uses the same slug rules as the teamspace handle.</p>
 						</div>
-						<footer className="flex flex-col gap-3 border-t border-border/70 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-							<p className="text-xs text-muted-foreground">You can manage members and roles after creation.</p>
-							<Button type="submit" className="bg-primary-accent text-primary-foreground hover:bg-primary-accent/90" disabled={!name.trim() || createTeam.isPending}>
-								{createTeam.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-								Create teamspace
-							</Button>
-						</footer>
-					</form>
+
+						<div className="hidden border-t border-border/70 pt-4 text-xs leading-5 text-muted-foreground 2xl:block">
+							<p className="font-medium text-foreground">After creation</p>
+							<p className="mt-1">Invite members, assign roles, and publish agents or components under this namespace.</p>
+						</div>
+					</aside>
+
+					<div className="flex min-w-0 flex-col">
+						<header className="flex items-start justify-between gap-4 border-b border-border/70 px-6 py-6 sm:px-8 sm:py-8">
+							<div>
+								<p className="text-sm font-medium text-primary-accent">New teamspace</p>
+								<h3 className="mt-2 text-2xl font-semibold tracking-tight">{firstTeamspace ? "Create your first teamspace" : "Create a teamspace"}</h3>
+								<p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Create a shared namespace for publishing agents and components with your team.</p>
+							</div>
+							{onCancel && <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
+						</header>
+
+						<form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+							<div className="grid flex-1 content-start gap-6 p-6 sm:p-8 md:grid-cols-2">
+								<div className="space-y-2">
+									<Label htmlFor="team-name">Name</Label>
+									<Input
+										id="team-name"
+										autoFocus={firstTeamspace}
+										required
+										value={name}
+										onChange={(event) => setName(event.target.value)}
+										placeholder="Platform Tools"
+										className={`${CONTROL_CLASS_NAME} h-11 text-base`}
+									/>
+								</div>
+								<div className="space-y-2">
+									<div className="flex items-center justify-between gap-3">
+										<Label htmlFor="team-handle">Handle</Label>
+										{handleEdited && (
+											<button type="button" className="inline-flex items-center gap-1 text-xs text-primary-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-accent/50" onClick={() => { setHandle(""); setHandleEdited(false); }}>
+												<RefreshCw className="h-3 w-3" /> Use generated
+											</button>
+										)}
+									</div>
+									<Input
+										id="team-handle"
+										value={handleEdited ? handle : generatedHandle}
+										onChange={(event) => { setHandle(slugifyHandle(event.target.value)); setHandleEdited(true); }}
+										placeholder="platform-tools"
+										aria-describedby="team-handle-help"
+										className={`${CONTROL_CLASS_NAME} h-11 font-mono text-base`}
+									/>
+									<p id="team-handle-help" className="text-xs leading-5 text-muted-foreground">Generated live from the name. Edit it only when you need a different stable slug.</p>
+								</div>
+								<div className="space-y-2 md:col-span-2">
+									<Label htmlFor="team-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label>
+									<Textarea
+										id="team-description"
+										value={description}
+										onChange={(event) => setDescription(event.target.value)}
+										rows={5}
+										placeholder="What this team publishes, who it serves, and what belongs in this namespace"
+										className={`${CONTROL_CLASS_NAME} min-h-28 resize-y text-base leading-6`}
+									/>
+								</div>
+							</div>
+							<footer className="flex flex-col gap-3 border-t border-border/70 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+								<p className="text-xs leading-5 text-muted-foreground">You can manage members and roles after creation.</p>
+								<Button type="submit" className="bg-primary-accent px-5 text-primary-foreground hover:bg-primary-accent/90" disabled={!name.trim() || createTeam.isPending}>
+									{createTeam.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+									Create teamspace
+								</Button>
+							</footer>
+						</form>
+					</div>
 				</section>
 			</div>
 		</main>
