@@ -1,6 +1,9 @@
 {
   "name": "observal",
   "private": true,
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "packageManager": "pnpm@10.34.4",
   "scripts": {
     "e2e": "pnpm --filter web e2e",

@@ -28,6 +28,8 @@ export interface SlugifyRegistryTextOptions {
 	preserveTrailingSeparator?: boolean;
 }
 
+const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/;
+
 /** Normalize human input to a lowercase registry slug without adding padding. */
 export function slugifyRegistryText(raw: string, options: SlugifyRegistryTextOptions = {}): string {
 	const separatorPattern = options.allowUnderscore ? /[^a-z0-9_-]+/g : /[^a-z0-9-]+/g;
@@ -42,6 +44,14 @@ export function slugifyRegistryText(raw: string, options: SlugifyRegistryTextOpt
 		slug = slug.slice(0, options.maxLength);
 	}
 	return options.preserveTrailingSeparator ? slug : slug.replace(/-+$/, "");
+}
+
+export function normalizeAgentName(raw: string): string {
+	return slugifyRegistryText(raw, { allowUnderscore: true });
+}
+
+export function isValidAgentName(raw: string): boolean {
+	return AGENT_NAME_RE.test(normalizeAgentName(raw));
 }
 
 /** Whether a username can be used verbatim as a registry namespace. */

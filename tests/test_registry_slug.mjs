@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { slugifyRegistryText } from "../web/src/lib/registry-name.ts";
+import { isValidAgentName, normalizeAgentName, slugifyRegistryText } from "../web/src/lib/registry-name.ts";
 
 test("replaces spaces with a single hyphen while typing", () => {
 	assert.equal(slugifyRegistryText("Cloud ", { preserveTrailingSeparator: true }), "cloud-");
@@ -21,4 +21,10 @@ test("preserves underscores for agent names when requested", () => {
 
 test("uses hyphens for team handle input", () => {
 	assert.equal(slugifyRegistryText("Cloud_Tools"), "cloud-tools");
+});
+
+test("rejects names that normalize to an empty draft name", () => {
+	assert.equal(normalizeAgentName("!!!"), "");
+	assert.equal(isValidAgentName("!!!"), false);
+	assert.equal(isValidAgentName("Cloud Computing"), true);
 });

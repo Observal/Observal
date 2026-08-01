@@ -37,7 +37,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { useRegistryItem, useAgentValidation, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
-import { slugifyRegistryText } from "@/lib/registry-name";
+import { isValidAgentName, normalizeAgentName, slugifyRegistryText } from "@/lib/registry-name";
 import type { RegistryItem } from "@/lib/types";
 import type { ValidationResult } from "@/lib/types";
 
@@ -52,7 +52,7 @@ import { COMPONENT_TYPES, REVERSE_TYPE_MAP, TYPE_MAP } from "@/components/regist
 import { ComponentPicker } from "@/components/registry/component-picker";
 import { VersionBumpDialog } from "@/components/registry/version-bump-dialog";
 
-const AGENT_NAME_REGEX = /^[a-z0-9][a-z0-9_-]*$/;
+const AGENT_NAME_ERROR = "Must start with a letter/digit, only lowercase letters, digits, hyphens, underscores.";
 const CATEGORIES = [
   "Code Review",
   "Testing",
@@ -347,6 +347,10 @@ function AgentBuilderInner() {
       toast.error("Agent name is required");
       return;
     }
+    if (!isValidAgentName(name)) {
+      toast.error(`Invalid agent name. ${AGENT_NAME_ERROR}`);
+      return;
+    }
     const hasPromptComponent = Object.values(selectedComponents).flat().some(
       (item: RegistryItem) => selectedComponents.prompts?.find((p) => p.id === item.id)
     ) || (selectedComponents.prompts ?? []).length > 0;
@@ -432,7 +436,7 @@ function AgentBuilderInner() {
 
 
     return {
-      name: slugifyRegistryText(name, { allowUnderscore: true }),
+      name: normalizeAgentName(name),
       version: (versionOverride ?? version).trim() || "1.0.0",
       description: description.trim(),
       category: category || undefined,
@@ -457,11 +461,8 @@ function AgentBuilderInner() {
       toast.error("An agent prompt is required.");
       return;
     }
-    const normalizedName = slugifyRegistryText(name, { allowUnderscore: true });
-    if (!AGENT_NAME_REGEX.test(normalizedName)) {
-      toast.error(
-        "Invalid agent name. Must start with a letter/digit, only lowercase letters, digits, hyphens, underscores.",
-      );
+    if (!isValidAgentName(name)) {
+      toast.error(`Invalid agent name. ${AGENT_NAME_ERROR}`);
       return;
     }
 
@@ -590,10 +591,8 @@ function AgentBuilderInner() {
                   onChange={(e) => {
                     const slugged = slugifyRegistryText(e.target.value, { allowUnderscore: true, preserveTrailingSeparator: true });
                     setName(slugged);
-                    if (slugged && !AGENT_NAME_REGEX.test(slugged)) {
-                      setNameError(
-                        "Must start with a letter/digit, only lowercase letters, digits, hyphens, underscores.",
-                      );
+                    if (slugged && !isValidAgentName(slugged)) {
+                      setNameError(AGENT_NAME_ERROR);
                     } else {
                       setNameError("");
                     }
