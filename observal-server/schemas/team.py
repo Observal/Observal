@@ -4,7 +4,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from models.team import TeamRole
 
@@ -45,3 +45,9 @@ class TeamMemberUpsertRequest(BaseModel):
     username: str | None = None
     user_id: uuid.UUID | None = None
     role: TeamRole = TeamRole.member
+
+    @model_validator(mode="after")
+    def _require_identifier(self) -> "TeamMemberUpsertRequest":
+        if not (self.email or self.username or self.user_id):
+            raise ValueError("One of email, username, or user_id is required")
+        return self

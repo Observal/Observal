@@ -118,5 +118,7 @@ async def test_register_creates_user_role():
         assert created_user.email == "new@example.com"
         assert created_user.role == UserRole.user
         assert created_user.org_id == org_id
+        # Verify both users.username and teams.handle reservation queries ran.
+        assert db.execute.call_count >= 2
     finally:
         _cleanup()

@@ -30,6 +30,8 @@ def slugify_handle(raw: str, *, fallback: str = "team") -> str:
     # NAMESPACE_RE requires 3-32 chars and alnum start/end; clip and pad.
     if len(base) > 32:
         base = base[:32].rstrip("-")
+    if len(base) < 3:
+        base = base + "0" * (3 - len(base))
     return validate_namespace(base, allow_reserved=True)
 
 
@@ -84,45 +86,8 @@ async def reserve_handle(
     return value
 
 
-async def count_owners(db: AsyncSession, team_id: uuid.UUID) -> int:
-    return (
-        (
-            await db.execute(
-                select(TeamMembership.id).where(
-                    TeamMembership.team_id == team_id, TeamMembership.role == TeamRole.owner
-                )
-            )
-        )
-        .scalars()
-        .all()
-        .__len__()
-    )
-
-
-if __name__ == "__main__":
-    # ponytail: self-check uses fakes; reserve_handle hits two select() calls.
-    import asyncio
-
-    async def _ok():
-        class _Scalar:
-            def scalar_one_or_none(self):
-                return None
-
-        class _Res:
-            def __init__(self):
-                self.calls = 0
-
-            async def execute(self, stmt):
-                self.calls += 1
-                return _Scalar()
-
-        db = _Res()
-        out = await reserve_handle(db, "Platform Tools!")
-        assert out == "platform-tools", out
-        assert db.calls == 2
-        # slugify_handle targets NAMESPACE_RE (3-32, [a-z0-9-], alnum ends)
-        assert slugify_handle("A B") == "a-b"
-        assert slugify_handle("") == "team"
-        print("reserve_handle ok:", out)
-
-    asyncio.run(_ok())
+async def count_owners(db: AsyncSession, team_id: uuid.UUID, *, for_update: bool = False) -> int:
+    stmt = select(TeamMembership.id).where(TeamMembership.team_id == team_id, TeamMembership.role == TeamRole.owner)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return (await db.execute(stmt)).scalars().all().__len__()

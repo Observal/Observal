@@ -4,7 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { teams } from "@/lib/api";
-import type { TeamRole } from "@/lib/types";
+import type { TeamMemberUpsertBody, TeamUpdateBody } from "@/lib/types";
 
 const TEAMS_STALE_MS = 5 * 60 * 1000;
 
@@ -48,7 +48,7 @@ export function useCreateTeam() {
 export function useUpdateTeam() {
 	const qc = useQueryClient();
 	return useMutation({
-		mutationFn: ({ id, body }: { id: string; body: { name?: string; description?: string } }) =>
+		mutationFn: ({ id, body }: { id: string; body: TeamUpdateBody }) =>
 			teams.update(id, body),
 		onSuccess: (_data, vars) => {
 			qc.invalidateQueries({ queryKey: ["teams"] });
@@ -74,7 +74,7 @@ export function useDeleteTeam() {
 export function useUpsertTeamMember(teamId?: string) {
 	const qc = useQueryClient();
 	return useMutation({
-		mutationFn: (body: { email?: string; username?: string; user_id?: string; role?: TeamRole }) =>
+		mutationFn: (body: TeamMemberUpsertBody) =>
 			teams.upsertMember(teamId || "", body),
 		onSuccess: () => {
 			qc.invalidateQueries({ queryKey: ["teams", teamId, "members"] });

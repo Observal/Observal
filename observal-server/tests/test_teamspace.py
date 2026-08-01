@@ -90,6 +90,7 @@ def _user(role=UserRole.user, username="alice"):
 def test_slugify_handle_targets_namespace_regex():
     assert slugify_handle("Platform Tools!") == "platform-tools"
     assert slugify_handle("A B") == "a-b"
+    assert slugify_handle("ab") == "ab0"
     assert slugify_handle("") == "team"
     # underscores are stripped (NAMESPACE_RE has no underscores)
     assert slugify_handle("my_team") == "my-team"
@@ -213,16 +214,18 @@ async def test_create_team_handle_collision_returns_409(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_non_reviewer_cannot_create_team(monkeypatch):
-    """create_team requires reviewer role via the FastAPI dependency; the body
-    only runs for authenticated users with sufficient role, so a plain user
-    reaching the body is a misconfiguration. We assert the dependency wiring
-    by checking require_role is used at import time instead of a runtime call."""
-    mod = _import_routes()
-    # The route's dependency is require_role(UserRole.reviewer); confirm the
-    # module imports require_role and UserRole so the gate is in place.
-    assert hasattr(mod, "require_role")
-    assert hasattr(mod, "UserRole")
+async def test_non_reviewer_cannot_create_team():
+    """create_team requires reviewer role. Call require_role directly with
+    a low-privilege user and assert 403 rejection."""
+    from unittest.mock import AsyncMock, patch
+
+    from api.deps import require_role
+
+    user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user, username="user", email="user@test.com")
+    dep = require_role(UserRole.reviewer)
+    with patch("api.deps.emit_security_event", new=AsyncMock()), pytest.raises(HTTPException) as exc:
+        await dep(current_user=user)
+    assert exc.value.status_code == 403
 
 
 # ── routes: owner/admin authz for membership ────────────────────────
@@ -279,7 +282,7 @@ async def test_remove_last_owner_blocked(monkeypatch):
     async def _membership(db, tid, uid):
         return membership
 
-    async def _count(db, tid):
+    async def _count(db, tid, **kwargs):
         return 1
 
     db = _FakeDB([])
@@ -305,7 +308,7 @@ async def test_leave_last_owner_blocked(monkeypatch):
     async def _membership(db, tid, uid):
         return membership
 
-    async def _count(db, tid):
+    async def _count(db, tid, **kwargs):
         return 1
 
     db = _FakeDB([])

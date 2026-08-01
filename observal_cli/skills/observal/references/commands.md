@@ -20,26 +20,26 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal admin review list`: List pending submissions awaiting admin review.
   - `observal admin review reject`: Reject a submission (component, agent, or bundle).
   - `observal admin review show`: Show review details for a component or agent.
-  - `observal admin audit-log`: Query the audit log.
-  - `observal admin audit-log-export`: Export audit log as CSV.
-  - `observal admin cache-clear`: Clear all server caches.
-  - `observal admin create-user`: Create a new user account. Requires admin privileges.
-  - `observal admin delete-user`: Delete a user account. Requires admin privileges.
-  - `observal admin diagnostics`: Show system diagnostics and health status.
-  - `observal admin reset-password`: Reset a user's password. Requires admin privileges.
-  - `observal admin saml-config`: View current SAML SSO configuration.
-  - `observal admin saml-config-delete`: Delete SAML SSO configuration. Disables SAML SSO.
-  - `observal admin saml-config-set`: Create or update SAML SSO configuration.
-  - `observal admin scim-token-create`: Create a new SCIM provisioning token.
-  - `observal admin scim-token-revoke`: Revoke a SCIM provisioning token.
-  - `observal admin scim-tokens`: List SCIM provisioning tokens.
-  - `observal admin security-events`: View security events log.
-  - `observal admin set`: Set a server setting.
-  - `observal admin set-role`: Change a user's role.
-  - `observal admin settings`: List server settings.
-  - `observal admin trace-privacy`: View trace privacy setting.
-  - `observal admin trace-privacy-set`: Enable or disable trace privacy (redacts sensitive trace data).
-  - `observal admin users`: List all users.
+- `observal admin audit-log`: Query the audit log.
+- `observal admin audit-log-export`: Export audit log as CSV.
+- `observal admin cache-clear`: Clear all server caches.
+- `observal admin create-user`: Create a new user account. Requires admin privileges.
+- `observal admin delete-user`: Delete a user account. Requires admin privileges.
+- `observal admin diagnostics`: Show system diagnostics and health status.
+- `observal admin reset-password`: Reset a user's password. Requires admin privileges.
+- `observal admin saml-config`: View current SAML SSO configuration.
+- `observal admin saml-config-delete`: Delete SAML SSO configuration. Disables SAML SSO.
+- `observal admin saml-config-set`: Create or update SAML SSO configuration.
+- `observal admin scim-token-create`: Create a new SCIM provisioning token.
+- `observal admin scim-token-revoke`: Revoke a SCIM provisioning token.
+- `observal admin scim-tokens`: List SCIM provisioning tokens.
+- `observal admin security-events`: View security events log.
+- `observal admin set`: Set a server setting.
+- `observal admin set-role`: Change a user's role.
+- `observal admin settings`: List server settings.
+- `observal admin trace-privacy`: View trace privacy setting.
+- `observal admin trace-privacy-set`: Enable or disable trace privacy (redacts sensitive trace data).
+- `observal admin users`: List all users.
 
 **`observal agent`**: Agent registry commands
 
@@ -47,48 +47,48 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal agent co-authors add`: Add a co-author.
   - `observal agent co-authors list`: List co-authors.
   - `observal agent co-authors remove`: Remove a co-author.
-  - `observal agent add`: Add a component reference to observal-agent.yaml.
-  - `observal agent archive`: Archive an agent.
-  - `observal agent build`: Validate agent definition against the server (dry-run).
-  - `observal agent bulk-create`: Bulk-create agents from a JSON file.
-  - `observal agent create`: Create a new agent (interactive wizard, from file, or via flags).
-  - `observal agent delete`: Archive an agent. Prefer the archive command.
-  - `observal agent init`: Scaffold an observal-agent.yaml definition file.
-  - `observal agent install`: Get install config for an agent.
-  - `observal agent list`: List active agents (paginated).
-  - `observal agent my`: List your own agents (all statuses).
-  - `observal agent publish`: Publish the agent definition to the server.
-  - `observal agent pull`: Fetch agent config and write harness files to disk.
-  - `observal agent release`: Bump version and push a versioned release to the registry.
-  - `observal agent show`: Show full agent details.
-  - `observal agent transfer-owner`: Transfer ownership to another username.
-  - `observal agent unarchive`: Restore an archived agent back to active status.
-  - `observal agent versions`: List all versions for an agent.
+- `observal agent add`: Add a component reference to observal-agent.yaml.
+- `observal agent archive`: Archive an agent.
+- `observal agent build`: Validate agent definition against the server (dry-run).
+- `observal agent bulk-create`: Bulk-create agents from a JSON file.
+- `observal agent create`: Create a new agent (interactive wizard, from file, or via flags).
+- `observal agent delete`: Archive an agent. Prefer the archive command.
+- `observal agent init`: Scaffold an observal-agent.yaml definition file.
+- `observal agent install`: Get install config for an agent.
+- `observal agent list`: List active agents (paginated).
+- `observal agent my`: List your own agents (all statuses).
+- `observal agent publish`: Publish the agent definition to the server.
+- `observal agent pull`: Fetch agent config and write harness files to disk.
+- `observal agent release`: Bump version and push a versioned release to the registry.
+- `observal agent show`: Show full agent details.
+- `observal agent transfer-owner`: Transfer ownership to another username.
+- `observal agent unarchive`: Restore an archived agent back to active status.
+- `observal agent versions`: List all versions for an agent.
 
 **`observal auth`**: Authentication and account commands
 
-  - `observal auth login`: Connect to Observal.
-  - `observal auth logout`: Clear saved credentials.
-  - `observal auth whoami`: Show current authenticated user.
-  - `observal auth status`: Check server connectivity and health.
-  - `observal auth change-password`: Change your password.
-  - `observal auth set-username`: Set or update your username.
+- `observal auth login`: Connect to Observal.
+- `observal auth logout`: Clear saved credentials.
+- `observal auth whoami`: Show current authenticated user.
+- `observal auth status`: Check server connectivity and health.
+- `observal auth change-password`: Change your password.
+- `observal auth set-username`: Set or update your username.
 
 **`observal config`**: CLI configuration
 
-  - `observal config alias`: Set or remove an alias for an MCP/agent ID.
-  - `observal config aliases`: List all aliases.
-  - `observal config path`: Show config file path.
-  - `observal config set`: Set a CLI config value.
-  - `observal config show`: Show current CLI configuration.
+- `observal config alias`: Set or remove an alias for an MCP/agent ID.
+- `observal config aliases`: List all aliases.
+- `observal config path`: Show config file path.
+- `observal config set`: Set a CLI config value.
+- `observal config show`: Show current CLI configuration.
 
 **`observal doctor`**: Diagnose and patch harness settings for Observal telemetry
 
 - `observal doctor support`: Generate and inspect diagnostic support bundles. Bundles contain no customer data or row contents.
   - `observal doctor support bundle`: Generate a diagnostic support bundle. No customer data or row contents included.
   - `observal doctor support inspect`: Inspect a support bundle.
-  - `observal doctor cleanup`: Remove ALL Observal hooks, env vars, and legacy telemetry config.
-  - `observal doctor patch`: Install Observal session telemetry hooks for selected harnesses.
+- `observal doctor cleanup`: Remove ALL Observal hooks, env vars, and legacy telemetry config.
+- `observal doctor patch`: Install Observal session telemetry hooks for selected harnesses.
 
 **`observal ops`**: Observability and operational commands (traces, telemetry, dashboard, feedback)
 
@@ -100,14 +100,14 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal ops telemetry`: Telemetry commands
   - `observal ops telemetry status`: Check telemetry data flow status.
   - `observal ops telemetry test`: Send a test telemetry event.
-  - `observal ops feedback`: Show feedback for an MCP server or agent.
-  - `observal ops metrics`: Show metrics for an MCP server or agent.
-  - `observal ops rate`: Rate an MCP server, agent, or component.
-  - `observal ops rate-delete`: Delete your review for an item.
-  - `observal ops rate-update`: Update your existing review for an item.
-  - `observal ops spans`: List spans for a trace.
-  - `observal ops top`: Show top MCP servers or agents by usage.
-  - `observal ops traces`: List recent traces (sessions).
+- `observal ops feedback`: Show feedback for an MCP server or agent.
+- `observal ops metrics`: Show metrics for an MCP server or agent.
+- `observal ops rate`: Rate an MCP server, agent, or component.
+- `observal ops rate-delete`: Delete your review for an item.
+- `observal ops rate-update`: Update your existing review for an item.
+- `observal ops spans`: List spans for a trace.
+- `observal ops top`: Show top MCP servers or agents by usage.
+- `observal ops traces`: List recent traces (sessions).
 
 **`observal reconcile`**: Push local session transcripts to the server
 
@@ -116,10 +116,10 @@ Every command available in the installed CLI. This block is generated from the T
 **`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes)
 
 - `observal registry hook`: Hook registry commands
-- `observal registry hook co-authors`: Manage co-authors for hooks
-  - `observal registry hook co-authors add`: Add a co-author.
-  - `observal registry hook co-authors list`: List co-authors.
-  - `observal registry hook co-authors remove`: Remove a co-author.
+  - `observal registry hook co-authors`: Manage co-authors for hooks
+    - `observal registry hook co-authors add`: Add a co-author.
+    - `observal registry hook co-authors list`: List co-authors.
+    - `observal registry hook co-authors remove`: Remove a co-author.
   - `observal registry hook archive`: Archive this component.
   - `observal registry hook edit`: Edit a draft, rejected, or pending hook submission.
   - `observal registry hook install`: Install a hook for a specific harness.
@@ -129,10 +129,10 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry hook transfer-owner`: Transfer ownership to another username.
   - `observal registry hook unarchive`: Restore an archived component.
 - `observal registry mcp`: MCP server registry commands
-- `observal registry mcp co-authors`: Manage co-authors for mcps
-  - `observal registry mcp co-authors add`: Add a co-author.
-  - `observal registry mcp co-authors list`: List co-authors.
-  - `observal registry mcp co-authors remove`: Remove a co-author.
+  - `observal registry mcp co-authors`: Manage co-authors for mcps
+    - `observal registry mcp co-authors add`: Add a co-author.
+    - `observal registry mcp co-authors list`: List co-authors.
+    - `observal registry mcp co-authors remove`: Remove a co-author.
   - `observal registry mcp submit`: Submit an MCP server to the registry.
   - `observal registry mcp show`: Show full details of an MCP server.
   - `observal registry mcp install`: Generate an install config snippet for an MCP server.
@@ -145,10 +145,10 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal registry models`: Inspect registry-backed harness model data.
   - `observal registry models list`
 - `observal registry prompt`: Prompt registry commands
-- `observal registry prompt co-authors`: Manage co-authors for prompts
-  - `observal registry prompt co-authors add`: Add a co-author.
-  - `observal registry prompt co-authors list`: List co-authors.
-  - `observal registry prompt co-authors remove`: Remove a co-author.
+  - `observal registry prompt co-authors`: Manage co-authors for prompts
+    - `observal registry prompt co-authors add`: Add a co-author.
+    - `observal registry prompt co-authors list`: List co-authors.
+    - `observal registry prompt co-authors remove`: Remove a co-author.
   - `observal registry prompt archive`: Archive this component.
   - `observal registry prompt edit`: Edit a draft, rejected, or pending prompt submission.
   - `observal registry prompt list`: List approved prompts in the registry.
@@ -159,10 +159,10 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry prompt transfer-owner`: Transfer ownership to another username.
   - `observal registry prompt unarchive`: Restore an archived component.
 - `observal registry sandbox`: Sandbox registry commands
-- `observal registry sandbox co-authors`: Manage co-authors for sandboxes
-  - `observal registry sandbox co-authors add`: Add a co-author.
-  - `observal registry sandbox co-authors list`: List co-authors.
-  - `observal registry sandbox co-authors remove`: Remove a co-author.
+  - `observal registry sandbox co-authors`: Manage co-authors for sandboxes
+    - `observal registry sandbox co-authors add`: Add a co-author.
+    - `observal registry sandbox co-authors list`: List co-authors.
+    - `observal registry sandbox co-authors remove`: Remove a co-author.
   - `observal registry sandbox archive`: Archive this component.
   - `observal registry sandbox edit`: Edit a draft, rejected, or pending sandbox submission.
   - `observal registry sandbox list`: List approved sandboxes in the registry.
@@ -171,10 +171,10 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry sandbox transfer-owner`: Transfer ownership to another username.
   - `observal registry sandbox unarchive`: Restore an archived component.
 - `observal registry skill`: Skill registry commands
-- `observal registry skill co-authors`: Manage co-authors for skills
-  - `observal registry skill co-authors add`: Add a co-author.
-  - `observal registry skill co-authors list`: List co-authors.
-  - `observal registry skill co-authors remove`: Remove a co-author.
+  - `observal registry skill co-authors`: Manage co-authors for skills
+    - `observal registry skill co-authors add`: Add a co-author.
+    - `observal registry skill co-authors list`: List co-authors.
+    - `observal registry skill co-authors remove`: Remove a co-author.
   - `observal registry skill archive`: Archive this component.
   - `observal registry skill edit`: Edit a draft, rejected, or pending skill submission.
   - `observal registry skill install`: Install a skill by fetching the full skill directory from git.
@@ -190,11 +190,11 @@ Every command available in the installed CLI. This block is generated from the T
 
 **`observal self`**: CLI self-management commands (upgrade, downgrade, rollback, status)
 
-  - `observal self upgrade`: Upgrade the observal CLI to the latest (or specified) version.
-  - `observal self downgrade`: Downgrade the observal CLI to a previous version.
-  - `observal self rollback`: Restore the CLI to the version before the last upgrade/downgrade.
-  - `observal self status`: Show current CLI version, install method, and update availability.
-  - `observal self uninstall`: Completely uninstall Observal: stop containers, remove volumes, delete repo and config.
+- `observal self upgrade`: Upgrade the observal CLI to the latest (or specified) version.
+- `observal self downgrade`: Downgrade the observal CLI to a previous version.
+- `observal self rollback`: Restore the CLI to the version before the last upgrade/downgrade.
+- `observal self status`: Show current CLI version, install method, and update availability.
+- `observal self uninstall`: Completely uninstall Observal: stop containers, remove volumes, delete repo and config.
 
 **`observal team`**: Manage teamspaces: creation, membership, and listing.
 
@@ -202,9 +202,9 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal team members add`: Add or update a team member. Owner or admin only.
   - `observal team members list`: List members of a teamspace.
   - `observal team members remove`: Remove a team member. Owner or admin only. The last owner cannot be removed.
-  - `observal team create`: Create a teamspace. Requires reviewer role or above. You become the owner.
-  - `observal team delete`: Delete a teamspace. Owner or admin only. This cannot be undone.
-  - `observal team leave`: Leave a teamspace. The last owner cannot leave; transfer ownership first.
-  - `observal team list`: List teamspaces you belong to (or all with --all).
-  - `observal team show`: Show teamspace detail and members.
+- `observal team create`: Create a teamspace. Requires reviewer role or above. You become the owner.
+- `observal team delete`: Delete a teamspace. Owner or admin only. This cannot be undone.
+- `observal team leave`: Leave a teamspace. The last owner cannot leave; transfer ownership first.
+- `observal team list`: List teamspaces you belong to (or all with --all).
+- `observal team show`: Show teamspace detail and members.
 <!-- END AUTO-GENERATED COMMAND REFERENCE -->

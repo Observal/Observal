@@ -73,13 +73,14 @@ def _group_help(group: typer.models.TyperInfo) -> str:
 def _walk(prefix: str, group_app: typer.Typer, lines: list[str], depth: int = 0) -> None:
     """Recursively render commands under ``group_app`` into ``lines``."""
     # Sub-groups first (alphabetical), then commands (alphabetical).
+    indent = "  " * depth
     for sub in sorted(group_app.registered_groups, key=lambda g: g.name or ""):
         name = sub.name or ""
         if depth == 0 and name in _HIDDEN_GROUPS:
             continue
         full = f"{prefix} {name}".strip()
         summary = _group_help(sub)
-        lines.append(f"- `{full}`: {summary}" if summary else f"- `{full}`")
+        lines.append(f"{indent}- `{full}`: {summary}" if summary else f"{indent}- `{full}`")
         if sub.typer_instance is not None:
             _walk(full, sub.typer_instance, lines, depth + 1)
 
@@ -87,7 +88,7 @@ def _walk(prefix: str, group_app: typer.Typer, lines: list[str], depth: int = 0)
         name = cmd.name or (cmd.callback.__name__ if cmd.callback else "")
         full = f"{prefix} {name}".strip()
         summary = _command_help(cmd)
-        lines.append(f"  - `{full}`: {summary}" if summary else f"  - `{full}`")
+        lines.append(f"{indent}- `{full}`: {summary}" if summary else f"{indent}- `{full}`")
 
 
 def generate_reference() -> str:

@@ -22,3 +22,15 @@ export interface TeamMember {
 	name?: string | null;
 	role: TeamRole;
 }
+
+export interface TeamUpdateBody {
+	name?: string;
+	description?: string;
+}
+
+export interface TeamMemberUpsertBody {
+	email?: string;
+	username?: string;
+	user_id?: string;
+	role?: TeamRole;
+}

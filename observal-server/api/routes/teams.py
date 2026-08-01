@@ -5,6 +5,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
@@ -20,6 +21,12 @@ from schemas.team import (
 from services.teamspace import count_owners, is_admin, reserve_handle, team_membership
 
 router = APIRouter(prefix="/api/v1/teams", tags=["teams"])
+
+
+def _role_value(role) -> str | None:
+    if role is None:
+        return None
+    return role.value if hasattr(role, "value") else str(role)
 
 
 async def _load_team(db: AsyncSession, team_id: uuid.UUID) -> Team:
@@ -73,7 +80,7 @@ async def my_teams(
             name=team.name,
             handle=team.handle,
             description=team.description,
-            role=role.value if hasattr(role, "value") else str(role),
+            role=_role_value(role),
             created_at=team.created_at,
         )
         for team, role in rows
@@ -107,7 +114,7 @@ async def all_teams(
             name=team.name,
             handle=team.handle,
             description=team.description,
-            role=role.value if hasattr(role, "value") else None,
+            role=_role_value(role),
             member_count=int(count) if count is not None else 0,
             created_at=team.created_at,
         )
@@ -125,9 +132,9 @@ async def team_detail(
     role = None
     if not is_admin(current_user):
         membership = await team_membership(db, team.id, current_user.id)
-        role = membership.role.value if membership else None
+        role = _role_value(membership.role) if membership else None
     else:
-        role = TeamRole.owner.value
+        role = _role_value(TeamRole.owner)
     return TeamResponse(
         id=team.id,
         name=team.name,
@@ -152,11 +159,11 @@ async def create_team(
 
     team = Team(name=req.name.strip(), handle=handle, description=req.description, created_by=current_user.id)
     db.add(team)
-    await db.flush()
-    db.add(TeamMembership(team_id=team.id, user_id=current_user.id, role=TeamRole.owner))
     try:
+        await db.flush()
+        db.add(TeamMembership(team_id=team.id, user_id=current_user.id, role=TeamRole.owner))
         await db.commit()
-    except Exception:
+    except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Team handle already exists")
     await db.refresh(team)
@@ -165,7 +172,7 @@ async def create_team(
         name=team.name,
         handle=team.handle,
         description=team.description,
-        role=TeamRole.owner.value,
+        role=_role_value(TeamRole.owner),
         member_count=1,
         created_at=team.created_at,
     )
@@ -190,7 +197,7 @@ async def update_team(
         name=team.name,
         handle=team.handle,
         description=team.description,
-        role=TeamRole.owner.value,
+        role=_role_value(TeamRole.owner),
         created_at=team.created_at,
     )
 
@@ -232,7 +239,7 @@ async def list_team_members(
             email=row.email,
             username=row.username,
             name=row.name,
-            role=row.role.value if hasattr(row.role, "value") else str(row.role),
+            role=_role_value(row.role),
         )
         for row in rows
     ]
@@ -250,7 +257,11 @@ async def upsert_team_member(
     membership = await team_membership(db, team.id, target.id)
     if membership:
         # Demoting the last owner is not allowed.
-        if membership.role == TeamRole.owner and req.role != TeamRole.owner and await count_owners(db, team.id) <= 1:
+        if (
+            membership.role == TeamRole.owner
+            and req.role != TeamRole.owner
+            and await count_owners(db, team.id, for_update=True) <= 1
+        ):
             raise HTTPException(status_code=409, detail="A team must have at least one owner")
         membership.role = req.role
     else:
@@ -261,7 +272,7 @@ async def upsert_team_member(
         email=target.email,
         username=target.username,
         name=target.name,
-        role=req.role.value if hasattr(req.role, "value") else str(req.role),
+        role=_role_value(req.role),
     )
 
 
@@ -276,7 +287,7 @@ async def remove_team_member(
     membership = await team_membership(db, team.id, user_id)
     if not membership:
         raise HTTPException(status_code=404, detail="Membership not found")
-    if membership.role == TeamRole.owner and await count_owners(db, team.id) <= 1:
+    if membership.role == TeamRole.owner and await count_owners(db, team.id, for_update=True) <= 1:
         raise HTTPException(status_code=409, detail="A team must have at least one owner")
     await db.delete(membership)
     await db.commit()
@@ -292,7 +303,7 @@ async def leave_team(
     membership = await team_membership(db, team.id, current_user.id)
     if not membership:
         raise HTTPException(status_code=404, detail="You are not a member of this team")
-    if membership.role == TeamRole.owner and await count_owners(db, team.id) <= 1:
+    if membership.role == TeamRole.owner and await count_owners(db, team.id, for_update=True) <= 1:
         raise HTTPException(status_code=409, detail="A team must have at least one owner; transfer ownership first")
     await db.delete(membership)
     await db.commit()

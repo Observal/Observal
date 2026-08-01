@@ -59,3 +59,4 @@ def downgrade() -> None:
     op.drop_table("team_memberships")
     op.drop_index("ix_teams_created_by", table_name="teams")
     op.drop_table("teams")
+    sa.Enum(name="teamrole").drop(op.get_bind(), checkfirst=True)

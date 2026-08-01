@@ -68,7 +68,7 @@ function TeamDetail({ team }: { team: Team }) {
 							<LogOut className="h-3.5 w-3.5 mr-1.5" /> Leave
 						</Button>
 						{isOwner && (
-							<Button variant="destructive" size="sm" onClick={() => deleteTeam.mutate(team.id)} disabled={deleteTeam.isPending}>
+							<Button variant="destructive" size="sm" onClick={() => { if (window.confirm("Delete this teamspace? This cannot be undone.")) deleteTeam.mutate(team.id); }} disabled={deleteTeam.isPending}>
 								<Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete
 							</Button>
 						)}
@@ -145,7 +145,7 @@ function CreatePanel({ onCreated }: { onCreated: () => void }) {
 
 	function submit() {
 		createTeam.mutate(
-			{ name: name.trim(), handle: slugifyHandle(handle || name), description: description.trim() || undefined },
+			{ name: name.trim(), handle: slugifyHandle(handle || name) || undefined, description: description.trim() || undefined },
 			{
 				onSuccess: () => {
 					setName("");
@@ -200,8 +200,8 @@ export default function TeamspacesPage() {
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [showCreate, setShowCreate] = useState(false);
 
-	const selectedTeam = teams.find((t) => t.id === selectedId);
 	const browse = teams.length === 0 ? allTeams : teams;
+	const selectedTeam = browse.find((t) => t.id === selectedId);
 
 	return (
 		<>

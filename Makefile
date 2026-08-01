@@ -80,7 +80,7 @@ check-migrations:  ## Validate alembic migration chain (no duplicates, no forks)
 
 new-migration:  ## Autogenerate a new migration (requires running stack): make new-migration MSG="add foo to bar"
 	@test -n "$(MSG)" || (echo 'Usage: make new-migration MSG="description"' && exit 1)
-	cd observal-server && DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/observal" uv run alembic revision --autogenerate -m "$(MSG)"
+	cd observal-server && DATABASE_URL="$${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@localhost:5432/observal}" uv run alembic revision --autogenerate -m "$(MSG)"
 	@echo ""
 	@echo "Migration generated in observal-server/alembic/versions/."
 	@echo "Inspect the file, then apply with: make migrate"
