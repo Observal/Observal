@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+# Default: Hari reviews everything not explicitly owned below
+*                           @Haz3-jolt
+
+# CI, workflows, Docker, supply chain hardening
+/.github/workflows/         @Haz3-jolt @Kaushik-Kumar-CEG
+/docker/                    @Haz3-jolt @Kaushik-Kumar-CEG
+/renovate.json              @Haz3-jolt @Kaushik-Kumar-CEG
+
+# CLI
+/observal_cli/              @Haz3-jolt
+
+# Server
+/observal-server/           @Haz3-jolt
+
+# Web frontend
+/web/                       @Haz3-jolt
+
+# Docs
+/CONTRIBUTING.md            @Haz3-jolt @Kaushik-Kumar-CEG
+/SECURITY.md                @Haz3-jolt @Kaushik-Kumar-CEG
+/GOVERNANCE.md              @Haz3-jolt
+/ARCHITECTURE.md            @Haz3-jolt
+/ROADMAP.md                 @Haz3-jolt
