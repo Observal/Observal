@@ -266,6 +266,22 @@ def may_view_unapproved(permission: str, user: User | None) -> bool:
     return permission == "owner" or (user is not None and user.role == UserRole.reviewer)
 
 
+def can_see_private_listings(user: User | None) -> bool:
+    """Whether a global role by itself may read team-private listings.
+
+    Only admins and super_admins qualify. Global reviewers are deliberately
+    excluded: their mandate is the PUBLIC catalog, and team-private content is
+    reviewed inside its own teamspace by a team owner or team reviewer, so a
+    global reviewer has no reason to read another team's private listings.
+
+    This answers a PRIVACY question and is not the same gate as
+    ``may_view_unapproved``, which answers a STATUS question. A reviewer must
+    still open a pending public listing to review it, so that helper keeps its
+    reviewer arm while this one does not grow one.
+    """
+    return user is not None and ROLE_HIERARCHY.get(user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
+
+
 # Convenience shorthand for super_admin-only endpoints
 require_super_admin = require_role(UserRole.super_admin)
 
@@ -504,19 +520,18 @@ def apply_visibility_filter(stmt, model, current_user):
     Public listings are visible to everyone. Team-private listings require a
     membership row for the requesting user, while legacy private user listings
     remain visible only to their creator.
+
+    Admins and super_admins skip the filter entirely. Global reviewers do not:
+    see ``can_see_private_listings``.
     """
     from sqlalchemy import or_
 
     from models.team import TeamMembership
-    from models.user import UserRole
 
     if not hasattr(model, "is_private"):
         return stmt
 
-    privileged = (
-        current_user is not None and ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
-    )
-    if privileged:
+    if can_see_private_listings(current_user):
         return stmt
 
     public = model.is_private == False  # noqa: E712
@@ -559,10 +574,8 @@ async def check_listing_visibility_async(listing, current_user, db: AsyncSession
         return False
 
     from models.team import TeamMembership
-    from models.user import UserRole
 
-    privileged = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
-    if privileged:
+    if can_see_private_listings(current_user):
         return True
     team_id = getattr(listing, "team_id", None)
     if team_id is None:

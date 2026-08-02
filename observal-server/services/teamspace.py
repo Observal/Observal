@@ -59,6 +59,78 @@ async def team_membership(db: AsyncSession, team_id: uuid.UUID, user_id: uuid.UU
     ).scalar_one_or_none()
 
 
+# The team roles that clear review for their own teamspace. A plain member
+# publishes into the queue; it is these two that empty it.
+REVIEWING_TEAM_ROLES = (TeamRole.owner, TeamRole.reviewer)
+
+
+@dataclass(frozen=True)
+class ReviewScope:
+    """What one caller is allowed to review.
+
+    ``is_admin`` reviews everything, team-private items included, because an admin
+    already administers the whole deployment. ``is_global_reviewer`` without
+    ``is_admin`` is the plain global reviewer role: public items only. ``team_ids``
+    are the teamspaces where the caller is an owner or a reviewer, and they carry
+    the right to review that teamspace's own private items and nothing else.
+    """
+
+    is_admin: bool
+    is_global_reviewer: bool
+    team_ids: frozenset[uuid.UUID]
+
+    @property
+    def is_empty(self) -> bool:
+        """True when the caller may not review anything at all."""
+        return not self.is_global_reviewer and not self.team_ids
+
+
+async def review_scope(db: AsyncSession, user: User) -> ReviewScope:
+    """Resolve the caller's review capability once, for both listing and acting.
+
+    The review queue and the approve and reject actions must agree on what a
+    caller may touch, so both read this single answer instead of re-deriving it.
+    """
+    if is_admin(user):
+        # An admin reviews every item regardless of teamspace, so their own
+        # memberships would not widen anything and the query is skipped.
+        return ReviewScope(is_admin=True, is_global_reviewer=True, team_ids=frozenset())
+
+    rows = await db.execute(
+        select(TeamMembership.team_id).where(
+            TeamMembership.user_id == user.id,
+            TeamMembership.role.in_(REVIEWING_TEAM_ROLES),
+        )
+    )
+    return ReviewScope(
+        is_admin=False,
+        is_global_reviewer=is_global_reviewer(user),
+        team_ids=frozenset(row[0] for row in rows),
+    )
+
+
+def can_review(entity, scope: ReviewScope) -> bool:
+    """Whether this caller may review one listing, agent version, or agent.
+
+    Decided from the item's own visibility, never from what the caller asked for.
+    A team-private item belongs to its teamspace: only that teamspace's owners and
+    reviewers, plus admins, may act on it, which is what keeps private titles away
+    from a global reviewer who is not in the team. A public item is the global
+    catalog: only a global reviewer and above may act on it, so a team owner cannot
+    walk a listing out of their own namespace into everyone's registry. That is the
+    same escalation team_role_self_publishes closes at publish time.
+
+    A private item with no teamspace is a personal listing. Nobody holds a team
+    role over it, so it stays admin-only.
+    """
+    if scope.is_admin:
+        return True
+    if getattr(entity, "is_private", False):
+        team_id = getattr(entity, "team_id", None)
+        return team_id is not None and team_id in scope.team_ids
+    return scope.is_global_reviewer
+
+
 async def user_team_ids(db: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
     rows = await db.execute(select(TeamMembership.team_id).where(TeamMembership.user_id == user_id))
     return list(rows.scalars().all())
@@ -117,7 +189,11 @@ async def resolve_publish_target(
     if not team:
         raise HTTPException(status_code=404, detail="Teamspace not found")
     membership = await team_membership(db, team.id, user.id)
-    if not membership and not is_global_reviewer(user):
+    # Publishing into a teamspace you do not belong to is an admin capability, not a
+    # reviewer one. A global reviewer cannot read another team's private listings, so
+    # letting one publish a team-private item here would create a listing its author
+    # can no longer see. Admins keep it because they can still read the result.
+    if not membership and not is_admin(user):
         raise HTTPException(status_code=403, detail="You are not a member of this teamspace")
 
     auto_approve = is_global_reviewer(user) or team_role_self_publishes(membership, target_visibility)

@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from api.deps import get_current_user, get_db
@@ -77,8 +77,8 @@ MATRIX = [
     ("team-reviewer-team", UserRole.user, TeamRole.reviewer, "team", True),
     ("team-member-public", UserRole.user, TeamRole.member, "public", False),
     ("team-member-team", UserRole.user, TeamRole.member, "team", False),
-    ("global-reviewer-public", UserRole.reviewer, None, "public", True),
-    ("global-reviewer-team", UserRole.reviewer, None, "team", True),
+    ("global-reviewer-member-public", UserRole.reviewer, TeamRole.member, "public", True),
+    ("global-reviewer-member-team", UserRole.reviewer, TeamRole.member, "team", True),
     ("admin-public", UserRole.admin, None, "public", True),
     ("admin-team", UserRole.admin, None, "team", True),
     ("super-admin-public", UserRole.super_admin, None, "public", True),
@@ -108,6 +108,35 @@ class TestResolvePublishTargetAutoApprove:
         assert target.namespace == "platform-tools"
         assert target.visibility == visibility
         assert target.auto_approve is expected
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("visibility", ["public", "team"])
+    async def test_global_reviewer_cannot_publish_into_a_team_they_are_not_in(self, visibility):
+        """Publishing cross-team is an admin capability, not a reviewer one.
+
+        A global reviewer cannot read another team's private listings, so allowing
+        one to publish here would create a listing its own author can no longer see.
+        """
+        team_id = uuid.uuid4()
+        db = _mock_db([_membership(None)])
+        db.get = AsyncMock(return_value=SimpleNamespace(id=team_id, handle="platform-tools"))
+
+        with pytest.raises(HTTPException) as exc:
+            await resolve_publish_target(
+                db, _user(UserRole.reviewer), "Internal Tool", team_id=team_id, visibility=visibility
+            )
+        assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("role", [UserRole.admin, UserRole.super_admin])
+    async def test_admin_may_publish_into_a_team_they_are_not_in(self, role):
+        """Admins keep the cross-team capability because they can still read the result."""
+        team_id = uuid.uuid4()
+        db = _mock_db([_membership(None)])
+        db.get = AsyncMock(return_value=SimpleNamespace(id=team_id, handle="platform-tools"))
+
+        target = await resolve_publish_target(db, _user(role), "Internal Tool", team_id=team_id, visibility="team")
+        assert (target.namespace, target.visibility, target.auto_approve) == ("platform-tools", "team", True)
 
     @pytest.mark.asyncio
     async def test_personal_public_listing_never_auto_approves(self):
@@ -210,7 +239,7 @@ class TestSkillSubmitStatus:
 
     @pytest.mark.asyncio
     async def test_global_reviewer_public_is_approved(self):
-        _listing, version = await self._submit(_user(UserRole.reviewer), None, "public")
+        _listing, version = await self._submit(_user(UserRole.reviewer), TeamRole.member, "public")
         assert version.status == ListingStatus.approved
         assert version.reviewed_by is not None
 

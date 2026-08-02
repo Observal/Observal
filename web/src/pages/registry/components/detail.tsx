@@ -9,6 +9,7 @@
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 import {
   useRegistryItem,
   useFeedback,
@@ -36,6 +37,16 @@ import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { ComponentEditForm } from "@/components/registry/component-edit-form";
 import { ComponentInstallCommand } from "@/components/registry/component-install-command";
 import { RegistryName } from "@/components/registry/registry-name";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PickerSelect } from "@/components/ui/picker-select";
@@ -48,6 +59,15 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { HarnessBadges } from "@/components/registry/harness-badges";
 import { CoAuthorInput, type CoAuthor } from "@/components/registry/co-author-input";
+
+// The visibility PATCH reports whether the flip pushed the listing back into the
+// review queue. Read it off the response and return null when the server did not
+// say, so the UI never invents an outcome from the caller's role.
+function readReturnedToReview(payload: unknown): boolean | null {
+  if (!payload || typeof payload !== "object") return null;
+  const value = (payload as Record<string, unknown>).returned_to_review;
+  return typeof value === "boolean" ? value : null;
+}
 
 function statusVariant(status?: string) {
   if (status === "approved") return "default" as const;
@@ -114,6 +134,8 @@ export default function ComponentDetailPage() {
     item && (canEdit || teamRole === "owner" || teamRole === "reviewer" || hasMinRole(getUserRole(), "reviewer")),
   );
   const canTransferOwnership = !!(whoami?.id && item?.submitted_by && whoami.id === String(item.submitted_by));
+  const currentVisibility = (item?.visibility as string | undefined) ?? (item?.is_private ? "team" : "public");
+  const [confirmPublicOpen, setConfirmPublicOpen] = useState(false);
 
   // Co-authors
   const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
@@ -144,6 +166,34 @@ export default function ComponentDetailPage() {
   const identity = registryIdentity(item, id.slice(0, 8));
   const componentName = identity.name;
   const componentRef = identity.qualified;
+
+  function applyVisibility(visibility: "public" | "team") {
+    updateVisibility.mutate(
+      { type, id, visibility },
+      {
+        onSuccess: (data) => {
+          setConfirmPublicOpen(false);
+          if (visibility !== "public") return;
+          const returnedToReview = readReturnedToReview(data);
+          // The shared mutation hook already raised a generic "Visibility updated"
+          // toast. Clear it so the user reads one accurate outcome, not two.
+          toast.dismiss();
+          if (returnedToReview === null) {
+            toast.error(
+              `${componentName} is now public, but the server did not report whether it went back for review.`,
+            );
+            return;
+          }
+          toast.success(
+            returnedToReview
+              ? `${componentName} was submitted for review. It is public now, but stays out of the catalog until a reviewer approves it.`
+              : `${componentName} is now public.`,
+          );
+        },
+      },
+    );
+  }
+
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;
   const metricsEntries: [string, string][] = rawMetrics && typeof rawMetrics === "object"
@@ -201,8 +251,17 @@ export default function ComponentDetailPage() {
                 )}
                 {canChangeVisibility && (
                   <PickerSelect
-                    value={(item.visibility as string | undefined) ?? (item.is_private ? "team" : "public")}
-                    onValueChange={(value) => updateVisibility.mutate({ type, id, visibility: value as "public" | "team" })}
+                    value={currentVisibility}
+                    onValueChange={(value) => {
+                      if (value === currentVisibility) return;
+                      // Going public widens the audience and re-opens review, so it
+                      // is confirmed. Narrowing to the teamspace needs no warning.
+                      if (value === "public") {
+                        setConfirmPublicOpen(true);
+                        return;
+                      }
+                      applyVisibility("team");
+                    }}
                     options={[
                       { value: "public", label: "Public" },
                       { value: "team", label: "Team members only" },
@@ -500,6 +559,35 @@ export default function ComponentDetailPage() {
           </div>
         )}
       </div>
+
+      <AlertDialog open={confirmPublicOpen} onOpenChange={setConfirmPublicOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Make {componentName} public?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Everyone who can reach this registry will be able to find and install this {singularType}, not just the
+              members of its teamspace. Publishing publicly also returns it to the review queue, so it leaves the
+              catalog until a reviewer approves it. Approval is manual, so it will not be immediate.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateVisibility.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                applyVisibility("public");
+              }}
+              disabled={updateVisibility.isPending}
+            >
+              {updateVisibility.isPending ? (
+                <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />Publishing...</>
+              ) : (
+                "Make public"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

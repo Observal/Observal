@@ -141,13 +141,16 @@ async def test_legacy_private_row_without_team_stays_creator_only():
     """The reason 018_team_publishing needs no backfill.
 
     A pre teamspace row (is_private=True, team_id=None) resolves to its creator
-    and to global reviewers only, so leaving it untouched discloses nothing.
+    and to admins only, so leaving it untouched discloses nothing. A global
+    reviewer is not on that list: nobody holds a team role over a personal
+    listing, so there is no team-scoped review to enable.
     """
     creator_id = uuid.uuid4()
     listing = SimpleNamespace(is_private=True, team_id=None, submitted_by=creator_id, co_authors=[])
     creator = SimpleNamespace(id=creator_id, role=UserRole.user)
     stranger = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user)
     reviewer = SimpleNamespace(id=uuid.uuid4(), role=UserRole.reviewer)
+    admin = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
 
     class _NoQueryDb:
         async def scalar(self, *args, **kwargs):
@@ -156,5 +159,6 @@ async def test_legacy_private_row_without_team_stays_creator_only():
     db = _NoQueryDb()
     assert await check_listing_visibility_async(listing, creator, db) is True
     assert await check_listing_visibility_async(listing, stranger, db) is False
-    assert await check_listing_visibility_async(listing, reviewer, db) is True
+    assert await check_listing_visibility_async(listing, reviewer, db) is False
+    assert await check_listing_visibility_async(listing, admin, db) is True
     assert await check_listing_visibility_async(listing, None, db) is False

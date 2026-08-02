@@ -361,10 +361,32 @@ async def test_admin_only_report_routes_allow_admins(route):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("route", REPORT_ROUTES)
 async def test_report_routes_reject_global_reviewer(route):
-    """Reviewers are privileged for visibility but not for session telemetry.
+    """Reviewers are privileged for review status but not for session telemetry.
 
-    check_listing_visibility_async lets a reviewer past gate 1 even on a
-    team-private agent, so the 403 here proves gate 2 is independent.
+    The agent here is PUBLIC, so gate 1 (visibility) admits the reviewer and the
+    403 comes from gate 2 (ownership) alone. That is what proves the two gates are
+    independent. A team-private agent would prove nothing, because gate 1 already
+    rejects a global reviewer who is not in the team.
+    """
+    from models.user import UserRole
+
+    agent = _agent(created_by=uuid.uuid4(), is_private=False)
+    report = _report(agent.id)
+
+    with pytest.raises(HTTPException) as exc:
+        await _call_report_route(route, str(report.id), _report_db(report, agent), _user(role=UserRole.reviewer))
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", REPORT_ROUTES)
+async def test_report_routes_hide_a_team_private_agent_from_a_global_reviewer(route):
+    """Gate 1 answers first, and it no longer admits a global reviewer.
+
+    Team-private content is reviewed inside its own teamspace, so an outside
+    reviewer gets "not found" rather than the 403 that would confirm the report
+    exists.
     """
     from models.user import UserRole
 
@@ -374,7 +396,7 @@ async def test_report_routes_reject_global_reviewer(route):
     with pytest.raises(HTTPException) as exc:
         await _call_report_route(route, str(report.id), _report_db(report, agent), _user(role=UserRole.reviewer))
 
-    assert exc.value.status_code == 403
+    assert exc.value.status_code == 404
 
 
 def test_no_route_bypasses_the_permission_gate():

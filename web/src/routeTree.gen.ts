@@ -21,6 +21,7 @@ import { Route as authDeviceRouteImport } from './routes/(auth)/device'
 import { Route as AuthedWikiIndexRouteImport } from './routes/_authed/wiki/index'
 import { Route as AuthedComponentsIndexRouteImport } from './routes/_authed/components/index'
 import { Route as AuthedAgentsIndexRouteImport } from './routes/_authed/agents/index'
+import { Route as AuthedTeamspacesHandleRouteImport } from './routes/_authed/teamspaces.$handle'
 import { Route as AuthedInsightsReportIdRouteImport } from './routes/_authed/insights/$reportId'
 import { Route as AuthedComponentsComponentIdRouteImport } from './routes/_authed/components/$componentId'
 import { Route as AuthedAgentsBuilderRouteImport } from './routes/_authed/agents/builder'
@@ -94,6 +95,11 @@ const AuthedAgentsIndexRoute = AuthedAgentsIndexRouteImport.update({
   id: '/agents/',
   path: '/agents/',
   getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedTeamspacesHandleRoute = AuthedTeamspacesHandleRouteImport.update({
+  id: '/$handle',
+  path: '/$handle',
+  getParentRoute: () => AuthedTeamspacesRoute,
 } as any)
 const AuthedInsightsReportIdRoute = AuthedInsightsReportIdRouteImport.update({
   id: '/insights/$reportId',
@@ -185,7 +191,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof authLoginRoute
   '/register': typeof authRegisterRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
-  '/teamspaces': typeof AuthedTeamspacesRoute
+  '/teamspaces': typeof AuthedTeamspacesRouteWithChildren
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/agents/builder': typeof AuthedAgentsBuilderRoute
   '/components/$componentId': typeof AuthedComponentsComponentIdRoute
   '/insights/$reportId': typeof AuthedInsightsReportIdRoute
+  '/teamspaces/$handle': typeof AuthedTeamspacesHandleRoute
   '/agents/': typeof AuthedAgentsIndexRoute
   '/components/': typeof AuthedComponentsIndexRoute
   '/wiki/': typeof AuthedWikiIndexRoute
@@ -212,7 +219,7 @@ export interface FileRoutesByTo {
   '/register': typeof authRegisterRoute
   '/': typeof AuthedIndexRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
-  '/teamspaces': typeof AuthedTeamspacesRoute
+  '/teamspaces': typeof AuthedTeamspacesRouteWithChildren
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
@@ -226,6 +233,7 @@ export interface FileRoutesByTo {
   '/agents/builder': typeof AuthedAgentsBuilderRoute
   '/components/$componentId': typeof AuthedComponentsComponentIdRoute
   '/insights/$reportId': typeof AuthedInsightsReportIdRoute
+  '/teamspaces/$handle': typeof AuthedTeamspacesHandleRoute
   '/agents': typeof AuthedAgentsIndexRoute
   '/components': typeof AuthedComponentsIndexRoute
   '/wiki': typeof AuthedWikiIndexRoute
@@ -242,7 +250,7 @@ export interface FileRoutesById {
   '/_authed/_admin': typeof AuthedAdminRouteWithChildren
   '/_authed/_user': typeof AuthedUserRouteWithChildren
   '/_authed/leaderboard': typeof AuthedLeaderboardRoute
-  '/_authed/teamspaces': typeof AuthedTeamspacesRoute
+  '/_authed/teamspaces': typeof AuthedTeamspacesRouteWithChildren
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/_admin/audit-log': typeof AuthedAdminAuditLogRoute
   '/_authed/_admin/dashboard': typeof AuthedAdminDashboardRoute
@@ -257,6 +265,7 @@ export interface FileRoutesById {
   '/_authed/agents/builder': typeof AuthedAgentsBuilderRoute
   '/_authed/components/$componentId': typeof AuthedComponentsComponentIdRoute
   '/_authed/insights/$reportId': typeof AuthedInsightsReportIdRoute
+  '/_authed/teamspaces/$handle': typeof AuthedTeamspacesHandleRoute
   '/_authed/agents/': typeof AuthedAgentsIndexRoute
   '/_authed/components/': typeof AuthedComponentsIndexRoute
   '/_authed/wiki/': typeof AuthedWikiIndexRoute
@@ -286,6 +295,7 @@ export interface FileRouteTypes {
     | '/agents/builder'
     | '/components/$componentId'
     | '/insights/$reportId'
+    | '/teamspaces/$handle'
     | '/agents/'
     | '/components/'
     | '/wiki/'
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
     | '/agents/builder'
     | '/components/$componentId'
     | '/insights/$reportId'
+    | '/teamspaces/$handle'
     | '/agents'
     | '/components'
     | '/wiki'
@@ -343,6 +354,7 @@ export interface FileRouteTypes {
     | '/_authed/agents/builder'
     | '/_authed/components/$componentId'
     | '/_authed/insights/$reportId'
+    | '/_authed/teamspaces/$handle'
     | '/_authed/agents/'
     | '/_authed/components/'
     | '/_authed/wiki/'
@@ -443,6 +455,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/agents/'
       preLoaderRoute: typeof AuthedAgentsIndexRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/_authed/teamspaces/$handle': {
+      id: '/_authed/teamspaces/$handle'
+      path: '/$handle'
+      fullPath: '/teamspaces/$handle'
+      preLoaderRoute: typeof AuthedTeamspacesHandleRouteImport
+      parentRoute: typeof AuthedTeamspacesRoute
     }
     '/_authed/insights/$reportId': {
       id: '/_authed/insights/$reportId'
@@ -601,6 +620,17 @@ const AuthedUserRouteWithChildren = AuthedUserRoute._addFileChildren(
   AuthedUserRouteChildren,
 )
 
+interface AuthedTeamspacesRouteChildren {
+  AuthedTeamspacesHandleRoute: typeof AuthedTeamspacesHandleRoute
+}
+
+const AuthedTeamspacesRouteChildren: AuthedTeamspacesRouteChildren = {
+  AuthedTeamspacesHandleRoute: AuthedTeamspacesHandleRoute,
+}
+
+const AuthedTeamspacesRouteWithChildren =
+  AuthedTeamspacesRoute._addFileChildren(AuthedTeamspacesRouteChildren)
+
 interface AuthedAgentsAgentIdRouteChildren {
   AuthedAgentsAgentIdInsightsReportIdRoute: typeof AuthedAgentsAgentIdInsightsReportIdRoute
 }
@@ -617,7 +647,7 @@ interface AuthedRouteChildren {
   AuthedAdminRoute: typeof AuthedAdminRouteWithChildren
   AuthedUserRoute: typeof AuthedUserRouteWithChildren
   AuthedLeaderboardRoute: typeof AuthedLeaderboardRoute
-  AuthedTeamspacesRoute: typeof AuthedTeamspacesRoute
+  AuthedTeamspacesRoute: typeof AuthedTeamspacesRouteWithChildren
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedAgentsAgentIdRoute: typeof AuthedAgentsAgentIdRouteWithChildren
   AuthedAgentsBuilderRoute: typeof AuthedAgentsBuilderRoute
@@ -632,7 +662,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminRoute: AuthedAdminRouteWithChildren,
   AuthedUserRoute: AuthedUserRouteWithChildren,
   AuthedLeaderboardRoute: AuthedLeaderboardRoute,
-  AuthedTeamspacesRoute: AuthedTeamspacesRoute,
+  AuthedTeamspacesRoute: AuthedTeamspacesRouteWithChildren,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedAgentsAgentIdRoute: AuthedAgentsAgentIdRouteWithChildren,
   AuthedAgentsBuilderRoute: AuthedAgentsBuilderRoute,

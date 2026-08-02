@@ -6,6 +6,8 @@ from __future__ import annotations
 import uuid
 from unittest.mock import MagicMock
 
+import pytest
+
 from api.routes.dashboard import agent_leaderboard, component_leaderboard, top_agents
 from models.user import User, UserRole
 
@@ -111,14 +113,29 @@ async def test_top_agents_gates_team_private_agents_on_caller_membership():
     assert outsider.id.hex not in sql
 
 
-async def test_top_agents_does_not_restrict_visibility_for_reviewers():
+@pytest.mark.parametrize("role", [UserRole.admin, UserRole.super_admin])
+async def test_top_agents_does_not_restrict_visibility_for_admins(role):
     db = _CaptureDb()
 
-    await top_agents(limit=6, db=db, current_user=_caller(role=UserRole.reviewer))
+    await top_agents(limit=6, db=db, current_user=_caller(role=role))
 
     sql = _sql(db.statements[0])
     assert "agents.is_private =" not in sql
     assert "team_memberships" not in sql
+
+
+async def test_top_agents_gates_a_global_reviewer_on_membership_like_anyone_else():
+    """A leaderboard is a public ranking, so another team's private agents stay out.
+
+    The global reviewer role reviews the public catalog; team-private agents are
+    reviewed inside their own teamspace, so only admins skip the filter here.
+    """
+    reviewer = _caller(role=UserRole.reviewer)
+    db = _CaptureDb()
+
+    await top_agents(limit=6, db=db, current_user=reviewer)
+
+    assert _membership_predicate("agents", reviewer) in _sql(db.statements[0])
 
 
 async def test_agent_leaderboard_hides_team_private_agents_from_anonymous_callers():

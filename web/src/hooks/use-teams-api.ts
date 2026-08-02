@@ -25,6 +25,27 @@ export function useTeam(id?: string) {
 	});
 }
 
+/**
+ * Resolve a teamspace from the handle in the URL.
+ *
+ * `/teams/all` is the only listing that carries every discoverable teamspace
+ * together with the caller's own role in it, so handle resolution runs off that
+ * one query instead of guessing an id. `notFound` is reported explicitly so the
+ * detail page can say the handle is wrong instead of rendering a blank shell.
+ */
+export function useTeamByHandle(handle: string | undefined) {
+	const query = useAllTeams();
+	const team = handle ? query.data?.find((item) => item.handle === handle) : undefined;
+	return {
+		team,
+		isLoading: query.isLoading,
+		isError: query.isError,
+		error: query.error,
+		refetch: query.refetch,
+		notFound: !query.isLoading && !query.isError && !team,
+	};
+}
+
 export function useTeamMembers(teamId?: string, enabled = true) {
 	return useQuery({
 		queryKey: ["teams", teamId, "members"],

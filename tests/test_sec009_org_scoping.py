@@ -74,6 +74,27 @@ class TestApplyVisibilityFilter:
         stmt.where.assert_not_called()
         assert result is stmt
 
+    def test_super_admin_sees_all(self):
+        from models.mcp import McpListing
+
+        stmt = self._stmt()
+        result = apply_visibility_filter(stmt, McpListing, _user(role="super_admin"))
+        stmt.where.assert_not_called()
+        assert result is stmt
+
+    def test_global_reviewer_is_filtered_like_a_regular_user(self):
+        """A global reviewer reviews the public catalog, not other teams' private rows.
+
+        Team-private items are reviewed inside their own teamspace by a team owner
+        or team reviewer, so the global reviewer role carries no cross-team read.
+        Only admins and super_admins skip the filter.
+        """
+        from models.mcp import McpListing
+
+        stmt = self._stmt()
+        apply_visibility_filter(stmt, McpListing, _user(role="reviewer"))
+        stmt.where.assert_called_once()
+
     def test_regular_user_filter_applied(self):
         from models.mcp import McpListing
 
@@ -203,10 +224,86 @@ class TestCheckListingVisibilityAsync:
         db.scalar.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_private_visible_to_reviewer_and_admin(self):
+    async def test_private_visible_to_admin_and_super_admin(self):
         listing = _listing(is_private=True, team_id=uuid.uuid4())
-        assert await check_listing_visibility_async(listing, _user(role="reviewer"), self._db(None)) is True
         assert await check_listing_visibility_async(listing, _user(role="admin"), self._db(None)) is True
+        assert await check_listing_visibility_async(listing, _user(role="super_admin"), self._db(None)) is True
+
+    @pytest.mark.asyncio
+    async def test_private_hidden_from_a_global_reviewer_who_is_not_a_member(self):
+        """The global reviewer role is not a cross-team read grant.
+
+        Team-private items are reviewed inside their own teamspace, so a global
+        reviewer falls back to the same membership query as any other user.
+        """
+        listing = _listing(is_private=True, team_id=uuid.uuid4())
+        db = self._db(None)
+
+        assert await check_listing_visibility_async(listing, _user(role="reviewer"), db) is False
+        db.scalar.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_private_visible_to_a_global_reviewer_who_is_a_member(self):
+        """Membership, not the global role, is what admits the reviewer."""
+        listing = _listing(is_private=True, team_id=uuid.uuid4())
+        assert await check_listing_visibility_async(listing, _user(role="reviewer"), self._db(uuid.uuid4())) is True
+
+
+@asynccontextmanager
+async def _seeded_team_private_listing(*, membership: bool):
+    """Yield (session, listing, submitter) for a team-private listing the submitter published."""
+    from models.base import Base
+    from models.mcp import McpListing, McpValidationResult, McpVersion
+    from models.team import Team, TeamMembership, TeamRole
+
+    tables = [
+        McpListing.__table__,
+        McpVersion.__table__,
+        McpValidationResult.__table__,
+        Team.__table__,
+        TeamMembership.__table__,
+    ]
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all, tables=tables)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+        submitter = _user()
+        team = Team(id=uuid.uuid4(), name="Platform", handle="platform", created_by=submitter.id)
+        listing = McpListing(
+            id=uuid.uuid4(),
+            name="internal-mcp",
+            namespace=team.handle,
+            slug="internal-mcp",
+            category="developer-tools",
+            owner=team.handle,
+            is_private=True,
+            team_id=team.id,
+            submitted_by=submitter.id,
+            co_authors=[],
+        )
+        async with sessions() as session:
+            session.add_all([team, listing])
+            if membership:
+                session.add(
+                    TeamMembership(id=uuid.uuid4(), team_id=team.id, user_id=submitter.id, role=TeamRole.member)
+                )
+            await session.commit()
+
+        async with sessions() as session:
+            yield session, listing, submitter
+    finally:
+        await engine.dispose()
+
+
+async def _visible_ids(session, caller):
+    from sqlalchemy import select
+
+    from models.mcp import McpListing
+
+    stmt = apply_visibility_filter(select(McpListing.id), McpListing, caller)
+    return set((await session.execute(stmt)).scalars().all())
 
 
 class TestExMemberSubmitterAgainstARealDatabase:
@@ -217,75 +314,70 @@ class TestExMemberSubmitterAgainstARealDatabase:
     ``check_listing_visibility_async`` fails here rather than in production.
     """
 
-    @staticmethod
-    @asynccontextmanager
-    async def _seeded(*, membership: bool):
-        """Yield (session, listing, submitter) for a team-private listing the submitter published."""
-        from models.base import Base
-        from models.mcp import McpListing, McpValidationResult, McpVersion
-        from models.team import Team, TeamMembership, TeamRole
-
-        tables = [
-            McpListing.__table__,
-            McpVersion.__table__,
-            McpValidationResult.__table__,
-            Team.__table__,
-            TeamMembership.__table__,
-        ]
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all, tables=tables)
-            sessions = async_sessionmaker(engine, expire_on_commit=False)
-
-            submitter = _user()
-            team = Team(id=uuid.uuid4(), name="Platform", handle="platform", created_by=submitter.id)
-            listing = McpListing(
-                id=uuid.uuid4(),
-                name="internal-mcp",
-                namespace=team.handle,
-                slug="internal-mcp",
-                category="developer-tools",
-                owner=team.handle,
-                is_private=True,
-                team_id=team.id,
-                submitted_by=submitter.id,
-                co_authors=[],
-            )
-            async with sessions() as session:
-                session.add_all([team, listing])
-                if membership:
-                    session.add(
-                        TeamMembership(id=uuid.uuid4(), team_id=team.id, user_id=submitter.id, role=TeamRole.member)
-                    )
-                await session.commit()
-
-            async with sessions() as session:
-                yield session, listing, submitter
-        finally:
-            await engine.dispose()
-
-    @staticmethod
-    async def _visible_ids(session, caller):
-        from sqlalchemy import select
-
-        from models.mcp import McpListing
-
-        stmt = apply_visibility_filter(select(McpListing.id), McpListing, caller)
-        return set((await session.execute(stmt)).scalars().all())
-
     @pytest.mark.asyncio
     async def test_current_member_sees_the_listing_in_both_gates(self):
-        async with self._seeded(membership=True) as (session, listing, submitter):
-            assert listing.id in await self._visible_ids(session, submitter)
+        async with _seeded_team_private_listing(membership=True) as (session, listing, submitter):
+            assert listing.id in await _visible_ids(session, submitter)
             assert await check_listing_visibility_async(listing, submitter, session) is True
 
     @pytest.mark.asyncio
     async def test_ex_member_submitter_is_denied_by_the_list_filter_and_the_detail_helper(self):
         """Removing the submitter from the teamspace revokes both list and by-id reads."""
-        async with self._seeded(membership=False) as (session, listing, submitter):
-            assert await self._visible_ids(session, submitter) == set()
+        async with _seeded_team_private_listing(membership=False) as (session, listing, submitter):
+            assert await _visible_ids(session, submitter) == set()
             assert await check_listing_visibility_async(listing, submitter, session) is False
+
+
+class TestGlobalReviewerAgainstARealDatabase:
+    """Only admins hold a cross-team read of team-private listings.
+
+    A global reviewer reviews the PUBLIC catalog. Team-private items are reviewed
+    inside their own teamspace by a team owner or team reviewer, so routing another
+    team's private titles past a reviewer who is not in that team buys nothing and
+    discloses everything. Both gates are asserted together because the detail helper
+    is the row-level twin of the list filter, and a fix applied to only one of them
+    leaves a by-id read open.
+    """
+
+    @pytest.mark.asyncio
+    async def test_global_reviewer_outside_the_team_is_denied_by_both_gates(self):
+        async with _seeded_team_private_listing(membership=True) as (session, listing, _submitter):
+            reviewer = _user(role="reviewer")
+
+            assert await _visible_ids(session, reviewer) == set()
+            assert await check_listing_visibility_async(listing, reviewer, session) is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("role", ["admin", "super_admin"])
+    async def test_admins_still_see_the_listing_in_both_gates(self, role):
+        async with _seeded_team_private_listing(membership=True) as (session, listing, _submitter):
+            caller = _user(role=role)
+
+            assert listing.id in await _visible_ids(session, caller)
+            assert await check_listing_visibility_async(listing, caller, session) is True
+
+    @pytest.mark.asyncio
+    async def test_a_plain_team_member_still_sees_the_listing_in_both_gates(self):
+        async with _seeded_team_private_listing(membership=True) as (session, listing, member):
+            assert listing.id in await _visible_ids(session, member)
+            assert await check_listing_visibility_async(listing, member, session) is True
+
+    @pytest.mark.asyncio
+    async def test_a_public_listing_stays_readable_by_the_reviewer(self):
+        """The mirror case: narrowing privacy must not touch the public catalog.
+
+        Status gating is a separate axis handled by ``may_view_unapproved``, so a
+        reviewer keeps reading public rows here whatever their review state.
+        """
+        async with _seeded_team_private_listing(membership=True) as (session, listing, _submitter):
+            listing.is_private = False
+            listing.team_id = None
+            session.add(listing)
+            await session.commit()
+            reviewer = _user(role="reviewer")
+
+            assert listing.id in await _visible_ids(session, reviewer)
+            assert await check_listing_visibility_async(listing, reviewer, session) is True
 
 
 class _Result:
@@ -381,15 +473,32 @@ class TestResolveListingAmbiguity:
         assert resolved is rows[0]
 
     @pytest.mark.asyncio
-    async def test_reviewer_sees_every_colliding_listing(self):
+    @pytest.mark.parametrize("role", ["admin", "super_admin"])
+    async def test_admin_sees_every_colliding_listing(self, role):
         from models.mcp import McpListing
 
         rows = [_row("alice", "tool"), _row("secretteam", "tool", is_private=True, team_id=uuid.uuid4())]
         with pytest.raises(HTTPException) as exc:
-            await resolve_listing(McpListing, "tool", self._db(rows), current_user=_user(role="reviewer"))
+            await resolve_listing(McpListing, "tool", self._db(rows), current_user=_user(role=role))
 
         assert exc.value.status_code == 409
         assert "secretteam/tool" in exc.value.detail
+
+    @pytest.mark.asyncio
+    async def test_global_reviewer_is_not_told_about_a_team_private_collision(self):
+        """The 409 is built from what the caller may see, and a reviewer may not see this.
+
+        A collision report that named the teamspace listing would leak the private
+        canonical name to every global reviewer, which is exactly the disclosure the
+        admin-only read closes.
+        """
+        from models.mcp import McpListing
+
+        rows = [_row("alice", "tool"), _row("secretteam", "tool", is_private=True, team_id=uuid.uuid4())]
+
+        resolved = await resolve_listing(McpListing, "tool", self._db(rows), current_user=_user(role="reviewer"))
+
+        assert resolved is rows[0]
 
     @pytest.mark.asyncio
     async def test_qualified_name_is_never_treated_as_ambiguous(self):

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import String, cast, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, require_role, resolve_prefix_id
+from api.deps import get_current_user, get_db, resolve_prefix_id
 from api.sanitize import escape_like
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.component_bundle import ComponentBundle
@@ -27,11 +27,13 @@ from models.mcp import ListingStatus, McpListing, McpVersion
 from models.prompt import PromptListing, PromptVersion
 from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing, SkillVersion
-from models.user import User, UserRole
+from models.user import User
 from schemas.mcp import ReviewActionRequest
 from services.cache import invalidate_namespace
 from services.editing_lock import is_actively_editing
 from services.redis import publish as redis_publish
+from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
+from services.teamspace import ReviewScope, can_review, review_scope
 
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
@@ -50,6 +52,73 @@ VERSION_MODELS = {
     "prompt": PromptVersion,
     "sandbox": SandboxVersion,
 }
+
+
+# ---------------------------------------------------------------------------
+# Review authorization
+#
+# Every route below used to sit behind require_role(UserRole.reviewer), the
+# GLOBAL role. That routed team-private items to reviewers outside the team and
+# left the team blocked until one of them acted, while the team's own owners and
+# reviewers got a 403. Authorization is now capability scoped: the queue, the
+# detail view, and the approve and reject actions all read the same ReviewScope,
+# so what a caller can list and what a caller can act on cannot drift apart.
+# ---------------------------------------------------------------------------
+
+
+async def _require_review_scope(db: AsyncSession, current_user: User) -> ReviewScope:
+    """Resolve the caller's review capability, refusing callers who have none.
+
+    A caller with neither a global review role nor an owner or reviewer seat in
+    any teamspace has no business on these routes at all, so this keeps the 403
+    that require_role used to raise rather than handing back an empty queue.
+    """
+    scope = await review_scope(db, current_user)
+    if scope.is_empty:
+        await emit_security_event(
+            SecurityEvent(
+                event_type=EventType.PERMISSION_DENIED,
+                severity=Severity.WARNING,
+                outcome="failure",
+                actor_id=str(current_user.id),
+                actor_email=current_user.email,
+                actor_role=current_user.role.value,
+                detail="Review access requires a global review role or a team owner or reviewer seat",
+            )
+        )
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return scope
+
+
+def _authorize_item(entity, scope: ReviewScope) -> None:
+    """Authorize one item from its own visibility and teamspace."""
+    if can_review(entity, scope):
+        return
+    if getattr(entity, "is_private", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Team-private items are reviewed by their teamspace's owners and reviewers",
+        )
+    raise HTTPException(
+        status_code=403,
+        detail="Public items are reviewed by global reviewers, not by teamspace roles",
+    )
+
+
+def _in_scope(entity, scope: ReviewScope, team_id: uuid.UUID | None) -> bool:
+    """Whether one pending item belongs in this caller's queue."""
+    if not can_review(entity, scope):
+        return False
+    return team_id is None or getattr(entity, "team_id", None) == team_id
+
+
+def _check_team_filter(team_id: uuid.UUID | None, scope: ReviewScope) -> None:
+    """Reject a ?team_id= narrowing to a teamspace the caller does not review for."""
+    if team_id is None:
+        return
+    if scope.is_admin or scope.is_global_reviewer or team_id in scope.team_ids:
+        return
+    raise HTTPException(status_code=403, detail="You do not review for this teamspace")
 
 
 async def _find_listing(listing_id: str, db: AsyncSession):
@@ -120,7 +189,7 @@ async def _check_agent_components_ready(components, db: AsyncSession) -> tuple[b
     return len(blocking) == 0, blocking
 
 
-async def _query_pending_agents(db: AsyncSession) -> list[dict]:
+async def _query_pending_agents(db: AsyncSession, scope: ReviewScope, team_id: uuid.UUID | None = None) -> list[dict]:
     # Find agents that have ANY pending version (not just latest_version_id).
     # This ensures version updates appear in the review queue after the first
     # version is approved.
@@ -140,10 +209,12 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
         if v.agent_id not in seen_agents and not is_actively_editing(v):
             seen_agents[v.agent_id] = v
 
-    # Load the agents
+    # Load the agents, dropping the ones this caller may not review. Agents carry
+    # is_private and team_id exactly like component listings do.
     agent_ids = list(seen_agents.keys())
     agents_result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
-    agents_map = {a.id: a for a in agents_result.scalars().all()}
+    agents_map = {a.id: a for a in agents_result.scalars().all() if _in_scope(a, scope, team_id)}
+    seen_agents = {aid: v for aid, v in seen_agents.items() if aid in agents_map}
 
     user_ids = {a.created_by for a in agents_map.values()}
     user_ids.update(v.released_by for v in seen_agents.values())
@@ -179,7 +250,12 @@ async def _query_pending_agents(db: AsyncSession) -> list[dict]:
     return items
 
 
-async def _query_pending_components(db: AsyncSession, type_filter: str | None = None) -> list[dict]:
+async def _query_pending_components(
+    db: AsyncSession,
+    scope: ReviewScope,
+    type_filter: str | None = None,
+    team_id: uuid.UUID | None = None,
+) -> list[dict]:
     optic.trace("type_filter={}", type_filter)
     models_to_query = (
         {type_filter: LISTING_MODELS[type_filter]} if type_filter and type_filter in LISTING_MODELS else LISTING_MODELS
@@ -208,9 +284,11 @@ async def _query_pending_components(db: AsyncSession, type_filter: str | None = 
         if not seen_listings:
             continue
 
-        # Load the listings
+        # Load the listings. A listing this caller may not review is dropped here,
+        # before anything about it reaches the response: a global reviewer who is
+        # not in the team must not even learn a team-private item's name.
         listings_result = await db.execute(select(model).where(model.id.in_(list(seen_listings.keys()))))
-        listings_map = {r.id: r for r in listings_result.scalars().all()}
+        listings_map = {r.id: r for r in listings_result.scalars().all() if _in_scope(r, scope, team_id)}
 
         for listing_id, pv in seen_listings.items():
             r = listings_map.get(listing_id)
@@ -280,21 +358,28 @@ async def list_pending(
         None,
         description="Filter by type: 'agents' or 'components'. Defaults to all pending items.",
     ),
+    team_id: uuid.UUID | None = Query(
+        None,
+        description="Narrow the queue to one teamspace the caller reviews for.",
+    ),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("type={}", type)
+    scope = await _require_review_scope(db, current_user)
+    _check_team_filter(team_id, scope)
+
     if tab == "agents":
-        result = await _query_pending_agents(db)
+        result = await _query_pending_agents(db, scope, team_id)
         return result
 
     if tab == "components":
-        result = await _query_pending_components(db, type)
+        result = await _query_pending_components(db, scope, type, team_id)
         return result
 
     # Default: return both agents and components
-    agents = await _query_pending_agents(db)
-    components = await _query_pending_components(db, type)
+    agents = await _query_pending_agents(db, scope, team_id)
+    components = await _query_pending_components(db, scope, type, team_id)
 
     # Merge and sort by created_at (most recent first)
     all_items = agents + components
@@ -446,12 +531,18 @@ def _serialize_listing_detail(listing_type: str, listing) -> dict:
 async def get_review(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("listing_id={}", listing_id)
+    scope = await _require_review_scope(db, current_user)
     listing_type, listing = await _find_listing(listing_id, db)
 
     if listing:
+        # 404 rather than 403: the queue already hides items outside the caller's
+        # scope, and answering 403 here would confirm a team-private item exists
+        # to the very reviewers the scoping keeps away from it.
+        if not can_review(listing, scope):
+            raise HTTPException(status_code=404, detail="Listing not found")
         result = _serialize_listing_detail(listing_type, listing)
     else:
         # Fallback: check Agent table
@@ -460,7 +551,7 @@ async def get_review(
         except ValueError:
             raise HTTPException(status_code=404, detail="Listing not found")
         agent = (await db.execute(select(Agent).where(Agent.id == agent_uuid))).scalar_one_or_none()
-        if not agent:
+        if not agent or not can_review(agent, scope):
             raise HTTPException(status_code=404, detail="Listing not found")
         # Use the pending version for review (not latest_version which is the approved one)
         pending_ver = next(
@@ -539,12 +630,14 @@ async def get_review(
 async def approve(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("listing_id={}", listing_id)
+    scope = await _require_review_scope(db, current_user)
     listing_type, listing = await _find_listing(listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
+    _authorize_item(listing, scope)
 
     # Find the pending version to approve (may not be latest_version)
     pending_ver = None
@@ -588,12 +681,14 @@ async def reject(
     listing_id: str,
     req: ReviewActionRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("listing_id={}, req={}", listing_id, req)
+    scope = await _require_review_scope(db, current_user)
     listing_type, listing = await _find_listing(listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
+    _authorize_item(listing, scope)
 
     # Find the pending version to reject (may not be latest_version)
     pending_ver = None
@@ -652,14 +747,16 @@ async def approve_agent(
     agent_id: uuid.UUID,
     req: AgentApproveRequest | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("agent_id={}, req={}", agent_id, req)
     from services.versioning import parse_semver
 
+    scope = await _require_review_scope(db, current_user)
     agent = (await db.execute(select(Agent).where(Agent.id == agent_id))).scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    _authorize_item(agent, scope)
 
     pending_versions = (
         (
@@ -726,12 +823,14 @@ async def reject_agent(
     agent_id: uuid.UUID,
     req: AgentRejectRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("agent_id={}, req={}", agent_id, req)
+    scope = await _require_review_scope(db, current_user)
     agent = (await db.execute(select(Agent).where(Agent.id == agent_id))).scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    _authorize_item(agent, scope)
 
     pending_versions = (
         (
@@ -768,32 +867,55 @@ async def reject_agent(
 
 # ---------------------------------------------------------------------------
 # Bundle review (atomic approve/reject)
+#
+# A ComponentBundle carries no visibility of its own: it is a grouping, and each
+# member listing keeps its own is_private and team_id. The bundle actions are
+# atomic by design, so they authorize every member listing individually and
+# refuse the whole bundle when one member is outside the caller's scope. A
+# wholly team-private bundle is therefore reviewable by that team's owners and
+# reviewers, a wholly public one by a global reviewer, and a bundle that mixes
+# the two only by an admin. Approving the reachable half and skipping the rest
+# would silently half-apply an operation whose entire point is atomicity.
 # ---------------------------------------------------------------------------
+
+
+async def _bundle_listings(bundle_id: uuid.UUID, db: AsyncSession, scope: ReviewScope, action: str) -> list:
+    """Load every listing in a bundle, refusing the bundle if one is out of scope."""
+    listings = []
+    for model in LISTING_MODELS.values():
+        result = await db.execute(select(model).where(model.bundle_id == bundle_id))
+        for listing in result.scalars().all():
+            if not can_review(listing, scope):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Cannot {action}: '{listing.name}' is outside your review scope",
+                )
+            listings.append(listing)
+    return listings
 
 
 @router.post("/bundles/{bundle_id}/approve")
 async def approve_bundle(
     bundle_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("bundle_id={}", bundle_id)
+    scope = await _require_review_scope(db, current_user)
     bundle = (await db.execute(select(ComponentBundle).where(ComponentBundle.id == bundle_id))).scalar_one_or_none()
     if not bundle:
         raise HTTPException(status_code=404, detail="Bundle not found")
 
     count = 0
-    for model in LISTING_MODELS.values():
-        result = await db.execute(select(model).where(model.bundle_id == bundle_id))
-        for listing in result.scalars().all():
-            if listing.latest_version and is_actively_editing(listing.latest_version):
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Cannot approve: '{listing.name}' is currently being edited by its owner",
-                )
-            listing.status = ListingStatus.approved
-            listing.rejection_reason = None
-            count += 1
+    for listing in await _bundle_listings(bundle_id, db, scope, "approve"):
+        if listing.latest_version and is_actively_editing(listing.latest_version):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot approve: '{listing.name}' is currently being edited by its owner",
+            )
+        listing.status = ListingStatus.approved
+        listing.rejection_reason = None
+        count += 1
 
     await db.commit()
     return {"bundle_id": str(bundle_id), "name": bundle.name, "approved_count": count}
@@ -804,25 +926,24 @@ async def reject_bundle(
     bundle_id: uuid.UUID,
     req: ReviewActionRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("bundle_id={}, req={}", bundle_id, req)
+    scope = await _require_review_scope(db, current_user)
     bundle = (await db.execute(select(ComponentBundle).where(ComponentBundle.id == bundle_id))).scalar_one_or_none()
     if not bundle:
         raise HTTPException(status_code=404, detail="Bundle not found")
 
     count = 0
-    for model in LISTING_MODELS.values():
-        result = await db.execute(select(model).where(model.bundle_id == bundle_id))
-        for listing in result.scalars().all():
-            if listing.latest_version and is_actively_editing(listing.latest_version):
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Cannot reject: '{listing.name}' is currently being edited by its owner",
-                )
-            listing.status = ListingStatus.rejected
-            listing.rejection_reason = req.reason
-            count += 1
+    for listing in await _bundle_listings(bundle_id, db, scope, "reject"):
+        if listing.latest_version and is_actively_editing(listing.latest_version):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot reject: '{listing.name}' is currently being edited by its owner",
+            )
+        listing.status = ListingStatus.rejected
+        listing.rejection_reason = req.reason
+        count += 1
 
     await db.commit()
     return {"bundle_id": str(bundle_id), "name": bundle.name, "rejected_count": count}
@@ -837,12 +958,15 @@ async def reject_bundle(
 async def get_related_skills(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("listing_id={}", listing_id)
+    scope = await _require_review_scope(db, current_user)
     listing_type, listing = await _find_listing(listing_id, db)
     if not listing or listing_type != "mcp":
         return {"skills": []}
+    if not can_review(listing, scope):
+        raise HTTPException(status_code=404, detail="Listing not found")
 
     mcp_name = listing.name
     mcp_id = str(listing.id)
@@ -860,7 +984,9 @@ async def get_related_skills(
         )
         .order_by(SkillListing.created_at.desc())
     )
-    skills = (await db.execute(stmt)).scalars().all()
+    # The suggestion list is a review surface like the queue itself, so a skill
+    # the caller may not review never appears in it.
+    skills = [s for s in (await db.execute(stmt)).scalars().all() if can_review(s, scope)]
 
     user_ids = {s.submitted_by for s in skills}
     user_map: dict[uuid.UUID, str] = {}
@@ -894,19 +1020,27 @@ class McpBulkApproveRequest(BaseModel):
     skill_ids: list[str] = []
 
 
+# approve-with-skills approves a caller-supplied set of skill ids alongside the
+# MCP, and nothing ties those skills to the MCP's teamspace, so it is scoped the
+# same way as a plain approve: the MCP and every named skill are authorized on
+# their own visibility. A skill outside the caller's scope fails the whole call
+# rather than being dropped from the batch, because a caller who asked for it
+# must be told it was refused instead of reading a smaller approved count.
 @router.post("/{listing_id}/approve-with-skills")
 async def approve_mcp_with_skills(
     listing_id: str,
     req: McpBulkApproveRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ):
     optic.trace("listing_id={}, req={}", listing_id, req)
+    scope = await _require_review_scope(db, current_user)
     listing_type, listing = await _find_listing(listing_id, db)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if listing_type != "mcp":
         raise HTTPException(status_code=400, detail="Only MCP listings support bulk skill approve")
+    _authorize_item(listing, scope)
 
     listing.status = ListingStatus.approved
     listing.rejection_reason = None
@@ -918,6 +1052,8 @@ async def approve_mcp_with_skills(
         except ValueError:
             continue
         skill = (await db.execute(select(SkillListing).where(SkillListing.id == skill_uuid))).scalar_one_or_none()
+        if skill and not can_review(skill, scope):
+            raise HTTPException(status_code=403, detail=f"Skill '{skill.name}' is outside your review scope")
         if skill and skill.status == ListingStatus.pending:
             skill.status = ListingStatus.approved
             skill.rejection_reason = None

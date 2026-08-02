@@ -783,12 +783,26 @@ async def test_component_lists_gate_team_private_listings_on_caller_membership()
 
 
 @pytest.mark.asyncio
-async def test_component_lists_do_not_restrict_visibility_for_reviewers():
+@pytest.mark.parametrize("role", [UserRole.admin, UserRole.super_admin])
+async def test_component_lists_do_not_restrict_visibility_for_admins(role):
+    admin = _user(role=role)
+    for list_items, table, filters, _expected in _list_endpoint_cases():
+        sql = _inline_sql(await _run_list(list_items, filters, current_user=admin))
+        assert f"{table}.is_private =" not in sql
+        assert "team_memberships" not in sql
+
+
+@pytest.mark.asyncio
+async def test_component_lists_gate_a_global_reviewer_on_membership_like_anyone_else():
+    """The global reviewer role reviews the public catalog, not other teams' rows.
+
+    Team-private items are reviewed inside their own teamspace, so a reviewer gets
+    the same membership predicate as a plain user and only admins skip it.
+    """
     reviewer = _user(role=UserRole.reviewer)
     for list_items, table, filters, _expected in _list_endpoint_cases():
         sql = _inline_sql(await _run_list(list_items, filters, current_user=reviewer))
-        assert f"{table}.is_private =" not in sql
-        assert "team_memberships" not in sql
+        assert _membership_predicate(table, reviewer) in sql
 
 
 # ═══════════════════════════════════════════════════════════

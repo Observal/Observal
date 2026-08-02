@@ -504,9 +504,9 @@ async def test_team_owner_making_a_listing_public_sends_it_back_to_review():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", [UserRole.reviewer, UserRole.admin, UserRole.super_admin])
+@pytest.mark.parametrize("role", [UserRole.admin, UserRole.super_admin])
 async def test_privileged_actor_making_a_listing_public_keeps_it_approved(role):
-    """A global reviewer already holds the authority the queue represents."""
+    """An admin already holds the authority the queue represents."""
     async with _sessions() as sessions:
         seed = await _seed_team_private_component(sessions)
         actor = SimpleNamespace(id=uuid.uuid4(), role=role)
@@ -516,6 +516,25 @@ async def test_privileged_actor_making_a_listing_public_keeps_it_approved(role):
         assert result["visibility"] == "public"
         assert result["returned_to_review"] is False
         assert result["status"] == ListingStatus.approved.value
+
+
+@pytest.mark.asyncio
+async def test_global_reviewer_outside_the_team_cannot_flip_a_team_private_listing():
+    """A global reviewer cannot read the listing, so it cannot flip it either.
+
+    Team-private content is reviewed inside its own teamspace. A reviewer who is
+    not in the team gets the same answer as any other outsider: the listing does
+    not exist. Publishing it into the public catalog stays a team owner or team
+    reviewer action, followed by the global review queue.
+    """
+    async with _sessions() as sessions:
+        seed = await _seed_team_private_component(sessions)
+        reviewer = SimpleNamespace(id=uuid.uuid4(), role=UserRole.reviewer)
+        async with sessions() as session:
+            with pytest.raises(HTTPException) as exc:
+                await _patch_visibility(session, seed.listing_id, reviewer, visibility="public")
+
+        assert exc.value.status_code == 404
 
 
 @pytest.mark.asyncio

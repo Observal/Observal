@@ -120,6 +120,21 @@ export function useApproveWithSkills() {
   });
 }
 
+/**
+ * Pending queue for one teamspace, used by the teamspace Review tab.
+ *
+ * Only a team owner or team reviewer may call this, so `enabled` must carry the
+ * team-role check: asking without the role earns a 403 rather than an empty
+ * list. The key stays under "review" so useReviewAction's invalidation reaches it.
+ */
+export function useTeamReviewQueue(teamId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["review", "team", teamId],
+    enabled: !!teamId && enabled,
+    queryFn: () => review.listForTeam(teamId!),
+  });
+}
+
 export function useReviewComponents(typeFilter?: string) {
   const params: Record<string, string> = { tab: "components" };
   if (typeFilter) params.type = typeFilter;

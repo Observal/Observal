@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import (
     apply_visibility_filter,
+    can_see_private_listings,
     check_listing_visibility_async,
     get_current_user,
     get_db,
@@ -159,7 +160,9 @@ async def update_registry_visibility(
         raise HTTPException(status_code=404, detail="Listing not found")
 
     team_id = getattr(listing, "team_id", None)
-    privileged = current_user.role in (UserRole.super_admin, UserRole.admin, UserRole.reviewer)
+    # A global reviewer is not privileged here: team-private listings belong to
+    # their teamspace, so flipping one is a team owner or team reviewer action.
+    privileged = can_see_private_listings(current_user)
     if not privileged and not await check_listing_visibility_async(listing, current_user, db):
         raise HTTPException(status_code=404, detail="Listing not found")
     creator_id = getattr(listing, "created_by", None) or getattr(listing, "submitted_by", None)

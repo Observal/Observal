@@ -38,17 +38,21 @@ def _user(role=UserRole.user, user_id=None, **kw):
     return u
 
 
-def _mock_db():
+def _mock_db(membership=None):
     db = AsyncMock()
     db.add = MagicMock()
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     db.delete = AsyncMock()
+    # check_listing_visibility_async resolves team membership with db.scalar.
+    # A bare AsyncMock returns a truthy sentinel, which would make every caller
+    # look like a team member, so the membership row is always explicit here.
+    db.scalar = AsyncMock(return_value=membership)
     return db
 
 
-def _app_with(router, user=None):
-    db = _mock_db()
+def _app_with(router, user=None, membership=None):
+    db = _mock_db(membership)
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_db] = lambda: db
@@ -301,3 +305,86 @@ class TestPrivilegedAccess:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
             assert r.status_code == 200
+
+
+# ── Privacy is a different axis from status ──────────────
+#
+# Status decides whether an item is ready to be shown; privacy decides who the
+# item belongs to. The detail routes run both gates, and only the status one
+# admits a global reviewer. A reviewer reviews the PUBLIC catalog, so a
+# team-private listing has to answer the membership question for them exactly as
+# it does for any other user.
+
+
+@pytest.mark.parametrize("route_type,base_path", ENDPOINTS)
+class TestTeamPrivateAccess:
+    """A team-private listing is readable through membership or an admin role only."""
+
+    @staticmethod
+    async def _get(route_type, base_path, user, *, membership, status=ListingStatus.approved):
+        router = _get_router(route_type)
+        listing = _listing_mock(status=status, is_private=True, team_id=uuid.uuid4())
+        app = _app_with(router, user=user, membership=membership)
+
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
+            mock_resolve.return_value = listing
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                return await ac.get(f"{base_path}/{listing.id}")
+
+    @pytest.mark.asyncio
+    async def test_global_reviewer_outside_the_team_is_denied(self, route_type, base_path):
+        reviewer = _user(role=UserRole.reviewer)
+
+        r = await self._get(route_type, base_path, reviewer, membership=None)
+
+        assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_global_reviewer_outside_the_team_is_denied_for_pending_too(self, route_type, base_path):
+        """The status gate must not hand a reviewer a private item it cannot own.
+
+        ``may_view_unapproved`` says yes to a reviewer for any pending item, so the
+        404 here proves the privacy gate runs first and independently.
+        """
+        reviewer = _user(role=UserRole.reviewer)
+
+        r = await self._get(route_type, base_path, reviewer, membership=None, status=ListingStatus.pending)
+
+        assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("role", [UserRole.admin, UserRole.super_admin])
+    async def test_admins_still_read_it(self, route_type, base_path, role):
+        r = await self._get(route_type, base_path, _user(role=role), membership=None)
+
+        assert r.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_team_member_reads_it(self, route_type, base_path):
+        r = await self._get(route_type, base_path, _user(), membership=uuid.uuid4())
+
+        assert r.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_reviewer_who_is_a_team_member_reads_it(self, route_type, base_path):
+        """Membership admits the reviewer; the global role never did."""
+        reviewer = _user(role=UserRole.reviewer)
+
+        r = await self._get(route_type, base_path, reviewer, membership=uuid.uuid4())
+
+        assert r.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_reviewer_still_reads_a_pending_public_listing(self, route_type, base_path):
+        """The mirror case: narrowing privacy must leave the review queue working."""
+        reviewer = _user(role=UserRole.reviewer)
+        router = _get_router(route_type)
+        listing = _listing_mock(status=ListingStatus.pending)
+        app = _app_with(router, user=reviewer, membership=None)
+
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
+            mock_resolve.side_effect = [None, listing]
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                r = await ac.get(f"{base_path}/{listing.id}")
+
+        assert r.status_code == 200

@@ -517,6 +517,13 @@ export const review = {
 		return get<ReviewItem[]>(`/review${qs}`);
 	},
 	listAgents: () => get<ReviewItem[]>("/review?tab=agents"),
+	/**
+	 * Pending queue narrowed to one teamspace. The server answers 403 when the
+	 * caller does not review for that teamspace, so callers must gate on the
+	 * team role before asking.
+	 */
+	listForTeam: (teamId: string, params?: Record<string, string>) =>
+		get<ReviewItem[]>(`/review?${new URLSearchParams({ ...params, team_id: teamId })}`),
 	get: (id: string) => get<ReviewItem>(`/review/${id}`),
 	approve: (id: string) => post(`/review/${id}/approve`),
 	reject: (id: string, body: { reason: string }) =>
