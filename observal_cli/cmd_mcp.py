@@ -1326,7 +1326,7 @@ def list_mcps(
     category: str | None = typer.Option(None, "--category", "-c", help="Filter by category"),
     search: str | None = typer.Option(None, "--search", "-s", help="Search by name/description"),
     namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
-    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
+    team: str | None = typer.Option(None, "--team", help="Only items owned by this teamspace"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive search mode"),
     limit: int = typer.Option(50, "--limit", "-n", help="Max results"),
     sort: str = typer.Option("name", "--sort", help="Sort by: name, category, version"),

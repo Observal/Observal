@@ -303,7 +303,7 @@ def hook_list(
     event: str | None = typer.Option(None, "--event", "-e", help="Filter by event type"),
     search: str | None = typer.Option(None, "--search", "-s"),
     namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
-    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
+    team: str | None = typer.Option(None, "--team", help="Only items owned by this teamspace"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
     """List approved hooks from the registry.

@@ -128,13 +128,35 @@ class TestApplyRegistryScope:
     two share an implementation. Narrowing to a single teamspace is ``?namespace=``.
     """
 
-    def test_team_filter_keeps_public_rows(self):
+    def test_team_filter_returns_only_that_teamspace_s_listings(self):
+        """?team_id= means ownership, so another namespace's public rows are out.
+
+        This used to reuse the publish-scope predicate, which kept every public
+        row in the registry. A teamspace page then listed other teams' listings
+        under its own tabs.
+        """
         from sqlalchemy import select
 
         from models.mcp import McpListing
 
         team_id = uuid.uuid4()
         sql = _inline_sql(apply_registry_scope(select(McpListing.id), McpListing, _user(role="admin"), team_id=team_id))
+
+        assert f"mcp_listings.team_id = '{team_id.hex}'" in sql
+        assert "is_private = false" not in sql
+
+    def test_composable_scope_keeps_public_rows(self):
+        """Agent composition still needs public plus the target team's private rows."""
+        from sqlalchemy import select
+
+        from models.mcp import McpListing
+
+        team_id = uuid.uuid4()
+        sql = _inline_sql(
+            apply_registry_scope(
+                select(McpListing.id), McpListing, _user(role="admin"), composable_for_team_id=team_id
+            )
+        )
 
         assert "mcp_listings.is_private = false" in sql
         assert f"mcp_listings.team_id = '{team_id.hex}'" in sql

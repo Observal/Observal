@@ -447,7 +447,7 @@ def agent_bulk_create(
 def agent_list(
     search: str | None = typer.Option(None, "--search", "-s"),
     namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
-    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
+    team: str | None = typer.Option(None, "--team", help="Only items owned by this teamspace"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive search mode"),
     limit: int = typer.Option(50, "--limit", "-n", min=1, max=200, help="Page size (1-200)"),
     page: int = typer.Option(1, "--page", "-p", min=1, help="Page number (1-indexed)"),

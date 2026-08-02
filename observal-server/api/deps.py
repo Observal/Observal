@@ -493,24 +493,31 @@ def apply_publish_scope(stmt, model, target_team_id):
     return stmt.where(or_(public, (model.is_private == True) & (model.team_id == target_team_id)))  # noqa: E712
 
 
-def apply_registry_scope(stmt, model, current_user, *, team_id=None, public_only=False):
-    """Apply caller visibility and the optional teamspace list filter.
+def apply_registry_scope(stmt, model, current_user, *, team_id=None, composable_for_team_id=None, public_only=False):
+    """Apply caller visibility plus one optional teamspace filter.
 
-    ``team_id`` here is deliberately the same predicate as ``apply_publish_scope``
-    even though the two answer different questions. ``apply_publish_scope`` answers
-    "what may an agent published for this target contain", while the registry list
-    filter behind ``?team_id=`` (the CLI ``--team TEAM_HANDLE`` flag) means
-    "public items plus this teamspace's private items". Both are public plus that
-    one team's private rows, so they share an implementation. Narrowing a list to a
-    single teamspace is what ``?namespace=`` is for, so do not "fix" this to drop
-    public rows. Caller visibility is applied first, so a non-member passing a
-    teamspace id still gets public rows only.
+    Two different questions used to share ``team_id``, which made every teamspace
+    view show the whole public registry:
+
+    ``team_id`` means OWNERSHIP: show what this teamspace published, and nothing
+    else. That is what a teamspace page, the ``?team_id=`` list filter, and the CLI
+    ``--team TEAM_HANDLE`` flag all want. A listing owned by another namespace has
+    no business appearing under a team's own tab just because it is public.
+
+    ``composable_for_team_id`` means PUBLISH SCOPE: public items plus this
+    teamspace's private items, which is the set an agent published for that target
+    may contain. Only the agent builder's component picker wants this.
+
+    Caller visibility is applied first either way, so a non-member passing a
+    teamspace id still sees only that team's public rows.
     """
     stmt = apply_visibility_filter(stmt, model, current_user)
     if public_only:
         return stmt.where(model.is_private == False)  # noqa: E712
-    if team_id is not None:
-        return apply_publish_scope(stmt, model, team_id)
+    if composable_for_team_id is not None:
+        return apply_publish_scope(stmt, model, composable_for_team_id)
+    if team_id is not None and hasattr(model, "team_id"):
+        return stmt.where(model.team_id == team_id)
     return stmt
 
 

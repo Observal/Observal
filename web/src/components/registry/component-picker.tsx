@@ -26,7 +26,9 @@ export function ComponentPicker({
 }) {
   const { data: items, isLoading } = useRegistryList(
     type,
-    targetTeamId ? { team_id: targetTeamId } : { public_only: "true" },
+    // Composition scope, not ownership: an agent published for this teamspace may
+    // contain any public component plus that teamspace's private ones.
+    targetTeamId ? { composable_for_team_id: targetTeamId } : { public_only: "true" },
   );
   const [search, setSearch] = useState("");
   const searchLabel = label ?? type;

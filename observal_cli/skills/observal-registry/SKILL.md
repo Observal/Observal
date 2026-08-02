@@ -42,7 +42,7 @@ observal registry mcp show NAME --output json
 observal registry hook show NAME --output json
 ```
 
-After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--interactive` for fuzzy picker. Team members see approved private teamspace items in the same lists. Use `--team TEAM_HANDLE` to include public items plus that team's private items, or `--namespace TEAM_HANDLE` to narrow to the team's namespace. Direct references use `TEAM_HANDLE/ITEM_SLUG`. Skill search covers descriptions, task types, target agents, slash commands, source paths, delivery mode, and SKILL.md content.
+After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--interactive` for fuzzy picker. Team members see approved private teamspace items in the same lists. Use `--team TEAM_HANDLE` to list only what that teamspace owns, including its private items when you are a member. Direct references use `TEAM_HANDLE/ITEM_SLUG`. Skill search covers descriptions, task types, target agents, slash commands, source paths, delivery mode, and SKILL.md content.
 
 **MCP categories:** `browser-automation`, `cloud-platforms`, `code-execution`, `communication`, `databases`, `developer-tools`, `devops`, `file-systems`, `finance`, `knowledge-memory`, `monitoring`, `multimedia`, `productivity`, `search`, `security`, `version-control`, `ai-ml`, `data-analytics`, `general`
 

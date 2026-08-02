@@ -116,7 +116,10 @@ async def list_hooks(
     scope: str | None = Query(None),
     namespace: str | None = Query(None),
     search: str | None = Query(None),
-    team_id: uuid.UUID | None = Query(None),
+    team_id: uuid.UUID | None = Query(None, description="Only listings owned by this teamspace"),
+    composable_for_team_id: uuid.UUID | None = Query(
+        None, description="Public listings plus this teamspace's private ones, for agent composition"
+    ),
     public_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -153,7 +156,14 @@ async def list_hooks(
         )
         if search_filter is not None:
             stmt = stmt.where(search_filter)
-    stmt = apply_registry_scope(stmt, HookListing, current_user, team_id=team_id, public_only=public_only)
+    stmt = apply_registry_scope(
+        stmt,
+        HookListing,
+        current_user,
+        team_id=team_id,
+        composable_for_team_id=composable_for_team_id,
+        public_only=public_only,
+    )
     total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
     order_by = [HookListing.created_at.desc()]
     if search_rank is not None:

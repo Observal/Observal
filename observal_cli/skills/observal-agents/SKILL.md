@@ -148,7 +148,7 @@ observal agent show AGENT_NAME --output json
 observal agent versions AGENT_NAME --output json
 ```
 
-After `list`, use row numbers (1, 2, 3...) in subsequent commands. Team members see approved private teamspace agents in normal results. Direct references use `TEAM_HANDLE/AGENT_SLUG`.
+After `list`, use row numbers (1, 2, 3...) in subsequent commands. Team members see approved private teamspace agents in normal results. `--team TEAM_HANDLE` narrows to what that teamspace owns. Direct references use `TEAM_HANDLE/AGENT_SLUG`.
 
 ---
 

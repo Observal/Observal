@@ -723,6 +723,7 @@ async def _run_list(list_items, filters, *, current_user, namespace="Alice"):
         namespace=namespace,
         search=None,
         team_id=None,
+        composable_for_team_id=None,
         public_only=False,
         limit=50,
         offset=0,

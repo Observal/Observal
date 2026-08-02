@@ -253,7 +253,10 @@ async def list_agents(
     search: str | None = Query(None),
     namespace: str | None = Query(None),
     category: str | None = Query(None),
-    team_id: uuid.UUID | None = Query(None),
+    team_id: uuid.UUID | None = Query(None, description="Only agents owned by this teamspace"),
+    composable_for_team_id: uuid.UUID | None = Query(
+        None, description="Public agents plus this teamspace's private ones"
+    ),
     public_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200, description="Page size (1-200)"),
     offset: int = Query(0, ge=0, description="Items to skip"),
@@ -291,13 +294,25 @@ async def list_agents(
     if category:
         filters.append(Agent.category == category)
     count_stmt = apply_registry_scope(
-        count_stmt.where(*filters), Agent, current_user, team_id=team_id, public_only=public_only
+        count_stmt.where(*filters),
+        Agent,
+        current_user,
+        team_id=team_id,
+        composable_for_team_id=composable_for_team_id,
+        public_only=public_only,
     )
     total = (await db.execute(count_stmt)).scalar_one()
     response.headers["X-Total-Count"] = str(total)
 
     stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(base_filter, *filters)
-    stmt = apply_registry_scope(stmt, Agent, current_user, team_id=team_id, public_only=public_only)
+    stmt = apply_registry_scope(
+        stmt,
+        Agent,
+        current_user,
+        team_id=team_id,
+        composable_for_team_id=composable_for_team_id,
+        public_only=public_only,
+    )
     order_by = [Agent.created_at.desc()]
     if search_rank is not None:
         order_by.insert(0, search_rank.desc())
