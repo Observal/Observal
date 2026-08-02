@@ -19,11 +19,6 @@ on:
         description: "Release preparation commit SHA to validate and resume"
         required: true
         type: string
-      prerelease:
-        description: "Force the GitHub Release to be marked as a pre-release (skips --latest)"
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: release
@@ -634,16 +629,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
           CHANNEL: ${{ needs.preflight.outputs.channel }}
-          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           VERSION="v$RELEASE_VERSION"
           FLAGS=(--title "Observal $VERSION" --notes-file .github/release-notes.md)
-          # Manual override: inputs.prerelease forces a pre-release even when
-          # the .release.toml channel is stable. Only set on push runs, the
-          # input is empty so channel drives the flag as before.
-          if [ "$PRERELEASE" = "true" ]; then
-            FLAGS+=(--prerelease)
-          elif [ "$CHANNEL" = "stable" ]; then
+          if [ "$CHANNEL" = "stable" ]; then
             FLAGS+=(--latest)
           else
             FLAGS+=(--prerelease)
