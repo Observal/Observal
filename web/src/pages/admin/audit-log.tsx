@@ -158,7 +158,6 @@ function DetailRow({ entry }: { entry: AuditLogEntry }) {
               <div><span className="text-muted-foreground">HTTP: </span>{entry.http_method} {entry.http_path}</div>
               <div><span className="text-muted-foreground">Actor ID: </span>{entry.actor_id}</div>
               <div><span className="text-muted-foreground">Role: </span>{entry.actor_role}</div>
-              <div><span className="text-muted-foreground">Org: </span>{entry.org_id || "-"}</div>
               <div><span className="text-muted-foreground">Resource: </span>{entry.resource_type} {entry.resource_id ? `(${entry.resource_id})` : ""}</div>
               <div><span className="text-muted-foreground">Source: </span>{entry.source}</div>
               <div className="col-span-2"><span className="text-muted-foreground">User-Agent: </span>{entry.user_agent || "-"}</div>

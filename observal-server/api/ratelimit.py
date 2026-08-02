@@ -44,15 +44,8 @@ def _get_rate_limit_key(request: Request) -> str:
     user = getattr(state, "current_user", None) or getattr(state, "user", None)
     if user is not None:
         user_id = getattr(user, "id", None)
-        org_id = getattr(user, "org_id", None)
-        if user_id and org_id:
-            return f"org:{org_id}:user:{user_id}"
         if user_id:
             return f"user:{user_id}"
-
-    org_id = getattr(state, "org_id", None)
-    if org_id:
-        return f"org:{org_id}"
 
     auth = request.headers.get("authorization", "")
     scheme, _, token = auth.partition(" ")

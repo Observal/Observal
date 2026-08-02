@@ -29,7 +29,6 @@ def _user(**kw):
     u.role = kw.get("role", UserRole.user)
     u.username = kw.get("username", "testuser")
     u.email = kw.get("email", "test@example.com")
-    u.org_id = kw.get("org_id")
     return u
 
 

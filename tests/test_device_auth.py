@@ -21,7 +21,6 @@ def _make_mock_user(**overrides):
     user.name = overrides.get("name", "Test User")
     user.role = overrides.get("role", UserRole.user)
     user.created_at = overrides.get("created_at", datetime.now(UTC))
-    user.org_id = overrides.get("org_id", uuid.uuid4())
     return user
 
 

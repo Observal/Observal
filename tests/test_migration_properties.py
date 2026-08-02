@@ -5,7 +5,7 @@
 
 Covers 15 properties testing the shared Migration_Service logic:
 archive round-trips, FK-safe ordering, schema tolerance, idempotency,
-org rewriting, row accounting, checksums, validation, state machines,
+project normalization, row accounting, checksums, validation, state machines,
 credential exclusion, token expiry, TTL purge, and role denial.
 """
 
@@ -51,20 +51,6 @@ def _table_name() -> st.SearchStrategy[str]:
     return st.sampled_from(INSERT_ORDER[:10])  # Use first 10 tables for speed
 
 
-def _row_data(table: str) -> dict:
-    """Generate a simple row dict with id and org_id."""
-    return {"id": str(uuid.uuid4()), "org_id": str(uuid.uuid4()), "name": f"test_{uuid.uuid4().hex[:8]}"}
-
-
-def _jsonl_rows_strategy() -> st.SearchStrategy[list[dict]]:
-    """Strategy that generates lists of row dicts."""
-    return st.lists(
-        st.fixed_dictionaries({"id": _uuid_str(), "org_id": _uuid_str(), "name": st.text(min_size=1, max_size=30)}),
-        min_size=1,
-        max_size=10,
-    )
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Property 1: Export → import round-trip preserves data
 # ══════════════════════════════════════════════════════════════════════════════
@@ -87,7 +73,7 @@ class TestExportImportRoundTrip:
     def test_archive_round_trip_preserves_data(self, rows, tmp_path_factory):
         """JSONL data written into a tar.gz archive can be read back identically."""
         tmp_path = tmp_path_factory.mktemp("roundtrip")
-        table_name = "organizations"
+        table_name = "enterprise_config"
 
         # Write JSONL
         jsonl_content = "\n".join(json.dumps(r, cls=PGEncoder) for r in rows) + "\n"
@@ -154,7 +140,7 @@ class TestFKSafeImportOrdering:
     @hsettings(max_examples=30)
     def test_on_conflict_do_nothing_query_structure(self, pk):
         """INSERT with ON CONFLICT (id) DO NOTHING is generated for all tables."""
-        table = "organizations"
+        table = "enterprise_config"
         columns = ["id", "name"]
         col_types = {"id": "uuid", "name": "text"}
         query = _build_insert(table, columns, col_types)
@@ -184,7 +170,7 @@ class TestSchemaTolerantImport:
     @hsettings(max_examples=30)
     def test_extra_columns_omitted(self, extra_col, value):
         """Rows with columns not in target schema are handled by omitting extra cols."""
-        assume(extra_col not in ("id", "name", "org_id"))
+        assume(extra_col not in ("id", "name", "project_id"))
         target_columns = ["id", "name"]
         row = {"id": str(uuid.uuid4()), "name": "test", extra_col: value}
 
@@ -242,37 +228,38 @@ class TestIdempotentClickHouseImport:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Property 5: Org/project rewrite
+# Property 5: Project normalization
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-class TestOrgProjectRewrite:
-    """Property 5: Import rewrites organization/project references.
+class TestProjectIdentity:
+    """Property 5: Import rewrites project identity.
 
     **Validates: Requirements 4.7**
     """
 
     @given(
-        source_org_id=_uuid_str(),
-        target_org_id=_uuid_str(),
+        source_project_id=_uuid_str(),
         row_count=st.integers(min_value=1, max_value=10),
     )
     @hsettings(max_examples=50)
-    def test_org_rewrite_replaces_all_references(self, source_org_id, target_org_id, row_count):
-        """All org_id references in imported data are rewritten to target org."""
-        rows = [{"id": str(uuid.uuid4()), "org_id": source_org_id, "name": f"row_{i}"} for i in range(row_count)]
+    def test_import_normalizes_project_identity(self, source_project_id, row_count):
+        """Imported project identities are normalized to the deployment default."""
+        rows = [
+            {"id": str(uuid.uuid4()), "project_id": source_project_id, "name": f"row_{i}"} for i in range(row_count)
+        ]
 
-        # Simulate org rewrite
+        # Simulate import normalization
         rewritten = []
         for row in rows:
             new_row = dict(row)
-            if "org_id" in new_row:
-                new_row["org_id"] = target_org_id
+            if "project_id" in new_row:
+                new_row["project_id"] = "default"
             rewritten.append(new_row)
 
         for row in rewritten:
-            assert row["org_id"] == target_org_id
-            assert source_org_id not in json.dumps(row)
+            assert row["project_id"] == "default"
+            assert source_project_id not in json.dumps(row)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -358,7 +345,7 @@ class TestFreshExportValidatesClean:
     def test_export_checksum_matches_content(self, rows, tmp_path_factory):
         """Exported JSONL checksum in manifest matches actual file hash."""
         tmp_path = tmp_path_factory.mktemp("validate")
-        table_name = "organizations"
+        table_name = "enterprise_config"
 
         jsonl_content = "\n".join(json.dumps(r, cls=PGEncoder) for r in rows) + "\n"
         jsonl_path = tmp_path / f"{table_name}.jsonl"
@@ -404,8 +391,8 @@ class TestCLIAPIEquivalence:
         result = ExportResult(
             archive_path="/tmp/test.tar.gz",
             migration_id=str(uuid.uuid4()),
-            table_counts={"organizations": 5},
-            checksums={"organizations": "a" * 64},
+            table_counts={"enterprise_config": 5},
+            checksums={"enterprise_config": "a" * 64},
             duration_seconds=1.0,
             total_rows=5,
         )
@@ -422,8 +409,8 @@ class TestCLIAPIEquivalence:
         import_result = ImportResult(
             migration_id=str(uuid.uuid4()),
             tables_imported=3,
-            rows_inserted={"organizations": 5},
-            rows_skipped={"organizations": 0},
+            rows_inserted={"enterprise_config": 5},
+            rows_skipped={"enterprise_config": 0},
             duration_seconds=2.0,
         )
         assert hasattr(import_result, "rows_inserted")
@@ -541,8 +528,8 @@ class TestCredentialExclusionFromLogs:
         result = ExportResult(
             archive_path="/tmp/export.tar.gz",
             migration_id=str(uuid.uuid4()),
-            table_counts={"organizations": 10},
-            checksums={"organizations": "a" * 64},
+            table_counts={"enterprise_config": 10},
+            checksums={"enterprise_config": "a" * 64},
             duration_seconds=5.0,
             total_rows=10,
         )

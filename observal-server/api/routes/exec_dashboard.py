@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
-from api.routes.dashboard import _ch_json_scoped, _range_days
+from api.routes.dashboard import _ch_json, _range_days
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.download import AgentDownloadRecord
 from models.exec_config import ExecDashboardConfig
@@ -56,66 +56,28 @@ def _period_bounds(range_: str | None) -> tuple[dt, dt, dt, dt]:
     return current_start, current_end, previous_start, previous_end
 
 
-async def resolve_user_departments(db: AsyncSession, org_id: uuid.UUID | None) -> dict[str, list[str]]:
-    """Return {department_name: [user_id_strings]} mapping.
-
-    Priority: user_groups table (SSO) > users.department column (local-auth).
-    Users with neither are grouped as 'Unassigned'.
-    """
+async def resolve_user_departments(db: AsyncSession) -> dict[str, list[str]]:
+    """Return a deployment-wide department to user ID mapping."""
     dept_map: dict[str, list[str]] = {}
     assigned_user_ids: set[uuid.UUID] = set()
 
-    # SSO groups
-    if org_id:
-        group_rows = (
-            await db.execute(
-                select(UserGroup.group_name, UserGroup.user_id)
-                .join(User, UserGroup.user_id == User.id)
-                .where(User.org_id == org_id)
-            )
-        ).all()
-    else:
-        group_rows = (await db.execute(select(UserGroup.group_name, UserGroup.user_id))).all()
-
+    group_rows = (await db.execute(select(UserGroup.group_name, UserGroup.user_id))).all()
     for row in group_rows:
         dept_map.setdefault(row.group_name, []).append(str(row.user_id))
         assigned_user_ids.add(row.user_id)
 
-    # Fallback: users.department for users not in user_groups
-    if org_id:
-        dept_rows = (
-            await db.execute(
-                select(User.id, User.department).where(
-                    User.org_id == org_id,
-                    User.department.isnot(None),
-                    User.id.notin_(assigned_user_ids) if assigned_user_ids else User.department.isnot(None),
-                )
-            )
-        ).all()
-    else:
-        dept_rows = (
-            await db.execute(
-                select(User.id, User.department).where(
-                    User.department.isnot(None),
-                    User.id.notin_(assigned_user_ids) if assigned_user_ids else User.department.isnot(None),
-                )
-            )
-        ).all()
-
+    department_filter = User.department.isnot(None)
+    if assigned_user_ids:
+        department_filter = department_filter & User.id.notin_(assigned_user_ids)
+    dept_rows = (await db.execute(select(User.id, User.department).where(department_filter))).all()
     for row in dept_rows:
         dept_map.setdefault(row.department, []).append(str(row.id))
         assigned_user_ids.add(row.id)
 
-    # Unassigned users
-    if org_id:
-        all_users = (await db.execute(select(User.id).where(User.org_id == org_id))).scalars().all()
-    else:
-        all_users = (await db.execute(select(User.id))).scalars().all()
-
+    all_users = (await db.execute(select(User.id))).scalars().all()
     unassigned = [str(uid) for uid in all_users if uid not in assigned_user_ids]
     if unassigned:
         dept_map["Unassigned"] = unassigned
-
     return dept_map
 
 
@@ -126,7 +88,6 @@ async def resolve_user_departments(db: AsyncSession, org_id: uuid.UUID | None) -
 
 class ExecConfigResponse(BaseModel):
     id: uuid.UUID
-    org_id: uuid.UUID
     hourly_dev_cost: float
     pre_ai_baselines: dict
     department_budgets: dict
@@ -152,11 +113,8 @@ async def get_exec_config(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Get exec dashboard configuration for the current org."""
-    if not current_user.org_id:
-        return None
-
-    result = await db.execute(select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == current_user.org_id))
+    """Get the deployment executive dashboard configuration."""
+    result = await db.execute(select(ExecDashboardConfig).limit(1))
     config = result.scalar_one_or_none()
     if not config:
         return None
@@ -170,15 +128,12 @@ async def update_exec_config(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Create or update exec dashboard configuration."""
-    if not current_user.org_id:
-        raise HTTPException(status_code=400, detail="User has no organization")
-
-    result = await db.execute(select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == current_user.org_id))
+    """Create or update the deployment executive dashboard configuration."""
+    result = await db.execute(select(ExecDashboardConfig).limit(1))
     config = result.scalar_one_or_none()
 
     if not config:
-        config = ExecDashboardConfig(org_id=current_user.org_id)
+        config = ExecDashboardConfig()
         db.add(config)
 
     if req.hourly_dev_cost is not None:
@@ -203,7 +158,6 @@ async def update_exec_config(
 def _config_to_response(config: ExecDashboardConfig) -> ExecConfigResponse:
     return ExecConfigResponse(
         id=config.id,
-        org_id=config.org_id,
         hourly_dev_cost=float(config.hourly_dev_cost),
         pre_ai_baselines=config.pre_ai_baselines or {},
         department_budgets=config.department_budgets or {},
@@ -236,22 +190,17 @@ async def get_adoption(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Monthly AI adoption percentage from active session users."""
-    org_id = current_user.org_id
 
-    # Total users in org
-    user_stmt = select(func.count(User.id))
-    if org_id:
-        user_stmt = user_stmt.where(User.org_id == org_id)
-    total_users = await db.scalar(user_stmt) or 0
+    # Total users in the deployment
+    total_users = await db.scalar(select(func.count(User.id))) or 0
 
     # Monthly active users from session aggregates (last 12 months)
-    rows = await _ch_json_scoped(
+    rows = await _ch_json(
         "SELECT toStartOfMonth(first_event_time) AS month, "
         "count(DISTINCT user_id) AS active "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 MONTH "
         "GROUP BY month ORDER BY month",
-        current_user,
     )
 
     monthly = []
@@ -261,17 +210,16 @@ async def get_adoption(
         monthly.append(AdoptionPoint(month=str(r["month"])[:7], adoption_pct=pct))
 
     # Current month active users
-    current_rows = await _ch_json_scoped(
+    current_rows = await _ch_json(
         "SELECT count(DISTINCT user_id) AS active "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= toStartOfMonth(now())",
-        current_user,
     )
     active_users = int(current_rows[0]["active"]) if current_rows else 0
     current_pct = round((active_users / total_users) * 100, 1) if total_users > 0 else 0.0
 
     # Departments covered (groups with at least one active user)
-    dept_map = await resolve_user_departments(db, org_id)
+    dept_map = await resolve_user_departments(db)
     departments_covered = sum(1 for k in dept_map if k != "Unassigned")
 
     return AdoptionResponse(
@@ -318,11 +266,10 @@ async def get_agent_counts(
     in_development = await db.scalar(dev_stmt) or 0
 
     # Active agents with sessions in the last 7 days
-    active_rows = await _ch_json_scoped(
+    active_rows = await _ch_json(
         "SELECT count(DISTINCT agent_id) AS cnt FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND agent_id != '' "
+        "WHERE project_id = '{project_id}' AND agent_id != '' "
         "AND first_event_time >= now() - INTERVAL 7 DAY",
-        current_user,
     )
     active = int(active_rows[0]["cnt"]) if active_rows else 0
 
@@ -356,23 +303,21 @@ async def get_usage_by_category(
     days = _range_days(range_)
 
     # Current period sessions by agent
-    current_rows = await _ch_json_scoped(
+    current_rows = await _ch_json(
         "SELECT agent_id, count() AS cnt FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND agent_id != '' "
+        "WHERE project_id = '{project_id}' AND agent_id != '' "
         "AND first_event_time >= now() - INTERVAL {days:UInt32} DAY "
         "GROUP BY agent_id",
-        current_user,
         {"param_days": str(days)},
     )
 
     # Previous period
-    prev_rows = await _ch_json_scoped(
+    prev_rows = await _ch_json(
         "SELECT agent_id, count() AS cnt FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND agent_id != '' "
+        "WHERE project_id = '{project_id}' AND agent_id != '' "
         "AND first_event_time >= now() - INTERVAL {days2:UInt32} DAY "
         "AND first_event_time < now() - INTERVAL {days:UInt32} DAY "
         "GROUP BY agent_id",
-        current_user,
         {"param_days": str(days), "param_days2": str(days * 2)},
     )
 
@@ -423,12 +368,11 @@ async def get_platform_coverage(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Harness/platform coverage — distinct users and sessions per platform."""
-    rows = await _ch_json_scoped(
+    rows = await _ch_json(
         "SELECT harness, count(DISTINCT user_id) AS users, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND harness != '' "
         "GROUP BY harness ORDER BY sessions DESC",
-        current_user,
     )
     return [
         PlatformCoverageItem(platform=r["harness"], users=int(r["users"]), sessions=int(r["sessions"])) for r in rows
@@ -456,14 +400,13 @@ async def get_platforms(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Per-Harness platform comparison with composite scores."""
-    rows = await _ch_json_scoped(
+    rows = await _ch_json(
         "SELECT harness, count() AS sessions, "
         "count(DISTINCT user_id) AS users, "
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time)), 1) AS avg_latency_ms "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND harness != '' "
+        "WHERE project_id = '{project_id}' AND harness != '' "
         "GROUP BY harness ORDER BY sessions DESC",
-        current_user,
     )
 
     if not rows:
@@ -524,12 +467,11 @@ async def get_velocity(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Weekly trace counts with baseline comparison."""
-    rows = await _ch_json_scoped(
+    rows = await _ch_json(
         "SELECT toStartOfWeek(first_event_time) AS week, count() AS traces "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 WEEK "
         "GROUP BY week ORDER BY week",
-        current_user,
     )
 
     weekly = [VelocityPoint(week=str(r["week"])[:10], traces=int(r["traces"])) for r in rows]
@@ -591,22 +533,20 @@ async def get_top_agents(
     rating_map = {str(r.listing_id): round(float(r.avg_rating), 2) for r in rating_rows}
 
     # Sessions from ClickHouse (last 30 days)
-    session_rows = await _ch_json_scoped(
+    session_rows = await _ch_json(
         "SELECT agent_id, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND agent_id != '' AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY agent_id ORDER BY sessions DESC LIMIT 50",
-        current_user,
     )
     session_map = {r["agent_id"]: int(r["sessions"]) for r in session_rows}
 
     # Weekly trend (last 6 weeks) per agent
-    trend_rows = await _ch_json_scoped(
+    trend_rows = await _ch_json(
         "SELECT agent_id, toStartOfWeek(first_event_time) AS week, count() AS cnt "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND agent_id != '' AND first_event_time >= now() - INTERVAL 6 WEEK "
         "GROUP BY agent_id, week ORDER BY agent_id, week",
-        current_user,
     )
     trend_map: dict[str, list[int]] = {}
     for r in trend_rows:
@@ -692,10 +632,9 @@ async def get_departments(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Per-department breakdown: users, agents, utilization, sessions/user."""
-    org_id = current_user.org_id
     days = _range_days(range_)
 
-    dept_map = await resolve_user_departments(db, org_id)
+    dept_map = await resolve_user_departments(db)
     if not dept_map:
         return DepartmentsResponse(departments=[])
 
@@ -720,12 +659,11 @@ async def get_departments(
     user_sessions: dict[str, int] = {}
     if all_user_ids:
         # Batch query: get session count per user in period
-        session_rows = await _ch_json_scoped(
+        session_rows = await _ch_json(
             "SELECT user_id, count() AS sessions "
-            "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+            "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
             "AND first_event_time >= now() - INTERVAL {days:UInt32} DAY "
             "GROUP BY user_id",
-            current_user,
             {"param_days": str(days)},
         )
         user_sessions = {r["user_id"]: int(r["sessions"]) for r in session_rows}
@@ -771,23 +709,21 @@ async def get_dept_tokens(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Token usage and cost per department with trend."""
-    org_id = current_user.org_id
     days = _range_days(range_)
 
-    dept_map = await resolve_user_departments(db, org_id)
+    dept_map = await resolve_user_departments(db)
     if not dept_map:
         return []
 
     # Current period: tokens and sessions per user. Session telemetry has no
     # monetary cost field, so cost remains zero.
-    current_rows = await _ch_json_scoped(
+    current_rows = await _ch_json(
         "SELECT user_id, sum(input_tokens + output_tokens) AS tokens, "
         "count() AS traces "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' "
+        "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL {days:UInt32} DAY "
         "GROUP BY user_id",
-        current_user,
         {"param_days": str(days)},
     )
     current_by_user: dict[str, dict] = {
@@ -795,14 +731,13 @@ async def get_dept_tokens(
     }
 
     # Previous period: tokens per user (for trend)
-    prev_rows = await _ch_json_scoped(
+    prev_rows = await _ch_json(
         "SELECT user_id, sum(input_tokens + output_tokens) AS tokens "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' "
+        "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL {days2:UInt32} DAY "
         "AND first_event_time < now() - INTERVAL {days:UInt32} DAY "
         "GROUP BY user_id",
-        current_user,
         {"param_days": str(days), "param_days2": str(days * 2)},
     )
     prev_by_user: dict[str, int] = {r["user_id"]: int(r["tokens"]) for r in prev_rows}
@@ -867,12 +802,8 @@ async def get_cost_summary(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Cost savings, spend, and ROI. Requires exec_dashboard_config baselines."""
-    org_id = current_user.org_id
     # Load config
-    config = None
-    if org_id:
-        result = await db.execute(select(ExecDashboardConfig).where(ExecDashboardConfig.org_id == org_id))
-        config = result.scalar_one_or_none()
+    config = (await db.execute(select(ExecDashboardConfig).limit(1))).scalar_one_or_none()
 
     if not config:
         return CostSummaryResponse(
@@ -885,12 +816,11 @@ async def get_cost_summary(
             configured=False,
         )
 
-    monthly_rows = await _ch_json_scoped(
+    monthly_rows = await _ch_json(
         "SELECT toStartOfMonth(first_event_time) AS month "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 MONTH "
         "GROUP BY month ORDER BY month",
-        current_user,
     )
 
     # ponytail: session telemetry has no monetary cost field. Report zero until
@@ -951,7 +881,7 @@ async def get_roi_projections(
     )
 
 
-# Strategic Insights (cross-org analysis from real telemetry)
+# Strategic Insights (deployment analysis from real telemetry)
 # ---------------------------------------------------------------------------
 
 
@@ -1001,33 +931,30 @@ async def get_strategic_insights(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Cross-org strategic insights derived from real telemetry data."""
-    org_id = current_user.org_id
+    """Strategic insights derived from deployment telemetry data."""
 
     # 1. Model comparison from session_stats_agg
-    model_rows = await _ch_json_scoped(
+    model_rows = await _ch_json(
         "SELECT model, "
         "count() AS sessions, "
         "round(avg(input_tokens + output_tokens)) AS avg_tokens "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND model != '' "
+        "WHERE project_id = '{project_id}' AND model != '' "
         "GROUP BY model "
         "HAVING sessions >= 5 "
         "ORDER BY sessions DESC "
         "LIMIT 10",
-        current_user,
     )
 
     # Completion proxy per model from session aggregates.
-    model_success_rows = await _ch_json_scoped(
+    model_success_rows = await _ch_json(
         "SELECT model, "
         "countIf(event_count > 5 AND prompt_count >= 1) AS successes, "
         "count() AS total "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND model != '' "
+        "WHERE project_id = '{project_id}' AND model != '' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY model HAVING total >= 5",
-        current_user,
     )
     model_success_map = {
         r["model"]: round(int(r["successes"]) / int(r["total"]) * 100, 1)
@@ -1065,14 +992,13 @@ async def get_strategic_insights(
             )
 
     # 2. Department gaps
-    dept_map = await resolve_user_departments(db, org_id)
+    dept_map = await resolve_user_departments(db)
     all_user_ids = []
     for uids in dept_map.values():
         all_user_ids.extend(uids)
 
-    user_session_rows = await _ch_json_scoped(
-        "SELECT user_id, count() AS sessions FROM session_stats_agg FINAL WHERE project_id = 'default' GROUP BY user_id",
-        current_user,
+    user_session_rows = await _ch_json(
+        "SELECT user_id, count() AS sessions FROM session_stats_agg FINAL WHERE project_id = '{project_id}' GROUP BY user_id",
     )
     user_sessions = {r["user_id"]: int(r["sessions"]) for r in user_session_rows}
 
@@ -1108,18 +1034,17 @@ async def get_strategic_insights(
     quick_wins = []
 
     # 4. Platform comparison (task completion speed)
-    platform_rows = await _ch_json_scoped(
+    platform_rows = await _ch_json(
         "SELECT harness, "
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time))) AS avg_time_ms, "
         "count() AS sessions, "
         "countIf(event_count > 2) AS completed "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND harness != '' "
+        "WHERE project_id = '{project_id}' AND harness != '' "
         "AND first_event_time != last_event_time "
         "GROUP BY harness "
         "HAVING sessions >= 5 "
         "ORDER BY sessions DESC",
-        current_user,
     )
     platform_comparison = [
         PlatformComparison(
@@ -1132,14 +1057,13 @@ async def get_strategic_insights(
     ]
 
     # 5. Power user analysis
-    user_value_rows = await _ch_json_scoped(
+    user_value_rows = await _ch_json(
         "SELECT user_id, count() AS sessions, sum(input_tokens + output_tokens) AS value "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' "
+        "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id "
         "ORDER BY value DESC",
-        current_user,
     )
 
     total_active = len(user_value_rows)
@@ -1152,14 +1076,13 @@ async def get_strategic_insights(
         power_user_value_pct = 0
 
     # 6. Automatable task estimation (simple tasks = low tokens + high success)
-    auto_rows = await _ch_json_scoped(
+    auto_rows = await _ch_json(
         "SELECT "
         "countIf((input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
         "count() AS total "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' "
+        "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY",
-        current_user,
     )
     simple = int(auto_rows[0]["simple"]) if auto_rows else 0
     total_tasks = int(auto_rows[0]["total"]) if auto_rows else 0
@@ -1206,25 +1129,20 @@ async def get_developer_breakdown(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Per-developer activity breakdown with percentile ranking."""
-    org_id = current_user.org_id
 
-    # Total users in org
-    user_stmt = select(func.count(User.id))
-    if org_id:
-        user_stmt = user_stmt.where(User.org_id == org_id)
-    total_developers = await db.scalar(user_stmt) or 0
+    # Total users in the deployment
+    total_developers = await db.scalar(select(func.count(User.id))) or 0
 
     # Per-user activity from ClickHouse (last 30 days)
-    user_rows = await _ch_json_scoped(
+    user_rows = await _ch_json(
         "SELECT user_id, "
         "count() AS sessions, "
         "sumIf(input_tokens + output_tokens, input_tokens IS NOT NULL) AS tokens "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' "
+        "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id "
         "ORDER BY sessions DESC",
-        current_user,
     )
 
     active_developers = len(user_rows)
@@ -1254,7 +1172,7 @@ async def get_developer_breakdown(
             user_info = {str(r.id): (r.name, r.department or "Unassigned") for r in info_rows}
 
     # Also check user_groups for SSO department
-    dept_map = await resolve_user_departments(db, org_id)
+    dept_map = await resolve_user_departments(db)
     uid_to_dept: dict[str, str] = {}
     for dept_name, uids in dept_map.items():
         for uid in uids:
@@ -1319,26 +1237,23 @@ async def get_inactivity_alerts(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Agents and users that were active in days 15-28 but inactive in last 14 days."""
-    org_id = current_user.org_id
 
     # Agents active 15-28 days ago but NOT in last 14 days
-    prev_agent_rows = await _ch_json_scoped(
+    prev_agent_rows = await _ch_json(
         "SELECT agent_id, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND agent_id != '' "
         "AND first_event_time >= now() - INTERVAL 28 DAY "
         "AND first_event_time < now() - INTERVAL 14 DAY "
         "GROUP BY agent_id HAVING sessions >= 5",
-        current_user,
     )
 
-    recent_agent_rows = await _ch_json_scoped(
+    recent_agent_rows = await _ch_json(
         "SELECT agent_id "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND agent_id != '' "
         "AND first_event_time >= now() - INTERVAL 14 DAY "
         "GROUP BY agent_id",
-        current_user,
     )
     recently_active_agents = {r["agent_id"] for r in recent_agent_rows}
 
@@ -1377,28 +1292,26 @@ async def get_inactivity_alerts(
             )
 
     # Users active 15-28 days ago but NOT in last 14 days
-    prev_user_rows = await _ch_json_scoped(
+    prev_user_rows = await _ch_json(
         "SELECT user_id, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 28 DAY "
         "AND first_event_time < now() - INTERVAL 14 DAY "
         "GROUP BY user_id HAVING sessions >= 5",
-        current_user,
     )
 
-    recent_user_rows = await _ch_json_scoped(
+    recent_user_rows = await _ch_json(
         "SELECT user_id "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 14 DAY "
         "GROUP BY user_id",
-        current_user,
     )
     recently_active_users = {r["user_id"] for r in recent_user_rows}
 
     churned_users = [r for r in prev_user_rows if r["user_id"] not in recently_active_users]
 
     # Resolve user names + departments
-    dept_map = await resolve_user_departments(db, org_id)
+    dept_map = await resolve_user_departments(db)
     uid_to_dept: dict[str, str] = {}
     for dept_name, uids in dept_map.items():
         for uid in uids:
@@ -1470,12 +1383,11 @@ async def get_time_to_value(
         return TimeToValueResponse(agents=[], avg_days_to_100=None)
 
     # Get cumulative session counts per agent per day
-    session_rows = await _ch_json_scoped(
+    session_rows = await _ch_json(
         "SELECT agent_id, min(first_event_time) AS first_session, count() AS total_sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND agent_id != '' "
         "GROUP BY agent_id",
-        current_user,
     )
     session_map: dict[str, dict] = {
         r["agent_id"]: {"first_session": r["first_session"], "total": int(r["total_sessions"])} for r in session_rows
@@ -1486,15 +1398,14 @@ async def get_time_to_value(
     day_100_map: dict[str, str] = {}
     if agents_over_100:
         # Get the date of the 100th session for each agent
-        milestone_rows = await _ch_json_scoped(
+        milestone_rows = await _ch_json(
             "SELECT agent_id, first_event_time AS start_time "
             "FROM ("
             "  SELECT agent_id, first_event_time, "
             "    row_number() OVER (PARTITION BY agent_id ORDER BY first_event_time) AS rn "
-            "  FROM session_stats_agg FINAL WHERE project_id = 'default' "
+            "  FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
             "  AND agent_id IN ({aids:String})"
             ") WHERE rn = 100",
-            current_user,
             {"param_aids": ",".join(f"'{a}'" for a in agents_over_100[:20])},
         )
         for r in milestone_rows:
@@ -1552,8 +1463,7 @@ class AIInsightsResponse(BaseModel):
 
 
 def _ai_insights_cache_key(current_user: User) -> str:
-    owner_id = current_user.org_id or current_user.id
-    return f"exec.ai_insights.{owner_id}"
+    return "exec.ai_insights"
 
 
 def _empty_ai_insights_response() -> AIInsightsResponse:
@@ -1595,59 +1505,50 @@ async def generate_ai_insights(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Generate and cache LLM-powered strategic insights from org telemetry."""
+    """Generate and cache LLM-powered strategic insights from deployment telemetry."""
     from services.strategic_insights import generate_strategic_insights
-
-    org_id = current_user.org_id
 
     # Collect all metrics needed for the LLM
     # 1. Adoption
-    user_stmt = select(func.count(User.id))
-    if org_id:
-        user_stmt = user_stmt.where(User.org_id == org_id)
-    total_users = await db.scalar(user_stmt) or 0
+    total_users = await db.scalar(select(func.count(User.id))) or 0
 
-    active_rows = await _ch_json_scoped(
+    active_rows = await _ch_json(
         "SELECT count(DISTINCT user_id) AS active "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY",
-        current_user,
     )
     active_users = int(active_rows[0]["active"]) if active_rows else 0
     adoption_pct = round((active_users / total_users) * 100, 1) if total_users > 0 else 0
 
     # 2. Model comparison
-    model_rows = await _ch_json_scoped(
+    model_rows = await _ch_json(
         "SELECT model, count() AS sessions, "
         "round(avg(input_tokens + output_tokens)) AS avg_tokens "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND model != '' "
+        "WHERE project_id = '{project_id}' AND model != '' "
         "GROUP BY model HAVING sessions >= 3 "
         "ORDER BY sessions DESC LIMIT 10",
-        current_user,
     )
 
     # 3. Platform comparison
-    platform_rows = await _ch_json_scoped(
+    platform_rows = await _ch_json(
         "SELECT harness, count() AS sessions, "
         "count(DISTINCT user_id) AS users, "
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time)) / 1000) AS avg_task_seconds "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' AND harness != '' "
+        "WHERE project_id = '{project_id}' AND harness != '' "
         "AND first_event_time != last_event_time "
         "GROUP BY harness HAVING sessions >= 3 "
         "ORDER BY sessions DESC",
-        current_user,
     )
 
     # 4. Department gaps
-    dept_map = await resolve_user_departments(db, org_id)
-    user_session_rows = await _ch_json_scoped(
+    dept_map = await resolve_user_departments(db)
+    user_session_rows = await _ch_json(
         "SELECT user_id, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = 'default' "
+        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id",
-        current_user,
     )
     user_sessions = {r["user_id"]: int(r["sessions"]) for r in user_session_rows}
 
@@ -1673,26 +1574,24 @@ async def generate_ai_insights(
     expensive_rows: list[dict] = []
 
     # 6. Automatable estimate
-    auto_rows = await _ch_json_scoped(
+    auto_rows = await _ch_json(
         "SELECT "
         "countIf((input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
         "count() AS total "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' "
+        "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY",
-        current_user,
     )
     simple_count = int(auto_rows[0]["simple"]) if auto_rows else 0
     total_count = int(auto_rows[0]["total"]) if auto_rows else 0
 
     # 7. Developer activity summary
-    dev_rows = await _ch_json_scoped(
+    dev_rows = await _ch_json(
         "SELECT user_id, count() AS sessions "
         "FROM session_stats_agg FINAL "
-        "WHERE project_id = 'default' "
+        "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id ORDER BY sessions DESC",
-        current_user,
     )
 
     # Build metrics dict for LLM

@@ -14,7 +14,7 @@ from loguru import logger as optic
 from observal_shared.migration.archive import _sha256_file, read_manifest
 from observal_shared.migration.ch_export import _ch_query
 from observal_shared.migration.connections import ChConnParams, parse_clickhouse_url
-from observal_shared.migration.constants import CLICKHOUSE_TABLES
+from observal_shared.migration.constants import CLICKHOUSE_TABLES, DEFAULT_PROJECT_ID
 from observal_shared.migration.exceptions import ChecksumMismatchError, ConnectionFailedError, MigrationError
 from observal_shared.migration.results import TelemetryImportResult
 
@@ -48,10 +48,7 @@ async def _ch_partition_has_data(
     name = table_cfg["name"]
     time_col = table_cfg["time_col"]
     if table_cfg["engine"] == "replacing":
-        sql = (
-            f"SELECT 1 AS has_data FROM {name} FINAL "
-            f"WHERE is_deleted = 0 AND toYYYYMM({time_col}) = {yyyymm} LIMIT 1 FORMAT JSON"
-        )
+        sql = f"SELECT 1 AS has_data FROM {name} FINAL WHERE toYYYYMM({time_col}) = {yyyymm} LIMIT 1 FORMAT JSON"
     else:
         sql = f"SELECT 1 AS has_data FROM {name} WHERE toYYYYMM({time_col}) = {yyyymm} LIMIT 1 FORMAT JSON"
     resp = await _ch_query(http_url, db, user, password, sql)
@@ -113,7 +110,6 @@ async def import_ch(
     params: ChConnParams,
     input_dir: Path,
     reporter: ProgressReporter,
-    normalize_project_id: str | None = None,
 ) -> TelemetryImportResult:
     """Import Parquet files into target ClickHouse.
 
@@ -185,7 +181,7 @@ async def import_ch(
                 invalidated.append(tname)
                 continue
             if table_cfg["engine"] == "replacing":
-                sql = f"SELECT 1 FROM {tname} FINAL WHERE is_deleted = 0 LIMIT 1 FORMAT JSON"
+                sql = f"SELECT 1 FROM {tname} FINAL LIMIT 1 FORMAT JSON"
             else:
                 sql = f"SELECT 1 FROM {tname} LIMIT 1 FORMAT JSON"
             resp = await _ch_query(http_url, db, user, password, sql)
@@ -244,9 +240,7 @@ async def import_ch(
                 continue
 
             optic.info("Importing {}", filename)
-            import_path = filepath
-            if normalize_project_id is not None:
-                import_path = _rewrite_project_id(filepath, normalize_project_id)
+            import_path = _rewrite_project_id(filepath, DEFAULT_PROJECT_ID)
             try:
                 await _ch_import(http_url, db, user, password, table_name, import_path)
             finally:

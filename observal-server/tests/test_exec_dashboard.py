@@ -30,14 +30,9 @@ def admin_user_id():
 
 
 @pytest.fixture
-def org_id():
-    return str(uuid.uuid4())
-
-
-@pytest.fixture
 def mock_ch_empty():
     """Mock ClickHouse to return empty results."""
-    with patch("api.routes.exec_dashboard._ch_json_scoped", new_callable=AsyncMock) as mock:
+    with patch("api.routes.exec_dashboard._ch_json", new_callable=AsyncMock) as mock:
         mock.return_value = []
         yield mock
 
@@ -46,7 +41,7 @@ def mock_ch_empty():
 def mock_ch_with_data():
     """Mock ClickHouse with sample data for adoption endpoint."""
 
-    async def fake_ch(sql, current_user, params=None):
+    async def fake_ch(sql, params=None):
         if "toStartOfMonth" in sql and "count(DISTINCT user_id)" in sql:
             return [{"month": "2026-04-01", "active": 5}, {"month": "2026-05-01", "active": 7}]
         if "count(DISTINCT user_id) AS active" in sql and "toStartOfMonth(now())" in sql:
@@ -69,7 +64,7 @@ def mock_ch_with_data():
             ]
         return []
 
-    with patch("api.routes.exec_dashboard._ch_json_scoped", side_effect=fake_ch) as mock:
+    with patch("api.routes.exec_dashboard._ch_json", side_effect=fake_ch) as mock:
         yield mock
 
 
@@ -148,7 +143,6 @@ class TestResponseShapes:
 
         # Mock admin auth
         mock_user = User(id=uuid.uuid4(), email="admin@test.com", name="Admin", role=UserRole.admin)
-        mock_user.org_id = uuid.uuid4()
 
         with patch("api.routes.exec_dashboard.require_role", return_value=lambda: mock_user):
             transport = ASGITransport(app=app)

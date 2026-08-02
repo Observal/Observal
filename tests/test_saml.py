@@ -135,7 +135,6 @@ class TestSamlEndpoints:
         mock_config.sp_x509_cert = cert
         mock_config.jit_provisioning = True
         mock_config.default_role = "user"
-        mock_config.org_id = None
         return mock_config, private_key
 
     @pytest.mark.asyncio
@@ -537,7 +536,6 @@ class TestSamlRelayState:
         mock_config.sp_x509_cert = cert
         mock_config.jit_provisioning = True
         mock_config.default_role = "user"
-        mock_config.org_id = None
         return mock_config, private_key
 
     @pytest.mark.asyncio

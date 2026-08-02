@@ -86,7 +86,6 @@ class SecurityEvent:
     source_ip: str = ""
     user_agent: str = ""
     detail: str = ""
-    org_id: str = ""
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
 
@@ -111,7 +110,6 @@ class SecurityEvent:
             "source_ip": self.source_ip,
             "user_agent": self.user_agent,
             "detail": self.detail,
-            "org_id": self.org_id,
         }
 
 

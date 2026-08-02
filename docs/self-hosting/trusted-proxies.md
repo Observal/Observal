@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Trusted Proxies & Network Security
 
-If you're behind a load balancer or reverse proxy, you MUST configure trusted proxies or rate limiting will break — all traffic will appear to come from a single IP (the proxy's), triggering limits for your entire org at once.
+If you're behind a load balancer or reverse proxy, you MUST configure trusted proxies or rate limiting will break — all traffic will appear to come from a single IP (the proxy's), triggering limits for your entire deployment at once.
 
 ## Quick Setup
 
@@ -139,4 +139,4 @@ Whether agent and component definitions can reference Git repositories on privat
 | `false` (default) | Git URLs pointing to private IPs are blocked; only public repos allowed |
 | `true` | Internal Git repos (e.g., `git@gitlab.internal:org/repo.git`) are accessible for agent/component sources |
 
-**When to set:** Your organization hosts agent source code on an internal GitLab/Gitea/GitHub Enterprise instance that resolves to a private IP. Enable this so `observal publish` and component installs can clone from internal repos.
+**When to set:** Your deployment hosts agent source code on an internal GitLab/Gitea/GitHub Enterprise instance that resolves to a private IP. Enable this so `observal publish` and component installs can clone from internal repos.

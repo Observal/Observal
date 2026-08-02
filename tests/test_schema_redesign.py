@@ -9,47 +9,6 @@ import uuid
 import pytest
 
 
-class TestOrganizationModel:
-    def test_organization_tablename(self):
-        from models.organization import Organization
-
-        assert Organization.__tablename__ == "organizations"
-
-    def test_organization_has_required_columns(self):
-        from models.organization import Organization
-
-        cols = {c.name for c in Organization.__table__.columns}
-        assert "id" in cols
-        assert "name" in cols
-        assert "slug" in cols
-        assert "created_at" in cols
-        assert "updated_at" in cols
-
-    def test_organization_slug_is_unique(self):
-        from models.organization import Organization
-
-        slug_col = Organization.__table__.c.slug
-        assert slug_col.unique or any(
-            uc
-            for uc in Organization.__table__.constraints
-            if hasattr(uc, "columns") and "slug" in [c.name for c in uc.columns]
-        )
-
-
-class TestUserOrgField:
-    def test_user_has_org_id(self):
-        from models.user import User
-
-        cols = {c.name for c in User.__table__.columns}
-        assert "org_id" in cols
-
-    def test_user_org_id_is_nullable(self):
-        from models.user import User
-
-        org_col = User.__table__.c.org_id
-        assert org_col.nullable is True
-
-
 class TestComponentSourceModel:
     def test_component_source_tablename(self):
         from models.component_source import ComponentSource
@@ -66,7 +25,6 @@ class TestComponentSourceModel:
             "provider",
             "component_type",
             "is_public",
-            "owner_org_id",
             "auto_sync_interval",
             "last_synced_at",
             "sync_status",
@@ -86,7 +44,7 @@ class TestComponentSourceModel:
 
 
 class TestComponentTableUpdates:
-    """All component tables must have: is_private, owner_org_id, download_count, unique_agents."""
+    """All component tables retain team visibility and version metrics."""
 
     @pytest.mark.parametrize(
         "model_path,model_name",
@@ -98,14 +56,14 @@ class TestComponentTableUpdates:
             ("models.sandbox", "SandboxListing"),
         ],
     )
-    def test_component_has_org_fields(self, model_path, model_name):
+    def test_component_has_team_visibility_fields(self, model_path, model_name):
         import importlib
 
         mod = importlib.import_module(model_path)
         cls = getattr(mod, model_name)
         cols = {c.name for c in cls.__table__.columns}
         assert "is_private" in cols, f"{model_name} missing is_private"
-        assert "owner_org_id" in cols, f"{model_name} missing owner_org_id"
+        assert "team_id" in cols, f"{model_name} missing team_id"
 
     @pytest.mark.parametrize(
         "model_path,version_name",
@@ -195,11 +153,11 @@ class TestComponentTableUpdates:
 
 
 class TestAgentModelUpdate:
-    def test_agent_has_org_fields(self):
+    def test_agent_has_no_deployment_scope_field(self):
         from models.agent import Agent
 
         cols = {c.name for c in Agent.__table__.columns}
-        assert "owner_org_id" in cols
+        assert "team_id" in cols
 
     def test_agent_has_version_fields(self):
         from models.agent import Agent
@@ -339,16 +297,16 @@ class TestExporterConfigModel:
         from models.exporter_config import ExporterConfig
 
         cols = {c.name for c in ExporterConfig.__table__.columns}
-        required = {"id", "org_id", "exporter_type", "enabled", "config", "created_at", "updated_at"}
+        required = {"id", "exporter_type", "enabled", "config", "created_at", "updated_at"}
         assert required.issubset(cols)
 
-    def test_exporter_config_unique_per_org(self):
+    def test_exporter_config_unique_per_type(self):
         from models.exporter_config import ExporterConfig
 
         table = ExporterConfig.__table__
-        unique_constraints = [uc for uc in table.constraints if hasattr(uc, "columns") and len(uc.columns) == 2]
+        unique_constraints = [uc for uc in table.constraints if hasattr(uc, "columns")]
         col_sets = [frozenset(c.name for c in uc.columns) for uc in unique_constraints]
-        assert frozenset({"org_id", "exporter_type"}) in col_sets
+        assert frozenset({"exporter_type"}) in col_sets
 
 
 class TestRemovedTypes:
@@ -374,10 +332,8 @@ class TestRemovedTypes:
             ComponentDownloadRecord,
             ComponentSource,
             ExporterConfig,
-            Organization,
         )
 
-        assert Organization.__tablename__ == "organizations"
         assert ComponentSource.__tablename__ == "component_sources"
         assert AgentComponent.__tablename__ == "agent_components"
         assert AgentDownloadRecord.__tablename__ == "agent_download_records"

@@ -37,7 +37,6 @@ async def insert_audit_log(events: list[dict]):
             "ip_address": e.get("ip_address", ""),
             "user_agent": e.get("user_agent", ""),
             "detail": e.get("detail", ""),
-            "org_id": e.get("org_id", ""),
             "sensitivity": e.get("sensitivity", "standard"),
             "request_id": e.get("request_id", ""),
             "outcome": e.get("outcome", ""),

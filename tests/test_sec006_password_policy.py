@@ -143,7 +143,6 @@ def _make_mock_user(**overrides):
     user.role = overrides.get("role", UserRole.admin)
     user.auth_provider = overrides.get("auth_provider", "local")
     user.created_at = overrides.get("created_at", datetime.now(UTC))
-    user.org_id = overrides.get("org_id", uuid.uuid4())
     user.avatar_url = None
     user._trace_privacy = False
     user.verify_password = MagicMock(return_value=True)
@@ -162,7 +161,6 @@ async def test_init_weak_password_returns_422():
     mock_db.scalar = AsyncMock(return_value=0)
     mock_user = _make_mock_user()
 
-    # get_or_create_default_org and generate_unique_username need db
     async def _mock_get_db():
         yield mock_db
 
@@ -173,9 +171,6 @@ async def test_init_weak_password_returns_422():
     try:
         async with _make_async_client() as client:
             with (
-                patch(
-                    "api.routes.auth.get_or_create_default_org", new=AsyncMock(return_value=MagicMock(id=uuid.uuid4()))
-                ),
                 patch("api.routes.auth.generate_unique_username", new=AsyncMock(return_value="admin")),
                 patch("api.routes.auth.get_redis", return_value=fake_redis),
             ):

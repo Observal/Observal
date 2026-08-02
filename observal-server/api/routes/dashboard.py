@@ -30,6 +30,7 @@ from models.prompt import PromptListing, PromptVersion
 from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing, SkillVersion
 from models.user import User, UserRole
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 from schemas.dashboard import (
     ComponentLeaderboardItem,
     GraphRagStats,
@@ -57,6 +58,7 @@ def _range_days(range_: str | None) -> int:
 
 async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
     """Run a ClickHouse query and return data rows."""
+    sql = sql.replace("project_id = '{project_id}'", f"project_id = '{DEFAULT_PROJECT_ID}'")
     # Optimize FINAL scans: process partitions independently instead of a
     # single cross-partition merge pass.  Benchmarks show ~2x speedup.
     if "FINAL" in sql and "SETTINGS" not in sql:
@@ -68,25 +70,6 @@ async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
     except Exception as e:
         optic.warning("clickhouse_query_failed", error=str(e))
     return []
-
-
-def _project_id_for_user(current_user) -> str:
-    """ClickHouse project_id scoped to the requesting user's org."""
-    if current_user is not None and current_user.org_id is not None:
-        return str(current_user.org_id)
-    return "default"
-
-
-async def _ch_json_scoped(sql: str, current_user, params: dict | None = None) -> list[dict]:
-    """_ch_json variant for admin endpoints that scopes queries to the user's org.
-
-    Replaces the hardcoded ``project_id = 'default'`` literal with a
-    parameterised placeholder and injects ``param_pid`` automatically.
-    """
-    pid = _project_id_for_user(current_user)
-    scoped_sql = sql.replace("project_id = 'default'", "project_id = {pid:String}")
-    scoped_params = {**(params or {}), "param_pid": pid}
-    return await _ch_json(scoped_sql, scoped_params)
 
 
 @router.get("/overview/stats", response_model=OverviewStats)

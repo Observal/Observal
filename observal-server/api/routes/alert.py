@@ -49,11 +49,6 @@ async def list_alerts(
     stmt = select(AlertRule).order_by(AlertRule.created_at.desc())
     if ROLE_HIERARCHY.get(current_user.role, 999) > ROLE_HIERARCHY[UserRole.admin]:
         stmt = stmt.where(AlertRule.created_by == current_user.id)
-    elif current_user.org_id is not None:
-        # Admin sees all alerts within their org (filter through user table)
-        org_user_ids = select(User.id).where(User.org_id == current_user.org_id)
-        stmt = stmt.where(AlertRule.created_by.in_(org_user_ids))
-    # else: admin with no org (local mode) - no filter, sees everything
     result = await db.execute(stmt)
     alerts = result.scalars().all()
     return [AlertRuleResponse.from_rule(r) for r in alerts]
@@ -95,11 +90,6 @@ async def update_alert(
     rule = await db.get(AlertRule, alert_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
-    # Org-scope check: ensure the alert belongs to the user's org
-    if current_user.org_id is not None:
-        creator = (await db.execute(select(User).where(User.id == rule.created_by))).scalar_one_or_none()
-        if not creator or creator.org_id != current_user.org_id:
-            raise HTTPException(404, "Alert rule not found")
     is_admin_or_above = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if rule.created_by != current_user.id and not is_admin_or_above:
         raise HTTPException(403, "Not authorized to modify this alert rule")
@@ -123,11 +113,6 @@ async def delete_alert(
     rule = await db.get(AlertRule, alert_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
-    # Org-scope check: ensure the alert belongs to the user's org
-    if current_user.org_id is not None:
-        creator = (await db.execute(select(User).where(User.id == rule.created_by))).scalar_one_or_none()
-        if not creator or creator.org_id != current_user.org_id:
-            raise HTTPException(404, "Alert rule not found")
     is_admin_or_above = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if rule.created_by != current_user.id and not is_admin_or_above:
         raise HTTPException(403, "Not authorized to delete this alert rule")
@@ -148,11 +133,6 @@ async def get_alert_history(
     rule = await db.get(AlertRule, alert_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
-    # Org-scope check: ensure the alert belongs to the user's org
-    if current_user.org_id is not None:
-        creator = (await db.execute(select(User).where(User.id == rule.created_by))).scalar_one_or_none()
-        if not creator or creator.org_id != current_user.org_id:
-            raise HTTPException(404, "Alert rule not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if rule.created_by != current_user.id and not is_admin:
         raise HTTPException(403, "Not authorized")

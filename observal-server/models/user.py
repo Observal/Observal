@@ -11,7 +11,7 @@ import os
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -44,7 +44,6 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.user)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     auth_provider: Mapped[str] = mapped_column(String(50), default="local", server_default="local")
     sso_subject_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -13,12 +13,12 @@ import strawberry
 import structlog
 from starlette.requests import Request
 
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
+from services import dynamic_settings as ds
 from services.jwt_service import decode_access_token
 from services.redis import subscribe
 
 logger = structlog.get_logger(__name__)
-
-_DEFAULT_PROJECT = "default"
 
 
 @strawberry.type
@@ -68,7 +68,11 @@ async def _resolve_user_context_from_request(request) -> dict:
     from database import async_session
     from models.user import User
 
-    default = {"project_id": _DEFAULT_PROJECT, "user_id": None, "user_role": None, "trace_privacy": False}
+    default = {
+        "user_id": None,
+        "user_role": None,
+        "trace_privacy": ds.get_sync_bool("security.trace_privacy"),
+    }
 
     auth: str | None = None
     if request is not None:
@@ -91,23 +95,14 @@ async def _resolve_user_context_from_request(request) -> dict:
         return default
 
     try:
-        from models.organization import Organization
-
         async with async_session() as session:
-            result = await session.execute(
-                select(User.org_id, User.role, Organization.trace_privacy)
-                .outerjoin(Organization, User.org_id == Organization.id)
-                .where(User.id == uid)
-            )
-            row = result.one_or_none()
-            if not row:
+            role = await session.scalar(select(User.role).where(User.id == uid))
+            if role is None:
                 return default
-            org_id, role, trace_privacy = row
             return {
-                "project_id": str(org_id) if org_id else _DEFAULT_PROJECT,
                 "user_id": str(uid),
-                "user_role": role.value if role else None,
-                "trace_privacy": bool(trace_privacy),
+                "user_role": role.value,
+                "trace_privacy": ds.get_sync_bool("security.trace_privacy"),
             }
     except Exception:
         logger.debug("Failed to resolve user context for GraphQL", exc_info=True)
@@ -115,13 +110,12 @@ async def _resolve_user_context_from_request(request) -> dict:
 
 
 def get_context(
-    project_id: str = _DEFAULT_PROJECT,
     user_id: str | None = None,
     user_role: str | None = None,
     trace_privacy: bool = False,
 ) -> dict:
     return {
-        "project_id": project_id,
+        "project_id": DEFAULT_PROJECT_ID,
         "user_id": user_id,
         "user_role": user_role,
         "trace_privacy": trace_privacy,
@@ -130,7 +124,7 @@ def get_context(
 
 async def get_context_dep(request: Request = None) -> dict:
     ctx = await _resolve_user_context_from_request(request)
-    return get_context(**ctx)
+    return get_context(user_id=ctx["user_id"], user_role=ctx["user_role"], trace_privacy=ctx["trace_privacy"])
 
 
 schema = strawberry.Schema(query=Query, subscription=Subscription)

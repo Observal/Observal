@@ -21,6 +21,8 @@ import json
 
 import structlog
 
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
+
 from ._deps import get_db_session
 from .facets import aggregate_facets, extract_and_cache_facets, load_cached_facets_batch
 from .sections import generate_sections
@@ -359,7 +361,7 @@ async def _run_pipeline(
             period_end=period_end,
             agent_name=agent_name,
             agent_version=agent_version,
-            project_id="default",
+            project_id=DEFAULT_PROJECT_ID,
         )
         if version_impact:
             data_block += f"\n\n## Version Impact\n{json.dumps(version_impact, indent=2)}"

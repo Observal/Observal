@@ -41,9 +41,6 @@ class McpListing(Base):
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
     is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    owner_org_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
-    )
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=True
     )

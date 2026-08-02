@@ -33,7 +33,6 @@ def _make_user(role_value: str = "user"):
     user.id = uuid.uuid4()
     user.email = "test@example.com"
     user.username = "testuser"
-    user.org_id = None
     user.role = UserRole(role_value)
     return user
 
@@ -82,7 +81,6 @@ def _make_agent(owner_id: uuid.UUID | None = None, *, with_approved_version: boo
     agent.qualified_name = "testuser/ruffchecker"
     agent.owner = "testuser"
     agent.created_by = owner_id
-    agent.owner_org_id = None
     agent.co_authors = []
 
     if with_approved_version:

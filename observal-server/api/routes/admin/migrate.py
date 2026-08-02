@@ -20,7 +20,6 @@ from models.migration_job import MigrationJob, MigrationOperation, MigrationScop
 from models.user import User, UserRole
 from schemas.migration import (
     ArtifactMeta,
-    CurrentOrgResponse,
     DownloadTokenResponse,
     MigrationJobResponse,
     StartExportRequest,
@@ -30,7 +29,6 @@ from services.redis import _get_arq_pool
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
-from .helpers import _get_user_org
 
 # ── Constants ──────────────────────────────────────────────
 
@@ -45,10 +43,8 @@ _MAGIC_PARQUET = b"PAR1"
 # ── Helpers ────────────────────────────────────────────────
 
 
-async def _check_concurrency(
-    db: AsyncSession, operation_type: MigrationOperation, data_scope: MigrationScope, org_id: uuid.UUID | None
-) -> None:
-    """Reject if a job with same operation+scope+org is already queued/running.
+async def _check_concurrency(db: AsyncSession, operation_type: MigrationOperation, data_scope: MigrationScope) -> None:
+    """Reject if a job with the same operation and scope is already queued or running.
 
     Uses SELECT ... FOR UPDATE to prevent TOCTOU races between the check and
     the subsequent INSERT in the calling endpoint.
@@ -58,7 +54,6 @@ async def _check_concurrency(
         .where(
             MigrationJob.operation_type == operation_type,
             MigrationJob.data_scope == data_scope,
-            MigrationJob.org_id == org_id,
             MigrationJob.status.in_([MigrationStatus.queued, MigrationStatus.running]),
         )
         .with_for_update(skip_locked=True)
@@ -186,10 +181,7 @@ async def start_export(
             detail="Standalone ClickHouse export is not supported; use 'both' or 'postgres'",
         )
 
-    org = await _get_user_org(db, current_user)
-    org_id = org.id
-
-    await _check_concurrency(db, MigrationOperation.export, body.scope, org_id)
+    await _check_concurrency(db, MigrationOperation.export, body.scope)
 
     job = MigrationJob(
         operation_type=MigrationOperation.export,
@@ -198,7 +190,6 @@ async def start_export(
         progress_phase="queued",
         progress_message="Export queued",
         created_by=current_user.id,
-        org_id=org_id,
     )
     db.add(job)
     await db.flush()
@@ -214,7 +205,6 @@ async def start_export(
             target_id=str(job.id),
             target_type="migration_job",
             detail=f"Migration export started (scope={body.scope.value})",
-            org_id=str(org_id),
         )
     )
 
@@ -229,8 +219,6 @@ async def start_export(
 async def start_import(
     files: list[UploadFile],
     scope: MigrationScope = MigrationScope.both,
-    org_id: str | None = None,
-    project_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ):
@@ -239,10 +227,7 @@ async def start_import(
 
     await _validate_upload_files(files, scope)
 
-    user_org = await _get_user_org(db, current_user)
-    effective_org_id = user_org.id
-
-    await _check_concurrency(db, MigrationOperation.import_, scope, effective_org_id)
+    await _check_concurrency(db, MigrationOperation.import_, scope)
 
     job = MigrationJob(
         operation_type=MigrationOperation.import_,
@@ -251,7 +236,6 @@ async def start_import(
         progress_phase="queued",
         progress_message="Import queued",
         created_by=current_user.id,
-        org_id=effective_org_id,
     )
     db.add(job)
     await db.flush()
@@ -271,7 +255,6 @@ async def start_import(
             target_id=str(job.id),
             target_type="migration_job",
             detail=f"Migration import started (scope={scope.value}, files={len(files)})",
-            org_id=str(effective_org_id),
         )
     )
 
@@ -294,10 +277,7 @@ async def start_validate(
 
     await _validate_upload_files(files, scope)
 
-    org = await _get_user_org(db, current_user)
-    org_id = org.id
-
-    await _check_concurrency(db, MigrationOperation.validate, scope, org_id)
+    await _check_concurrency(db, MigrationOperation.validate, scope)
 
     job = MigrationJob(
         operation_type=MigrationOperation.validate,
@@ -306,7 +286,6 @@ async def start_validate(
         progress_phase="queued",
         progress_message="Validation queued",
         created_by=current_user.id,
-        org_id=org_id,
     )
     db.add(job)
     await db.flush()
@@ -326,7 +305,6 @@ async def start_validate(
             target_id=str(job.id),
             target_type="migration_job",
             detail=f"Migration validate started (scope={scope.value}, files={len(files)})",
-            org_id=str(org_id),
         )
     )
 
@@ -484,13 +462,3 @@ async def download_artifact(
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{os.path.basename(artifact_path)}"'},
     )
-
-
-@router.get("/migrate/current-org")
-async def get_current_org(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.super_admin)),
-) -> CurrentOrgResponse:
-    """Return the current org_id and project_id for pre-filling import fields."""
-    org = await _get_user_org(db, current_user)
-    return CurrentOrgResponse(org_id=str(org.id), project_id=str(org.id))

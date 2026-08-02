@@ -94,11 +94,7 @@ def _build_ch_export_query(table_cfg: dict, yyyymm: int, *, cutoff: str | None =
     name = table_cfg["name"]
     time_col = table_cfg["time_col"]
     where_parts: list[str] = []
-    if table_cfg["engine"] == "replacing":
-        final = " FINAL"
-        where_parts.append("is_deleted = 0")
-    else:
-        final = ""
+    final = " FINAL" if table_cfg["engine"] == "replacing" else ""
     where_parts.append(f"toYYYYMM({time_col}) = {yyyymm}")
     if cutoff:
         where_parts.append(f"{time_col} < {{cutoff:String}}")
@@ -111,11 +107,7 @@ def _build_ch_count_query(table_cfg: dict, yyyymm: int, *, cutoff: str | None = 
     name = table_cfg["name"]
     time_col = table_cfg["time_col"]
     where_parts: list[str] = []
-    if table_cfg["engine"] == "replacing":
-        final = " FINAL"
-        where_parts.append("is_deleted = 0")
-    else:
-        final = ""
+    final = " FINAL" if table_cfg["engine"] == "replacing" else ""
     where_parts.append(f"toYYYYMM({time_col}) = {yyyymm}")
     if cutoff:
         where_parts.append(f"{time_col} < {{cutoff:String}}")
@@ -133,10 +125,7 @@ def _build_ch_time_range_query(table_cfg: dict) -> str:
     name = table_cfg["name"]
     time_col = table_cfg["time_col"]
     if table_cfg["engine"] == "replacing":
-        return (
-            f"SELECT min({time_col}) AS min_t, max({time_col}) AS max_t "
-            f"FROM {name} FINAL WHERE is_deleted = 0 FORMAT JSON"
-        )
+        return f"SELECT min({time_col}) AS min_t, max({time_col}) AS max_t FROM {name} FINAL FORMAT JSON"
     return f"SELECT min({time_col}) AS min_t, max({time_col}) AS max_t FROM {name} FORMAT JSON"
 
 

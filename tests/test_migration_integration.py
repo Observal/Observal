@@ -76,12 +76,12 @@ class TestExportValidateRoundTrip:
     def test_export_archive_passes_checksum_validation(self, tmp_path):
         """Exported archive checksums match manifest entries."""
         tables = {
-            "organizations": [
-                {"id": str(uuid.uuid4()), "name": "Org A"},
-                {"id": str(uuid.uuid4()), "name": "Org B"},
+            "enterprise_config": [
+                {"id": str(uuid.uuid4()), "key": "security.trace_privacy", "value": "false"},
+                {"id": str(uuid.uuid4()), "key": "retention.enabled", "value": "true"},
             ],
             "users": [
-                {"id": str(uuid.uuid4()), "email": "a@test.com", "org_id": str(uuid.uuid4())},
+                {"id": str(uuid.uuid4()), "email": "a@test.com"},
             ],
         }
 
@@ -103,7 +103,7 @@ class TestExportValidateRoundTrip:
     def test_export_archive_row_counts_match_manifest(self, tmp_path):
         """Row counts in JSONL files match manifest entries."""
         tables = {
-            "organizations": [{"id": str(uuid.uuid4()), "name": f"Org {i}"} for i in range(5)],
+            "enterprise_config": [{"id": str(uuid.uuid4()), "key": f"setting.{i}", "value": "value"} for i in range(5)],
         }
 
         archive_path = _create_test_archive(tmp_path, tables)
@@ -123,7 +123,7 @@ class TestExportValidateRoundTrip:
     def test_corrupted_archive_fails_validation(self, tmp_path):
         """Archive with modified content fails checksum validation."""
         tables = {
-            "organizations": [{"id": str(uuid.uuid4()), "name": "Test Org"}],
+            "enterprise_config": [{"id": str(uuid.uuid4()), "key": "test", "value": "value"}],
         }
 
         archive_path = _create_test_archive(tmp_path, tables)
@@ -137,12 +137,12 @@ class TestExportValidateRoundTrip:
         manifest = json.loads((extract_dir / "manifest.json").read_text())
 
         # Corrupt the JSONL file
-        jsonl_path = extract_dir / "pg" / "organizations.jsonl"
+        jsonl_path = extract_dir / "pg" / "enterprise_config.jsonl"
         jsonl_path.write_text('{"id": "corrupted", "name": "bad"}\n')
 
         # Verify checksum no longer matches
         actual_checksum = _sha256_file(jsonl_path)
-        expected_checksum = manifest["tables"]["organizations"]["checksum"]
+        expected_checksum = manifest["tables"]["enterprise_config"]["checksum"]
         assert actual_checksum != expected_checksum
 
 
@@ -158,7 +158,7 @@ class TestIdempotentReImport:
         """ON CONFLICT (id) DO NOTHING ensures idempotent PG import."""
         from observal_shared.migration.encoding import _build_insert
 
-        table = "organizations"
+        table = "enterprise_config"
         columns = ["id", "name"]
         col_types = {"id": "uuid", "name": "text"}
 
@@ -170,7 +170,7 @@ class TestIdempotentReImport:
 
         # Simulate: same row inserted twice, second is a no-op
         existing_ids = set()
-        rows = [{"id": "abc-123", "name": "Org A"}, {"id": "abc-123", "name": "Org A"}]
+        rows = [{"id": "abc-123", "key": "test", "value": "value"}, {"id": "abc-123", "key": "test", "value": "value"}]
 
         inserted = 0
         skipped = 0

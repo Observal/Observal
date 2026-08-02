@@ -48,7 +48,7 @@ The URL for SAML Single Logout (optional).
 
 **Affects:** When set, logging out of Observal also triggers a logout at the IdP, ending all SSO sessions. When blank, only the Observal session is terminated.
 
-**When to set:** Organizations that require centralized session termination (e.g., when an employee is offboarded and all sessions must end immediately).
+**When to set:** Deployments that require centralized session termination, for example when an employee is offboarded and all sessions must end immediately.
 
 ### IdP Certificate {#idp-certificate}
 
@@ -93,7 +93,7 @@ Automatically create Observal user accounts when someone authenticates via SAML 
 | `true` (default) | New users are created on first SSO login with the configured default role |
 | `false` | Users must be pre-created manually before they can log in via SSO |
 
-**When to disable:** Organizations that want explicit control over who can access Observal and prefer manual user creation.
+**When to disable:** Deployments that want explicit control over who can access Observal and prefer manual user creation.
 
 ### Default Role {#default-role}
 

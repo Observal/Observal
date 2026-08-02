@@ -117,7 +117,6 @@ def _make_user(*, role: UserRole = UserRole.user) -> User:
     user.role = role
     user.email = "test@example.com"
     user.username = "testuser"
-    user.org_id = None
     return user
 
 
@@ -265,7 +264,6 @@ def _make_user() -> User:
     user.role = UserRole.user
     user.email = "test@example.com"
     user.username = "testuser"
-    user.org_id = None
     return user
 
 

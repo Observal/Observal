@@ -16,7 +16,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
-from api.deps import get_db, get_project_id, require_role
+from api.deps import get_db, require_role
 from config import settings
 from models.agent import Agent
 from models.enterprise_config import RESTART_PENDING_KEY, EnterpriseConfig
@@ -25,6 +25,7 @@ from models.insight_report import InsightReport
 from models.insight_session_facets import InsightSessionFacets
 from models.insight_session_meta import InsightSessionMeta
 from models.user import User, UserRole
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 from schemas.admin import EnterpriseConfigResponse, EnterpriseConfigUpdate, SettingRevokedResponse
 from services.config_validator import validate_runtime_config_async
 from services.insights import _normalize_model_id
@@ -382,9 +383,9 @@ async def purge_traces_and_insights(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Danger-zone purge: delete all telemetry traces/sessions and insight reports for this org."""
+    """Danger-zone purge: delete all deployment telemetry and insight reports."""
     optic.warning("danger purge traces+insights requested by user={}", current_user.id)
-    project_id = get_project_id(current_user)
+    project_id = DEFAULT_PROJECT_ID
 
     from services.clickhouse.client import _query as ch_query
 
@@ -399,9 +400,6 @@ async def purge_traces_and_insights(
             optic.warning("danger purge failed for ClickHouse table {}: {}", table, e)
 
     agent_ids_stmt = select(Agent.id)
-    if current_user.org_id is not None:
-        agent_ids_stmt = agent_ids_stmt.where(Agent.owner_org_id == current_user.org_id)
-
     report_result = await db.execute(delete(InsightReport).where(InsightReport.agent_id.in_(agent_ids_stmt)))
     facets_result = await db.execute(
         delete(InsightSessionFacets).where(InsightSessionFacets.agent_id.in_(agent_ids_stmt))
@@ -420,7 +418,7 @@ async def purge_traces_and_insights(
             actor_role=current_user.role.value,
             target_id="danger.purge_traces_insights",
             target_type="danger_zone",
-            detail="Purged telemetry traces/session data and insight reports for current project/org",
+            detail="Purged deployment telemetry traces/session data and insight reports",
         )
     )
 

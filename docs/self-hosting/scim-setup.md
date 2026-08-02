@@ -11,9 +11,8 @@ This guide covers configuring SCIM 2.0 user provisioning between your identity p
 
 Before configuring SCIM, verify the following:
 
-2. **SAML or OIDC SSO is configured.** Users provisioned via SCIM will authenticate through your IdP. Ensure SSO login works before enabling SCIM.
-3. **Admin database access.** You will need `psql` access to the Observal PostgreSQL database to insert a SCIM bearer token.
-4. **Organization exists.** At least one organization must exist in the `organizations` table. The SCIM token is scoped to a specific `org_id`.
+1. **SAML or OIDC SSO is configured.** Users provisioned via SCIM will authenticate through your IdP. Ensure SSO login works before enabling SCIM.
+2. **Admin database access.** You will need `psql` access to the Observal PostgreSQL database to insert a SCIM bearer token.
 
 ---
 
@@ -74,10 +73,9 @@ export SCIM_TOKEN_HASH=$(echo -n "$SCIM_TOKEN" | sha256sum | awk '{print $1}')
 ```
 
 ```sql
-INSERT INTO scim_tokens (id, org_id, token_hash, description, active, created_at)
+INSERT INTO scim_tokens (id, token_hash, description, active, created_at)
 VALUES (
   gen_random_uuid(),
-  'YOUR_ORG_ID',
   '<SCIM_TOKEN_HASH>',
   'Primary SCIM token for Okta',
   true,
@@ -125,7 +123,7 @@ token hash does not match any active record.
 1. In the Azure portal, go to **Microsoft Entra ID > Enterprise applications** and select your Observal application.
 2. Navigate to **Provisioning** and set **Provisioning Mode** to **Automatic**.
 3. Under **Admin Credentials**, enter:
-   - **Tenant URL:** `https://your-observal-instance.example.com/api/v1/scim`
+   - **SCIM URL:** `https://your-observal-instance.example.com/api/v1/scim`
    - **Secret Token:** paste the raw bearer token
 4. Click **Test Connection** to validate.
 5. Under **Mappings**, configure attribute mappings. The required attributes are:
@@ -482,7 +480,7 @@ Without SCIM, user accounts are only created via SAML JIT (just-in-time) provisi
 - **Token mismatch.** The hash of the token your IdP sends does not match any `token_hash` in the `scim_tokens` table. Regenerate the token and re-enter it in your IdP.
 - **Token deactivated.** Check that the token record has `active = true`:
   ```sql
-  SELECT id, org_id, active, created_at FROM scim_tokens;
+  SELECT id, active, created_at FROM scim_tokens;
   ```
 - **Wrong endpoint URL.** Ensure the IdP is pointing to `/api/v1/scim` (not `/scim` or `/api/scim`).
 - **TLS / proxy issues.** If Observal is behind a reverse proxy, verify the `Authorization` header is being forwarded and not stripped.

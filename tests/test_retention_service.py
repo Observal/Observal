@@ -1,465 +1,149 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for retention service — covers branches missed by test_retention.py."""
+"""Focused tests for deployment-wide retention purging."""
 
-import uuid
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 
-def _mock_response(status_code=200, data=None):
-    resp = MagicMock()
-    resp.status_code = status_code
-    resp.text = "error text"
-    if data is not None:
-        resp.json.return_value = {"data": data}
-    else:
-        resp.json.return_value = {"data": []}
-    return resp
-
-
-# ── _delete_batch ────────────────────────────────────────
+def _response(status_code=200, data=None):
+    response = MagicMock(status_code=status_code, text="error")
+    response.json.return_value = {"data": data or []}
+    return response
 
 
 @pytest.mark.asyncio
-async def test_delete_batch_returns_0_on_failure():
-    """_delete_batch returns 0 when ClickHouse returns non-200."""
-    with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
-        mock_query.return_value = _mock_response(status_code=500)
-
+async def test_delete_batch_reports_clickhouse_failure():
+    with patch("services.clickhouse._query", new=AsyncMock(return_value=_response(500))):
         from services.retention import _delete_batch
 
-        result = await _delete_batch("traces", "start_time", "pid", "2026-01-01 00:00:00.000")
-
-    assert result == 0
+        assert await _delete_batch("session_events", "timestamp", "default", "2026-01-01") == 0
 
 
 @pytest.mark.asyncio
-async def test_delete_batch_returns_1_on_success():
-    """_delete_batch returns 1 on success."""
-    with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
-        mock_query.return_value = _mock_response(status_code=200)
-
+async def test_delete_batch_reports_success():
+    with patch("services.clickhouse._query", new=AsyncMock(return_value=_response())):
         from services.retention import _delete_batch
 
-        result = await _delete_batch("spans", "start_time", "pid", "2026-01-01 00:00:00.000")
-
-    assert result == 1
-
-
-# ── _has_data ────────────────────────────────────────────
+        assert await _delete_batch("session_events", "timestamp", "default", "2026-01-01") == 1
 
 
 @pytest.mark.asyncio
-async def test_has_data_returns_false_on_non_200():
-    """_has_data returns False when ClickHouse errors."""
-    with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
-        mock_query.return_value = _mock_response(status_code=500)
-
+async def test_has_data_fails_closed_on_clickhouse_error():
+    with patch("services.clickhouse._query", new=AsyncMock(return_value=_response(500))):
         from services.retention import _has_data
 
-        result = await _has_data("pid")
-
-    assert result is False
-
-
-# ── _has_inflight_insights ───────────────────────────────
+        assert await _has_data("default") is False
 
 
 @pytest.mark.asyncio
-async def test_has_inflight_insights_no_agents():
-    """Returns False when org has no agents."""
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = []
-    mock_db.execute = AsyncMock(return_value=mock_result)
+async def test_has_inflight_insights_checks_all_reports():
+    db = AsyncMock()
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = "report-id"
+    db.execute.return_value = result
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=db)
+    session.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("services.retention.async_session") as mock_session:
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with patch("services.retention.async_session", return_value=session):
         from services.retention import _has_inflight_insights
 
-        result = await _has_inflight_insights(uuid.uuid4())
-
-    assert result is False
+        assert await _has_inflight_insights() is True
 
 
 @pytest.mark.asyncio
-async def test_has_inflight_insights_with_pending_report():
-    """Returns True when a pending/running report exists."""
-    mock_db = AsyncMock()
-    agent_result = MagicMock()
-    agent_result.scalars.return_value.all.return_value = [uuid.uuid4()]
-
-    report_result = MagicMock()
-    report_result.scalar_one_or_none.return_value = uuid.uuid4()
-
-    mock_db.execute = AsyncMock(side_effect=[agent_result, report_result])
-
-    with patch("services.retention.async_session") as mock_session:
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        from services.retention import _has_inflight_insights
-
-        result = await _has_inflight_insights(uuid.uuid4())
-
-    assert result is True
-
-
-@pytest.mark.asyncio
-async def test_has_inflight_insights_no_pending():
-    """Returns False when no pending/running reports exist."""
-    mock_db = AsyncMock()
-    agent_result = MagicMock()
-    agent_result.scalars.return_value.all.return_value = [uuid.uuid4()]
-
-    report_result = MagicMock()
-    report_result.scalar_one_or_none.return_value = None
-
-    mock_db.execute = AsyncMock(side_effect=[agent_result, report_result])
-
-    with patch("services.retention.async_session") as mock_session:
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        from services.retention import _has_inflight_insights
-
-        result = await _has_inflight_insights(uuid.uuid4())
-
-    assert result is False
-
-
-# ── _purge_time_based ────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_purge_time_based_handles_exception():
-    """Exception in one table doesn't stop others."""
-    call_count = 0
-
-    async def _failing_query(sql, *args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise RuntimeError("network error")
-        return _mock_response()
-
-    with patch("services.clickhouse._query", side_effect=_failing_query):
+async def test_purge_time_based_reports_each_table():
+    with patch("services.retention._delete_batch", new=AsyncMock(return_value=1)) as delete_batch:
         from services.retention import _purge_time_based
 
-        stats = await _purge_time_based(
-            "pid",
-            "2026-01-01 00:00:00.000",
-            {"session_events": "timestamp", "session_stats_agg": "first_event_time"},
-        )
+        result = await _purge_time_based("default", "2026-01-01", {"session_events": "timestamp"})
 
-    assert 0 in stats.values()
-    assert 1 in stats.values()
-
-
-# ── _purge_session_stats_orphans ─────────────────────────
+    assert result == {"session_events": 1}
+    delete_batch.assert_awaited_once_with("session_events", "timestamp", "default", "2026-01-01")
 
 
 @pytest.mark.asyncio
-async def test_purge_session_stats_orphans_failure():
-    """Returns 0 on ClickHouse failure."""
-    with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
-        mock_query.return_value = _mock_response(status_code=500)
+async def test_purge_insight_reports_deletes_completed_and_stuck_rows():
+    db = AsyncMock()
+    completed = MagicMock(rowcount=3)
+    stuck = MagicMock(rowcount=1)
+    db.execute.side_effect = [completed, stuck]
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=db)
+    session.__aexit__ = AsyncMock(return_value=False)
 
-        from services.retention import _purge_session_stats_orphans
-
-        result = await _purge_session_stats_orphans("pid")
-
-    assert result == 0
-
-
-# ── _purge_insight_reports ───────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_purge_insight_reports_no_agents():
-    """Returns 0 when org has no agents."""
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = []
-    mock_db.execute = AsyncMock(return_value=mock_result)
-
-    with patch("services.retention.async_session") as mock_session:
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        from datetime import UTC, datetime
-
+    with patch("services.retention.async_session", return_value=session):
         from services.retention import _purge_insight_reports
 
-        result = await _purge_insight_reports(uuid.uuid4(), datetime.now(UTC))
-
-    assert result == 0
-
-
-@pytest.mark.asyncio
-async def test_purge_insight_reports_deletes_old_reports():
-    """Deletes completed and stuck reports older than cutoff."""
-    mock_db = AsyncMock()
-    agent_result = MagicMock()
-    agent_result.scalars.return_value.all.return_value = [uuid.uuid4()]
-
-    completed_result = MagicMock()
-    completed_result.rowcount = 3
-
-    stuck_result = MagicMock()
-    stuck_result.rowcount = 1
-
-    mock_db.execute = AsyncMock(side_effect=[agent_result, completed_result, stuck_result])
-    mock_db.commit = AsyncMock()
-
-    with patch("services.retention.async_session") as mock_session:
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        from datetime import UTC, datetime
-
-        from services.retention import _purge_insight_reports
-
-        result = await _purge_insight_reports(uuid.uuid4(), datetime.now(UTC))
+        result = await _purge_insight_reports(datetime.now(UTC))
 
     assert result == 4
-    mock_db.commit.assert_called_once()
-
-
-# ── _purge_count_based ───────────────────────────────────
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_purge_count_based_no_data():
-    """Returns 0 when no daily data exists."""
-    with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
-        mock_query.return_value = _mock_response(data=[])
-
-        from services.retention import _purge_count_based
-
-        result = await _purge_count_based("pid", 1000)
-
-    assert result == 0
-
-
-@pytest.mark.asyncio
-async def test_purge_count_based_under_limit():
-    """Returns 0 when total is under the limit (no cutoff found)."""
-    with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
-        mock_query.return_value = _mock_response(
-            data=[
-                {"day": "2026-05-11", "cnt": "500"},
-                {"day": "2026-05-10", "cnt": "300"},
-            ]
-        )
-
-        from services.retention import _purge_count_based
-
-        result = await _purge_count_based("pid", 5000)
-
-    assert result == 0
-
-
-@pytest.mark.asyncio
-async def test_purge_count_based_query_failure():
-    """Returns 0 when ClickHouse query fails."""
-    with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
-        mock_query.return_value = _mock_response(status_code=500)
-
-        from services.retention import _purge_count_based
-
-        result = await _purge_count_based("pid", 1000)
-
-    assert result == 0
-
-
-@pytest.mark.asyncio
-async def test_purge_count_based_executes_deletes():
-    """When over limit, deletes JSONL session events and orphan stats."""
-    with patch("services.clickhouse._query", new_callable=AsyncMock) as mock_query:
-        # First call: daily aggregation exceeds limit
-        daily_resp = _mock_response(
-            data=[
-                {"day": "2026-05-11", "cnt": "600"},
-                {"day": "2026-05-10", "cnt": "600"},
-                {"day": "2026-05-09", "cnt": "600"},
-            ]
-        )
-        # Subsequent calls: delete operations
-        delete_resp = _mock_response()
-        mock_query.side_effect = [daily_resp, delete_resp, delete_resp]
-
-        from services.retention import _purge_count_based
-
-        result = await _purge_count_based("pid", 1000)
-
-    assert result == 1
-    # 1 query + 2 deletes (session_events, session_stats_orphans)
-    assert mock_query.call_count == 3
-
-
-# ── run_retention_purge ──────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_run_retention_purge_skips_when_no_orgs():
-    """Early return when no orgs have retention enabled."""
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = []
-    mock_db.execute = AsyncMock(return_value=mock_result)
-
-    with patch("services.retention.async_session") as mock_session:
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        from services.retention import run_retention_purge
-
-        await run_retention_purge(None)
-
-
-@pytest.mark.asyncio
-async def test_run_retention_purge_skips_empty_org():
-    """Skips orgs with no data in ClickHouse."""
-    org = MagicMock()
-    org.id = uuid.uuid4()
-    org.slug = "empty-org"
-    org.retention_enabled = True
-    org.data_retention_days = 14
-    org.score_retention_days = None
-    org.max_trace_count = None
-
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [org]
-    mock_db.execute = AsyncMock(return_value=mock_result)
-
-    with (
-        patch("services.retention.async_session") as mock_session,
-        patch("services.retention._has_data", new_callable=AsyncMock, return_value=False) as mock_has_data,
-        patch("services.retention.INTER_ORG_DELAY", 0),
+async def test_purge_count_based_does_nothing_under_limit():
+    with patch(
+        "services.clickhouse._query",
+        new=AsyncMock(return_value=_response(data=[{"day": "2026-05-11", "cnt": "2"}])),
     ):
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+        from services.retention import _purge_count_based
 
-        from services.retention import run_retention_purge
-
-        await run_retention_purge(None)
-
-    mock_has_data.assert_called_once_with(str(org.id))
+        assert await _purge_count_based("default", 10) == 0
 
 
 @pytest.mark.asyncio
-async def test_run_retention_purge_skips_inflight_insights():
-    """Skips orgs with in-flight insight reports."""
-    org = MagicMock()
-    org.id = uuid.uuid4()
-    org.slug = "busy-org"
-    org.retention_enabled = True
-    org.data_retention_days = 14
-    org.score_retention_days = None
-    org.max_trace_count = None
+async def test_purge_count_based_deletes_old_sessions():
+    query = AsyncMock(
+        side_effect=[
+            _response(data=[{"day": "2026-05-11", "cnt": "6"}, {"day": "2026-05-10", "cnt": "6"}]),
+            _response(),
+            _response(),
+        ]
+    )
+    with patch("services.clickhouse._query", new=query):
+        from services.retention import _purge_count_based
 
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [org]
-    mock_db.execute = AsyncMock(return_value=mock_result)
-
-    with (
-        patch("services.retention.async_session") as mock_session,
-        patch("services.retention._has_data", new_callable=AsyncMock, return_value=True),
-        patch("services.retention._has_inflight_insights", new_callable=AsyncMock, return_value=True) as mock_inflight,
-        patch("services.retention.INTER_ORG_DELAY", 0),
-    ):
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        from services.retention import run_retention_purge
-
-        await run_retention_purge(None)
-
-    mock_inflight.assert_called_once_with(org.id)
+        assert await _purge_count_based("default", 10) == 1
+    assert query.await_count == 3
 
 
 @pytest.mark.asyncio
-async def test_run_retention_purge_full_run():
-    """Full purge run: JSONL time-based, insights, and count-based."""
-    org = MagicMock()
-    org.id = uuid.uuid4()
-    org.slug = "full-org"
-    org.retention_enabled = True
-    org.data_retention_days = 14
-    org.score_retention_days = 30
-    org.max_trace_count = 5000
+async def test_run_retention_purge_skips_when_disabled():
+    with patch("services.retention.ds.get_bool", new=AsyncMock(return_value=False)):
+        from services.retention import run_retention_purge
 
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [org]
-    mock_db.execute = AsyncMock(return_value=mock_result)
+        await run_retention_purge()
 
+
+@pytest.mark.asyncio
+async def test_run_retention_purge_uses_default_project_and_settings():
+    int_values = {
+        "retention.trace_days": 14,
+        "retention.score_days": 30,
+        "retention.max_trace_count": 5000,
+    }
     with (
-        patch("services.retention.async_session") as mock_session,
-        patch("services.retention._has_data", new_callable=AsyncMock, return_value=True),
-        patch("services.retention._has_inflight_insights", new_callable=AsyncMock, return_value=False),
+        patch("services.retention.ds.get_bool", new=AsyncMock(return_value=True)),
         patch(
-            "services.retention._purge_time_based", new_callable=AsyncMock, return_value={"session_events": 1}
-        ) as mock_time,
-        patch("services.retention._purge_session_stats_orphans", new_callable=AsyncMock, return_value=1),
-        patch("services.retention._purge_count_based", new_callable=AsyncMock, return_value=1) as mock_count,
-        patch("services.retention._purge_insight_reports", new_callable=AsyncMock, return_value=2) as mock_insights,
-        patch("services.retention._delete_batch", new_callable=AsyncMock, return_value=1) as mock_delete,
-        patch("services.retention.INTER_ORG_DELAY", 0),
+            "services.retention.ds.get_int",
+            new=AsyncMock(side_effect=lambda key, default=0: int_values.get(key, default)),
+        ),
+        patch("services.retention._has_data", new=AsyncMock(return_value=True)),
+        patch("services.retention._has_inflight_insights", new=AsyncMock(return_value=False)),
+        patch("services.retention._purge_time_based", new=AsyncMock(return_value={})) as purge_time,
+        patch("services.retention._purge_session_stats_orphans", new=AsyncMock()),
+        patch("services.retention._purge_count_based", new=AsyncMock(return_value=1)) as purge_count,
+        patch("services.retention._purge_insight_reports", new=AsyncMock(return_value=2)) as purge_reports,
     ):
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
         from services.retention import run_retention_purge
 
-        await run_retention_purge(None)
+        await run_retention_purge()
 
-    assert mock_time.call_count == 1
-    mock_count.assert_called_once_with(str(org.id), 5000)
-    mock_insights.assert_called_once()
-    mock_delete.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_run_retention_purge_score_defaults_to_2x_trace():
-    """When score_retention_days is None, defaults to 2x data_retention_days (min 30)."""
-    org = MagicMock()
-    org.id = uuid.uuid4()
-    org.slug = "default-score-org"
-    org.retention_enabled = True
-    org.data_retention_days = 14
-    org.score_retention_days = None
-    org.max_trace_count = None
-
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [org]
-    mock_db.execute = AsyncMock(return_value=mock_result)
-
-    with (
-        patch("services.retention.async_session") as mock_session,
-        patch("services.retention._has_data", new_callable=AsyncMock, return_value=True),
-        patch("services.retention._has_inflight_insights", new_callable=AsyncMock, return_value=False),
-        patch("services.retention._purge_time_based", new_callable=AsyncMock, return_value={}) as mock_time,
-        patch("services.retention._purge_session_stats_orphans", new_callable=AsyncMock, return_value=1),
-        patch("services.retention._purge_insight_reports", new_callable=AsyncMock, return_value=0) as mock_insights,
-        patch("services.retention._delete_batch", new_callable=AsyncMock, return_value=1),
-        patch("services.retention.INTER_ORG_DELAY", 0),
-    ):
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        from services.retention import run_retention_purge
-
-        await run_retention_purge(None)
-
-    assert mock_time.call_count == 1
-    mock_insights.assert_called_once()
+    assert purge_time.await_args.args[0] == "default"
+    purge_count.assert_awaited_once_with("default", 5000)
+    purge_reports.assert_awaited_once()

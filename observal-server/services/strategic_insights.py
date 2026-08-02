@@ -4,7 +4,7 @@
 
 """Strategic AI Insights generator.
 
-Collects org-wide telemetry metrics, builds a data block, and calls the
+Collects deployment-wide telemetry metrics, builds a data block, and calls the
 configured LLM to produce business-language strategic recommendations similar
 to a consulting report.
 """
@@ -33,9 +33,9 @@ Writing style:
 
 Output valid JSON only. No markdown, no code fences."""
 
-STRATEGIC_PROMPT = """Analyze this organization's AI usage telemetry and produce strategic recommendations.
+STRATEGIC_PROMPT = """Analyze this deployment's AI usage telemetry and produce strategic recommendations.
 
-## Organization Telemetry Data
+## Deployment Telemetry Data
 {data_block}
 
 Produce a JSON object with this EXACT structure:
@@ -85,7 +85,7 @@ Rules:
 
 
 async def generate_strategic_insights(metrics_data: dict) -> dict:
-    """Generate LLM-powered strategic insights from org telemetry metrics.
+    """Generate LLM-powered strategic insights from deployment telemetry metrics.
 
     Args:
         metrics_data: Dict containing all the computed metrics from the

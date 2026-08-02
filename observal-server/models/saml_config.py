@@ -4,7 +4,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,11 +13,9 @@ from models.base import Base
 
 class SamlConfig(Base):
     __tablename__ = "saml_configs"
+    __table_args__ = (Index("uq_saml_configs_singleton", text("(true)"), unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("organizations.id"), unique=True, nullable=False
-    )
     idp_entity_id: Mapped[str] = mapped_column(Text, nullable=False)
     idp_sso_url: Mapped[str] = mapped_column(Text, nullable=False)
     idp_slo_url: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -113,7 +113,6 @@ def _make_job(
     job.artifacts_json = None
     job.result_json = None
     job.schema_version = None
-    job.org_id = uuid.uuid4()
     return job
 
 
@@ -137,9 +136,6 @@ class TestStartEndpoints:
 
         mock_db = AsyncMock()
         mock_user = _make_user()
-        mock_org = MagicMock()
-        mock_org.id = uuid.uuid4()
-
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -156,7 +152,6 @@ class TestStartEndpoints:
         body = StartExportRequest(scope=MigrationScope.postgres)
 
         with (
-            patch.object(_migrate_mod, "_get_user_org", new_callable=AsyncMock, return_value=mock_org),
             patch.object(_migrate_mod, "_get_arq_pool") as mock_pool_fn,
             patch.object(_migrate_mod, "emit_security_event", new_callable=AsyncMock),
         ):
@@ -177,9 +172,6 @@ class TestStartEndpoints:
 
         mock_db = AsyncMock()
         mock_user = _make_user()
-        mock_org = MagicMock()
-        mock_org.id = uuid.uuid4()
-
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -201,7 +193,6 @@ class TestStartEndpoints:
         mock_file.seek = AsyncMock()
 
         with (
-            patch.object(_migrate_mod, "_get_user_org", new_callable=AsyncMock, return_value=mock_org),
             patch.object(_migrate_mod, "_get_arq_pool") as mock_pool_fn,
             patch.object(_migrate_mod, "emit_security_event", new_callable=AsyncMock),
             patch.object(_migrate_mod, "_store_upload_files", new_callable=AsyncMock) as mock_store,
@@ -228,12 +219,12 @@ class TestStartEndpoints:
 
 
 class TestConcurrencyCheck:
-    """Concurrent jobs of same type/scope/org return 409."""
+    """Concurrent jobs of the same type and scope return 409."""
 
     @skip_if_no_module
     @pytest.mark.asyncio
     async def test_duplicate_export_returns_409(self):
-        """A running export for same scope+org causes 409."""
+        """A running export for same operation and scope causes 409."""
         from fastapi import HTTPException
 
         _check_concurrency = _migrate_mod._check_concurrency
@@ -245,7 +236,7 @@ class TestConcurrencyCheck:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         with pytest.raises(HTTPException) as exc_info:
-            await _check_concurrency(mock_db, MigrationOperation.export, MigrationScope.postgres, uuid.uuid4())
+            await _check_concurrency(mock_db, MigrationOperation.export, MigrationScope.postgres)
         assert exc_info.value.status_code == 409
 
 
@@ -369,9 +360,6 @@ class TestAuditEventEmissions:
 
         mock_db = AsyncMock()
         mock_user = _make_user()
-        mock_org = MagicMock()
-        mock_org.id = uuid.uuid4()
-
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -388,7 +376,6 @@ class TestAuditEventEmissions:
         body = StartExportRequest(scope=MigrationScope.postgres)
 
         with (
-            patch.object(_migrate_mod, "_get_user_org", new_callable=AsyncMock, return_value=mock_org),
             patch.object(_migrate_mod, "_get_arq_pool") as mock_pool_fn,
             patch.object(_migrate_mod, "emit_security_event", new_callable=AsyncMock) as mock_emit,
         ):

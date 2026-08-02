@@ -26,9 +26,6 @@ class ComponentSource(Base):
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=True
     )
-    owner_org_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
-    )
     auto_sync_interval: Mapped[timedelta | None] = mapped_column(Interval, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_status: Mapped[str | None] = mapped_column(String(20), nullable=True)

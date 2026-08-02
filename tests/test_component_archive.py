@@ -25,7 +25,6 @@ def _user(listing):
     user = MagicMock()
     user.id = listing.submitted_by
     user.role = UserRole.user
-    user.org_id = None
     return user
 
 

@@ -1,37 +1,48 @@
-<!--
-SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
-SPDX-License-Identifier: Apache-2.0
--->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Data & Retention Settings
 
-Control how long telemetry is stored and how aggressively expensive API responses are cached.
+Control deployment-wide telemetry retention and how aggressively expensive API responses are cached.
 
 ## Purge Traces and Insights {#purge-traces-and-insights}
 
-The **Purge Traces & Insights** danger-zone action permanently deletes telemetry and generated insight data for the current project/organization.
+The **Purge Traces & Insights** danger-zone action permanently deletes telemetry and generated insight data for the deployment.
 
 It removes:
 
-- ClickHouse session events and session aggregates for the current project.
-- Agent insight reports and insight caches/facets for agents in the current organization.
+- ClickHouse session events and session aggregates for project `default`.
+- Agent insight reports and insight caches/facets for all agents.
 
 It does **not** delete registry agents, versions, skills, hooks, prompts, users, reviews, or audit/security logs.
 
 Use this only when you intentionally need a clean telemetry slate, for example before handing over a demo instance or after importing accidental/private trace data. The action cannot be undone from Observal; take database backups first if you may need the data later.
 
-## Data Retention {#data-retention}
+## Application retention policy {#application-retention}
 
-Maximum age, in days, for session events and derived session analytics.
+The admin retention controls store deployment-wide policy values in the following settings:
+
+| Setting | Effect |
+|---------|--------|
+| `retention.enabled` | Enables scheduled application-level purging |
+| `retention.trace_days` | Deletes session events older than this many days |
+| `retention.score_days` | Deletes completed and stale insight reports older than this many days |
+| `retention.max_trace_count` | Limits the number of retained sessions |
+
+The policy values are independent of registry ownership. Leave a threshold empty when that limit is not needed. If `retention.score_days` is empty, the purge uses twice `retention.trace_days`, with a 30-day minimum.
+
+## ClickHouse TTL {#data-retention}
+
+`data.retention_days` remains the separate ClickHouse TTL setting. It controls automatic expiry of raw session content and defaults to 90 days. Application retention values cannot exceed this ceiling when it is enabled.
 
 | Value | Effect |
 |-------|--------|
-| `90` (default) | Keep telemetry for 90 days |
-| `30` | Short retention for privacy-sensitive deployments |
-| `365` | Long retention for annual analysis |
-| `0` | Keep forever, not recommended unless storage is actively managed |
+| `90` (default) | Keep raw telemetry for 90 days |
+| `30` | Short TTL for privacy-sensitive deployments |
+| `365` | Long TTL for annual analysis |
+| `0` | Keep raw telemetry indefinitely, not recommended unless storage is actively managed |
 
-**When to lower:** Your organization has strict data minimization rules, or ClickHouse storage is growing too quickly.
+**When to lower:** The deployment has strict data minimization rules, or ClickHouse storage is growing too quickly.
 
 **When to raise:** You need longer trend windows for audits, investigations, or longitudinal agent performance analysis.
 

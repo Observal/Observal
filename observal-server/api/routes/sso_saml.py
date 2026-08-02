@@ -24,7 +24,7 @@ from loguru import logger as optic
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from sqlalchemy import select
 
-from api.deps import get_db, get_or_create_default_org
+from api.deps import get_db
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -144,7 +144,6 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
                 "sp_x509_cert": cert_pem,
                 "jit_provisioning": ds.get_sync_bool("saml.jit_provisioning", True),
                 "default_role": ds.get_sync("saml.default_role", "user"),
-                "org_id": None,
             },
         )()
         _dynamic_saml_config_cache = dynamic_config
@@ -719,7 +718,6 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
             return _saml_error_redirect(corr)
 
         try:
-            default_org = await get_or_create_default_org(db)
             default_role_str = getattr(config, "default_role", "user")
             try:
                 role = UserRole(default_role_str)
@@ -730,7 +728,6 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
                 username=await generate_unique_username(email, db),
                 name=name,
                 role=role,
-                org_id=getattr(config, "org_id", None) or default_org.id,
                 auth_provider="saml",
                 sso_subject_id=subject_id,
             )

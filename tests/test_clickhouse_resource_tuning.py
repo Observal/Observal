@@ -31,7 +31,6 @@ def _make_admin():
     user.id = uuid.uuid4()
     user.email = "admin@test.example"
     user.role = UserRole.super_admin
-    user.org_id = None
     return user
 
 
@@ -351,7 +350,6 @@ class TestResourceApplyEndpoint:
         regular_user.id = uuid.uuid4()
         regular_user.email = "user@test.example"
         regular_user.role = UserRole.user
-        regular_user.org_id = None
 
         mock_db = AsyncMock()
         app.dependency_overrides[get_db] = lambda: mock_db

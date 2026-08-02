@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger as optic
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from api.deps import get_project_id, require_role
+from api.deps import require_role
 from api.ratelimit import limiter
 from models.user import User, UserRole
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 
 MAX_SHORT_STRING_LENGTH = 512
 MAX_TEXT_LENGTH = 1_048_576
@@ -109,7 +110,7 @@ async def ingest_session(
     )
 
     user_id = str(current_user.id)
-    project_id = get_project_id(current_user)
+    project_id = DEFAULT_PROJECT_ID
 
     optic.debug(
         "ingest request: session={}, harness={}, lines={}, offset={}, final={}",
@@ -229,7 +230,7 @@ async def get_session_checkpoint(
     """Return the caller's durable contiguous checkpoint for one session source."""
     from services.clickhouse import query_session_checkpoint
 
-    project_id = get_project_id(current_user)
+    project_id = DEFAULT_PROJECT_ID
     acknowledged_line, acknowledged_offset = await query_session_checkpoint(
         session_id,
         project_id,

@@ -34,7 +34,6 @@ def _user(**kw):
     u.role = kw.get("role", UserRole.user)
     u.email = kw.get("email", "test@example.com")
     u.username = kw.get("username", "testuser")
-    u.org_id = kw.get("org_id")
     return u
 
 
@@ -76,7 +75,6 @@ def _agent_mock(status=AgentStatus.approved, created_by=None, **extra):
     m.rejection_reason = None
     m.download_count = 0
     m.unique_users = 0
-    m.owner_org_id = None
     m.git_url = None
     m.created_by = created_by or uuid.uuid4()
     m.created_at = datetime.now(UTC)
@@ -95,7 +93,6 @@ def _agent_mock(status=AgentStatus.approved, created_by=None, **extra):
         "model_config_json",
         "external_mcps",
         "supported_harnesses",
-        "owner_org_id",
         "status",
         "rejection_reason",
         "download_count",

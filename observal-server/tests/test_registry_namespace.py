@@ -131,7 +131,7 @@ async def test_reconcile_batches_by_type_and_returns_canonical_metadata():
             ]
         )
     )
-    user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user, org_id=None)
+    user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user)
     request = RegistryReconcileRequest(items=[{"type": "agent", "id": agent_id}, {"type": "mcp", "id": mcp_id}])
 
     results = await reconcile_registry_items(request, db, user)
@@ -324,7 +324,6 @@ async def test_transfer_moves_every_listing_type_to_target_namespace(entity_type
         id=uuid.uuid4(),
         username="bob",
         email="bob@example.com",
-        org_id=uuid.uuid4(),
         auth_provider="local",
     )
     other_coauthor = uuid.uuid4()
@@ -334,7 +333,6 @@ async def test_transfer_moves_every_listing_type_to_target_namespace(entity_type
         namespace="alice",
         slug="tool",
         co_authors=[str(current.id), str(target.id), str(other_coauthor)],
-        owner_org_id=None,
         **{owner_field: current.id},
     )
     db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
@@ -363,7 +361,6 @@ async def test_transfer_moves_every_listing_type_to_target_namespace(entity_type
     assert entity.namespace == "bob"
     assert entity.slug == "tool"
     assert getattr(entity, owner_field) == target.id
-    assert entity.owner_org_id is None
     assert entity.co_authors == [str(other_coauthor)]
     assert response.qualified_name == "bob/tool"
     db.commit.assert_awaited_once()
@@ -397,7 +394,6 @@ async def test_transfer_rejects_target_namespace_collision_without_mutating_list
         id=uuid.uuid4(),
         username="bob",
         email="bob@example.com",
-        org_id=None,
         auth_provider="local",
     )
     entity = _TransferEntity(
@@ -407,7 +403,6 @@ async def test_transfer_rejects_target_namespace_collision_without_mutating_list
         slug="tool",
         created_by=current.id,
         co_authors=[],
-        owner_org_id=None,
     )
     db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
 
@@ -443,7 +438,6 @@ async def test_transfer_converts_database_uniqueness_race_to_conflict():
         id=uuid.uuid4(),
         username="bob",
         email="bob@example.com",
-        org_id=None,
         auth_provider="local",
     )
     entity = _TransferEntity(
@@ -453,7 +447,6 @@ async def test_transfer_converts_database_uniqueness_race_to_conflict():
         slug="tool",
         created_by=current.id,
         co_authors=[],
-        owner_org_id=None,
     )
     conflict = IntegrityError("UPDATE agents", {}, Exception("duplicate key value violates namespace slug unique"))
     db = SimpleNamespace(commit=AsyncMock(side_effect=conflict), rollback=AsyncMock(), refresh=AsyncMock())

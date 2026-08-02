@@ -24,6 +24,8 @@ from urllib.parse import urlparse
 # Add server source to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "observal-server"))
 
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
+
 try:
     import asyncpg
     import httpx
@@ -88,7 +90,8 @@ USER_ACTIVITY = {
 }
 
 WEEKS_OF_DATA = 8
-PROJECT_ID = "52eb7062-11f8-444e-8f6e-4c906e8d7649"
+
+PROJECT_ID = DEFAULT_PROJECT_ID
 
 
 # ---------------------------------------------------------------------------
@@ -123,104 +126,76 @@ def parse_ch_url(url: str) -> tuple[str, str, str, str]:
 # ---------------------------------------------------------------------------
 
 
-async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
-    """Seed PG and return lookup dicts."""
-    conn_params = parse_pg_url(pg_url)
-    conn = await asyncpg.connect(**conn_params)
-
+async def seed_postgres(pg_url: str, clean: bool) -> dict:
+    """Seed deployment-wide dashboard data and return lookup dicts."""
+    conn = await asyncpg.connect(**parse_pg_url(pg_url))
     try:
-        # Get or create org
-        if org_id:
-            oid = uuid.UUID(org_id)
-        else:
-            row = await conn.fetchrow("SELECT id FROM organizations LIMIT 1")
-            if row:
-                oid = row["id"]
-            else:
-                oid = uuid.uuid4()
-                await conn.execute(
-                    "INSERT INTO organizations (id, name, slug) VALUES ($1, $2, $3)",
-                    oid,
-                    "Acme Corp",
-                    "acme",
-                )
-        print(f"  Org ID: {oid}")
-
         if clean:
-            await conn.execute("DELETE FROM user_groups WHERE user_id IN (SELECT id FROM users WHERE org_id = $1)", oid)
-            await conn.execute("DELETE FROM exec_dashboard_config WHERE org_id = $1", oid)
+            agent_names = [name for name, _, _ in AGENTS]
+            agent_rows = await conn.fetch("SELECT id FROM agents WHERE name = ANY($1::text[])", agent_names)
+            for row in agent_rows:
+                await conn.execute("DELETE FROM agent_download_records WHERE agent_id = $1", row["id"])
+                await conn.execute("DELETE FROM feedback WHERE listing_id = $1", row["id"])
+                await conn.execute("DELETE FROM agent_versions WHERE agent_id = $1", row["id"])
+                await conn.execute("DELETE FROM agents WHERE id = $1", row["id"])
+            await conn.execute("DELETE FROM exec_dashboard_config")
             await conn.execute(
-                "DELETE FROM agent_download_records WHERE agent_id IN (SELECT id FROM agents WHERE owner_org_id = $1)",
-                oid,
+                "DELETE FROM user_groups WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@acme.corp')"
             )
-            await conn.execute(
-                "DELETE FROM feedback WHERE listing_id IN (SELECT id FROM agents WHERE owner_org_id = $1)", oid
-            )
-            await conn.execute(
-                "DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE owner_org_id = $1)", oid
-            )
-            await conn.execute("DELETE FROM agents WHERE owner_org_id = $1", oid)
-            await conn.execute("DELETE FROM users WHERE org_id = $1 AND email LIKE '%@acme.corp'", oid)
+            await conn.execute("DELETE FROM users WHERE email LIKE '%@acme.corp'")
             print("  Cleaned existing test data")
 
-        # Create users
         user_map: dict[str, uuid.UUID] = {}
         admin_id = None
         for email, name, dept, _ in USERS:
-            uid = uuid.uuid4()
-            await conn.execute(
-                "INSERT INTO users (id, email, name, role, org_id, department, auth_provider, created_at) "
-                "VALUES ($1, $2, $3, 'user', $4, $5, 'local', NOW()) ON CONFLICT (email) DO UPDATE SET department = $5 RETURNING id",
-                uid,
+            row = await conn.fetchrow(
+                "INSERT INTO users (id, email, username, name, role, department, auth_provider, created_at) "
+                "VALUES ($1, $2, $3, $4, 'user', $5, 'local', NOW()) "
+                "ON CONFLICT (email) DO UPDATE SET department = $5 RETURNING id",
+                uuid.uuid4(),
                 email,
+                email.split("@", 1)[0][:32],
                 name,
-                oid,
                 dept,
             )
-            row = await conn.fetchrow("SELECT id FROM users WHERE email = $1", email)
             user_map[email] = row["id"]
             if admin_id is None:
                 admin_id = row["id"]
 
-        # Make first user admin (for created_by)
         await conn.execute("UPDATE users SET role = 'admin' WHERE id = $1", admin_id)
         print(f"  Created {len(user_map)} users")
 
-        # Create user_groups (SSO simulation)
         for email, _, dept, _ in USERS:
-            uid = user_map[email]
             await conn.execute(
                 "INSERT INTO user_groups (id, user_id, group_name, synced_at) VALUES ($1, $2, $3, NOW()) "
                 "ON CONFLICT (user_id, group_name) DO NOTHING",
                 uuid.uuid4(),
-                uid,
+                user_map[email],
                 dept,
             )
         print("  Created user_groups entries")
 
-        # Create agents
         agent_map: dict[str, uuid.UUID] = {}
         for agent_name, category, status in AGENTS:
-            agent_id = uuid.uuid4()
-            version_id = uuid.uuid4()
-
-            await conn.execute(
-                "INSERT INTO agents (id, name, owner, category, created_by, owner_org_id, co_authors, created_at, updated_at) "
-                "VALUES ($1, $2, $3, $4, $5, $6, '[]'::jsonb, NOW(), NOW()) ON CONFLICT DO NOTHING",
-                agent_id,
+            row = await conn.fetchrow(
+                "INSERT INTO agents (id, name, namespace, slug, owner, category, created_by, co_authors, created_at, updated_at) "
+                "VALUES ($1, $2, 'seed', $3, 'seed', $4, $5, '[]'::jsonb, NOW(), NOW()) "
+                "ON CONFLICT (namespace, slug) DO UPDATE SET category = EXCLUDED.category RETURNING id",
+                uuid.uuid4(),
                 agent_name,
-                "acme",
+                agent_name.lower(),
                 category,
                 admin_id,
-                oid,
             )
-            row = await conn.fetchrow("SELECT id FROM agents WHERE name = $1 AND owner_org_id = $2", agent_name, oid)
             agent_id = row["id"]
             agent_map[agent_name] = agent_id
-
+            version_id = uuid.uuid4()
             await conn.execute(
-                "INSERT INTO agent_versions (id, agent_id, version, description, prompt, model_name, model_config_json, models_by_harness, external_mcps, supported_harnesses, required_capabilities, inferred_supported_harnesses, status, is_prerelease, download_count, released_by, released_at, created_at, is_editing) "
-                "VALUES ($1, $2, '1.0.0', $3, '', '', '{}', '{}', '[]', '[]', '[]', '[]', $4, false, 0, $5, NOW(), NOW(), false) ON CONFLICT DO NOTHING",
+                "INSERT INTO agent_versions (id, agent_id, version, description, prompt, model_name, model_config_json, "
+                "models_by_harness, external_mcps, supported_harnesses, required_capabilities, "
+                "inferred_supported_harnesses, status, is_prerelease, download_count, released_by, released_at, "
+                "created_at, is_editing) VALUES ($1, $2, '1.0.0', $3, '', '', '{}', '{}', '[]', '[]', '[]', '[]', "
+                "$4, false, 0, $5, NOW(), NOW(), false) ON CONFLICT DO NOTHING",
                 version_id,
                 agent_id,
                 f"{agent_name} agent",
@@ -235,44 +210,43 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
 
         print(f"  Created {len(agent_map)} agents")
 
-        # Downloads
         downloads = {"CodeReviewBot": 45, "TestGenerator": 22, "DocWriter": 35, "SecurityScanner": 15}
         for agent_name, count in downloads.items():
-            aid = agent_map.get(agent_name)
-            if not aid:
+            agent_id = agent_map.get(agent_name)
+            if not agent_id:
                 continue
             for _ in range(count):
                 await conn.execute(
-                    "INSERT INTO agent_download_records (id, agent_id, user_id, source, installed_at) VALUES ($1, $2, $3, 'cli', $4) ON CONFLICT DO NOTHING",
+                    "INSERT INTO agent_download_records (id, agent_id, user_id, source, installed_at) "
+                    "VALUES ($1, $2, $3, 'cli', $4) ON CONFLICT DO NOTHING",
                     uuid.uuid4(),
-                    aid,
+                    agent_id,
                     admin_id,
                     datetime.now(UTC) - timedelta(days=random.randint(0, 60)),
                 )
         print("  Inserted download records")
 
-        # Feedback
         feedbacks = [("CodeReviewBot", [5, 4, 4.5]), ("DocWriter", [4, 4, 4, 4, 4]), ("TestGenerator", [4, 3.6])]
         for agent_name, ratings in feedbacks:
-            aid = agent_map.get(agent_name)
-            if not aid:
+            agent_id = agent_map.get(agent_name)
+            if not agent_id:
                 continue
             for rating in ratings:
                 await conn.execute(
-                    "INSERT INTO feedback (id, listing_id, listing_type, user_id, rating, comment, created_at) VALUES ($1, $2, 'agent', $3, $4, 'Good', NOW())",
+                    "INSERT INTO feedback (id, listing_id, listing_type, user_id, rating, comment, created_at) "
+                    "VALUES ($1, $2, 'agent', $3, $4, 'Good', NOW())",
                     uuid.uuid4(),
-                    aid,
+                    agent_id,
                     admin_id,
                     rating,
                 )
         print("  Inserted feedback ratings")
 
-        # Exec dashboard config
         await conn.execute(
-            "INSERT INTO exec_dashboard_config (id, org_id, hourly_dev_cost, pre_ai_baselines, department_budgets, target_adoption_pct, created_at, updated_at) "
-            "VALUES ($1, $2, 85.00, $3, $4, 80, NOW(), NOW()) ON CONFLICT (org_id) DO UPDATE SET hourly_dev_cost = 85.00, pre_ai_baselines = $3",
+            "INSERT INTO exec_dashboard_config (id, hourly_dev_cost, pre_ai_baselines, department_budgets, "
+            "target_adoption_pct, created_at, updated_at) VALUES ($1, 85.00, $2, $3, 80, NOW(), NOW()) "
+            "ON CONFLICT DO UPDATE SET hourly_dev_cost = 85.00, pre_ai_baselines = EXCLUDED.pre_ai_baselines",
             uuid.uuid4(),
-            oid,
             json.dumps(
                 {
                     "Code Review": 0.50,
@@ -286,9 +260,7 @@ async def seed_postgres(pg_url: str, org_id: str | None, clean: bool) -> dict:
             json.dumps({"Engineering": 5000, "Data Science": 3000, "QA": 2000, "Product": 1000}),
         )
         print("  Created exec_dashboard_config")
-
-        return {"org_id": oid, "user_map": user_map, "agent_map": agent_map}
-
+        return {"user_map": user_map, "agent_map": agent_map}
     finally:
         await conn.close()
 
@@ -454,20 +426,18 @@ async def main():
         default=os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/observal"),
     )
     parser.add_argument("--ch-url", default=os.environ.get("CLICKHOUSE_URL", "clickhouse://localhost:8123/observal"))
-    parser.add_argument("--org-id", default=None, help="Existing org UUID to use")
     parser.add_argument("--clean", action="store_true", help="Delete existing test data first")
     args = parser.parse_args()
 
     print("=== Exec Dashboard Seed Script ===\n")
 
     print("[1/2] Seeding PostgreSQL...")
-    result = await seed_postgres(args.pg_url, args.org_id, args.clean)
+    result = await seed_postgres(args.pg_url, args.clean)
 
     print("\n[2/2] Seeding ClickHouse...")
     await seed_clickhouse(args.ch_url, result["user_map"], result["agent_map"], args.clean)
 
     print("\n=== Done ===")
-    print(f"Org ID: {result['org_id']}")
     print(f"Users: {len(result['user_map'])}")
     print(f"Agents: {len(result['agent_map'])}")
     print("\nTo verify: python scripts/verify_exec_dashboard.py --base-url <URL> --token <ADMIN_JWT>")

@@ -301,13 +301,6 @@ export function useMigrationJobs() {
   });
 }
 
-export function useCurrentMigrationOrg() {
-  return useQuery({
-    queryKey: ["admin", "migration", "current-org"],
-    queryFn: admin.migrateCurrentOrg,
-  });
-}
-
 export function useMigrationDownloadToken() {
   return useMutation({
     mutationFn: (vars: { jobId: string; name: string }) =>

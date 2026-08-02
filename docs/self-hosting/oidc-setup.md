@@ -198,7 +198,7 @@ your organization:
 | Use when | IdP supports OIDC (Okta, Azure AD, Google) | IdP only supports SAML, or signed assertions are required by policy |
 | Provisioning | JIT only (on first login) | JIT only (combine with SCIM for full lifecycle) |
 
-**Recommendation:** Use OIDC unless your organization requires SAML for
+**Recommendation:** Use OIDC unless your deployment requires SAML for
 compliance or existing infrastructure reasons. Either protocol can be combined
 with [SCIM provisioning](scim-setup.md) for automated user lifecycle management
 (pre-provisioning and deprovisioning).

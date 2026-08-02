@@ -15,12 +15,6 @@ class StartExportRequest(BaseModel):
     scope: MigrationScope
 
 
-class StartImportRequest(BaseModel):
-    scope: MigrationScope
-    org_id: str | None = None
-    project_id: str | None = None
-
-
 class StartValidateRequest(BaseModel):
     scope: MigrationScope
 
@@ -52,8 +46,3 @@ class MigrationJobResponse(BaseModel):
 class DownloadTokenResponse(BaseModel):
     token: str
     expires_at: datetime
-
-
-class CurrentOrgResponse(BaseModel):
-    org_id: str
-    project_id: str

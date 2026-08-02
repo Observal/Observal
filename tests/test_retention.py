@@ -1,9 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for per-organization data retention purge service."""
+"""Tests for deployment-wide data retention purge service."""
 
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,17 +17,6 @@ def _mock_response(status_code=200, data=None):
     else:
         resp.json.return_value = {"data": []}
     return resp
-
-
-def _make_org(retention_enabled=True, data_retention_days=14, score_retention_days=None, max_trace_count=None):
-    org = MagicMock()
-    org.id = uuid.uuid4()
-    org.slug = "test-org"
-    org.retention_enabled = retention_enabled
-    org.data_retention_days = data_retention_days
-    org.score_retention_days = score_retention_days
-    org.max_trace_count = max_trace_count
-    return org
 
 
 @pytest.mark.asyncio

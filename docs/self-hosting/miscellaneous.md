@@ -35,7 +35,7 @@ Restrict which harnesses are available in the platform. When set, only the liste
 
 **Format:** Comma-separated harness identifiers. Valid identifiers: `cursor`, `claude_code`, `kiro`, `pi`, `copilot`, `copilot_cli`, `codex`, `opencode`, `gemini_cli`, `antigravity`
 
-**When to set:** Your organization standardizes on specific harnesses and you don't want users confused by irrelevant options. Also useful for reducing noise in the registry when agents only need to support a subset of harnesses.
+**When to set:** Your deployment standardizes on specific harnesses and you don't want users confused by irrelevant options. Also useful for reducing noise in the registry when agents only need to support a subset of harnesses.
 
 **CLI behavior:** When set, `observal pull <agent>` without `--harness` defaults to the first harness in the allowlist (the "default harness"). Users can still specify any allowed harness explicitly.
 
@@ -73,7 +73,7 @@ Limits telemetry to agents that are registered in the Observal registry.
 
 **Status:** This control is unstable. Enable it only after confirming all team agents are registered and harness patching is current.
 
-**When to enable:** Organizations that want stricter control over which agents produce telemetry, for compliance or cost control.
+**When to enable:** Deployments that want stricter control over which agents produce telemetry, for compliance or cost control.
 
 ## Trace Privacy {#trace-privacy}
 
@@ -81,7 +81,7 @@ Restricts trace visibility by user.
 
 | Value | Effect |
 |-------|--------|
-| `false` (default) | Admins can inspect traces across the organization according to their role |
+| `false` (default) | Admins can inspect traces across the deployment according to their role |
 | `true` | Users and admins see only their own traces. Super admins retain full visibility |
 
-**When to enable:** Organizations that want trace viewers scoped to each user's own activity while preserving super-admin access for incident response.
+**When to enable:** Deployments that want trace viewers scoped to each user's own activity while preserving super-admin access for incident response.

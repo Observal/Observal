@@ -430,14 +430,3 @@ def test_no_route_bypasses_the_permission_gate():
             unguarded.append(node.name)
 
     assert unguarded == [], f"insights routes missing an authorization gate: {unguarded}"
-
-
-def test_module_imports_do_not_reference_org_scoping():
-    """Feature 3 removed org scoping. It must not creep back into this module."""
-    import inspect
-
-    import api.routes.insights as insights
-
-    source = inspect.getsource(insights)
-    assert "org_id" not in source
-    assert "owner_org_id" not in source

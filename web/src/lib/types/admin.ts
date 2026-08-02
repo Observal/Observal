@@ -70,7 +70,6 @@ export interface AuditLogEntry {
 	ip_address: string;
 	user_agent: string;
 	detail: string;
-	org_id: string;
 	sensitivity: string;
 	request_id: string;
 	outcome: string;
@@ -93,7 +92,6 @@ export interface SecurityEvent {
 	source_ip: string;
 	user_agent: string;
 	detail: string;
-	org_id: string;
 }
 
 export interface DiagnosticsResponse {
@@ -382,7 +380,6 @@ export interface ExecTopAgent {
 
 export interface ExecConfig {
 	id: string;
-	org_id: string;
 	hourly_dev_cost: number;
 	pre_ai_baselines: Record<string, number>;
 	department_budgets: Record<string, { headcount: number; monthly_budget: number }>;
@@ -606,9 +603,4 @@ export interface MigrationValidateResult {
 export interface MigrationDownloadToken {
 	token: string;
 	expires_at: string;
-}
-
-export interface CurrentOrgInfo {
-	org_id: string;
-	project_id: string;
 }

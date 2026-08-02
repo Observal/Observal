@@ -61,4 +61,3 @@ class MigrationJob(Base):
     artifacts_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     artifact_dir: Mapped[str | None] = mapped_column(Text, nullable=True)
     schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

@@ -27,7 +27,6 @@ CREATE TABLE IF NOT EXISTS security_events (
         source_ip   String DEFAULT '',
         user_agent  String DEFAULT '',
         detail      String DEFAULT '',
-        org_id      String DEFAULT '',
         INDEX idx_event_type event_type TYPE bloom_filter(0.01) GRANULARITY 1,
         INDEX idx_severity severity TYPE bloom_filter(0.01) GRANULARITY 1,
         INDEX idx_actor_id actor_id TYPE bloom_filter(0.01) GRANULARITY 1,
@@ -63,9 +62,6 @@ CREATE TABLE IF NOT EXISTS audit_log (
     ORDER BY (action, resource_type, timestamp)
 ;
 
-ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS org_id String DEFAULT ''
-;
-
 ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS sensitivity LowCardinality(String) DEFAULT 'standard'
 ;
 
@@ -88,9 +84,6 @@ ALTER TABLE audit_log ADD INDEX IF NOT EXISTS idx_outcome outcome TYPE bloom_fil
 ;
 
 ALTER TABLE audit_log ADD INDEX IF NOT EXISTS idx_sensitivity sensitivity TYPE bloom_filter(0.01) GRANULARITY 1
-;
-
-ALTER TABLE audit_log ADD INDEX IF NOT EXISTS idx_org_id org_id TYPE bloom_filter(0.01) GRANULARITY 1
 ;
 
 ALTER TABLE audit_log ADD INDEX IF NOT EXISTS idx_source source TYPE bloom_filter(0.01) GRANULARITY 1

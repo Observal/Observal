@@ -36,7 +36,6 @@ def _user(role=UserRole.user, user_id=None):
     u.role = role
     u.email = "test@example.com"
     u.username = "testuser"
-    u.org_id = None
     return u
 
 

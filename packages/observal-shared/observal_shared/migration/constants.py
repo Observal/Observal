@@ -11,13 +11,13 @@ from typing import Literal, TypedDict
 # ── PostgreSQL constants ─────────────────────────────────
 
 CHUNK_SIZE = 500
+DEFAULT_PROJECT_ID = "default"
 
 INSERT_ORDER: list[str] = [
     # Tier 0 - no FK dependencies
-    "organizations",
     "enterprise_config",
     "component_sources",
-    # Tier 1 - FK to organizations
+    # Tier 1 - deployment-wide records
     "users",
     "exporter_configs",
     # Tier 1.5 - FK to users
@@ -109,7 +109,15 @@ class TableCfg(TypedDict):
 
 
 CLICKHOUSE_TABLES: list[TableCfg] = [
-    {"name": "session_events", "engine": "mergetree", "time_col": "timestamp", "fk_cols": ["agent_id", "user_id"]},
+    {"name": "session_events", "engine": "replacing", "time_col": "timestamp", "fk_cols": ["agent_id", "user_id"]},
+    {"name": "session_checkpoints", "engine": "replacing", "time_col": "updated_at", "fk_cols": ["user_id"]},
+    {
+        "name": "session_stats_agg",
+        "engine": "replacing",
+        "time_col": "first_event_time",
+        "fk_cols": ["agent_id", "user_id"],
+    },
+    {"name": "layer_snapshots", "engine": "replacing", "time_col": "uploaded_at", "fk_cols": ["user_id"]},
     {"name": "audit_log", "engine": "mergetree", "time_col": "timestamp", "fk_cols": ["actor_id"]},
     {"name": "security_events", "engine": "mergetree", "time_col": "timestamp", "fk_cols": []},
     {"name": "webhook_deliveries", "engine": "mergetree", "time_col": "timestamp", "fk_cols": []},

@@ -1222,14 +1222,14 @@ def admin_trace_privacy():
     """View trace privacy setting.
 
     Shows whether trace privacy (sensitive data redaction) is currently
-    enabled or disabled for the organization.
+    enabled or disabled for the deployment.
 
     Examples:
 
         observal admin trace-privacy
     """
     with spinner():
-        data = client.get("/api/v1/admin/org/trace-privacy")
+        data = client.get("/api/v1/admin/trace-privacy")
     enabled = data.get("trace_privacy", False)
     status = "[green]enabled[/green]" if enabled else "[red]disabled[/red]"
     rprint(f"  Trace privacy: {status}")
@@ -1251,7 +1251,7 @@ def admin_trace_privacy_set(
         observal admin trace-privacy-set false
     """
     with spinner("Updating trace privacy..."):
-        result = client.put("/api/v1/admin/org/trace-privacy", {"trace_privacy": enabled})
+        result = client.put("/api/v1/admin/trace-privacy", {"trace_privacy": enabled})
     status = "[green]enabled[/green]" if result.get("trace_privacy") else "[red]disabled[/red]"
     rprint(f"  Trace privacy: {status}")
 

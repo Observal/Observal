@@ -5,7 +5,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DATE, DateTime, ForeignKey, Integer, Numeric, UniqueConstraint
+from sqlalchemy import DATE, DateTime, Index, Integer, Numeric, text
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,12 +14,9 @@ from models.base import Base
 
 class ExecDashboardConfig(Base):
     __tablename__ = "exec_dashboard_config"
-    __table_args__ = (UniqueConstraint("org_id", name="uq_exec_dashboard_config_org"),)
+    __table_args__ = (Index("uq_exec_dashboard_config_singleton", text("(true)"), unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
-    )
     hourly_dev_cost: Mapped[float] = mapped_column(Numeric(10, 2), default=75.00)
     pre_ai_baselines: Mapped[dict] = mapped_column(JSON, default=dict)
     department_budgets: Mapped[dict] = mapped_column(JSON, default=dict)

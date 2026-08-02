@@ -20,22 +20,7 @@ def _make_user(role=UserRole.user, is_demo=False, email="test@test.com"):
     user.email = email
     user.role = role
     user.is_demo = is_demo
-    user.org_id = None
     return user
-
-
-def _mock_org():
-    org = MagicMock()
-    org.id = uuid.uuid4()
-    org.slug = "default"
-    return org
-
-
-def _patch_db_execute(db, org):
-    """Make db.execute return a result whose scalar_one_or_none returns org."""
-    result = MagicMock()
-    result.scalar_one_or_none.return_value = org
-    db.execute = AsyncMock(return_value=result)
 
 
 async def _stub_username(email, db):
@@ -56,7 +41,6 @@ class TestSeedDemoAccounts:
         # First call: real_count=0, then per-tier exists checks return 0
         db.scalar = AsyncMock(side_effect=[0, 0, 0, 0, 0])
         db.commit = AsyncMock()
-        _patch_db_execute(db, _mock_org())
 
         with patch("services.demo_accounts.settings") as mock_settings:
             mock_settings.DEMO_SUPER_ADMIN_EMAIL = "super@demo.example"
@@ -96,7 +80,6 @@ class TestSeedDemoAccounts:
 
         db = AsyncMock()
         db.scalar = AsyncMock(return_value=0)  # no real users
-        _patch_db_execute(db, _mock_org())
 
         with patch("services.demo_accounts.settings") as mock_settings:
             mock_settings.DEMO_SUPER_ADMIN_EMAIL = None
@@ -121,7 +104,6 @@ class TestSeedDemoAccounts:
         # real_count=0, super_admin exists=1 (skip), admin exists=0 (create)
         db.scalar = AsyncMock(side_effect=[0, 1, 0])
         db.commit = AsyncMock()
-        _patch_db_execute(db, _mock_org())
 
         with patch("services.demo_accounts.settings") as mock_settings:
             mock_settings.DEMO_SUPER_ADMIN_EMAIL = "super@demo.example"

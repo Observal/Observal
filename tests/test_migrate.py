@@ -162,7 +162,7 @@ class TestPGEncoder:
     def test_mixed_row(self):
         row = {
             "id": uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
-            "name": "test-org",
+            "name": "test-config",
             "count": 42,
             "active": True,
             "score": 3.14,
@@ -173,7 +173,7 @@ class TestPGEncoder:
         encoded = json.dumps(row, cls=PGEncoder)
         decoded = json.loads(encoded)
         assert decoded["id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-        assert decoded["name"] == "test-org"
+        assert decoded["name"] == "test-config"
         assert decoded["count"] == 42
         assert decoded["active"] is True
         assert decoded["score"] == 3.14
@@ -185,15 +185,15 @@ class TestPGEncoder:
 
 
 class TestConstants:
-    def test_insert_order_has_43_entries(self):
-        assert len(INSERT_ORDER) == 35
+    def test_insert_order_has_34_entries(self):
+        assert len(INSERT_ORDER) == 34
 
     def test_insert_order_no_duplicates(self):
         assert len(INSERT_ORDER) == len(set(INSERT_ORDER))
 
     def test_insert_order_contains_key_tables(self):
         key_tables = [
-            "organizations",
+            "enterprise_config",
             "users",
             "agents",
             "mcp_listings",
@@ -228,8 +228,8 @@ class TestBuildSelect:
         assert "name::text" not in sql
 
     def test_table_without_jsonb_columns(self):
-        sql = _build_select("organizations", ["id", "name", "slug"])
-        assert sql == 'SELECT * FROM "organizations"'
+        sql = _build_select("enterprise_config", ["id", "name", "slug"])
+        assert sql == 'SELECT * FROM "enterprise_config"'
 
     def test_agents_produces_correct_sql(self):
         columns = ["id", "name", "model_config_json"]
@@ -392,7 +392,7 @@ class TestBuildInsert:
     def test_table_without_jsonb_columns(self):
         columns = ["id", "name", "slug"]
         col_types = {"id": "uuid", "name": "text", "slug": "text"}
-        sql = _build_insert("organizations", columns, col_types)
+        sql = _build_insert("enterprise_config", columns, col_types)
         assert "$1" in sql
         assert "$2" in sql
         assert "$3" in sql
@@ -467,7 +467,7 @@ class TestManifestStructure:
             "migration_id": str(uuid.uuid4()),
             "exported_at": datetime.now(UTC).isoformat(),
             "source_alembic_version": "0012",
-            "tables": {"organizations": {"checksum": "abc123", "row_count": 5}},
+            "tables": {"enterprise_config": {"checksum": "abc123", "row_count": 5}},
         }
         serialized = json.dumps(manifest)
         deserialized = json.loads(serialized)
@@ -556,13 +556,13 @@ class TestDataclasses:
     def test_import_result_fields(self):
         result = ImportResult(
             migration_id="abc-123",
-            tables_imported=43,
+            tables_imported=34,
             rows_inserted={"users": 10},
             rows_skipped={"users": 2},
             duration_seconds=2.0,
             warnings=[],
         )
-        assert result.tables_imported == 43
+        assert result.tables_imported == 34
         assert result.rows_inserted["users"] == 10
 
     def test_checksum_result_fields(self):
@@ -592,10 +592,10 @@ class TestInsertOrderDependencies:
 
     KNOWN_FK_PAIRS = [
         # (child, parent) — parent must come before child
-        ("users", "organizations"),
-        ("exporter_configs", "organizations"),
-        ("agents", "organizations"),
-        ("mcp_listings", "organizations"),
+        ("users", "enterprise_config"),
+        ("exporter_configs", "enterprise_config"),
+        ("agents", "enterprise_config"),
+        ("mcp_listings", "enterprise_config"),
         ("agent_components", "agents"),
         ("feedback", "users"),
         ("alert_history", "alert_rules"),
@@ -902,26 +902,26 @@ class TestInsertOrderFKProperty:
 
     # Complete FK pairs derived from the SQLAlchemy models
     ALL_FK_PAIRS = [
-        ("users", "organizations"),
-        ("exporter_configs", "organizations"),
+        ("users", "enterprise_config"),
+        ("exporter_configs", "enterprise_config"),
         ("component_bundles", "users"),
         ("mcp_listings", "users"),
-        ("mcp_listings", "organizations"),
+        ("mcp_listings", "enterprise_config"),
         ("mcp_listings", "component_bundles"),
         ("skill_listings", "users"),
-        ("skill_listings", "organizations"),
+        ("skill_listings", "enterprise_config"),
         ("skill_listings", "component_bundles"),
         ("hook_listings", "users"),
-        ("hook_listings", "organizations"),
+        ("hook_listings", "enterprise_config"),
         ("hook_listings", "component_bundles"),
         ("prompt_listings", "users"),
-        ("prompt_listings", "organizations"),
+        ("prompt_listings", "enterprise_config"),
         ("prompt_listings", "component_bundles"),
         ("sandbox_listings", "users"),
-        ("sandbox_listings", "organizations"),
+        ("sandbox_listings", "enterprise_config"),
         ("sandbox_listings", "component_bundles"),
         ("agents", "users"),
-        ("agents", "organizations"),
+        ("agents", "enterprise_config"),
         ("mcp_validation_results", "mcp_listings"),
         ("mcp_downloads", "mcp_listings"),
         ("mcp_downloads", "users"),

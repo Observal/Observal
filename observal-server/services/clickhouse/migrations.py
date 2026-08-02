@@ -28,7 +28,7 @@ BASELINE_TABLES = frozenset(
 
 
 def _strip_sql_comments(sql: str) -> str:
-    return "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("#"))
+    return "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith(("#", "--")))
 
 
 def _split_sql(sql: str) -> list[str]:

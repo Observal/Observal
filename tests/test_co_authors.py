@@ -34,7 +34,6 @@ def _listing(entity_type, owner_id, *, team_id=None, is_private=False):
         co_authors=[],
         team_id=team_id,
         is_private=is_private,
-        owner_org_id=None,
         **{owner_field: owner_id},
     )
 

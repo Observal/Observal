@@ -53,7 +53,6 @@ async def audit_sink(message: str) -> None:
         "ip_address": extra.get("ip_address", ""),
         "user_agent": extra.get("user_agent", ""),
         "detail": extra.get("detail", ""),
-        "org_id": extra.get("org_id", ""),
         "sensitivity": extra.get("sensitivity", "standard"),
         "request_id": extra.get("request_id", ""),
         "outcome": extra.get("outcome", ""),

@@ -38,26 +38,6 @@ async def _get_column_types(conn: asyncpg.Connection, table: str) -> dict[str, s
     return {row["column_name"]: row["udt_name"] for row in rows}
 
 
-async def _get_org_fk_columns(conn: asyncpg.Connection) -> set[str]:
-    """Discover all columns that FK-reference organizations.id from information_schema."""
-    rows = await conn.fetch(
-        """
-        SELECT DISTINCT kcu.column_name
-        FROM information_schema.referential_constraints rc
-        JOIN information_schema.key_column_usage kcu
-            ON kcu.constraint_name = rc.constraint_name
-            AND kcu.constraint_schema = rc.constraint_schema
-        JOIN information_schema.key_column_usage ccu
-            ON ccu.constraint_name = rc.unique_constraint_name
-            AND ccu.constraint_schema = rc.unique_constraint_schema
-        WHERE ccu.table_name = 'organizations'
-            AND ccu.column_name = 'id'
-            AND rc.constraint_schema = 'public'
-        """
-    )
-    return {row["column_name"] for row in rows}
-
-
 async def _get_notnull_json_defaults(conn: asyncpg.Connection, table: str) -> dict[str, str]:
     """Discover NOT NULL columns with defaults for a table.
 
@@ -149,8 +129,6 @@ async def _insert_table(
     table: str,
     jsonl_path: Path,
     col_types: dict[str, str],
-    org_rewrite_map: dict[str, str] | None = None,
-    org_columns: set[str] | None = None,
     notnull_defaults: dict[str, str] | None = None,
 ) -> tuple[int, int, list[str]]:
     """Insert rows from a JSONL file into a table. Returns (inserted, skipped, warnings)."""
@@ -160,9 +138,6 @@ async def _insert_table(
     batch: list[dict] = []
     columns = sorted(col_types.keys())
     logged_skipped = False
-
-    # Determine which columns in this table need org rewriting
-    rewrite_cols = (org_columns & set(columns)) if org_rewrite_map and org_columns else set()
 
     with open(jsonl_path, encoding="utf-8") as f:
         for line in f:
@@ -180,13 +155,6 @@ async def _insert_table(
                         ", ".join(sorted(skipped_cols)),
                     )
                     logged_skipped = True
-
-            # Rewrite org IDs if normalization is active
-            if rewrite_cols and org_rewrite_map:
-                for col in rewrite_cols:
-                    val = row.get(col)
-                    if val and val in org_rewrite_map:
-                        row[col] = org_rewrite_map[val]
 
             batch.append(row)
 
@@ -210,7 +178,6 @@ async def import_pg(
     params: PgConnParams,
     archive_path: Path,
     reporter: ProgressReporter,
-    normalize_org_id: str | None = None,
 ) -> ImportResult:
     """Import a migration archive into the target database.
 
@@ -287,36 +254,6 @@ async def import_pg(
                 )
             }
 
-            # Org ID normalization: detect source org(s) and build rewrite map
-            org_rewrite_map: dict[str, str] = {}
-            source_org_ids: set[str] = set()
-            org_jsonl = staging_dir / "pg" / "organizations.jsonl"
-            if org_jsonl.exists():
-                with open(org_jsonl, encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        row = json.loads(line)
-                        src_id = row.get("id")
-                        if src_id:
-                            source_org_ids.add(src_id)
-
-            if normalize_org_id:
-                for src_id in source_org_ids:
-                    if src_id != normalize_org_id:
-                        org_rewrite_map[src_id] = normalize_org_id
-                if org_rewrite_map:
-                    optic.info("Normalizing {} source org(s) to: {}", len(org_rewrite_map), normalize_org_id)
-            elif source_org_ids:
-                target_org_ids = {str(row["id"]) for row in await conn.fetch('SELECT "id" FROM "organizations"')}
-                foreign_orgs = source_org_ids - target_org_ids
-                if foreign_orgs:
-                    warnings.append(f"Archive contains {len(foreign_orgs)} org(s) not on target; use org_id to remap")
-
-            # Derive org FK columns from schema
-            org_columns = await _get_org_fk_columns(conn)
-
             # Disable all user-defined triggers (including FK constraint triggers)
             await conn.execute("SET session_replication_role = 'replica'")
             try:
@@ -351,8 +288,6 @@ async def import_pg(
                         table,
                         jsonl_path,
                         col_types,
-                        org_rewrite_map=org_rewrite_map,
-                        org_columns=org_columns,
                         notnull_defaults=notnull_defaults,
                     )
                     rows_inserted[table] = ins
@@ -362,34 +297,7 @@ async def import_pg(
                 # Always restore default trigger behavior
                 await conn.execute("SET session_replication_role = 'origin'")
 
-            await reporter.update(phase="pg_import", pct=96, message="Running post-import fixups")
-
-            # Post-import fixup: backfill NULL owner_org_id from creator's org
-            _org_backfill: list[tuple[str, str]] = [
-                ("agents", "created_by"),
-                ("mcp_listings", "submitted_by"),
-                ("skill_listings", "submitted_by"),
-                ("hook_listings", "submitted_by"),
-                ("prompt_listings", "submitted_by"),
-                ("sandbox_listings", "submitted_by"),
-            ]
-            for tbl, creator_col in _org_backfill:
-                if tbl not in existing_tables:
-                    continue
-                tbl_cols = await _get_column_types(conn, tbl)
-                if "owner_org_id" not in tbl_cols:
-                    continue
-                result = await conn.execute(
-                    f'UPDATE "{tbl}" SET "owner_org_id" = "u"."org_id" '
-                    f'FROM "users" "u" '
-                    f'WHERE "{tbl}"."{creator_col}" = "u"."id" '
-                    f'AND "{tbl}"."owner_org_id" IS NULL '
-                    f'AND "u"."org_id" IS NOT NULL'
-                )
-                count = int(result.split()[-1])
-                if count > 0:
-                    optic.info("Fixed {} row(s) in {} with NULL owner_org_id", count, tbl)
-                    warnings.append(f"{tbl}: backfilled owner_org_id for {count} row(s)")
+            await reporter.update(phase="pg_import", pct=96, message="Finishing import")
 
         finally:
             await conn.close()

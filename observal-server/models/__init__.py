@@ -24,7 +24,6 @@ from models.insight_session_facets import InsightSessionFacets
 from models.insight_session_meta import InsightSessionMeta
 from models.mcp import ListingStatus, McpDownload, McpListing, McpValidationResult
 from models.migration_job import MigrationJob, MigrationOperation, MigrationScope, MigrationStatus
-from models.organization import Organization
 from models.prompt import PromptDownload, PromptListing
 from models.saml_config import SamlConfig
 from models.sandbox import SandboxDownload, SandboxListing
@@ -65,7 +64,6 @@ __all__ = [
     "MigrationOperation",
     "MigrationScope",
     "MigrationStatus",
-    "Organization",
     "PromptDownload",
     "PromptListing",
     "SamlConfig",

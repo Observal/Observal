@@ -21,8 +21,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
+import services.dynamic_settings as ds
 from database import async_session
-from models.organization import Organization
 from models.user import User, UserRole
 from services.jwt_service import decode_access_token
 from services.redis import get_redis
@@ -43,8 +43,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
     """Try to authenticate using a JWT access token. Returns User or None.
 
-    Also resolves the org's trace_privacy flag in the same query (via JOIN)
-    so downstream code never needs a separate DB call for it.
+    Resolves the deployment trace privacy policy from the settings cache so
+    downstream code never needs a separate DB call for it.
     """
     try:
         payload = decode_access_token(token)
@@ -89,16 +89,11 @@ async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
     except ValueError:
         return None
 
-    result = await db.execute(
-        select(User, Organization.trace_privacy)
-        .outerjoin(Organization, User.org_id == Organization.id)
-        .where(User.id == uid)
-    )
-    row = result.one_or_none()
-    if not row:
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
+    if not user:
         return None
-    user, trace_privacy = row
-    user._trace_privacy = bool(trace_privacy)
+    user._trace_privacy = ds.get_sync_bool("security.trace_privacy")
     user._groups = payload.get("groups", [])
     return user
 
@@ -147,7 +142,6 @@ async def get_current_user(
             raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
 
     request.state.current_user = user
-    request.state.org_id = user.org_id
     return user
 
 
@@ -304,46 +298,6 @@ async def commit_or_name_conflict(db: AsyncSession, item_type: str) -> None:
         ):
             raise HTTPException(status_code=409, detail=f"A {item_type} with this namespace and slug already exists")
         raise
-
-
-async def get_current_org_id(
-    current_user: User = Depends(get_current_user),
-) -> _uuid.UUID | None:
-    """Return the authenticated user's org_id (None for unaffiliated users)."""
-    return current_user.org_id
-
-
-def get_project_id(user: User) -> str:
-    """Derive the ClickHouse project_id from a user's org membership.
-
-    Returns "default" when the user has no org (backwards compat for local mode).
-    """
-    return str(user.org_id) if user.org_id else "default"
-
-
-async def get_or_create_default_org(db: AsyncSession) -> Organization:
-    """Return the default organization, creating it if it doesn't exist."""
-    result = await db.execute(select(Organization).where(Organization.slug == "default"))
-    org = result.scalar_one_or_none()
-    if org:
-        return org
-    org = Organization(name="Default", slug="default")
-    db.add(org)
-    await db.flush()
-    return org
-
-
-def require_org_scope():
-    """FastAPI dependency that applies org-scoped filtering.
-
-    Returns None when the user has no org (local mode - no filtering).
-    Returns the org_id UUID when the user belongs to an org.
-    """
-
-    async def _dep(current_user: User = Depends(get_current_user)) -> _uuid.UUID | None:
-        return current_user.org_id
-
-    return _dep
 
 
 async def require_password_auth() -> None:
@@ -524,7 +478,7 @@ def apply_registry_scope(stmt, model, current_user, *, team_id=None, composable_
 
 
 def apply_visibility_filter(stmt, model, current_user):
-    """Restrict team-private listings without using organization state.
+    """Restrict team-private listings without using deployment scope state.
 
     Public listings are visible to everyone. Team-private listings require a
     membership row for the requesting user, while legacy private user listings

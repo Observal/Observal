@@ -29,7 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
-from api.deps import get_current_user, get_db, get_or_create_default_org, require_password_auth
+from api.deps import get_current_user, get_db, require_password_auth
 from api.ratelimit import limiter
 from models.user import User, UserRole
 from models.user_group import UserGroup
@@ -255,7 +255,6 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
     if count and count > 0:
         raise HTTPException(status_code=400, detail="System already initialized")
 
-    default_org = await get_or_create_default_org(db)
     try:
         username = await generate_unique_username(req.email, db, explicit=req.username)
     except ValueError as exc:
@@ -265,7 +264,6 @@ async def init_admin(req: InitRequest, db: AsyncSession = Depends(get_db)):
         username=username,
         name=req.name,
         role=UserRole.admin,
-        org_id=default_org.id,
     )
     if req.password:
         _validate_password_strength(req.password)
@@ -300,13 +298,11 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
     if count and count > 0:
         raise HTTPException(status_code=400, detail="System already initialized")
 
-    default_org = await get_or_create_default_org(db)
     user = User(
         email="admin@localhost",
         username=await generate_unique_username("admin@localhost", db),
         name="admin",
         role=UserRole.admin,
-        org_id=default_org.id,
     )
     db.add(user)
     try:
@@ -335,7 +331,6 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
 
     _validate_password_strength(req.password)
     source_ip, user_agent = _extract_request_info(request)
-    default_org = await get_or_create_default_org(db)
     try:
         username = await generate_unique_username(req.email, db, explicit=req.username)
     except ValueError as exc:
@@ -345,7 +340,6 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
         username=username,
         name=req.name,
         role=UserRole.user,
-        org_id=default_org.id,
     )
     user.set_password(req.password)
     db.add(user)
@@ -449,13 +443,11 @@ async def _provision_sso_user(
     user = result.scalar_one_or_none()
 
     if user is None:
-        default_org = await get_or_create_default_org(db)
         user = User(
             email=email,
             username=await generate_unique_username(email, db),
             name=name,
             role=UserRole.user,
-            org_id=default_org.id,
             auth_provider=provider,
             sso_subject_id=subject_id,
         )
@@ -754,13 +746,11 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)):
 
     if user is None:
         try:
-            default_org = await get_or_create_default_org(db)
             user = User(
                 email=email,
                 username=await generate_unique_username(email, db),
                 name=name,
                 role=UserRole.user,
-                org_id=default_org.id,
                 auth_provider="oidc",
                 sso_subject_id=subject_id,
             )

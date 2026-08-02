@@ -54,7 +54,6 @@ def _make_admin_user(role="admin"):
     u = MagicMock(spec=User)
     u.id = uuid.uuid4()
     u.role = UserRole.admin if role == "admin" else UserRole.user
-    u.org_id = uuid.uuid4()
     return u
 
 
@@ -64,7 +63,6 @@ def _make_regular_user():
     u = MagicMock(spec=User)
     u.id = uuid.uuid4()
     u.role = UserRole.user
-    u.org_id = uuid.uuid4()
     return u
 
 

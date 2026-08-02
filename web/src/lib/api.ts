@@ -727,18 +727,18 @@ export const admin = {
 			{},
 		),
 	getTracePrivacy: () =>
-		get<{ trace_privacy: boolean }>("/admin/org/trace-privacy"),
+		get<{ trace_privacy: boolean }>("/admin/trace-privacy"),
 	setTracePrivacy: (enabled: boolean) =>
-		put<{ trace_privacy: boolean }>("/admin/org/trace-privacy", {
+		put<{ trace_privacy: boolean }>("/admin/trace-privacy", {
 			trace_privacy: enabled,
 		}),
 	getRegisteredAgentsOnly: () =>
 		get<{ registered_agents_only: boolean }>(
-			"/admin/org/registered-agents-only",
+			"/admin/registered-agents-only",
 		),
 	setRegisteredAgentsOnly: (enabled: boolean) =>
 		put<{ registered_agents_only: boolean }>(
-			"/admin/org/registered-agents-only",
+			"/admin/registered-agents-only",
 			{ registered_agents_only: enabled },
 		),
 	auditLog: (params?: Record<string, string>) => {
@@ -793,14 +793,14 @@ export const admin = {
 			body,
 		),
 	revokeScimToken: (id: string) => del(`/admin/scim-tokens/${id}`),
-	getRetention: () => get<RetentionConfig>("/admin/org/retention"),
+	getRetention: () => get<RetentionConfig>("/admin/retention"),
 	setRetention: (body: RetentionConfigUpdate) =>
-		put<RetentionConfig>("/admin/org/retention", body),
+		put<RetentionConfig>("/admin/retention", body),
 	previewRetention: (days: number) =>
-		get<RetentionPreview>(`/admin/org/retention/preview?days=${days}`),
-	getRetentionStats: () => get<RetentionStats>("/admin/org/retention/stats"),
+		get<RetentionPreview>(`/admin/retention/preview?days=${days}`),
+	getRetentionStats: () => get<RetentionStats>("/admin/retention/stats"),
 	getRetentionWarnings: () =>
-		get<RetentionWarnings>("/admin/org/retention/warnings"),
+		get<RetentionWarnings>("/admin/retention/warnings"),
 	// ── Migration ──────────────────────────────────────────────
 	migrateExport: (scope: string) =>
 		post<{ job_id: string }>("/admin/migrate/export", { scope }),
@@ -857,8 +857,6 @@ export const admin = {
 			`/admin/migrate/jobs/${jobId}/artifacts/${name}/token`,
 			{},
 		),
-	migrateCurrentOrg: () =>
-		get<import("./types/admin").CurrentOrgInfo>("/admin/migrate/current-org"),
 };
 
 // ── Retention Types ───────────────────────────────────────────────

@@ -4,7 +4,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,7 +15,6 @@ class ScimToken(Base):
     __tablename__ = "scim_tokens"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
     token_hash: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(String(255), default="", server_default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")

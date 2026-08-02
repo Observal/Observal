@@ -170,7 +170,7 @@ All caches cleared.
 
 ### admin trace-privacy
 
-Shows whether trace privacy (sensitive data redaction) is currently enabled or disabled for the organization.
+Shows whether trace privacy (sensitive data redaction) is currently enabled or disabled for the deployment.
 
 ```bash
 observal admin trace-privacy

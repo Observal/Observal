@@ -18,7 +18,7 @@ async def test_agent_scoped_report_route_rejects_cross_agent_report():
 
     agent_id = uuid.uuid4()
     report_agent_id = uuid.uuid4()
-    user = SimpleNamespace(id=uuid.uuid4(), org_id=None, role=UserRole.user)
+    user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user)
     db = AsyncMock()
     agent = SimpleNamespace(id=agent_id)
     report = SimpleNamespace(agent_id=report_agent_id)
@@ -40,7 +40,7 @@ async def test_agent_scoped_report_route_returns_matching_report():
     from models.user import UserRole
 
     agent_id = uuid.uuid4()
-    user = SimpleNamespace(id=uuid.uuid4(), org_id=None, role=UserRole.user)
+    user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user)
     db = AsyncMock()
     agent = SimpleNamespace(id=agent_id)
     report = SimpleNamespace(agent_id=agent_id)
@@ -59,7 +59,7 @@ async def test_agent_scoped_list_delegates_to_existing_insights_logic():
     from api.routes.agent.insights import list_agent_insight_reports
     from models.user import UserRole
 
-    user = SimpleNamespace(id=uuid.uuid4(), org_id=None, role=UserRole.user)
+    user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user)
     db = AsyncMock()
     reports = [{"id": str(uuid.uuid4())}]
 

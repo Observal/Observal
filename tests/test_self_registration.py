@@ -3,7 +3,6 @@
 
 import uuid
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -86,7 +85,6 @@ async def test_register_creates_user_role():
     from models.user import UserRole
 
     db = _db_override()
-    org_id = uuid.uuid4()
     try:
 
         async def get_bool(key):
@@ -94,7 +92,6 @@ async def test_register_creates_user_role():
 
         with (
             patch("api.routes.auth.ds.get_bool", new=AsyncMock(side_effect=get_bool)),
-            patch("api.routes.auth.get_or_create_default_org", new=AsyncMock(return_value=SimpleNamespace(id=org_id))),
             patch("api.routes.auth._issue_tokens", new=AsyncMock(return_value=("access", "refresh", 3600))),
             patch("api.routes.auth.emit_security_event", new=AsyncMock()),
         ):
@@ -117,7 +114,6 @@ async def test_register_creates_user_role():
         created_user = db.add.call_args.args[0]
         assert created_user.email == "new@example.com"
         assert created_user.role == UserRole.user
-        assert created_user.org_id == org_id
         # Verify both users.username and teams.handle reservation queries ran.
         assert db.execute.call_count >= 2
     finally:

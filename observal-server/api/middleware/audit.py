@@ -72,7 +72,6 @@ class AuditMiddleware(BaseHTTPMiddleware):
             actor_role=(
                 user.role.value if user and hasattr(user, "role") and hasattr(user.role, "value") else "anonymous"
             ),
-            org_id=str(user.org_id) if user and hasattr(user, "org_id") and user.org_id else "",
             status_code=status,
             outcome=outcome,
             duration_ms=round(duration_ms, 2),

@@ -37,7 +37,6 @@ def _make_job_row(
     job.started_at = None
     job.finished_at = None
     job.artifact_dir = None
-    job.org_id = uuid.uuid4()
     job.progress_phase = "queued"
     job.progress_pct = 0
     job.progress_message = "Queued"
@@ -120,13 +119,13 @@ class TestFailedLifecycle:
     def test_checksum_error_produces_failed_status(self):
         """ChecksumMismatchError leads to failed status with descriptive message."""
         job = _make_job_row(status=MigrationStatus.running)
-        error = ChecksumMismatchError("organizations: expected abc, got xyz")
+        error = ChecksumMismatchError("enterprise_config: expected abc, got xyz")
 
         job.status = MigrationStatus.failed
         job.error_message = str(error)
 
         assert job.status == MigrationStatus.failed
-        assert "organizations" in job.error_message
+        assert "enterprise_config" in job.error_message
 
     def test_connection_error_produces_failed_status(self):
         """ConnectionFailedError leads to failed status."""

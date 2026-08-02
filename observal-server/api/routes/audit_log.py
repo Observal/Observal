@@ -29,7 +29,7 @@ _ALL_COLUMNS = (
     "event_id, timestamp, actor_id, actor_email, actor_role, "
     "action, resource_type, resource_id, resource_name, http_method, "
     "http_path, status_code, ip_address, user_agent, detail, "
-    "org_id, sensitivity, request_id, outcome, duration_ms, chain_hash, source"
+    "sensitivity, request_id, outcome, duration_ms, chain_hash, source"
 )
 
 
@@ -49,7 +49,6 @@ class AuditLogEntry(BaseModel):
     ip_address: str
     user_agent: str
     detail: str
-    org_id: str = ""
     sensitivity: str = "standard"
     request_id: str = ""
     outcome: str = ""
@@ -254,7 +253,6 @@ async def export_audit_logs(
         "ip_address",
         "user_agent",
         "detail",
-        "org_id",
         "sensitivity",
         "request_id",
         "outcome",

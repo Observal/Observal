@@ -190,7 +190,6 @@ def test_alert_history_endpoint_rejects_oversized_limit_via_query_validation():
         user.id = uuid.uuid4()
         user.email = "tester@example.com"
         user.role = UserRole.user
-        user.org_id = None
         return user
 
     async def _get_db():
@@ -225,9 +224,9 @@ def test_rate_limit_key_prefers_identity_then_token_then_ip():
     from api.ratelimit import _get_rate_limit_key
 
     user_request = MagicMock()
-    user_request.state = SimpleNamespace(current_user=SimpleNamespace(id="user-1", org_id="org-1"))
+    user_request.state = SimpleNamespace(current_user=SimpleNamespace(id="user-1"))
     user_request.headers = {}
-    assert _get_rate_limit_key(user_request) == "org:org-1:user:user-1"
+    assert _get_rate_limit_key(user_request) == "user:user-1"
 
     token_request = MagicMock()
     token_request.state = SimpleNamespace()
@@ -256,7 +255,6 @@ async def test_get_current_user_stores_identity_for_rate_limit_key():
     user.id = uuid.uuid4()
     user.email = "tester@example.com"
     user.role = UserRole.user
-    user.org_id = uuid.uuid4()
     user.auth_provider = "password"
 
     request = MagicMock()
@@ -274,4 +272,3 @@ async def test_get_current_user_stores_identity_for_rate_limit_key():
 
     assert result is user
     assert request.state.current_user is user
-    assert request.state.org_id == user.org_id

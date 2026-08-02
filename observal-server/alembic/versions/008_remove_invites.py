@@ -27,12 +27,6 @@ def downgrade() -> None:
     op.create_table(
         "invites",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column(
-            "org_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
         sa.Column("email", sa.String(255), nullable=True),
         sa.Column(
             "role",

@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 from loguru import logger as optic
 
 from config import settings
-from models.organization import Organization
 from models.user import User, UserRole
 from services.events import UserCreated, bus
 from services.username_generator import generate_unique_username
@@ -47,11 +46,6 @@ async def seed_demo_accounts(db: AsyncSession) -> int:
     if real_count and real_count > 0:
         return 0
 
-    result = await db.execute(select(Organization).where(Organization.slug == "default"))
-    default_org = result.scalar_one_or_none()
-    if not default_org:
-        return 0
-
     created = 0
     for prefix, role in DEMO_TIERS:
         email = getattr(settings, f"{prefix}_EMAIL", None)
@@ -71,7 +65,6 @@ async def seed_demo_accounts(db: AsyncSession) -> int:
             name=f"Demo {role.value.replace('_', ' ').title()}",
             role=role,
             is_demo=True,
-            org_id=default_org.id,
         )
         user.set_password(password)
         db.add(user)

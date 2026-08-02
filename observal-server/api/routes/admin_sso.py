@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 import services.dynamic_settings as ds
-from api.deps import get_db, get_or_create_default_org, require_role
+from api.deps import get_db, require_role
 from api.ratelimit import limiter
 from api.routes.sso_saml import _get_saml_config, _run_saml_check_suite
 from config import settings as app_settings
@@ -88,7 +88,6 @@ async def get_saml_config(
         "configured": True,
         "source": "database",
         "id": str(config.id),
-        "org_id": str(config.org_id),
         "idp_entity_id": config.idp_entity_id,
         "idp_sso_url": config.idp_sso_url,
         "idp_slo_url": config.idp_slo_url,
@@ -121,13 +120,10 @@ async def upsert_saml_config(
             detail="idp_entity_id, idp_sso_url, and idp_x509_cert are required",
         )
 
-    default_org = await get_or_create_default_org(db)
-    org_id = current_user.org_id or default_org.id
-
     sp_entity_id = body.get("sp_entity_id") or f"{_get_frontend_url()}/api/v1/sso/saml/metadata"
     sp_acs_url = body.get("sp_acs_url") or f"{_get_frontend_url()}/api/v1/sso/saml/acs"
 
-    result = await db.execute(select(SamlConfig).where(SamlConfig.org_id == org_id))
+    result = await db.execute(select(SamlConfig).limit(1))
     config = result.scalar_one_or_none()
 
     enc_password = ds.get_sync("saml.sp_key_encryption_password")
@@ -137,7 +133,6 @@ async def upsert_saml_config(
         sp_key_enc = encrypt_private_key(private_key_pem, enc_password)
 
         config = SamlConfig(
-            org_id=org_id,
             idp_entity_id=idp_entity_id,
             idp_sso_url=idp_sso_url,
             idp_slo_url=body.get("idp_slo_url", ""),
@@ -200,12 +195,7 @@ async def delete_saml_config(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Delete SAML configuration (disables SAML SSO)."""
-    org_id = current_user.org_id
-    if not org_id:
-        default_org = await get_or_create_default_org(db)
-        org_id = default_org.id
-
-    result = await db.execute(select(SamlConfig).where(SamlConfig.org_id == org_id))
+    result = await db.execute(select(SamlConfig).limit(1))
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="No SAML configuration found")
@@ -701,12 +691,7 @@ async def list_scim_tokens(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """List all SCIM tokens (token values are not returned, only metadata)."""
-    org_id = current_user.org_id
-    if not org_id:
-        default_org = await get_or_create_default_org(db)
-        org_id = default_org.id
-
-    result = await db.execute(select(ScimToken).where(ScimToken.org_id == org_id).order_by(ScimToken.created_at.desc()))
+    result = await db.execute(select(ScimToken).order_by(ScimToken.created_at.desc()))
     tokens = result.scalars().all()
     return [
         {
@@ -727,17 +712,11 @@ async def create_scim_token(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Generate a new SCIM bearer token. The plaintext token is returned ONCE."""
-    org_id = current_user.org_id
-    if not org_id:
-        default_org = await get_or_create_default_org(db)
-        org_id = default_org.id
-
     description = body.get("description", "")
     raw_token = secrets.token_urlsafe(48)
     token_hash = hash_scim_token(raw_token)
 
     token = ScimToken(
-        org_id=org_id,
         token_hash=token_hash,
         description=description,
         active=True,
@@ -780,12 +759,7 @@ async def revoke_scim_token(
     except ValueError:
         raise HTTPException(status_code=404, detail="Token not found")
 
-    org_id = current_user.org_id
-    if not org_id:
-        default_org = await get_or_create_default_org(db)
-        org_id = default_org.id
-
-    result = await db.execute(select(ScimToken).where(ScimToken.id == tid, ScimToken.org_id == org_id))
+    result = await db.execute(select(ScimToken).where(ScimToken.id == tid))
     token = result.scalar_one_or_none()
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")

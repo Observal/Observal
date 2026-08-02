@@ -151,7 +151,7 @@ class TestImportCommand:
     @patch("observal_cli.cmd_migrate.import_pg", new_callable=AsyncMock)
     @patch("observal_cli.cmd_migrate._require_admin")
     def test_import_passes_pg_conn_params_and_archive(self, mock_admin, mock_import_pg, tmp_path):
-        """import_pg receives PgConnParams, archive path, and org_id."""
+        """import_pg receives only the target connection, archive, and reporter."""
         mock_import_pg.return_value = _make_import_result()
 
         # Create a dummy tar.gz file
@@ -169,8 +169,6 @@ class TestImportCommand:
                 "postgresql://u:p@host/db",
                 "--archive",
                 str(archive),
-                "--org-id",
-                "550e8400-e29b-41d4-a716-446655440000",
             ],
         )
 
@@ -183,13 +181,12 @@ class TestImportCommand:
         assert args[1] == archive
         # Third arg: reporter
         assert hasattr(args[2], "update")
-        # Keyword: normalize_org_id
-        assert kwargs["normalize_org_id"] == "550e8400-e29b-41d4-a716-446655440000"
+        assert not kwargs
 
     @patch("observal_cli.cmd_migrate.import_pg", new_callable=AsyncMock)
     @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_without_org_id(self, mock_admin, mock_import_pg, tmp_path):
-        """Without --org-id, normalize_org_id should be None."""
+    def test_import_without_target_identity_flags(self, mock_admin, mock_import_pg, tmp_path):
+        """The import command has no target identity options."""
         mock_import_pg.return_value = _make_import_result()
 
         archive = tmp_path / "test.tar.gz"
@@ -205,7 +202,7 @@ class TestImportCommand:
 
         assert result.exit_code == 0, result.output
         _, kwargs = mock_import_pg.call_args
-        assert kwargs["normalize_org_id"] is None
+        assert not kwargs
 
 
 # ── Validate command tests ───────────────────────────────────
@@ -311,8 +308,8 @@ class TestImportTelemetryCommand:
 
     @patch("observal_cli.cmd_migrate.import_ch", new_callable=AsyncMock)
     @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_telemetry_passes_ch_params_and_project_id(self, mock_admin, mock_import_ch, tmp_path):
-        """import_ch receives ChConnParams, input dir, reporter, and project_id."""
+    def test_import_telemetry_passes_ch_params(self, mock_admin, mock_import_ch, tmp_path):
+        """import_ch receives only the connection, input directory, and reporter."""
         mock_import_ch.return_value = _make_telemetry_import_result()
 
         input_dir = tmp_path / "telemetry"
@@ -326,8 +323,6 @@ class TestImportTelemetryCommand:
                 "clickhouse://default:@localhost:8123/observal",
                 "--input-dir",
                 str(input_dir),
-                "--project-id",
-                "new-project-uuid",
             ],
         )
 
@@ -340,13 +335,12 @@ class TestImportTelemetryCommand:
         assert args[1] == input_dir
         # Third arg: reporter
         assert hasattr(args[2], "update")
-        # Keyword: normalize_project_id
-        assert kwargs["normalize_project_id"] == "new-project-uuid"
+        assert not kwargs
 
     @patch("observal_cli.cmd_migrate.import_ch", new_callable=AsyncMock)
     @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_telemetry_without_project_id(self, mock_admin, mock_import_ch, tmp_path):
-        """Without --project-id, normalize_project_id should be None."""
+    def test_import_telemetry_without_target_identity_flags(self, mock_admin, mock_import_ch, tmp_path):
+        """The import command has no target identity options."""
         mock_import_ch.return_value = _make_telemetry_import_result()
 
         input_dir = tmp_path / "telemetry"
@@ -365,7 +359,7 @@ class TestImportTelemetryCommand:
 
         assert result.exit_code == 0, result.output
         _, kwargs = mock_import_ch.call_args
-        assert kwargs["normalize_project_id"] is None
+        assert not kwargs
 
 
 # ── Validate telemetry command tests ─────────────────────────

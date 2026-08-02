@@ -34,7 +34,7 @@ async def test_resolve_insights_agent_accepts_agent_name():
 
     assert resolved is agent
     # The loader evaluates team membership itself, so it takes the caller, not an
-    # organization id. Organization scoping is not part of registry visibility.
+    # Registry visibility is governed by teams, not deployment scope.
     load_agent.assert_awaited_once_with(
         db,
         "ultra-pi",

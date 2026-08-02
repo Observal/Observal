@@ -320,7 +320,7 @@ export default function SettingsPage() {
 	}, []);
 
 	const handlePurgeTracesInsights = useCallback(async () => {
-		if (!window.confirm("Permanently delete all traces/session telemetry and insight reports for this project/org? This cannot be undone.")) {
+		if (!window.confirm("Permanently delete all traces/session telemetry and insight reports for this deployment? This cannot be undone.")) {
 			return;
 		}
 		setPurgingTracesInsights(true);

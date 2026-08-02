@@ -33,7 +33,6 @@ def _make_agent(name="test-agent", owner="test-owner"):
     agent.id = uuid.uuid4()
     agent.name = name
     agent.owner = owner
-    agent.owner_org_id = uuid.uuid4()
     agent.created_by = uuid.uuid4()
     return agent
 

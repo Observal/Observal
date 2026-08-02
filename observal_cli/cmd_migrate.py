@@ -209,11 +209,6 @@ def export_cmd(
 def import_cmd(
     db_url: str = typer.Option(..., "--db-url", help="Target PostgreSQL connection string"),
     archive: str = typer.Option(..., "--archive", "-a", help="Path to .tar.gz archive"),
-    org_id: str | None = typer.Option(
-        None,
-        "--org-id",
-        help="Rewrite all org references to this UUID (use target org ID when source/target orgs differ)",
-    ),
 ) -> None:
     """Import a migration archive into the target database.
 
@@ -221,12 +216,9 @@ def import_cmd(
     for idempotent imports: existing rows are skipped, not overwritten.
     Requires super_admin role.
 
-    When migrating between instances with different organizations, use
-    --org-id to remap all organization references to the target org UUID.
-
     Examples:
         observal migrate import --db-url postgresql://user:pass@host/observal --archive backup.tar.gz
-        observal migrate import --db-url $DATABASE_URL -a backup.tar.gz --org-id 550e8400-...
+        observal migrate import --db-url $DATABASE_URL -a backup.tar.gz
     """
     _require_admin()
 
@@ -240,9 +232,6 @@ def import_cmd(
         rprint("[dim]  Expected a .tar.gz file.[/dim]")
         raise typer.Exit(1)
 
-    if org_id:
-        rprint(f"[dim]  Normalizing org references to: {org_id}[/dim]")
-
     rprint(f"[bold]Importing from:[/bold] {archive_path}")
 
     params = PgConnParams(dsn=db_url)
@@ -250,7 +239,7 @@ def import_cmd(
 
     try:
         with spinner("Importing..."):
-            result: ImportResult = asyncio.run(import_pg(params, archive_path, reporter, normalize_org_id=org_id))
+            result: ImportResult = asyncio.run(import_pg(params, archive_path, reporter))
     except MigrationError as exc:
         _handle_migration_error(exc)
 
@@ -397,9 +386,6 @@ def export_telemetry_cmd(
 def import_telemetry_cmd(
     clickhouse_url: str = typer.Option(..., "--clickhouse-url", help="Target ClickHouse connection string"),
     input_dir: str = typer.Option(..., "--input-dir", help="Directory containing Parquet files"),
-    project_id: str | None = typer.Option(
-        None, "--project-id", help="Rewrite project_id in all tables to this value (use when source/target orgs differ)"
-    ),
 ) -> None:
     """Import Parquet telemetry files into target ClickHouse.
 
@@ -408,16 +394,10 @@ def import_telemetry_cmd(
     data for idempotent re-runs. Persists resume state so interrupted imports
     can continue where they left off. Requires super_admin role.
 
-    Use --project-id to normalize the project_id column when migrating between
-    instances with different organization identifiers.
-
     Examples:
         observal migrate import-telemetry \\
             --clickhouse-url clickhouse://default:@localhost:8123/observal \\
             --input-dir ./telemetry-export
-        observal migrate import-telemetry \\
-            --clickhouse-url $CLICKHOUSE_URL \\
-            --input-dir ./telemetry-export --project-id my-new-org-id
     """
     _require_admin()
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -429,18 +409,13 @@ def import_telemetry_cmd(
         rprint(f"[red]Directory not found:[/red] {input_path}")
         raise typer.Exit(1)
 
-    if project_id:
-        rprint(f"[dim]  Normalizing project_id to: {project_id}[/dim]")
-
     rprint(f"[bold]Importing telemetry from:[/bold] {input_path}")
 
     ch_params = ChConnParams(url=clickhouse_url)
     reporter = RichProgressReporter()
 
     try:
-        result: TelemetryImportResult = asyncio.run(
-            import_ch(ch_params, input_path, reporter, normalize_project_id=project_id)
-        )
+        result: TelemetryImportResult = asyncio.run(import_ch(ch_params, input_path, reporter))
     except MigrationError as exc:
         _handle_migration_error(exc)
 

@@ -42,7 +42,7 @@ observal server migrate import \
   --db-url "$TARGET_DATABASE_URL"
 ```
 
-Registry archives include users, organizations, agents, component listings and versions, feedback, settings, and related relational records. Treat them as production backups.
+Registry archives include users, agents, component listings and versions, feedback, settings, and related relational records. Treat them as production backups.
 
 ## Telemetry export
 
@@ -57,7 +57,10 @@ The deep-copy export includes only active ClickHouse tables:
 
 | Table | Engine | Time column | Description |
 | --- | --- | --- | --- |
-| `session_events` | MergeTree | `timestamp` | Harness session transcript records |
+| `session_events` | ReplacingMergeTree | `timestamp` | Harness session transcript records |
+| `session_checkpoints` | ReplacingMergeTree | `updated_at` | Resume checkpoints |
+| `session_stats_agg` | ReplacingMergeTree | `first_event_time` | Regenerated session aggregates |
+| `layer_snapshots` | ReplacingMergeTree | `uploaded_at` | Harness layer snapshots |
 | `audit_log` | MergeTree | `timestamp` | Audit trail entries |
 | `security_events` | MergeTree | `timestamp` | Security event records |
 | `webhook_deliveries` | MergeTree | `timestamp` | Webhook delivery history |
@@ -89,14 +92,7 @@ observal server migrate import-telemetry \
   --input-dir ./migration/telemetry/
 ```
 
-To normalize imported rows to one target project:
-
-```bash
-observal server migrate import-telemetry \
-  --clickhouse-url "clickhouse://default:clickhouse@target:8123/observal" \
-  --input-dir ./migration/telemetry/ \
-  --project-id "target-org-id"
-```
+Telemetry imports always normalize project-keyed rows to the deployment project `default`.
 
 Imports are resumable. Progress is stored in the input directory, completed tables are skipped, and temporary files use a `.tmp` suffix until each operation finishes.
 

@@ -216,7 +216,7 @@ def test_request_requires_one_ordered_byte_checkpoint_per_line():
 async def test_ingest_route_returns_contiguous_acknowledgement(monkeypatch):
     user = MagicMock()
     user.id = "user"
-    monkeypatch.setattr(ingest_route, "get_project_id", lambda _user: "project")
+    monkeypatch.setattr(ingest_route, "DEFAULT_PROJECT_ID", "project")
     monkeypatch.setattr(
         session_ingest,
         "ingest_session_lines",

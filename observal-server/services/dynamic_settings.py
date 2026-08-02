@@ -258,6 +258,14 @@ DEFAULTS: dict[str, str] = {
     "security.allow_draft_install": "false",
     "security.rate_limit_auth": "10/minute",
     "security.rate_limit_auth_strict": "5/minute",
+    "security.trace_privacy": "false",
+    # Registry policy
+    "registry.registered_agents_only": "false",
+    # Application retention policy, separate from the ClickHouse TTL below
+    "retention.enabled": "false",
+    "retention.trace_days": "",
+    "retention.score_days": "",
+    "retention.max_trace_count": "",
     # NOTE: Defaults to RFC 1918 private ranges so the Docker compose stack
     # works out of the box (nginx LB connects from a Docker-bridge IP).
     # Tradeoff: any process on the same private network can inject XFF headers
@@ -453,9 +461,16 @@ SECTIONS: list[dict[str, Any]] = [
     {
         "id": "data",
         "title": "Data & Retention",
-        "description": "Data retention policies and cache TTLs.",
+        "description": "Deployment-wide retention policies and cache TTLs.",
         "icon": "hard-drive",
-        "keys": [k for k in DEFAULTS if k.startswith("data.")],
+        "keys": [k for k in DEFAULTS if k.startswith("data.") or k.startswith("retention.")],
+    },
+    {
+        "id": "registry",
+        "title": "Registry",
+        "description": "Deployment-wide registry policy.",
+        "icon": "package",
+        "keys": [k for k in DEFAULTS if k.startswith("registry.")],
     },
     {
         "id": "observability",

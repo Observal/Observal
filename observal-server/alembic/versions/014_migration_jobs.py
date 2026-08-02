@@ -47,7 +47,6 @@ def upgrade() -> None:
         sa.Column("artifacts_json", JSON(), nullable=True),
         sa.Column("artifact_dir", sa.Text(), nullable=True),
         sa.Column("schema_version", sa.String(64), nullable=True),
-        sa.Column("org_id", UUID(as_uuid=True), nullable=True),
     )
 
     op.create_foreign_key(

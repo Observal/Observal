@@ -387,9 +387,9 @@ def delete(path: str) -> dict:
 
 
 def get_registered_agents_only() -> bool:
-    """Check if the org has registered-agents-only mode enabled.
+    """Check whether deployment registered-agent enforcement is enabled.
 
-    Returns False on any error (fail-open, silent, no printed messages).
+    Returns False when the server is not configured or the policy endpoint is unavailable.
     """
     try:
         cfg = config.load()
@@ -398,7 +398,7 @@ def get_registered_agents_only() -> bool:
         if not server_url or not token:
             return False
         r = httpx.get(
-            f"{server_url}/api/v1/admin/org/registered-agents-only",
+            f"{server_url}/api/v1/admin/registered-agents-only",
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
         )

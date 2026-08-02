@@ -12,7 +12,6 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.organization import Organization
 from models.user import User
 
 # ── Branding Validation ──────────────────────────────────
@@ -154,13 +153,3 @@ async def _generate_unique_password(db: AsyncSession, length: int = 20, max_atte
 
     # Astronomically unlikely to reach here, but be safe
     return "".join(secrets.choice(alphabet) for _ in range(length))
-
-
-async def _get_user_org(db: AsyncSession, user: User) -> Organization:
-    """Get the user's org. Raises 400 if user has no org."""
-    if not user.org_id:
-        raise HTTPException(status_code=400, detail="User has no organization")
-    org = (await db.execute(select(Organization).where(Organization.id == user.org_id))).scalar_one_or_none()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
-    return org

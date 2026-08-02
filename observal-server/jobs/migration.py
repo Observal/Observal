@@ -136,7 +136,6 @@ async def run_migration_job(ctx: dict, job_id: str) -> None:
         operation_type = job.operation_type
         data_scope = job.data_scope
         artifact_dir = job.artifact_dir
-        org_id = str(job.org_id) if job.org_id else None
 
     # Create artifact dir
     artifact_root = await _get_artifact_root()
@@ -171,7 +170,7 @@ async def run_migration_job(ctx: dict, job_id: str) -> None:
                 )
             elif operation_type == MigrationOperation.import_:
                 result_json, artifacts_json, schema_version = await _run_import(
-                    data_scope, pg_conn, ch_conn, artifact_dir, reporter, org_id
+                    data_scope, pg_conn, ch_conn, artifact_dir, reporter
                 )
             elif operation_type == MigrationOperation.validate:
                 result_json, artifacts_json, schema_version = await _run_validate(
@@ -237,7 +236,6 @@ async def run_migration_job(ctx: dict, job_id: str) -> None:
             target_id=job_id,
             target_type="migration_job",
             detail=detail,
-            org_id=org_id or "",
         )
     )
 
@@ -334,7 +332,6 @@ async def _run_import(
     ch_conn: ChConnParams,
     artifact_dir: str,
     reporter: DbProgressReporter,
-    org_id: str | None = None,
 ) -> tuple[dict | None, list | None, str | None]:
     """Dispatch import operations based on scope."""
     from pathlib import Path
@@ -343,19 +340,6 @@ async def _run_import(
     artifacts: list = []
     schema_version = None
     artifact_path = Path(artifact_dir)
-
-    # Auto-detect target org for rewriting if not explicitly provided
-    normalize_org_id = org_id
-    if not normalize_org_id:
-        from observal_shared.migration.connections import connect_pg
-
-        conn = await connect_pg(pg_conn)
-        try:
-            row = await conn.fetchrow("SELECT id::text FROM organizations LIMIT 1")
-            if row:
-                normalize_org_id = row["id"]
-        finally:
-            await conn.close()
 
     if data_scope in (MigrationScope.postgres, MigrationScope.both):
         # Find the PG archive file (exclude telemetry archives)
@@ -372,7 +356,6 @@ async def _run_import(
             pg_conn,
             archive_file,
             reporter,
-            normalize_org_id=normalize_org_id,
         )
         result["rows_inserted"] = import_result.rows_inserted
         result["rows_skipped"] = import_result.rows_skipped
@@ -399,7 +382,6 @@ async def _run_import(
             ch_conn,
             telemetry_dir,
             reporter,
-            normalize_project_id=normalize_org_id,
         )
         # Merge CH import results
         for table, count in (ch_result.rows_imported or {}).items():

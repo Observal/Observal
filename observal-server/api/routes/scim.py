@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, get_or_create_default_org
+from api.deps import get_db
 from models.scim_token import ScimToken
 from models.user import User, UserRole
 from services.events import UserCreated, UserDeleted, bus
@@ -50,18 +50,12 @@ router = APIRouter(prefix="/api/v1/scim", tags=["scim"])
 SCIM_CONTENT_TYPE = "application/scim+json"
 
 
-async def _get_scoped_user(
-    user_id: str,
-    scim_token: ScimToken,
-    db: AsyncSession,
-) -> User | None:
+async def _get_scoped_user(user_id: str, db: AsyncSession) -> User | None:
     try:
         uid = _uuid.UUID(user_id)
     except ValueError:
         return None
     q = select(User).where(User.id == uid)
-    if scim_token.org_id:
-        q = q.where(User.org_id == scim_token.org_id)
     result = await db.execute(q)
     return result.scalar_one_or_none()
 
@@ -105,7 +99,7 @@ async def list_users(
     startIndex: int = 1,  # noqa: N803 - SCIM spec parameter name
     count: int = 100,
     filter: str | None = None,
-    scim_token: ScimToken = Depends(_verify_scim_token),
+    _scim_token: ScimToken = Depends(_verify_scim_token),
     db: AsyncSession = Depends(get_db),
 ):
     base_url = str(request.base_url).rstrip("/") + "/api/v1/scim"
@@ -123,8 +117,6 @@ async def list_users(
         if parsed_filter.attr == "username":
             value = parsed_filter.value.strip().lower()
             q = select(User)
-            if scim_token.org_id:
-                q = q.where(User.org_id == scim_token.org_id)
             if parsed_filter.op == "eq":
                 q = q.where(User.email == value)
             elif parsed_filter.op == "sw":
@@ -155,8 +147,6 @@ async def list_users(
         )
 
     base_q = select(User)
-    if scim_token.org_id:
-        base_q = base_q.where(User.org_id == scim_token.org_id)
 
     total_q = select(func.count()).select_from(base_q.subquery())
     total = (await db.execute(total_q)).scalar() or 0
@@ -175,7 +165,7 @@ async def list_users(
 @router.post("/Users", status_code=201)
 async def create_user(
     request: Request,
-    scim_token: ScimToken = Depends(_verify_scim_token),
+    _scim_token: ScimToken = Depends(_verify_scim_token),
     db: AsyncSession = Depends(get_db),
 ):
     body = await request.json()
@@ -197,15 +187,11 @@ async def create_user(
             media_type=SCIM_CONTENT_TYPE,
         )
 
-    default_org = await get_or_create_default_org(db)
-    org_id = scim_token.org_id or default_org.id
-
     user = User(
         email=email,
         username=await generate_unique_username(email, db),
         name=parsed["name"],
         role=UserRole.user,
-        org_id=org_id,
         auth_provider="scim",
     )
     db.add(user)
@@ -235,10 +221,10 @@ async def create_user(
 async def get_user(
     user_id: str,
     request: Request,
-    scim_token: ScimToken = Depends(_verify_scim_token),
+    _scim_token: ScimToken = Depends(_verify_scim_token),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await _get_scoped_user(user_id, scim_token, db)
+    user = await _get_scoped_user(user_id, db)
     if not user:
         return JSONResponse(
             status_code=404,
@@ -257,10 +243,10 @@ async def get_user(
 async def update_user(
     user_id: str,
     request: Request,
-    scim_token: ScimToken = Depends(_verify_scim_token),
+    _scim_token: ScimToken = Depends(_verify_scim_token),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await _get_scoped_user(user_id, scim_token, db)
+    user = await _get_scoped_user(user_id, db)
     if not user:
         return JSONResponse(
             status_code=404,
@@ -294,10 +280,10 @@ async def update_user(
 @router.delete("/Users/{user_id}", status_code=204)
 async def delete_user(
     user_id: str,
-    scim_token: ScimToken = Depends(_verify_scim_token),
+    _scim_token: ScimToken = Depends(_verify_scim_token),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await _get_scoped_user(user_id, scim_token, db)
+    user = await _get_scoped_user(user_id, db)
     if not user:
         return JSONResponse(
             status_code=404,
@@ -368,10 +354,10 @@ def _apply_patch_op(user: User, op: str, path: str | None, value: object) -> str
 async def patch_user(
     user_id: str,
     request: Request,
-    scim_token: ScimToken = Depends(_verify_scim_token),
+    _scim_token: ScimToken = Depends(_verify_scim_token),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await _get_scoped_user(user_id, scim_token, db)
+    user = await _get_scoped_user(user_id, db)
     if not user:
         return JSONResponse(
             status_code=404,

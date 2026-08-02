@@ -1175,7 +1175,6 @@ def _update_user():
     user.role = UserRole.user
     user.email = "owner@example.com"
     user.username = "owner"
-    user.org_id = None
     return user
 
 

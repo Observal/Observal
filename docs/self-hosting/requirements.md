@@ -12,7 +12,7 @@ Minimum and recommended specs for running the Observal stack.
 | Profile | CPU | Memory | Disk | Who it's for |
 | --- | --- | --- | --- | --- |
 | Developer | 2 vCPU | 4 GB | 20 GB | One engineer, local machine |
-| Small team (≤10) | 2 vCPU | 6 GB | 50 GB | Small org, moderate telemetry |
+| Small team (≤10) | 2 vCPU | 6 GB | 50 GB | Small deployment, moderate telemetry |
 | Team (10–50) | 4 vCPU | 12 GB | 200 GB + fast SSD | Typical production deployment |
 | Large team (50+) | 8+ vCPU | 32 GB | 500 GB + fast SSD | High telemetry volume; consider externalizing ClickHouse |
 

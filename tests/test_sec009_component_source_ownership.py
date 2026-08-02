@@ -4,7 +4,7 @@
 
 Component sources have exactly two visibilities: public (everyone) and team
 (members of the owning teamspace, plus global reviewers and admins). There is no
-organization axis.
+deployment scope axis.
 
 Verifies that:
 - add_source derives the teamspace and visibility from the authenticated user's

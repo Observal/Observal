@@ -56,7 +56,7 @@ Do not import artifacts that fail checksum validation.
 2. Select **Import**.
 3. Upload the validated artifacts.
 4. Choose the import scope.
-5. Review the target organization and project IDs.
+5. Imports normalize all project-keyed telemetry to the deployment project `default`.
 6. Click **Start import**.
 7. Wait for the job to finish.
 8. Check agents, components, users, and sessions in the target instance.

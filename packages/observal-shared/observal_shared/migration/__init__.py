@@ -19,6 +19,7 @@ Errors are raised as plain domain exceptions.
 from observal_shared.migration.ch_export import export_ch
 from observal_shared.migration.ch_import import import_ch
 from observal_shared.migration.connections import ChConnParams, PgConnParams
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 from observal_shared.migration.exceptions import (
     ArtifactValidationError,
     ChecksumMismatchError,
@@ -41,6 +42,7 @@ from observal_shared.migration.results import (
 from observal_shared.migration.validation import validate_ch, validate_pg
 
 __all__ = [
+    "DEFAULT_PROJECT_ID",
     "ArtifactValidationError",
     "ChConnParams",
     "ChecksumMismatchError",

@@ -1,100 +1,71 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Per-organization data retention purge service.
+"""Deployment-wide data retention purge service."""
 
-Runs as a cron job every 6 hours. For each org with retention_enabled=True:
-1. Time-based purge: DELETE rows older than data_retention_days
-2. Score/insight purge: DELETE scores + insight reports older than score_retention_days
-3. Count-based purge: If trace count exceeds max_trace_count, find cutoff and purge
-"""
-
-import asyncio
-import uuid
 from datetime import UTC, datetime, timedelta
 
 from loguru import logger as optic
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
+import services.dynamic_settings as ds
 from database import async_session
-from models.organization import Organization
-
-INTER_ORG_DELAY = 2.0
+from models.insight_report import InsightReport, InsightReportStatus
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 
 TIME_PURGE_TABLES = {"session_events": "timestamp"}
 
 
 async def _delete_batch(table: str, time_col: str, project_id: str, cutoff_str: str) -> int:
-    """Execute a lightweight DELETE. Returns 1 on success, 0 on failure."""
-    optic.trace("deleting expired rows from table {}", table)
+    """Execute a lightweight delete and return one on success."""
     from services.clickhouse import _query
 
     sql = (
         f"DELETE FROM {table} "
         f"WHERE project_id = {{pid:String}} AND {time_col} < {{cutoff:String}} "
-        f"SETTINGS lightweight_deletes_sync = 0"
+        "SETTINGS lightweight_deletes_sync = 0"
     )
-    resp = await _query(sql, {"param_pid": project_id, "param_cutoff": cutoff_str})
-    if resp.status_code != 200:
-        optic.warning("retention delete failed on table {} (status={}): {}", table, resp.status_code, resp.text[:200])
+    response = await _query(sql, {"param_pid": project_id, "param_cutoff": cutoff_str})
+    if response.status_code != 200:
+        optic.warning(
+            "retention delete failed on table {} (status={}): {}", table, response.status_code, response.text[:200]
+        )
         return 0
     return 1
 
 
 async def _has_data(project_id: str) -> bool:
-    """Quick existence check - does this org have any traces?"""
-    optic.trace("checking retention for project")
     from services.clickhouse import _query
 
-    resp = await _query(
+    response = await _query(
         "SELECT 1 FROM session_events WHERE project_id = {pid:String} LIMIT 1 FORMAT JSON",
         {"param_pid": project_id},
     )
-    if resp.status_code == 200:
-        data = resp.json().get("data", [])
-        return len(data) > 0
-    return False
+    if response.status_code != 200:
+        return False
+    return bool(response.json().get("data", []))
 
 
-async def _has_inflight_insights(org_id: uuid.UUID) -> bool:
-    """Check if org has insight reports currently being generated."""
-    optic.trace("purging retention for org")
-    from models.agent import Agent
-    from models.insight_report import InsightReport, InsightReportStatus
-
+async def _has_inflight_insights() -> bool:
     async with async_session() as db:
-        agent_ids = (await db.execute(select(Agent.id).where(Agent.owner_org_id == org_id))).scalars().all()
-        if not agent_ids:
-            return False
-        count = (
+        report_id = (
             await db.execute(
                 select(InsightReport.id)
-                .where(
-                    InsightReport.agent_id.in_(agent_ids),
-                    InsightReport.status.in_([InsightReportStatus.pending, InsightReportStatus.running]),
-                )
+                .where(InsightReport.status.in_([InsightReportStatus.pending, InsightReportStatus.running]))
                 .limit(1)
             )
         ).scalar_one_or_none()
-        return count is not None
+    return report_id is not None
 
 
 async def _purge_time_based(project_id: str, cutoff_str: str, tables: dict[str, str]) -> dict[str, int]:
-    """Delete rows older than cutoff from specified tables."""
-    optic.trace("purging data older than {} for project", cutoff_str)
-    stats = {}
+    stats: dict[str, int] = {}
     for table, time_col in tables.items():
-        try:
-            stats[table] = await _delete_batch(table, time_col, project_id, cutoff_str)
-        except Exception as e:
-            optic.warning("retention purge failed on table {}: {}", table, e)
-            stats[table] = 0
+        stats[table] = await _delete_batch(table, time_col, project_id, cutoff_str)
     return stats
 
 
 async def _purge_session_stats_orphans(project_id: str) -> int:
-    """Delete session_stats_agg entries whose sessions no longer have events."""
-    optic.trace("checking retention for project")
     from services.clickhouse import _query
 
     sql = (
@@ -102,73 +73,43 @@ async def _purge_session_stats_orphans(project_id: str) -> int:
         "WHERE project_id = {pid:String} "
         "AND session_id NOT IN ("
         "  SELECT DISTINCT session_id FROM session_events WHERE project_id = {pid2:String}"
-        ") "
-        "SETTINGS lightweight_deletes_sync = 0"
+        ") SETTINGS lightweight_deletes_sync = 0"
     )
-    resp = await _query(sql, {"param_pid": project_id, "param_pid2": project_id})
-    if resp.status_code != 200:
-        optic.warning("session stats orphan cleanup failed (status={})", resp.status_code)
-        return 0
-    return 1
+    response = await _query(sql, {"param_pid": project_id, "param_pid2": project_id})
+    return 1 if response.status_code == 200 else 0
 
 
-async def _purge_insight_reports(org_id: uuid.UUID, score_cutoff: datetime) -> int:
-    """Delete old insight reports from PostgreSQL."""
-    optic.trace("purging scores older than cutoff")
-    from models.agent import Agent
-    from models.insight_report import InsightReport, InsightReportStatus
-
+async def _purge_insight_reports(score_cutoff: datetime) -> int:
     async with async_session() as db:
-        agent_ids = (await db.execute(select(Agent.id).where(Agent.owner_org_id == org_id))).scalars().all()
-        if not agent_ids:
-            return 0
-
-        # Delete completed reports older than score_cutoff
-        from sqlalchemy import delete
-
-        result = await db.execute(
+        completed = await db.execute(
             delete(InsightReport).where(
-                InsightReport.agent_id.in_(agent_ids),
                 InsightReport.completed_at < score_cutoff,
                 InsightReport.status == InsightReportStatus.completed,
             )
         )
-        completed_deleted = result.rowcount
-
-        # Delete stuck reports (failed/pending) older than score_cutoff
-        result = await db.execute(
+        stuck = await db.execute(
             delete(InsightReport).where(
-                InsightReport.agent_id.in_(agent_ids),
                 InsightReport.created_at < score_cutoff,
                 InsightReport.status.in_([InsightReportStatus.failed, InsightReportStatus.pending]),
             )
         )
-        stuck_deleted = result.rowcount
-
         await db.commit()
-        return completed_deleted + stuck_deleted
+    return int(completed.rowcount or 0) + int(stuck.rowcount or 0)
 
 
 async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
-    """If trace count exceeds max, find cutoff day and purge oldest."""
-    optic.trace("enforcing max trace count ({}) for project", max_trace_count)
     from services.clickhouse import _query
 
     sql = (
-        "SELECT toDate(timestamp) as day, count(DISTINCT session_id) as cnt "
+        "SELECT toDate(timestamp) AS day, count(DISTINCT session_id) AS cnt "
         "FROM session_events WHERE project_id = {pid:String} "
         "AND timestamp >= now() - INTERVAL 730 DAY "
         "GROUP BY day ORDER BY day DESC LIMIT 730 FORMAT JSON"
     )
-    resp = await _query(sql, {"param_pid": project_id})
-    if resp.status_code != 200:
+    response = await _query(sql, {"param_pid": project_id})
+    if response.status_code != 200:
         return 0
-
-    data = resp.json().get("data", [])
-    if not data:
-        return 0
-
-    # Walk from newest to oldest summing counts
+    data = response.json().get("data", [])
     running_total = 0
     cutoff_day = None
     for row in data:
@@ -176,66 +117,42 @@ async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
         if running_total > max_trace_count:
             cutoff_day = row["day"]
             break
-
     if cutoff_day is None:
         return 0
 
-    # Purge everything older than cutoff_day (children first)
-    cutoff_str = f"{cutoff_day} 00:00:00.000"
-    await _delete_batch("session_events", "timestamp", project_id, cutoff_str)
+    await _delete_batch("session_events", "timestamp", project_id, f"{cutoff_day} 00:00:00.000")
     await _purge_session_stats_orphans(project_id)
     return 1
 
 
 async def run_retention_purge(ctx: dict | None = None):
-    """Main entry point for the retention purge cron job."""
-    optic.debug("purge started")
-    async with async_session() as db:
-        result = await db.execute(select(Organization).where(Organization.retention_enabled.is_(True)))
-        orgs = result.scalars().all()
-
-    if not orgs:
+    """Run the configured retention policy for the deployment."""
+    del ctx
+    if not await ds.get_bool("retention.enabled"):
         return
 
-    optic.info("starting retention purge for {} orgs", len(orgs))
+    trace_days = await ds.get_int("retention.trace_days", default=0)
+    score_days = await ds.get_int("retention.score_days", default=0)
+    max_trace_count = await ds.get_int("retention.max_trace_count", default=0)
+    if not trace_days and not score_days and not max_trace_count:
+        return
+    if await _has_data(DEFAULT_PROJECT_ID) is False:
+        return
+    if await _has_inflight_insights():
+        optic.info("skipping retention purge while insights are in flight")
+        return
 
-    for org in orgs:
-        project_id = str(org.id)
+    now = datetime.now(UTC)
+    stats: dict[str, object] = {}
+    if trace_days:
+        cutoff = (now - timedelta(days=trace_days)).strftime("%Y-%m-%d %H:%M:%S.000")
+        stats["time"] = await _purge_time_based(DEFAULT_PROJECT_ID, cutoff, TIME_PURGE_TABLES)
+        await _purge_session_stats_orphans(DEFAULT_PROJECT_ID)
 
-        # Skip if no data exists
-        if not await _has_data(project_id):
-            optic.debug("skipping org {} (no retention config)", org.slug)
-            await asyncio.sleep(INTER_ORG_DELAY)
-            continue
+    score_days = score_days or (trace_days * 2 if trace_days else 0)
+    if score_days:
+        stats["insight_reports"] = await _purge_insight_reports(now - timedelta(days=max(score_days, 30)))
+    if max_trace_count:
+        stats["count_purge"] = await _purge_count_based(DEFAULT_PROJECT_ID, max_trace_count)
 
-        # Skip if insight reports are being generated
-        if await _has_inflight_insights(org.id):
-            optic.info("skipping org {} (purge already in flight)", org.slug)
-            await asyncio.sleep(INTER_ORG_DELAY)
-            continue
-
-        org_stats: dict = {}
-        now = datetime.now(UTC)
-
-        # Time-based purge for JSONL session events
-        if org.data_retention_days:
-            data_cutoff = now - timedelta(days=org.data_retention_days)
-            data_cutoff_str = data_cutoff.strftime("%Y-%m-%d %H:%M:%S.000")
-            org_stats["time"] = await _purge_time_based(project_id, data_cutoff_str, TIME_PURGE_TABLES)
-            await _purge_session_stats_orphans(project_id)
-
-        # Insight purge (separate retention period)
-        score_days = org.score_retention_days or ((org.data_retention_days * 2) if org.data_retention_days else None)
-        if score_days:
-            score_days = max(score_days, 30)
-            score_cutoff = now - timedelta(days=score_days)
-            org_stats["insight_reports"] = await _purge_insight_reports(org.id, score_cutoff)
-
-        # Count-based purge
-        if org.max_trace_count:
-            org_stats["count_purge"] = await _purge_count_based(project_id, org.max_trace_count)
-
-        optic.info("retention purge complete for org {}: {}", org.slug, org_stats)
-        await asyncio.sleep(INTER_ORG_DELAY)
-
-    optic.info("retention_purge_completed")
+    optic.info("retention purge complete: {}", stats)

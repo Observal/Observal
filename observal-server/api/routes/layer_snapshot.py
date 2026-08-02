@@ -11,9 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from loguru import logger as optic
 from pydantic import BaseModel, Field
 
-from api.deps import get_project_id, require_role
+from api.deps import require_role
 from api.ratelimit import limiter
 from models.user import User, UserRole
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 
 router = APIRouter(prefix="/api/v1/layer-snapshots", tags=["layer-snapshots"])
 
@@ -85,7 +86,7 @@ async def upload_layer_snapshot(
     the same hash again is a no-op.
     """
     optic.trace("user_id={}, hash={}", current_user.id, req.hash)
-    project_id = get_project_id(current_user)
+    project_id = DEFAULT_PROJECT_ID
     user_id = str(current_user.id)
 
     # Enforce server-side caps (match CLI limits)
@@ -201,7 +202,7 @@ async def get_layer_snapshot(
 ):
     """Retrieve a layer snapshot by hash."""
     optic.trace("user_id={}, hash={}", current_user.id, snapshot_hash)
-    project_id = get_project_id(current_user)
+    project_id = DEFAULT_PROJECT_ID
 
     from services.clickhouse.client import _query as ch_query
 
@@ -263,7 +264,7 @@ async def diff_layer_snapshots(
     Returns added, removed, and modified files between snapshot A and B.
     """
     optic.trace("user_id={}, hash_a={}, hash_b={}", current_user.id, hash_a, hash_b)
-    project_id = get_project_id(current_user)
+    project_id = DEFAULT_PROJECT_ID
 
     import json
 
@@ -346,7 +347,7 @@ async def pin_baseline(
     measured against this baseline in insights.
     """
     optic.trace("user_id={}, agent_id={}, hash={}", current_user.id, req.agent_id, req.layer_hash)
-    project_id = get_project_id(current_user)
+    project_id = DEFAULT_PROJECT_ID
     user_id = str(current_user.id)
 
     import json

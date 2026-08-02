@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import ROLE_HIERARCHY, get_db, get_or_create_default_org, require_password_auth, require_role
+from api.deps import ROLE_HIERARCHY, get_db, require_password_auth, require_role
 from models.user import User, UserRole
 from schemas.admin import (
     AdminResetPasswordRequest,
@@ -39,8 +39,6 @@ async def list_users(
 ):
     optic.debug("admin users list")
     stmt = select(User).order_by(User.created_at.desc())
-    if current_user.org_id is not None:
-        stmt = stmt.where(User.org_id == current_user.org_id)
     result = await db.execute(stmt)
     users = [UserAdminResponse.model_validate(u) for u in result.scalars().all()]
     return users
@@ -68,16 +66,11 @@ async def create_user(
 
     password = req.password or await _generate_unique_password(db)
 
-    org_id = current_user.org_id
-    if not org_id:
-        default_org = await get_or_create_default_org(db)
-        org_id = default_org.id
-
     try:
         username = await generate_unique_username(req.email, db, explicit=req.username)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    user = User(email=req.email, username=username, name=req.name, role=role, org_id=org_id)
+    user = User(email=req.email, username=username, name=req.name, role=role)
     user.set_password(password)
     db.add(user)
     try:
@@ -132,8 +125,6 @@ async def update_user_role(
         raise HTTPException(status_code=400, detail="Cannot change your own role")
 
     stmt = select(User).where(User.id == user_id)
-    if current_user.org_id is not None:
-        stmt = stmt.where(User.org_id == current_user.org_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user:
@@ -167,8 +158,6 @@ async def update_user_department(
 ):
     optic.trace("user_id={}", user_id)
     stmt = select(User).where(User.id == user_id)
-    if current_user.org_id is not None:
-        stmt = stmt.where(User.org_id == current_user.org_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user:
@@ -206,8 +195,6 @@ async def bulk_update_departments(
 
     for entry in req.entries:
         stmt = select(User).where(User.email == entry.email.strip().lower())
-        if current_user.org_id is not None:
-            stmt = stmt.where(User.org_id == current_user.org_id)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
         if user:
@@ -234,8 +221,6 @@ async def reset_user_password(
     """
     optic.trace("user_id={}", user_id)
     stmt = select(User).where(User.id == user_id)
-    if current_user.org_id is not None:
-        stmt = stmt.where(User.org_id == current_user.org_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user:
@@ -293,8 +278,6 @@ async def delete_user(
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
 
     stmt = select(User).where(User.id == user_id)
-    if current_user.org_id is not None:
-        stmt = stmt.where(User.org_id == current_user.org_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user:

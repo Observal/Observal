@@ -14,7 +14,7 @@ Components to test:
 - Dialog tabs (Export / Import / Validate)
 - Active job state transitions: form → progress → result
 - Export form shows only postgres/both, disabled clickhouse with tooltip
-- Import form pre-fills org/project from server
+- Import form submits artifacts without target identity controls
 
 Requirements: 1.1, 1.2, 1.3, 1.4, 3.9, 4.8, 6.3, 6.6, 7.7
 """

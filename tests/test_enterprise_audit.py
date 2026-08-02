@@ -139,7 +139,6 @@ class TestSink:
                     "ip_address": "127.0.0.1",
                     "user_agent": "test",
                     "detail": "",
-                    "org_id": "",
                     "sensitivity": "standard",
                     "request_id": "req-1",
                     "outcome": "success",
@@ -342,7 +341,6 @@ class TestSchemaExpansion:
         from services.clickhouse.migrations import MIGRATIONS_DIR
 
         sql_blob = (MIGRATIONS_DIR / "001_baseline.sql").read_text()
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS org_id" in sql_blob
         assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS sensitivity" in sql_blob
         assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS outcome" in sql_blob
         assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS duration_ms" in sql_blob
@@ -388,7 +386,6 @@ class TestInsertAuditLog:
                         "ip_address": "10.0.0.1",
                         "user_agent": "cli",
                         "detail": "",
-                        "org_id": "org-1",
                         "sensitivity": "high",
                         "request_id": "req-1",
                         "outcome": "success",
@@ -402,7 +399,6 @@ class TestInsertAuditLog:
                 mock_query.assert_called_once()
                 data = mock_query.call_args.kwargs.get("data", "")
                 parsed = json.loads(data)
-                assert parsed["org_id"] == "org-1"
                 assert parsed["sensitivity"] == "high"
                 assert parsed["outcome"] == "success"
                 assert parsed["source"] == "cli"

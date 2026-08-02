@@ -190,7 +190,6 @@ class TestAdminSamlConfigAPI:
     """Test admin_sso.py SAML config endpoints with mocked dependencies."""
 
     ADMIN_USER_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
-    ORG_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 
     def _make_admin_app(self):
         """Create a FastAPI app with admin_sso router and overridden deps."""
@@ -206,7 +205,6 @@ class TestAdminSamlConfigAPI:
         mock_user.id = self.ADMIN_USER_ID
         mock_user.email = "admin@test.com"
         mock_user.role = UserRole.admin
-        mock_user.org_id = self.ORG_ID
 
         return app, mock_user
 
@@ -363,19 +361,11 @@ class TestAdminSamlConfigAPI:
 
         self._override_deps(app, mock_user, mock_db)
 
-        with patch(
-            "api.routes.admin_sso.get_or_create_default_org",
-            new_callable=AsyncMock,
-        ) as mock_get_org:
-            mock_org = MagicMock()
-            mock_org.id = self.ORG_ID
-            mock_get_org.return_value = mock_org
-
-            async with AsyncClient(
-                transport=ASGITransport(app=app),
-                base_url="http://test",
-            ) as ac:
-                r = await ac.delete("/api/v1/admin/saml-config")
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            r = await ac.delete("/api/v1/admin/saml-config")
 
         assert r.status_code == 404
         assert "No SAML configuration found" in r.json()["detail"]
@@ -389,7 +379,6 @@ class TestAdminSamlConfigAPI:
         config_id = uuid.uuid4()
         mock_config = MagicMock()
         mock_config.id = config_id
-        mock_config.org_id = self.ORG_ID
         mock_config.idp_entity_id = "https://idp.example.com"
         mock_config.idp_sso_url = "https://idp.example.com/sso"
         mock_config.idp_slo_url = ""
@@ -434,7 +423,6 @@ class TestAdminScimTokenAPI:
     """Test SCIM token management endpoints with mocked DB."""
 
     ADMIN_USER_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
-    ORG_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 
     def _make_admin_app(self):
         from fastapi import FastAPI
@@ -450,9 +438,9 @@ class TestAdminScimTokenAPI:
         mock_user.id = self.ADMIN_USER_ID
         mock_user.email = "admin@test.com"
         mock_user.role = UserRole.admin
-        mock_user.org_id = self.ORG_ID
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()
 
         async def override_get_db():
             yield mock_db
@@ -547,7 +535,6 @@ class TestAdminScimTokenAPI:
         mock_token = MagicMock()
         mock_token.id = token_id
         mock_token.active = True
-        mock_token.org_id = self.ORG_ID
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_token
@@ -583,19 +570,11 @@ class TestAdminScimTokenAPI:
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        with patch(
-            "api.routes.admin_sso.get_or_create_default_org",
-            new_callable=AsyncMock,
-        ) as mock_get_org:
-            mock_org = MagicMock()
-            mock_org.id = self.ORG_ID
-            mock_get_org.return_value = mock_org
-
-            async with AsyncClient(
-                transport=ASGITransport(app=app),
-                base_url="http://test",
-            ) as ac:
-                r = await ac.delete(f"/api/v1/admin/scim-tokens/{token_id}")
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            r = await ac.delete(f"/api/v1/admin/scim-tokens/{token_id}")
 
         assert r.status_code == 404
         assert "Token not found" in r.json()["detail"]

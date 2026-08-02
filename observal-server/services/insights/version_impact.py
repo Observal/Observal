@@ -19,6 +19,7 @@ import json
 
 import structlog
 
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 from services.insight_version_filters import LEGACY_UNVERSIONED_AGENT_VERSION, agent_version_filter
 
 from ._deps import get_query
@@ -280,7 +281,7 @@ async def build_version_impact_data(
     period_end: str,
     agent_name: str = "",
     agent_version: str | None = None,
-    project_id: str = "default",
+    project_id: str = DEFAULT_PROJECT_ID,
 ) -> dict | None:
     """Build the complete version impact data block for the insight report.
 

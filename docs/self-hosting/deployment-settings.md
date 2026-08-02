@@ -18,7 +18,7 @@ Disable all password-based authentication, forcing users to log in via SAML or O
 | `false` (default) | Both password and SSO login are available |
 | `true` | Only SSO login is permitted; password endpoints return 403 |
 
-**When to enable:** Your organization mandates SSO for all access. Ensure SAML/OAuth is fully configured and tested before enabling, or you will lock everyone out.
+**When to enable:** Your deployment mandates SSO for all access. Ensure SAML/OAuth is fully configured and tested before enabling, or you will lock everyone out.
 
 **Recovery:** If locked out, set `deployment.sso_only` to `false` directly in the database (`dynamic_settings` table) and restart the API.
 

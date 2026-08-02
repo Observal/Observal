@@ -225,7 +225,7 @@ async def validate_ch(
                 row_count_results[table_name] = (manifest_count, -1)
                 continue
             if table_cfg["engine"] == "replacing":
-                sql = f"SELECT count() AS cnt FROM {table_name} FINAL WHERE is_deleted = 0 FORMAT JSON"
+                sql = f"SELECT count() AS cnt FROM {table_name} FINAL FORMAT JSON"
             else:
                 sql = f"SELECT count() AS cnt FROM {table_name} FORMAT JSON"
             resp = await _ch_query(http_url, db, user, password, sql)

@@ -5,15 +5,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 
 import services.dynamic_settings as ds
-from api.deps import get_or_create_default_org
 from config import settings
 from database import engine
 from models import Base
 from models.enterprise_config import RESTART_PENDING_KEY, EnterpriseConfig
-from models.user import User
 from services.audit import setup_audit, shutdown_audit
 from services.audit.event_handlers import register_audit_handlers
 from services.audit.event_handlers import shutdown_audit as shutdown_audit_handlers
@@ -80,11 +78,6 @@ async def run_startup_tasks() -> None:
             await ds.invalidate("jwt.refresh_token_expire_days")
             await ds.refresh_sync_cache()
 
-    async with session_factory() as db:
-        default_org = await get_or_create_default_org(db)
-        await db.execute(update(User).where(User.org_id.is_(None)).values(org_id=default_org.id))
-        await db.commit()
-
     from services.demo_accounts import seed_demo_accounts
 
     async with session_factory() as db:
@@ -97,10 +90,6 @@ async def run_startup_tasks() -> None:
 
     configure_insights()
 
-    from services.agent_registry_cache import start as start_registry_cache
-
-    await start_registry_cache()
-
     # A successful startup applies all restart-required settings.
     async with session_factory() as db:
         await db.execute(delete(EnterpriseConfig).where(EnterpriseConfig.key == RESTART_PENDING_KEY))
@@ -112,9 +101,6 @@ async def run_shutdown_tasks() -> None:
     await shutdown_audit()
     await shutdown_audit_handlers()
 
-    from services.agent_registry_cache import stop as stop_registry_cache
-
-    await stop_registry_cache()
     await close_cache()
     await close_redis()
 

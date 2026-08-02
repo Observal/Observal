@@ -1,66 +1,86 @@
-# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Admin data retention routes."""
+"""Deployment-wide data retention routes."""
+
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException
-from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
 from api.deps import get_db, require_role
+from models.agent import Agent
+from models.enterprise_config import EnterpriseConfig
+from models.insight_report import InsightReport, InsightReportStatus
 from models.user import User, UserRole
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 from schemas.retention import RetentionConfigResponse, RetentionConfigUpdate
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 from ._router import router
-from .helpers import _get_user_org
-
-# ── Data Retention ─────────────────────────────────────────
 
 
-@router.get("/org/retention")
-async def get_retention_config(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-) -> RetentionConfigResponse:
-    """Get the organization's data retention configuration."""
-    optic.debug("admin retention get")
-    org = await _get_user_org(db, current_user)
-    global_days = await ds.get_int("retention.global_days")
+async def _read_config() -> RetentionConfigResponse:
+    trace_days = await ds.get_int("retention.trace_days", default=0)
+    score_days = await ds.get_int("retention.score_days", default=0)
+    max_trace_count = await ds.get_int("retention.max_trace_count", default=0)
     return RetentionConfigResponse(
-        retention_enabled=org.retention_enabled,
-        data_retention_days=org.data_retention_days,
-        score_retention_days=org.score_retention_days,
-        max_trace_count=org.max_trace_count,
-        global_retention_days=global_days,
+        retention_enabled=await ds.get_bool("retention.enabled"),
+        data_retention_days=trace_days or None,
+        score_retention_days=score_days or None,
+        max_trace_count=max_trace_count or None,
+        global_retention_days=await ds.get_int("data.retention_days"),
     )
 
 
-@router.put("/org/retention")
+async def _write_config(db: AsyncSession, body: RetentionConfigUpdate) -> RetentionConfigResponse:
+    values = {
+        "retention.enabled": "true" if body.retention_enabled else "false",
+        "retention.trace_days": str(body.data_retention_days or ""),
+        "retention.score_days": str(body.score_retention_days or ""),
+        "retention.max_trace_count": str(body.max_trace_count or ""),
+    }
+    rows = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key.in_(tuple(values))))
+    configs = {config.key: config for config in rows.scalars().all()}
+    for key, value in values.items():
+        config = configs.get(key)
+        if config is None:
+            db.add(EnterpriseConfig(key=key, value=value))
+        else:
+            config.value = value
+    await db.commit()
+    for key in values:
+        await ds.invalidate(key)
+    await ds.refresh_sync_cache()
+    return await _read_config()
+
+
+@router.get("/retention")
+async def get_retention_config(current_user: User = Depends(require_role(UserRole.admin))) -> RetentionConfigResponse:
+    del current_user
+    return await _read_config()
+
+
+@router.put("/retention")
 async def update_retention_config(
     body: RetentionConfigUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ) -> RetentionConfigResponse:
-    """Update the organization's data retention configuration. Super admin only."""
-    optic.trace("body={}", body)
-    global_days = await ds.get_int("retention.global_days")
-    if body.data_retention_days is not None and global_days > 0 and body.data_retention_days > global_days:
+    config = await _read_config()
+    if (
+        body.data_retention_days is not None
+        and config.global_retention_days > 0
+        and body.data_retention_days > config.global_retention_days
+    ):
         raise HTTPException(
             status_code=422,
-            detail=f"data_retention_days cannot exceed global ceiling of {global_days} days",
+            detail=f"data_retention_days cannot exceed global ceiling of {config.global_retention_days} days",
         )
 
-    org = await _get_user_org(db, current_user)
-    org.retention_enabled = body.retention_enabled
-    org.data_retention_days = body.data_retention_days
-    org.score_retention_days = body.score_retention_days
-    org.max_trace_count = body.max_trace_count
-    await db.commit()
-    await db.refresh(org)
-
+    updated = await _write_config(db, body)
     await emit_security_event(
         SecurityEvent(
             event_type=EventType.SETTING_CHANGED,
@@ -69,95 +89,63 @@ async def update_retention_config(
             actor_id=str(current_user.id),
             actor_email=current_user.email,
             actor_role=current_user.role.value,
-            target_id=str(org.id),
-            target_type="organization",
+            target_id="retention",
+            target_type="setting",
             detail=f"Data retention {'enabled' if body.retention_enabled else 'disabled'}"
             f" (days={body.data_retention_days}, scores={body.score_retention_days}, max={body.max_trace_count})",
         )
     )
-
-    return RetentionConfigResponse(
-        retention_enabled=org.retention_enabled,
-        data_retention_days=org.data_retention_days,
-        score_retention_days=org.score_retention_days,
-        max_trace_count=org.max_trace_count,
-        global_retention_days=global_days,
-    )
+    return updated
 
 
-@router.get("/org/retention/preview")
+@router.get("/retention/preview")
 async def preview_retention(
     days: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ):
-    """Preview approximate row counts that would be deleted for a given retention period."""
-    optic.trace("days={}", days)
+    del current_user
     if days < 7:
         raise HTTPException(status_code=422, detail="days must be >= 7")
 
     from services.clickhouse import _query
 
-    org = await _get_user_org(db, current_user)
-    project_id = str(org.id)
-
-    counts = {}
-    tables = {
-        "session_events": "SELECT count() as cnt FROM session_events WHERE project_id = {pid:String} AND timestamp < now() - INTERVAL {days:UInt32} DAY",
-    }
-
-    for table_name, sql in tables.items():
-        try:
-            resp = await _query(sql + " FORMAT JSON", {"param_pid": project_id, "param_days": str(days)})
-            if resp.status_code == 200:
-                data = resp.json().get("data", [{}])
-                counts[table_name] = int(data[0].get("cnt", 0)) if data else 0
-            else:
-                counts[table_name] = -1
-        except Exception:
-            counts[table_name] = -1
-
-    # Count insight reports from PostgreSQL
-    from datetime import UTC, datetime, timedelta
-
-    from models.agent import Agent
-    from models.insight_report import InsightReport, InsightReportStatus
+    response = await _query(
+        "SELECT count() AS cnt FROM session_events "
+        "WHERE project_id = {pid:String} AND timestamp < now() - INTERVAL {days:UInt32} DAY FORMAT JSON",
+        {"param_pid": DEFAULT_PROJECT_ID, "param_days": str(days)},
+    )
+    counts = {"session_events": 0}
+    if response.status_code == 200:
+        data = response.json().get("data", [])
+        counts["session_events"] = int(data[0].get("cnt", 0)) if data else 0
 
     score_cutoff = datetime.now(UTC) - timedelta(days=days * 2)
-    agent_ids = (await db.execute(select(Agent.id).where(Agent.owner_org_id == org.id))).scalars().all()
-    if agent_ids:
-        report_count = (
-            await db.execute(
-                select(func.count())
-                .select_from(InsightReport)
-                .where(
-                    InsightReport.agent_id.in_(agent_ids),
-                    InsightReport.completed_at < score_cutoff,
-                    InsightReport.status == InsightReportStatus.completed,
-                )
+    report_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(InsightReport)
+            .where(
+                InsightReport.agent_id.in_(select(Agent.id)),
+                InsightReport.completed_at < score_cutoff,
+                InsightReport.status == InsightReportStatus.completed,
             )
-        ).scalar() or 0
-    else:
-        report_count = 0
-
+        )
+    ).scalar() or 0
     counts["insight_reports"] = report_count
     counts["_note"] = "approximate; counts may be higher if a purge ran recently"
     return counts
 
 
-@router.get("/org/retention/stats")
-async def get_retention_stats(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-    """Get retention statistics for the dashboard widget."""
-    optic.debug("get_retention_stats called")
-    org = await _get_user_org(db, current_user)
-    if not org.retention_enabled:
+@router.get("/retention/stats")
+async def get_retention_stats(current_user: User = Depends(require_role(UserRole.admin))):
+    del current_user
+    config = await _read_config()
+    if not config.retention_enabled:
         return {
             "retention_enabled": False,
-            "data_retention_days": org.data_retention_days,
-            "score_retention_days": org.score_retention_days,
+            "data_retention_days": config.data_retention_days,
+            "score_retention_days": config.score_retention_days,
             "total_traces": 0,
             "oldest_trace_age_days": 0,
             "traces_expiring_7d": 0,
@@ -166,48 +154,38 @@ async def get_retention_stats(
 
     from services.clickhouse import _query
 
-    project_id = str(org.id)
-
+    response = await _query(
+        "SELECT count(DISTINCT session_id) AS cnt, "
+        "if(cnt > 0, dateDiff('day', min(timestamp), now()), 0) AS age "
+        "FROM session_events WHERE project_id = {pid:String} FORMAT JSON",
+        {"param_pid": DEFAULT_PROJECT_ID},
+    )
     total_traces = 0
     oldest_age_days = 0
-    traces_expiring = 0
-    try:
-        resp = await _query(
-            "SELECT count(DISTINCT session_id) as cnt, "
-            "if(cnt > 0, dateDiff('day', min(timestamp), now()), 0) as age "
-            "FROM session_events WHERE project_id = {pid:String} FORMAT JSON",
-            {"param_pid": project_id},
-        )
-        if resp.status_code == 200:
-            data = resp.json().get("data", [{}])
-            if data:
-                total_traces = int(data[0].get("cnt", 0))
-                oldest_age_days = int(data[0].get("age", 0)) if total_traces > 0 else 0
-    except Exception:
-        pass
+    if response.status_code == 200:
+        data = response.json().get("data", [])
+        if data:
+            total_traces = int(data[0].get("cnt", 0))
+            oldest_age_days = int(data[0].get("age", 0)) if total_traces else 0
 
-    if org.data_retention_days:
-        try:
-            cutoff_soon = org.data_retention_days - 7
-            if cutoff_soon > 0:
-                resp = await _query(
-                    "SELECT count(DISTINCT session_id) as cnt FROM session_events "
-                    "WHERE project_id = {pid:String} "
-                    "AND timestamp < now() - INTERVAL {days:UInt32} DAY "
-                    "FORMAT JSON",
-                    {"param_pid": project_id, "param_days": str(cutoff_soon)},
-                )
-                if resp.status_code == 200:
-                    data = resp.json().get("data", [{}])
-                    if data:
-                        traces_expiring = int(data[0].get("cnt", 0))
-        except Exception:
-            pass
+    traces_expiring = 0
+    if config.data_retention_days:
+        cutoff_soon = config.data_retention_days - 7
+        if cutoff_soon > 0:
+            response = await _query(
+                "SELECT count(DISTINCT session_id) AS cnt FROM session_events "
+                "WHERE project_id = {pid:String} "
+                "AND timestamp < now() - INTERVAL {days:UInt32} DAY FORMAT JSON",
+                {"param_pid": DEFAULT_PROJECT_ID, "param_days": str(cutoff_soon)},
+            )
+            if response.status_code == 200:
+                data = response.json().get("data", [])
+                traces_expiring = int(data[0].get("cnt", 0)) if data else 0
 
     return {
         "retention_enabled": True,
-        "data_retention_days": org.data_retention_days,
-        "score_retention_days": org.score_retention_days,
+        "data_retention_days": config.data_retention_days,
+        "score_retention_days": config.score_retention_days,
         "total_traces": total_traces,
         "oldest_trace_age_days": oldest_age_days,
         "traces_expiring_7d": traces_expiring,
@@ -215,46 +193,35 @@ async def get_retention_stats(
     }
 
 
-@router.get("/org/retention/warnings")
+@router.get("/retention/warnings")
 async def get_retention_warnings(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(require_role(UserRole.admin))
 ):
-    """Get agents with unanalyzed traces approaching expiry."""
-    optic.debug("get_retention_warnings called")
-    org = await _get_user_org(db, current_user)
-    if not org.retention_enabled or not org.data_retention_days:
-        return {"warnings": [], "retention_days": org.data_retention_days, "retention_enabled": org.retention_enabled}
+    del current_user
+    config = await _read_config()
+    if not config.retention_enabled or not config.data_retention_days:
+        return {
+            "warnings": [],
+            "retention_days": config.data_retention_days,
+            "retention_enabled": config.retention_enabled,
+        }
 
-    from models.agent import Agent
-    from models.insight_report import InsightReport, InsightReportStatus
-
-    # Get all agents for this org
-    agents_result = await db.execute(select(Agent.id, Agent.name).where(Agent.owner_org_id == org.id))
-    agents = agents_result.all()
+    agents = (await db.execute(select(Agent.id, Agent.name))).all()
     if not agents:
-        return {"warnings": [], "retention_days": org.data_retention_days, "retention_enabled": True}
+        return {"warnings": [], "retention_days": config.data_retention_days, "retention_enabled": True}
 
-    # Get latest completed report per agent
-    latest_reports = {}
+    latest_reports: dict[object, datetime | None] = {}
     for agent_id, _ in agents:
-        report = (
+        latest_reports[agent_id] = (
             await db.execute(
                 select(InsightReport.completed_at)
-                .where(
-                    InsightReport.agent_id == agent_id,
-                    InsightReport.status == InsightReportStatus.completed,
-                )
+                .where(InsightReport.agent_id == agent_id, InsightReport.status == InsightReportStatus.completed)
                 .order_by(InsightReport.completed_at.desc())
                 .limit(1)
             )
         ).scalar_one_or_none()
-        latest_reports[agent_id] = report
 
-    # Find agents without a recent report covering the retention window
-    from datetime import UTC, datetime, timedelta
-
-    retention_start = datetime.now(UTC) - timedelta(days=org.data_retention_days)
+    retention_start = datetime.now(UTC) - timedelta(days=config.data_retention_days)
     warnings = []
     for agent_id, agent_name in agents:
         last_report = latest_reports.get(agent_id)
@@ -268,4 +235,4 @@ async def get_retention_warnings(
                 }
             )
 
-    return {"warnings": warnings, "retention_days": org.data_retention_days, "retention_enabled": True}
+    return {"warnings": warnings, "retention_days": config.data_retention_days, "retention_enabled": True}

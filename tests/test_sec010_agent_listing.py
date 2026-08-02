@@ -31,7 +31,6 @@ def _user(role="user"):
     u = MagicMock(spec=User)
     u.id = uuid.uuid4()
     u.role = getattr(UserRole, role)
-    u.org_id = uuid.uuid4()
     u.username = "testuser"
     u.email = "test@example.com"
     return u
@@ -97,7 +96,6 @@ async def test_agent_list_applies_parameterized_search_filters():
 
     mock = _mock_db()
     user = _user()
-    user.org_id = None
     await list_agents(
         response=Response(),
         search="review",

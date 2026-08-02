@@ -128,7 +128,7 @@ Observal requests standard `openid profile email` scope. The IdP's `email` claim
 
 ## Google OAuth (first-class provider) {#google-oauth}
 
-Google sign-in runs as its own provider, separate from the generic OIDC slot above. Both can be enabled at the same time, so an org can offer Okta *and* Google on the login screen.
+Google sign-in runs as its own provider, separate from the generic OIDC slot above. Both can be enabled at the same time, so a deployment can offer Okta *and* Google on the login screen.
 
 Set these in the SSO settings page, or set them as container env vars for one-time import at startup. The **Sign in with Google** button appears after the API restarts:
 

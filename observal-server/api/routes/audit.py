@@ -60,7 +60,6 @@ async def receive_cli_audit_event(
         "ip_address": ip,
         "user_agent": request.headers.get("user-agent", "")[:256],
         "detail": event.detail,
-        "org_id": str(current_user.org_id) if hasattr(current_user, "org_id") and current_user.org_id else "",
         "sensitivity": event.sensitivity,
         "request_id": getattr(request.state, "request_id", ""),
         "outcome": "success",

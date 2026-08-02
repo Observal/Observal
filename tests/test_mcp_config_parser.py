@@ -33,7 +33,7 @@ class TestParseServerJsonManifest:
                     "url": "https://api.example.com/mcp",
                     "variables": {
                         "API_KEY": {"description": "Your API key"},
-                        "ORG_ID": {"description": "Organization ID"},
+                        "INSTANCE_ID": {"description": "Instance ID"},
                     },
                 }
             ]
@@ -44,7 +44,7 @@ class TestParseServerJsonManifest:
         assert result["transport"] == "sse"
         assert len(result["environment_variables"]) == 2
         names = {ev["name"] for ev in result["environment_variables"]}
-        assert names == {"API_KEY", "ORG_ID"}
+        assert names == {"API_KEY", "INSTANCE_ID"}
 
     def test_remotes_streamable_http(self):
         """Handles streamable-http type."""

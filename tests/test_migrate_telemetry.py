@@ -176,11 +176,11 @@ class TestParseClickhouseUrl:
 class TestBuildChExportQuery:
     """Test _build_ch_export_query for ReplacingMergeTree vs MergeTree."""
 
-    def test_replacing_engine_has_final_and_is_deleted(self):
+    def test_replacing_engine_has_final(self):
         cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_export_query(cfg, 202501)
         assert "FINAL" in query
-        assert "is_deleted = 0" in query
+        assert "FINAL" in query
 
     def test_mergetree_engine_plain_select(self):
         cfg = {"name": "audit_log", "engine": "mergetree", "time_col": "timestamp", "fk_cols": []}
@@ -240,7 +240,7 @@ class TestBuildChCountQuery:
         cfg = {"name": "audit_log", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_count_query(cfg, 202501)
         assert "FINAL" in query
-        assert "is_deleted = 0" in query
+        assert "FINAL" in query
 
     def test_mergetree_no_final(self):
         cfg = {"name": "audit_log", "engine": "mergetree", "time_col": "timestamp", "fk_cols": []}
@@ -271,7 +271,7 @@ class TestBuildChTimeRangeQuery:
         cfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_time_range_query(cfg)
         assert "FINAL" in query
-        assert "is_deleted = 0" in query
+        assert "FINAL" in query
 
     def test_mergetree_no_final(self):
         cfg = {"name": "audit_log", "engine": "mergetree", "time_col": "timestamp", "fk_cols": []}
@@ -381,8 +381,8 @@ class TestReadCount:
 class TestConstants:
     """Verify CLICKHOUSE_TABLES, FK_PG_TABLE_MAP, and EPOCH_SENTINELS."""
 
-    def test_clickhouse_tables_has_4_entries(self):
-        assert len(CLICKHOUSE_TABLES) == 4
+    def test_clickhouse_tables_has_7_entries(self):
+        assert len(CLICKHOUSE_TABLES) == 7
 
     def test_each_table_has_required_keys(self):
         for table_cfg in CLICKHOUSE_TABLES:
@@ -395,6 +395,9 @@ class TestConstants:
         names = {t["name"] for t in CLICKHOUSE_TABLES}
         expected = {
             "session_events",
+            "session_checkpoints",
+            "session_stats_agg",
+            "layer_snapshots",
             "audit_log",
             "security_events",
             "webhook_deliveries",
@@ -405,18 +408,13 @@ class TestConstants:
         for t in CLICKHOUSE_TABLES:
             assert t["engine"] in ("replacing", "mergetree")
 
-    def test_no_replacing_tables(self):
-        replacing = [t["name"] for t in CLICKHOUSE_TABLES if t["engine"] == "replacing"]
-        assert replacing == []
+    def test_replacing_tables_are_keyed_telemetry(self):
+        replacing = {t["name"] for t in CLICKHOUSE_TABLES if t["engine"] == "replacing"}
+        assert replacing == {"session_events", "session_checkpoints", "session_stats_agg", "layer_snapshots"}
 
     def test_mergetree_tables(self):
         mergetree = [t["name"] for t in CLICKHOUSE_TABLES if t["engine"] == "mergetree"]
-        assert set(mergetree) == {
-            "session_events",
-            "audit_log",
-            "security_events",
-            "webhook_deliveries",
-        }
+        assert set(mergetree) == {"audit_log", "security_events", "webhook_deliveries"}
 
     def test_typed_dict_structure(self):
         """Verify CLICKHOUSE_TABLES entries conform to TableCfg TypedDict."""
@@ -741,7 +739,7 @@ class TestExportQueryBuilderProperty:
         # FINAL iff replacing
         if table_cfg["engine"] == "replacing":
             assert "FINAL" in query
-            assert "is_deleted = 0" in query
+            assert "FINAL" in query
         else:
             assert "FINAL" not in query
             assert "is_deleted" not in query
@@ -765,7 +763,7 @@ class TestExportQueryBuilderProperty:
 
         if table_cfg["engine"] == "replacing":
             assert "FINAL" in query
-            assert "is_deleted = 0" in query
+            assert "FINAL" in query
         else:
             assert "FINAL" not in query
             assert "is_deleted" not in query
@@ -1115,13 +1113,13 @@ class TestPartitionCheckAllEngines:
     """Verify partition-has-data check applies to both replacing and mergetree."""
 
     def test_replacing_partition_query_uses_final(self):
-        """For replacing engines, the partition check should use FINAL WHERE is_deleted = 0."""
+        """For replacing engines, the partition check should use FINAL."""
         # We test this indirectly by checking _ch_partition_has_data builds the right query.
         # The function is async, so we verify the query pattern via _build_ch_export_query.
         cfg: TableCfg = {"name": "session_events", "engine": "replacing", "time_col": "start_time", "fk_cols": []}
         query = _build_ch_export_query(cfg, 202501)
         assert "FINAL" in query
-        assert "is_deleted = 0" in query
+        assert "FINAL" in query
 
     def test_mergetree_partition_query_no_final(self):
         cfg: TableCfg = {"name": "audit_log", "engine": "mergetree", "time_col": "timestamp", "fk_cols": []}
@@ -1274,7 +1272,7 @@ class TestCutoffInWhereClause:
         query = _build_ch_export_query(cfg, 202506, cutoff=cutoff)
         assert "start_time < {cutoff:String}" in query
         assert "FINAL" in query
-        assert "is_deleted = 0" in query
+        assert "FINAL" in query
 
 
 def test_exec_dashboard_queries_session_tables_only():

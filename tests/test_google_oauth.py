@@ -248,8 +248,6 @@ class TestProvisionSsoUser:
     @pytest.mark.asyncio
     async def test_creates_new_user_with_provider_and_subject(self, monkeypatch):
         db = self._mock_db_with_existing(None)
-        default_org = MagicMock(id="org-1")
-        monkeypatch.setattr(auth_module, "get_or_create_default_org", AsyncMock(return_value=default_org))
         monkeypatch.setattr(auth_module, "generate_unique_username", AsyncMock(return_value="alice"))
 
         user = await auth_module._provision_sso_user(
@@ -266,7 +264,6 @@ class TestProvisionSsoUser:
         assert added.email == "alice@acme.com"
         assert added.auth_provider == "google"
         assert added.sso_subject_id == "g-sub-1"
-        assert added.org_id == "org-1"
         assert user is added
 
     @pytest.mark.asyncio
