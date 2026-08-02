@@ -91,14 +91,17 @@ async def _require_review_scope(db: AsyncSession, current_user: User) -> ReviewS
 
 
 def _authorize_item(entity, scope: ReviewScope) -> None:
-    """Authorize one item from its own visibility and teamspace."""
+    """Authorize one item from its own visibility and teamspace.
+
+    A team-private item the caller cannot review answers 404, matching the read
+    paths: the queue already hides it, so a 403 naming it as team-private would
+    confirm both that the id exists and that it is private. A PUBLIC item is
+    already discoverable, so refusing it can say why without disclosing anything.
+    """
     if can_review(entity, scope):
         return
     if getattr(entity, "is_private", False):
-        raise HTTPException(
-            status_code=403,
-            detail="Team-private items are reviewed by their teamspace's owners and reviewers",
-        )
+        raise HTTPException(status_code=404, detail="Submission not found")
     raise HTTPException(
         status_code=403,
         detail="Public items are reviewed by global reviewers, not by teamspace roles",

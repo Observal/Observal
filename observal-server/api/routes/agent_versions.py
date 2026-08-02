@@ -22,7 +22,12 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
-from api.deps import get_db, get_effective_agent_permission, require_role
+from api.deps import (
+    get_db,
+    get_effective_agent_permission,
+    may_view_unapproved,
+    require_role,
+)
 from models.agent import (
     Agent,
     AgentStatus,
@@ -130,10 +135,18 @@ async def _list_agent_versions(
     if perm == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
 
+    # A version carries the agent's prompt and generated harness config. Seeing the
+    # agent is not enough to read a version nobody has approved: making a
+    # team-private agent public returns its versions to the queue, and without this
+    # an ordinary caller reads them before a reviewer does.
+    version_filters = [AgentVersion.agent_id == agent.id]
+    if not may_view_unapproved(perm, current_user):
+        version_filters.append(AgentVersion.status == AgentStatus.approved)
+
     offset = (page - 1) * page_size
     stmt = (
         select(AgentVersion)
-        .where(AgentVersion.agent_id == agent.id)
+        .where(*version_filters)
         .order_by(AgentVersion.created_at.desc())
         .offset(offset)
         .limit(page_size)
@@ -167,10 +180,15 @@ async def _get_agent_version(
     if perm == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
 
-    stmt = select(AgentVersion).where(
-        AgentVersion.agent_id == agent.id,
-        AgentVersion.version == version,
-    )
+    # A version carries the agent's prompt and generated harness config. Seeing the
+    # agent is not enough to read a version nobody has approved: making a
+    # team-private agent public returns its versions to the queue, and without this
+    # an ordinary caller reads them before a reviewer does.
+    version_filters = [AgentVersion.agent_id == agent.id]
+    if not may_view_unapproved(perm, current_user):
+        version_filters.append(AgentVersion.status == AgentStatus.approved)
+
+    stmt = select(AgentVersion).where(*version_filters, AgentVersion.version == version)
     ver = (await db.execute(stmt)).scalar_one_or_none()
     if not ver:
         raise HTTPException(status_code=404, detail="Version not found")
@@ -378,10 +396,17 @@ async def _review_agent_version(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    stmt = select(AgentVersion).where(
-        AgentVersion.agent_id == agent.id,
-        AgentVersion.version == version,
-    )
+    perm = get_effective_agent_permission(agent, current_user)
+
+    # A version carries the agent's prompt and generated harness config. Seeing the
+    # agent is not enough to read a version nobody has approved: making a
+    # team-private agent public returns its versions to the queue, and without this
+    # an ordinary caller reads them before a reviewer does.
+    version_filters = [AgentVersion.agent_id == agent.id]
+    if not may_view_unapproved(perm, current_user):
+        version_filters.append(AgentVersion.status == AgentStatus.approved)
+
+    stmt = select(AgentVersion).where(*version_filters, AgentVersion.version == version)
     ver = (await db.execute(stmt)).scalar_one_or_none()
     if not ver:
         raise HTTPException(status_code=404, detail="Version not found")
@@ -438,10 +463,15 @@ async def _get_agent_harness_config(
     if perm == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
 
-    stmt = select(AgentVersion).where(
-        AgentVersion.agent_id == agent.id,
-        AgentVersion.version == version,
-    )
+    # A version carries the agent's prompt and generated harness config. Seeing the
+    # agent is not enough to read a version nobody has approved: making a
+    # team-private agent public returns its versions to the queue, and without this
+    # an ordinary caller reads them before a reviewer does.
+    version_filters = [AgentVersion.agent_id == agent.id]
+    if not may_view_unapproved(perm, current_user):
+        version_filters.append(AgentVersion.status == AgentStatus.approved)
+
+    stmt = select(AgentVersion).where(*version_filters, AgentVersion.version == version)
     ver = (await db.execute(stmt)).scalar_one_or_none()
     if not ver:
         raise HTTPException(status_code=404, detail="Version not found")

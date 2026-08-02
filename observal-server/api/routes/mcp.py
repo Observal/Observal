@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import (
     apply_registry_scope,
+    apply_visibility_filter,
     commit_or_name_conflict,
     get_db,
     get_effective_component_permission,
@@ -278,7 +279,11 @@ async def my_mcps(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("my_mcps called")
+    # Authorship is not a standing grant: a member removed from a teamspace keeps
+    # submitted_by on its listings but must not keep reading them, so /my is
+    # scoped like every other list rather than trusting the author column.
     stmt = select(McpListing).where(McpListing.submitted_by == current_user.id).order_by(McpListing.created_at.desc())
+    stmt = apply_visibility_filter(stmt, McpListing, current_user)
     result = await db.execute(stmt)
     listings = [McpListingSummary.model_validate(r) for r in result.scalars().all()]
     return listings

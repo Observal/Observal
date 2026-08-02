@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import (
     apply_registry_scope,
+    apply_visibility_filter,
     commit_or_name_conflict,
     get_db,
     get_effective_component_permission,
@@ -174,6 +175,10 @@ async def my_sandboxes(
         .where(SandboxListing.submitted_by == current_user.id)
         .order_by(SandboxListing.created_at.desc())
     )
+    # Authorship is not a standing grant: a member removed from a teamspace keeps
+    # the author column on its listings but must not keep reading them.
+    stmt = apply_visibility_filter(stmt, SandboxListing, current_user)
+
     result = await db.execute(stmt)
     listings = [SandboxListingSummary.model_validate(r) for r in result.scalars().all()]
     return listings

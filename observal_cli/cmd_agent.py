@@ -1023,6 +1023,16 @@ def agent_publish(
         # authorized endpoint and a teamspace move is a transfer, not an edit.
         # Accepting them here and dropping them would report success for something
         # that never happened.
+        if visibility is not None:
+            # There is no single server call that edits an agent and republishes it,
+            # so doing both means one can succeed while the other fails and the agent
+            # is left half-published. Reordering only chooses which half breaks.
+            rprint(
+                "[red]--visibility cannot be combined with --update.[/red] They are two server "
+                "operations with no atomic form, so a failure would leave the agent half-published. "
+                "Run the update first, then change visibility on the agent."
+            )
+            raise typer.Exit(code=1)
         if team is not None:
             rprint(
                 "[red]--team cannot be used with --update.[/red] Moving an agent between teamspaces "
@@ -1074,17 +1084,6 @@ def agent_publish(
             except (Exception, SystemExit):
                 pass
 
-        # Visibility first: it is the change that can be refused (composition
-        # conflicts, team role, review reset). Running it after the update would
-        # leave a half-applied publish, the agent edited but still team-private,
-        # reported as success.
-        if visibility is not None:
-            with spinner("Updating visibility..."):
-                vis = client.patch(f"/api/v1/registry/agent/{agent_id}/visibility", {"visibility": visibility})
-            if vis.get("returned_to_review"):
-                rprint(
-                    "[yellow]Agent returned to the review queue; it is not public until a reviewer approves.[/yellow]"
-                )
         with spinner("Updating agent..."):
             result = client.put(f"/api/v1/agents/{agent_id}", payload)
         rprint(f"[green]✓ Agent updated![/green] ID: [bold]{result['id']}[/bold]  v{result.get('version', '?')}")

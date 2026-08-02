@@ -401,6 +401,12 @@ export function SubmitComponentDialog({
 		setName("");
 		setVersion("0.1.0");
 		setDescription("");
+		// The publication target has to reset with everything else. Leaving it means
+		// the next submission silently inherits the previous teamspace and
+		// visibility, so a component meant to be public is published team-private,
+		// or worse, one meant for a teamspace is published to the whole registry.
+		setTeamId("");
+		setVisibility("public");
 		setSupportedHarnesses([]);
 		setMcpMode("json");
 		setJsonInput("");

@@ -37,9 +37,11 @@ _TEAM_TABLES = (
     "component_sources",
 )
 
-# The subset whose team ownership the downgrade guard protects. component_sources
-# is excluded: it carries no is_private of its own and follows its listing.
-_GUARDED_TABLES = _TEAM_TABLES[:-1]
+# Every table the downgrade guard protects. component_sources is included: it has
+# no listing relationship to inherit visibility from, it carries its own team_id
+# and is_public, so dropping its team_id strands a non-public source exactly the
+# way it strands a listing.
+_GUARDED_TABLES = _TEAM_TABLES
 
 
 def upgrade() -> None:

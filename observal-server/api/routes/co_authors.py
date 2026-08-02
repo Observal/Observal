@@ -100,7 +100,9 @@ async def _get_entity_and_check_permission(
     if not model:
         raise HTTPException(status_code=400, detail=f"Invalid entity type: {entity_type}")
 
-    entity = await db.get(model, entity_id)
+    # resolve_listing, not db.get: it applies the caller's visibility, so a listing
+    # they cannot read is not one they can edit the co-authors of either.
+    entity = await resolve_listing(model, str(entity_id), db, current_user=current_user)
     if not entity:
         raise HTTPException(status_code=404, detail=f"{entity_type[:-1].title()} not found")
 
@@ -126,8 +128,23 @@ async def _get_entity_for_transfer(entity_type: str, entity_id: str, current_use
     if not entity:
         raise HTTPException(status_code=404, detail=f"{entity_type[:-1].title()} not found")
 
+    # Authority depends on where the listing lives. A team-owned listing belongs to
+    # its teamspace, so a team owner or admin may move it even though they did not
+    # submit it. Checking the submitter first, as this used to, meant a team owner
+    # was refused before the teamspace rule was ever consulted, which left a
+    # teamspace impossible to empty and therefore impossible to delete.
     owner_id = entity.created_by if entity_type == "agents" else entity.submitted_by
-    if owner_id != current_user.id:
+    if getattr(entity, "team_id", None) is not None:
+        if is_admin(current_user):
+            return entity
+        membership = await team_membership(db, entity.team_id, current_user.id)
+        if membership and membership.role == TeamRole.owner:
+            return entity
+        raise HTTPException(
+            status_code=403,
+            detail="Only a teamspace owner or an admin can transfer a listing out of a teamspace",
+        )
+    if owner_id != current_user.id and not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Only the current owner can transfer ownership")
     return entity
 
@@ -177,20 +194,15 @@ async def transfer_ownership(
     # requires a teamspace. That makes the listing public, which is a publication,
     # so it returns to the review queue on the way just like any other
     # private-to-public transition.
+    # _get_entity_for_transfer has already authorized the move; it needs the
+    # teamspace rule itself in order to decide.
     team_id = getattr(entity, "team_id", None)
-    if team_id is not None:
-        membership = await team_membership(db, team_id, current_user.id)
-        if not is_admin(current_user) and (not membership or membership.role != TeamRole.owner):
-            raise HTTPException(
-                status_code=403,
-                detail="Only a teamspace owner or an admin can transfer a listing out of a teamspace",
-            )
     target_user = await _resolve_target_user(db, user_id=req.user_id, email=req.email, username=req.username)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
     if target_user.auth_provider == "deactivated":
         raise HTTPException(status_code=422, detail="Cannot transfer ownership to a deactivated user")
-    if target_user.id == current_user.id:
+    if target_user.id == current_user.id and team_id is None:
         raise HTTPException(status_code=422, detail="You already own this item")
 
     was_private = bool(getattr(entity, "is_private", False))

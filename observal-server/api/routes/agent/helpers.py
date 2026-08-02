@@ -9,7 +9,14 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import apply_publish_scope, apply_visibility_filter, check_listing_visibility_async, resolve_prefix_id
+from api.deps import (
+    apply_publish_scope,
+    apply_visibility_filter,
+    check_listing_visibility_async,
+    get_effective_agent_permission,
+    may_view_unapproved,
+    resolve_prefix_id,
+)
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.mcp import ListingStatus, McpListing, McpVersion
 from schemas.agent import (
@@ -51,6 +58,16 @@ async def _load_agent(
         agent = await resolve_prefix_id(Agent, agent_id, db, extra_conditions=conditions)
         if current_user is not _VISIBILITY_UNSET and not await check_listing_visibility_async(agent, current_user, db):
             return None
+        # The name branch below gates on approved status; this one has to as well.
+        # Otherwise a UUID or prefix reads an agent whose version is pending, which
+        # is exactly the state a team-private agent lands in the moment it is made
+        # public, and its prompt would be readable before any reviewer saw it.
+        if not include_all_statuses and agent.status != AgentStatus.approved:
+            owner_id = getattr(agent, "created_by", None)
+            caller = None if current_user is _VISIBILITY_UNSET else current_user
+            permission = get_effective_agent_permission(agent, caller)
+            if not may_view_unapproved(permission, caller) and owner_id != prefer_user_id:
+                return None
         return agent
     except HTTPException:
         pass

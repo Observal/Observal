@@ -205,8 +205,11 @@ async def update_team(
 async def _team_owned_listing_counts(db: AsyncSession, team_id: uuid.UUID) -> dict[str, int]:
     """Count everything published under a teamspace, by kind.
 
-    The team_id foreign keys are ON DELETE SET NULL, so deleting a team does not
-    delete its listings: it strips their teamspace and leaves them behind.
+    The team_id foreign keys are ON DELETE RESTRICT as of migration 019, so the
+    database refuses the delete on its own. This count exists only to answer with a
+    message naming what is in the way instead of surfacing an integrity error, and
+    it is deliberately not the enforcement: counting and then deleting is racy, and
+    a publish landing in between is caught by the constraint rather than here.
     """
     from models.agent import Agent
     from models.component_source import ComponentSource
@@ -228,12 +231,10 @@ async def _team_owned_listing_counts(db: AsyncSession, team_id: uuid.UUID) -> di
     }
     counts: dict[str, int] = {}
     for model, (singular, plural) in labels.items():
-        stmt = select(func.count(model.id)).where(model.team_id == team_id)
-        # Soft-deleted agents are already gone as far as their owner is concerned,
-        # so they must not keep a teamspace alive forever.
-        if hasattr(model, "deleted_at"):
-            stmt = stmt.where(model.deleted_at.is_(None))
-        total = await db.scalar(stmt)
+        # Soft-deleted agents count too. They are restorable and still carry the
+        # teamspace's namespace, so freeing the handle while one exists lets a new
+        # team claim it and inherit that agent on restore.
+        total = await db.scalar(select(func.count(model.id)).where(model.team_id == team_id))
         if total:
             counts[singular if total == 1 else plural] = total
     return counts
