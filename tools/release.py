@@ -355,8 +355,6 @@ def render_release_notes(
         "<!-- SPDX-License-Identifier: Apache-2.0 -->",
         # REUSE-IgnoreEnd
         "",
-        f"# Observal v{version}",
-        "",
         f"This release includes {len(changes)} change groups through `{cutoff[:7]}`.",
     ]
     if highlights:
@@ -367,13 +365,6 @@ def render_release_notes(
         regular = [item for item in items if item not in highlights and item not in breaking]
         if regular:
             lines.extend(("", f"## {category}", "", render_entries(regular)))
-    lines.extend(("", "## Contributors", ""))
-    if contributors:
-        for contributor in contributors:
-            suffix = " (first contribution)" if contributor.first_time else ""
-            lines.append(f"- {contributor.label}{suffix}")
-    else:
-        lines.append("- No human contributors detected")
     lines.extend(
         (
             "",

@@ -281,7 +281,7 @@ def test_human_names_ending_in_bot_are_not_filtered():
     assert [contributor.label for contributor in contributors] == ["@talbot"]
 
 
-def test_release_notes_include_all_contributors_and_first_time_marker():
+def test_release_notes_include_version_and_comparison_link():
     notes = render_release_notes(
         "1.10.8",
         "v1.10.7",
@@ -290,9 +290,8 @@ def test_release_notes_include_all_contributors_and_first_time_marker():
         [Contributor("Hari", "hari"), Contributor("New Person", "new-person", first_time=True)],
     )
 
-    assert "@hari" in notes
-    assert "@new-person (first contribution)" in notes
     assert "v1.10.7...v1.10.8" in notes
+    assert "add safe releases" in notes
 
 
 def test_changelog_uses_only_selected_public_notes():
