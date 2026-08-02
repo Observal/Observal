@@ -23,9 +23,18 @@ jobs:
           fetch-depth: 0
 
       - name: Install Gitleaks
+        env:
+          # Pinned to gitleaks v8.30.1 (tag commit 83d9cd684c87d95d656c1458ef04895a7f1cbd8e).
+          # SHA-256 of gitleaks_8.30.1_linux_x64.tar.gz from the official release.
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
-          VERSION=$(curl -sI https://github.com/gitleaks/gitleaks/releases/latest | grep -i ^location | sed 's|.*/v||' | tr -d '\r')
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" | tar xz -C /usr/local/bin gitleaks
+          set -eu
+          cd "$(mktemp -d)"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "$url" -o gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar xzf gitleaks.tar.gz -C /usr/local/bin gitleaks
 
       - name: Run Gitleaks
         env:
