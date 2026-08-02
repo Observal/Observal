@@ -142,12 +142,17 @@ def test_latest_tag_chooses_highest_stable_even_when_detached(monkeypatch):
 
 def test_release_cutoff_uses_manifest_with_old_tag_fallback(monkeypatch):
     cutoff = "b" * 40
+    old_tag_sha = "a" * 40
 
     def fake_run(*args, **kwargs):
         if args[:3] == ("git", "show", "v1.10.8:.release.toml"):
             return f'cutoff = "{cutoff}"\n'
         if args[:3] == ("git", "show", "v1.10.7:.release.toml"):
             raise ReleaseError("missing manifest")
+        # No .release.toml at the tag: the fallback resolves the tag to a
+        # commit SHA so later git log ranges don't depend on the tag ref.
+        if args[:3] == ("git", "rev-parse", "v1.10.7^{commit}"):
+            return old_tag_sha
         if args[:3] == ("git", "cat-file", "-e"):
             return ""
         raise AssertionError(args)
@@ -155,7 +160,7 @@ def test_release_cutoff_uses_manifest_with_old_tag_fallback(monkeypatch):
     monkeypatch.setattr(release, "run", fake_run)
 
     assert release_cutoff("v1.10.8") == cutoff
-    assert release_cutoff("v1.10.7") == "v1.10.7"
+    assert release_cutoff("v1.10.7") == old_tag_sha
 
 
 def test_release_discovery_skips_prior_release_metadata(monkeypatch):

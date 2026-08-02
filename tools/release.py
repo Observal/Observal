@@ -487,7 +487,7 @@ def ensure_preflight(upstream: str) -> None:
     if run("git", "branch", "--show-current") != "main":
         raise ReleaseError("Releases must be prepared from main")
     run("gh", "auth", "status")
-    run("git", "fetch", upstream, "main", "--tags")
+    run("git", "fetch", upstream, "main", "--tags", "--force", "--no-prune-tags")
     if run("git", "rev-parse", "HEAD") != run("git", "rev-parse", f"{upstream}/main"):
         raise ReleaseError(f"Local main must exactly match {upstream}/main")
 
@@ -504,7 +504,10 @@ def release_cutoff(tag: str) -> str:
     try:
         manifest = tomllib.loads(run("git", "show", f"{tag}:.release.toml"))
     except ReleaseError:
-        return tag
+        # No .release.toml at this tag (older release). Resolve the tag to a
+        # commit SHA immediately so subsequent git log ranges don't depend on
+        # the tag ref surviving background fetches with fetch.pruneTags.
+        return run("git", "rev-parse", f"{tag}^{{commit}}")
     except tomllib.TOMLDecodeError as exc:
         raise ReleaseError(f"Invalid release manifest in {tag}: {exc}") from exc
     cutoff = manifest.get("cutoff")
@@ -601,6 +604,9 @@ def prepare(preview_only: bool, upstream: str = "upstream", fork: str = "origin"
     repo = f"{owner}/{name}"
     fork_owner, _ = repository(fork)
     branch = f"{upstream}/main"
+    # Re-fetch tags in case a background process (e.g. lazygit with
+    # fetch.pruneTags) pruned them between ensure_preflight and here.
+    run("git", "fetch", upstream, "--tags", "--force", "--no-prune-tags")
     previous_tag = latest_tag()
     previous_cutoff = release_cutoff(previous_tag)
     changes = discover_changes(repo, previous_cutoff, branch)
