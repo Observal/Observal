@@ -17,14 +17,6 @@ members_app = typer.Typer(name="members", help="Manage team membership.", no_arg
 team_app.add_typer(members_app, name="members")
 
 
-def _require_teamspaces() -> None:
-    """Gate team commands on server support; clean message on older servers."""
-    if not client.server_supports("teamspaces"):
-        rprint("[yellow]Teamspaces are not supported by this server.[/yellow]")
-        rprint("[dim]Update your server to v1.11.0 or later to use team commands.[/dim]")
-        raise typer.Exit(1)
-
-
 def _resolve_team_id(team: str) -> str:
     """Accept a UUID or a team handle; resolve to a UUID via the all-teams list."""
     import uuid as _uuid
@@ -56,7 +48,6 @@ def list_teams(
 
         observal team list --output json
     """
-    _require_teamspaces()
     path = "/api/v1/teams/all" if all_teams else "/api/v1/teams"
     rows = client.get(path)
     if output == "json":
@@ -95,7 +86,6 @@ def show_team(
 
         observal team show 36e0c516-7a7f-4fec-ad2c-b47eb426b8a7
     """
-    _require_teamspaces()
     team_id = _resolve_team_id(team)
     detail = client.get(f"/api/v1/teams/{team_id}")
     members = client.get(f"/api/v1/teams/{team_id}/members")
@@ -131,7 +121,6 @@ def create_team(
 
         observal team create 'SRE' -h sre -d 'Site reliability'
     """
-    _require_teamspaces()
     body: dict = {"name": name}
     if handle:
         body["handle"] = handle
@@ -156,7 +145,6 @@ def delete_team(
 
         observal team delete 36e0c516-7a7f-4fec-ad2c-b47eb426b8a7 -y
     """
-    _require_teamspaces()
     team_id = _resolve_team_id(team)
     if not yes and not typer.confirm(f"Delete teamspace '{team}'? This cannot be undone."):
         raise typer.Abort()
@@ -176,7 +164,6 @@ def leave_team(
 
         observal team leave sre
     """
-    _require_teamspaces()
     team_id = _resolve_team_id(team)
     client.post(f"/api/v1/teams/{team_id}/leave")
     rprint("[green]Left teamspace.[/green]")
@@ -195,7 +182,6 @@ def list_members(
 
         observal team members list sre --output json
     """
-    _require_teamspaces()
     team_id = _resolve_team_id(team)
     rows = client.get(f"/api/v1/teams/{team_id}/members")
     if output == "json":
@@ -226,7 +212,6 @@ def add_member(
 
         observal team members add sre @bob -r owner
     """
-    _require_teamspaces()
     team_id = _resolve_team_id(team)
     body: dict = {"role": role}
     if "@" in user and not user.startswith("@"):
@@ -251,7 +236,6 @@ def remove_member(
 
         observal team members remove sre alice@example.com -y
     """
-    _require_teamspaces()
     team_id = _resolve_team_id(team)
     members = client.get(f"/api/v1/teams/{team_id}/members")
     target = None

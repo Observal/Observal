@@ -23,7 +23,6 @@ export const FEATURE_VERSIONS: Record<string, string> = {
 	selfUpgrade: "1.0.0",
 	serverUpgrade: "1.0.0",
 	skills: "0.7.0",
-	teamspaces: "1.11.0",
 	versionCheck: "1.0.0",
 	versionEnforcement: "1.0.0",
 	versionNegotiation: "1.0.0",

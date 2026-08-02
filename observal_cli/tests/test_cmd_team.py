@@ -14,14 +14,6 @@ from observal_cli.main import app
 
 runner = CliRunner()
 
-# All team commands are gated on server_supports("teamspaces"); mock it True.
-
-
-@pytest.fixture(autouse=True)
-def _support_teamspaces():
-    with patch("observal_cli.client.server_supports", return_value=True):
-        yield
-
 
 def _teams_all():
     return [
@@ -149,9 +141,19 @@ def test_team_show_unknown_handle_errors(bad: str):
     assert result.exit_code != 0
 
 
-def test_team_commands_blocked_when_server_unsupported():
-    """On an older server without teamspaces, commands exit cleanly with a message."""
-    with patch("observal_cli.client.server_supports", return_value=False):
+def test_team_commands_do_not_probe_the_server_version():
+    """No client-side version gate stands in front of the team commands.
+
+    The gate this replaces asked the server for its version before every team
+    command and refused based on a hardcoded minimum. That minimum could only ever
+    be wrong: the CLI and server versions both come from this repository, so the
+    negotiated version could never exceed it. A server that genuinely lacks the
+    endpoints answers for itself.
+    """
+    with (
+        patch("observal_cli.client.server_supports") as supports,
+        patch("observal_cli.client.get", return_value=_teams_all()),
+    ):
         result = runner.invoke(app, ["team", "list"])
-    assert result.exit_code == 1
-    assert "not supported" in result.output
+    assert result.exit_code == 0
+    supports.assert_not_called()
