@@ -156,7 +156,7 @@ Or just tell your agent what you want and it figures out the right commands.
 
 ### Agents are portable context packages
 
-An agent bundles 5 component types into a single installable package: **MCP servers**, **skills**, **hooks**, **prompts**, and **sandboxes**. You define the agent once, publish it to the registry, and Observal generates the right config files for whichever supported harness or harness the user runs.
+An agent bundles 5 component types into a single installable package: **MCP servers**, **skills**, **hooks**, **prompts**, and **sandboxes**. You define the agent once, publish it to the registry, and Observal generates the right config files for whichever supported harness the user runs.
 
 ```bash
 observal pull security-auditor --harness pi
@@ -164,15 +164,11 @@ observal pull security-auditor --harness pi
 
 ### The registry is the distribution layer
 
-Browse published agents, see which harnesses they support, check download counts and ratings, and install with one command. Admins review submissions before they go live. Version diffs show exactly what changed between releases, so teams can safely evolve shared context.
+The registry is where agents live. Admins review submissions, version diffs keep changes auditable, and one command installs an agent into any supported harness.
 
-### Insights show what is helping
+### Insights close the loop
 
-Observal turns real usage into reports about which agents, prompts, tools, and workflows are working or getting in the way. Use those insights to improve shared context instead of guessing from anecdotes.
-
-### Session traces provide the evidence
-
-When you need to debug, audit, or understand a result, Observal can replay the full coding session: user prompts, thinking blocks, assistant responses, and tool calls with their inputs and outputs. The traces support registry and insight workflows rather than defining the product.
+Real usage data flows back as reports: what's helping, what's getting in the way, and where to improve. Session traces provide the underlying evidence for debugging and auditing.
 
 ---
 
@@ -224,7 +220,7 @@ See [Insights LLM Setup](docs/insights-setup.md) for configuration.
 
 ![Review queue with agent detail](docs/img/review.png)
 
-**Version diffs show exactly what changed between releases:**
+**Side-by-side version diffs before approving a new release:**
 
 ![Side-by-side diff of v1.0.0 vs v2.0.0](docs/img/review-diff.png)
 
