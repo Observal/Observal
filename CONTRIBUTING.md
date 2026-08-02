@@ -11,9 +11,11 @@
 
 Thank you for considering contributing to Observal. Contributions of all kinds are welcome: bug reports, bug fixes, new features, documentation improvements, and tests.
 
-> \[!TIP] This page is a quick-start summary. For the full setup walkthrough, architecture notes, and detailed workflows, see the [Development Guide](docs/DEVELOPMENT_GUIDE.md). For new Python tests, follow the [Testing Guide](docs/testing/Testing_Guide.md).
+> [!TIP]
+> This page is a quick-start summary. For the full setup walkthrough, architecture notes, and detailed workflows, see the [Development Guide](docs/DEVELOPMENT_GUIDE.md). For new Python tests, follow the [Testing Guide](docs/testing/Testing_Guide.md).
 
-> \[!IMPORTANT] **Discord is our primary communication channel.** Join at [discord.observal.io](https://discord.observal.io) and ask questions in **#contributing**, report bugs in **#bug**, or discuss ideas in **#feature-requests**. GitHub issues and PRs are for concrete, actionable items, not exploratory discussion.
+> [!IMPORTANT]
+> **Discord is our primary communication channel.** Join at [discord.observal.io](https://discord.observal.io) and ask questions in **#contributing**, report bugs in **#bug**, or discuss ideas in **#feature-requests**. GitHub issues and PRs are for concrete, actionable items, not exploratory discussion.
 
 Please read our [Code of Conduct](https://github.com/Observal/Observal/blob/main/CODE_OF_CONDUCT.md) and [AI Policy](AI_POLICY.md) before contributing.
 
@@ -84,7 +86,8 @@ cd web && pnpm install && pnpm dev
 
 Set `NEXT_PUBLIC_API_URL=http://localhost` in `web/.env.local` if the backend is on a different host.
 
-> \[!NOTE] See the [Development Guide](docs/DEVELOPMENT_GUIDE.md) for the full environment setup and troubleshooting steps.
+> [!NOTE]
+> See the [Development Guide](docs/DEVELOPMENT_GUIDE.md) for the full environment setup and troubleshooting steps.
 
 ***
 
@@ -101,7 +104,8 @@ For larger changes, open an issue or discuss in **#contributing** on Discord bef
 * Max **2 open assigned issues** at a time.
 * Issues with no activity for **30 days** are automatically unassigned.
 
-> \[!WARNING] Issues labeled `keep open` cannot be claimed. Anyone may submit a PR for those without assignment.
+> [!WARNING]
+> Issues labeled `keep open` cannot be claimed. Anyone may submit a PR for those without assignment.
 
 ***
 
@@ -169,7 +173,8 @@ Add an entry under `[Unreleased]` in [CHANGELOG.md](https://github.com/Observal/
 
 ## Submitting a Pull Request
 
-> \[!IMPORTANT] Read the [AI Policy](AI_POLICY.md) before submitting. AI-assisted contributions are welcome but must meet the standards described there. **Autonomous coding agents (Devin, SWE-agent, OpenHands, and similar tools that write and submit code without meaningful human authorship) are not permitted**, see the AI Policy for the legal and practical reasons. PRs that show obvious signs of unreviewed AI output will be closed without review.
+> [!IMPORTANT]
+> Read the [AI Policy](AI_POLICY.md) before submitting. AI-assisted contributions are welcome but must meet the standards described there. **Autonomous coding agents (Devin, SWE-agent, OpenHands, and similar tools that write and submit code without meaningful human authorship) are not permitted**, see the AI Policy for the legal and practical reasons. PRs that show obvious signs of unreviewed AI output will be closed without review.
 
 1.  Rebase against `main` before opening:
 

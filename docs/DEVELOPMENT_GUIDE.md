@@ -3,7 +3,8 @@
 
 # Development Guide
 
-> \[!IMPORTANT] **Discord is the primary place to ask questions.** Join at [discord.observal.io](https://discord.observal.io).
+> [!IMPORTANT]
+> **Discord is the primary place to ask questions.** Join at [discord.observal.io](https://discord.observal.io).
 >
 > * **#contributing**, setup help, workflow questions, anything about the contribution process
 > * **#bug**, discuss bugs before filing a GitHub issue
@@ -65,7 +66,8 @@
 
 We are a small, active community and we take the quality of interactions seriously.
 
-> \[!WARNING] The following will result in a **moderator warning**. A second violation results in a **temporary or permanent ban** from the repository and Discord:
+> [!WARNING]
+> The following will result in a **moderator warning**. A second violation results in a **temporary or permanent ban** from the repository and Discord:
 >
 > * Pinging contributors, maintainers, or reviewers unnecessarily (outside of a direct reply on your own open PR or issue)
 > * Submitting low-effort or unreviewed PRs (slop), including unreviewed AI output or autonomous agent submissions
@@ -451,7 +453,8 @@ Edit the generated file in `observal-server/alembic/versions/`. Then verify the 
 python3 scripts/check_migrations.py
 ```
 
-> \[!CAUTION] Never edit an existing migration file. Always create a new one. A broken migration chain blocks CI and prevents the server from starting.
+> [!CAUTION]
+> Never edit an existing migration file. Always create a new one. A broken migration chain blocks CI and prevents the server from starting.
 
 Apply migrations to your local stack:
 
@@ -555,7 +558,8 @@ When adding new UI, use the semantic tokens, never hardcode colors. Check all fi
 
 ### Screenshots for UI changes
 
-> \[!IMPORTANT] Any PR that touches the web frontend must include **screenshots of all affected screens** in the PR description. This is required regardless of how small the change is. Attach screenshots directly to the PR body, not as review comments.
+> [!IMPORTANT]
+> Any PR that touches the web frontend must include **screenshots of all affected screens** in the PR description. This is required regardless of how small the change is. Attach screenshots directly to the PR body, not as review comments.
 
 ***
 
@@ -673,4 +677,5 @@ If you are stuck, the best place to ask is **#contributing** on [Discord](https:
 
 For bugs use **#bug**. For feature ideas use **#feature-requests**.
 
-> \[!NOTE] Do not open a GitHub issue just to ask a question. Issues are for confirmed bugs and accepted feature requests. Questions belong on Discord.
+> [!NOTE]
+> Do not open a GitHub issue just to ask a question. Issues are for confirmed bugs and accepted feature requests. Questions belong on Discord.
