@@ -39,6 +39,9 @@ concurrency:
   group: terraform-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # ── fmt + validate (aws, gcp) ──────────────────────────────────────────────
   fmt-validate:

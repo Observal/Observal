@@ -15,6 +15,9 @@ concurrency:
   group: e2e-frontend-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   e2e:
     name: e2e-frontend-flows

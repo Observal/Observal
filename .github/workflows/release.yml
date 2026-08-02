@@ -25,11 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  packages: write
-  pull-requests: read
-  id-token: write
-  attestations: write
+  contents: read
 
 env:
   REGISTRY: ghcr.io
@@ -254,6 +250,9 @@ jobs:
     name: Docker (${{ matrix.image }}-${{ matrix.arch }})
     needs: preflight
     if: needs.preflight.outputs.is_release == 'true'
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -311,6 +310,8 @@ jobs:
     needs: [preflight, docker-build, tag]
     if: needs.tag.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     strategy:
       matrix:
         image: [api, web]
@@ -444,6 +445,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v6
@@ -559,6 +561,10 @@ jobs:
     needs: [preflight, cli-binaries, docker-merge, server-package, pypi, npm, helm-chart, tag]
     if: needs.tag.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v6
         with:
