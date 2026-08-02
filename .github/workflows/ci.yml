@@ -55,9 +55,9 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       helm: ${{ steps.filter.outputs.helm }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       # v4 compares merge-queue candidates using merge_group.base_sha/head_sha.
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: filter
         with:
           filters: |
@@ -103,10 +103,10 @@ jobs:
           echo "::notice::No Python changes detected, skipping lint"
           echo "This job reports success to satisfy branch protection"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         if: needs.changes.outputs.python == 'true'
 
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         if: needs.changes.outputs.python == 'true'
         with:
           enable-cache: true
@@ -128,10 +128,10 @@ jobs:
     name: reuse-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: REUSE compliance check
-        uses: fsfe/reuse-action@v6
+        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6
 
 # ── Job 3: Python tests (matrix) ──────────────────────────────────────────────
   test:
@@ -150,10 +150,10 @@ jobs:
           echo "::notice::No Python changes detected, skipping test"
           echo "This job reports success to satisfy branch protection"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         if: needs.changes.outputs.python == 'true'
 
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         if: needs.changes.outputs.python == 'true'
         with:
           enable-cache: true
@@ -183,7 +183,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: needs.changes.outputs.python == 'true' && matrix.python-version == '3.13'
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
         with:
           files: observal-server/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -206,15 +206,15 @@ jobs:
           echo "::notice::No web changes detected, skipping web-lint"
           echo "This job reports success to satisfy branch protection"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         if: needs.changes.outputs.web == 'true'
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         if: needs.changes.outputs.web == 'true'
         with:
           standalone: true
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: needs.changes.outputs.web == 'true'
         with:
           node-version: 24
@@ -246,10 +246,10 @@ jobs:
           echo "::notice::No Helm changes detected, skipping helm-lint"
           echo "This job reports success to satisfy branch protection"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         if: needs.changes.outputs.helm == 'true'
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         if: needs.changes.outputs.helm == 'true'
 
       - name: Lint chart
@@ -304,7 +304,7 @@ jobs:
           echo "::notice::No Docker changes detected, skipping docker-build"
           echo "This job reports success to satisfy branch protection"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         if: needs.changes.outputs.docker == 'true'
 
       - name: Create stub .env
@@ -320,9 +320,9 @@ jobs:
     name: dependency-audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
 
@@ -333,7 +333,7 @@ jobs:
           uv run --with pip-audit pip-audit --desc --ignore-vuln PYSEC-2025-183 --ignore-vuln PYSEC-2026-161 --ignore-vuln CVE-2026-47265
 
       - name: Audit Node dependencies
-        uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
+        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
         with:
           scan-args: |-
             --lockfile=pnpm-lock.yaml
