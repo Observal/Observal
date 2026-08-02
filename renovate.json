@@ -28,12 +28,12 @@
       "matchManagers": ["pre-commit"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "pre-commit hooks (minor/patch)"
-    },
-    {
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
     }
-  ]
+  ],
+  "dockerfile": {
+    "pinDigests": true
+  },
+  "docker-compose": {
+    "pinDigests": true
+  }
 }
