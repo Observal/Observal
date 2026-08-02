@@ -28,7 +28,6 @@ async def get_security_events(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Query the security events audit log from ClickHouse."""
-    del current_user
     optic.debug(
         "org.get_security_events: event_type={}, severity={}, actor_email={}", event_type, severity, actor_email
     )
@@ -56,6 +55,9 @@ async def get_security_events(
         else:
             conditions.append("actor_email = {ae:String}")
             params["param_ae"] = actor_email
+    if current_user.org_id is not None:
+        conditions.append("org_id = {org_id:String}")
+        params["param_org_id"] = str(current_user.org_id)
 
     where = " AND ".join(conditions)
     limit = min(max(int(limit), 1), 1000)

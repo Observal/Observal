@@ -25,6 +25,10 @@ from loguru import logger as optic
 
 logger = logging.getLogger("observal.security")
 
+# Cache of actor_id -> org_id so repeated events from the same actor do not
+# re-query the database on every emit.
+_ACTOR_ORG_CACHE: dict[str, str] = {}
+
 
 class Severity(str, Enum):
     INFO = "info"
@@ -118,6 +122,10 @@ class SecurityEvent:
 async def emit_security_event(event: SecurityEvent) -> None:
     """Emit a security event to structured logging and ClickHouse."""
     optic.trace("emitting security event: {} ({})", event.event_type, event.severity)
+    # Client callers never set org_id; resolve it from the actor so the event can
+    # be scoped to a tenant before it is logged or persisted.
+    if not event.org_id:
+        event.org_id = await _resolve_actor_org_id(event.actor_id)
     log_data = event.to_log_dict()
 
     log_level = {
@@ -140,6 +148,33 @@ async def emit_security_event(event: SecurityEvent) -> None:
         await _query("INSERT INTO security_events FORMAT JSONEachRow", data=data)
     except Exception:
         logger.debug("ClickHouse security_events insert skipped", exc_info=True)
+
+
+async def _resolve_actor_org_id(actor_id: str) -> str:
+    """Resolve an actor's org id from the database, caching the result per actor."""
+    if not actor_id:
+        return ""
+    if actor_id in _ACTOR_ORG_CACHE:
+        return _ACTOR_ORG_CACHE[actor_id]
+    try:
+        actor_uuid = uuid.UUID(actor_id)
+    except ValueError:
+        return ""
+    try:
+        from sqlalchemy import select
+
+        from database import async_session
+        from models.user import User
+
+        async with async_session() as db:
+            result = await db.execute(select(User.org_id).where(User.id == actor_uuid))
+            org_id = result.scalar_one_or_none()
+    except Exception:
+        logger.debug("Security event actor org lookup skipped", exc_info=True)
+        return ""
+    resolved = str(org_id) if org_id else ""
+    _ACTOR_ORG_CACHE[actor_id] = resolved
+    return resolved
 
 
 def _extract_request_info(request: Any) -> tuple[str, str]:
