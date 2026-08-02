@@ -612,13 +612,15 @@ jobs:
           # Verify every attested artifact against the bundle. gh attestation verify
           # validates the Sigstore certificate chain, the signer workflow identity,
           # and the source repository/commit recorded in the provenance.
+          # The signer-workflow identity uses refs/heads/main because push-triggered
+          # runs record that ref in the signing certificate, not the commit SHA.
           fail=0
           for f in release/observal-*; do
             echo "Verifying $f"
             gh attestation verify "$f" \
               --repo "$GITHUB_REPOSITORY" \
               --bundle release/build-provenance.intoto.jsonl \
-              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml@${{ needs.preflight.outputs.target }}" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/heads/main" \
               || { echo "::error::Provenance verification failed for $f"; fail=1; }
           done
           [ "$fail" -eq 0 ] || exit 1
