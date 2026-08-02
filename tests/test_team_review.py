@@ -28,9 +28,10 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -587,3 +588,77 @@ async def test_public_detail_is_404_for_a_team_role_that_cannot_act_on_it():
         seed = await _seed(sessions)
         response = await _detail(sessions, seed.team_owner, seed.public_id)
     assert response.status_code == 404
+
+
+# ── Deleting a teamspace must not strip access from its listings ─────────────
+
+
+class TestTeamDeletionGuard:
+    """ON DELETE SET NULL turns a team-private listing into an orphan.
+
+    Reproduced against a live stack before the guard existed: deleting a team
+    returned 204, and the listing kept is_private=True with team_id=NULL. Its
+    submitter still reached it through the personal-private clause, but every
+    other member went from 200 to 404 with no warning, and the listing still
+    reported visibility "team" while belonging to no team. Freeing the handle
+    also lets the next registrant claim that namespace.
+    """
+
+    @staticmethod
+    def _team():
+        team = MagicMock()
+        team.id = uuid.uuid4()
+        team.handle = "platform-tools"
+        return team
+
+    @pytest.mark.asyncio
+    async def test_delete_is_refused_while_the_team_owns_listings(self):
+        from api.routes.teams import delete_team
+
+        team = self._team()
+        db = AsyncMock()
+        # One skill left in the teamspace is enough to block the delete.
+        db.scalar = AsyncMock(side_effect=[0, 0, 1, 0, 0, 0])
+
+        with (
+            patch("api.routes.teams._require_owner_or_admin", new=AsyncMock(return_value=team)),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await delete_team(team_id=team.id, db=db, current_user=MagicMock())
+
+        assert exc.value.status_code == 409
+        assert "1 skill" in exc.value.detail
+        assert "platform-tools" in exc.value.detail
+        db.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_proceeds_for_an_empty_teamspace(self):
+        from api.routes.teams import delete_team
+
+        team = self._team()
+        db = AsyncMock()
+        db.scalar = AsyncMock(return_value=0)
+
+        with patch("api.routes.teams._require_owner_or_admin", new=AsyncMock(return_value=team)):
+            await delete_team(team_id=team.id, db=db, current_user=MagicMock())
+
+        db.delete.assert_awaited_once_with(team)
+        db.commit.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_every_listing_kind_is_counted(self):
+        """A teamspace holding only sandboxes must block too, not just skills."""
+        from api.routes.teams import delete_team
+
+        team = self._team()
+        db = AsyncMock()
+        db.scalar = AsyncMock(side_effect=[0, 0, 0, 0, 0, 2])
+
+        with (
+            patch("api.routes.teams._require_owner_or_admin", new=AsyncMock(return_value=team)),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await delete_team(team_id=team.id, db=db, current_user=MagicMock())
+
+        assert exc.value.status_code == 409
+        assert "2 sandboxes" in exc.value.detail

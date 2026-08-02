@@ -202,6 +202,36 @@ async def update_team(
     )
 
 
+async def _team_owned_listing_counts(db: AsyncSession, team_id: uuid.UUID) -> dict[str, int]:
+    """Count everything published under a teamspace, by kind.
+
+    The team_id foreign keys are ON DELETE SET NULL, so deleting a team does not
+    delete its listings: it strips their teamspace and leaves them behind.
+    """
+    from models.agent import Agent
+    from models.hook import HookListing
+    from models.mcp import McpListing
+    from models.prompt import PromptListing
+    from models.sandbox import SandboxListing
+    from models.skill import SkillListing
+
+    # (singular, plural) so a count of one does not read "1 skills".
+    labels = {
+        Agent: ("agent", "agents"),
+        McpListing: ("MCP server", "MCP servers"),
+        SkillListing: ("skill", "skills"),
+        HookListing: ("hook", "hooks"),
+        PromptListing: ("prompt", "prompts"),
+        SandboxListing: ("sandbox", "sandboxes"),
+    }
+    counts: dict[str, int] = {}
+    for model, (singular, plural) in labels.items():
+        total = await db.scalar(select(func.count(model.id)).where(model.team_id == team_id))
+        if total:
+            counts[singular if total == 1 else plural] = total
+    return counts
+
+
 @router.delete("/{team_id}", status_code=204)
 async def delete_team(
     team_id: uuid.UUID,
@@ -209,6 +239,31 @@ async def delete_team(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     team = await _require_owner_or_admin(db, team_id, current_user)
+
+    # Refuse while the teamspace still owns listings. ON DELETE SET NULL would
+    # otherwise leave every one of them with is_private=True and team_id=NULL:
+    # the membership check can no longer match anybody, so each listing silently
+    # collapses to creator-only access while still reporting visibility "team",
+    # and no member other than its original submitter can reach it again. The
+    # handle also becomes free to claim, which would hand those listings'
+    # namespace to whoever registers it next. Make the owner deal with the
+    # listings first rather than destroying access as a side effect.
+    owned = await _team_owned_listing_counts(db, team.id)
+    if owned:
+        # Public listings block too. Changing visibility does not clear team_id, and
+        # deleting the team frees the handle for anyone to claim, which would hand a
+        # new owner the namespace those listings still carry. Only transferring or
+        # deleting them actually detaches them, so the message says exactly that.
+        detail = ", ".join(f"{count} {label}" for label, count in sorted(owned.items()))
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Teamspace '{team.handle}' still owns {detail}. Transfer or delete those listings before "
+                "deleting the teamspace, otherwise their members lose access and the namespace is "
+                "left claimable by someone else."
+            ),
+        )
+
     await db.delete(team)
     await db.commit()
 
