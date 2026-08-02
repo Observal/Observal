@@ -460,7 +460,21 @@ jobs:
       - name: Build sdist and wheel
         run: uv build
 
+      - name: Check if already published
+        id: published
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/observal-cli/$VERSION/json")
+          if [ "$STATUS" = "200" ]; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "observal-cli $VERSION is already on PyPI, skipping publish"
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to PyPI
+        if: steps.published.outputs.already_published != 'true'
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
 
   # ── Job 5: npm publish (after approval) ────────────────────
@@ -488,7 +502,20 @@ jobs:
           cd packages/pi-extension
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      - name: Check if already published
+        id: published
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          if npm view "observal-pi@$VERSION" version 2>/dev/null | grep -qx "$VERSION"; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "observal-pi $VERSION is already on npm, skipping publish"
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish observal-pi
+        if: steps.published.outputs.already_published != 'true'
         env:
           CHANNEL: ${{ needs.preflight.outputs.channel }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -549,8 +576,14 @@ jobs:
             --username "${{ github.actor }}" \
             --password-stdin
 
-          helm push "chart-dist/observal-${VERSION}.tgz" "$HELM_OCI_REPO"
+          # Skip if this chart version is already published
+          if helm pull "$HELM_OCI_REPO/observal" --version "$VERSION" --destination /tmp 2>/dev/null; then
+            echo "Chart $VERSION is already on GHCR, skipping push"
+          else
+            helm push "chart-dist/observal-${VERSION}.tgz" "$HELM_OCI_REPO"
+          fi
 
+          # artifacthub metadata is idempotent, always push
           oras push "${HELM_OCI_REF}:artifacthub.io" \
             --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
             infra/helm/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
