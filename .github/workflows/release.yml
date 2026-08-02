@@ -219,16 +219,16 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.14"
-          cache: pip
 
-      - name: Install dependencies
-        run: |
-          pip install pyinstaller
-          pip install -e .
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install project and release deps from frozen lockfile
+        run: uv sync --frozen --group release
 
       - name: Build binary
-        run: |
-          pyinstaller observal_cli/pyinstaller.spec --noconfirm
+        run: uv run --frozen --group release pyinstaller observal_cli/pyinstaller.spec --noconfirm
         env:
           TARGET_ARCH: ${{ matrix.arch }}
 

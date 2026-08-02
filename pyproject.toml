@@ -146,3 +146,8 @@ dev = [
     "hypothesis>=6.0",
     "pyarrow>=15.0.0",
 ]
+# Exact pins for reproducible CLI binary builds (release pipeline).
+# `uv sync --frozen --group release` in the cli-binaries job installs these.
+release = [
+    "pyinstaller==6.21.0",
+]
