@@ -57,6 +57,7 @@ jobs:
               - 'observal_cli/**/*.py'
               - 'observal-server/**/*.py'
               - 'tests/**/*.py'
+              - 'tools/**/*.py'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'Makefile'

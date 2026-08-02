@@ -3,7 +3,7 @@
 
 """Ensure all package versions stay in sync across the monorepo.
 
-The release script (tools/release.sh) bumps pyproject.toml, observal-server/pyproject.toml,
+The release tool (tools/release.py) bumps pyproject.toml, observal-server/pyproject.toml,
 web/package.json, and packages/pi-extension/package.json together. This test catches
 drift if someone bumps one without the others.
 """
@@ -50,6 +50,6 @@ def test_all_package_versions_in_sync():
         versions["packages/pi-extension/package.json"] = _extract_json_version(pi_pkg)
 
     unique_versions = set(versions.values())
-    assert len(unique_versions) == 1, "Version mismatch across packages. Run tools/release.sh to sync.\n" + "\n".join(
+    assert len(unique_versions) == 1, "Version mismatch across packages. Run make release to sync.\n" + "\n".join(
         f"  {k}: {v}" for k, v in sorted(versions.items())
     )

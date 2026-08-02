@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release-major release-feature release-patch sync-skill
+.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release release-preview sync-skill
 
 # ── Linting ──────────────────────────────────────────────
 
@@ -172,14 +172,11 @@ clean:  ## Remove build artifacts and caches
 
 # ── Release ─────────────────────────────────────────────────
 
-release-major:  ## Cut a major release (X.0.0, requires approval)
-	tools/release.sh major
+release:  ## Interactively prepare a curated release PR
+	uv run python tools/release.py
 
-release-feature:  ## Cut a feature release (x.Y.0, requires approval)
-	tools/release.sh feature
-
-release-patch:  ## Cut a patch release (x.y.Z, auto-publishes)
-	tools/release.sh patch
+release-preview:  ## Preview a curated release without writing changes
+	uv run python tools/release.py --preview
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'

@@ -2,12 +2,11 @@
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-# Automated release pipeline for Observal.
+# Curated release pipeline for Observal.
 #
-# Triggered automatically when a release PR merges to main (detected by
-# bump(release) commit), or manually via workflow_dispatch with a version input.
-# Creates the git tag, then builds: CLI binaries (6 platforms), Docker images
-# (GHCR), server tarball, PyPI package. All releases require approval.
+# A release PR is based on a selected, contiguous main-branch cutoff. After that
+# PR is merge-committed, this workflow builds and publishes its second parent so
+# later commits already on main cannot leak into the release.
 
 name: Release
 
@@ -16,9 +15,9 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version to release (e.g. 0.3.2). Leave empty to auto-detect from commit."
-        required: false
+      target:
+        description: "Release preparation commit SHA to validate and resume"
+        required: true
         type: string
 
 concurrency:
@@ -36,7 +35,7 @@ env:
   IMAGE_PREFIX: ghcr.io/observal/observal
 
 jobs:
-  # ── Preflight: detect release commit and create tag ────────
+  # ── Preflight: detect and validate the release commit ─────
   preflight:
     name: Preflight checks
     if: github.repository == 'Observal/Observal'
@@ -44,7 +43,10 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       bump_type: ${{ steps.version.outputs.bump_type }}
-      is_release: ${{ steps.version.outputs.is_release }}
+      channel: ${{ steps.version.outputs.channel }}
+      python_version: ${{ steps.version.outputs.python_version }}
+      target: ${{ steps.target.outputs.target }}
+      is_release: ${{ steps.target.outputs.is_release }}
     steps:
       - name: Generate release app token
         id: app-token
@@ -52,74 +54,126 @@ jobs:
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
 
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
 
-      - name: Detect release version
-        id: version
+      - name: Resolve release target
+        id: target
+        env:
+          MANUAL_TARGET: ${{ inputs.target }}
         run: |
-          # Manual dispatch with explicit version takes priority
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
-            echo "is_release=true" >> "$GITHUB_OUTPUT"
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ -n "$MANUAL_TARGET" ]; then
+            TARGET=$(git rev-parse "$MANUAL_TARGET^{commit}")
           else
-            COMMIT_MSG=$(git log -1 --pretty=%s)
-            if [[ "$COMMIT_MSG" =~ ^bump\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-              VERSION="${BASH_REMATCH[1]}"
-              echo "is_release=true" >> "$GITHUB_OUTPUT"
-              echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            else
+            read -ra PARENTS <<< "$(git show -s --format=%P HEAD)"
+            if [ "${#PARENTS[@]}" -ne 2 ]; then
+              if git diff-tree --no-commit-id --name-only -r HEAD | grep -qx '.release.toml'; then
+                echo "::error::Release PRs must use a merge commit, not squash or rebase"
+                exit 1
+              fi
+              echo "is_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            TARGET="${PARENTS[1]}"
+            if [[ "$(git show -s --format=%s "$TARGET")" != chore\(release\):\ v* ]]; then
               echo "is_release=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
+          echo "is_release=true" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
 
-          # Validate version matches pyproject.toml
-          PKG_VERSION=$(python3 -c "import re, pathlib; m = re.search(r'^version\s*=\s*\"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(), re.M); print(m.group(1))")
-          if [ "$VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Release version v$VERSION does not match pyproject.toml ($PKG_VERSION)"
-            exit 1
-          fi
-
-          # Validate version matches web/package.json
-          WEB_VERSION=$(python3 -c "import json, pathlib; print(json.loads(pathlib.Path('web/package.json').read_text())['version'])")
-          if [ "$VERSION" != "$WEB_VERSION" ]; then
-            echo "::error::Release version v$VERSION does not match web/package.json ($WEB_VERSION)"
-            exit 1
-          fi
-
-          # Validate version matches packages/pi-extension/package.json
-          NPM_VERSION=$(python3 -c "import json, pathlib; print(json.loads(pathlib.Path('packages/pi-extension/package.json').read_text())['version'])")
-          if [ "$VERSION" != "$NPM_VERSION" ]; then
-            echo "::error::Release version v$VERSION does not match packages/pi-extension/package.json ($NPM_VERSION)"
-            exit 1
-          fi
-
-          # Detect bump type by comparing to previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "v0.0.0")
-          PREV="${PREV_TAG#v}"
-          IFS='.' read -r PM PMI PP <<< "$PREV"
-          IFS='.' read -r CM CMI CP <<< "$VERSION"
-          if [ "$CM" != "$PM" ]; then
-            echo "bump_type=major" >> "$GITHUB_OUTPUT"
-          elif [ "$CMI" != "$PMI" ]; then
-            echo "bump_type=feature" >> "$GITHUB_OUTPUT"
-          else
-            echo "bump_type=patch" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create release tag
-        if: steps.version.outputs.is_release == 'true'
+      - name: Validate release manifest and cutoff
+        id: version
+        if: steps.target.outputs.is_release == 'true'
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
         run: |
-          VERSION="v${{ steps.version.outputs.version }}"
-          git config user.name "observal-release[bot]"
-          git config user.email "observal-release[bot]@users.noreply.github.com"
-          git tag -a "$VERSION" -m "Release $VERSION"
-          git push origin "$VERSION"
+          git checkout --detach "$TARGET"
+          python3 <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+          import tomllib
+
+          target = os.environ["TARGET"]
+          manifest = tomllib.loads(pathlib.Path(".release.toml").read_text())
+          version = manifest["version"]
+          subject = subprocess.check_output(["git", "show", "-s", "--format=%s", target], text=True).strip()
+          if subject != f"chore(release): v{version}":
+              raise SystemExit(f"invalid release commit subject: {subject}")
+          channel = manifest["channel"]
+          cutoff = manifest["cutoff"]
+          previous_tag = manifest["previous_tag"]
+
+          if channel not in {"stable", "rc", "beta", "alpha"}:
+              raise SystemExit(f"invalid release channel: {channel}")
+          expected = r"\d+\.\d+\.\d+" if channel == "stable" else rf"\d+\.\d+\.\d+-{channel}\.\d+"
+          if not re.fullmatch(expected, version):
+              raise SystemExit(f"version {version} does not match channel {channel}")
+
+          parents = subprocess.check_output(["git", "show", "-s", "--format=%P", target], text=True).split()
+          if parents != [cutoff]:
+              raise SystemExit("release commit must have the selected cutoff as its only parent")
+          subprocess.run(["git", "merge-base", "--is-ancestor", previous_tag, cutoff], check=True)
+          subprocess.run(["git", "merge-base", "--is-ancestor", cutoff, "origin/main"], check=True)
+          subprocess.run(["git", "merge-base", "--is-ancestor", target, "origin/main"], check=True)
+
+          allowed = {
+              "pyproject.toml", "observal-server/pyproject.toml", "web/package.json",
+              "packages/pi-extension/package.json", "uv.lock", "observal-server/uv.lock",
+              "CHANGELOG.md", ".release.toml", ".github/release-notes.md",
+          }
+          changed = set(subprocess.check_output(
+              ["git", "diff", "--name-only", f"{cutoff}..{target}"], text=True
+          ).splitlines())
+          unexpected = changed - allowed
+          if unexpected:
+              raise SystemExit(f"release commit changed forbidden files: {sorted(unexpected)}")
+
+          versions = {
+              tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"],
+              tomllib.loads(pathlib.Path("observal-server/pyproject.toml").read_text())["project"]["version"],
+              json.loads(pathlib.Path("web/package.json").read_text())["version"],
+              json.loads(pathlib.Path("packages/pi-extension/package.json").read_text())["version"],
+          }
+          if versions != {version}:
+              raise SystemExit(f"release versions disagree: {sorted(versions)}")
+          if f"## [{version}]" not in pathlib.Path("CHANGELOG.md").read_text():
+              raise SystemExit("release version is missing from CHANGELOG.md")
+          notes = pathlib.Path(".github/release-notes.md").read_text()
+          if f"# Observal v{version}" not in notes or "## Contributors" not in notes:
+              raise SystemExit("release notes are incomplete")
+
+          previous = previous_tag.removeprefix("v").split(".")
+          current = version.split("-")[0].split(".")
+          bump = "major" if current[0] != previous[0] else "feature" if current[1] != previous[1] else "patch"
+          python_version = version
+          if channel != "stable":
+              base, prerelease = version.split("-", 1)
+              name, serial = prerelease.split(".")
+              python_version = f"{base}{ {'alpha': 'a', 'beta': 'b', 'rc': 'rc'}[name] }{serial}"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(
+                  f"version={version}\npython_version={python_version}\nchannel={channel}\nbump_type={bump}\n"
+              )
+          PY
+
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path(".release.toml").read_text())["version"])')
+          TAG="v$VERSION"
+          if git rev-parse "$TAG^{commit}" >/dev/null 2>&1; then
+            [ "$(git rev-parse "$TAG^{commit}")" = "$TARGET" ] || {
+              echo "::error::$TAG already points to a different commit"
+              exit 1
+            }
+          fi
 
   # ── Job 1: Build CLI binaries (5-platform matrix) ──────────
   cli-binaries:
@@ -153,6 +207,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.target }}
+          persist-credentials: false
 
       - uses: actions/setup-python@v6
         with:
@@ -203,6 +260,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.target }}
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@v4
 
@@ -239,8 +299,8 @@ jobs:
 
   docker-merge:
     name: Docker manifest (${{ matrix.image }})
-    needs: [preflight, docker-build]
-    if: needs.preflight.outputs.is_release == 'true'
+    needs: [preflight, docker-build, tag]
+    if: needs.tag.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -262,12 +322,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create manifest list and push
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          CHANNEL: ${{ needs.preflight.outputs.channel }}
         run: |
           IMAGE="${{ env.IMAGE_PREFIX }}-${{ matrix.image }}"
-          VERSION="${{ needs.preflight.outputs.version }}"
+          TAGS=(-t "$IMAGE:$VERSION")
+          if [ "$CHANNEL" = "stable" ]; then
+            TAGS+=(-t "$IMAGE:latest")
+          fi
           docker buildx imagetools create \
-            -t "$IMAGE:$VERSION" \
-            -t "$IMAGE:latest" \
+            "${TAGS[@]}" \
             $(printf "$IMAGE@sha256:%s " $(ls /tmp/digests/))
 
   # ── Job 3: Server deployment tarball ───────────────────────
@@ -278,10 +343,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.target }}
+          persist-credentials: false
 
       - name: Build server tarball
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
         run: |
-          VERSION="${{ needs.preflight.outputs.version }}"
           STAGING="observal-server-v${VERSION}"
           mkdir -p "$STAGING/clickhouse"
           mkdir -p "$STAGING/grafana"
@@ -310,23 +379,68 @@ jobs:
   # ── Approval gate (all releases) ────────────────────────────
   approve:
     name: Approval gate
-    needs: [preflight, cli-binaries, docker-merge, server-package]
+    needs: [preflight, cli-binaries, docker-build, server-package]
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - run: echo "${{ needs.preflight.outputs.bump_type }} release v${{ needs.preflight.outputs.version }} approved"
+      - env:
+          BUMP_TYPE: ${{ needs.preflight.outputs.bump_type }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: echo "$BUMP_TYPE release v$VERSION approved"
+
+  tag:
+    name: Create release tag
+    needs: [preflight, approve]
+    if: needs.approve.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate release app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.preflight.outputs.target }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Create or verify tag
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          TARGET: ${{ needs.preflight.outputs.target }}
+        run: |
+          TAG="v$VERSION"
+          if git rev-parse "$TAG^{commit}" >/dev/null 2>&1; then
+            [ "$(git rev-parse "$TAG^{commit}")" = "$TARGET" ] || {
+              echo "::error::$TAG points to a different commit"
+              exit 1
+            }
+            echo "$TAG already points to the validated release commit"
+            exit 0
+          fi
+          git config user.name "observal-release[bot]"
+          git config user.email "observal-release[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG" "$TARGET"
+          git push origin "$TAG"
 
   # ── Job 4: PyPI publish (after approval) ───────────────────
   pypi:
     name: Publish to PyPI
-    needs: [preflight, approve]
-    if: needs.approve.result == 'success'
+    needs: [preflight, tag]
+    if: needs.tag.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.target }}
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v8.2.0
         with:
@@ -341,12 +455,15 @@ jobs:
   # ── Job 5: npm publish (after approval) ────────────────────
   npm:
     name: Publish to npm
-    needs: [preflight, approve]
-    if: needs.approve.result == 'success'
+    needs: [preflight, tag]
+    if: needs.tag.result == 'success'
     runs-on: ubuntu-latest
     environment: npm
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.target }}
+          persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
@@ -354,23 +471,27 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Sync version from release
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
         run: |
-          VERSION="${{ needs.preflight.outputs.version }}"
           cd packages/pi-extension
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish observal-pi
+        env:
+          CHANNEL: ${{ needs.preflight.outputs.channel }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd packages/pi-extension
-          npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG="latest"
+          [ "$CHANNEL" = "stable" ] || TAG="$CHANNEL"
+          npm publish --access public --tag "$TAG"
 
   # ── Job 6: Helm chart to GHCR (after approval) ────────────
   helm-chart:
     name: Publish Helm chart
-    needs: [preflight, approve]
-    if: needs.approve.result == 'success'
+    needs: [preflight, approve, tag]
+    if: needs.tag.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -379,14 +500,17 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.preflight.outputs.target }}
+          persist-credentials: false
 
       - uses: azure/setup-helm@v4
 
       - uses: oras-project/setup-oras@v1
 
       - name: Lint and package chart
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
         run: |
-          VERSION="${{ needs.preflight.outputs.version }}"
           mkdir -p chart-dist
 
           helm lint infra/helm/observal
@@ -401,8 +525,9 @@ jobs:
           path: chart-dist/observal-${{ needs.preflight.outputs.version }}.tgz
 
       - name: Publish chart to GHCR
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
         run: |
-          VERSION="${{ needs.preflight.outputs.version }}"
           HELM_OCI_REPO="oci://ghcr.io/observal/charts"
           HELM_OCI_REF="ghcr.io/observal/charts/observal"
 
@@ -422,13 +547,15 @@ jobs:
   # ── Final: Create GitHub Release with all artifacts ────────
   release:
     name: GitHub Release
-    needs: [preflight, cli-binaries, docker-merge, server-package, pypi, npm, helm-chart, approve]
-    if: needs.approve.result == 'success'
+    needs: [preflight, cli-binaries, docker-merge, server-package, pypi, npm, helm-chart, tag]
+    if: needs.tag.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.preflight.outputs.target }}
+          persist-credentials: false
 
       - name: Download release artifacts
         uses: actions/download-artifact@v8
@@ -446,32 +573,94 @@ jobs:
           cd release
           sha256sum * > checksums.txt
 
-      - name: Generate release notes
-        run: |
-          pip install git-cliff
-          git-cliff --config cliff.toml --latest --strip header > release/RELEASE_NOTES.md
-
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: "release/observal-*"
 
-      - name: Create GitHub Release
+      - name: Create or resume GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+          CHANNEL: ${{ needs.preflight.outputs.channel }}
         run: |
-          VERSION="v${{ needs.preflight.outputs.version }}"
+          VERSION="v$RELEASE_VERSION"
+          FLAGS=(--title "Observal $VERSION" --notes-file .github/release-notes.md)
+          if [ "$CHANNEL" = "stable" ]; then
+            FLAGS+=(--latest)
+          else
+            FLAGS+=(--prerelease)
+          fi
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            DRAFT=$(gh release view "$VERSION" --json isDraft --jq '.isDraft')
+            if [ "$DRAFT" = "true" ]; then
+              gh release upload "$VERSION" --clobber release/*
+              gh release edit "$VERSION" "${FLAGS[@]}"
+            else
+              echo "$VERSION is already published; assets will be verified without replacement"
+            fi
+          else
+            gh release create "$VERSION" --draft "${FLAGS[@]}" release/*
+          fi
 
-          gh release create "$VERSION" \
-            --draft \
-            --title "Observal $VERSION" \
-            --notes-file release/RELEASE_NOTES.md \
-            --latest \
-            release/*
-
-      - name: Publish release (remove draft)
+      - name: Verify assets and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
-          VERSION="v${{ needs.preflight.outputs.version }}"
+          VERSION="v$RELEASE_VERSION"
+          EXPECTED=$(find release -maxdepth 1 -type f | wc -l)
+          ACTUAL=$(gh release view "$VERSION" --json assets --jq '.assets | length')
+          [ "$ACTUAL" -eq "$EXPECTED" ] || {
+            echo "::error::Expected $EXPECTED release assets, found $ACTUAL"
+            exit 1
+          }
           gh release edit "$VERSION" --draft=false
+
+  verify:
+    name: Verify published release
+    needs: [preflight, release]
+    if: needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - uses: astral-sh/setup-uv@v8.2.0
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: azure/setup-helm@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify registries and smoke test CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          PYTHON_VERSION: ${{ needs.preflight.outputs.python_version }}
+        run: |
+          retry() {
+            for attempt in {1..12}; do
+              "$@" && return 0
+              echo "Attempt $attempt failed, retrying in 10 seconds"
+              sleep 10
+            done
+            return 1
+          }
+          gh release view "v$VERSION" --repo Observal/Observal --json isDraft --jq '.isDraft' | grep -qx false
+          retry curl --fail --silent --show-error "https://pypi.org/pypi/observal-cli/$PYTHON_VERSION/json" -o /dev/null
+          retry sh -c "npm view 'observal-pi@$VERSION' version | grep -qx '$VERSION'"
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          retry docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-api:$VERSION"
+          retry docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-web:$VERSION"
+          retry helm pull oci://ghcr.io/observal/charts/observal --version "$VERSION" --destination /tmp
+          retry sh -c "uvx --refresh --from 'observal-cli==$PYTHON_VERSION' observal --version | grep -F '$PYTHON_VERSION'"

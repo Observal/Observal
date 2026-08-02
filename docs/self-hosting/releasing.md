@@ -3,141 +3,123 @@
 
 # Releasing
 
-How to cut a release of Observal. This is for maintainers with push access.
+How maintainers cut a curated Observal release.
 
 ## Prerequisites
 
-- A fork of `Observal/Observal` with `origin` pointing to your fork and `upstream` pointing to the org repo
-- GitHub CLI (`gh`) installed and authenticated
-- `git-cliff` installed (`cargo install git-cliff`) or `uvx` available as a fallback
+- A fork with `origin` pointing to the fork and `upstream` pointing to `Observal/Observal`
+- GitHub CLI authenticated with repository access
+- `uv` and Git
+- A clean local `main` that exactly matches `upstream/main`
 
-## Quick reference
+The release tool uses the existing `questionary` project dependency. git-cliff is not used.
 
-```bash
-make release-patch     # 0.1.0 -> 0.1.1
-make release-feature   # 0.1.0 -> 0.2.0
-make release-major     # 0.1.0 -> 1.0.0
-```
-
-That's it. One command. The script bumps versions, generates the changelog, commits, pushes a release branch to your fork, and opens a PR. Merging the PR triggers the release pipeline automatically.
-
-## What happens when you run the command
-
-1. `tools/release.sh` verifies you're on `main` and in sync with `upstream/main`
-2. Creates a `release/vX.Y.Z` branch
-3. Bumps the version in both `pyproject.toml` (CLI) and `observal-server/pyproject.toml` (server)
-4. `git-cliff` regenerates `CHANGELOG.md` from conventional commits
-5. A signed commit (`bump(release): vX.Y.Z`) is created
-6. The branch is pushed to your fork and a PR is opened against `upstream/main`
-
-## What happens when the PR merges
-
-The release workflow detects the `bump(release): vX.Y.Z` commit on main, creates an annotated tag, and triggers the build pipeline.
-
-These jobs run in parallel:
-
-| Job | What it produces |
-|-----|-----------------|
-| `cli-binaries` | Standalone CLI binaries for 6 platforms (Linux/macOS/Windows, x64/arm64) via PyInstaller |
-| `docker-images` | Multi-arch Docker images pushed to `ghcr.io/observal/observal-api` and `ghcr.io/observal/observal-web` |
-| `server-package` | Deployment tarball (`observal-server-vX.Y.Z.tar.gz`) with Docker Compose, configs, and setup script |
-| `pypi` | Python package published to PyPI via Trusted Publishing |
-
-After all jobs complete, the workflow pauses at the `production` environment approval gate. A maintainer must click "Approve" in the GitHub Actions UI before the release publishes.
-
-The final `release` job:
-- Downloads all artifacts
-- Generates SHA256 checksums (`checksums.txt`)
-- Generates release notes from git-cliff
-- Creates SLSA build provenance attestation
-- Creates a draft GitHub Release with all assets and contributor attribution
-- Publishes the release (removes draft status)
-
-## When to use which bump type
-
-| Type | When | Examples |
-|------|------|---------|
-| `patch` | Bug fixes, dependency updates, docs, CI tweaks | Fix login redirect, update ruff version, typo in docs |
-| `feature` | New functionality, new endpoints, new CLI commands | Add SAML support, add audit log viewer, new alert rule type |
-| `major` | Breaking changes, major rewrites, incompatible API changes | Auth system rewrite, database schema migration required, CLI flag rename |
-
-## Conventional commits
-
-The changelog is generated from commit messages. Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-feat: add SAML SSO support
-fix: correct redirect URL in OAuth callback
-docs: update self-hosting guide
-chore: bump dependencies
-perf: optimize ClickHouse batch inserts
-refactor: extract audit helper from event bus
-ci: add PyInstaller binary builds
-test: add SAML configuration tests
-```
-
-Commits prefixed with `bump(release):` are automatically excluded from the changelog.
-
-## What end users see
-
-### CLI users
+## Prepare a release
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh | bash
+make release
 ```
 
-Downloads the right binary for their OS/arch, verifies the checksum, and installs to `/usr/local/bin/observal`. Or `pip install observal` for Python users.
-
-### Server deployers
+For a no-write rehearsal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash
+make release-preview
 ```
 
-Downloads the server tarball, unpacks to `/opt/observal`, and runs an interactive setup that prompts for deployment mode, frontend URL, and auto-generates database passwords. Starts the full Docker Compose stack.
+The tool fetches tags, finds every commit after the latest stable release, associates commits with GitHub pull requests, and presents the pull requests in chronological order.
+
+Select the last pull request that should ship. Every commit from the previous tag through that pull request is included. Later commits remain deferred to the next release. A pull request cannot be partially included, and commits cannot be removed from the middle of the range.
+
+Commits without an associated pull request appear as standalone choices.
+
+## Curate public notes
+
+After selecting the code cutoff, choose which included changes should appear in public notes. Internal maintenance is excluded by default. Titles, categories, highlights, and breaking-change status can be edited before anything is written.
+
+The generator writes:
+
+- A new section at the top of `CHANGELOG.md`
+- Curated GitHub release notes in `.github/release-notes.md`
+- Release metadata in `.release.toml`
+- Every included pull request author and commit co-author
+- First-time contributor markers from GitHub pull request metadata
+
+Existing changelog sections are preserved byte for byte. Future releases only insert one new section after the changelog introduction.
+
+## Versions and channels
+
+The tool suggests a version bump from the selected changes. Maintainers can choose patch, feature, major, or an explicit version.
+
+Supported channels:
+
+| Channel | Example | Registry behavior |
+|---------|---------|-------------------|
+| Stable | `1.11.0` | Updates the latest GitHub, npm, and Docker tags |
+| Release candidate | `1.11.0-rc.1` | Published as a prerelease and does not replace latest |
+| Beta | `1.11.0-beta.1` | Published as a prerelease and does not replace latest |
+| Alpha | `1.11.0-alpha.1` | Published as a prerelease and does not replace latest |
+
+The same version is written to the CLI, server, web, and Pi extension packages.
+
+## Release branch and pull request
+
+The tool creates `release/vX.Y.Z` from the selected cutoff, not from the latest `main`. Its release commit may change only:
+
+- Package version files
+- Python lockfiles
+- `CHANGELOG.md`
+- `.release.toml`
+- `.github/release-notes.md`
+
+The branch is pushed to the maintainer fork and a fully populated pull request is opened.
+
+Merge the release pull request with a merge commit. Squash and rebase merges are rejected because they would make the selected cutoff impossible to enforce.
+
+## Pipeline
+
+After the merge, the workflow validates the release commit as the merge commit's second parent. Every build checks out that exact commit, so later code already on `main` cannot enter the release.
+
+Before approval, the workflow builds:
+
+- CLI binaries for Linux, macOS, and Windows
+- Multi-architecture API and web container digests
+- The server deployment archive
+
+The production environment approval then unlocks the release tag and registry publishing. After approval, the workflow:
+
+1. Creates or verifies the annotated tag
+2. Publishes the Python package
+3. Publishes the Pi extension with the correct npm channel
+4. Publishes Docker manifests without moving `latest` for prereleases
+5. Publishes the Helm chart
+6. Creates a draft GitHub release with curated notes and checksums
+7. Verifies every expected asset before publishing the GitHub release
+8. Verifies PyPI, npm, Docker, Helm, and the installed CLI
+
+Build failures occur before tag creation. A failed workflow can be resumed with GitHub's failed-job rerun. Manual workflow dispatch accepts the validated release preparation commit SHA for recovery.
+
+## Safety checks
+
+The local tool and workflow reject releases when:
+
+- The working tree is dirty
+- Local `main` differs from `upstream/main`
+- The previous tag is missing or not an ancestor of the cutoff
+- The cutoff is not an ancestor of `main`
+- A pull request is split across noncontiguous commits
+- The release commit contains application code
+- Package versions disagree
+- Release notes omit the contributor section
+- The changelog already contains the target version
+- The tag points to another commit
+- The release pull request was squash or rebase merged
+
+If local preparation fails after creating its worktree, the worktree is preserved under `.worktrees/` for inspection and recovery.
+
+## Immutable package recovery
+
+Published PyPI and npm versions cannot be replaced. If publication is partially successful, rerun only failed jobs after confirming the successful registry entries. If released code is wrong, publish a corrected patch and deprecate the bad npm version where appropriate. Restore Docker deployment tags only after documenting the incident.
 
 ## Configuration
 
-The release script defaults to `upstream` for the org repo and `origin` for your fork. Override with environment variables if your remotes are named differently:
-
-```bash
-OBSERVAL_UPSTREAM=org OBSERVAL_FORK=myfork make release-patch
-```
-
-## Access control
-
-Three layers prevent unauthorized releases:
-
-1. **Branch protection on main**: PRs required with status checks, so the release commit must pass review
-2. **Tag protection rules**: Only the release workflow (via `GITHUB_TOKEN`) creates `v*` tags
-3. **Environment gate**: The `production` environment requires authorized reviewers to approve major/feature releases
-
-## Troubleshooting
-
-### Release script fails with "Working tree is dirty"
-
-Commit or stash your changes first. The release script requires a clean working tree.
-
-### Release script fails with "Releases must be cut from main"
-
-Switch to `main` and ensure it's up to date: `git checkout main && git pull upstream main`
-
-### Release script fails with "not up to date with upstream/main"
-
-Pull latest: `git pull upstream main`
-
-### CI workflow doesn't trigger after PR merge
-
-The workflow looks for a commit message matching `bump(release): vX.Y.Z`. If the PR was squash-merged with a different message, the workflow won't detect it. Use "Rebase and merge" or "Create a merge commit" when merging release PRs.
-
-### Approval gate not appearing
-
-Ensure the `production` environment exists in GitHub Settings > Environments and has required reviewers configured.
-
-### PyPI publish fails
-
-Verify that PyPI Trusted Publishing is configured: PyPI > Project > Publishing > Trusted Publisher with `owner=Observal`, `repo=Observal`, `workflow=release.yml`, `environment=pypi`.
-
-### Docker push fails
-
-GHCR authentication uses `GITHUB_TOKEN` automatically. If it fails, check that the repository's Actions permissions allow writing packages (Settings > Actions > General > Workflow permissions).
+The tool defaults to `upstream` for the organization repository and `origin` for the maintainer fork. The `upstream` and `fork` command options can select different remote names when the canonical clone is `origin` or a fork uses another name.
