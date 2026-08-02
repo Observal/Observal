@@ -15,14 +15,19 @@ export function ComponentPicker({
   selected,
   onToggle,
   onCreateNew,
+  targetTeamId,
 }: {
   type: RegistryType;
   label?: string;
   selected: Set<string>;
   onToggle: (item: RegistryItem) => void;
   onCreateNew?: () => void;
+  targetTeamId?: string;
 }) {
-  const { data: items, isLoading } = useRegistryList(type);
+  const { data: items, isLoading } = useRegistryList(
+    type,
+    targetTeamId ? { team_id: targetTeamId } : { public_only: "true" },
+  );
   const [search, setSearch] = useState("");
   const searchLabel = label ?? type;
 
@@ -86,6 +91,10 @@ export function ComponentPicker({
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{item.name}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {item.qualified_name ?? item.name}
+                    {item.visibility === "team" ? " · team-only" : " · public"}
+                  </span>
                   {item.description && (
                     <span className="block truncate text-xs text-muted-foreground">
                       {item.description}

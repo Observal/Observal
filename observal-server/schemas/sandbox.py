@@ -12,6 +12,7 @@ from models.mcp import ListingStatus
 from schemas.constants import (
     VALID_SANDBOX_NETWORK_POLICIES,
     VALID_SANDBOX_RUNTIME_TYPES,
+    Visibility,
     make_harness_list_validator,
     make_option_validator,
 )
@@ -41,6 +42,8 @@ class SandboxSubmitRequest(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     runtime_type: str
     image: str
     resource_limits: dict = {}
@@ -72,6 +75,8 @@ class SandboxDraftRequest(BaseModel):
     version: str = "0.1.0"
     description: str = ""
     owner: str = ""
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     runtime_type: str = "docker"
     image: str = ""
     resource_limits: dict = {}
@@ -97,6 +102,8 @@ class SandboxUpdateRequest(BaseModel):
     version: str | None = None
     description: str | None = None
     owner: str | None = None
+    team_id: uuid.UUID | None = None
+    visibility: Visibility | None = None
     runtime_type: str | None = None
     image: str | None = None
     resource_limits: dict | None = None
@@ -125,6 +132,9 @@ class SandboxListingResponse(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     runtime_type: str
     image: str
     resource_limits: dict
@@ -176,6 +186,9 @@ class SandboxListingSummary(BaseModel):
     source_ref: str | None = None
     sandbox_path: str | None = None
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     supported_harnesses: list[str]
     status: ListingStatus
     rejection_reason: str | None = None

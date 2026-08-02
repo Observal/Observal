@@ -363,7 +363,7 @@ async def test_transfer_moves_every_listing_type_to_target_namespace(entity_type
     assert entity.namespace == "bob"
     assert entity.slug == "tool"
     assert getattr(entity, owner_field) == target.id
-    assert entity.owner_org_id == target.org_id
+    assert entity.owner_org_id is None
     assert entity.co_authors == [str(other_coauthor)]
     assert response.qualified_name == "bob/tool"
     db.commit.assert_awaited_once()

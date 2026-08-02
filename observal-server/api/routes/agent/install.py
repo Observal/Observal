@@ -11,6 +11,8 @@ from sqlalchemy.orm import selectinload
 
 import services.dynamic_settings as _ds
 from api.deps import (
+    apply_publish_scope,
+    apply_visibility_filter,
     get_db,
     get_effective_agent_permission,
     optional_current_user,
@@ -51,7 +53,7 @@ async def install_agent(
         db,
         agent_id,
         prefer_user_id=current_user.id,
-        org_id=current_user.org_id,
+        current_user=current_user,
     )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -59,8 +61,6 @@ async def install_agent(
         _ds.get_sync_bool("security.allow_draft_install") and agent.created_by == current_user.id
     ):
         raise HTTPException(status_code=404, detail="Agent not found or not approved for installation")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to install this agent")
 
@@ -87,6 +87,7 @@ async def install_agent(
         install_version = agent.latest_version
 
     install_components = list(install_version.components or [])
+    component_target_team_id = agent.team_id if agent.is_private else None
 
     class _InstallAgentProxy:
         _version_fields = {
@@ -116,14 +117,28 @@ async def install_agent(
     mcp_comp_ids = [c.component_id for c in install_components if c.component_type == "mcp"]
     mcp_listings_map = {}
     if mcp_comp_ids:
-        mcp_rows = (await db.execute(select(McpListing).where(McpListing.id.in_(mcp_comp_ids)))).scalars().all()
+        mcp_stmt = apply_publish_scope(
+            apply_visibility_filter(
+                select(McpListing).where(McpListing.id.in_(mcp_comp_ids)), McpListing, current_user
+            ),
+            McpListing,
+            component_target_team_id,
+        )
+        mcp_rows = (await db.execute(mcp_stmt)).scalars().all()
         mcp_listings_map = {row.id: row for row in mcp_rows}
 
     # Pre-load skill listings for skill file generation
     skill_comp_ids = [c.component_id for c in install_components if c.component_type == "skill"]
     skill_listings_map = {}
     if skill_comp_ids:
-        skill_rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_comp_ids)))).scalars().all()
+        skill_stmt = apply_publish_scope(
+            apply_visibility_filter(
+                select(SkillListing).where(SkillListing.id.in_(skill_comp_ids)), SkillListing, current_user
+            ),
+            SkillListing,
+            component_target_team_id,
+        )
+        skill_rows = (await db.execute(skill_stmt)).scalars().all()
         skill_listings_map = {row.id: row for row in skill_rows}
 
     # Pre-load hook listings for hook config generation
@@ -133,9 +148,17 @@ async def install_agent(
         hook_rows = (
             (
                 await db.execute(
-                    select(HookListing)
-                    .options(selectinload(HookListing.latest_version))
-                    .where(HookListing.id.in_(hook_comp_ids))
+                    apply_publish_scope(
+                        apply_visibility_filter(
+                            select(HookListing)
+                            .options(selectinload(HookListing.latest_version))
+                            .where(HookListing.id.in_(hook_comp_ids)),
+                            HookListing,
+                            current_user,
+                        ),
+                        HookListing,
+                        component_target_team_id,
+                    )
                 )
             )
             .scalars()
@@ -150,9 +173,17 @@ async def install_agent(
         prompt_rows = (
             (
                 await db.execute(
-                    select(PromptListing)
-                    .options(selectinload(PromptListing.latest_version))
-                    .where(PromptListing.id.in_(prompt_comp_ids))
+                    apply_publish_scope(
+                        apply_visibility_filter(
+                            select(PromptListing)
+                            .options(selectinload(PromptListing.latest_version))
+                            .where(PromptListing.id.in_(prompt_comp_ids)),
+                            PromptListing,
+                            current_user,
+                        ),
+                        PromptListing,
+                        component_target_team_id,
+                    )
                 )
             )
             .scalars()
@@ -167,9 +198,17 @@ async def install_agent(
         sandbox_rows = (
             (
                 await db.execute(
-                    select(SandboxListing)
-                    .options(selectinload(SandboxListing.latest_version))
-                    .where(SandboxListing.id.in_(sandbox_comp_ids))
+                    apply_publish_scope(
+                        apply_visibility_filter(
+                            select(SandboxListing)
+                            .options(selectinload(SandboxListing.latest_version))
+                            .where(SandboxListing.id.in_(sandbox_comp_ids)),
+                            SandboxListing,
+                            current_user,
+                        ),
+                        SandboxListing,
+                        component_target_team_id,
+                    )
                 )
             )
             .scalars()
@@ -206,6 +245,16 @@ async def install_agent(
                         status_code=404, detail=f"Sandbox {listing.name} version {resolved_version!r} not found"
                     )
                 sandbox_listings_map[sid] = _VersionedSandboxListing(listing, pinned)
+
+    component_maps = (
+        (mcp_comp_ids, mcp_listings_map),
+        (skill_comp_ids, skill_listings_map),
+        (hook_comp_ids, hook_listings_map),
+        (prompt_comp_ids, prompt_listings_map),
+        (sandbox_comp_ids, sandbox_listings_map),
+    )
+    if any(set(ids) - set(listings) for ids, listings in component_maps):
+        raise HTTPException(status_code=404, detail="Agent contains a component unavailable to this agent target")
 
     archived_warnings = []
     setup_warnings = []
@@ -302,11 +351,9 @@ async def agent_download_stats(
         db,
         agent_id,
         prefer_user_id=current_user.id if current_user else None,
-        org_id=current_user.org_id if current_user else None,
+        current_user=current_user,
     )
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user is not None and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view stats for this agent")
@@ -330,11 +377,9 @@ async def get_agent_traces(
         db,
         agent_id,
         prefer_user_id=current_user.id if current_user else None,
-        org_id=current_user.org_id if current_user else None,
+        current_user=current_user,
     )
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user is not None and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
@@ -349,16 +394,14 @@ async def resolve_agent_components(
 ):
     """Resolve all components for an agent - validates they exist and are approved."""
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to resolve this agent")
     from services.agent_resolver import resolve_agent
 
-    resolved = await resolve_agent(agent, db)
+    resolved = await resolve_agent(agent, db, current_user=current_user)
     from services.agent_builder import build_composition_summary
 
     return build_composition_summary(resolved)
@@ -372,16 +415,14 @@ async def get_agent_manifest(
 ):
     """Generate a portable agent manifest with all resolved components."""
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent's manifest")
     from services.agent_resolver import resolve_agent
 
-    resolved = await resolve_agent(agent, db)
+    resolved = await resolve_agent(agent, db, current_user=current_user)
     if not resolved.ok:
         raise HTTPException(
             status_code=422,
@@ -415,6 +456,9 @@ async def validate_agent_composition(
         [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
         db,
         require_approved=False,
+        current_user=current_user,
+        target_team_id=req.team_id if req.visibility == "team" else None,
+        enforce_target=True,
     )
     issues = [
         ValidationIssue(

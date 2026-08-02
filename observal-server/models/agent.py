@@ -86,8 +86,12 @@ class Agent(Base):
     namespace: Mapped[str] = mapped_column(String(32), nullable=False)
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     owner_org_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
+    )
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
     )
     co_authors: Mapped[list] = mapped_column(JSON, default=list)
     latest_version_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -114,6 +118,7 @@ class Agent(Base):
             postgresql_where=deleted_at.is_(None),
             sqlite_where=deleted_at.is_(None),
         ),
+        Index("ix_agents_team_id", "team_id"),
     )
 
     versions: Mapped[list["AgentVersion"]] = relationship(
@@ -129,6 +134,10 @@ class Agent(Base):
     @property
     def qualified_name(self) -> str:
         return f"{self.namespace}/{self.slug}"
+
+    @property
+    def visibility(self) -> str:
+        return "team" if self.is_private else "public"
 
     # ------------------------------------------------------------------
     # Deprecated compatibility properties - delegate to latest_version.

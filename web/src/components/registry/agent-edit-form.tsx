@@ -61,6 +61,8 @@ interface AgentDetail {
   status?: string;
   version?: string;
   owner?: string;
+  team_id?: string | null;
+  visibility?: "public" | "team";
   user_permission?: string;
   description?: string;
   prompt?: string;
@@ -234,7 +236,11 @@ export function AgentEditForm({
 
     validateTimerRef.current = setTimeout(() => {
       validation.mutate(
-        { components: allComponents },
+        {
+          components: allComponents,
+          team_id: agent.team_id ?? undefined,
+          visibility: agent.visibility ?? "public",
+        },
         {
           onSuccess: (result) => setValidationResult(result),
           onError: () =>
@@ -492,6 +498,7 @@ export function AgentEditForm({
                 type={ct.value}
                 selected={selectedIds}
                 onToggle={handleToggle(ct.value)}
+                targetTeamId={agent.visibility === "team" ? agent.team_id ?? undefined : undefined}
               />
 
               {(selectedComponents[ct.value] ?? []).length > 0 && (

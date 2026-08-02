@@ -10,7 +10,7 @@ from models.user import User
 
 
 async def archive_listing(model, listing_id: str, db: AsyncSession, current_user: User, item_type: str) -> dict:
-    listing = await resolve_listing(model, listing_id, db)
+    listing = await resolve_listing(model, listing_id, db, current_user=current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":
@@ -24,7 +24,7 @@ async def archive_listing(model, listing_id: str, db: AsyncSession, current_user
 
 
 async def unarchive_listing(model, listing_id: str, db: AsyncSession, current_user: User, item_type: str) -> dict:
-    listing = await resolve_listing(model, listing_id, db)
+    listing = await resolve_listing(model, listing_id, db, current_user=current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":

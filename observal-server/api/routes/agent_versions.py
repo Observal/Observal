@@ -42,6 +42,11 @@ from services.versioning import parse_semver, validate_semver
 
 agent_version_router = APIRouter()
 
+
+async def audit(*_args, **_kwargs):
+    return None
+
+
 # Import _load_agent from agent.py to avoid duplication.
 # This is a late import done inside each function to avoid circular imports
 # at module load time (agent.py imports from schemas.agent which we also import here).
@@ -101,12 +106,12 @@ def _version_to_detail(ver: AgentVersion) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def _load_agent(db: AsyncSession, agent_id: str) -> Agent | None:
+async def _load_agent(db: AsyncSession, agent_id: str, current_user: User | None = None) -> Agent | None:
     """Thin wrapper that delegates to the route-level _load_agent."""
     optic.trace("agent_id={}", agent_id)
     from api.routes.agent import _load_agent as _base_load
 
-    return await _base_load(db, agent_id)
+    return await _base_load(db, agent_id, current_user=current_user)
 
 
 async def _list_agent_versions(
@@ -117,7 +122,7 @@ async def _list_agent_versions(
     current_user: User,
 ) -> dict:
     optic.trace("agent_id={}, page={}", agent_id, page)
-    agent = await _load_agent(db, agent_id)
+    agent = await _load_agent(db, agent_id, current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -154,7 +159,7 @@ async def _get_agent_version(
     current_user: User,
 ) -> dict:
     optic.trace("agent_id={}, version={}", agent_id, version)
-    agent = await _load_agent(db, agent_id)
+    agent = await _load_agent(db, agent_id, current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -194,7 +199,7 @@ async def _create_agent_version(
     if not validate_semver(req.version):
         raise HTTPException(status_code=422, detail=f"Invalid semver string: {req.version!r}")
 
-    agent = await _load_agent(db, agent_id)
+    agent = await _load_agent(db, agent_id, current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -215,6 +220,9 @@ async def _create_agent_version(
         errors = await validate_component_ids(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
             db,
+            current_user=current_user,
+            target_team_id=agent.team_id if agent.is_private else None,
+            enforce_target=True,
         )
         if errors:
             raise HTTPException(
@@ -366,7 +374,7 @@ async def _review_agent_version(
     current_user: User,
 ) -> dict:
     optic.trace("agent_id={}, version={}", agent_id, version)
-    agent = await _load_agent(db, agent_id)
+    agent = await _load_agent(db, agent_id, current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -422,7 +430,7 @@ async def _get_agent_harness_config(
     current_user: User,
 ) -> dict:
     optic.trace("agent_id={}, version={}", agent_id, version)
-    agent = await _load_agent(db, agent_id)
+    agent = await _load_agent(db, agent_id, current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -456,7 +464,7 @@ async def _get_version_diff(
     current_user: User,
 ) -> dict:
     optic.trace("agent_id={}, v1={}", agent_id, v1)
-    agent = await _load_agent(db, agent_id)
+    agent = await _load_agent(db, agent_id, current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 

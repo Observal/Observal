@@ -3,21 +3,31 @@
 
 """Agent draft workflow routes: save, update, start/cancel edit, submit."""
 
+from datetime import UTC, datetime
+
 from fastapi import Depends, HTTPException
 from loguru import logger as optic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import commit_or_name_conflict, get_db, get_effective_agent_permission, registry_identity, require_role
+from api.deps import commit_or_name_conflict, get_db, get_effective_agent_permission, require_role
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.agent_component import AgentComponent
 from models.skill import SkillListing
+from models.team import TeamRole
 from models.user import User, UserRole
 from schemas.agent import AgentCreateRequest, AgentResponse, AgentUpdateRequest
 from services.config_generator import validate_mcp_command
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.registry_telemetry import emit_registry_event
+from services.teamspace import (
+    is_global_reviewer,
+    publish_auto_approves_for_entity,
+    resolve_publish_target,
+    review_publication_to_public,
+    team_membership,
+)
 
 from ._router import router
 from .helpers import _agent_to_response, _load_agent, _resolve_component_names
@@ -25,6 +35,63 @@ from .helpers import _agent_to_response, _load_agent, _resolve_component_names
 # ---------------------------------------------------------------------------
 # Draft workflow
 # ---------------------------------------------------------------------------
+
+
+async def _authorize_visibility_change(agent: Agent, current_user: User, db: AsyncSession) -> None:
+    """Gate a visibility flip behind the roles the registry visibility route requires.
+
+    Personal agents are already covered by the owner or editor check on the
+    route. Team agents additionally require a team owner or team reviewer,
+    matching PATCH /api/v1/registry/agent/{id}/visibility.
+    """
+    if is_global_reviewer(current_user):
+        return
+    if agent.team_id is None:
+        return
+    membership = await team_membership(db, agent.team_id, current_user.id)
+    if not membership or membership.role not in (TeamRole.owner, TeamRole.reviewer):
+        raise HTTPException(status_code=403, detail="Only team owners and reviewers can change visibility")
+
+
+async def _reject_components_outside_target(
+    components: list,
+    db: AsyncSession,
+    current_user: User,
+    *,
+    target_team_id,
+    target_visibility: str,
+) -> None:
+    """Re-run the shared composition validation against a new publish target.
+
+    Used when visibility changes without the caller resending components: the
+    components already attached must still be legal under the new target.
+    """
+    refs = [{"component_type": c.component_type, "component_id": c.component_id} for c in components]
+    if not refs:
+        return
+
+    from services.agent_resolver import validate_component_ids
+
+    errors = await validate_component_ids(
+        refs,
+        db,
+        require_approved=False,
+        current_user=current_user,
+        target_team_id=target_team_id,
+        enforce_target=True,
+    )
+    if not errors:
+        return
+
+    name_map = await _resolve_component_names(components, db)
+    offenders = ", ".join(
+        f"{error.component_type} '{name_map.get(str(error.component_id)) or error.component_id}'" for error in errors
+    )
+    raise HTTPException(
+        status_code=409,
+        detail=f"Cannot change visibility to '{target_visibility}': {offenders} cannot be used by a "
+        f"{target_visibility} agent",
+    )
 
 
 @router.post("/draft", response_model=AgentResponse)
@@ -35,14 +102,43 @@ async def save_draft(
 ):
     """Create an agent as a draft (relaxed validation, not submitted for review)."""
     optic.trace("req={}", req)
-    namespace, slug = registry_identity(current_user, req.name)
+    target = await resolve_publish_target(
+        db,
+        current_user,
+        req.name,
+        team_id=req.team_id,
+        visibility=req.visibility,
+    )
+    from services.agent_resolver import validate_component_ids
+
+    component_refs = [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components] + [
+        {"component_type": "mcp", "component_id": mid} for mid in req.mcp_server_ids
+    ]
+    errors = await validate_component_ids(
+        component_refs,
+        db,
+        require_approved=False,
+        current_user=current_user,
+        target_team_id=target.team_id if target.visibility == "team" else None,
+        enforce_target=True,
+    )
+    if errors:
+        raise HTTPException(
+            status_code=400,
+            detail=[
+                {"component_type": e.component_type, "component_id": str(e.component_id), "reason": e.reason}
+                for e in errors
+            ],
+        )
+
     agent = Agent(
         name=req.name,
-        namespace=namespace,
-        slug=slug,
-        owner=req.owner or current_user.username or current_user.email,
+        namespace=target.namespace,
+        slug=target.slug,
+        owner=target.owner if target.team_id else (req.owner or current_user.username or current_user.email),
         created_by=current_user.id,
-        owner_org_id=current_user.org_id,
+        team_id=target.team_id,
+        is_private=target.visibility == "team",
     )
     db.add(agent)
     await db.flush()
@@ -94,7 +190,7 @@ async def save_draft(
                 component_type=cref.component_type,
                 component_id=cref.component_id,
                 component_name="",
-                resolved_version=component_versions.get(("mcp", mid), "latest"),
+                resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
                 order_index=order,
                 config_override=cref.config_override,
             )
@@ -136,10 +232,8 @@ async def update_draft(
 ):
     """Update a draft agent."""
     optic.trace("agent_id={}, req={}", agent_id, req)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     perm = get_effective_agent_permission(agent, current_user)
     if perm not in ("owner", "edit"):
@@ -150,6 +244,49 @@ async def update_draft(
     version = agent.latest_version
     if not version:
         raise HTTPException(status_code=400, detail="Agent has no version to update")
+
+    # Moving an item between teamspaces is a separate operation and must never
+    # ride along on a draft save.
+    if req.team_id is not None and req.team_id != agent.team_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Teamspace cannot be changed here. Recreate the agent under the target teamspace.",
+        )
+    if req.mcp_server_ids is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="mcp_server_ids is not accepted here. Send MCP servers in 'components' instead.",
+        )
+
+    if req.visibility == "team" and agent.team_id is None:
+        raise HTTPException(status_code=422, detail="Team visibility requires a teamspace")
+    target_is_private = bool(agent.is_private) if req.visibility is None else req.visibility == "team"
+    visibility_changed = target_is_private != bool(agent.is_private)
+    target_team_id = agent.team_id if target_is_private else None
+    if visibility_changed:
+        await _authorize_visibility_change(agent, current_user, db)
+        # A caller who resends components gets them validated below; otherwise
+        # the currently attached set has to survive the new target.
+        if req.components is None:
+            await _reject_components_outside_target(
+                list(agent.components),
+                db,
+                current_user,
+                target_team_id=target_team_id,
+                target_visibility="team" if target_is_private else "public",
+            )
+    was_private = bool(agent.is_private)
+    agent.is_private = target_is_private
+    # This route only accepts draft, rejected, and pending agents, so nothing here is
+    # approved yet and the call cannot currently fire. It stays as an invariant guard:
+    # every site that writes is_private must route a private-to-public transition back
+    # through review, so loosening the status gate above can never open that bypass.
+    review_publication_to_public(agent, current_user, was_private=was_private)
+
+    if req.version_bump_type and req.version is None:
+        from services.versioning import bump_version
+
+        req.version = bump_version(agent.version, req.version_bump_type)
 
     for field in (
         "version",
@@ -175,7 +312,24 @@ async def update_draft(
         version.external_mcps = [m.model_dump() for m in req.external_mcps]
 
     if req.components is not None:
-        from services.agent_resolver import resolve_component_versions
+        from services.agent_resolver import resolve_component_versions, validate_component_ids
+
+        errors = await validate_component_ids(
+            [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
+            db,
+            require_approved=False,
+            current_user=current_user,
+            target_team_id=target_team_id,
+            enforce_target=True,
+        )
+        if errors:
+            raise HTTPException(
+                status_code=400,
+                detail=[
+                    {"component_type": e.component_type, "component_id": str(e.component_id), "reason": e.reason}
+                    for e in errors
+                ],
+            )
 
         component_versions = await resolve_component_versions(req.components, db)
         version_id = version.id
@@ -232,7 +386,7 @@ async def update_draft(
     release_edit_lock(version, current_user.id, force=True)
     await db.flush()
 
-    for field in ("name", "owner"):
+    for field in ("name", "owner", "category"):
         val = getattr(req, field)
         if val is not None:
             setattr(agent, field, val)
@@ -255,7 +409,7 @@ async def start_edit_agent(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     perm = get_effective_agent_permission(agent, current_user)
@@ -282,7 +436,7 @@ async def cancel_edit_agent(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     perm = get_effective_agent_permission(agent, current_user)
@@ -304,10 +458,8 @@ async def submit_draft(
 ):
     """Submit a draft agent for review (transitions draft -> pending)."""
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     perm = get_effective_agent_permission(agent, current_user)
     if perm not in ("owner", "edit"):
@@ -325,6 +477,9 @@ async def submit_draft(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in agent.components],
             db,
             require_approved=False,
+            current_user=current_user,
+            target_team_id=agent.team_id if agent.is_private else None,
+            enforce_target=True,
         )
         if errors:
             raise HTTPException(
@@ -347,7 +502,12 @@ async def submit_draft(
 
         agent.latest_version.yaml_snapshot = await build_yaml_snapshot(agent.latest_version, db)
 
-    agent.status = AgentStatus.pending
+    if await publish_auto_approves_for_entity(agent, current_user, db):
+        agent.status = AgentStatus.approved
+        agent.latest_version.reviewed_by = current_user.id
+        agent.latest_version.reviewed_at = datetime.now(UTC)
+    else:
+        agent.status = AgentStatus.pending
     await db.commit()
     agent = await _load_agent(db, str(agent.id))
     name_map = await _resolve_component_names(agent.components, db)

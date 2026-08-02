@@ -8,12 +8,13 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger as optic
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
 from models.component_source import ComponentSource
+from models.team import TeamMembership
 from models.user import User, UserRole
 from schemas.component_source import (
     ComponentSourceCreate,
@@ -21,8 +22,25 @@ from schemas.component_source import (
     SyncResponse,
 )
 from services.git_mirror_service import sync_source
+from services.teamspace import resolve_publish_target
 
 router = APIRouter(prefix="/api/v1/component-sources", tags=["component-sources"])
+
+
+async def _source_visible(source: ComponentSource, current_user: User, db: AsyncSession) -> bool:
+    if source.is_public or current_user.role in (UserRole.super_admin, UserRole.admin, UserRole.reviewer):
+        return True
+    if source.team_id is None:
+        return False
+    return (
+        await db.scalar(
+            select(TeamMembership.id).where(
+                TeamMembership.team_id == source.team_id,
+                TeamMembership.user_id == current_user.id,
+            )
+        )
+        is not None
+    )
 
 
 @router.post("", response_model=ComponentSourceResponse, status_code=201)
@@ -40,13 +58,19 @@ async def add_source(
     elif "bitbucket" in url_lower:
         provider = "bitbucket"
 
-    # Always derive owner from the authenticated user's org - never trust client-supplied org
+    target = await resolve_publish_target(
+        db,
+        current_user,
+        "source",
+        team_id=req.team_id,
+        visibility=req.visibility,
+    )
     source = ComponentSource(
         url=req.url,
         provider=provider,
         component_type=req.component_type,
-        is_public=req.is_public,
-        owner_org_id=current_user.org_id,
+        is_public=target.visibility == "public",
+        team_id=target.team_id,
     )
     try:
         db.add(source)
@@ -68,14 +92,19 @@ async def list_sources(
     stmt = select(ComponentSource)
     if component_type:
         stmt = stmt.where(ComponentSource.component_type == component_type)
-    # Scope: public sources are visible to all; private sources only to owning org
-    if current_user.org_id is not None:
-        stmt = stmt.where(
-            (ComponentSource.is_public == True)  # noqa: E712
-            | (ComponentSource.owner_org_id == current_user.org_id)
+    if current_user.role not in (UserRole.super_admin, UserRole.admin, UserRole.reviewer):
+        member = (
+            select(TeamMembership.id)
+            .where(TeamMembership.team_id == ComponentSource.team_id, TeamMembership.user_id == current_user.id)
+            .correlate(ComponentSource)
+            .exists()
         )
-    else:
-        stmt = stmt.where(ComponentSource.is_public == True)  # noqa: E712
+        stmt = stmt.where(
+            or_(
+                ComponentSource.is_public == True,  # noqa: E712
+                and_(ComponentSource.is_public == False, member),  # noqa: E712
+            )
+        )
     result = await db.execute(stmt.order_by(ComponentSource.created_at.desc()))
     sources = result.scalars().all()
     return [ComponentSourceResponse.model_validate(s) for s in sources]
@@ -91,8 +120,7 @@ async def get_source(
     source = await db.get(ComponentSource, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
-    # Private sources are only visible to the owning org
-    if not source.is_public and (current_user.org_id is None or source.owner_org_id != current_user.org_id):
+    if not await _source_visible(source, current_user, db):
         raise HTTPException(status_code=404, detail="Source not found")
     return ComponentSourceResponse.model_validate(source)
 

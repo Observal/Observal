@@ -205,24 +205,3 @@ async def clear_cache(current_user: User = Depends(require_role(UserRole.admin))
 
     deleted = await invalidate_all()
     return {"cleared": deleted}
-
-
-@router.post("/fix-agent-org")
-async def fix_agent_org(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
-):
-    """Fix agents missing owner_org_id by setting it from the creator's org."""
-    optic.debug("org.fix_agent_org called")
-    from models.agent import Agent
-
-    result = await db.execute(select(Agent).where(Agent.owner_org_id.is_(None)))
-    agents = result.scalars().all()
-    fixed = 0
-    for agent in agents:
-        creator = (await db.execute(select(User).where(User.id == agent.created_by))).scalar_one_or_none()
-        if creator and creator.org_id:
-            agent.owner_org_id = creator.org_id
-            fixed += 1
-    await db.commit()
-    return {"fixed": fixed, "total_checked": len(agents)}

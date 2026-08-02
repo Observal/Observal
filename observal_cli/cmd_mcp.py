@@ -473,7 +473,7 @@ def _build_config_preview(server_name: str, parsed: dict) -> dict:
 # ── Implementation functions (shared by canonical + deprecated) ──
 
 
-def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False):
+def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False, team=None, visibility=None):
     # ── Path B/C: Direct JSON config (no git URL needed) ─────
     optic.trace("git_url={}, name={}", git_url, name)
     if direct_config:
@@ -600,12 +600,14 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
                 "docker_image": git_analysis.get("docker_image"),
             }
 
+        client.add_publish_target(submit_payload, team, visibility)
         endpoint = "/api/v1/mcps/draft" if draft else "/api/v1/mcps/submit"
         label = "Saving draft..." if draft else "Submitting..."
         with spinner(label):
             result = client.post(endpoint, submit_payload)
         msg = "Draft saved!" if draft else "Submitted!"
         rprint(f"\n[green]{msg}[/green] ID: [bold]{result['id']}[/bold]")
+        rprint(f"  Install: [cyan]observal registry mcp install {client.canonical_name(result)}[/cyan]")
         rprint(f"  Status: {status_badge(result.get('status', 'pending'))}")
         return
 
@@ -906,24 +908,30 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False)
             "setup_instructions": prefill.get("setup_instructions"),
         }
 
+    client.add_publish_target(submit_payload, team, visibility)
     endpoint = "/api/v1/mcps/draft" if draft else "/api/v1/mcps/submit"
     label = "Saving draft..." if draft else "Submitting..."
     with spinner(label):
         result = client.post(endpoint, submit_payload)
     msg = "Draft saved!" if draft else "Submitted!"
     rprint(f"\n[green]{msg}[/green] ID: [bold]{result['id']}[/bold]")
+    rprint(f"  Install: [cyan]observal registry mcp install {client.canonical_name(result)}[/cyan]")
     if _framework:
         rprint(f"  Framework: [cyan]{_framework}[/cyan]")
     rprint(f"  Status: {status_badge(result.get('status', 'pending'))}")
 
 
-def _list_impl(category, search, limit, sort, output, interactive=False):
-    optic.trace("category={}, search={}", category, search)
+def _list_impl(category, search, limit, sort, output, interactive=False, namespace=None, team=None):
+    optic.trace("category={}, search={}, namespace={}, team={}", category, search, namespace, team)
     params = {}
     if category:
         params["category"] = category
     if search:
         params["search"] = search
+    if namespace:
+        params["namespace"] = namespace.lstrip("@").lower()
+    if team:
+        params["team_id"] = client.resolve_team_id(team)
 
     with spinner("Fetching MCP servers..."):
         data = client.get("/api/v1/mcps", params=params)
@@ -1249,6 +1257,8 @@ def submit(
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (MCP ID)"),
     example: bool = typer.Option(False, "--example", help="Print example MCP configs and exit"),
+    team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
 ):
     """Submit an MCP server to the registry.
 
@@ -1299,13 +1309,24 @@ def submit(
     if config:
         rprint("[dim]Note: --config is now the default. You can just run `observal mcp submit`.[/dim]")
     rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
-    _submit_impl(git_url, name, category, yes, direct_config=True, draft=draft)
+    _submit_impl(
+        git_url,
+        name,
+        category,
+        yes,
+        direct_config=True,
+        draft=draft,
+        team=team,
+        visibility=visibility,
+    )
 
 
 @mcp_app.command(name="list")
 def list_mcps(
     category: str | None = typer.Option(None, "--category", "-c", help="Filter by category"),
     search: str | None = typer.Option(None, "--search", "-s", help="Search by name/description"),
+    namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
+    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive search mode"),
     limit: int = typer.Option(50, "--limit", "-n", help="Max results"),
     sort: str = typer.Option("name", "--sort", help="Sort by: name, category, version"),
@@ -1337,7 +1358,7 @@ def list_mcps(
         # Sort by category, limit to 10 results
         observal registry mcp list --sort category --limit 10
     """
-    _list_impl(category, search, limit, sort, output, interactive=interactive)
+    _list_impl(category, search, limit, sort, output, interactive=interactive, namespace=namespace, team=team)
 
 
 @mcp_app.command(name="my")

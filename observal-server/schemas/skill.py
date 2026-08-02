@@ -10,7 +10,7 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 
 from models.mcp import ListingStatus
-from schemas.constants import VALID_SKILL_TASK_TYPES, make_harness_list_validator, make_option_validator
+from schemas.constants import VALID_SKILL_TASK_TYPES, Visibility, make_harness_list_validator, make_option_validator
 from schemas.skill_commands import normalize_slash_command
 
 
@@ -19,6 +19,8 @@ class SkillSubmitRequest(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     skill_path: str = "/"
     git_url: str | None = None
     git_ref: str | None = None
@@ -45,6 +47,8 @@ class SkillDraftRequest(BaseModel):
     version: str = "0.1.0"
     description: str = ""
     owner: str = ""
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     skill_path: str = "/"
     git_url: str | None = None
     git_ref: str | None = None
@@ -70,6 +74,8 @@ class SkillUpdateRequest(BaseModel):
     version: str | None = None
     description: str | None = None
     owner: str | None = None
+    team_id: uuid.UUID | None = None
+    visibility: Visibility | None = None
     skill_path: str | None = None
     git_url: str | None = None
     git_ref: str | None = None
@@ -97,6 +103,9 @@ class SkillListingResponse(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     task_type: str
     target_agents: list[str]
     supported_harnesses: list[str]
@@ -135,6 +144,9 @@ class SkillListingSummary(BaseModel):
     description: str
     task_type: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     target_agents: list[str]
     status: ListingStatus
     rejection_reason: str | None = None

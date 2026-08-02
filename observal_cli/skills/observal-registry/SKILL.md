@@ -26,8 +26,10 @@ Use natural-language keywords with `--search`; do not require exact whole-query 
 
 ```bash
 observal registry mcp list --category developer-tools --output json
-observal registry skill list --search 'frontend design' --output json
-observal registry skill list --task-type code-review --output json
+observal registry mcp list --namespace platform-tools --output json
+observal registry skill list --namespace platform-tools --output json
+observal registry skill list --team platform-tools --search 'frontend design' --output json
+observal registry skill list --task-type code-review --harness claude-code --output json
 observal registry hook list --event UserPromptSubmit --output json
 observal registry prompt list --category coding --output json
 observal registry sandbox list --runtime docker --output json
@@ -40,7 +42,7 @@ observal registry mcp show NAME --output json
 observal registry hook show NAME --output json
 ```
 
-After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--interactive` for fuzzy picker.
+After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--interactive` for fuzzy picker. Team members see approved private teamspace items in the same lists. Use `--team TEAM_HANDLE` to include public items plus that team's private items, or `--namespace TEAM_HANDLE` to narrow to the team's namespace. Direct references use `TEAM_HANDLE/ITEM_SLUG`. Skill search covers descriptions, task types, target agents, slash commands, source paths, delivery mode, and SKILL.md content.
 
 **MCP categories:** `browser-automation`, `cloud-platforms`, `code-execution`, `communication`, `databases`, `developer-tools`, `devops`, `file-systems`, `finance`, `knowledge-memory`, `monitoring`, `multimedia`, `productivity`, `search`, `security`, `version-control`, `ai-ml`, `data-analytics`, `general`
 
@@ -58,6 +60,7 @@ Paste the MCP JSON config. Optionally include `--git` so Observal clones the rep
 observal registry mcp submit --example
 observal registry mcp submit --name my-mcp --category developer-tools --yes
 observal registry mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
+observal registry mcp submit --name internal-mcp --category developer-tools --team platform-tools --visibility team --yes
 ```
 
 The command still expects pasted JSON. If a local image must be built, follow the returned setup instructions, for example `docker build -t name:latest .`. Manual installs also print these setup instructions before the MCP can be used.
@@ -70,6 +73,7 @@ There are two delivery modes for skills:
 ```bash
 observal registry skill submit --example
 observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --git-ref main --name my-skill --description 'What it does' --task-type general
+observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --name internal-skill --description 'Team skill' --task-type general --team platform-tools --visibility team
 ```
 
 **Registry direct** (inline SKILL.md + optional script, no git repo needed):

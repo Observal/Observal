@@ -8,7 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 
 from models.mcp import ListingStatus
-from schemas.constants import VALID_PROMPT_CATEGORIES, make_harness_list_validator, make_option_validator
+from schemas.constants import VALID_PROMPT_CATEGORIES, Visibility, make_harness_list_validator, make_option_validator
 
 
 class PromptSubmitRequest(BaseModel):
@@ -16,6 +16,8 @@ class PromptSubmitRequest(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     category: str
     template: str
     variables: list[dict] = []
@@ -32,6 +34,8 @@ class PromptDraftRequest(BaseModel):
     version: str = "0.1.0"
     description: str = ""
     owner: str = ""
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     category: str = "general"
     template: str = ""
     variables: list[dict] = []
@@ -47,6 +51,8 @@ class PromptUpdateRequest(BaseModel):
     version: str | None = None
     description: str | None = None
     owner: str | None = None
+    team_id: uuid.UUID | None = None
+    visibility: Visibility | None = None
     category: str | None = None
     template: str | None = None
     variables: list[dict] | None = None
@@ -64,6 +70,9 @@ class PromptListingResponse(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     category: str
     template: str
     variables: list[dict]
@@ -95,6 +104,9 @@ class PromptListingSummary(BaseModel):
     description: str
     category: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     status: ListingStatus
     rejection_reason: str | None = None
     updated_at: datetime | None = None

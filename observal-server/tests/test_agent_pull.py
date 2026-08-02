@@ -223,8 +223,13 @@ def test_agent_to_response_populates_latest_version_string():
 
 
 @pytest.mark.asyncio
-async def test_install_agent_no_latest_version_returns_400():
-    """install_agent returns 400 when agent has no approved/published version."""
+async def test_install_agent_not_approved_returns_404():
+    """A non-approved agent is not installable, and must not be distinguishable.
+
+    The status gate runs before the no-version branch, so an agent without a
+    published version reports 404 rather than confirming it exists. Owning the
+    agent does not change that: install is gated on approval, not on permission.
+    """
     from fastapi import HTTPException
 
     from api.routes.agent.install import install_agent
@@ -232,7 +237,7 @@ async def test_install_agent_no_latest_version_returns_400():
 
     agent = _make_agent(with_approved_version=False)
     user = _make_user()
-    user.id = agent.created_by  # owner, so auth passes
+    user.id = agent.created_by
 
     req = AgentInstallRequest(harness="claude-code")
     request = MagicMock()
@@ -247,7 +252,53 @@ async def test_install_agent_no_latest_version_returns_400():
     with (
         patch("api.routes.agent.install._load_agent", new=AsyncMock(return_value=agent)),
         patch("api.routes.agent.install.get_effective_agent_permission", return_value="owner"),
-        patch("api.routes.agent.install.audit", new=AsyncMock()),
+        patch("api.routes.agent.install._ds.get_sync_bool", return_value=False),
+        patch("services.download_tracker.record_agent_download", new=AsyncMock()),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await install_agent(
+            agent_id=str(agent.id),
+            req=req,
+            request=request,
+            db=db,
+            current_user=user,
+        )
+
+    assert exc.value.status_code == 404
+    assert "not approved" in exc.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_install_agent_no_version_returns_400_for_draft_install():
+    """With security.allow_draft_install on, the creator reaches the no-version branch.
+
+    That setting is the only way past the approval gate, so it is the only way the
+    400 is reachable. The creator already knows the agent exists, so naming the
+    real problem leaks nothing.
+    """
+    from fastapi import HTTPException
+
+    from api.routes.agent.install import install_agent
+    from schemas.agent import AgentInstallRequest
+
+    agent = _make_agent(with_approved_version=False)
+    user = _make_user()
+    user.id = agent.created_by
+
+    req = AgentInstallRequest(harness="claude-code")
+    request = MagicMock()
+    request.url = MagicMock()
+    request.url.scheme = "http"
+    request.url.hostname = "localhost"
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: []))))
+    db.commit = AsyncMock()
+
+    with (
+        patch("api.routes.agent.install._load_agent", new=AsyncMock(return_value=agent)),
+        patch("api.routes.agent.install.get_effective_agent_permission", return_value="owner"),
+        patch("api.routes.agent.install._ds.get_sync_bool", return_value=True),
         patch("services.download_tracker.record_agent_download", new=AsyncMock()),
         pytest.raises(HTTPException) as exc,
     ):
@@ -260,7 +311,7 @@ async def test_install_agent_no_latest_version_returns_400():
         )
 
     assert exc.value.status_code == 400
-    assert "no" in exc.value.detail.lower() or "version" in exc.value.detail.lower()
+    assert "version" in exc.value.detail.lower()
 
 
 @pytest.mark.asyncio
@@ -292,7 +343,6 @@ async def test_install_agent_with_approved_version_succeeds():
         patch("api.routes.agent.install.get_effective_agent_permission", return_value="owner"),
         patch("api.routes.agent.install.generate_agent_config", return_value=fake_config),
         patch("api.routes.agent.install.emit_registry_event"),
-        patch("api.routes.agent.install.audit", new=AsyncMock()),
         patch("api.routes.config.derive_endpoints", return_value={"api": "http://localhost:8000", "otlp_http": ""}),
         patch("services.download_tracker.record_agent_download", new=AsyncMock()),
     ):

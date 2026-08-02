@@ -15,6 +15,9 @@ export interface RegistryItem {
 	namespace?: string;
 	slug?: string;
 	qualified_name?: string;
+	team_id?: string | null;
+	visibility?: "public" | "team";
+	is_private?: boolean;
 	description?: string;
 	status?: string;
 	rejection_reason?: string;

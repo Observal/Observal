@@ -59,7 +59,7 @@ def _app_with(router, user=None):
     return app
 
 
-def _listing_mock(status=ListingStatus.approved, submitted_by=None):
+def _listing_mock(status=ListingStatus.approved, submitted_by=None, is_private=False, team_id=None):
     m = MagicMock()
     m.id = uuid.uuid4()
     m.name = "test-listing"
@@ -72,7 +72,13 @@ def _listing_mock(status=ListingStatus.approved, submitted_by=None):
     m.status = status
     m.rejection_reason = None
     m.submitted_by = submitted_by or uuid.uuid4()
-    m.owner_org_id = None
+    m.co_authors = []
+    # Privacy is a separate axis from status: set it explicitly so these tests
+    # exercise status gating only. A bare MagicMock attribute is truthy, which
+    # would silently make every listing look team-private.
+    m.is_private = is_private
+    m.team_id = team_id
+    m.visibility = "team" if is_private else "public"
     m.supported_harnesses = []
     m.created_at = datetime(2025, 1, 1, tzinfo=UTC)
     m.updated_at = datetime(2025, 1, 1, tzinfo=UTC)
@@ -132,12 +138,18 @@ def _listing_mock(status=ListingStatus.approved, submitted_by=None):
 # ── Endpoint configs for parametrization ─────────────────
 
 ENDPOINTS = [
-    ("mcp", "/api/v1/mcps", "api.routes.mcp"),
-    ("prompt", "/api/v1/prompts", "api.routes.prompt"),
-    ("skill", "/api/v1/skills", "api.routes.skill"),
-    ("hook", "/api/v1/hooks", "api.routes.hook"),
-    ("sandbox", "/api/v1/sandboxes", "api.routes.sandbox"),
+    ("mcp", "/api/v1/mcps"),
+    ("prompt", "/api/v1/prompts"),
+    ("skill", "/api/v1/skills"),
+    ("hook", "/api/v1/hooks"),
+    ("sandbox", "/api/v1/sandboxes"),
 ]
+
+# The route modules resolve listings through api.deps.resolve_visible_listing,
+# which calls the module-global resolve_listing inside api.deps. That is the only
+# seam a patch can intercept; patching api.routes.<type>.resolve_listing rebinds a
+# name the detail handlers never call.
+RESOLVE_SEAM = "api.deps.resolve_listing"
 
 
 def _get_router(route_type):
@@ -159,17 +171,17 @@ def _get_router(route_type):
 # ── Tests ────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("route_type,base_path,module_path", ENDPOINTS)
+@pytest.mark.parametrize("route_type,base_path", ENDPOINTS)
 class TestUnauthenticatedAccess:
     """Unauthenticated users can only see approved listings."""
 
     @pytest.mark.asyncio
-    async def test_sees_approved(self, route_type, base_path, module_path):
+    async def test_sees_approved(self, route_type, base_path):
         router = _get_router(route_type)
         listing = _listing_mock(status=ListingStatus.approved)
         app = _app_with(router, user=None)
 
-        with patch(f"{module_path}.resolve_listing", new_callable=AsyncMock) as mock_resolve:
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
             mock_resolve.return_value = listing
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
@@ -180,30 +192,30 @@ class TestUnauthenticatedAccess:
         "status",
         [ListingStatus.draft, ListingStatus.pending, ListingStatus.rejected, ListingStatus.archived],
     )
-    async def test_blocked_from_non_approved(self, route_type, base_path, module_path, status):
+    async def test_blocked_from_non_approved(self, route_type, base_path, status):
         router = _get_router(route_type)
         listing = _listing_mock(status=status)
         app = _app_with(router, user=None)
 
-        with patch(f"{module_path}.resolve_listing", new_callable=AsyncMock) as mock_resolve:
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
             mock_resolve.side_effect = [None, listing]
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
             assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_nonexistent_returns_404(self, route_type, base_path, module_path):
+    async def test_nonexistent_returns_404(self, route_type, base_path):
         router = _get_router(route_type)
         app = _app_with(router, user=None)
 
-        with patch(f"{module_path}.resolve_listing", new_callable=AsyncMock) as mock_resolve:
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
             mock_resolve.side_effect = [None, None]
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{uuid.uuid4()}")
             assert r.status_code == 404
 
 
-@pytest.mark.parametrize("route_type,base_path,module_path", ENDPOINTS)
+@pytest.mark.parametrize("route_type,base_path", ENDPOINTS)
 class TestOwnerAccess:
     """Listing owners can see their own listings in any status."""
 
@@ -212,20 +224,20 @@ class TestOwnerAccess:
         "status",
         [ListingStatus.draft, ListingStatus.pending, ListingStatus.rejected],
     )
-    async def test_owner_sees_own_non_approved(self, route_type, base_path, module_path, status):
+    async def test_owner_sees_own_non_approved(self, route_type, base_path, status):
         owner = _user()
         router = _get_router(route_type)
         listing = _listing_mock(status=status, submitted_by=owner.id)
         app = _app_with(router, user=owner)
 
-        with patch(f"{module_path}.resolve_listing", new_callable=AsyncMock) as mock_resolve:
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
             mock_resolve.side_effect = [None, listing]
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
             assert r.status_code == 200
 
 
-@pytest.mark.parametrize("route_type,base_path,module_path", ENDPOINTS)
+@pytest.mark.parametrize("route_type,base_path", ENDPOINTS)
 class TestNonOwnerRegularUser:
     """Non-owner regular users cannot see non-approved listings."""
 
@@ -234,57 +246,57 @@ class TestNonOwnerRegularUser:
         "status",
         [ListingStatus.draft, ListingStatus.pending],
     )
-    async def test_blocked_from_others_non_approved(self, route_type, base_path, module_path, status):
+    async def test_blocked_from_others_non_approved(self, route_type, base_path, status):
         other_user = _user()
         router = _get_router(route_type)
         listing = _listing_mock(status=status)
         app = _app_with(router, user=other_user)
 
-        with patch(f"{module_path}.resolve_listing", new_callable=AsyncMock) as mock_resolve:
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
             mock_resolve.side_effect = [None, listing]
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
             assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_sees_approved(self, route_type, base_path, module_path):
+    async def test_sees_approved(self, route_type, base_path):
         other_user = _user()
         router = _get_router(route_type)
         listing = _listing_mock(status=ListingStatus.approved)
         app = _app_with(router, user=other_user)
 
-        with patch(f"{module_path}.resolve_listing", new_callable=AsyncMock) as mock_resolve:
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
             mock_resolve.return_value = listing
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
             assert r.status_code == 200
 
 
-@pytest.mark.parametrize("route_type,base_path,module_path", ENDPOINTS)
+@pytest.mark.parametrize("route_type,base_path", ENDPOINTS)
 class TestPrivilegedAccess:
     """Admins and reviewers can see any listing in any status."""
 
     @pytest.mark.asyncio
-    async def test_reviewer_sees_pending(self, route_type, base_path, module_path):
+    async def test_reviewer_sees_pending(self, route_type, base_path):
         reviewer = _user(role=UserRole.reviewer)
         router = _get_router(route_type)
         listing = _listing_mock(status=ListingStatus.pending)
         app = _app_with(router, user=reviewer)
 
-        with patch(f"{module_path}.resolve_listing", new_callable=AsyncMock) as mock_resolve:
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
             mock_resolve.side_effect = [None, listing]
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")
             assert r.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_admin_sees_draft(self, route_type, base_path, module_path):
+    async def test_admin_sees_draft(self, route_type, base_path):
         admin = _user(role=UserRole.admin)
         router = _get_router(route_type)
         listing = _listing_mock(status=ListingStatus.draft)
         app = _app_with(router, user=admin)
 
-        with patch(f"{module_path}.resolve_listing", new_callable=AsyncMock) as mock_resolve:
+        with patch(RESOLVE_SEAM, new_callable=AsyncMock) as mock_resolve:
             mock_resolve.side_effect = [None, listing]
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 r = await ac.get(f"{base_path}/{listing.id}")

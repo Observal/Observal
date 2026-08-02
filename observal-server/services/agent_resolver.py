@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, computed_field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.deps import apply_publish_scope, apply_visibility_filter
 from models.agent import Agent
 from models.hook import HookListing
 from models.mcp import ListingStatus, McpListing
@@ -145,6 +146,7 @@ async def resolve_agent(
     db: AsyncSession,
     *,
     require_approved: bool = True,
+    current_user=None,
 ) -> ResolvedAgent:
     """Resolve all components for an agent.
 
@@ -180,6 +182,9 @@ async def resolve_agent(
         model = _LISTING_MODELS[comp_type]
         ids = [c.component_id for c in comps]
         stmt = select(model).where(model.id.in_(ids))
+        if current_user is not None:
+            stmt = apply_visibility_filter(stmt, model, current_user)
+        stmt = apply_publish_scope(stmt, model, agent.team_id if agent.is_private else None)
         result = await db.execute(stmt)
         for listing in result.scalars().all():
             found[listing.id] = listing
@@ -265,6 +270,9 @@ async def validate_component_ids(
     db: AsyncSession,
     *,
     require_approved: bool = True,
+    current_user=None,
+    target_team_id: uuid.UUID | None = None,
+    enforce_target: bool = False,
 ) -> list[ResolutionError]:
     """Validate a list of component references before attaching them to an agent.
 
@@ -298,6 +306,10 @@ async def validate_component_ids(
             continue
 
         stmt = select(model).where(model.id == cid)
+        if current_user is not None:
+            stmt = apply_visibility_filter(stmt, model, current_user)
+        if enforce_target:
+            stmt = apply_publish_scope(stmt, model, target_team_id)
         listing = (await db.execute(stmt)).scalar_one_or_none()
 
         if listing is None:

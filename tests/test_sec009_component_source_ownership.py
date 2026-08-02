@@ -1,17 +1,36 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for component source org ownership enforcement.
+"""Tests for teamspace visibility enforcement on component sources.
+
+Component sources have exactly two visibilities: public (everyone) and team
+(members of the owning teamspace, plus global reviewers and admins). There is no
+organization axis.
 
 Verifies that:
-- add_source derives owner_org_id from the authenticated user, not the request body
-- list_sources returns only public sources and the caller's own org sources
-- get_source returns 404 for private sources owned by a different org
+- add_source derives the teamspace and visibility from the authenticated user's
+  membership, never from unvalidated request-body input
+- list_sources returns public sources plus team-private sources of teams the
+  caller belongs to, and nothing else
+- get_source answers 404 (not 403) for a team-private source the caller cannot
+  see, so existence is never leaked
+
+The routes run against a real in-memory SQLite session so the visibility SQL is
+actually executed rather than merely inspected.
 """
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from contextlib import asynccontextmanager
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from models.base import Base
+from models.component_source import ComponentSource
+from models.team import Team, TeamMembership, TeamRole
+from models.user import User, UserRole
+
+_TABLES = [ComponentSource.__table__, Team.__table__, TeamMembership.__table__]
 
 
 def _make_client():
@@ -27,264 +46,336 @@ def _make_client():
     )
 
 
-def _user(role="user", org_id=None):
-    from models.user import User, UserRole
-
-    u = MagicMock(spec=User)
-    u.id = uuid.uuid4()
-    u.role = getattr(UserRole, role)
-    u.org_id = org_id if org_id is not None else uuid.uuid4()
-    return u
-
-
-def _source(is_public=True, owner_org_id=None):
-    s = MagicMock()
-    s.id = uuid.uuid4()
-    s.url = "https://github.com/example/repo"
-    s.provider = "github"
-    s.component_type = "mcp"
-    s.is_public = is_public
-    s.owner_org_id = owner_org_id or uuid.uuid4()
-    s.auto_sync_interval = None
-    s.last_synced_at = None
-    s.sync_status = None
-    s.sync_error = None
-    from datetime import UTC, datetime
-
-    s.created_at = datetime.now(UTC)
-    return s
-
-
-# ── add_source: owner_org_id derived from user, not request ──────────────────
-
-
-@pytest.mark.asyncio
-async def test_add_source_ignores_client_owner_org_id():
-    """owner_org_id in the request body is ignored; user's org is used."""
+@asynccontextmanager
+async def _api(user: User | None):
+    """Bind the app to a fresh database and authenticate as ``user`` (None = anonymous)."""
     from api.deps import get_current_user, get_db
     from main import app
 
-    org = uuid.uuid4()
-    user = _user(org_id=org)
-    foreign_org = uuid.uuid4()
-
-    from datetime import UTC, datetime
-
-    created_source = _source(owner_org_id=org)
-    captured = {}
-
-    db = AsyncMock()
-
-    def capturing_add(obj):
-        captured["source"] = obj
-        # Copy required fields onto the object so pydantic serialisation works
-        obj.id = created_source.id
-        obj.provider = created_source.provider
-        obj.created_at = datetime.now(UTC)
-        obj.auto_sync_interval = None
-        obj.last_synced_at = None
-        obj.sync_status = None
-        obj.sync_error = None
-
-    db.add = MagicMock(side_effect=capturing_add)
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock()
-
-    async def fake_db():
-        yield db
-
-    app.dependency_overrides[get_db] = fake_db
-    app.dependency_overrides[get_current_user] = lambda: user
-
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     try:
-        async with _make_client() as client:
-            r = await client.post(
-                "/api/v1/component-sources",
-                json={
-                    "url": "https://github.com/example/repo",
-                    "component_type": "mcp",
-                    "is_public": True,
-                    "owner_org_id": str(foreign_org),  # attacker supplies foreign org
-                },
-            )
-        assert r.status_code in (201, 409)
-        # The source added to DB must use the user's org, not the foreign one
-        if "source" in captured:
-            assert captured["source"].owner_org_id == org
-            assert captured["source"].owner_org_id != foreign_org
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all, tables=_TABLES)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def _db():
+            async with sessions() as session:
+                yield session
+
+        app.dependency_overrides[get_db] = _db
+        if user is not None:
+            app.dependency_overrides[get_current_user] = lambda: user
+        try:
+            async with _make_client() as client:
+                yield client, sessions
+        finally:
+            app.dependency_overrides.clear()
     finally:
-        app.dependency_overrides.clear()
+        await engine.dispose()
 
 
-# ── list_sources: scoped to public + caller's org ─────────────────────────────
+async def _seed(sessions, *rows):
+    async with sessions() as session:
+        session.add_all(rows)
+        await session.commit()
+
+
+async def _sources(sessions) -> list[ComponentSource]:
+    async with sessions() as session:
+        return list((await session.execute(select(ComponentSource))).scalars().all())
+
+
+def _user(username: str = "alice", role: UserRole = UserRole.user) -> User:
+    return User(
+        id=uuid.uuid4(),
+        email=f"{username}@example.com",
+        username=username,
+        name=username.title(),
+        role=role,
+    )
+
+
+def _team(handle: str) -> Team:
+    return Team(id=uuid.uuid4(), name=handle.title(), handle=handle, created_by=uuid.uuid4())
+
+
+def _member(team: Team, user: User, role: TeamRole = TeamRole.member) -> TeamMembership:
+    return TeamMembership(id=uuid.uuid4(), team_id=team.id, user_id=user.id, role=role)
+
+
+def _source(url: str, *, is_public: bool = True, team_id: uuid.UUID | None = None) -> ComponentSource:
+    return ComponentSource(
+        id=uuid.uuid4(),
+        url=url,
+        provider="github",
+        component_type="mcp",
+        is_public=is_public,
+        team_id=team_id,
+    )
+
+
+# ── add_source: teamspace derived from membership, not from the request body ──
 
 
 @pytest.mark.asyncio
-async def test_list_sources_excludes_other_org_private_sources():
-    """Private sources from a different org are not returned."""
-    from api.deps import get_current_user, get_db
-    from main import app
-
-    my_org = uuid.uuid4()
-    other_org = uuid.uuid4()
-    user = _user(org_id=my_org)
-
-    public_source = _source(is_public=True, owner_org_id=other_org)
-    private_mine = _source(is_public=False, owner_org_id=my_org)
-    private_other = _source(is_public=False, owner_org_id=other_org)
-
-    db = AsyncMock()
-    result = MagicMock()
-
-    # Simulate DB filtering: only return sources that pass the WHERE clause
-    # We test by checking what WHERE conditions are applied via the stmt
-    executed_stmts = []
-    orig_execute = db.execute
-
-    async def capturing_execute(stmt, *a, **kw):
-        executed_stmts.append(stmt)
-        r = MagicMock()
-        r.scalars.return_value.all.return_value = [public_source, private_mine]
-        return r
-
-    db.execute = capturing_execute
-
-    async def fake_db():
-        yield db
-
-    app.dependency_overrides[get_db] = fake_db
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    try:
-        async with _make_client() as client:
-            r = await client.get("/api/v1/component-sources")
-        assert r.status_code == 200
-        # The WHERE clause on the stmt should include org scoping
-        assert len(executed_stmts) == 1
-        stmt_str = str(executed_stmts[0])
-        assert str(my_org) in stmt_str or "owner_org_id" in stmt_str
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
-async def test_list_sources_no_org_user_sees_only_public():
-    """User with no org_id sees only public sources."""
-    from api.deps import get_current_user, get_db
-    from main import app
-
+async def test_add_source_rejects_team_id_the_caller_is_not_a_member_of():
+    """A client-supplied team_id cannot attach a source to a foreign teamspace."""
     user = _user()
-    user.org_id = None
+    foreign_team = _team("platform")
 
-    db = AsyncMock()
-    executed_stmts = []
-
-    async def capturing_execute(stmt, *a, **kw):
-        executed_stmts.append(stmt)
-        r = MagicMock()
-        r.scalars.return_value.all.return_value = []
-        return r
-
-    db.execute = capturing_execute
-
-    async def fake_db():
-        yield db
-
-    app.dependency_overrides[get_db] = fake_db
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    try:
-        async with _make_client() as client:
-            r = await client.get("/api/v1/component-sources")
-        assert r.status_code == 200
-        assert len(executed_stmts) == 1
-        # Query must filter to is_public = true only
-        stmt_str = str(executed_stmts[0])
-        assert "is_public" in stmt_str
-    finally:
-        app.dependency_overrides.clear()
-
-
-# ── get_source: private source from another org returns 404 ──────────────────
+    async with _api(user) as (client, sessions):
+        await _seed(sessions, foreign_team)
+        r = await client.post(
+            "/api/v1/component-sources",
+            json={
+                "url": "https://github.com/example/repo",
+                "component_type": "mcp",
+                "team_id": str(foreign_team.id),
+                "visibility": "team",
+            },
+        )
+        assert r.status_code == 403
+        assert await _sources(sessions) == []
 
 
 @pytest.mark.asyncio
-async def test_get_source_private_other_org_returns_404():
-    """Fetching a private source owned by a different org returns 404."""
-    from api.deps import get_current_user, get_db
-    from main import app
+async def test_add_source_rejects_foreign_team_even_for_public_visibility():
+    """Membership is checked on team_id itself, not only when visibility is 'team'."""
+    user = _user()
+    foreign_team = _team("platform")
 
-    my_org = uuid.uuid4()
-    other_org = uuid.uuid4()
-    user = _user(org_id=my_org)
+    async with _api(user) as (client, sessions):
+        await _seed(sessions, foreign_team)
+        r = await client.post(
+            "/api/v1/component-sources",
+            json={
+                "url": "https://github.com/example/repo",
+                "component_type": "mcp",
+                "team_id": str(foreign_team.id),
+                "visibility": "public",
+            },
+        )
+        assert r.status_code == 403
+        assert await _sources(sessions) == []
 
-    private_source = _source(is_public=False, owner_org_id=other_org)
 
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=private_source)
+@pytest.mark.asyncio
+async def test_add_source_rejects_team_visibility_without_a_teamspace():
+    """Team visibility with no teamspace has no membership to authorize against."""
+    async with _api(_user()) as (client, sessions):
+        r = await client.post(
+            "/api/v1/component-sources",
+            json={
+                "url": "https://github.com/example/repo",
+                "component_type": "mcp",
+                "visibility": "team",
+            },
+        )
+        assert r.status_code == 422
+        assert await _sources(sessions) == []
 
-    async def fake_db():
-        yield db
 
-    app.dependency_overrides[get_db] = fake_db
-    app.dependency_overrides[get_current_user] = lambda: user
+@pytest.mark.asyncio
+async def test_add_source_stores_team_visibility_for_a_member():
+    """A member publishing to their own teamspace gets a team-private source."""
+    user = _user()
+    team = _team("platform")
 
-    try:
-        async with _make_client() as client:
-            r = await client.get(f"/api/v1/component-sources/{private_source.id}")
+    async with _api(user) as (client, sessions):
+        await _seed(sessions, team, _member(team, user))
+        r = await client.post(
+            "/api/v1/component-sources",
+            json={
+                "url": "https://github.com/example/repo",
+                "component_type": "mcp",
+                "team_id": str(team.id),
+                "visibility": "team",
+            },
+        )
+        assert r.status_code == 201
+        assert r.json()["visibility"] == "team"
+        assert r.json()["team_id"] == str(team.id)
+
+        stored = await _sources(sessions)
+        assert len(stored) == 1
+        assert stored[0].is_public is False
+        assert stored[0].team_id == team.id
+
+
+@pytest.mark.asyncio
+async def test_add_source_without_a_team_is_public():
+    """No teamspace means no private scope to hide the source in."""
+    async with _api(_user()) as (client, sessions):
+        r = await client.post(
+            "/api/v1/component-sources",
+            json={"url": "https://github.com/example/repo", "component_type": "mcp"},
+        )
+        assert r.status_code == 201
+        assert r.json()["visibility"] == "public"
+        assert r.json()["team_id"] is None
+
+        stored = await _sources(sessions)
+        assert len(stored) == 1
+        assert stored[0].is_public is True
+        assert stored[0].team_id is None
+
+
+# ── list_sources: public plus the caller's own teamspaces ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_sources_excludes_team_private_sources_of_other_teams():
+    """Team-private sources of a teamspace the caller is not in are never listed."""
+    user = _user()
+    mine, theirs = _team("mine"), _team("theirs")
+
+    async with _api(user) as (client, sessions):
+        await _seed(
+            sessions,
+            mine,
+            theirs,
+            _member(mine, user),
+            _source("https://github.com/example/public", is_public=True),
+            _source("https://github.com/example/mine", is_public=False, team_id=mine.id),
+            _source("https://github.com/example/theirs", is_public=False, team_id=theirs.id),
+        )
+        r = await client.get("/api/v1/component-sources")
+        assert r.status_code == 200
+        assert {s["url"] for s in r.json()} == {
+            "https://github.com/example/public",
+            "https://github.com/example/mine",
+        }
+
+
+@pytest.mark.asyncio
+async def test_list_sources_includes_team_private_sources_for_a_member():
+    """Membership is what admits a team-private source into the listing."""
+    user = _user()
+    team = _team("platform")
+
+    async with _api(user) as (client, sessions):
+        await _seed(
+            sessions,
+            team,
+            _member(team, user),
+            _source("https://github.com/example/private", is_public=False, team_id=team.id),
+        )
+        r = await client.get("/api/v1/component-sources")
+        assert r.status_code == 200
+        assert [s["url"] for s in r.json()] == ["https://github.com/example/private"]
+        assert r.json()[0]["visibility"] == "team"
+
+
+@pytest.mark.asyncio
+async def test_list_sources_hides_private_sources_with_no_teamspace():
+    """A private source with no teamspace has no membership that can admit it."""
+    async with _api(_user()) as (client, sessions):
+        await _seed(
+            sessions,
+            _source("https://github.com/example/orphan", is_public=False, team_id=None),
+            _source("https://github.com/example/public", is_public=True),
+        )
+        r = await client.get("/api/v1/component-sources")
+        assert r.status_code == 200
+        assert [s["url"] for s in r.json()] == ["https://github.com/example/public"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", [UserRole.reviewer, UserRole.admin, UserRole.super_admin])
+async def test_list_sources_returns_every_team_private_source_to_global_reviewers(role):
+    """Global reviewers and admins moderate the whole registry, so they see all of it."""
+    team = _team("platform")
+
+    async with _api(_user(role=role)) as (client, sessions):
+        await _seed(
+            sessions,
+            team,
+            _source("https://github.com/example/private", is_public=False, team_id=team.id),
+            _source("https://github.com/example/public", is_public=True),
+        )
+        r = await client.get("/api/v1/component-sources")
+        assert r.status_code == 200
+        assert {s["url"] for s in r.json()} == {
+            "https://github.com/example/private",
+            "https://github.com/example/public",
+        }
+
+
+# ── get_source: non-members get 404 so existence is not leaked ───────────────
+
+
+@pytest.mark.asyncio
+async def test_get_team_private_source_as_non_member_returns_404():
+    """A non-member gets the same answer as for an id that does not exist."""
+    team = _team("platform")
+    private = _source("https://github.com/example/private", is_public=False, team_id=team.id)
+
+    async with _api(_user()) as (client, sessions):
+        await _seed(sessions, team, private)
+        hidden = await client.get(f"/api/v1/component-sources/{private.id}")
+        missing = await client.get(f"/api/v1/component-sources/{uuid.uuid4()}")
+        assert hidden.status_code == 404
+        assert hidden.json() == missing.json()
+
+
+@pytest.mark.asyncio
+async def test_get_private_source_with_no_teamspace_returns_404():
+    """No teamspace means no membership can grant access, so it stays hidden."""
+    orphan = _source("https://github.com/example/orphan", is_public=False, team_id=None)
+
+    async with _api(_user()) as (client, sessions):
+        await _seed(sessions, orphan)
+        r = await client.get(f"/api/v1/component-sources/{orphan.id}")
         assert r.status_code == 404
-    finally:
-        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
-async def test_get_source_private_same_org_returns_200():
-    """Fetching a private source owned by the caller's org returns 200."""
-    from api.deps import get_current_user, get_db
-    from main import app
+async def test_get_team_private_source_as_member_returns_200():
+    """Members of the owning teamspace can read the source."""
+    user = _user()
+    team = _team("platform")
+    private = _source("https://github.com/example/private", is_public=False, team_id=team.id)
 
-    org = uuid.uuid4()
-    user = _user(org_id=org)
-    private_source = _source(is_public=False, owner_org_id=org)
-
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=private_source)
-
-    async def fake_db():
-        yield db
-
-    app.dependency_overrides[get_db] = fake_db
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    try:
-        async with _make_client() as client:
-            r = await client.get(f"/api/v1/component-sources/{private_source.id}")
+    async with _api(user) as (client, sessions):
+        await _seed(sessions, team, _member(team, user), private)
+        r = await client.get(f"/api/v1/component-sources/{private.id}")
         assert r.status_code == 200
-    finally:
-        app.dependency_overrides.clear()
+        assert r.json()["visibility"] == "team"
+        assert r.json()["team_id"] == str(team.id)
 
 
 @pytest.mark.asyncio
-async def test_get_source_public_any_org_returns_200():
-    """Public sources are accessible to any authenticated user."""
-    from api.deps import get_current_user, get_db
-    from main import app
+@pytest.mark.parametrize("role", [UserRole.reviewer, UserRole.admin, UserRole.super_admin])
+async def test_get_team_private_source_as_global_reviewer_returns_200(role):
+    """Global reviewers and admins can read team-private sources."""
+    team = _team("platform")
+    private = _source("https://github.com/example/private", is_public=False, team_id=team.id)
 
-    user = _user(org_id=uuid.uuid4())
-    public_source = _source(is_public=True, owner_org_id=uuid.uuid4())
-
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=public_source)
-
-    async def fake_db():
-        yield db
-
-    app.dependency_overrides[get_db] = fake_db
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    try:
-        async with _make_client() as client:
-            r = await client.get(f"/api/v1/component-sources/{public_source.id}")
+    async with _api(_user(role=role)) as (client, sessions):
+        await _seed(sessions, team, private)
+        r = await client.get(f"/api/v1/component-sources/{private.id}")
         assert r.status_code == 200
-    finally:
-        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_get_public_source_returns_200_for_any_authenticated_caller():
+    """Public sources carry no teamspace restriction."""
+    public = _source("https://github.com/example/public", is_public=True)
+
+    async with _api(_user(username="nobody")) as (client, sessions):
+        await _seed(sessions, public)
+        r = await client.get(f"/api/v1/component-sources/{public.id}")
+        assert r.status_code == 200
+        assert r.json()["visibility"] == "public"
+        assert r.json()["team_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_component_sources_require_authentication():
+    """The whole surface is authenticated, so anonymous callers never reach visibility."""
+    public = _source("https://github.com/example/public", is_public=True)
+
+    async with _api(None) as (client, sessions):
+        await _seed(sessions, public)
+        assert (await client.get("/api/v1/component-sources")).status_code == 401
+        assert (await client.get(f"/api/v1/component-sources/{public.id}")).status_code == 401

@@ -1,72 +1,49 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for org-scoped visibility on registry list and detail endpoints.
+"""Tests for public and teamspace visibility on registry listings."""
 
-Verifies that private listings are hidden from users in other organisations,
-visible to users in the same organisation, and always visible to admins.
-The same rules apply to MCP, skill, hook, prompt, and sandbox routes.
-"""
-
+import ast
 import uuid
-from unittest.mock import MagicMock
+from contextlib import asynccontextmanager
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
-from api.deps import apply_visibility_filter, check_listing_visibility
+import pytest
+from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+import api.deps
+from api.deps import (
+    apply_registry_scope,
+    apply_visibility_filter,
+    check_listing_visibility_async,
+    resolve_listing,
+)
 
 # ── Unit tests for the shared helpers ─────────────────────────────────────────
 
 
-def _user(role="user", org_id=None):
+def _user(role="user"):
     from models.user import User, UserRole
 
     u = MagicMock(spec=User)
     u.id = uuid.uuid4()
     u.role = getattr(UserRole, role)
-    u.org_id = org_id or uuid.uuid4()
     return u
 
 
-def _listing(is_private=False, owner_org_id=None, submitted_by=None):
+def _listing(is_private=False, team_id=None, submitted_by=None):
     m = MagicMock()
     m.is_private = is_private
-    m.owner_org_id = owner_org_id or uuid.uuid4()
+    m.team_id = team_id
     m.submitted_by = submitted_by or uuid.uuid4()
     return m
 
 
-class TestCheckListingVisibility:
-    def test_public_listing_always_visible(self):
-        assert check_listing_visibility(_listing(is_private=False), None) is True
-        assert check_listing_visibility(_listing(is_private=False), _user()) is True
-
-    def test_private_hidden_from_anonymous(self):
-        assert check_listing_visibility(_listing(is_private=True), None) is False
-
-    def test_private_hidden_from_other_org(self):
-        org_a = uuid.uuid4()
-        org_b = uuid.uuid4()
-        listing = _listing(is_private=True, owner_org_id=org_a)
-        user = _user(org_id=org_b)
-        assert check_listing_visibility(listing, user) is False
-
-    def test_private_visible_to_same_org(self):
-        org = uuid.uuid4()
-        listing = _listing(is_private=True, owner_org_id=org)
-        user = _user(org_id=org)
-        assert check_listing_visibility(listing, user) is True
-
-    def test_private_visible_to_submitter(self):
-        user = _user()
-        listing = _listing(is_private=True, submitted_by=user.id)
-        assert check_listing_visibility(listing, user) is True
-
-    def test_private_visible_to_admin(self):
-        listing = _listing(is_private=True)
-        assert check_listing_visibility(listing, _user(role="admin")) is True
-        assert check_listing_visibility(listing, _user(role="reviewer")) is True
-
-    def test_no_is_private_attr_is_visible(self):
-        m = MagicMock(spec=[])  # no is_private attribute
-        assert check_listing_visibility(m, None) is True
+def _inline_sql(statement) -> str:
+    """Compile a statement to a single-line SQL string with bind values inlined."""
+    return " ".join(str(statement.compile(compile_kwargs={"literal_binds": True})).split())
 
 
 class TestApplyVisibilityFilter:
@@ -74,11 +51,6 @@ class TestApplyVisibilityFilter:
         s = MagicMock()
         s.where = MagicMock(return_value=s)
         return s
-
-    def _model(self):
-        from models.mcp import McpListing
-
-        return McpListing
 
     def test_no_is_private_attr_passes_through(self):
         model = MagicMock(spec=[])
@@ -108,3 +80,360 @@ class TestApplyVisibilityFilter:
         stmt = self._stmt()
         apply_visibility_filter(stmt, McpListing, _user(role="user"))
         stmt.where.assert_called_once()
+
+    def test_submitter_clause_is_restricted_to_listings_without_a_teamspace(self):
+        """The own-listing shortcut never admits a team-private row.
+
+        Team-private rows are admitted only by the membership EXISTS, so an
+        ex-member who submitted the listing no longer sees it in any list.
+        """
+        from sqlalchemy import select
+
+        from models.mcp import McpListing
+
+        caller = _user()
+        sql = _inline_sql(apply_visibility_filter(select(McpListing.id), McpListing, caller))
+
+        assert f"mcp_listings.team_id IS NULL AND mcp_listings.submitted_by = '{caller.id.hex}'" in sql
+        # The only other path to a private row is the correlated membership EXISTS.
+        assert "mcp_listings.is_private = true AND mcp_listings.team_id IS NOT NULL AND (EXISTS" in sql
+
+
+class TestApplyRegistryScope:
+    """``team_id`` on a list route means "public plus this teamspace", not "only this teamspace".
+
+    ``apply_publish_scope`` answers a different question (what an agent published
+    for a target may contain) but resolves to the same predicate, which is why the
+    two share an implementation. Narrowing to a single teamspace is ``?namespace=``.
+    """
+
+    def test_team_filter_keeps_public_rows(self):
+        from sqlalchemy import select
+
+        from models.mcp import McpListing
+
+        team_id = uuid.uuid4()
+        sql = _inline_sql(apply_registry_scope(select(McpListing.id), McpListing, _user(role="admin"), team_id=team_id))
+
+        assert "mcp_listings.is_private = false" in sql
+        assert f"mcp_listings.team_id = '{team_id.hex}'" in sql
+
+    def test_team_filter_still_hides_other_teams_private_rows_from_non_members(self):
+        from sqlalchemy import select
+
+        from models.mcp import McpListing
+
+        caller = _user()
+        team_id = uuid.uuid4()
+        sql = _inline_sql(apply_registry_scope(select(McpListing.id), McpListing, caller, team_id=team_id))
+
+        # Caller visibility is applied before the teamspace filter, so the
+        # membership EXISTS still gates every team-private row.
+        assert "team_memberships" in sql
+        assert f"team_memberships.user_id = '{caller.id.hex}'" in sql
+
+    def test_public_only_drops_the_team_filter(self):
+        from sqlalchemy import select
+
+        from models.mcp import McpListing
+
+        sql = _inline_sql(
+            apply_registry_scope(
+                select(McpListing.id), McpListing, _user(role="admin"), team_id=uuid.uuid4(), public_only=True
+            )
+        )
+
+        assert "mcp_listings.is_private = false" in sql
+        assert "mcp_listings.team_id =" not in sql
+
+
+class TestCheckListingVisibilityAsync:
+    """Detail and install routes resolve membership with a query instead of a cached list."""
+
+    def _db(self, membership_id=None):
+        db = MagicMock()
+        db.scalar = AsyncMock(return_value=membership_id)
+        return db
+
+    @pytest.mark.asyncio
+    async def test_public_listing_needs_no_membership_query(self):
+        db = self._db()
+        assert await check_listing_visibility_async(_listing(is_private=False), _user(), db) is True
+        db.scalar.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_private_hidden_from_anonymous(self):
+        db = self._db(membership_id=uuid.uuid4())
+        assert await check_listing_visibility_async(_listing(is_private=True), None, db) is False
+        db.scalar.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_private_visible_to_team_member(self):
+        listing = _listing(is_private=True, team_id=uuid.uuid4())
+        assert await check_listing_visibility_async(listing, _user(), self._db(uuid.uuid4())) is True
+
+    @pytest.mark.asyncio
+    async def test_private_hidden_from_non_member(self):
+        listing = _listing(is_private=True, team_id=uuid.uuid4())
+        assert await check_listing_visibility_async(listing, _user(), self._db(None)) is False
+
+    @pytest.mark.asyncio
+    async def test_private_hidden_when_no_team_and_not_submitter(self):
+        listing = _listing(is_private=True, team_id=None)
+        assert await check_listing_visibility_async(listing, _user(), self._db(uuid.uuid4())) is False
+
+    @pytest.mark.asyncio
+    async def test_private_visible_to_submitter_when_there_is_no_teamspace(self):
+        user = _user()
+        listing = _listing(is_private=True, team_id=None, submitted_by=user.id)
+        assert await check_listing_visibility_async(listing, user, self._db(None)) is True
+
+    @pytest.mark.asyncio
+    async def test_submitter_removed_from_the_teamspace_loses_detail_access(self):
+        """Publishing into a teamspace hands the item to the team, not to the submitter.
+
+        Membership is the only grant, so this matches ``apply_visibility_filter``:
+        an ex-member cannot read by id something that no longer appears in any list.
+        """
+        user = _user()
+        listing = _listing(is_private=True, team_id=uuid.uuid4(), submitted_by=user.id)
+        db = self._db(None)  # membership row was deleted
+
+        assert await check_listing_visibility_async(listing, user, db) is False
+        db.scalar.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_private_visible_to_reviewer_and_admin(self):
+        listing = _listing(is_private=True, team_id=uuid.uuid4())
+        assert await check_listing_visibility_async(listing, _user(role="reviewer"), self._db(None)) is True
+        assert await check_listing_visibility_async(listing, _user(role="admin"), self._db(None)) is True
+
+
+class TestExMemberSubmitterAgainstARealDatabase:
+    """The list filter and the detail helper must agree on the same row.
+
+    These run the visibility SQL against in-memory SQLite instead of inspecting
+    it, so a divergence between ``apply_visibility_filter`` and
+    ``check_listing_visibility_async`` fails here rather than in production.
+    """
+
+    @staticmethod
+    @asynccontextmanager
+    async def _seeded(*, membership: bool):
+        """Yield (session, listing, submitter) for a team-private listing the submitter published."""
+        from models.base import Base
+        from models.mcp import McpListing, McpValidationResult, McpVersion
+        from models.team import Team, TeamMembership, TeamRole
+
+        tables = [
+            McpListing.__table__,
+            McpVersion.__table__,
+            McpValidationResult.__table__,
+            Team.__table__,
+            TeamMembership.__table__,
+        ]
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all, tables=tables)
+            sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+            submitter = _user()
+            team = Team(id=uuid.uuid4(), name="Platform", handle="platform", created_by=submitter.id)
+            listing = McpListing(
+                id=uuid.uuid4(),
+                name="internal-mcp",
+                namespace=team.handle,
+                slug="internal-mcp",
+                category="developer-tools",
+                owner=team.handle,
+                is_private=True,
+                team_id=team.id,
+                submitted_by=submitter.id,
+                co_authors=[],
+            )
+            async with sessions() as session:
+                session.add_all([team, listing])
+                if membership:
+                    session.add(
+                        TeamMembership(id=uuid.uuid4(), team_id=team.id, user_id=submitter.id, role=TeamRole.member)
+                    )
+                await session.commit()
+
+            async with sessions() as session:
+                yield session, listing, submitter
+        finally:
+            await engine.dispose()
+
+    @staticmethod
+    async def _visible_ids(session, caller):
+        from sqlalchemy import select
+
+        from models.mcp import McpListing
+
+        stmt = apply_visibility_filter(select(McpListing.id), McpListing, caller)
+        return set((await session.execute(stmt)).scalars().all())
+
+    @pytest.mark.asyncio
+    async def test_current_member_sees_the_listing_in_both_gates(self):
+        async with self._seeded(membership=True) as (session, listing, submitter):
+            assert listing.id in await self._visible_ids(session, submitter)
+            assert await check_listing_visibility_async(listing, submitter, session) is True
+
+    @pytest.mark.asyncio
+    async def test_ex_member_submitter_is_denied_by_the_list_filter_and_the_detail_helper(self):
+        """Removing the submitter from the teamspace revokes both list and by-id reads."""
+        async with self._seeded(membership=False) as (session, listing, submitter):
+            assert await self._visible_ids(session, submitter) == set()
+            assert await check_listing_visibility_async(listing, submitter, session) is False
+
+
+class _Result:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return SimpleNamespace(all=lambda: list(self._rows), first=lambda: self._rows[0] if self._rows else None)
+
+
+def _row(namespace, slug, *, is_private=False, team_id=None, submitted_by=None):
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        namespace=namespace,
+        slug=slug,
+        qualified_name=f"{namespace}/{slug}",
+        is_private=is_private,
+        team_id=team_id,
+        submitted_by=submitted_by or uuid.uuid4(),
+    )
+
+
+class TestResolveListingAmbiguity:
+    """A legacy bare name must not disclose listings the caller cannot see."""
+
+    def _db(self, rows, membership_id=None):
+        return SimpleNamespace(
+            execute=AsyncMock(return_value=_Result(rows)),
+            scalar=AsyncMock(return_value=membership_id),
+        )
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_public_names_are_reported(self):
+        from models.mcp import McpListing
+
+        rows = [_row("alice", "tool"), _row("bob", "tool")]
+        with pytest.raises(HTTPException) as exc:
+            await resolve_listing(McpListing, "tool", self._db(rows), current_user=_user())
+
+        assert exc.value.status_code == 409
+        assert "alice/tool" in exc.value.detail
+        assert "bob/tool" in exc.value.detail
+
+    @pytest.mark.asyncio
+    async def test_ambiguity_message_omits_team_private_listings(self):
+        """A non-member learns nothing about the colliding teamspace listing."""
+        from models.mcp import McpListing
+
+        rows = [
+            _row("alice", "tool"),
+            _row("secretteam", "tool", is_private=True, team_id=uuid.uuid4()),
+            _row("otherteam", "tool", is_private=True, team_id=uuid.uuid4()),
+        ]
+        db = self._db(rows, membership_id=None)
+
+        resolved = await resolve_listing(McpListing, "tool", db, current_user=_user())
+
+        # Only one visible candidate remains, so the name is not ambiguous here.
+        assert resolved is rows[0]
+
+    @pytest.mark.asyncio
+    async def test_ambiguity_between_hidden_listings_is_not_disclosed(self):
+        from models.mcp import McpListing
+
+        rows = [
+            _row("secretteam", "tool", is_private=True, team_id=uuid.uuid4()),
+            _row("otherteam", "tool", is_private=True, team_id=uuid.uuid4()),
+        ]
+
+        assert await resolve_listing(McpListing, "tool", self._db(rows), current_user=_user()) is None
+
+    @pytest.mark.asyncio
+    async def test_anonymous_caller_never_sees_private_choices(self):
+        from models.mcp import McpListing
+
+        rows = [_row("alice", "tool"), _row("secretteam", "tool", is_private=True, team_id=uuid.uuid4())]
+
+        assert await resolve_listing(McpListing, "tool", self._db(rows), current_user=None) is rows[0]
+
+    @pytest.mark.asyncio
+    async def test_submitter_of_a_team_listing_is_not_told_about_it_after_removal(self):
+        from models.mcp import McpListing
+
+        user = _user()
+        rows = [
+            _row("alice", "tool"),
+            _row("exteam", "tool", is_private=True, team_id=uuid.uuid4(), submitted_by=user.id),
+        ]
+        db = self._db(rows, membership_id=None)
+
+        resolved = await resolve_listing(McpListing, "tool", db, current_user=user)
+
+        assert resolved is rows[0]
+
+    @pytest.mark.asyncio
+    async def test_reviewer_sees_every_colliding_listing(self):
+        from models.mcp import McpListing
+
+        rows = [_row("alice", "tool"), _row("secretteam", "tool", is_private=True, team_id=uuid.uuid4())]
+        with pytest.raises(HTTPException) as exc:
+            await resolve_listing(McpListing, "tool", self._db(rows), current_user=_user(role="reviewer"))
+
+        assert exc.value.status_code == 409
+        assert "secretteam/tool" in exc.value.detail
+
+    @pytest.mark.asyncio
+    async def test_qualified_name_is_never_treated_as_ambiguous(self):
+        from models.mcp import McpListing
+
+        rows = [_row("alice", "tool")]
+        assert await resolve_listing(McpListing, "alice/tool", self._db(rows), current_user=None) is rows[0]
+
+
+class TestEveryCallSitePassesTheCaller:
+    """``current_user`` on ``resolve_listing`` means "anonymous", never "unset".
+
+    A route that leaves it off evaluates a legacy bare-name collision as an
+    anonymous caller, so the team-private half of the collision drops out and a
+    name that must raise 409 for a team member silently resolves to the single
+    public row. No behavioural test catches that, because every test in this file
+    passes the caller explicitly, so this walks the shipped source instead.
+
+    The parameter keeps a default because ``None`` is a real value that the
+    anonymous detail routes pass on purpose. This scan is what makes omitting it
+    a build failure rather than a silent downgrade.
+    """
+
+    @staticmethod
+    def _call_sites():
+        """Yield (label, keyword names) for every ``resolve_listing`` call under api/."""
+        api_root = Path(api.deps.__file__).resolve().parent
+        for path in sorted(api_root.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+                if called != "resolve_listing":
+                    continue
+                label = f"{path.relative_to(api_root.parent)}:{node.lineno}"
+                yield label, {keyword.arg for keyword in node.keywords}
+
+    def test_no_call_site_resolves_a_bare_name_as_an_anonymous_caller(self):
+        offenders = [label for label, keywords in self._call_sites() if "current_user" not in keywords]
+        assert offenders == [], "resolve_listing called without current_user at: " + ", ".join(offenders)
+
+    def test_the_scan_actually_reaches_the_call_sites(self):
+        """Guard the guard: a rename that silently empties the walk must fail here."""
+        sites = list(self._call_sites())
+        assert len(sites) >= 20, f"expected the api package to still hold the call sites, found {len(sites)}"

@@ -6,11 +6,14 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
 
+from schemas.constants import Visibility
+
 
 class ComponentSourceCreate(BaseModel):
     url: str = Field(..., min_length=10, pattern=r"^https://")
     component_type: str = Field(..., pattern="^(mcp|skill|hook|prompt|sandbox)$")
-    is_public: bool = True
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
 
 
 class ComponentSourceResponse(BaseModel):
@@ -18,8 +21,8 @@ class ComponentSourceResponse(BaseModel):
     url: str
     provider: str
     component_type: str
-    is_public: bool
-    owner_org_id: uuid.UUID | None
+    team_id: uuid.UUID | None
+    visibility: Visibility
     auto_sync_interval: timedelta | None
     last_synced_at: datetime | None
     sync_status: str | None

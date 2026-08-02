@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import (
+    check_listing_visibility_async,
     commit_or_name_conflict,
     get_current_user,
     get_db,
@@ -118,7 +119,7 @@ async def _get_entity_for_transfer(entity_type: str, entity_id: str, current_use
     if not model:
         raise HTTPException(status_code=400, detail=f"Invalid entity type: {entity_type}")
 
-    entity = await resolve_listing(model, entity_id, db)
+    entity = await resolve_listing(model, entity_id, db, current_user=current_user)
 
     if not entity:
         raise HTTPException(status_code=404, detail=f"{entity_type[:-1].title()} not found")
@@ -164,6 +165,14 @@ async def transfer_ownership(
     current_user: User = Depends(get_current_user),
 ):
     entity = await _get_entity_for_transfer(entity_type, entity_id, current_user, db)
+    # Transfer rewrites the namespace to the target user's handle. A teamspace
+    # listing would end up in a user namespace while still carrying the team's
+    # id and visibility, so refuse instead of silently rehoming or publishing it.
+    if getattr(entity, "team_id", None) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This listing belongs to a teamspace; move it out of the teamspace before transferring ownership",
+        )
     target_user = await _resolve_target_user(db, user_id=req.user_id, email=req.email, username=req.username)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -207,7 +216,7 @@ async def list_co_authors(
         raise HTTPException(status_code=400, detail=f"Invalid entity type: {entity_type}")
 
     entity = await db.get(model, entity_id)
-    if not entity:
+    if not entity or not await check_listing_visibility_async(entity, current_user, db):
         raise HTTPException(status_code=404, detail=f"{entity_type[:-1].title()} not found")
 
     co_author_ids = entity.co_authors or []

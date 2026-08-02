@@ -12,6 +12,7 @@ from models.mcp import ListingStatus
 from schemas.constants import (
     VALID_MCP_CATEGORIES,
     VALID_MCP_FRAMEWORKS,
+    Visibility,
     make_harness_list_validator,
     make_option_validator,
 )
@@ -53,6 +54,8 @@ class McpSubmitRequest(BaseModel):
     description: str = Field(min_length=1)
     category: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     framework: str | None = None
     docker_image: str | None = None
     command: str | None = None
@@ -92,6 +95,8 @@ class McpDraftRequest(BaseModel):
     description: str = ""
     category: str = "other"
     owner: str = ""
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     git_url: str | None = None
     framework: str | None = None
     docker_image: str | None = None
@@ -116,6 +121,8 @@ class McpUpdateRequest(BaseModel):
     description: str | None = None
     category: str | None = None
     owner: str | None = None
+    team_id: uuid.UUID | None = None
+    visibility: Visibility | None = None
     git_url: str | None = None
     framework: str | None = None
     docker_image: str | None = None
@@ -156,6 +163,9 @@ class McpListingResponse(BaseModel):
     description: str
     category: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     supported_harnesses: list[str]
     environment_variables: list[McpEnvVar] = []
     setup_instructions: str | None
@@ -198,6 +208,9 @@ class McpListingSummary(BaseModel):
     description: str
     category: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     supported_harnesses: list[str]
     status: ListingStatus
     rejection_reason: str | None = None

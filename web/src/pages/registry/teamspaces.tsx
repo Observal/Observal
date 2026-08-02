@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Building2, Loader2, LogOut, Plus, RefreshCw, Search, ShieldCheck, Terminal, Trash2, UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
@@ -96,6 +97,9 @@ function TeamDetail({ team }: { team: Team }) {
 						</div>
 					</div>
 					<div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+						<Link to="/components" search={{ team: team.handle }}>
+							<Button variant="outline" size="sm">Browse registry</Button>
+						</Link>
 						{isMember && (
 							<Button variant="outline" size="sm" onClick={() => leaveTeam.mutate(team.id)} disabled={leaveTeam.isPending}>
 								<LogOut className="mr-1.5 h-3.5 w-3.5" /> Leave

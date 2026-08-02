@@ -32,6 +32,7 @@ import {
   useComponentUpdateDraft,
   useStartEdit,
   useCancelEdit,
+  useTeams,
 } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import type { RegistryType } from "@/lib/api";
@@ -191,6 +192,7 @@ export default function ComponentsPage() {
   const router = useRouter();
   const searchParams = useSearch({ from: "/_authed/components/" });
   const { ready: authReady, role } = useAuthGuard();
+  const { data: teams = [] } = useTeams();
   const activeType = searchParams.type ?? "mcps";
   const [search, setSearch] = useState(searchParams.search ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.search ?? "");
@@ -215,9 +217,11 @@ export default function ComponentsPage() {
   }, [searchParams.namespace]);
 
   const typeFilters = TYPE_FILTERS[activeType] ?? [];
+  const selectedTeam = teams.find((team) => team.handle === searchParams.team);
   const registryFilters: Record<string, string> = {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(searchParams.namespace ? { namespace: searchParams.namespace } : {}),
+    ...(selectedTeam ? { team_id: selectedTeam.id } : {}),
   };
   for (const filter of typeFilters) {
     const value = searchParams[filter.key];
@@ -299,6 +303,7 @@ export default function ComponentsPage() {
     updateFilters({
       search: undefined,
       namespace: undefined,
+      team: undefined,
       category: undefined,
       task_type: undefined,
       event: undefined,
@@ -310,6 +315,7 @@ export default function ComponentsPage() {
   const hasFilters = !!(
     search ||
     searchParams.namespace ||
+    searchParams.team ||
     typeFilters.some((filter) => searchParams[filter.key])
   );
 
@@ -340,6 +346,17 @@ export default function ComponentsPage() {
                 className="pl-9 h-9"
               />
             </div>
+            <PickerSelect
+              value={searchParams.team ?? ""}
+              onValueChange={(value) => updateFilters({ team: value || undefined })}
+              options={[
+                { value: "", label: "All visible teamspaces" },
+                ...teams.map((team) => ({ value: team.handle, label: `Team: ${team.name}` })),
+              ]}
+              placeholder="Teamspace"
+              className="w-[210px]"
+              inputClassName="h-9"
+            />
             <UserSearchInput
               value={publisherQuery}
               onValueChange={(value) => {
@@ -399,6 +416,12 @@ export default function ComponentsPage() {
           </div>
           {hasFilters && (
             <div className="flex min-h-7 items-center gap-2 flex-wrap" aria-label="Active filters">
+              {searchParams.team && (
+                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ team: undefined })}>
+                  Team: {selectedTeam?.name ?? searchParams.team}
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
               {searchParams.namespace && (
                 <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ namespace: undefined })}>
                   Publisher: @{searchParams.namespace}

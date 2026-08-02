@@ -102,12 +102,15 @@ Goes through review queue. Use for "new version", "bump", or "release".
    ```bash
    observal registry mcp list --search 'github docker' --output json
    observal registry skill list --search 'frontend design' --output json
+   observal registry skill list --team platform-tools --output json
    observal agent add mcp COMPONENT_UUID --dir ./my-agent
    observal agent add skill COMPONENT_UUID --dir ./my-agent
    ```
 3. Validate: `observal agent build --dir ./my-agent`
 4. Publish: `observal agent publish --dir ./my-agent`
    - `--draft` saves without submitting. `--submit` submits a saved draft.
+   - Use `--team TEAM_HANDLE --visibility public` for a public teamspace agent.
+   - Use `--team TEAM_HANDLE --visibility team` for a private agent visible only to team members.
 
 ---
 
@@ -135,6 +138,8 @@ observal agent unarchive AGENT_NAME --yes
 
 ```bash
 observal agent list --output json
+observal agent list --namespace platform-tools --output json
+observal agent list --team platform-tools --output json
 observal agent list --search 'incident resolution' --output json
 observal agent list --search keyword --output json
 observal agent list --page 2 --limit 20 --output json
@@ -143,7 +148,7 @@ observal agent show AGENT_NAME --output json
 observal agent versions AGENT_NAME --output json
 ```
 
-After `list`, use row numbers (1, 2, 3...) in subsequent commands.
+After `list`, use row numbers (1, 2, 3...) in subsequent commands. Team members see approved private teamspace agents in normal results. Direct references use `TEAM_HANDLE/AGENT_SLUG`.
 
 ---
 

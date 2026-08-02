@@ -9,13 +9,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger as optic
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from api.deps import get_current_user, get_db
+from api.deps import apply_visibility_filter, get_current_user, get_db
 from models.hook import HookListing
 from models.mcp import McpListing
 from models.prompt import PromptListing
@@ -115,52 +115,40 @@ async def preview_config(
         components=components,
     )
 
-    # Resolve component listings by ID (same pattern as install endpoint -
-    # the builder UI already scoped what the user can select)
+    # Resolve component listings by ID. Preview renders real component content
+    # (MCP commands, hook handlers, prompt templates, SKILL.md), so it must apply
+    # the same visibility rules as every other read path. The builder UI scoping
+    # what a user can select is not an authorization boundary.
     mcp_ids = [c.component_id for c in components if c.component_type == "mcp"]
     skill_ids = [c.component_id for c in components if c.component_type == "skill"]
     hook_ids = [c.component_id for c in components if c.component_type == "hook"]
     prompt_ids = [c.component_id for c in components if c.component_type == "prompt"]
 
-    mcp_map: dict = {}
-    if mcp_ids:
-        rows = (await db.execute(select(McpListing).where(McpListing.id.in_(mcp_ids)))).scalars().all()
-        mcp_map = {row.id: row for row in rows}
+    async def _visible_map(model, ids, *, load_latest_version=False):
+        if not ids:
+            return {}
+        stmt = select(model).where(model.id.in_(ids))
+        if load_latest_version:
+            stmt = stmt.options(selectinload(model.latest_version))
+        stmt = apply_visibility_filter(stmt, model, current_user)
+        rows = (await db.execute(stmt)).scalars().all()
+        return {row.id: row for row in rows}
 
-    skill_map: dict = {}
-    if skill_ids:
-        rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_ids)))).scalars().all()
-        skill_map = {row.id: row for row in rows}
+    mcp_map = await _visible_map(McpListing, mcp_ids)
+    skill_map = await _visible_map(SkillListing, skill_ids)
+    hook_map = await _visible_map(HookListing, hook_ids, load_latest_version=True)
+    prompt_map = await _visible_map(PromptListing, prompt_ids, load_latest_version=True)
 
-    hook_map: dict = {}
-    if hook_ids:
-        rows = (
-            (
-                await db.execute(
-                    select(HookListing)
-                    .options(selectinload(HookListing.latest_version))
-                    .where(HookListing.id.in_(hook_ids))
-                )
-            )
-            .scalars()
-            .all()
+    # Refuse loudly rather than quietly previewing a partial agent. A component the
+    # caller cannot see is reported the same way as one that does not exist, so the
+    # response is not an existence oracle for team-private listings.
+    requested = set(mcp_ids) | set(skill_ids) | set(hook_ids) | set(prompt_ids)
+    resolved = set(mcp_map) | set(skill_map) | set(hook_map) | set(prompt_map)
+    if missing := requested - resolved:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Component not found: {', '.join(sorted(str(i) for i in missing))}",
         )
-        hook_map = {row.id: row for row in rows}
-
-    prompt_map: dict = {}
-    if prompt_ids:
-        rows = (
-            (
-                await db.execute(
-                    select(PromptListing)
-                    .options(selectinload(PromptListing.latest_version))
-                    .where(PromptListing.id.in_(prompt_ids))
-                )
-            )
-            .scalars()
-            .all()
-        )
-        prompt_map = {row.id: row for row in rows}
 
     # Build component name map
     name_map: dict[str, str] = {}

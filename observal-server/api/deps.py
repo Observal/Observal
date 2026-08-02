@@ -249,6 +249,23 @@ def get_effective_component_permission(listing, user: User | None) -> str:
     return "view"
 
 
+def may_view_unapproved(permission: str, user: User | None) -> bool:
+    """Non-approved listings are visible only to owners, co-authors, admins, and reviewers.
+
+    ``permission`` is the return of ``get_effective_component_permission`` or
+    ``get_effective_agent_permission``. Both already answer "owner" for the
+    submitter, for co-authors, and for admins and super_admins, so those three
+    arrive through ``permission``.
+
+    Reviewers are deliberately absent from those two functions: "owner" there
+    also means "may edit", and a reviewer must be able to open a pending item
+    without gaining edit rights over it. The reviewer arm below is therefore the
+    only thing that lets the review queue read what it has to review. Removing it
+    as redundant would close the queue.
+    """
+    return permission == "owner" or (user is not None and user.role == UserRole.reviewer)
+
+
 # Convenience shorthand for super_admin-only endpoints
 require_super_admin = require_role(UserRole.super_admin)
 
@@ -322,8 +339,28 @@ async def require_password_auth() -> None:
         raise HTTPException(status_code=403, detail="Password authentication is disabled (SSO-only mode)")
 
 
-async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_status=None):
-    """Resolve a listing by UUID, canonical name, or unambiguous legacy bare name."""
+# Legacy bare names can collide across namespaces. Fetch a small window instead
+# of two rows so the ambiguity report still sees alternatives after the listings
+# the caller may not see are dropped.
+MAX_BARE_NAME_MATCHES = 6
+
+
+async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_status=None, current_user=None):
+    """Resolve a listing by UUID, canonical name, or unambiguous legacy bare name.
+
+    ``current_user`` scopes the legacy bare-name collision report. The 409 names
+    only listings the caller is allowed to see, and a bare name that collides
+    solely with hidden listings resolves to the single visible one instead of
+    disclosing canonical names through the error message.
+
+    ``current_user=None`` means an anonymous caller and narrows the collision set
+    to public listings, so leaving it off at a call site that does have a caller
+    is a real behaviour change: a name that must raise 409 for a team member
+    resolves to the single public row instead. Every call site under
+    ``observal-server/api`` therefore passes it explicitly, and
+    ``TestEveryCallSitePassesTheCaller`` in ``tests/test_sec009_org_scoping.py``
+    fails the build when a new one does not.
+    """
 
     value = str(identifier).strip()
     try:
@@ -347,18 +384,21 @@ async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_s
         stmt = stmt.join(version_model, model.latest_version_id == version_model.id).where(
             version_model.status == require_status
         )
-    result = await db.execute(stmt.limit(2))
+    result = await db.execute(stmt.limit(MAX_BARE_NAME_MATCHES if ambiguous_label is not None else 2))
     scalars = result.scalars()
     matches = scalars.all()
     if not isinstance(matches, (list, tuple)):
         first = scalars.first()
         matches = [first] if first is not None else []
     if ambiguous_label is not None and len(matches) > 1:
-        choices = ", ".join(item.qualified_name for item in matches)
-        raise HTTPException(
-            status_code=409,
-            detail=f"'{ambiguous_label}' is ambiguous; use one of: {choices}",
-        )
+        visible = [item for item in matches if await check_listing_visibility_async(item, current_user, db)]
+        if len(visible) > 1:
+            choices = ", ".join(item.qualified_name for item in visible)
+            raise HTTPException(
+                status_code=409,
+                detail=f"'{ambiguous_label}' is ambiguous; use one of: {choices}",
+            )
+        return visible[0] if visible else None
     return matches[0] if matches else None
 
 
@@ -425,55 +465,124 @@ async def resolve_prefix_id(
     raise HTTPException(status_code=400, detail=detail)
 
 
-def apply_visibility_filter(stmt, model, current_user):
-    """Exclude private listings from orgs other than the requesting user's.
+def apply_publish_scope(stmt, model, target_team_id):
+    """Limit components to what an agent published for one target can contain."""
+    from sqlalchemy import or_
 
-    Rules:
-    - Public items (is_private=False) are always visible.
-    - Private items are only visible to users in the same org, or to the
-      submitter directly, or to admins/reviewers.
+    if not hasattr(model, "is_private") or not hasattr(model, "team_id"):
+        return stmt
+    public = model.is_private == False  # noqa: E712
+    if target_team_id is None:
+        return stmt.where(public)
+    return stmt.where(or_(public, (model.is_private == True) & (model.team_id == target_team_id)))  # noqa: E712
+
+
+def apply_registry_scope(stmt, model, current_user, *, team_id=None, public_only=False):
+    """Apply caller visibility and the optional teamspace list filter.
+
+    ``team_id`` here is deliberately the same predicate as ``apply_publish_scope``
+    even though the two answer different questions. ``apply_publish_scope`` answers
+    "what may an agent published for this target contain", while the registry list
+    filter behind ``?team_id=`` (the CLI ``--team TEAM_HANDLE`` flag) means
+    "public items plus this teamspace's private items". Both are public plus that
+    one team's private rows, so they share an implementation. Narrowing a list to a
+    single teamspace is what ``?namespace=`` is for, so do not "fix" this to drop
+    public rows. Caller visibility is applied first, so a non-member passing a
+    teamspace id still gets public rows only.
+    """
+    stmt = apply_visibility_filter(stmt, model, current_user)
+    if public_only:
+        return stmt.where(model.is_private == False)  # noqa: E712
+    if team_id is not None:
+        return apply_publish_scope(stmt, model, team_id)
+    return stmt
+
+
+def apply_visibility_filter(stmt, model, current_user):
+    """Restrict team-private listings without using organization state.
+
+    Public listings are visible to everyone. Team-private listings require a
+    membership row for the requesting user, while legacy private user listings
+    remain visible only to their creator.
     """
     from sqlalchemy import or_
 
+    from models.team import TeamMembership
     from models.user import UserRole
 
     if not hasattr(model, "is_private"):
         return stmt
 
-    is_admin = (
+    privileged = (
         current_user is not None and ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
     )
-    if is_admin:
-        return stmt  # admins see everything
+    if privileged:
+        return stmt
 
     public = model.is_private == False  # noqa: E712
     if current_user is None:
         return stmt.where(public)
 
-    # Guard: only match same-org if user actually has an org (not NULL)
-    if current_user.org_id is not None:
-        same_org = (model.is_private == True) & (model.owner_org_id == current_user.org_id)  # noqa: E712
-        own = (model.is_private == True) & (model.submitted_by == current_user.id)  # noqa: E712
-        return stmt.where(or_(public, same_org, own))
-    # User has no org - can only see their own private items
-    own = (model.is_private == True) & (model.submitted_by == current_user.id)  # noqa: E712
+    creator_column = getattr(model, "submitted_by", None) or getattr(model, "created_by", None)
+    if hasattr(model, "team_id"):
+        own = (model.is_private == True) & model.team_id.is_(None)  # noqa: E712
+    else:
+        own = model.is_private == True  # noqa: E712
+    own = own & (creator_column == current_user.id) if creator_column is not None else False
+
+    if hasattr(model, "team_id"):
+        member = (
+            select(TeamMembership.id)
+            .where(TeamMembership.team_id == model.team_id, TeamMembership.user_id == current_user.id)
+            .correlate(model)
+            .exists()
+        )
+        team_private = (model.is_private == True) & model.team_id.is_not(None) & member  # noqa: E712
+        return stmt.where(or_(public, own, team_private))
+
+    # Models without team_id are outside the registry visibility contract.
     return stmt.where(or_(public, own))
 
 
-def check_listing_visibility(listing, current_user) -> bool:
-    """Return True if current_user may see this listing.
+async def check_listing_visibility_async(listing, current_user, db: AsyncSession) -> bool:
+    """Check visibility with a membership query for detail and install routes.
 
-    Used on detail routes to gate access to private items.
+    This is the row-level twin of ``apply_visibility_filter`` and must stay
+    identical to it: a team-private listing is reachable through team membership
+    only. Being the original submitter is not a standing grant, otherwise someone
+    removed from a teamspace would keep reading by id an item that has already
+    vanished from every list.
     """
-    from models.user import UserRole
-
     if not getattr(listing, "is_private", False):
         return True
     if current_user is None:
         return False
-    is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
-    if is_admin:
+
+    from models.team import TeamMembership
+    from models.user import UserRole
+
+    privileged = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.reviewer]
+    if privileged:
         return True
-    if listing.submitted_by == current_user.id:
-        return True
-    return current_user.org_id is not None and listing.owner_org_id == current_user.org_id
+    team_id = getattr(listing, "team_id", None)
+    if team_id is None:
+        # Private with no teamspace is a personal listing: only its creator sees it.
+        creator_id = getattr(listing, "submitted_by", None) or getattr(listing, "created_by", None)
+        return creator_id == current_user.id
+    return (
+        await db.scalar(
+            select(TeamMembership.id).where(
+                TeamMembership.team_id == team_id,
+                TeamMembership.user_id == current_user.id,
+            )
+        )
+        is not None
+    )
+
+
+async def resolve_visible_listing(model, identifier: str, db: AsyncSession, current_user, *, require_status=None):
+    """Resolve a listing and hide it when the caller cannot see it."""
+    listing = await resolve_listing(model, identifier, db, require_status=require_status, current_user=current_user)
+    if listing is None or not await check_listing_visibility_async(listing, current_user, db):
+        return None
+    return listing

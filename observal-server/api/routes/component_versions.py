@@ -19,7 +19,12 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
-from api.deps import get_db, get_effective_component_permission, require_role, resolve_listing
+from api.deps import (
+    get_db,
+    get_effective_component_permission,
+    require_role,
+    resolve_visible_listing,
+)
 from models.mcp import ListingStatus
 from models.user import User, UserRole
 from schemas.component_version import VersionPublishRequest, VersionReviewRequest  # noqa: TC001
@@ -79,7 +84,7 @@ async def _list_versions(
     current_user: User,
 ) -> dict:
     optic.trace("listing_id={}, page={}", listing_id, page)
-    listing = await resolve_listing(listing_model, listing_id, db)
+    listing = await resolve_visible_listing(listing_model, listing_id, db, current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -115,7 +120,7 @@ async def _get_version(
     current_user: User,
 ) -> dict:
     optic.trace("listing_id={}, version={}", listing_id, version)
-    listing = await resolve_listing(listing_model, listing_id, db)
+    listing = await resolve_visible_listing(listing_model, listing_id, db, current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -144,7 +149,7 @@ async def _publish_version(
     if not SEMVER_RE.match(req.version):
         raise HTTPException(status_code=422, detail=f"Invalid semver string: {req.version!r}")
 
-    listing = await resolve_listing(listing_model, listing_id, db)
+    listing = await resolve_visible_listing(listing_model, listing_id, db, current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -224,7 +229,7 @@ async def _version_suggestions(
     current_user: User,
 ) -> dict:
     optic.trace("listing_id={}, listing_model={}", listing_id, listing_model)
-    listing = await resolve_listing(listing_model, listing_id, db)
+    listing = await resolve_visible_listing(listing_model, listing_id, db, current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
@@ -259,7 +264,7 @@ async def _review_version(
     current_user: User,
 ) -> dict:
     optic.trace("listing_id={}, version={}", listing_id, version)
-    listing = await resolve_listing(listing_model, listing_id, db)
+    listing = await resolve_visible_listing(listing_model, listing_id, db, current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 

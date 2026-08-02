@@ -126,6 +126,8 @@ def skill_submit(
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (skill ID)"),
     example: bool = typer.Option(False, "--example", help="Print example skill payloads and exit"),
+    team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
 ):
     """Submit a new skill for review.
 
@@ -270,6 +272,7 @@ def skill_submit(
             payload["script_content"] = script_content
             payload["script_filename"] = script_filename
 
+    client.add_publish_target(payload, team, visibility)
     endpoint = "/api/v1/skills/draft" if draft else "/api/v1/skills/submit"
     label = "draft" if draft else "skill"
     with spinner(f"Saving {label}..."):
@@ -277,6 +280,7 @@ def skill_submit(
     validated = result.get("validated", False)
     validated_tag = "[green]✓ validated[/green]" if validated else "[yellow]unvalidated[/yellow]"
     rprint(f"[green]✓ {label.capitalize()} submitted![/green] ID: [bold]{result['id']}[/bold]  {validated_tag}")
+    rprint(f"  Install: [cyan]observal registry skill install {client.canonical_name(result)}[/cyan]")
 
 
 # ── List / My ─────────────────────────────────────────────────────────────────
@@ -286,7 +290,10 @@ def skill_submit(
 def skill_list(
     task_type: str | None = typer.Option(None, "--task-type", "-t"),
     target_agent: str | None = typer.Option(None, "--target-agent"),
+    harness: str | None = typer.Option(None, "--harness", help="Only skills supporting this harness"),
     search: str | None = typer.Option(None, "--search", "-s"),
+    namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
+    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
     """List approved skills in the registry.
@@ -306,8 +313,14 @@ def skill_list(
         params["task_type"] = task_type
     if target_agent:
         params["target_agent"] = target_agent
+    if harness:
+        params["harness"] = harness
     if search:
         params["search"] = search
+    if namespace:
+        params["namespace"] = namespace.lstrip("@").lower()
+    if team:
+        params["team_id"] = client.resolve_team_id(team)
     with spinner("Fetching skills..."):
         data = client.get("/api/v1/skills", params=params)
     if not data:

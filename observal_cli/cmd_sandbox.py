@@ -106,6 +106,8 @@ def sandbox_submit(
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (sandbox ID)"),
     example: bool = typer.Option(False, "--example", help="Print example sandbox payloads and exit"),
+    team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
 ):
     """Submit a new sandbox environment for review.
 
@@ -222,6 +224,7 @@ def sandbox_submit(
             rprint(f"[red]Error:[/red] Invalid harness: {bad_harnesses[0]}")
             raise typer.Exit(1)
 
+    client.add_publish_target(payload, team, visibility)
     if draft:
         with spinner("Saving draft..."):
             result = client.post("/api/v1/sandboxes/draft", payload)
@@ -230,12 +233,15 @@ def sandbox_submit(
         with spinner("Submitting sandbox..."):
             result = client.post("/api/v1/sandboxes/submit", payload)
         rprint(f"[green]✓ Sandbox submitted![/green] ID: [bold]{result['id']}[/bold]")
+    rprint(f"  Install: [cyan]observal registry sandbox install {client.canonical_name(result)}[/cyan]")
 
 
 @sandbox_app.command(name="list")
 def sandbox_list(
     runtime: str | None = typer.Option(None, "--runtime", "-r"),
     search: str | None = typer.Option(None, "--search", "-s"),
+    namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
+    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
     """List approved sandboxes in the registry.
@@ -254,6 +260,10 @@ def sandbox_list(
         params["runtime"] = runtime
     if search:
         params["search"] = search
+    if namespace:
+        params["namespace"] = namespace.lstrip("@").lower()
+    if team:
+        params["team_id"] = client.resolve_team_id(team)
     with spinner("Fetching sandboxes..."):
         data = client.get("/api/v1/sandboxes", params=params)
     if not data:

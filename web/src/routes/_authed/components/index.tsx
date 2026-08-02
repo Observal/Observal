@@ -11,6 +11,7 @@ export type ComponentsSearch = {
   type?: RegistryType;
   search?: string;
   namespace?: string;
+  team?: string;
   category?: string;
   task_type?: string;
   event?: string;
@@ -34,6 +35,7 @@ export const Route = createFileRoute("/_authed/components/")({
       : undefined,
     search: (search.search as string) || undefined,
     namespace: (search.namespace as string) || undefined,
+    team: (search.team as string) || undefined,
     category: (search.category as string) || undefined,
     task_type: (search.task_type as string) || undefined,
     event: (search.event as string) || undefined,

@@ -32,6 +32,8 @@ import {
   useFeedback,
   useFeedbackSummary,
   useMyFeedback,
+  useTeams,
+  useUpdateRegistryVisibility,
   useWhoami,
   useAgentVersions,
   useAgentVersionDetail,
@@ -60,6 +62,7 @@ import { HarnessBadges } from "@/components/registry/harness-badges";
 import { ReviewForm } from "@/components/registry/review-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PickerSelect } from "@/components/ui/picker-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -162,6 +165,9 @@ interface AgentDetail {
   version?: string;
   owner?: string;
   user_permission?: string;
+  team_id?: string | null;
+  visibility?: "public" | "team";
+  is_private?: boolean;
   description?: string;
   prompt?: string;
   model_name?: string;
@@ -618,6 +624,8 @@ export default function AgentDetailPage() {
   const { data: myReview } = useMyFeedback("agent", id);
 
   const { data: whoami } = useWhoami();
+  const { data: teams = [] } = useTeams();
+  const updateVisibility = useUpdateRegistryVisibility();
   const { data: versionsData } = useAgentVersions(id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const { data: versionDetail, isLoading: isVersionDetailLoading } = useAgentVersionDetail(id, selectedVersion);
@@ -670,6 +678,10 @@ export default function AgentDetailPage() {
   const versionInferredIdes = vd?.inferred_supported_harnesses ?? (selectedVersion ? undefined : a?.inferred_supported_harnesses);
   const isOwner = !!(whoami?.id && a?.created_by && whoami.id === String(a.created_by));
   const canTransferOwnership = isOwner;
+  const teamRole = a?.team_id ? teams.find((team) => team.id === String(a.team_id))?.role : undefined;
+  const canChangeVisibility = Boolean(
+    a && (isOwner || teamRole === "owner" || teamRole === "reviewer" || hasMinRole(getUserRole(), "reviewer")),
+  );
   const canManageLifecycle = isAdmin || isOwner;
   const agentStatus = a?.status as string | undefined;
   const canEdit = (isAdmin || a?.user_permission === "owner" || a?.user_permission === "edit") && ["approved", "pending", "draft", "rejected"].includes(agentStatus ?? "");
@@ -720,6 +732,20 @@ export default function AgentDetailPage() {
                     handleClassName="text-sm text-muted-foreground"
                   />
                   {a.status && <StatusBadge status={a.status} />}
+                  {canChangeVisibility && (
+                    <PickerSelect
+                      value={a.visibility ?? (a.is_private ? "team" : "public")}
+                      onValueChange={(value) => updateVisibility.mutate({ type: "agents", id, visibility: value as "public" | "team" })}
+                      options={[
+                        { value: "public", label: "Public" },
+                        { value: "team", label: "Team members only" },
+                      ]}
+                      ariaLabel="Agent visibility"
+                      className="w-40"
+                      inputClassName="h-7 px-2 text-xs"
+                      disabled={updateVisibility.isPending || !a.team_id}
+                    />
+                  )}
                   {versions.length > 0 ? (
                     <VersionDropdown
                       versions={versions}

@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, field_validator
 
 from models.agent import AgentStatus
-from schemas.constants import AGENT_NAME_REGEX, make_name_validator
+from schemas.constants import AGENT_NAME_REGEX, Visibility, make_name_validator
 from services.versioning import validate_semver
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
@@ -46,6 +46,8 @@ class AgentCreateRequest(BaseModel):
     description: str = ""
     category: str | None = None
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     prompt: str = ""
     model_name: str
     model_config_json: dict = {}
@@ -81,6 +83,8 @@ class AgentUpdateRequest(BaseModel):
     description: str | None = None
     category: str | None = None
     owner: str | None = None
+    team_id: uuid.UUID | None = None
+    visibility: Visibility | None = None
     prompt: str | None = None
     model_name: str | None = None
     model_config_json: dict | None = None
@@ -141,6 +145,9 @@ class AgentResponse(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     prompt: str
     model_name: str
     model_config_json: dict
@@ -175,6 +182,9 @@ class AgentSummary(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     model_name: str
     supported_harnesses: list[str]
     required_capabilities: list[str] = []
@@ -197,6 +207,8 @@ class AgentSummary(BaseModel):
 
 class AgentValidateRequest(BaseModel):
     components: list[ComponentRef] = []
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
 
 
 class ValidationIssue(BaseModel):

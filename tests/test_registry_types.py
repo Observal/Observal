@@ -688,45 +688,107 @@ class TestFeedbackExtension:
 # ═══════════════════════════════════════════════════════════
 
 
-@pytest.mark.asyncio
-async def test_component_lists_apply_namespace_and_type_filters():
-    from fastapi import Response
-
+def _list_endpoint_cases():
+    """Every registry list route with its listing table, type filter, and expected filter value."""
     from api.routes.hook import list_hooks
     from api.routes.mcp import list_mcps
     from api.routes.prompt import list_prompts
     from api.routes.sandbox import list_sandboxes
     from api.routes.skill import list_skills
 
-    cases = [
-        (list_mcps.__wrapped__, {"category": "developer-tools"}, "developer-tools"),
-        (list_skills.__wrapped__, {"task_type": "testing", "target_agent": None}, "testing"),
-        (list_hooks.__wrapped__, {"event": "Stop", "scope": None}, "Stop"),
-        (list_prompts.__wrapped__, {"category": "testing"}, "testing"),
-        (list_sandboxes.__wrapped__, {"runtime_type": "docker"}, "docker"),
+    return [
+        (list_mcps, "mcp_listings", {"category": "developer-tools"}, "developer-tools"),
+        (list_skills, "skill_listings", {"task_type": "testing", "target_agent": None, "harness": None}, "testing"),
+        (list_hooks, "hook_listings", {"event": "Stop", "scope": None}, "Stop"),
+        (list_prompts, "prompt_listings", {"category": "testing"}, "testing"),
+        (list_sandboxes, "sandbox_listings", {"runtime_type": "docker"}, "docker"),
     ]
 
-    for list_items, filters, expected in cases:
-        db = _mock_db()
-        result = MagicMock()
-        result.scalars.return_value.all.return_value = []
-        db.execute.return_value = result
-        db.scalar.return_value = 0
-        await list_items(
-            response=Response(),
-            namespace="Alice",
-            search=None,
-            limit=50,
-            offset=0,
-            db=db,
-            current_user=None,
-            **filters,
-        )
-        statement = db.execute.await_args.args[0]
+
+async def _run_list(list_items, filters, *, current_user, namespace="Alice"):
+    """Call a registry list route directly and return the SELECT it executed.
+
+    The routes carry no response cache, so every argument is passed explicitly:
+    unset FastAPI ``Query`` defaults are sentinel objects, not ``None``.
+    """
+    from fastapi import Response
+
+    db = _mock_db()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    db.execute.return_value = result
+    db.scalar.return_value = 0
+    await list_items(
+        response=Response(),
+        namespace=namespace,
+        search=None,
+        team_id=None,
+        public_only=False,
+        limit=50,
+        offset=0,
+        db=db,
+        current_user=current_user,
+        **filters,
+    )
+    return db.execute.await_args.args[0]
+
+
+def _inline_sql(statement) -> str:
+    """Compile a statement to a single-line SQL string with bind values inlined."""
+    return " ".join(str(statement.compile(compile_kwargs={"literal_binds": True})).split())
+
+
+def _membership_predicate(table: str, user) -> str:
+    """The correlated EXISTS that gates team-private listings on the caller's own membership."""
+    return (
+        f"{table}.is_private = true AND {table}.team_id IS NOT NULL "
+        "AND (EXISTS (SELECT team_memberships.id FROM team_memberships "
+        f"WHERE team_memberships.team_id = {table}.team_id "
+        f"AND team_memberships.user_id = '{user.id.hex}'))"
+    )
+
+
+@pytest.mark.asyncio
+async def test_component_lists_apply_namespace_and_type_filters():
+    for list_items, _table, filters, expected in _list_endpoint_cases():
+        statement = await _run_list(list_items, filters, current_user=None)
         sql = str(statement)
         params = set(statement.compile().params.values())
         assert ".namespace" in sql
         assert {"alice", expected}.issubset(params)
+
+
+@pytest.mark.asyncio
+async def test_component_lists_hide_team_private_listings_from_anonymous_callers():
+    for list_items, table, filters, _expected in _list_endpoint_cases():
+        sql = _inline_sql(await _run_list(list_items, filters, current_user=None))
+        assert f"{table}.is_private = false" in sql
+        assert f"{table}.is_private = true" not in sql
+        assert "team_memberships" not in sql
+
+
+@pytest.mark.asyncio
+async def test_component_lists_gate_team_private_listings_on_caller_membership():
+    """A team-private listing is reachable only through a membership row for the caller.
+
+    The same predicate both excludes non-members and includes members, and it is
+    bound to the calling user's id, so no other user's rows can leak in.
+    """
+    caller = _user(role=UserRole.user)
+    outsider = _user(role=UserRole.user)
+    for list_items, table, filters, _expected in _list_endpoint_cases():
+        sql = _inline_sql(await _run_list(list_items, filters, current_user=caller))
+        assert _membership_predicate(table, caller) in sql
+        assert outsider.id.hex not in sql
+
+
+@pytest.mark.asyncio
+async def test_component_lists_do_not_restrict_visibility_for_reviewers():
+    reviewer = _user(role=UserRole.reviewer)
+    for list_items, table, filters, _expected in _list_endpoint_cases():
+        sql = _inline_sql(await _run_list(list_items, filters, current_user=reviewer))
+        assert f"{table}.is_private =" not in sql
+        assert "team_memberships" not in sql
 
 
 # ═══════════════════════════════════════════════════════════

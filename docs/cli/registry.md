@@ -32,7 +32,21 @@ Notes:
 
 All registry references accept a UUID, canonical `namespace/slug`, a unique legacy bare name, a row number from the last `list` output, or an `@alias`. If the same bare slug exists in multiple namespaces, qualify it (for example, `alice/search` instead of `search`).
 
-The namespace is the publisher's username. Usernames cannot change after the account owns a registry listing. Transferring ownership moves the item to the recipient's namespace and fails if that `namespace/slug` already exists.
+The namespace is the publisher's username or a teamspace handle. Usernames cannot change after the account owns a registry listing. Team members can browse approved private teamspace items in normal list results. Use `--team TEAM_HANDLE` to include public items plus that team's private items, or `--namespace TEAM_HANDLE` to restrict results to that namespace. Direct references use `team-handle/item-slug`. Nonmembers receive the same not-found response for private items as for unknown items.
+
+### Teamspace visibility
+
+Use the teamspace target and visibility options on submit commands:
+
+```bash
+observal registry skill submit --skill-md ./SKILL.md --team platform-tools --visibility public
+observal registry skill submit --skill-md ./SKILL.md --team platform-tools --visibility team
+observal registry skill list --team platform-tools --search 'frontend design' --harness claude-code --output json
+observal registry skill list --namespace platform-tools --output json
+observal registry skill show platform-tools/internal-skill --output json
+```
+
+`public` teamspace items are visible to all registry users. `team` items are visible only to team members and privileged reviewers. Team owners and reviewers can change visibility after publication. A team member's new submission still follows the normal review workflow.
 
 ---
 

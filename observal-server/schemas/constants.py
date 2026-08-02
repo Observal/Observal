@@ -17,10 +17,13 @@ harness-specific data (features, paths, scopes) is defined in
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from observal_shared.harness_registry import get_harness_capability_matrix, get_valid_harnesses
 
 # ── Name validation ───────────────────────────────────────────
+
+Visibility = Literal["public", "team"]
 
 AGENT_NAME_REGEX = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 

@@ -49,6 +49,8 @@ def prompt_submit(
     template: str | None = typer.Option(None, "--template", "-t", help="Template body"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (prompt ID)"),
+    team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
 ):
     """Submit a new prompt template for review.
 
@@ -130,6 +132,7 @@ def prompt_submit(
             rprint(f"[red]Error:[/red] Invalid category: {payload.get('category')}")
             raise typer.Exit(1)
 
+    client.add_publish_target(payload, team, visibility)
     if draft:
         with spinner("Saving draft..."):
             result = client.post("/api/v1/prompts/draft", payload)
@@ -138,12 +141,15 @@ def prompt_submit(
         with spinner("Submitting prompt..."):
             result = client.post("/api/v1/prompts/submit", payload)
         rprint(f"[green]✓ Prompt submitted![/green] ID: [bold]{result['id']}[/bold]")
+    rprint(f"  Install: [cyan]observal registry prompt render {client.canonical_name(result)}[/cyan]")
 
 
 @prompt_app.command(name="list")
 def prompt_list(
     category: str | None = typer.Option(None, "--category", "-c"),
     search: str | None = typer.Option(None, "--search", "-s"),
+    namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
+    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
     """List approved prompts in the registry.
@@ -162,6 +168,10 @@ def prompt_list(
         params["category"] = category
     if search:
         params["search"] = search
+    if namespace:
+        params["namespace"] = namespace.lstrip("@").lower()
+    if team:
+        params["team_id"] = client.resolve_team_id(team)
     with spinner("Fetching prompts..."):
         data = client.get("/api/v1/prompts", params=params)
     if not data:

@@ -196,3 +196,105 @@ class TestPreviewConfigNoComponents:
             )
 
         assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+class TestPreviewConfigVisibility:
+    """Preview renders real component content, so it must apply the same
+    visibility rules as every other read path.
+
+    A team-private MCP command, hook handler, prompt template, or SKILL.md must
+    never reach a caller who is not a member of the owning teamspace. Selecting a
+    component in the builder UI is not an authorization boundary: the endpoint
+    takes raw component ids from the request body.
+    """
+
+    @staticmethod
+    def _db_returning(rows):
+        db = AsyncMock()
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = rows
+        db.execute = AsyncMock(return_value=result)
+        return db
+
+    async def test_invisible_component_returns_404(self):
+        """A component the caller cannot see is reported as not found."""
+        hidden_id = str(uuid.uuid4())
+        app, _db, _u = _app_with(db=self._db_returning([]))
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            res = await client.post(
+                "/api/v1/agents/preview-config",
+                json={
+                    "name": "probe",
+                    "description": "",
+                    "prompt": "",
+                    "model_name": "",
+                    "components": [{"component_type": "skill", "component_id": hidden_id}],
+                },
+            )
+
+        assert res.status_code == 404
+        # Same wording a genuinely nonexistent id would produce, so the response is
+        # not an existence oracle for team-private listings.
+        assert res.json()["detail"] == f"Component not found: {hidden_id}"
+
+    async def test_visibility_filter_applied_to_every_component_query(self):
+        """Every component lookup is scoped to the requesting user."""
+        from unittest.mock import patch
+
+        seen = []
+
+        def _spy(stmt, model, current_user):
+            seen.append((model.__name__, current_user))
+            return stmt
+
+        user = _user()
+        app, _db, _u = _app_with(user=user, db=self._db_returning([]))
+
+        with patch("api.routes.preview.apply_visibility_filter", side_effect=_spy):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                res = await client.post(
+                    "/api/v1/agents/preview-config",
+                    json={
+                        "name": "probe",
+                        "description": "",
+                        "prompt": "",
+                        "model_name": "",
+                        "components": [
+                            {"component_type": "mcp", "component_id": str(uuid.uuid4())},
+                            {"component_type": "skill", "component_id": str(uuid.uuid4())},
+                            {"component_type": "hook", "component_id": str(uuid.uuid4())},
+                            {"component_type": "prompt", "component_id": str(uuid.uuid4())},
+                        ],
+                    },
+                )
+
+        assert res.status_code == 404
+        assert {m for m, _ in seen} == {"McpListing", "SkillListing", "HookListing", "PromptListing"}
+        assert all(u is user for _, u in seen)
+
+    async def test_no_component_lookup_without_visibility_filter(self):
+        """The endpoint issues no unfiltered component query."""
+        from unittest.mock import patch
+
+        db = self._db_returning([])
+        app, _db, _u = _app_with(db=db)
+
+        with patch("api.routes.preview.apply_visibility_filter", side_effect=lambda s, m, u: s) as spy:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                await client.post(
+                    "/api/v1/agents/preview-config",
+                    json={
+                        "name": "probe",
+                        "description": "",
+                        "prompt": "",
+                        "model_name": "",
+                        "components": [{"component_type": "mcp", "component_id": str(uuid.uuid4())}],
+                    },
+                )
+
+        assert db.execute.await_count == spy.call_count == 1

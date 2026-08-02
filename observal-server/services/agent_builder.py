@@ -24,11 +24,15 @@ from services.agent_resolver import ResolvedAgent, ResolvedComponent
 
 def _resolved_to_manifest_component(comp: ResolvedComponent) -> ManifestComponent:
     """Convert a ResolvedComponent to a ManifestComponent."""
+    # git_url is optional on a resolved component: registry-direct skills and
+    # command or url based MCP servers have no repository. The manifest field is a
+    # plain string whose empty value means "no repository", so normalize here rather
+    # than letting None reach validation.
     kwargs: dict = {
         "name": comp.name,
         "version": comp.version,
-        "git_url": comp.git_url,
-        "description": comp.description,
+        "git_url": comp.git_url or "",
+        "description": comp.description or "",
         "order": comp.order_index,
     }
     if comp.git_ref:

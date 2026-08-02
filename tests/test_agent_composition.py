@@ -11,9 +11,10 @@ and route endpoints for multi-component agent composition.
 """
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 # ── Schema Tests ────────────────────────────────────────────────────
@@ -1091,3 +1092,175 @@ class TestResolverAndBuilderModulesImportable:
 
         assert callable(build_agent_manifest)
         assert callable(build_composition_summary)
+
+
+class TestManifestWithoutGitUrl:
+    """Components with no repository must still produce a manifest.
+
+    Registry-direct skills and command or url based MCP servers have no git_url.
+    ManifestComponent.git_url is a plain string, so a None must be normalized to ""
+    instead of failing validation and returning a 500 from GET /agents/{id}/manifest.
+    """
+
+    def _resolved(self):
+        from services.agent_resolver import ResolvedAgent, ResolvedComponent
+
+        return ResolvedAgent(
+            agent_id=uuid.uuid4(),
+            agent_name="no-git-agent",
+            agent_version="1.0.0",
+            components=[
+                ResolvedComponent(
+                    component_type="skill",
+                    component_id=uuid.uuid4(),
+                    name="direct-skill",
+                    version="1.0.0",
+                    git_url=None,
+                    description="",
+                    order_index=0,
+                    extra={"skill_md_content": "# direct", "task_type": "testing"},
+                ),
+                ResolvedComponent(
+                    component_type="mcp",
+                    component_id=uuid.uuid4(),
+                    name="command-mcp",
+                    version="1.0.0",
+                    git_url=None,
+                    description="",
+                    order_index=1,
+                    extra={"transport": "stdio"},
+                ),
+            ],
+        )
+
+    def test_manifest_builds_without_git_url(self):
+        from services.agent_builder import build_agent_manifest
+
+        data = build_agent_manifest(self._resolved())
+        assert data["name"] == "no-git-agent"
+        assert len(data["components"]["skills"]) == 1
+        assert len(data["components"]["mcps"]) == 1
+
+    def test_component_conversion_normalizes_none(self):
+        from services.agent_builder import _resolved_to_manifest_component
+
+        comp = self._resolved().components[0]
+        manifest_component = _resolved_to_manifest_component(comp)
+        assert manifest_component.git_url == ""
+        assert manifest_component.description == ""
+
+
+# ── Update Route Publish Target Tests ───────────────────────────────
+
+
+def _update_app(user, db):
+    """Build an app exposing the agent routes with auth and db overridden."""
+    from fastapi import FastAPI
+
+    from api.deps import get_current_user, get_db
+    from api.routes.agent import router
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db
+    return app
+
+
+def _update_user():
+    from models.user import User, UserRole
+
+    user = MagicMock(spec=User)
+    user.id = uuid.uuid4()
+    user.role = UserRole.user
+    user.email = "owner@example.com"
+    user.username = "owner"
+    user.org_id = None
+    return user
+
+
+def _update_agent_mock(user, *, is_private=False, team_id=None):
+    from datetime import UTC, datetime
+
+    from models.agent import AgentStatus
+
+    agent = MagicMock()
+    agent.id = uuid.uuid4()
+    agent.name = "update-target"
+    agent.version = "1.0.0"
+    agent.description = "An agent to update"
+    agent.owner = "owner"
+    agent.prompt = "Do things"
+    agent.model_name = "claude-sonnet-4"
+    agent.model_config_json = {}
+    agent.external_mcps = []
+    agent.supported_harnesses = []
+    agent.status = AgentStatus.approved
+    agent.rejection_reason = None
+    agent.created_by = user.id
+    agent.created_at = datetime.now(UTC)
+    agent.updated_at = datetime.now(UTC)
+    agent.deleted_at = None
+    agent.co_authors = []
+    agent.is_private = is_private
+    agent.team_id = team_id
+    agent.components = []
+    return agent
+
+
+class TestUpdateAgentRejectsPublishTargetChanges:
+    """PUT /agents/{id} must not silently drop visibility or team_id.
+
+    Visibility has a dedicated authorized endpoint and a teamspace move is a
+    different operation, so both are refused here rather than ignored.
+    """
+
+    @pytest.mark.asyncio
+    async def test_visibility_change_is_rejected(self):
+        user = _update_user()
+        agent = _update_agent_mock(user, is_private=True, team_id=uuid.uuid4())
+        db = AsyncMock()
+        app = _update_app(user, db)
+
+        with patch("api.routes.agent.crud._load_agent", return_value=agent):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                r = await ac.put(f"/api/v1/agents/{agent.id}", json={"visibility": "public"})
+
+        assert r.status_code == 422
+        assert f"/api/v1/registry/agent/{agent.id}/visibility" in r.json()["detail"]
+        assert agent.is_private is True
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_matching_visibility_is_accepted(self):
+        user = _update_user()
+        agent = _update_agent_mock(user, is_private=False)
+        db = AsyncMock()
+        app = _update_app(user, db)
+
+        with (
+            patch("api.routes.agent.crud._load_agent", return_value=agent),
+            patch("api.routes.agent.crud._resolve_component_names", return_value={}),
+            patch("api.routes.agent.crud.emit_registry_event"),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                r = await ac.put(f"/api/v1/agents/{agent.id}", json={"visibility": "public"})
+
+        assert r.status_code == 200
+        assert agent.is_private is False
+        db.commit.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_teamspace_move_is_rejected(self):
+        user = _update_user()
+        agent = _update_agent_mock(user, is_private=True, team_id=uuid.uuid4())
+        db = AsyncMock()
+        app = _update_app(user, db)
+
+        with patch("api.routes.agent.crud._load_agent", return_value=agent):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                r = await ac.put(f"/api/v1/agents/{agent.id}", json={"team_id": str(uuid.uuid4())})
+
+        assert r.status_code == 422
+        assert "Teamspace cannot be changed here" in r.json()["detail"]
+        db.commit.assert_not_awaited()

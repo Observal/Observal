@@ -859,27 +859,72 @@ class TestAgentAdd:
         assert "not found" in result.output
 
 
+_TEAM_UUID = "6f3c4b1a-9d2e-4f5a-8c7b-1e2d3f4a5b6c"
+
+
+def _validate_call(mock_post_fn):
+    """Return the payload the CLI sent to the agent composition validator."""
+    for call in mock_post_fn.call_args_list:
+        if call[0][0] == "/api/v1/agents/validate":
+            return call[0][1]
+    raise AssertionError(f"composition validation was never called: {mock_post_fn.call_args_list}")
+
+
 class TestAgentBuild:
     def test_validates_components_against_server(self, tmp_path: Path):
-        """Components are validated via GET calls; output shows results."""
-        _make_agent_yaml(
-            tmp_path,
-            components=[
-                {"component_type": "mcp", "component_id": "id-1"},
-                {"component_type": "skill", "component_id": "id-2"},
-            ],
-        )
+        """Components are validated via GET calls, then scope-checked on the server."""
+        components = [
+            {"component_type": "mcp", "component_id": "id-1"},
+            {"component_type": "skill", "component_id": "id-2"},
+        ]
+        _make_agent_yaml(tmp_path, components=components)
 
         def mock_get(path, **kwargs):
             return {"id": "id-1", "name": "test"}
 
-        with _patch_config(), patch("observal_cli.client.get", side_effect=mock_get):
+        with (
+            _patch_config(),
+            patch("observal_cli.client.get", side_effect=mock_get),
+            _patch_post({"valid": True, "issues": []}) as mock_post_fn,
+        ):
             result = runner.invoke(
                 cli_app,
                 ["agent", "build", "--dir", str(tmp_path)],
             )
         assert result.exit_code == 0, result.output
         assert "All components valid" in result.output
+
+        payload = _validate_call(mock_post_fn)
+        assert payload["components"] == components
+        assert payload["visibility"] == "public"
+        assert "team_id" not in payload
+
+    def test_sends_publish_target_to_composition_validation(self, tmp_path: Path):
+        """--team/--visibility are resolved and sent to the composition validator."""
+        _make_agent_yaml(
+            tmp_path,
+            components=[{"component_type": "skill", "component_id": "id-1"}],
+        )
+
+        def mock_get(path, **kwargs):
+            if path == "/api/v1/teams/all":
+                return [{"id": _TEAM_UUID, "handle": "platform"}]
+            return {"id": "id-1", "name": "test"}
+
+        with (
+            _patch_config(),
+            patch("observal_cli.client.get", side_effect=mock_get),
+            _patch_post({"valid": True, "issues": []}) as mock_post_fn,
+        ):
+            result = runner.invoke(
+                cli_app,
+                ["agent", "build", "--dir", str(tmp_path), "--team", "@platform", "--visibility", "team"],
+            )
+        assert result.exit_code == 0, result.output
+
+        payload = _validate_call(mock_post_fn)
+        assert payload["visibility"] == "team"
+        assert payload["team_id"] == _TEAM_UUID
 
     def test_reports_invalid_components(self, tmp_path: Path):
         """Components that fail GET show as errors."""
@@ -893,13 +938,52 @@ class TestAgentBuild:
         def mock_get(path, **kwargs):
             raise typer.Exit(code=1)
 
-        with _patch_config(), patch("observal_cli.client.get", side_effect=mock_get):
+        with (
+            _patch_config(),
+            patch("observal_cli.client.get", side_effect=mock_get),
+            _patch_post({"valid": True, "issues": []}),
+        ):
             result = runner.invoke(
                 cli_app,
                 ["agent", "build", "--dir", str(tmp_path)],
             )
         assert result.exit_code != 0
         assert "failed validation" in result.output
+        assert "mcp:bad-id" in result.output
+
+    def test_reports_server_scope_issues(self, tmp_path: Path):
+        """A scope issue from the server fails the build and is shown to the user."""
+        _make_agent_yaml(
+            tmp_path,
+            components=[{"component_type": "skill", "component_id": "id-1"}],
+        )
+
+        def mock_get(path, **kwargs):
+            return {"id": "id-1", "name": "test"}
+
+        scope_result = {
+            "valid": False,
+            "issues": [
+                {
+                    "severity": "error",
+                    "component_type": "skill",
+                    "component_id": "id-1",
+                    "message": "Component belongs to another teamspace",
+                }
+            ],
+        }
+        with (
+            _patch_config(),
+            patch("observal_cli.client.get", side_effect=mock_get),
+            _patch_post(scope_result),
+        ):
+            result = runner.invoke(
+                cli_app,
+                ["agent", "build", "--dir", str(tmp_path)],
+            )
+        assert result.exit_code != 0
+        assert "failed validation" in result.output
+        assert "Component belongs to another teamspace" in result.output
 
     def test_fails_if_no_yaml(self, tmp_path: Path):
         """Fails if observal-agent.yaml does not exist."""
@@ -913,9 +997,14 @@ class TestAgentBuild:
 
 class TestAgentPublish:
     def test_creates_agent_via_post(self, tmp_path: Path):
-        """publish sends correct payload via POST."""
+        """publish sends correct payload via POST and reports the pending status."""
         _make_agent_yaml(tmp_path)
-        mock_result = {"id": "new-agent-uuid", "name": "test-agent"}
+        mock_result = {
+            "id": "new-agent-uuid",
+            "name": "test-agent",
+            "qualified_name": "tester/test-agent",
+            "status": "pending",
+        }
 
         with _patch_config(), _patch_post(mock_result) as mock_post_fn:
             result = runner.invoke(
@@ -923,8 +1012,11 @@ class TestAgentPublish:
                 ["agent", "publish", "--dir", str(tmp_path)],
             )
         assert result.exit_code == 0, result.output
-        assert "Agent submitted for review" in result.output
+        assert "Agent submitted!" in result.output
         assert "new-agent-uuid" in result.output
+        assert "observal pull tester/test-agent" in result.output
+        # A public publish stays in the review queue, so the CLI must say so.
+        assert "an admin must approve it" in result.output
 
         # Verify the POST payload
         call_args = mock_post_fn.call_args
@@ -932,6 +1024,35 @@ class TestAgentPublish:
         assert payload["name"] == "test-agent"
         assert payload["version"] == "1.0.0"
         assert payload["model_name"] == "claude-sonnet-4"
+        assert payload["visibility"] == "public"
+
+    def test_team_publish_reports_auto_approval(self, tmp_path: Path):
+        """A team publish auto-approves, so no review warning is printed."""
+        _make_agent_yaml(tmp_path)
+        mock_result = {
+            "id": "new-agent-uuid",
+            "name": "test-agent",
+            "qualified_name": "platform/test-agent",
+            "status": "approved",
+        }
+
+        with (
+            _patch_config(),
+            _patch_get([{"id": _TEAM_UUID, "handle": "platform"}]),
+            _patch_post(mock_result) as mock_post_fn,
+        ):
+            result = runner.invoke(
+                cli_app,
+                ["agent", "publish", "--dir", str(tmp_path), "--team", "@platform", "--visibility", "team"],
+            )
+        assert result.exit_code == 0, result.output
+        assert "Agent submitted!" in result.output
+        assert "observal pull platform/test-agent" in result.output
+        assert "must approve" not in result.output
+
+        payload = mock_post_fn.call_args[0][1]
+        assert payload["visibility"] == "team"
+        assert payload["team_id"] == _TEAM_UUID
 
     def test_updates_existing_agent_with_update_flag(self, tmp_path: Path):
         """--update finds agent by name then PUTs."""

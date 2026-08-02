@@ -34,7 +34,7 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layouts/page-header";
-import { useRegistryItem, useAgentValidation, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
+import { useRegistryItem, useAgentValidation, useTeams, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
 import { isValidAgentName, normalizeAgentName, slugifyRegistryText } from "@/lib/registry-name";
@@ -84,6 +84,7 @@ function AgentBuilderInner() {
   const isEditMode = !!editId;
 
   const { data: whoami } = useWhoami();
+  const { data: teams = [] } = useTeams();
   const { data: existingAgent } = useRegistryItem("agents", editId ?? draftParam ?? undefined);
 
   const [name, setName] = useState("");
@@ -96,6 +97,8 @@ function AgentBuilderInner() {
   const [modelsByHarness, setModelsByIde] = useState<Record<string, string>>({});
   const [publishing, setPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
+  const [teamId, setTeamId] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "team">("public");
 
   // Version bump dialog
   const [showVersionDialog, setShowVersionDialog] = useState(false);
@@ -157,6 +160,10 @@ function AgentBuilderInner() {
     }
     const agentCategory = (existingAgent as Record<string, unknown>).category;
     if (typeof agentCategory === "string") setCategory(agentCategory);
+    const agentTeamId = (existingAgent as Record<string, unknown>).team_id;
+    if (typeof agentTeamId === "string") setTeamId(agentTeamId);
+    const agentVisibility = (existingAgent as Record<string, unknown>).visibility;
+    if (agentVisibility === "public" || agentVisibility === "team") setVisibility(agentVisibility);
 
     if (draftParam) setDraftId(draftParam);
 
@@ -248,7 +255,11 @@ function AgentBuilderInner() {
 
     validateTimerRef.current = setTimeout(() => {
       validation.mutate(
-        { components: allComponents },
+        {
+          components: allComponents,
+          team_id: teamId || undefined,
+          visibility,
+        },
         {
           onSuccess: (result) => setValidationResult(result),
           onError: () =>
@@ -435,7 +446,7 @@ function AgentBuilderInner() {
     }
 
 
-    return {
+    const body: Record<string, unknown> = {
       name: normalizeAgentName(name),
       version: (versionOverride ?? version).trim() || "1.0.0",
       description: description.trim(),
@@ -445,7 +456,10 @@ function AgentBuilderInner() {
       model_name: modelName,
       models_by_harness: modelsByHarness,
       components: components.length > 0 ? components : [],
+      visibility,
     };
+    if (teamId) body.team_id = teamId;
+    return body;
   }
 
   async function handlePublish() {
@@ -649,6 +663,40 @@ function AgentBuilderInner() {
                   />
                 </div>
               </div>
+              <div className="grid gap-4 max-w-3xl sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Publish to</Label>
+                  <PickerSelect
+                    value={teamId || "personal"}
+                    onValueChange={(value) => {
+                      const next = value === "personal" ? "" : value;
+                      setTeamId(next);
+                      if (!next) setVisibility("public");
+                    }}
+                    options={[
+                      { value: "personal", label: `Personal (${whoami?.username || whoami?.email || "me"})` },
+                      ...teams.map((team) => ({ value: team.id, label: `Team: ${team.name}` })),
+                    ]}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Visibility</Label>
+                  <PickerSelect
+                    value={visibility}
+                    onValueChange={(value) => {
+                      if (value === "team" && !teamId) {
+                        toast.error("Team visibility requires a teamspace");
+                        return;
+                      }
+                      setVisibility(value as "public" | "team");
+                    }}
+                    options={[
+                      { value: "public", label: "Public" },
+                      { value: "team", label: "Team members only" },
+                    ]}
+                  />
+                </div>
+              </div>
               <div className="max-w-3xl">
                 <ModelPicker
                   modelName={modelName}
@@ -726,6 +774,7 @@ function AgentBuilderInner() {
                       selected={selectedIds}
                       onToggle={handleToggle(ct.value)}
                       onCreateNew={() => setCreateDialogType(ct.value)}
+                      targetTeamId={visibility === "team" ? teamId || undefined : undefined}
                     />
                     {/* In-memory components not yet submitted */}
                     {pendingComponents.filter((p) => p.type === ct.value).map((p) => (
@@ -844,19 +893,23 @@ function AgentBuilderInner() {
           onSubmit={(body) => {
             const tempId = Math.random().toString(36).slice(2);
             const name = (body.name as string) || createDialogType.replace(/s$/, "");
-            setPendingComponents((prev) => [...prev, { id: tempId, type: createDialogType!, name, body }]);
+            const targetBody = teamId && !body.team_id ? { ...body, team_id: teamId, visibility } : body;
+            setPendingComponents((prev) => [...prev, { id: tempId, type: createDialogType!, name, body: targetBody }]);
             setCreateDialogType(null);
             toast.success(`${name} added, will be submitted with the agent.`);
           }}
           onSaveDraft={(body) => {
             const tempId = Math.random().toString(36).slice(2);
             const name = (body.name as string) || createDialogType.replace(/s$/, "");
-            setPendingComponents((prev) => [...prev, { id: tempId, type: createDialogType!, name, body }]);
+            const targetBody = teamId && !body.team_id ? { ...body, team_id: teamId, visibility } : body;
+            setPendingComponents((prev) => [...prev, { id: tempId, type: createDialogType!, name, body: targetBody }]);
             setCreateDialogType(null);
             toast.success(`${name} added, will be submitted with the agent.`);
           }}
           isSubmitting={false}
           isSavingDraft={false}
+          fixedTeamId={teamId || undefined}
+          fixedVisibility={visibility}
         />
       )}
 

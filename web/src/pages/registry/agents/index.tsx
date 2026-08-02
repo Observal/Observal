@@ -33,7 +33,7 @@ import { PickerSelect } from "@/components/ui/picker-select";
 import { UserSearchInput } from "@/components/shared/user-search-input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRegistryList, useMyAgents, useArchivedAgents, useDeletedAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useDeleteAgent, useRestoreDeletedAgent, useSubmitDraft } from "@/hooks/use-api";
+import { useRegistryList, useMyAgents, useArchivedAgents, useDeletedAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useDeleteAgent, useRestoreDeletedAgent, useSubmitDraft, useTeams } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import {
@@ -423,8 +423,10 @@ export default function AgentListPage() {
 }
 
 function AgentListContent() {
-  const { search: searchParam, namespace, category } = useSearch({ from: "/_authed/agents/" });
+  const { search: searchParam, namespace, team, category } = useSearch({ from: "/_authed/agents/" });
   const router = useRouter();
+  const { data: teams = [] } = useTeams();
+  const selectedTeam = teams.find((item) => item.handle === team);
   const initialSearch = searchParam ?? "";
   const [search, setSearch] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
@@ -455,6 +457,7 @@ function AgentListContent() {
   } = useRegistryList("agents", {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(namespace ? { namespace } : {}),
+    ...(selectedTeam ? { team_id: selectedTeam.id } : {}),
     ...(category ? { category } : {}),
   });
 
@@ -522,7 +525,7 @@ function AgentListContent() {
     }
   }
 
-  function updateFilters(next: { search?: string; namespace?: string; category?: string }) {
+  function updateFilters(next: { search?: string; namespace?: string; team?: string; category?: string }) {
     router.navigate({
       to: "/agents",
       search: (current) => ({ ...current, ...next }),
@@ -534,10 +537,10 @@ function AgentListContent() {
     setSearch("");
     setDebouncedSearch("");
     setPublisherQuery("");
-    updateFilters({ search: undefined, namespace: undefined, category: undefined });
+    updateFilters({ search: undefined, namespace: undefined, team: undefined, category: undefined });
   }
 
-  const hasFilters = !!(search || namespace || category);
+  const hasFilters = !!(search || namespace || team || category);
 
   return (
     <>
@@ -566,6 +569,17 @@ function AgentListContent() {
                 className="pl-9 h-9"
               />
             </div>
+            <PickerSelect
+              value={team ?? ""}
+              onValueChange={(value) => updateFilters({ team: value || undefined })}
+              options={[
+                { value: "", label: "All visible teamspaces" },
+                ...teams.map((item) => ({ value: item.handle, label: `Team: ${item.name}` })),
+              ]}
+              placeholder="Teamspace"
+              className="w-[210px]"
+              inputClassName="h-9"
+            />
             <UserSearchInput
               value={publisherQuery}
               onValueChange={(value) => {
@@ -616,6 +630,12 @@ function AgentListContent() {
           </div>
           {hasFilters && (
             <div className="flex min-h-7 items-center gap-2 flex-wrap" aria-label="Active filters">
+              {team && (
+                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ team: undefined })}>
+                  Team: {selectedTeam?.name ?? team}
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
               {namespace && (
                 <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ namespace: undefined })}>
                   Publisher: @{namespace}

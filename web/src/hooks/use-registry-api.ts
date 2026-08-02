@@ -30,6 +30,20 @@ export function useMyComponents(type: RegistryType) {
   });
 }
 
+export function useUpdateRegistryVisibility() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ type, id, visibility }: { type: RegistryType; id: string; visibility: "public" | "team" }) =>
+      registry.updateVisibility(type, id, visibility),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["registry", variables.type] });
+      qc.invalidateQueries({ queryKey: ["registry", variables.type, variables.id] });
+      toast.success("Visibility updated");
+    },
+    onError: (err: Error) => toast.error(err.message || "Failed to update visibility"),
+  });
+}
+
 export function useComponentSubmit(type: RegistryType) {
   const qc = useQueryClient();
   return useMutation({

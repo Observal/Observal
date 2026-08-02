@@ -12,7 +12,15 @@ from fastapi import HTTPException
 
 from models.team import TeamRole
 from models.user import UserRole
-from services.teamspace import count_owners, is_admin, reserve_handle, slugify_handle, team_membership
+from services.teamspace import (
+    count_owners,
+    is_admin,
+    publish_auto_approves_for_entity,
+    reserve_handle,
+    resolve_publish_target,
+    slugify_handle,
+    team_membership,
+)
 
 
 class _Scalar:
@@ -94,6 +102,114 @@ def test_slugify_handle_targets_namespace_regex():
     assert slugify_handle("") == "team"
     # underscores are stripped (NAMESPACE_RE has no underscores)
     assert slugify_handle("my_team") == "my-team"
+
+
+# ── publish targets ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_resolve_publish_target_defaults_to_public_user_namespace():
+    user = _user(username="alice")
+    target = await resolve_publish_target(_FakeDB([]), user, "Internal Tool")
+    assert (target.namespace, target.slug, target.team_id, target.visibility) == (
+        "alice",
+        "internal-tool",
+        None,
+        "public",
+    )
+    assert target.auto_approve is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_publish_target_allows_team_member_and_private_visibility():
+    team_id = uuid.uuid4()
+    team = SimpleNamespace(id=team_id, handle="platform-tools")
+    member = SimpleNamespace(role=TeamRole.member)
+    db = _FakeDB([member])
+    db.get = AsyncMock(return_value=team)
+    target = await resolve_publish_target(db, _user(), "Internal Tool", team_id=team_id, visibility="team")
+    assert target.namespace == "platform-tools"
+    assert target.visibility == "team"
+    assert target.team_id == team_id
+    assert target.auto_approve is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_publish_target_rejects_non_member():
+    team_id = uuid.uuid4()
+    db = _FakeDB([None])
+    db.get = AsyncMock(return_value=SimpleNamespace(id=team_id, handle="platform-tools"))
+    with pytest.raises(HTTPException) as exc:
+        await resolve_publish_target(db, _user(), "Internal Tool", team_id=team_id)
+    assert exc.value.status_code == 403
+
+
+# ── auto-approval matrix ────────────────────────────────────────────
+# Team roles are self-service, so they clear review for team-visibility listings
+# only. Publishing PUBLIC out of a team namespace always waits for global review.
+
+# (label, user role, team role or None, visibility, expected auto_approve)
+_AUTO_APPROVE_MATRIX = [
+    ("team-owner-public", UserRole.user, TeamRole.owner, "public", False),
+    ("team-owner-team", UserRole.user, TeamRole.owner, "team", True),
+    ("team-reviewer-public", UserRole.user, TeamRole.reviewer, "public", False),
+    ("team-reviewer-team", UserRole.user, TeamRole.reviewer, "team", True),
+    ("team-member-public", UserRole.user, TeamRole.member, "public", False),
+    ("team-member-team", UserRole.user, TeamRole.member, "team", False),
+    ("global-reviewer-public", UserRole.reviewer, None, "public", True),
+    ("global-reviewer-team", UserRole.reviewer, None, "team", True),
+    ("admin-public", UserRole.admin, None, "public", True),
+    ("admin-team", UserRole.admin, None, "team", True),
+    ("super-admin-public", UserRole.super_admin, None, "public", True),
+    ("super-admin-team", UserRole.super_admin, None, "team", True),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_role", "team_role", "visibility", "expected"),
+    [pytest.param(*row[1:], id=row[0]) for row in _AUTO_APPROVE_MATRIX],
+)
+async def test_resolve_publish_target_auto_approve_matrix(user_role, team_role, visibility, expected):
+    team_id = uuid.uuid4()
+    membership = SimpleNamespace(role=team_role) if team_role is not None else None
+    db = _FakeDB([membership])
+    db.get = AsyncMock(return_value=SimpleNamespace(id=team_id, handle="platform-tools"))
+
+    target = await resolve_publish_target(db, _user(user_role), "Internal Tool", team_id=team_id, visibility=visibility)
+
+    assert target.visibility == visibility
+    assert target.auto_approve is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_role", "team_role", "visibility", "expected"),
+    [pytest.param(*row[1:], id=row[0]) for row in _AUTO_APPROVE_MATRIX],
+)
+async def test_publish_auto_approves_for_entity_matrix(user_role, team_role, visibility, expected):
+    membership = SimpleNamespace(role=team_role) if team_role is not None else None
+    entity = SimpleNamespace(team_id=uuid.uuid4(), is_private=visibility == "team")
+
+    got = await publish_auto_approves_for_entity(entity, _user(user_role), _FakeDB([membership]))
+
+    assert got is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("visibility", ["public", "team"])
+async def test_publish_auto_approves_for_entity_rejects_non_member(visibility):
+    entity = SimpleNamespace(team_id=uuid.uuid4(), is_private=visibility == "team")
+    assert await publish_auto_approves_for_entity(entity, _user(), _FakeDB([None])) is False
+
+
+@pytest.mark.asyncio
+async def test_publish_auto_approves_for_entity_ignores_personal_listings():
+    """No teamspace means no self-publish path and no membership lookup at all."""
+    db = _FakeDB([])
+    entity = SimpleNamespace(team_id=None, is_private=False)
+    assert await publish_auto_approves_for_entity(entity, _user(UserRole.super_admin), db) is False
+    db.execute.assert_not_awaited()
 
 
 # ── reserve_handle ──────────────────────────────────────────────────

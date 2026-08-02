@@ -23,6 +23,7 @@ from pathlib import Path
 
 import typer
 from rich import print as rprint
+from rich.markup import escape
 
 from observal_cli import client
 from observal_cli.render import spinner
@@ -86,7 +87,10 @@ def _require_admin() -> None:
     role = user.get("role", "")
     if role != "super_admin":
         rprint("[red]Permission denied.[/red] The migrate command requires super_admin role.")
-        rprint(f"[dim]  Current role: {role}[/dim]")
+        # The role comes from the server response, so it has to be escaped before it
+        # reaches Rich. A value containing markup such as "[/]" would otherwise raise
+        # MarkupError and replace this clean exit with a traceback.
+        rprint(f"[dim]  Current role: {escape(str(role))}[/dim]")
         raise typer.Exit(1)
 
 

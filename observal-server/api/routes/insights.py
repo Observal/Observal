@@ -13,7 +13,7 @@ from loguru import logger as optic
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, get_effective_agent_permission, require_role
+from api.deps import check_listing_visibility_async, get_db, get_effective_agent_permission, require_role
 from api.routes.agent.helpers import _load_agent
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.insight_meta_cache import InsightMetaCache
@@ -43,7 +43,13 @@ def _require_insights():
 
 
 def _require_agent_edit_access(agent: Agent, user: User) -> None:
-    """Raise 403 unless user is admin or has owner/edit permission on the agent."""
+    """Raise 403 unless user is admin or has owner/edit permission on the agent.
+
+    Insight reports expose the agent's private session telemetry, so seeing the
+    agent is not enough. Team membership is a visibility axis in the registry, not
+    an ownership axis: a team member who is not the creator, a co-author, or an
+    admin resolves the agent and is then refused here.
+    """
     perm = get_effective_agent_permission(agent, user)
     if perm not in ("owner", "edit"):
         raise HTTPException(status_code=403, detail="Insufficient permissions for this agent")
@@ -55,14 +61,27 @@ async def _resolve_insights_agent(agent_id: str, db: AsyncSession, current_user:
         db,
         agent_id,
         prefer_user_id=current_user.id,
-        org_id=current_user.org_id,
+        current_user=current_user,
         include_all_statuses=True,
     )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     _require_agent_edit_access(agent, current_user)
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+    return agent
+
+
+async def _authorize_report_agent(report: InsightReport, db: AsyncSession, current_user: User) -> Agent:
+    """Resolve the agent behind a report and apply visibility plus the edit gate.
+
+    Reports carry a non-null agent_id with an ON DELETE CASCADE foreign key, so a
+    missing agent row means the report is unreachable. That is reported as 404
+    rather than silently skipping the authorization checks.
+    """
+    agent_result = await db.execute(select(Agent).where(Agent.id == report.agent_id))
+    agent = agent_result.scalar_one_or_none()
+    if not agent or not await check_listing_visibility_async(agent, current_user, db):
+        raise HTTPException(status_code=404, detail="Report not found")
+    _require_agent_edit_access(agent, current_user)
     return agent
 
 
@@ -378,15 +397,7 @@ async def get_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Org-scope check via agent
-    agent_stmt = select(Agent).where(Agent.id == report.agent_id)
-    agent_result = await db.execute(agent_stmt)
-    agent = agent_result.scalar_one_or_none()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Report not found")
-    _require_agent_edit_access(agent, current_user)
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+    await _authorize_report_agent(report, db, current_user)
 
     return InsightReportResponse.model_validate(report)
 
@@ -410,15 +421,7 @@ async def export_report_html(
     if report.status != InsightReportStatus.completed:
         raise HTTPException(status_code=400, detail="Report is not yet completed")
 
-    # Org-scope check
-    agent_stmt = select(Agent).where(Agent.id == report.agent_id)
-    agent_result = await db.execute(agent_stmt)
-    agent = agent_result.scalar_one_or_none()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Report not found")
-    _require_agent_edit_access(agent, current_user)
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+    await _authorize_report_agent(report, db, current_user)
 
     # Build report dict for the renderer
     report_data = {
@@ -488,12 +491,7 @@ async def delete_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Org-scope check
-    agent_stmt = select(Agent).where(Agent.id == report.agent_id)
-    agent_result = await db.execute(agent_stmt)
-    agent = agent_result.scalar_one_or_none()
-    if agent and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+    await _authorize_report_agent(report, db, current_user)
 
     await db.delete(report)
     await db.commit()
@@ -526,18 +524,13 @@ async def apply_report_suggestions(
             detail="Self-learning is disabled. Enable via settings: insights.self_learn_enabled",
         )
 
-    # Org-scope check
     stmt = select(InsightReport).where(InsightReport.id == report_id)
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    agent_stmt = select(Agent).where(Agent.id == report.agent_id)
-    agent_result = await db.execute(agent_stmt)
-    agent = agent_result.scalar_one_or_none()
-    if agent and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="Agent does not belong to your organization")
+    await _authorize_report_agent(report, db, current_user)
 
     # Run the self-learn pipeline
     from services.insights.self_learn import apply_insight_suggestions

@@ -45,7 +45,6 @@ async def _create_single_agent(
         slug=slug,
         owner=item.owner or user.email,
         created_by=user.id,
-        owner_org_id=user.org_id,
     )
     db.add(agent)
     await db.flush()

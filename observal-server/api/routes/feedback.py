@@ -11,7 +11,7 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, require_role
+from api.deps import check_listing_visibility_async, get_db, optional_current_user, require_role
 from models.agent import Agent
 from models.feedback import Feedback
 from models.hook import HookListing
@@ -32,6 +32,26 @@ LISTING_MODELS = {
     "prompt": PromptListing,
     "sandbox": SandboxListing,
 }
+
+
+async def _visible_listing(db: AsyncSession, listing_type: str, listing_id: uuid.UUID, current_user: User | None):
+    model = LISTING_MODELS.get(listing_type)
+    if not model:
+        raise HTTPException(status_code=400, detail=f"Unknown listing type: {listing_type}")
+    listing = await db.scalar(select(model).where(model.id == listing_id))
+    if not listing or not await check_listing_visibility_async(listing, current_user, db):
+        raise HTTPException(status_code=404, detail="Listing not found")
+    return listing
+
+
+async def _visible_listing_by_id(db: AsyncSession, listing_id: uuid.UUID, current_user: User | None):
+    for listing_type in LISTING_MODELS:
+        try:
+            return await _visible_listing(db, listing_type, listing_id, current_user)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+    raise HTTPException(status_code=404, detail="Listing not found")
 
 
 def _serialize_feedback(fb: Feedback) -> FeedbackResponse:
@@ -58,13 +78,8 @@ async def create_feedback(
     """Submit a review. One review per user per listing (returns 409 if already reviewed)."""
     optic.debug("feedback create: user={}, listing={}", current_user.id, req.listing_id)
 
-    # Validate listing exists
-    model = LISTING_MODELS.get(req.listing_type)
-    if not model:
-        raise HTTPException(status_code=400, detail=f"Unknown listing type: {req.listing_type}")
-    exists = await db.scalar(select(model.id).where(model.id == req.listing_id))
-    if not exists:
-        raise HTTPException(status_code=404, detail="Listing not found")
+    # Validate listing exists and is visible to the caller.
+    await _visible_listing(db, req.listing_type, req.listing_id, current_user)
 
     # Enforce one review per user per listing
     existing = await db.scalar(
@@ -103,8 +118,7 @@ async def get_my_review(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Get the current user's review for a specific listing (if it exists)."""
-    if listing_type not in LISTING_MODELS:
-        raise HTTPException(status_code=400, detail=f"Unknown listing type: {listing_type}")
+    await _visible_listing(db, listing_type, listing_id, current_user)
     result = await db.execute(
         select(Feedback).where(
             Feedback.user_id == current_user.id,
@@ -132,6 +146,7 @@ async def update_feedback(
         raise HTTPException(status_code=404, detail="Review not found")
     if fb.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only update your own review")
+    await _visible_listing(db, fb.listing_type, fb.listing_id, current_user)
 
     if req.rating is not None:
         fb.rating = req.rating
@@ -160,6 +175,7 @@ async def delete_feedback(
         raise HTTPException(status_code=404, detail="Review not found")
     if fb.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only delete your own review")
+    await _visible_listing(db, fb.listing_type, fb.listing_id, current_user)
 
     await db.delete(fb)
     await db.commit()
@@ -206,8 +222,13 @@ async def my_feedback_received(
 
 
 @router.get("/summary/{listing_id}", response_model=FeedbackSummary)
-async def feedback_summary(listing_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def feedback_summary(
+    listing_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
+):
     optic.trace("listing_id={}", listing_id)
+    await _visible_listing_by_id(db, listing_id, current_user)
     result = await db.execute(
         select(
             func.avg(Feedback.rating).label("avg_rating"),
@@ -223,11 +244,15 @@ async def feedback_summary(listing_id: uuid.UUID, db: AsyncSession = Depends(get
 
 
 @router.get("/{listing_type}/{listing_id}", response_model=list[FeedbackResponse])
-async def get_feedback(listing_type: str, listing_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_feedback(
+    listing_type: str,
+    listing_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
+):
     """Get all reviews for a listing. Anonymous reviews have user_id redacted."""
     optic.trace("listing_type={}, listing_id={}", listing_type, listing_id)
-    if listing_type not in LISTING_MODELS:
-        raise HTTPException(status_code=400, detail=f"Unknown listing type: {listing_type}")
+    await _visible_listing(db, listing_type, listing_id, current_user)
     result = await db.execute(
         select(Feedback)
         .where(Feedback.listing_id == listing_id, Feedback.listing_type == listing_type)

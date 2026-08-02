@@ -119,6 +119,8 @@ def hook_submit(
     scope: str | None = typer.Option(None, "--scope", help="agent, session, or global"),
     supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
     example: bool = typer.Option(False, "--example", help="Print example hook payloads and exit"),
+    team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
 ):
     """Submit a new hook for review.
 
@@ -284,6 +286,7 @@ def hook_submit(
         if requires:
             payload["requirements"] = requires
 
+    client.add_publish_target(payload, team, visibility)
     if draft:
         with spinner("Saving draft..."):
             result = client.post("/api/v1/hooks/draft", payload)
@@ -292,12 +295,15 @@ def hook_submit(
         with spinner("Submitting hook..."):
             result = client.post("/api/v1/hooks/submit", payload)
         rprint(f"[green]✓ Hook submitted![/green] ID: [bold]{result['id']}[/bold]")
+    rprint(f"  Install: [cyan]observal registry hook install {client.canonical_name(result)}[/cyan]")
 
 
 @hook_app.command(name="list")
 def hook_list(
     event: str | None = typer.Option(None, "--event", "-e", help="Filter by event type"),
     search: str | None = typer.Option(None, "--search", "-s"),
+    namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
+    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
     output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
 ):
     """List approved hooks from the registry.
@@ -317,6 +323,10 @@ def hook_list(
         params["event"] = event
     if search:
         params["search"] = search
+    if namespace:
+        params["namespace"] = namespace.lstrip("@").lower()
+    if team:
+        params["team_id"] = client.resolve_team_id(team)
     with spinner("Fetching hooks..."):
         data = client.get("/api/v1/hooks", params=params)
     if not data:

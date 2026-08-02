@@ -431,6 +431,8 @@ export const registry = {
 		),
 	validate: (body: {
 		components: { component_type: string; component_id: string }[];
+		team_id?: string;
+		visibility?: "public" | "team";
 	}) => post<ValidationResult>("/agents/validate", body),
 	previewConfig: (body: {
 		name: string;
@@ -462,6 +464,11 @@ export const registry = {
 		post(`/${type ?? "agents"}/${id}/submit`),
 	submit: (type: RegistryType, body: unknown) =>
 		post<RegistryItem>(`/${type}/submit`, body),
+	updateVisibility: (type: RegistryType, id: string, visibility: "public" | "team") =>
+		patch<{ id: string; visibility: "public" | "team" }>(
+			`/registry/${type === "agents" ? "agent" : type.slice(0, -1)}/${id}/visibility`,
+			{ visibility },
+		),
 	versionSuggestions: (id: string) =>
 		get<VersionSuggestions>(`/agents/${id}/version-suggestions`),
 	listVersions: (agentId: string, page = 1, pageSize = 50) =>

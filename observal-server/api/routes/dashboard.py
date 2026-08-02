@@ -14,13 +14,11 @@ from datetime import UTC, timedelta
 from datetime import datetime as dt
 
 from fastapi import APIRouter, Depends, Query
-from fastapi_cache.decorator import cache
 from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
-import services.dynamic_settings as ds
-from api.deps import get_db, require_role
+from api.deps import apply_visibility_filter, get_db, optional_current_user, require_role
 from api.sanitize import escape_like
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.agent_component import AgentComponent
@@ -92,10 +90,10 @@ async def _ch_json_scoped(sql: str, current_user, params: dict | None = None) ->
 
 
 @router.get("/overview/stats", response_model=OverviewStats)
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
 async def overview_stats(
     range_: str | None = Query(None, alias="range"),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
 ):
 
     optic.trace("range={}", range_)
@@ -103,16 +101,18 @@ async def overview_stats(
     days = _range_days(range_)
 
     # Fan out all independent queries in parallel (3 Postgres + 2 ClickHouse)
-    total_mcps_coro = db.scalar(
+    total_mcps_stmt = (
         select(func.count(McpListing.id))
         .join(McpVersion, McpListing.latest_version_id == McpVersion.id)
         .where(McpVersion.status == ListingStatus.approved)
     )
-    total_agents_coro = db.scalar(
+    total_agents_stmt = (
         select(func.count(Agent.id))
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
         .where(AgentVersion.status == AgentStatus.approved, Agent.deleted_at.is_(None))
     )
+    total_mcps_coro = db.scalar(apply_visibility_filter(total_mcps_stmt, McpListing, current_user))
+    total_agents_coro = db.scalar(apply_visibility_filter(total_agents_stmt, Agent, current_user))
     total_users_coro = db.scalar(select(func.count(User.id)))
     tool_rows_coro = _ch_json(
         "SELECT sum(tool_call_count) as cnt FROM session_stats_agg FINAL WHERE last_event_time > now() - INTERVAL {days:UInt32} DAY",
@@ -141,26 +141,27 @@ async def overview_stats(
 
 
 @router.get("/overview/top-mcps", response_model=list[TopItem])
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
-async def top_mcps(db: AsyncSession = Depends(get_db)):
+async def top_mcps(
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
+):
     optic.debug("top_mcps called")
-    result = await db.execute(
-        select(McpDownload.listing_id, func.count(McpDownload.id).label("cnt"), McpListing.name)
-        .join(McpListing, McpDownload.listing_id == McpListing.id)
-        .group_by(McpDownload.listing_id, McpListing.name)
-        .order_by(func.count(McpDownload.id).desc())
-        .limit(5)
+    stmt = select(McpDownload.listing_id, func.count(McpDownload.id).label("cnt"), McpListing.name).join(
+        McpListing, McpDownload.listing_id == McpListing.id
     )
+    stmt = apply_visibility_filter(stmt, McpListing, current_user)
+    stmt = stmt.group_by(McpDownload.listing_id, McpListing.name).order_by(func.count(McpDownload.id).desc()).limit(5)
+    result = await db.execute(stmt)
     return [TopItem(id=row.listing_id, name=row.name, value=row.cnt) for row in result.all()]
 
 
 @router.get("/overview/top-agents", response_model=list[TopAgentItem])
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
 async def top_agents(
     limit: int = Query(6, le=50),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
 ):
-    result = await db.execute(
+    stmt = (
         select(
             AgentDownloadRecord.agent_id,
             func.count(AgentDownloadRecord.id).label("cnt"),
@@ -172,10 +173,16 @@ async def top_agents(
         .join(Agent, AgentDownloadRecord.agent_id == Agent.id)
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
         .where(AgentVersion.status == AgentStatus.approved, Agent.deleted_at.is_(None))
-        .group_by(AgentDownloadRecord.agent_id, Agent.name, AgentVersion.description, Agent.owner, AgentVersion.version)
+    )
+    stmt = apply_visibility_filter(stmt, Agent, current_user)
+    stmt = (
+        stmt.group_by(
+            AgentDownloadRecord.agent_id, Agent.name, AgentVersion.description, Agent.owner, AgentVersion.version
+        )
         .order_by(func.count(AgentDownloadRecord.id).desc())
         .limit(limit)
     )
+    result = await db.execute(stmt)
     rows = result.all()
 
     # Batch-fetch average ratings
@@ -204,12 +211,12 @@ async def top_agents(
 
 
 @router.get("/overview/leaderboard", response_model=list[LeaderboardItem])
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
 async def agent_leaderboard(
     window: str = Query("7d", pattern="^(24h|7d|30d|all)$"),
     limit: int = Query(20, le=50),
     user: str | None = Query(None, description="Filter by creator email"),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
 ):
     """Public leaderboard of agents ranked by downloads within a time window."""
     stmt = (
@@ -226,6 +233,7 @@ async def agent_leaderboard(
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
         .where(AgentVersion.status == AgentStatus.approved, Agent.deleted_at.is_(None))
     )
+    stmt = apply_visibility_filter(stmt, Agent, current_user)
     if user:
         stmt = stmt.join(User, Agent.created_by == User.id).where(User.email.ilike(f"%{escape_like(user)}%"))
     if window != "all":
@@ -274,6 +282,7 @@ async def agent_leaderboard(
                 Agent.id.notin_(existing_ids),
             )
         )
+        extra_stmt = apply_visibility_filter(extra_stmt, Agent, current_user)
         if user:
             extra_stmt = extra_stmt.join(User, Agent.created_by == User.id).where(
                 User.email.ilike(f"%{escape_like(user)}%")
@@ -322,12 +331,12 @@ async def agent_leaderboard(
 
 
 @router.get("/overview/component-leaderboard", response_model=list[ComponentLeaderboardItem])
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
 async def component_leaderboard(
     window: str = Query("7d", pattern="^(24h|7d|30d|all)$"),
     limit: int = Query(20, le=50),
     user: str | None = Query(None, description="Filter by creator email"),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
 ):
     """Public leaderboard of components ranked by agent downloads within a time window."""
     listing_types = [
@@ -364,6 +373,8 @@ async def component_leaderboard(
                 Agent.deleted_at.is_(None),
             )
         )
+        stmt = apply_visibility_filter(stmt, Agent, current_user)
+        stmt = apply_visibility_filter(stmt, listing_model, current_user)
         if user:
             stmt = stmt.join(User, listing_model.submitted_by == User.id).where(
                 User.email.ilike(f"%{escape_like(user)}%")
@@ -438,9 +449,9 @@ async def component_leaderboard(
                 select(listing_model.id, listing_model.name, version_model.description, listing_model.submitted_by)
                 .join(version_model, listing_model.latest_version_id == version_model.id)
                 .where(version_model.status == ListingStatus.approved, listing_model.id.notin_(existing_ids))
-                .order_by(listing_model.created_at.desc())
-                .limit(limit - len(all_items))
             )
+            extra_stmt = apply_visibility_filter(extra_stmt, listing_model, current_user)
+            extra_stmt = extra_stmt.order_by(listing_model.created_at.desc()).limit(limit - len(all_items))
             extra_rows = (await db.execute(extra_stmt)).all()
             extra_sub_ids = {r.submitted_by for r in extra_rows if r.submitted_by} - set(email_map)
             if extra_sub_ids:
@@ -472,7 +483,6 @@ async def component_leaderboard(
 
 
 @router.get("/overview/trends", response_model=list[TrendPoint])
-@cache(expire=ds.get_sync_int("data.cache_ttl_dashboard", 60), namespace="dashboard")
 async def trends(
     range_: str | None = Query(None, alias="range"),
     db: AsyncSession = Depends(get_db),
@@ -484,14 +494,10 @@ async def trends(
 
     day_col_mcp = func.date_trunc("day", McpListing.created_at).label("day")
     mcp_stmt = select(day_col_mcp, func.count(McpListing.id).label("cnt")).where(McpListing.created_at >= start)
-    if current_user.org_id is not None:
-        mcp_stmt = mcp_stmt.where(McpListing.owner_org_id == current_user.org_id)
     mcp_rows = await db.execute(mcp_stmt.group_by(day_col_mcp).order_by(day_col_mcp))
 
     day_col_user = func.date_trunc("day", User.created_at).label("day")
     user_stmt = select(day_col_user, func.count(User.id).label("cnt")).where(User.created_at >= start)
-    if current_user.org_id is not None:
-        user_stmt = user_stmt.where(User.org_id == current_user.org_id)
     user_rows = await db.execute(user_stmt.group_by(day_col_user).order_by(day_col_user))
 
     submissions = {str(r.day.date()): r.cnt for r in mcp_rows.all()}

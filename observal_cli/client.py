@@ -7,6 +7,7 @@
 
 import logging
 import time
+import uuid
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -264,6 +265,32 @@ def resolve_registry_reference(item_type: str, reference: str) -> str:
 
 def canonical_name(item: dict) -> str:
     return item.get("qualified_name") or item.get("name", "")
+
+
+def resolve_team_id(reference: str) -> str:
+    """Resolve a team UUID or handle using the authenticated team list."""
+    value = reference.strip().lstrip("@").lower()
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        pass
+    teams = get("/api/v1/teams/all")
+    for team in teams:
+        if str(team.get("handle", "")).lower() == value:
+            return str(team["id"])
+    raise typer.BadParameter(f"No teamspace with handle '{reference}'", param_hint="team")
+
+
+def add_publish_target(payload: dict, team: str | None, visibility: str | None) -> None:
+    """Add and validate the teamspace target fields for a publish request."""
+    target_visibility = (visibility or "public").strip().lower()
+    if target_visibility not in {"public", "team"}:
+        raise typer.BadParameter("visibility must be 'public' or 'team'", param_hint="visibility")
+    if target_visibility == "team" and not team:
+        raise typer.BadParameter("--visibility team requires --team", param_hint="team")
+    payload["visibility"] = target_visibility
+    if team:
+        payload["team_id"] = resolve_team_id(team)
 
 
 def get(path: str, params: dict | None = None) -> dict:

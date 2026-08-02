@@ -3,7 +3,7 @@
 
 """Agent CRUD routes: create, list, get, update, delete, archive, unarchive."""
 
-import uuid  # noqa: TC003
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, Query, Response
@@ -14,9 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import (
     ROLE_HIERARCHY,
+    apply_registry_scope,
     get_db,
     get_effective_agent_permission,
-    registry_identity,
     require_role,
 )
 from api.search import keyword_search
@@ -40,6 +40,7 @@ from services.config_generator import validate_mcp_command
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.registry_namespace import identity_exists, slugify
 from services.registry_telemetry import emit_registry_event
+from services.teamspace import resolve_publish_target
 
 from ._router import router
 from .helpers import (
@@ -61,12 +62,26 @@ async def create_agent(
     if not req.description:
         raise HTTPException(status_code=422, detail="Description must not be empty")
 
+    target = await resolve_publish_target(
+        db,
+        current_user,
+        req.name,
+        team_id=req.team_id,
+        visibility=req.visibility,
+    )
+
     # If `components` is provided, it supersedes legacy `mcp_server_ids`
     if req.components:
         req.mcp_server_ids = []
 
     # Validate legacy mcp_server_ids
-    mcp_listings = await _validate_mcp_ids(req.mcp_server_ids, db)
+    mcp_listings = await _validate_mcp_ids(
+        req.mcp_server_ids,
+        db,
+        current_user=current_user,
+        target_team_id=target.team_id if target.visibility == "team" else None,
+        enforce_target=True,
+    )
 
     # Validate new components field (component_type already validated by Pydantic Literal)
     if req.components:
@@ -76,6 +91,9 @@ async def create_agent(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
             db,
             require_approved=False,
+            current_user=current_user,
+            target_team_id=target.team_id if target.visibility == "team" else None,
+            enforce_target=True,
         )
         if errors:
             raise HTTPException(
@@ -97,25 +115,25 @@ async def create_agent(
             raise HTTPException(status_code=422, detail=f"Invalid MCP command: {e}")
 
     # The database remains the source of truth; this pre-check gives a clean 409.
-    namespace, slug = registry_identity(current_user, req.name)
     existing = await db.execute(
         select(Agent.id).where(
-            Agent.namespace == namespace,
-            Agent.slug == slug,
+            Agent.namespace == target.namespace,
+            Agent.slug == target.slug,
             Agent.deleted_at.is_(None),
         )
     )
     if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail=f"Agent '{namespace}/{slug}' already exists")
+        raise HTTPException(status_code=409, detail=f"Agent '{target.namespace}/{target.slug}' already exists")
 
     agent = Agent(
         name=req.name,
-        namespace=namespace,
-        slug=slug,
-        owner=req.owner or current_user.username or current_user.email,
+        namespace=target.namespace,
+        slug=target.slug,
+        owner=target.owner if target.team_id else (req.owner or current_user.username or current_user.email),
         category=req.category,
         created_by=current_user.id,
-        owner_org_id=current_user.org_id,
+        team_id=target.team_id,
+        is_private=target.visibility == "team",
     )
     db.add(agent)
     await db.flush()
@@ -130,8 +148,10 @@ async def create_agent(
         models_by_harness=req.models_by_harness,
         external_mcps=[m.model_dump() for m in req.external_mcps],
         supported_harnesses=req.supported_harnesses,
-        status=AgentStatus.pending,
+        status=AgentStatus.approved if target.auto_approve else AgentStatus.pending,
         released_by=current_user.id,
+        reviewed_by=current_user.id if target.auto_approve else None,
+        reviewed_at=datetime.now(UTC) if target.auto_approve else None,
     )
     db.add(version)
     await db.flush()
@@ -203,7 +223,10 @@ async def create_agent(
     except IntegrityError as exc:
         await db.rollback()
         if "uq_agents_active_namespace_slug" in str(exc.orig):
-            raise HTTPException(status_code=409, detail=f"Agent '{namespace}/{slug}' already exists")
+            raise HTTPException(
+                status_code=409,
+                detail=f"Agent '{target.namespace}/{target.slug}' already exists",
+            )
         raise
 
     agent = await _load_agent(db, str(agent.id))
@@ -230,6 +253,8 @@ async def list_agents(
     search: str | None = Query(None),
     namespace: str | None = Query(None),
     category: str | None = Query(None),
+    team_id: uuid.UUID | None = Query(None),
+    public_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200, description="Page size (1-200)"),
     offset: int = Query(0, ge=0, description="Items to skip"),
     db: AsyncSession = Depends(get_db),
@@ -256,26 +281,23 @@ async def list_agents(
             name_field=Agent.name,
         )
 
-    # Org-scoping: when the caller belongs to an org, show agents owned by that org
-    # or agents with no org set (legacy/bulk-created agents)
-    org_filter = None
-    if current_user.org_id is not None:
-        org_filter = (Agent.owner_org_id == current_user.org_id) | (Agent.owner_org_id.is_(None))
-
     # Total count for pagination header
     count_stmt = (
         select(func.count(Agent.id)).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(base_filter)
     )
-    filters = [condition for condition in (search_filter, org_filter) if condition is not None]
+    filters = [condition for condition in (search_filter,) if condition is not None]
     if namespace:
         filters.append(Agent.namespace == namespace.strip().lower())
     if category:
         filters.append(Agent.category == category)
-    count_stmt = count_stmt.where(*filters)
+    count_stmt = apply_registry_scope(
+        count_stmt.where(*filters), Agent, current_user, team_id=team_id, public_only=public_only
+    )
     total = (await db.execute(count_stmt)).scalar_one()
     response.headers["X-Total-Count"] = str(total)
 
     stmt = select(Agent).join(AgentVersion, Agent.latest_version_id == AgentVersion.id).where(base_filter, *filters)
+    stmt = apply_registry_scope(stmt, Agent, current_user, team_id=team_id, public_only=public_only)
     order_by = [Agent.created_at.desc()]
     if search_rank is not None:
         order_by.insert(0, search_rank.desc())
@@ -313,6 +335,9 @@ async def list_agents(
             version=a.version,
             description=a.description,
             owner=a.owner,
+            team_id=a.team_id,
+            visibility=a.visibility,
+            is_private=a.is_private,
             model_name=a.model_name,
             supported_harnesses=a.supported_harnesses,
             status=a.status,
@@ -365,6 +390,9 @@ async def my_agents(
             version=a.version,
             description=a.description,
             owner=a.owner,
+            team_id=a.team_id,
+            visibility=a.visibility,
+            is_private=a.is_private,
             model_name=a.model_name,
             supported_harnesses=a.supported_harnesses,
             status=a.status,
@@ -396,9 +424,6 @@ async def archived_agents(
         .where(AgentVersion.status == AgentStatus.archived, Agent.deleted_at.is_(None))
         .order_by(Agent.created_at.desc())
     )
-    if current_user.org_id is not None:
-        stmt = stmt.where(Agent.owner_org_id == current_user.org_id)
-
     agents = (await db.execute(stmt)).scalars().all()
 
     agent_ids = [a.id for a in agents]
@@ -430,6 +455,9 @@ async def archived_agents(
             version=a.version,
             description=a.description,
             owner=a.owner,
+            team_id=a.team_id,
+            visibility=a.visibility,
+            is_private=a.is_private,
             model_name=a.model_name,
             supported_harnesses=a.supported_harnesses,
             status=a.status,
@@ -457,10 +485,7 @@ async def deleted_agents(
 
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     stmt = select(Agent).where(Agent.deleted_at.is_not(None)).order_by(Agent.deleted_at.desc())
-    if is_admin:
-        if current_user.org_id is not None:
-            stmt = stmt.where(Agent.owner_org_id == current_user.org_id)
-    else:
+    if not is_admin:
         stmt = stmt.where(Agent.created_by == current_user.id)
 
     agents = (await db.execute(stmt)).scalars().all()
@@ -494,6 +519,9 @@ async def deleted_agents(
             version=a.version,
             description=a.description,
             owner=a.owner,
+            team_id=a.team_id,
+            visibility=a.visibility,
+            is_private=a.is_private,
             model_name=a.model_name,
             supported_harnesses=a.supported_harnesses,
             status=a.status,
@@ -523,11 +551,9 @@ async def get_agent(
         db,
         agent_id,
         prefer_user_id=current_user.id,
-        org_id=current_user.org_id,
+        current_user=current_user,
     )
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     perm = get_effective_agent_permission(agent, current_user)
     if perm == "none":
@@ -556,11 +582,9 @@ async def version_suggestions(
         db,
         agent_id,
         prefer_user_id=current_user.id,
-        org_id=current_user.org_id,
+        current_user=current_user,
     )
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
@@ -594,16 +618,30 @@ async def update_agent(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
-    if not is_admin and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=404, detail="Agent not found")
 
     perm = get_effective_agent_permission(agent, current_user)
     if perm not in ("owner", "edit") and not is_admin:
         raise HTTPException(status_code=403, detail="Not the agent owner or editor")
+
+    # Visibility and teamspace are not editable here. Echoing back the current
+    # value is a no-op; asking for a different one is refused rather than
+    # silently dropped, because both have their own authorized flows.
+    if req.visibility is not None and (req.visibility == "team") != bool(agent.is_private):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Visibility cannot be changed here. Use PATCH /api/v1/registry/agent/{agent.id}/visibility instead."
+            ),
+        )
+    if req.team_id is not None and req.team_id != agent.team_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Teamspace cannot be changed here. Recreate the agent under the target teamspace.",
+        )
 
     if req.version_bump_type and req.version is None:
         from services.versioning import bump_version
@@ -654,6 +692,9 @@ async def update_agent(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
             db,
             require_approved=False,
+            current_user=current_user,
+            target_team_id=agent.team_id if agent.is_private else None,
+            enforce_target=True,
         )
         if errors:
             raise HTTPException(
@@ -693,7 +734,13 @@ async def update_agent(
         if not agent.latest_version:
             raise HTTPException(status_code=400, detail="Agent has no version to update components on")
 
-        mcp_listings = await _validate_mcp_ids(req.mcp_server_ids, db)
+        mcp_listings = await _validate_mcp_ids(
+            req.mcp_server_ids,
+            db,
+            current_user=current_user,
+            target_team_id=agent.team_id if agent.is_private else None,
+            enforce_target=True,
+        )
         version_id = agent.latest_version.id
         old_comps = (
             (
@@ -770,13 +817,11 @@ async def delete_agent(
     optic.debug("soft deleting agent")
 
     agent = await _load_agent(
-        db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id, include_all_statuses=True
+        db, agent_id, prefer_user_id=current_user.id, current_user=current_user, include_all_statuses=True
     )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
-    if not is_admin and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=404, detail="Agent not found")
     perm = get_effective_agent_permission(agent, current_user)
     if perm != "owner" and not is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -809,15 +854,13 @@ async def restore_deleted_agent(
         db,
         agent_id,
         prefer_user_id=current_user.id,
-        org_id=current_user.org_id,
+        current_user=current_user,
         include_all_statuses=True,
         include_deleted=True,
     )
     if not agent or agent.deleted_at is None:
         raise HTTPException(status_code=404, detail="Deleted agent not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
-    if not is_admin and current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
-        raise HTTPException(status_code=404, detail="Deleted agent not found")
     perm = get_effective_agent_permission(agent, current_user)
     if perm != "owner" and not is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -855,10 +898,8 @@ async def archive_agent(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id)
+    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if agent.created_by != current_user.id and not is_admin:
@@ -892,11 +933,9 @@ async def unarchive_agent(
 ):
     optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(
-        db, agent_id, prefer_user_id=current_user.id, org_id=current_user.org_id, include_all_statuses=True
+        db, agent_id, prefer_user_id=current_user.id, current_user=current_user, include_all_statuses=True
     )
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if current_user.org_id is not None and agent.owner_org_id != current_user.org_id:
         raise HTTPException(status_code=404, detail="Agent not found")
     is_admin = ROLE_HIERARCHY.get(current_user.role, 999) <= ROLE_HIERARCHY[UserRole.admin]
     if agent.created_by != current_user.id and not is_admin:

@@ -41,6 +41,7 @@ observal agent create
 observal agent create --from-file agent.json
 observal agent create --name my-agent --prompt "You are..." --model claude-sonnet-4
 observal agent create --name my-agent --prompt-file ./PROMPT.md --harness kiro --harness claude-code
+observal agent create --name team-agent --prompt 'Team workflow' --team platform-tools --visibility team
 ```
 
 | Option | Description |
@@ -53,6 +54,8 @@ observal agent create --name my-agent --prompt-file ./PROMPT.md --harness kiro -
 | `--prompt-file` | Read system prompt from a file |
 | `--model`, `-m` | Model name (e.g. claude-sonnet-4) |
 | `--harness` | Supported harnesses (repeat for multiple) |
+| `--team` | Teamspace UUID or handle |
+| `--visibility` | `public` or `team`, team visibility requires `--team` |
 
 ---
 
@@ -81,6 +84,7 @@ List active agents in the registry with pagination support. Use `--interactive` 
 ```bash
 observal agent list
 observal agent list --search my-agent
+observal agent list --team platform-tools --output json
 observal agent list --page 2 --limit 20
 observal agent list --interactive
 observal agent list --output json
@@ -90,6 +94,8 @@ observal agent list --full-id
 | Option | Description |
 | --- | --- |
 | `--search`, `-s` | Filter by search term |
+| `--namespace` | Restrict to one publisher or team namespace |
+| `--team` | Include public items plus private items from this teamspace |
 | `--interactive`, `-i` | Interactive search mode |
 | `--limit`, `-n` | Page size (1-200, default 50) |
 | `--page`, `-p` | Page number (1-indexed) |
@@ -234,6 +240,7 @@ observal agent publish
 observal agent publish --update
 observal agent publish --draft
 observal agent publish --dir /tmp/my-agent
+observal agent publish --dir /tmp/my-agent --team platform-tools --visibility team
 ```
 
 | Option | Description |
@@ -242,6 +249,8 @@ observal agent publish --dir /tmp/my-agent
 | `--update`, `-u` | Update existing agent instead of creating |
 | `--draft` | Save as draft instead of submitting for review |
 | `--submit` | Submit an existing draft agent for review (agent ID) |
+| `--team` | Publish into a teamspace by UUID or handle |
+| `--visibility` | Set `public` or `team` visibility, team visibility requires `--team` |
 
 ---
 

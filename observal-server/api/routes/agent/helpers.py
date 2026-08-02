@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import resolve_prefix_id
+from api.deps import apply_publish_scope, apply_visibility_filter, check_listing_visibility_async, resolve_prefix_id
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.mcp import ListingStatus, McpListing, McpVersion
 from schemas.agent import (
@@ -20,6 +20,8 @@ from schemas.agent import (
 from services.registry_namespace import _namespace_slug_parts
 from services.shared.utils import registry_item_slug
 
+_VISIBILITY_UNSET = object()
+
 
 async def _load_agent(
     db: AsyncSession,
@@ -27,7 +29,7 @@ async def _load_agent(
     extra_conditions=None,
     *,
     prefer_user_id: uuid.UUID | None = None,
-    org_id: uuid.UUID | None = None,
+    current_user=_VISIBILITY_UNSET,
     include_all_statuses: bool = False,
     include_deleted: bool = False,
 ) -> Agent | None:
@@ -35,8 +37,8 @@ async def _load_agent(
 
     When *prefer_user_id* is provided and resolution is by name, prefer the
     caller's own agent over agents created by other users with the same name.
-    The global name fallback is restricted to active agents and, when *org_id*
-    is set, to agents within the same organisation.
+    The global name fallback is restricted to active agents and the caller's
+    visibility scope when *current_user* is supplied.
 
     Set *include_all_statuses* to find agents regardless of version status
     (needed for unarchive, delete, etc.).
@@ -46,7 +48,10 @@ async def _load_agent(
         conditions.append(Agent.deleted_at.is_(None))
 
     try:
-        return await resolve_prefix_id(Agent, agent_id, db, extra_conditions=conditions)
+        agent = await resolve_prefix_id(Agent, agent_id, db, extra_conditions=conditions)
+        if current_user is not _VISIBILITY_UNSET and not await check_listing_visibility_async(agent, current_user, db):
+            return None
+        return agent
     except HTTPException:
         pass
 
@@ -64,8 +69,8 @@ async def _load_agent(
         stmt = stmt.where(visible_status)
     if conditions:
         stmt = stmt.where(*conditions)
-    if org_id is not None:
-        stmt = stmt.where(Agent.owner_org_id == org_id)
+    if current_user is not _VISIBILITY_UNSET:
+        stmt = apply_visibility_filter(stmt, Agent, current_user)
     results = (await db.execute(stmt.limit(2))).scalars().all()
     if not parts and len(results) > 1:
         choices = ", ".join(item.qualified_name for item in results)
@@ -122,10 +127,17 @@ def _agent_to_response(
         "inferred_supported_harnesses",
         "status",
         "rejection_reason",
+        "visibility",
     ):
         agent_dict[field] = getattr(agent, field)
     if not isinstance(agent_dict.get("models_by_harness"), dict):
         agent_dict["models_by_harness"] = {}
+    if not isinstance(agent_dict.get("team_id"), uuid.UUID):
+        agent_dict["team_id"] = None
+    if agent_dict.get("visibility") not in ("public", "team"):
+        agent_dict["visibility"] = "team" if agent_dict.get("is_private") is True else "public"
+    if not isinstance(agent_dict.get("is_private"), bool):
+        agent_dict["is_private"] = False
     namespace = agent_dict.get("namespace")
     if not isinstance(namespace, str):
         namespace = created_by_username or str(agent.owner)
@@ -210,14 +222,26 @@ async def _resolve_component_statuses(components: list, db: AsyncSession) -> dic
     return status_map
 
 
-async def _validate_mcp_ids(mcp_ids: list[uuid.UUID], db: AsyncSession) -> list[McpListing]:
+async def _validate_mcp_ids(
+    mcp_ids: list[uuid.UUID],
+    db: AsyncSession,
+    *,
+    current_user=None,
+    target_team_id: uuid.UUID | None = None,
+    enforce_target: bool = False,
+) -> list[McpListing]:
     listings = []
     for mid in mcp_ids:
-        result = await db.execute(
+        stmt = (
             select(McpListing)
             .join(McpVersion, McpListing.latest_version_id == McpVersion.id)
             .where(McpListing.id == mid, McpVersion.status == ListingStatus.approved)
         )
+        if current_user is not None:
+            stmt = apply_visibility_filter(stmt, McpListing, current_user)
+        if enforce_target:
+            stmt = apply_publish_scope(stmt, McpListing, target_team_id)
+        result = await db.execute(stmt)
         listing = result.scalar_one_or_none()
         if not listing:
             raise HTTPException(status_code=400, detail=f"MCP server {mid} not found or not approved")

@@ -297,12 +297,7 @@ async def get_agent_counts(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Agent count breakdown by status and category."""
-    org_id = current_user.org_id
-
     base = select(Agent)
-    if org_id:
-        base = base.where(Agent.owner_org_id == org_id)
-
     # Total
     total = await db.scalar(select(func.count()).select_from(base.subquery())) or 0
 
@@ -312,8 +307,6 @@ async def get_agent_counts(
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
         .where(AgentVersion.status == AgentStatus.approved)
     )
-    if org_id:
-        pub_stmt = pub_stmt.where(Agent.owner_org_id == org_id)
     published = await db.scalar(pub_stmt) or 0
 
     # In development (pending/draft)
@@ -322,8 +315,6 @@ async def get_agent_counts(
         .join(AgentVersion, Agent.latest_version_id == AgentVersion.id)
         .where(AgentVersion.status.in_([AgentStatus.pending, AgentStatus.draft]))
     )
-    if org_id:
-        dev_stmt = dev_stmt.where(Agent.owner_org_id == org_id)
     in_development = await db.scalar(dev_stmt) or 0
 
     # Active agents with sessions in the last 7 days
@@ -337,8 +328,6 @@ async def get_agent_counts(
 
     # By category
     cat_stmt = select(Agent.category, func.count(Agent.id)).group_by(Agent.category)
-    if org_id:
-        cat_stmt = cat_stmt.where(Agent.owner_org_id == org_id)
     cat_rows = (await db.execute(cat_stmt)).all()
     by_category = [{"category": row[0] or "Uncategorized", "count": row[1]} for row in cat_rows]
 
@@ -585,8 +574,6 @@ async def get_top_agents(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Top agents by composite score (downloads + sessions + rating)."""
-    org_id = current_user.org_id
-
     # Downloads from PG
     dl_stmt = select(AgentDownloadRecord.agent_id, func.count(AgentDownloadRecord.id).label("downloads")).group_by(
         AgentDownloadRecord.agent_id
@@ -644,8 +631,6 @@ async def get_top_agents(
     agent_info: dict[str, tuple[str, str]] = {}
     if valid_ids:
         info_stmt = select(Agent.id, Agent.name, Agent.category)
-        if org_id:
-            info_stmt = info_stmt.where(Agent.owner_org_id == org_id)
         info_stmt = info_stmt.where(Agent.id.in_(valid_ids))
         info_rows = (await db.execute(info_stmt)).all()
         agent_info = {str(r.id): (r.name, r.category or "Uncategorized") for r in info_rows}
@@ -1372,8 +1357,6 @@ async def get_inactivity_alerts(
     agent_info: dict[str, tuple[str, str]] = {}
     if agent_ids_to_resolve:
         info_stmt = select(Agent.id, Agent.name, Agent.category)
-        if org_id:
-            info_stmt = info_stmt.where(Agent.owner_org_id == org_id)
         info_stmt = info_stmt.where(Agent.id.in_(agent_ids_to_resolve))
         rows = (await db.execute(info_stmt)).all()
         agent_info = {str(r.id): (r.name, r.category or "Uncategorized") for r in rows}
@@ -1479,12 +1462,8 @@ async def get_time_to_value(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Days from agent deployment to reaching 100 sessions."""
-    org_id = current_user.org_id
-
     # Get all agents with their created_at
     agent_stmt = select(Agent.id, Agent.name, Agent.category, Agent.created_at)
-    if org_id:
-        agent_stmt = agent_stmt.where(Agent.owner_org_id == org_id)
     agent_rows = (await db.execute(agent_stmt)).all()
 
     if not agent_rows:

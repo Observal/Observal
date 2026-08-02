@@ -19,8 +19,12 @@ import {
   useComponentVersionDetail,
   useComponentArchive,
   useComponentUnarchive,
+  useTeams,
+  useUpdateRegistryVisibility,
   useWhoami,
 } from "@/hooks/use-api";
+import { getUserRole } from "@/lib/api";
+import { hasMinRole } from "@/hooks/use-role-guard";
 import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
 import { compactNumber } from "@/lib/utils";
@@ -34,6 +38,7 @@ import { ComponentInstallCommand } from "@/components/registry/component-install
 import { RegistryName } from "@/components/registry/registry-name";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PickerSelect } from "@/components/ui/picker-select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -91,6 +96,8 @@ export default function ComponentDetailPage() {
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const { data: versionDetail } = useComponentVersionDetail(type, id, selectedVersion);
   const { data: whoami } = useWhoami();
+  const { data: teams = [] } = useTeams();
+  const updateVisibility = useUpdateRegistryVisibility();
 
   const storeSub = useCallback((cb: () => void) => {
     window.addEventListener("storage", cb);
@@ -102,6 +109,10 @@ export default function ComponentDetailPage() {
     () => false,
   );
   const canEdit = isAuthenticated && (item?.user_permission === "owner");
+  const teamRole = item?.team_id ? teams.find((team) => team.id === String(item.team_id))?.role : undefined;
+  const canChangeVisibility = Boolean(
+    item && (canEdit || teamRole === "owner" || teamRole === "reviewer" || hasMinRole(getUserRole(), "reviewer")),
+  );
   const canTransferOwnership = !!(whoami?.id && item?.submitted_by && whoami.id === String(item.submitted_by));
 
   // Co-authors
@@ -187,6 +198,20 @@ export default function ComponentDetailPage() {
                   >
                     {item.status}
                   </Badge>
+                )}
+                {canChangeVisibility && (
+                  <PickerSelect
+                    value={(item.visibility as string | undefined) ?? (item.is_private ? "team" : "public")}
+                    onValueChange={(value) => updateVisibility.mutate({ type, id, visibility: value as "public" | "team" })}
+                    options={[
+                      { value: "public", label: "Public" },
+                      { value: "team", label: "Team members only" },
+                    ]}
+                    ariaLabel="Listing visibility"
+                    className="w-40"
+                    inputClassName="h-7 px-2 text-xs"
+                    disabled={updateVisibility.isPending || !item.team_id}
+                  />
                 )}
                 {versionsForDropdown.length > 0 ? (
                   <VersionDropdown

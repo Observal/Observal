@@ -825,7 +825,6 @@ async def _create_skill_listing(
         slug=slugify(validated.name),
         owner=validated.owner,
         submitted_by=submitter_id,
-        owner_org_id=agent.owner_org_id,
     )
     db.add(listing)
     await db.flush()
@@ -950,7 +949,6 @@ async def _create_hook_listing(
         slug=slugify(validated.name),
         owner=validated.owner,
         submitted_by=submitter_id,
-        owner_org_id=agent.owner_org_id,
     )
     db.add(listing)
     await db.flush()
@@ -1132,7 +1130,6 @@ async def _create_prompt_listing(
         slug=slugify(validated.name),
         owner=validated.owner,
         submitted_by=submitter_id,
-        owner_org_id=agent.owner_org_id,
     )
     db.add(listing)
     await db.flush()

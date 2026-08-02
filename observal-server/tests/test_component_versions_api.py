@@ -47,7 +47,13 @@ def _make_version(listing_id, ver=SEMVER_VALID, status=ListingStatus.pending, re
     return v
 
 
-def _make_listing(owner_id):
+# The version routes resolve through api.deps.resolve_visible_listing, which calls
+# the module-global resolve_listing inside api.deps. That is the only seam a patch
+# can intercept: api.routes.component_versions no longer binds resolve_listing.
+RESOLVE_SEAM = "api.deps.resolve_listing"
+
+
+def _make_listing(owner_id, *, is_private=False, team_id=None):
     listing = MagicMock()
     listing.id = uuid.uuid4()
     listing.name = "test-listing"
@@ -55,6 +61,11 @@ def _make_listing(owner_id):
     listing.latest_version_id = None
     listing.versions = []
     listing.latest_version = None
+    # Set explicitly: an unset MagicMock attribute is truthy, which would make
+    # every listing look team-private to check_listing_visibility_async.
+    listing.is_private = is_private
+    listing.team_id = team_id
+    listing.co_authors = []
     return listing
 
 
@@ -161,9 +172,7 @@ async def test_list_versions_empty():
     listing_id = str(uuid.uuid4())
     db = _db_with_versions([])
 
-    with patch(
-        "api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=_make_listing(uuid.uuid4()))
-    ):
+    with patch(RESOLVE_SEAM, new=AsyncMock(return_value=_make_listing(uuid.uuid4()))):
         result = await _list_versions(
             listing_id=listing_id,
             page=1,
@@ -193,7 +202,7 @@ async def test_list_versions_with_data():
     listing_id = str(listing.id)
     db = _db_with_versions([ver])
 
-    with patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)):
+    with patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)):
         result = await _list_versions(
             listing_id=listing_id,
             page=1,
@@ -226,7 +235,7 @@ async def test_get_version_found():
 
     db = _db_returning_one(ver)
 
-    with patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)):
+    with patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)):
         result = await _get_version(
             listing_id=str(listing.id),
             version=SEMVER_VALID,
@@ -255,7 +264,7 @@ async def test_get_version_not_found():
     db = _db_returning_one(None)
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         pytest.raises(HTTPException) as exc,
     ):
         await _get_version(
@@ -293,7 +302,7 @@ async def test_publish_version_bad_semver():
     req = VersionPublishRequest(version=SEMVER_INVALID, description="test", changelog=None, extra=None)
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         pytest.raises(HTTPException) as exc,
     ):
         await _publish_version(
@@ -326,7 +335,7 @@ async def test_publish_version_not_owner():
     req = VersionPublishRequest(version=SEMVER_VALID, description="test", changelog=None, extra=None)
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         pytest.raises(HTTPException) as exc,
     ):
         await _publish_version(
@@ -364,7 +373,7 @@ async def test_publish_version_duplicate_409():
     db = _db_returning_one(existing_ver)
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         pytest.raises(HTTPException) as exc,
     ):
         await _publish_version(
@@ -404,7 +413,7 @@ async def test_publish_version_happy_path():
     db.commit = AsyncMock()
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         patch("api.routes.component_versions.audit", new=AsyncMock()),
     ):
         result = await _publish_version(
@@ -450,7 +459,7 @@ async def test_review_version_approve_updates_latest():
     db.commit = AsyncMock()
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         patch("api.routes.component_versions.audit", new=AsyncMock()),
     ):
         result = await _review_version(
@@ -490,7 +499,7 @@ async def test_review_version_reject_stores_reason():
     db.commit = AsyncMock()
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         patch("api.routes.component_versions.audit", new=AsyncMock()),
     ):
         result = await _review_version(
@@ -531,7 +540,7 @@ async def test_review_version_non_pending_422():
     db.execute = AsyncMock(return_value=ver_result)
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         pytest.raises(HTTPException) as exc,
     ):
         await _review_version(
@@ -569,7 +578,7 @@ async def test_review_version_not_found_404():
     db.execute = AsyncMock(return_value=ver_result)
 
     with (
-        patch("api.routes.component_versions.resolve_listing", new=AsyncMock(return_value=listing)),
+        patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         pytest.raises(HTTPException) as exc,
     ):
         await _review_version(

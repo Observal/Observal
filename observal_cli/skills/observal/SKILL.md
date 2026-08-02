@@ -34,6 +34,7 @@ For requests like "find me an agent for incident resolution" or "what skill help
 ```bash
 observal agent list --search 'incident resolution' --output json
 observal registry skill list --search 'frontend design' --output json
+observal registry skill list --team platform-tools --search 'frontend design' --output json
 observal registry mcp list --search 'github docker' --output json
 ```
 
@@ -83,8 +84,7 @@ Check for newer versions of installed agents and components.
 
 ```bash
 observal outdated
-observal outdated --harness claude-code
-observal outdated --output json
+observal outdated --harness claude-code --output json
 ```
 
 Reads `~/.observal/lockfile.json` and compares each pinned version against the registry's latest. Reports a table of outdated items with current vs latest version.

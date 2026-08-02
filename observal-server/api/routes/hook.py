@@ -5,25 +5,24 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi_cache.decorator import cache
 from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import services.dynamic_settings as ds
 from api.deps import (
-    apply_visibility_filter,
-    check_listing_visibility,
+    apply_registry_scope,
     commit_or_name_conflict,
     get_db,
     get_effective_component_permission,
+    may_view_unapproved,
     optional_current_user,
-    registry_identity,
     require_role,
     resolve_listing,
+    resolve_visible_listing,
 )
 from api.routes._component_archive import archive_listing, archived_install_warning, unarchive_listing
 from api.routes.component_versions import create_version_router
@@ -43,6 +42,7 @@ from schemas.hook import (
 )
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 from services.registry_namespace import identity_exists
+from services.teamspace import publish_auto_approves_for_entity, resolve_publish_target
 
 router = APIRouter(prefix="/api/v1/hooks", tags=["hooks"])
 
@@ -54,17 +54,24 @@ async def submit_hook(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("hook submit: name={}", req.name)
-    namespace, slug = registry_identity(current_user, req.name)
-    if await identity_exists(db, HookListing, namespace, slug):
-        raise HTTPException(status_code=409, detail=f"Hook '{namespace}/{slug}' already exists")
+    target = await resolve_publish_target(
+        db,
+        current_user,
+        req.name,
+        team_id=req.team_id,
+        visibility=req.visibility,
+    )
+    if await identity_exists(db, HookListing, target.namespace, target.slug):
+        raise HTTPException(status_code=409, detail=f"Hook '{target.namespace}/{target.slug}' already exists")
 
     listing = HookListing(
         name=req.name,
-        namespace=namespace,
-        slug=slug,
-        owner=req.owner,
+        namespace=target.namespace,
+        slug=target.slug,
+        owner=target.owner if target.team_id else req.owner,
         submitted_by=current_user.id,
-        owner_org_id=current_user.org_id,
+        team_id=target.team_id,
+        is_private=target.visibility == "team",
     )
     db.add(listing)
     await db.flush()
@@ -87,9 +94,11 @@ async def submit_hook(
         source_ref=req.source_ref,
         source_path=req.source_path,
         requirements=req.requirements,
-        status=ListingStatus.pending,
+        status=ListingStatus.approved if target.auto_approve else ListingStatus.pending,
         released_by=current_user.id,
         released_at=datetime.now(UTC),
+        reviewed_by=current_user.id if target.auto_approve else None,
+        reviewed_at=datetime.now(UTC) if target.auto_approve else None,
     )
     db.add(version)
     await db.flush()
@@ -101,13 +110,14 @@ async def submit_hook(
 
 
 @router.get("", response_model=list[HookListingSummary])
-@cache(expire=ds.get_sync_int("data.cache_ttl_registry", 30), namespace="registry")
 async def list_hooks(
     response: Response,
     event: str | None = Query(None),
     scope: str | None = Query(None),
     namespace: str | None = Query(None),
     search: str | None = Query(None),
+    team_id: uuid.UUID | None = Query(None),
+    public_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -143,7 +153,7 @@ async def list_hooks(
         )
         if search_filter is not None:
             stmt = stmt.where(search_filter)
-    stmt = apply_visibility_filter(stmt, HookListing, current_user)
+    stmt = apply_registry_scope(stmt, HookListing, current_user, team_id=team_id, public_only=public_only)
     total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
     order_by = [HookListing.created_at.desc()]
     if search_rank is not None:
@@ -175,22 +185,19 @@ async def get_hook(
     current_user: User | None = Depends(optional_current_user),
 ):
     optic.debug("hook get: listing_id={}", listing_id)
-    listing = await resolve_listing(HookListing, listing_id, db, require_status=ListingStatus.approved)
-    if listing:
-        resp = HookListingResponse.model_validate(listing)
-        resp.user_permission = get_effective_component_permission(listing, current_user)
-        return resp
-
-    listing = await resolve_listing(HookListing, listing_id, db)
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-
-    if check_listing_visibility(listing, current_user):
-        resp = HookListingResponse.model_validate(listing)
-        resp.user_permission = get_effective_component_permission(listing, current_user)
-        return resp
-
-    raise HTTPException(status_code=404, detail="Listing not found")
+    listing = await resolve_visible_listing(
+        HookListing, listing_id, db, current_user, require_status=ListingStatus.approved
+    )
+    if listing is None:
+        listing = await resolve_visible_listing(HookListing, listing_id, db, current_user)
+        may_view = listing is not None and may_view_unapproved(
+            get_effective_component_permission(listing, current_user), current_user
+        )
+        if not may_view:
+            raise HTTPException(status_code=404, detail="Listing not found")
+    resp = HookListingResponse.model_validate(listing)
+    resp.user_permission = get_effective_component_permission(listing, current_user)
+    return resp
 
 
 @router.post("/{listing_id}/install", response_model=HookInstallResponse)
@@ -202,10 +209,12 @@ async def install_hook(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("hook install: listing_id={}", listing_id)
-    listing = await resolve_listing(HookListing, listing_id, db, require_status=ListingStatus.approved)
+    listing = await resolve_visible_listing(
+        HookListing, listing_id, db, current_user, require_status=ListingStatus.approved
+    )
     if not listing:
-        listing = await resolve_listing(HookListing, listing_id, db)
-        if not listing or not check_listing_visibility(listing, current_user):
+        listing = await resolve_visible_listing(HookListing, listing_id, db, current_user)
+        if not listing:
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
         if (
             listing.status != ListingStatus.archived
@@ -246,16 +255,23 @@ async def save_hook_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("req={}", req)
-    namespace, slug = registry_identity(current_user, req.name)
-    if await identity_exists(db, HookListing, namespace, slug):
-        raise HTTPException(status_code=409, detail=f"Hook '{namespace}/{slug}' already exists")
+    target = await resolve_publish_target(
+        db,
+        current_user,
+        req.name,
+        team_id=req.team_id,
+        visibility=req.visibility,
+    )
+    if await identity_exists(db, HookListing, target.namespace, target.slug):
+        raise HTTPException(status_code=409, detail=f"Hook '{target.namespace}/{target.slug}' already exists")
     listing = HookListing(
         name=req.name,
-        namespace=namespace,
-        slug=slug,
-        owner=req.owner or current_user.username or current_user.email,
+        namespace=target.namespace,
+        slug=target.slug,
+        owner=target.owner if target.team_id else (req.owner or current_user.username or current_user.email),
         submitted_by=current_user.id,
-        owner_org_id=current_user.org_id,
+        team_id=target.team_id,
+        is_private=target.visibility == "team",
     )
     db.add(listing)
     await db.flush()
@@ -291,6 +307,27 @@ async def save_hook_draft(
     return HookListingResponse.model_validate(listing)
 
 
+def _reject_visibility_edits(listing, req) -> None:
+    """Refuse teamspace or visibility changes sent to the draft update route.
+
+    Visibility has exactly one authoritative path, PATCH /api/v1/registry/hook/{listing_id}/visibility,
+    which authorizes team owners and reviewers, writes audit metadata, and blocks privatizing a
+    component that an approved public agent depends on. Accepting these fields here would either
+    silently discard them or fork that policy into a weaker second implementation, so a real change
+    is rejected. A request that repeats the values the listing already holds changes nothing and passes.
+    """
+    if req.team_id is not None and req.team_id != listing.team_id:
+        raise HTTPException(
+            status_code=400,
+            detail="team_id cannot be changed here. A listing stays in the teamspace it was created under.",
+        )
+    if req.visibility is not None and req.visibility != listing.visibility:
+        raise HTTPException(
+            status_code=400,
+            detail=f"visibility cannot be changed here. Use PATCH /api/v1/registry/hook/{listing.id}/visibility.",
+        )
+
+
 @router.put("/{listing_id}/draft", response_model=HookListingResponse)
 async def update_hook_draft(
     listing_id: str,
@@ -299,13 +336,14 @@ async def update_hook_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("listing_id={}", listing_id)
-    listing = await resolve_listing(HookListing, listing_id, db)
+    listing = await resolve_listing(HookListing, listing_id, db, current_user=current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
     if listing.status not in (ListingStatus.draft, ListingStatus.rejected, ListingStatus.pending):
         raise HTTPException(status_code=400, detail="Only draft, rejected, or pending listings can be edited")
+    _reject_visibility_edits(listing, req)
 
     ver = listing.latest_version
     if not ver:
@@ -359,7 +397,7 @@ async def start_edit_hook(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("listing_id={}", listing_id)
-    listing = await resolve_listing(HookListing, listing_id, db)
+    listing = await resolve_listing(HookListing, listing_id, db, current_user=current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":
@@ -383,7 +421,7 @@ async def cancel_edit_hook(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("listing_id={}", listing_id)
-    listing = await resolve_listing(HookListing, listing_id, db)
+    listing = await resolve_listing(HookListing, listing_id, db, current_user=current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":
@@ -403,7 +441,7 @@ async def submit_hook_draft(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("listing_id={}", listing_id)
-    listing = await resolve_listing(HookListing, listing_id, db)
+    listing = await resolve_listing(HookListing, listing_id, db, current_user=current_user)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":
@@ -414,7 +452,12 @@ async def submit_hook_draft(
     if not listing.description:
         raise HTTPException(status_code=400, detail="Description is required before submitting")
 
-    listing.status = ListingStatus.pending
+    if await publish_auto_approves_for_entity(listing, current_user, db):
+        listing.status = ListingStatus.approved
+        listing.latest_version.reviewed_by = current_user.id
+        listing.latest_version.reviewed_at = datetime.now(UTC)
+    else:
+        listing.status = ListingStatus.pending
     await commit_or_name_conflict(db, "hook")
     await db.refresh(listing)
     return HookListingResponse.model_validate(listing)

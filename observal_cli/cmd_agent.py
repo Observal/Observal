@@ -115,6 +115,8 @@ def agent_create(
     supported_harnesses: list[str] | None = typer.Option(
         None, "--harness", help="Supported harnesses (repeat for multiple)"
     ),
+    team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
 ):
     """Create a new agent (interactive wizard, from file, or via flags).
 
@@ -135,6 +137,8 @@ def agent_create(
 
         with open(from_file) as f:
             payload = json.load(f)
+        if team or visibility:
+            client.add_publish_target(payload, team, visibility)
         with spinner("Creating agent..."):
             result = client.post("/api/v1/agents", payload)
         status = result.get("status", "pending")
@@ -189,6 +193,7 @@ def agent_create(
             "components": [],
         }
 
+        client.add_publish_target(payload, team, visibility)
         with spinner("Creating agent..."):
             result = client.post("/api/v1/agents", payload)
         status = result.get("status", "pending")
@@ -298,21 +303,20 @@ def agent_create(
         rprint("[yellow]Aborted.[/yellow]")
         raise typer.Exit(0)
 
+    payload = {
+        "name": name,
+        "version": version,
+        "description": description,
+        "owner": owner,
+        "prompt": prompt_text,
+        "model_name": model_name,
+        "model_config_json": model_cfg,
+        "supported_harnesses": supported_harnesses,
+        "components": components,
+    }
+    client.add_publish_target(payload, team, visibility)
     with spinner("Creating agent..."):
-        result = client.post(
-            "/api/v1/agents",
-            {
-                "name": name,
-                "version": version,
-                "description": description,
-                "owner": owner,
-                "prompt": prompt_text,
-                "model_name": model_name,
-                "model_config_json": model_cfg,
-                "supported_harnesses": supported_harnesses,
-                "components": components,
-            },
-        )
+        result = client.post("/api/v1/agents", payload)
     status = result.get("status", "pending")
     rprint(f"\n[green]✓ Agent submitted for review![/green] ID: [bold]{result['id']}[/bold]")
     rprint(f"[yellow]Status: {status} - an admin must approve it before it becomes visible.[/yellow]")
@@ -442,6 +446,8 @@ def agent_bulk_create(
 @agent_app.command(name="list")
 def agent_list(
     search: str | None = typer.Option(None, "--search", "-s"),
+    namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
+    team: str | None = typer.Option(None, "--team", help="Include public items and private items from this teamspace"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive search mode"),
     limit: int = typer.Option(50, "--limit", "-n", min=1, max=200, help="Page size (1-200)"),
     page: int = typer.Option(1, "--page", "-p", min=1, help="Page number (1-indexed)"),
@@ -466,6 +472,10 @@ def agent_list(
     params: dict = {"limit": limit, "offset": (page - 1) * limit}
     if search:
         params["search"] = search
+    if namespace:
+        params["namespace"] = namespace.lstrip("@").lower()
+    if team:
+        params["team_id"] = client.resolve_team_id(team)
 
     with spinner("Fetching agents..."):
         data, headers = client.get_with_headers("/api/v1/agents", params=params)
@@ -896,6 +906,8 @@ def agent_add(
 @agent_app.command(name="build")
 def agent_build(
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+    team: str | None = typer.Option(None, "--team", help="Validate private components for this teamspace"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Agent visibility: public or team"),
 ):
     """Validate agent definition against the server (dry-run).
 
@@ -941,6 +953,13 @@ def agent_build(
 
     console.print(table)
 
+    scope_payload = {"components": components}
+    client.add_publish_target(scope_payload, team, visibility)
+    with spinner("Checking agent composition scope..."):
+        scope_result = client.post("/api/v1/agents/validate", scope_payload)
+    for issue in scope_result.get("issues", []):
+        errors.append(issue.get("message", "Component is not valid for this agent target"))
+
     if errors:
         rprint(f"\n[red]{len(errors)} component(s) failed validation:[/red]")
         for e in errors:
@@ -957,6 +976,8 @@ def agent_publish(
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit: str | None = typer.Option(None, "--submit", help="Submit a draft agent for review (agent ID)"),
     bump: str | None = typer.Option(None, "--bump", help="Version bump type: patch, minor, or major (skips prompt)"),
+    team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
 ):
     """Publish the agent definition to the server.
 
@@ -996,6 +1017,9 @@ def agent_publish(
         "supported_harnesses": data.get("supported_harnesses", []),
         "components": data.get("components", []),
     }
+
+    if not update:
+        client.add_publish_target(payload, team, visibility)
 
     if draft:
         with spinner("Saving draft..."):
@@ -1040,13 +1064,17 @@ def agent_publish(
 
         with spinner("Updating agent..."):
             result = client.put(f"/api/v1/agents/{agent_id}", payload)
+        if visibility is not None:
+            client.patch(f"/api/v1/registry/agent/{agent_id}/visibility", {"visibility": visibility})
         rprint(f"[green]✓ Agent updated![/green] ID: [bold]{result['id']}[/bold]  v{result.get('version', '?')}")
     else:
         with spinner("Submitting agent for review..."):
             result = client.post("/api/v1/agents", payload)
         status = result.get("status", "pending")
-        rprint(f"[green]✓ Agent submitted for review![/green] ID: [bold]{result['id']}[/bold]")
-        rprint(f"[yellow]Status: {status} - an admin must approve it before it becomes visible.[/yellow]")
+        rprint(f"[green]✓ Agent submitted![/green] ID: [bold]{result['id']}[/bold]")
+        rprint(f"  Pull: [cyan]observal pull {client.canonical_name(result)}[/cyan]")
+        if status != "approved":
+            rprint(f"[yellow]Status: {status} - an admin must approve it before it becomes visible.[/yellow]")
 
 
 @agent_app.command(name="release")

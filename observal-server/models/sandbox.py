@@ -21,6 +21,7 @@ class SandboxListing(Base):
         UniqueConstraint("namespace", "slug", name="uq_sandbox_listings_namespace_slug"),
         Index("ix_sandbox_listings_namespace", "namespace"),
         Index("ix_sandbox_listings_submitted_by", "submitted_by"),
+        Index("ix_sandbox_listings_team_id", "team_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -31,6 +32,9 @@ class SandboxListing(Base):
     is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     owner_org_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
+    )
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
     )
     bundle_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("component_bundles.id"), nullable=True
@@ -55,12 +59,16 @@ class SandboxListing(Base):
         foreign_keys="SandboxVersion.listing_id",
     )
     latest_version: Mapped[SandboxVersion | None] = relationship(
-        foreign_keys=[latest_version_id], lazy="selectin", uselist=False
+        foreign_keys=[latest_version_id], lazy="selectin", uselist=False, post_update=True
     )
 
     @property
     def qualified_name(self) -> str:
         return f"{self.namespace}/{self.slug}"
+
+    @property
+    def visibility(self) -> str:
+        return "team" if self.is_private else "public"
 
     # ------------------------------------------------------------------
     # Deprecated compatibility properties - delegate to latest_version.

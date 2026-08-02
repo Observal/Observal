@@ -26,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, HelpCircle, Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import type { RegistryType } from "@/lib/api";
-import { useWhoami } from "@/hooks/use-api";
+import { useTeams, useWhoami } from "@/hooks/use-api";
 import { useHarnesses } from "@/hooks/use-harnesses";
 import { parseMcpConfigJson, applyParsedConfig } from "@/lib/mcp-parser";
 import type { EnvVar } from "@/lib/mcp-parser";
@@ -139,6 +139,8 @@ interface SubmitComponentDialogProps {
 	isSubmitting: boolean;
 	isSavingDraft: boolean;
 	editItem?: Record<string, unknown> | null;
+	fixedTeamId?: string;
+	fixedVisibility?: "public" | "team";
 }
 
 export function SubmitComponentDialog({
@@ -151,10 +153,13 @@ export function SubmitComponentDialog({
 	isSubmitting,
 	isSavingDraft,
 	editItem,
+	fixedTeamId,
+	fixedVisibility,
 }: SubmitComponentDialogProps) {
 	const d = editItem as Record<string, unknown> | null;
 	const helpCtx = useHelp();
 	const { data: whoami } = useWhoami();
+	const { data: teams = [] } = useTeams();
 	const { data: harnessList } = useHarnesses();
 	const defaultOwner =
 		(d?.owner as string) ||
@@ -169,6 +174,10 @@ export function SubmitComponentDialog({
 		(d?.description as string) ?? "",
 	);
 	const owner = defaultOwner;
+	const [teamId, setTeamId] = useState<string>((d?.team_id as string) ?? "");
+	const [visibility, setVisibility] = useState<"public" | "team">(
+		(d?.visibility as "public" | "team") ?? "public",
+	);
 	const [supportedHarnesses, setSupportedHarnesses] = useState<string[]>(
 		Array.isArray(d?.supported_harnesses) ? (d.supported_harnesses as string[]) : [],
 	);
@@ -439,12 +448,16 @@ export function SubmitComponentDialog({
 	const isPendingEdit = isEditMode && d?.status === "pending";
 
 	function buildBody(): Record<string, unknown> {
+		const effectiveTeamId = fixedTeamId ?? teamId;
+		const effectiveVisibility = fixedVisibility ?? visibility;
 		const base: Record<string, unknown> = {
 			name,
 			version,
 			description,
 			owner,
+			visibility: effectiveVisibility,
 		};
+		if (effectiveTeamId) base.team_id = effectiveTeamId;
 		if (supportedHarnesses.length > 0) base.supported_harnesses = supportedHarnesses;
 
 		switch (type) {
@@ -703,6 +716,46 @@ export function SubmitComponentDialog({
 							rows={3}
 						/>
 					</div>
+
+					<div className="grid grid-cols-2 gap-3">
+						<div className="space-y-1.5">
+							<Label>Publish to</Label>
+							<PickerSelect
+								value={(fixedTeamId ?? teamId) || "personal"}
+								disabled={fixedTeamId !== undefined || fixedVisibility !== undefined}
+								onValueChange={(value) => {
+									const next = value === "personal" ? "" : value;
+									setTeamId(next);
+									if (!next) setVisibility("public");
+								}}
+								options={[
+									{ value: "personal", label: `Personal (${whoami?.username || whoami?.email || "me"})` },
+									...teams.map((team) => ({ value: team.id, label: `Team: ${team.name}` })),
+								]}
+							/>
+						</div>
+						<div className="space-y-1.5">
+							<Label>Visibility</Label>
+							<PickerSelect
+								value={fixedVisibility ?? visibility}
+								disabled={fixedVisibility !== undefined}
+								onValueChange={(value) => {
+									if (value === "team" && !teamId) {
+										toast.error("Team visibility requires a teamspace");
+										return;
+									}
+									setVisibility(value as "public" | "team");
+								}}
+								options={[
+									{ value: "public", label: "Public" },
+									{ value: "team", label: "Team members only" },
+								]}
+							/>
+						</div>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Public teamspace items are visible to everyone. Team-only items are limited to team members.
+					</p>
 
 					{/* ── MCP-specific ──────────────────────────────── */}
 					{type === "mcps" && (

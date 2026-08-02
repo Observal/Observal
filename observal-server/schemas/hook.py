@@ -14,6 +14,7 @@ from schemas.constants import (
     VALID_HOOK_EXECUTION_MODES,
     VALID_HOOK_HANDLER_TYPES,
     VALID_HOOK_SCOPES,
+    Visibility,
     make_harness_list_validator,
     make_option_validator,
 )
@@ -24,6 +25,8 @@ class HookSubmitRequest(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     event: str
     execution_mode: str = "async"
     priority: int = 100
@@ -58,6 +61,8 @@ class HookDraftRequest(BaseModel):
     version: str = "0.1.0"
     description: str = ""
     owner: str = ""
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
     event: str = "PreToolUse"
     execution_mode: str = "async"
     priority: int = 100
@@ -81,6 +86,8 @@ class HookUpdateRequest(BaseModel):
     version: str | None = None
     description: str | None = None
     owner: str | None = None
+    team_id: uuid.UUID | None = None
+    visibility: Visibility | None = None
     event: str | None = None
     execution_mode: str | None = None
     priority: int | None = None
@@ -106,6 +113,9 @@ class HookListingResponse(BaseModel):
     version: str
     description: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     event: str
     execution_mode: str
     priority: int
@@ -142,6 +152,9 @@ class HookListingSummary(BaseModel):
     event: str
     scope: str
     owner: str
+    team_id: uuid.UUID | None = None
+    visibility: Visibility = "public"
+    is_private: bool = False
     status: ListingStatus
     rejection_reason: str | None = None
     updated_at: datetime | None = None
