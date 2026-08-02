@@ -7,7 +7,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Observal CI — runs on every PR targeting main and on pushes to main.
+# Observal CI — runs on every PR and merge-queue candidate targeting main,
+# and on pushes to main.
 #
 # Recommended branch-protection rules (Settings → Branches → main):
 #   Required status checks:
@@ -29,6 +30,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
 
@@ -41,6 +44,7 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: read
     outputs:
       python: ${{ steps.filter.outputs.python }}
@@ -49,6 +53,7 @@ jobs:
       helm: ${{ steps.filter.outputs.helm }}
     steps:
       - uses: actions/checkout@v6
+      # v4 compares merge-queue candidates using merge_group.base_sha/head_sha.
       - uses: dorny/paths-filter@v4
         id: filter
         with:

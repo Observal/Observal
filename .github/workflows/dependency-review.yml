@@ -6,6 +6,8 @@ name: Dependency Review
 on:
   pull_request:
     branches: [main]
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
@@ -23,6 +25,8 @@ jobs:
         with:
           fail-on-severity: high
           deny-licenses: SSPL-1.0, BUSL-1.1, Elastic-2.0
-          comment-summary-in-pr: always
+          base-ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          head-ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          comment-summary-in-pr: ${{ github.event_name == 'pull_request' && 'always' || 'never' }}
           license-check: true
           vulnerability-check: true

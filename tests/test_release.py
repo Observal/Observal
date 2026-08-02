@@ -6,6 +6,7 @@ import tomllib
 from types import ModuleType
 
 import pytest
+import tools.release as release
 from tools.release import (
     Change,
     Commit,
@@ -14,9 +15,14 @@ from tools.release import (
     all_contributors,
     bump_version,
     choose_release,
+    discover_changes,
+    latest_tag,
+    pr_body,
     prepend_changelog,
+    release_cutoff,
     render_changelog_section,
     render_release_notes,
+    resolve_release_push,
     set_version,
     validate_version_channel,
     write_manifest,
@@ -126,6 +132,106 @@ def test_set_version_rejects_missing_version(tmp_path):
 
     with pytest.raises(ReleaseError, match="top-level version"):
         set_version(path, "1.1.0")
+
+
+def test_latest_tag_chooses_highest_stable_even_when_detached(monkeypatch):
+    monkeypatch.setattr(release, "run", lambda *args, **kwargs: "v1.10.7\nv1.11.0-rc.1\nv1.10.9\n")
+
+    assert latest_tag() == "v1.10.9"
+
+
+def test_release_cutoff_uses_manifest_with_old_tag_fallback(monkeypatch):
+    cutoff = "b" * 40
+
+    def fake_run(*args, **kwargs):
+        if args[:3] == ("git", "show", "v1.10.8:.release.toml"):
+            return f'cutoff = "{cutoff}"\n'
+        if args[:3] == ("git", "show", "v1.10.7:.release.toml"):
+            raise ReleaseError("missing manifest")
+        if args[:3] == ("git", "cat-file", "-e"):
+            return ""
+        raise AssertionError(args)
+
+    monkeypatch.setattr(release, "run", fake_run)
+
+    assert release_cutoff("v1.10.8") == cutoff
+    assert release_cutoff("v1.10.7") == "v1.10.7"
+
+
+def test_release_discovery_skips_prior_release_metadata(monkeypatch):
+    release_commit = Commit("a" * 40, "Maintainer", "m@example.com", "chore(release): v1.10.8", "")
+    feature_commit = Commit("b" * 40, "Contributor", "c@example.com", "feat: next change", "")
+    monkeypatch.setattr(release, "commit_log", lambda revision_range: [release_commit, feature_commit])
+    monkeypatch.setattr(
+        release,
+        "gh_json",
+        lambda repo, endpoint: (
+            [{"number": 1, "merged_at": "2026-08-01", "base": {"ref": "main"}, "title": release_commit.title}]
+            if release_commit.sha in endpoint
+            else []
+        ),
+    )
+
+    changes = discover_changes("Observal/Observal", "c" * 40, "upstream/main")
+
+    assert [change.title for change in changes] == ["feat: next change"]
+
+
+def test_resolve_release_push_uses_exact_merged_pr_head(monkeypatch):
+    normal = Commit("a" * 40, "A", "a@example.com", "fix: normal", "")
+    merged = Commit("b" * 40, "B", "b@example.com", "chore(release): v1.10.8", "")
+    head = "c" * 40
+    monkeypatch.setattr(release, "commit_log", lambda revision_range: [normal, merged])
+
+    def fake_run(*args, **kwargs):
+        if args[:4] == ("git", "log", "--format=%H", "0" * 40 + ".." + "f" * 40):
+            return merged.sha
+        if args[:3] == ("git", "fetch", "--no-tags"):
+            return ""
+        if args[:3] == ("git", "rev-parse", "FETCH_HEAD^{commit}"):
+            return head
+        raise AssertionError(args)
+
+    def fake_gh_json(repo, endpoint):
+        if endpoint == f"commits/{merged.sha}/pulls":
+            return [
+                {
+                    "number": 42,
+                    "merged_at": "2026-08-02T00:00:00Z",
+                    "base": {"ref": "main"},
+                    "title": merged.title,
+                }
+            ]
+        if endpoint == "pulls/42":
+            return {
+                "merged_at": "2026-08-02T00:00:00Z",
+                "merge_commit_sha": merged.sha,
+                "title": merged.title,
+                "base": {"ref": "main"},
+                "head": {"sha": head},
+            }
+        raise AssertionError(endpoint)
+
+    monkeypatch.setattr(release, "run", fake_run)
+    monkeypatch.setattr(release, "gh_json", fake_gh_json)
+
+    assert resolve_release_push("0" * 40, "f" * 40, "Observal/Observal") == (head, 42)
+
+
+def test_resolve_release_push_rejects_manifest_without_release_commit(monkeypatch):
+    normal = Commit("a" * 40, "A", "a@example.com", "fix: normal", "")
+    monkeypatch.setattr(release, "commit_log", lambda revision_range: [normal])
+    monkeypatch.setattr(release, "run", lambda *args, **kwargs: normal.sha)
+
+    with pytest.raises(ReleaseError, match="ambiguous or malformed"):
+        resolve_release_push("0" * 40, "f" * 40, "Observal/Observal")
+
+
+def test_release_pr_instructions_allow_linear_merges():
+    body = pr_body("1.10.8", "v1.10.7", "a" * 40, [_change()], "preview")
+
+    assert "squash, rebase, or the merge queue" in body
+    assert "merge commit" not in body
 
 
 def test_write_manifest_supports_no_pull_requests(tmp_path):

@@ -26,9 +26,9 @@ For a no-write rehearsal:
 make release-preview
 ```
 
-The tool fetches tags, finds every commit after the latest stable release, associates commits with GitHub pull requests, and presents the pull requests in chronological order.
+The tool fetches tags, reads the latest stable release's recorded cutoff (or uses the tag for older releases), associates every later `main` commit with GitHub pull requests, and presents the pull requests in chronological order. Prior release metadata commits are skipped.
 
-Select the last pull request that should ship. Every commit from the previous tag through that pull request is included. Later commits remain deferred to the next release. A pull request cannot be partially included, and commits cannot be removed from the middle of the range.
+Select the last pull request that should ship. Every non-release commit from the previous cutoff through that pull request is included. Later commits remain deferred to the next release. A pull request cannot be partially included, and commits cannot be removed from the middle of the range.
 
 Commits without an associated pull request appear as standalone choices.
 
@@ -71,13 +71,13 @@ The tool creates `release/vX.Y.Z` from the selected cutoff, not from the latest 
 - `.release.toml`
 - `.github/release-notes.md`
 
-The branch is pushed to the maintainer fork and a fully populated pull request is opened.
-
-Merge the release pull request with a merge commit. Squash and rebase merges are rejected because they would make the selected cutoff impossible to enforce.
+The branch is pushed to the maintainer fork and a fully populated pull request is opened. Because the branch starts at the selected cutoff, GitHub may show that it is behind `main`; do not update it. Merge it with squash, rebase, or the squash-configured merge queue.
 
 ## Pipeline
 
-After the merge, the workflow validates the release commit as the merge commit's second parent. Every build checks out that exact commit, so later code already on `main` cannot enter the release.
+After the merge, the workflow finds the release commit anywhere in the pushed `main` range, resolves its associated merged pull request, and fetches that pull request's exact head. Every build checks out that validated head, so later code already on `main` cannot enter the release even though `main` remains linear.
+
+Release tags can therefore point to a detached release head rather than an ancestor of `main`. The next release reads the prior manifest's recorded cutoff and discovers later changes from that point; tags created before release manifests existed fall back to their tagged commit.
 
 Before approval, the workflow builds:
 
@@ -104,7 +104,7 @@ The local tool and workflow reject releases when:
 
 - The working tree is dirty
 - Local `main` differs from `upstream/main`
-- The previous tag is missing or not an ancestor of the cutoff
+- The previous release's recorded cutoff (or a pre-manifest tag) is missing or not an ancestor of the selected cutoff
 - The cutoff is not an ancestor of `main`
 - A pull request is split across noncontiguous commits
 - The release commit contains application code
@@ -112,7 +112,7 @@ The local tool and workflow reject releases when:
 - Release notes omit the contributor section
 - The changelog already contains the target version
 - The tag points to another commit
-- The release pull request was squash or rebase merged
+- The automatic target is not the exact head of one associated merged release pull request
 
 If local preparation fails after creating its worktree, the worktree is preserved under `.worktrees/` for inspection and recovery.
 

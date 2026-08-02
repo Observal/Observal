@@ -5,6 +5,8 @@ name: Secrets Scan
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
 
@@ -26,9 +28,21 @@ jobs:
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" | tar xz -C /usr/local/bin gitleaks
 
       - name: Run Gitleaks
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_HEAD: ${{ github.event.merge_group.head_sha }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            gitleaks detect --source . --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" --verbose
-          else
-            gitleaks detect --source . --verbose
+          case "$EVENT_NAME" in
+            pull_request) BASE=$PR_BASE; HEAD=$PR_HEAD ;;
+            merge_group) BASE=$QUEUE_BASE; HEAD=$QUEUE_HEAD ;;
+            *) BASE=$PUSH_BASE; HEAD=$PUSH_HEAD ;;
+          esac
+          if [[ "$BASE" =~ ^0+$ ]]; then
+            BASE=$(git rev-parse "$HEAD^")
           fi
+          gitleaks detect --source . --log-opts="$BASE..$HEAD" --verbose

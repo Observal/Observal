@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,6 +40,7 @@ RELEASE_FILES = (
     ".release.toml",
     ".github/release-notes.md",
 )
+RELEASE_TITLE = re.compile(r"chore\(release\): v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?")
 
 
 class ReleaseError(RuntimeError):
@@ -180,10 +182,52 @@ def commit_log(revision_range: str) -> list[Commit]:
     return commits
 
 
-def discover_changes(repo: str, previous_tag: str, branch: str) -> list[Change]:
+def resolve_release_push(before: str, after: str, repo: str, remote: str = "origin") -> tuple[str, int] | None:
+    revision_range = f"{before}..{after}"
+    commits = commit_log(revision_range)
+    release_commits = [commit for commit in commits if RELEASE_TITLE.fullmatch(commit.title)]
+    manifest_commits = set(
+        filter(None, run("git", "log", "--format=%H", revision_range, "--", ".release.toml").splitlines())
+    )
+    if not release_commits and not manifest_commits:
+        return None
+    if len(release_commits) != 1 or manifest_commits != {release_commits[0].sha}:
+        raise ReleaseError("push contains an ambiguous or malformed release change")
+
+    merged = [
+        pull
+        for pull in gh_json(repo, f"commits/{release_commits[0].sha}/pulls")
+        if pull.get("merged_at")
+        and pull.get("base", {}).get("ref") == "main"
+        and RELEASE_TITLE.fullmatch(pull.get("title", ""))
+    ]
+    if len(merged) != 1:
+        raise ReleaseError("release commit must belong to exactly one merged release PR")
+
+    number = merged[0]["number"]
+    pull = gh_json(repo, f"pulls/{number}")
+    head = pull.get("head", {}).get("sha") if isinstance(pull, dict) else None
+    if (
+        not isinstance(head, str)
+        or not re.fullmatch(r"[0-9a-f]{40}", head)
+        or not pull.get("merged_at")
+        or pull.get("base", {}).get("ref") != "main"
+        or pull.get("merge_commit_sha") != release_commits[0].sha
+        or not RELEASE_TITLE.fullmatch(pull.get("title", ""))
+    ):
+        raise ReleaseError(f"merged release PR #{number} has invalid head metadata")
+
+    run("git", "fetch", "--no-tags", remote, f"refs/pull/{number}/head")
+    fetched = run("git", "rev-parse", "FETCH_HEAD^{commit}")
+    if fetched != head:
+        raise ReleaseError(f"release PR #{number} head changed while resolving it")
+    return head, number
+
+
+def discover_changes(repo: str, previous_ref: str, branch: str) -> list[Change]:
     changes: list[Change] = []
     seen_prs: set[int] = set()
-    for commit in commit_log(f"{previous_tag}..{branch}"):
+    for commit in commit_log(f"{previous_ref}..{branch}"):
         pulls = gh_json(repo, f"commits/{commit.sha}/pulls")
         matching = [pr for pr in pulls if pr.get("merged_at") and pr.get("base", {}).get("ref") == "main"]
         pr = max(matching, key=lambda item: item["merged_at"]) if matching else None
@@ -197,6 +241,8 @@ def discover_changes(repo: str, previous_tag: str, branch: str) -> list[Change]:
             seen_prs.add(pr_number)
         labels = [label["name"] for label in pr.get("labels", [])] if pr else []
         title = pr["title"] if pr else commit.title
+        if RELEASE_TITLE.fullmatch(title):
+            continue
         user = pr.get("user") if pr else None
         login = user.get("login") if user else None
         association = pr.get("author_association", "") if pr else ""
@@ -406,7 +452,7 @@ No linked issue. This is a release preparation change.
 ## Approach
 The release contains {len(changes)} PR or commit groups. This PR updates version metadata, lockfiles, the curated release notes, and prepends one new changelog section without rewriting existing changelog history.
 
-Merge this PR with a merge commit. Squash and rebase merges are rejected by the release workflow.
+Merge this PR with squash, rebase, or the merge queue. The release workflow publishes this PR's selected-cutoff head rather than the resulting `main` commit.
 
 ## How Has This Been Tested?
 
@@ -446,12 +492,26 @@ def ensure_preflight(upstream: str) -> None:
         raise ReleaseError(f"Local main must exactly match {upstream}/main")
 
 
-def latest_tag(branch: str) -> str:
-    tags = run("git", "tag", "--merged", branch, "--list", "v[0-9]*").splitlines()
+def latest_tag() -> str:
+    tags = run("git", "tag", "--list", "v[0-9]*").splitlines()
     stable = [tag for tag in tags if re.fullmatch(r"v\d+\.\d+\.\d+", tag)]
     if not stable:
-        raise ReleaseError(f"No stable release tag is reachable from {branch}")
+        raise ReleaseError("No stable release tag exists")
     return max(stable, key=lambda tag: parse_version(tag[1:]))
+
+
+def release_cutoff(tag: str) -> str:
+    try:
+        manifest = tomllib.loads(run("git", "show", f"{tag}:.release.toml"))
+    except ReleaseError:
+        return tag
+    except tomllib.TOMLDecodeError as exc:
+        raise ReleaseError(f"Invalid release manifest in {tag}: {exc}") from exc
+    cutoff = manifest.get("cutoff")
+    if not isinstance(cutoff, str) or not re.fullmatch(r"[0-9a-f]{40}", cutoff):
+        raise ReleaseError(f"Invalid release cutoff in {tag}")
+    run("git", "cat-file", "-e", f"{cutoff}^{{commit}}")
+    return cutoff
 
 
 def _ask(prompt):
@@ -541,8 +601,9 @@ def prepare(preview_only: bool, upstream: str = "upstream", fork: str = "origin"
     repo = f"{owner}/{name}"
     fork_owner, _ = repository(fork)
     branch = f"{upstream}/main"
-    previous_tag = latest_tag(branch)
-    changes = discover_changes(repo, previous_tag, branch)
+    previous_tag = latest_tag()
+    previous_cutoff = release_cutoff(previous_tag)
+    changes = discover_changes(repo, previous_cutoff, branch)
     if not changes:
         raise ReleaseError(f"No commits exist after {previous_tag}")
     included, version, channel = choose_release(
@@ -555,7 +616,9 @@ def prepare(preview_only: bool, upstream: str = "upstream", fork: str = "origin"
         )
         raise ReleaseError(f"Database migrations must be included in release notes: {names}")
     cutoff = included[-1].commits[-1]
-    commits = commit_log(f"{previous_tag}..{cutoff}")
+    commits = [
+        commit for commit in commit_log(f"{previous_cutoff}..{cutoff}") if not RELEASE_TITLE.fullmatch(commit.title)
+    ]
     contributors = all_contributors(included, commits)
     date = datetime.now(UTC).date().isoformat()
     changelog_section = render_changelog_section(version, date, included)
@@ -617,7 +680,7 @@ def prepare(preview_only: bool, upstream: str = "upstream", fork: str = "origin"
                 cwd=worktree,
             )
         print(f"\nRelease PR created: {url}")
-        print("Merge it with a merge commit. The workflow rejects squash and rebase merges.")
+        print("Merge with squash, rebase, or the merge queue; the selected cutoff remains the release target.")
     except Exception:
         print(f"Release worktree preserved for recovery: {worktree}", file=sys.stderr)
         raise
@@ -630,8 +693,19 @@ def main() -> None:
     parser.add_argument("--preview", action="store_true", help="render the release without creating a branch or PR")
     parser.add_argument("--upstream", default="upstream", help="remote for the canonical repository")
     parser.add_argument("--fork", default="origin", help="remote that receives the release branch")
+    parser.add_argument("--resolve-push", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--before", help=argparse.SUPPRESS)
+    parser.add_argument("--after", help=argparse.SUPPRESS)
+    parser.add_argument("--repo", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
+        if args.resolve_push:
+            if not all((args.before, args.after, args.repo)):
+                raise ReleaseError("--resolve-push requires --before, --after, and --repo")
+            resolved = resolve_release_push(args.before, args.after, args.repo)
+            if resolved:
+                print(resolved[0])
+            return
         prepare(args.preview, args.upstream, args.fork)
     except (ReleaseError, KeyboardInterrupt) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

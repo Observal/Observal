@@ -4,9 +4,9 @@
 
 # Curated release pipeline for Observal.
 #
-# A release PR is based on a selected, contiguous main-branch cutoff. After that
-# PR is merge-committed, this workflow builds and publishes its second parent so
-# later commits already on main cannot leak into the release.
+# A release PR is based on a selected, contiguous main-branch cutoff. After the
+# PR is squash/rebase merged, this workflow builds and publishes its exact PR
+# head so later commits already on main cannot leak into the release.
 
 name: Release
 
@@ -27,6 +27,7 @@ concurrency:
 permissions:
   contents: write
   packages: write
+  pull-requests: read
   id-token: write
   attestations: write
 
@@ -65,22 +66,24 @@ jobs:
       - name: Resolve release target
         id: target
         env:
+          GH_TOKEN: ${{ github.token }}
           MANUAL_TARGET: ${{ inputs.target }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
           if [ -n "$MANUAL_TARGET" ]; then
+            git fetch --no-tags origin "$MANUAL_TARGET" || true
             TARGET=$(git rev-parse "$MANUAL_TARGET^{commit}")
           else
-            read -ra PARENTS <<< "$(git show -s --format=%P HEAD)"
-            if [ "${#PARENTS[@]}" -ne 2 ]; then
-              if git diff-tree --no-commit-id --name-only -r HEAD | grep -qx '.release.toml'; then
-                echo "::error::Release PRs must use a merge commit, not squash or rebase"
-                exit 1
-              fi
-              echo "is_release=false" >> "$GITHUB_OUTPUT"
-              exit 0
+            if [[ "$BEFORE" =~ ^0+$ ]]; then
+              BEFORE=$(git rev-parse "$AFTER^")
             fi
-            TARGET="${PARENTS[1]}"
-            if [[ "$(git show -s --format=%s "$TARGET")" != chore\(release\):\ v* ]]; then
+            TARGET=$(python3 tools/release.py \
+              --resolve-push \
+              --before "$BEFORE" \
+              --after "$AFTER" \
+              --repo "$GITHUB_REPOSITORY")
+            if [ -z "$TARGET" ]; then
               echo "is_release=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -122,9 +125,15 @@ jobs:
           parents = subprocess.check_output(["git", "show", "-s", "--format=%P", target], text=True).split()
           if parents != [cutoff]:
               raise SystemExit("release commit must have the selected cutoff as its only parent")
-          subprocess.run(["git", "merge-base", "--is-ancestor", previous_tag, cutoff], check=True)
+          previous_manifest = subprocess.run(
+              ["git", "show", f"{previous_tag}:.release.toml"], text=True, capture_output=True
+          )
+          if previous_manifest.returncode == 0:
+              previous_cutoff = tomllib.loads(previous_manifest.stdout)["cutoff"]
+          else:
+              previous_cutoff = previous_tag
+          subprocess.run(["git", "merge-base", "--is-ancestor", previous_cutoff, cutoff], check=True)
           subprocess.run(["git", "merge-base", "--is-ancestor", cutoff, "origin/main"], check=True)
-          subprocess.run(["git", "merge-base", "--is-ancestor", target, "origin/main"], check=True)
 
           allowed = {
               "pyproject.toml", "observal-server/pyproject.toml", "web/package.json",
