@@ -168,8 +168,16 @@ for img in observal-api observal-web; do
   if check_ghcr_image "$img" "$TAG"; then
     pass "ghcr.io/observal/$img:$TAG exists"
   else
-    # Try with token auth
-    TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:observal/$img:pull" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
+    # Try with token auth. Python performs the HTTP fetch + JSON parse directly
+    # so no remote content is piped into an interpreter (Scorecard supply-chain check).
+    TOKEN=$(GHCR_IMG="$img" python3 -c 'import json,os,urllib.request
+try:
+    url = "https://ghcr.io/token?scope=repository:observal/" + os.environ["GHCR_IMG"] + ":pull"
+    with urllib.request.urlopen(url, timeout=10) as r:
+        print(json.load(r).get("token", ""))
+except Exception:
+    pass
+' 2>/dev/null || echo "")
     if [ -n "$TOKEN" ]; then
       status=$(curl -s -o /dev/null -w "%{http_code}" \
         -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \

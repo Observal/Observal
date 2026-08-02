@@ -90,7 +90,12 @@ section "4. SERVER VERSION ENDPOINT"
 # ═══════════════════════════════════════════════════════════
 
 echo "GET /api/v1/config/version:"
-curl -s $API/api/v1/config/version | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin),indent=2))"
+# Python performs the HTTP fetch + JSON parse directly so no remote content is
+# piped into an interpreter (Scorecard supply-chain check).
+API="$API" python3 -c 'import json,os,urllib.request
+with urllib.request.urlopen(os.environ["API"] + "/api/v1/config/version", timeout=10) as r:
+    print(json.dumps(json.load(r), indent=2))
+'
 pass "Version endpoint returns extended fields"
 
 # ═══════════════════════════════════════════════════════════
