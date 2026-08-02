@@ -178,7 +178,8 @@ jobs:
             --with hypothesis \
             --with pyarrow \
             --with pytest-cov \
-            pytest ../tests/ -q \
+            --with pytest-xdist \
+            pytest ../tests/ -q -n auto \
               ${{ matrix.python-version == '3.13' && '--cov=../observal_cli --cov=. --cov-report=xml' || '' }}
 
       - name: Upload coverage to Codecov

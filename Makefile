@@ -21,11 +21,11 @@ check:  ## Full pre-commit check on all files
 
 # ── Testing ──────────────────────────────────────────────
 
-test:  ## Run Python tests
-	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich --with hypothesis --with pyarrow pytest ../tests/ -q
+test:  ## Run Python tests (parallel across cores)
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow pytest ../tests/ -q -n auto
 
-test-v:  ## Run Python tests (verbose)
-	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich --with hypothesis --with pyarrow pytest ../tests/ -v
+test-v:  ## Run Python tests (verbose, parallel across cores)
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow pytest ../tests/ -v -n auto
 
 test-adversarial:  ## Run BenchJack self-test suite
 	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/test_adversarial_self.py -v --tb=short

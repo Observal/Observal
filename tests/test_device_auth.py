@@ -11,6 +11,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _init_key_manager(tmp_path_factory):
+    """Ensure the ES256 key manager is initialized for this module's tests.
+
+    Under pytest-xdist each worker is a separate process, so the key manager
+    singleton initialized by another module's tests is not present here. Token
+    issuance calls sign_token -> get_key_manager(), which raises RuntimeError
+    (surfacing as HTTP 500) if no prior test in this worker initialized it.
+    """
+    from services.crypto import init_key_manager
+
+    key_dir = tmp_path_factory.mktemp("keys")
+    init_key_manager(key_dir=str(key_dir), key_password=None)
+
+
 def _make_mock_user(**overrides):
     from models.user import UserRole
 
