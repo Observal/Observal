@@ -594,9 +594,40 @@ jobs:
           sha256sum * > checksums.txt
 
       - name: Attest build provenance
+        id: attest
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-path: "release/observal-*"
+
+      - name: Copy attestation bundle into release/
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          test -n "$BUNDLE_PATH" -a -s "$BUNDLE_PATH" || {
+            echo "::error::Attestation bundle is missing or empty"
+            exit 1
+          }
+          cp "$BUNDLE_PATH" release/build-provenance.intoto.jsonl
+          echo "Bundle copied ($(wc -c < release/build-provenance.intoto.jsonl) bytes)"
+
+      - name: Verify provenance before publishing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Verify every attested artifact against the bundle. gh attestation verify
+          # validates the Sigstore certificate chain, the signer workflow identity,
+          # and the source repository/commit recorded in the provenance.
+          fail=0
+          for f in release/observal-*; do
+            echo "Verifying $f"
+            gh attestation verify "$f" \
+              --repo "$GITHUB_REPOSITORY" \
+              --bundle release/build-provenance.intoto.jsonl \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml@${{ needs.preflight.outputs.target }}" \
+              || { echo "::error::Provenance verification failed for $f"; fail=1; }
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "All artifacts verified against the attestation bundle."
 
       - name: Create or resume GitHub Release
         env:
