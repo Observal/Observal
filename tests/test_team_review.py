@@ -329,7 +329,7 @@ async def test_another_teams_owner_cannot_approve_this_teams_private_item():
     async with _sessions() as sessions:
         seed = await _seed(sessions)
         response = await _approve(sessions, seed.other_owner, seed.private_id)
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 # ── The queue: ?team_id= narrowing ─────────────────────────────────────────
@@ -421,8 +421,7 @@ async def test_global_reviewer_cannot_approve_a_team_private_item():
     async with _sessions() as sessions:
         seed = await _seed(sessions)
         response = await _approve(sessions, seed.global_reviewer, seed.private_id)
-        assert response.status_code == 403
-        assert "team" in response.json()["detail"].lower()
+        assert response.status_code == 404
 
         async with sessions() as session:
             listing = await session.get(McpListing, seed.private_id)
@@ -449,7 +448,7 @@ async def test_global_reviewer_cannot_reject_a_team_private_item():
     async with _sessions() as sessions:
         seed = await _seed(sessions)
         response = await _reject(sessions, seed.global_reviewer, seed.private_id)
-        assert response.status_code == 403
+        assert response.status_code == 404
 
 
 # ── Approving a public item ────────────────────────────────────────────────
@@ -523,7 +522,7 @@ async def test_global_reviewer_cannot_approve_a_team_private_agent():
     async with _sessions() as sessions:
         seed = await _seed(sessions)
         response = await _approve_agent(sessions, seed.global_reviewer, seed.agent_id)
-        assert response.status_code == 403
+        assert response.status_code == 404
 
         async with sessions() as session:
             agent = await session.get(Agent, seed.agent_id)

@@ -371,6 +371,19 @@ async def test_get_public_source_returns_200_for_any_authenticated_caller():
 
 
 @pytest.mark.asyncio
+async def test_team_owner_can_delete_a_team_source():
+    owner = _user()
+    team = _team("platform")
+    source = _source("https://github.com/example/private", is_public=False, team_id=team.id)
+
+    async with _api(owner) as (client, sessions):
+        await _seed(sessions, team, _member(team, owner, TeamRole.owner), source)
+        response = await client.delete(f"/api/v1/component-sources/{source.id}")
+        assert response.status_code == 200
+        assert await _sources(sessions) == []
+
+
+@pytest.mark.asyncio
 async def test_component_sources_require_authentication():
     """The whole surface is authenticated, so anonymous callers never reach visibility."""
     public = _source("https://github.com/example/public", is_public=True)

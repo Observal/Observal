@@ -11,7 +11,13 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import check_listing_visibility_async, get_db, optional_current_user, require_role
+from api.deps import (
+    apply_visibility_filter,
+    check_listing_visibility_async,
+    get_db,
+    optional_current_user,
+    require_role,
+)
 from models.agent import Agent
 from models.feedback import Feedback
 from models.hook import HookListing
@@ -197,28 +203,17 @@ async def my_feedback_received(
 ):
     """Feedback received on listings submitted/created by the current user."""
     optic.debug("my_feedback_received called")
-    mcp_ids = list(
-        (await db.execute(select(McpListing.id).where(McpListing.submitted_by == current_user.id))).scalars().all()
-    )
-    agent_ids = list((await db.execute(select(Agent.id).where(Agent.created_by == current_user.id))).scalars().all())
-    skill_ids = list(
-        (await db.execute(select(SkillListing.id).where(SkillListing.submitted_by == current_user.id))).scalars().all()
-    )
-    hook_ids = list(
-        (await db.execute(select(HookListing.id).where(HookListing.submitted_by == current_user.id))).scalars().all()
-    )
-    prompt_ids = list(
-        (await db.execute(select(PromptListing.id).where(PromptListing.submitted_by == current_user.id)))
-        .scalars()
-        .all()
-    )
-    sandbox_ids = list(
-        (await db.execute(select(SandboxListing.id).where(SandboxListing.submitted_by == current_user.id)))
-        .scalars()
-        .all()
-    )
-
-    all_ids = mcp_ids + agent_ids + skill_ids + hook_ids + prompt_ids + sandbox_ids
+    all_ids = []
+    for model, owner_column in (
+        (McpListing, McpListing.submitted_by),
+        (Agent, Agent.created_by),
+        (SkillListing, SkillListing.submitted_by),
+        (HookListing, HookListing.submitted_by),
+        (PromptListing, PromptListing.submitted_by),
+        (SandboxListing, SandboxListing.submitted_by),
+    ):
+        stmt = apply_visibility_filter(select(model.id).where(owner_column == current_user.id), model, current_user)
+        all_ids.extend((await db.execute(stmt)).scalars().all())
     if not all_ids:
         return []
 

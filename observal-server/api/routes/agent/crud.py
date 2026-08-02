@@ -229,7 +229,7 @@ async def create_agent(
             )
         raise
 
-    agent = await _load_agent(db, str(agent.id))
+    agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)
     name_map = await _resolve_component_names(agent.components, db)
 
     emit_registry_event(
@@ -383,6 +383,7 @@ async def my_agents(
         .where(Agent.created_by == current_user.id, Agent.deleted_at.is_(None))
         .order_by(Agent.created_at.desc())
     )
+    stmt = apply_registry_scope(stmt, Agent, current_user)
     agents = (await db.execute(stmt)).scalars().all()
 
     agent_ids = [a.id for a in agents]
@@ -806,7 +807,7 @@ async def update_agent(
         agent.inferred_supported_harnesses = compute_supported_harnesses(agent.required_capabilities)
 
     await db.commit()
-    agent = await _load_agent(db, str(agent.id))
+    agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)
     name_map = await _resolve_component_names(agent.components, db)
 
     emit_registry_event(

@@ -755,9 +755,11 @@ async def test_diff_versions_returns_yaml_diff():
 
     db = AsyncMock()
     calls = [0]
+    statements = []
 
     async def _execute(stmt):
         calls[0] += 1
+        statements.append(str(stmt))
         mock = MagicMock()
         mock.scalar_one_or_none.return_value = ver1 if calls[0] == 1 else ver2
         return mock
@@ -779,6 +781,7 @@ async def test_diff_versions_returns_yaml_diff():
     assert isinstance(result["yaml_diff"], str)
     assert len(result["yaml_diff"]) > 0
     assert isinstance(result["component_changes"], list)
+    assert all("agent_versions.status" in statement for statement in statements)
 
 
 @pytest.mark.asyncio

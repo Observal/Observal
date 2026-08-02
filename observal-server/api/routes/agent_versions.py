@@ -502,12 +502,16 @@ async def _get_version_diff(
     if perm == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
 
-    stmt1 = select(AgentVersion).where(AgentVersion.agent_id == agent.id, AgentVersion.version == v1)
+    version_filters = [AgentVersion.agent_id == agent.id]
+    if not may_view_unapproved(perm, current_user):
+        version_filters.append(AgentVersion.status == AgentStatus.approved)
+
+    stmt1 = select(AgentVersion).where(*version_filters, AgentVersion.version == v1)
     ver1 = (await db.execute(stmt1)).scalar_one_or_none()
     if not ver1:
         raise HTTPException(status_code=404, detail=f"Version {v1!r} not found")
 
-    stmt2 = select(AgentVersion).where(AgentVersion.agent_id == agent.id, AgentVersion.version == v2)
+    stmt2 = select(AgentVersion).where(*version_filters, AgentVersion.version == v2)
     ver2 = (await db.execute(stmt2)).scalar_one_or_none()
     if not ver2:
         raise HTTPException(status_code=404, detail=f"Version {v2!r} not found")

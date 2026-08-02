@@ -274,7 +274,11 @@ async def delete_team(
         )
 
     await db.delete(team)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Teamspace still owns registry items") from exc
 
 
 @router.get("/{team_id}/members", response_model=list[TeamMemberResponse])

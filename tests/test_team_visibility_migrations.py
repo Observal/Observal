@@ -81,6 +81,20 @@ def test_component_source_migration_has_no_data_mutation_sql():
     assert "is_public=True" not in source
 
 
+def test_team_foreign_keys_match_the_restrict_migration():
+    from models.agent import Agent
+    from models.component_source import ComponentSource
+    from models.hook import HookListing
+    from models.mcp import McpListing
+    from models.prompt import PromptListing
+    from models.sandbox import SandboxListing
+    from models.skill import SkillListing
+
+    for model in (Agent, McpListing, SkillListing, HookListing, PromptListing, SandboxListing, ComponentSource):
+        foreign_key = next(key for key in model.__table__.foreign_keys if key.target_fullname == "teams.id")
+        assert foreign_key.ondelete == "RESTRICT"
+
+
 class _FakeResult:
     def __init__(self, count: int) -> None:
         self._count = count

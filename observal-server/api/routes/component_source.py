@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
 from models.component_source import ComponentSource
-from models.team import TeamMembership
+from models.team import TeamMembership, TeamRole
 from models.user import User, UserRole
 from schemas.component_source import (
     ComponentSourceCreate,
@@ -22,7 +22,7 @@ from schemas.component_source import (
     SyncResponse,
 )
 from services.git_mirror_service import sync_source
-from services.teamspace import resolve_publish_target
+from services.teamspace import is_admin, resolve_publish_target, team_membership
 
 router = APIRouter(prefix="/api/v1/component-sources", tags=["component-sources"])
 
@@ -164,12 +164,16 @@ async def trigger_sync(
 async def delete_source(
     source_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin)),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.debug("component_source delete")
     source = await db.get(ComponentSource, source_id)
-    if not source:
+    if not source or not await _source_visible(source, current_user, db):
         raise HTTPException(status_code=404, detail="Source not found")
+    if not is_admin(current_user):
+        membership = await team_membership(db, source.team_id, current_user.id) if source.team_id else None
+        if not membership or membership.role != TeamRole.owner:
+            raise HTTPException(status_code=403, detail="Only teamspace owners and admins can delete this source")
     await db.delete(source)
     await db.commit()
     return {"deleted": str(source_id)}

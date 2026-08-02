@@ -34,7 +34,7 @@ class SkillListing(Base):
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
     )
     team_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=True
     )
     bundle_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("component_bundles.id"), nullable=True

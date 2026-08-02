@@ -882,17 +882,13 @@ async def reject_agent(
 # ---------------------------------------------------------------------------
 
 
-async def _bundle_listings(bundle_id: uuid.UUID, db: AsyncSession, scope: ReviewScope, action: str) -> list:
+async def _bundle_listings(bundle_id: uuid.UUID, db: AsyncSession, scope: ReviewScope) -> list:
     """Load every listing in a bundle, refusing the bundle if one is out of scope."""
     listings = []
     for model in LISTING_MODELS.values():
         result = await db.execute(select(model).where(model.bundle_id == bundle_id))
         for listing in result.scalars().all():
-            if not can_review(listing, scope):
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Cannot {action}: '{listing.name}' is outside your review scope",
-                )
+            _authorize_item(listing, scope)
             listings.append(listing)
     return listings
 
@@ -910,7 +906,7 @@ async def approve_bundle(
         raise HTTPException(status_code=404, detail="Bundle not found")
 
     count = 0
-    for listing in await _bundle_listings(bundle_id, db, scope, "approve"):
+    for listing in await _bundle_listings(bundle_id, db, scope):
         if listing.latest_version and is_actively_editing(listing.latest_version):
             raise HTTPException(
                 status_code=409,
@@ -938,7 +934,7 @@ async def reject_bundle(
         raise HTTPException(status_code=404, detail="Bundle not found")
 
     count = 0
-    for listing in await _bundle_listings(bundle_id, db, scope, "reject"):
+    for listing in await _bundle_listings(bundle_id, db, scope):
         if listing.latest_version and is_actively_editing(listing.latest_version):
             raise HTTPException(
                 status_code=409,
@@ -1055,8 +1051,8 @@ async def approve_mcp_with_skills(
         except ValueError:
             continue
         skill = (await db.execute(select(SkillListing).where(SkillListing.id == skill_uuid))).scalar_one_or_none()
-        if skill and not can_review(skill, scope):
-            raise HTTPException(status_code=403, detail=f"Skill '{skill.name}' is outside your review scope")
+        if skill:
+            _authorize_item(skill, scope)
         if skill and skill.status == ListingStatus.pending:
             skill.status = ListingStatus.approved
             skill.rejection_reason = None

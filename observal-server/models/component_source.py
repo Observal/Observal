@@ -24,7 +24,7 @@ class ComponentSource(Base):
     component_type: Mapped[str] = mapped_column(String(50), nullable=False)  # mcp, skill, hook, prompt, sandbox
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     team_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=True
     )
     owner_org_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True

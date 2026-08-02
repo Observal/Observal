@@ -219,7 +219,7 @@ async def save_draft(
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
 
     await commit_or_name_conflict(db, "agent")
-    agent = await _load_agent(db, str(agent.id))
+    agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)
     return _agent_to_response(agent, created_by_email=current_user.email, created_by_username=current_user.username)
 
 
@@ -398,7 +398,7 @@ async def update_draft(
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
 
     await db.commit()
-    agent = await _load_agent(db, str(agent.id))
+    agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)
     return _agent_to_response(agent, created_by_email=current_user.email, created_by_username=current_user.username)
 
 
@@ -509,7 +509,7 @@ async def submit_draft(
     else:
         agent.status = AgentStatus.pending
     await db.commit()
-    agent = await _load_agent(db, str(agent.id))
+    agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)
     name_map = await _resolve_component_names(agent.components, db)
 
     emit_registry_event(
