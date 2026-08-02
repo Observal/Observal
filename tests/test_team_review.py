@@ -618,7 +618,8 @@ class TestTeamDeletionGuard:
         team = self._team()
         db = AsyncMock()
         # One skill left in the teamspace is enough to block the delete.
-        db.scalar = AsyncMock(side_effect=[0, 0, 1, 0, 0, 0])
+        # agents, mcp, skill, hook, prompt, sandbox, component_source
+        db.scalar = AsyncMock(side_effect=[0, 0, 1, 0, 0, 0, 0])
 
         with (
             patch("api.routes.teams._require_owner_or_admin", new=AsyncMock(return_value=team)),
@@ -652,7 +653,7 @@ class TestTeamDeletionGuard:
 
         team = self._team()
         db = AsyncMock()
-        db.scalar = AsyncMock(side_effect=[0, 0, 0, 0, 0, 2])
+        db.scalar = AsyncMock(side_effect=[0, 0, 0, 0, 0, 2, 0])
 
         with (
             patch("api.routes.teams._require_owner_or_admin", new=AsyncMock(return_value=team)),

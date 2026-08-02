@@ -221,7 +221,7 @@ async def publish_auto_approves_for_entity(entity, user: User, db: AsyncSession)
     return is_global_reviewer(user) or team_role_self_publishes(membership, visibility)
 
 
-def review_publication_to_public(entity, user: User, *, was_private: bool) -> bool:
+async def review_publication_to_public(entity, user: User, db: AsyncSession, *, was_private: bool) -> bool:
     """Send a listing back to the review queue when it becomes publicly visible.
 
     Turning a team-private listing public publishes it into the global registry, so
@@ -250,10 +250,37 @@ def review_publication_to_public(entity, user: User, *, was_private: bool) -> bo
         # yet, so becoming public changes nothing about its review state.
         return False
 
-    entity.status = _pending_status(entity)
+    # EVERY approved version returns to the queue, not just the latest. Older
+    # versions were approved by a team role for a team-only audience, and installs
+    # can pin any approved version, so leaving them approved would publish content
+    # no global reviewer ever saw.
+    version_model, listing_column = _version_model_for(entity)
+    approved = _approved_status(entity)
+    pending = _pending_status(entity)
+    rows = (
+        await db.execute(select(version_model).where(listing_column == entity.id, version_model.status == approved))
+    ).scalars()
+    for row in rows:
+        row.status = pending
+        row.reviewed_by = None
+        row.reviewed_at = None
+
+    # The listing's own status mirrors its latest version, so set it explicitly in
+    # case the latest version was not among the rows above.
+    entity.status = pending
     version.reviewed_by = None
     version.reviewed_at = None
     return True
+
+
+def _version_model_for(entity):
+    """Return (version model, the column linking a version back to its listing)."""
+    from models.agent import Agent, AgentVersion
+
+    if isinstance(entity, Agent):
+        return AgentVersion, AgentVersion.agent_id
+    version_model = type(entity).__mapper__.relationships["latest_version"].entity.class_
+    return version_model, version_model.listing_id
 
 
 def _approved_status(entity):

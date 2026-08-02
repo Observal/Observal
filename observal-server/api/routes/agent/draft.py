@@ -281,7 +281,7 @@ async def update_draft(
     # approved yet and the call cannot currently fire. It stays as an invariant guard:
     # every site that writes is_private must route a private-to-public transition back
     # through review, so loosening the status gate above can never open that bypass.
-    review_publication_to_public(agent, current_user, was_private=was_private)
+    await review_publication_to_public(agent, current_user, db, was_private=was_private)
 
     if req.version_bump_type and req.version is None:
         from services.versioning import bump_version

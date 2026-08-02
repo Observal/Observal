@@ -700,8 +700,14 @@ export default function AgentDetailPage() {
   const isOwner = !!(whoami?.id && a?.created_by && whoami.id === String(a.created_by));
   const canTransferOwnership = isOwner;
   const teamRole = a?.team_id ? teams.find((team) => team.id === String(a.team_id))?.role : undefined;
+  // Mirror the server rule in PATCH /registry/agent/{id}/visibility exactly. See
+  // the matching comment in the component detail page: admins are privileged, a
+  // global reviewer is not, a team-owned agent needs a team owner or reviewer,
+  // and a personal one needs its creator.
   const canChangeVisibility = Boolean(
-    a && (isOwner || teamRole === "owner" || teamRole === "reviewer" || hasMinRole(getUserRole(), "reviewer")),
+    a &&
+      (hasMinRole(getUserRole(), "admin") ||
+        (a.team_id ? teamRole === "owner" || teamRole === "reviewer" : isOwner)),
   );
   const currentVisibility = a?.visibility ?? (a?.is_private ? "team" : "public");
   const canManageLifecycle = isAdmin || isOwner;

@@ -364,18 +364,22 @@ MAX_BARE_NAME_MATCHES = 6
 async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_status=None, current_user=None):
     """Resolve a listing by UUID, canonical name, or unambiguous legacy bare name.
 
-    ``current_user`` scopes the legacy bare-name collision report. The 409 names
-    only listings the caller is allowed to see, and a bare name that collides
-    solely with hidden listings resolves to the single visible one instead of
-    disclosing canonical names through the error message.
+    ``current_user`` decides what the caller may see, and a listing they may not
+    see resolves to None exactly as a nonexistent one does. This is the single
+    gate every read AND write path inherits: archive, unarchive, draft edit and
+    the editing lock all resolve through here, and they authorize with
+    ``get_effective_component_permission``, which answers "owner" for the original
+    submitter forever. Without the check below, a user removed from a teamspace
+    could still mutate a listing they can no longer read.
 
-    ``current_user=None`` means an anonymous caller and narrows the collision set
-    to public listings, so leaving it off at a call site that does have a caller
-    is a real behaviour change: a name that must raise 409 for a team member
-    resolves to the single public row instead. Every call site under
-    ``observal-server/api`` therefore passes it explicitly, and
-    ``TestEveryCallSitePassesTheCaller`` in ``tests/test_sec009_org_scoping.py``
-    fails the build when a new one does not.
+    ``current_user=None`` means an anonymous caller, so omitting it fails closed
+    rather than open. Every call site under ``observal-server/api`` passes it
+    explicitly, and ``TestEveryCallSitePassesTheCaller`` in
+    ``tests/test_sec009_org_scoping.py`` fails the build when a new one does not.
+
+    The legacy bare-name collision report is scoped the same way: the 409 names
+    only listings the caller may see, and a name colliding solely with hidden
+    listings resolves to the single visible one rather than disclosing the others.
     """
 
     value = str(identifier).strip()
@@ -406,16 +410,14 @@ async def resolve_listing(model, identifier: str, db: AsyncSession, *, require_s
     if not isinstance(matches, (list, tuple)):
         first = scalars.first()
         matches = [first] if first is not None else []
-    if ambiguous_label is not None and len(matches) > 1:
-        visible = [item for item in matches if await check_listing_visibility_async(item, current_user, db)]
-        if len(visible) > 1:
-            choices = ", ".join(item.qualified_name for item in visible)
-            raise HTTPException(
-                status_code=409,
-                detail=f"'{ambiguous_label}' is ambiguous; use one of: {choices}",
-            )
-        return visible[0] if visible else None
-    return matches[0] if matches else None
+    visible = [item for item in matches if await check_listing_visibility_async(item, current_user, db)]
+    if ambiguous_label is not None and len(visible) > 1:
+        choices = ", ".join(item.qualified_name for item in visible)
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{ambiguous_label}' is ambiguous; use one of: {choices}",
+        )
+    return visible[0] if visible else None
 
 
 MIN_ID_PREFIX_LENGTH = 4

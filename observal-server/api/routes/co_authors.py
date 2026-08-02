@@ -30,9 +30,11 @@ from models.mcp import McpListing, McpVersion
 from models.prompt import PromptListing, PromptVersion
 from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing, SkillVersion
+from models.team import TeamRole
 from models.user import User
 from services.ownership import transfer_entity_owner
 from services.registry_namespace import identity_exists
+from services.teamspace import is_admin, review_publication_to_public, team_membership
 
 router = APIRouter(prefix="/api/v1", tags=["co-authors"])
 
@@ -165,14 +167,24 @@ async def transfer_ownership(
     current_user: User = Depends(get_current_user),
 ):
     entity = await _get_entity_for_transfer(entity_type, entity_id, current_user, db)
-    # Transfer rewrites the namespace to the target user's handle. A teamspace
-    # listing would end up in a user namespace while still carrying the team's
-    # id and visibility, so refuse instead of silently rehoming or publishing it.
-    if getattr(entity, "team_id", None) is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="This listing belongs to a teamspace; move it out of the teamspace before transferring ownership",
-        )
+
+    # Transfer rewrites the namespace to the target user's handle, so a teamspace
+    # listing has to leave its teamspace on the way out. Refusing outright used to
+    # be a dead end: deleting a teamspace requires emptying it, emptying it
+    # requires transferring, and transferring refused every team-owned listing.
+    #
+    # Leaving a teamspace also means losing team visibility, because team-private
+    # requires a teamspace. That makes the listing public, which is a publication,
+    # so it returns to the review queue on the way just like any other
+    # private-to-public transition.
+    team_id = getattr(entity, "team_id", None)
+    if team_id is not None:
+        membership = await team_membership(db, team_id, current_user.id)
+        if not is_admin(current_user) and (not membership or membership.role != TeamRole.owner):
+            raise HTTPException(
+                status_code=403,
+                detail="Only a teamspace owner or an admin can transfer a listing out of a teamspace",
+            )
     target_user = await _resolve_target_user(db, user_id=req.user_id, email=req.email, username=req.username)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -180,6 +192,12 @@ async def transfer_ownership(
         raise HTTPException(status_code=422, detail="Cannot transfer ownership to a deactivated user")
     if target_user.id == current_user.id:
         raise HTTPException(status_code=422, detail="You already own this item")
+
+    was_private = bool(getattr(entity, "is_private", False))
+    if team_id is not None:
+        entity.team_id = None
+        entity.is_private = False
+        await review_publication_to_public(entity, current_user, db, was_private=was_private)
 
     model = ENTITY_MODELS[entity_type]
     if await identity_exists(db, model, target_user.username, entity.slug, exclude_id=entity.id):

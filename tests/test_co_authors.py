@@ -30,6 +30,7 @@ import pytest
 from fastapi import HTTPException
 
 from api.routes.co_authors import TransferOwnershipRequest, transfer_ownership
+from models.team import TeamRole
 
 ENTITY_TYPES = ["agents", "mcps", "skills", "hooks", "prompts", "sandboxes"]
 
@@ -64,11 +65,16 @@ def _target_user():
     )
 
 
-async def _transfer(entity_type, listing, current_user, target_user, db):
+async def _transfer(entity_type, listing, current_user, target_user, db, *, team_role=None):
+    """Run a transfer. ``team_role`` is the caller's role in the listing's teamspace."""
+    membership = SimpleNamespace(role=team_role) if team_role is not None else None
     with (
         patch("api.routes.co_authors._get_entity_for_transfer", new=AsyncMock(return_value=listing)),
         patch("api.routes.co_authors._resolve_target_user", new=AsyncMock(return_value=target_user)),
         patch("api.routes.co_authors.identity_exists", new=AsyncMock(return_value=False)),
+        patch("api.routes.co_authors.team_membership", new=AsyncMock(return_value=membership)),
+        patch("api.routes.co_authors.is_admin", return_value=False),
+        patch("api.routes.co_authors.review_publication_to_public", new=AsyncMock(return_value=True)),
     ):
         return await transfer_ownership(
             entity_type,
@@ -82,25 +88,44 @@ async def _transfer(entity_type, listing, current_user, target_user, db):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entity_type", ENTITY_TYPES)
 @pytest.mark.parametrize("is_private", [False, True])
-async def test_transfer_of_team_listing_is_refused(entity_type, is_private):
+async def test_transfer_of_team_listing_needs_a_teamspace_owner(entity_type, is_private):
+    """A plain member cannot walk a listing out of the teamspace."""
     current_user = SimpleNamespace(id=uuid.uuid4())
     team_id = uuid.uuid4()
     listing = _listing(entity_type, current_user.id, team_id=team_id, is_private=is_private)
-    target_user = _target_user()
     db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
 
     with pytest.raises(HTTPException) as exc:
-        await _transfer(entity_type, listing, current_user, target_user, db)
+        await _transfer(entity_type, listing, current_user, _target_user(), db, team_role=TeamRole.member)
 
-    assert exc.value.status_code == 409
-    assert "teamspace" in exc.value.detail
+    assert exc.value.status_code == 403
     # Nothing is rehomed, republished, or committed.
     assert listing.team_id == team_id
     assert listing.is_private is is_private
     assert listing.namespace == "platform"
-    owner_field = "created_by" if entity_type == "agents" else "submitted_by"
-    assert getattr(listing, owner_field) == current_user.id
     db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entity_type", ENTITY_TYPES)
+@pytest.mark.parametrize("is_private", [False, True])
+async def test_teamspace_owner_transfer_detaches_the_listing(entity_type, is_private):
+    """Transfer is the way OUT of a teamspace.
+
+    Refusing outright used to be a dead end: deleting a teamspace requires
+    emptying it, emptying it requires transferring, and transferring refused every
+    team-owned listing. Leaving the teamspace also drops team visibility, because
+    team-private requires a teamspace.
+    """
+    current_user = SimpleNamespace(id=uuid.uuid4())
+    listing = _listing(entity_type, current_user.id, team_id=uuid.uuid4(), is_private=is_private)
+    db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
+
+    await _transfer(entity_type, listing, current_user, _target_user(), db, team_role=TeamRole.owner)
+
+    assert listing.team_id is None
+    assert listing.is_private is False
+    db.commit.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -132,6 +157,10 @@ async def test_team_check_runs_before_the_target_user_is_resolved():
     with (
         patch("api.routes.co_authors._get_entity_for_transfer", new=AsyncMock(return_value=listing)),
         patch("api.routes.co_authors._resolve_target_user", new=resolve_target),
+        patch(
+            "api.routes.co_authors.team_membership", new=AsyncMock(return_value=SimpleNamespace(role=TeamRole.member))
+        ),
+        patch("api.routes.co_authors.is_admin", return_value=False),
         pytest.raises(HTTPException) as exc,
     ):
         await transfer_ownership(
@@ -142,5 +171,5 @@ async def test_team_check_runs_before_the_target_user_is_resolved():
             current_user,
         )
 
-    assert exc.value.status_code == 409
+    assert exc.value.status_code == 403
     resolve_target.assert_not_awaited()

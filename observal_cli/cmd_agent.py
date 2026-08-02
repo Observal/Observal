@@ -1018,7 +1018,19 @@ def agent_publish(
         "components": data.get("components", []),
     }
 
-    if not update:
+    if update:
+        # The update endpoint refuses both fields by design: visibility has its own
+        # authorized endpoint and a teamspace move is a transfer, not an edit.
+        # Accepting them here and dropping them would report success for something
+        # that never happened.
+        if team is not None:
+            rprint(
+                "[red]--team cannot be used with --update.[/red] Moving an agent between teamspaces "
+                "is a transfer, not an edit. Use [bold]observal agent transfer-owner[/bold] or "
+                "recreate the agent under the target teamspace."
+            )
+            raise typer.Exit(code=1)
+    else:
         client.add_publish_target(payload, team, visibility)
 
     if draft:
@@ -1062,10 +1074,19 @@ def agent_publish(
             except (Exception, SystemExit):
                 pass
 
+        # Visibility first: it is the change that can be refused (composition
+        # conflicts, team role, review reset). Running it after the update would
+        # leave a half-applied publish, the agent edited but still team-private,
+        # reported as success.
+        if visibility is not None:
+            with spinner("Updating visibility..."):
+                vis = client.patch(f"/api/v1/registry/agent/{agent_id}/visibility", {"visibility": visibility})
+            if vis.get("returned_to_review"):
+                rprint(
+                    "[yellow]Agent returned to the review queue; it is not public until a reviewer approves.[/yellow]"
+                )
         with spinner("Updating agent..."):
             result = client.put(f"/api/v1/agents/{agent_id}", payload)
-        if visibility is not None:
-            client.patch(f"/api/v1/registry/agent/{agent_id}/visibility", {"visibility": visibility})
         rprint(f"[green]✓ Agent updated![/green] ID: [bold]{result['id']}[/bold]  v{result.get('version', '?')}")
     else:
         with spinner("Submitting agent for review..."):

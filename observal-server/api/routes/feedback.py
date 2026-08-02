@@ -45,13 +45,21 @@ async def _visible_listing(db: AsyncSession, listing_type: str, listing_id: uuid
 
 
 async def _visible_listing_by_id(db: AsyncSession, listing_id: uuid.UUID, current_user: User | None):
-    for listing_type in LISTING_MODELS:
-        try:
-            return await _visible_listing(db, listing_type, listing_id, current_user)
-        except HTTPException as exc:
-            if exc.status_code != 404:
-                raise
-    raise HTTPException(status_code=404, detail="Listing not found")
+    """Resolve a listing when only its id is known, without probing every table.
+
+    This backs the anonymous feedback summary, which the registry detail page hits
+    on every render. Scanning all six listing models cost up to six round trips
+    before the aggregate even ran. Feedback rows already record which type the
+    listing is, so one lookup narrows it to a single model.
+    """
+    listing_type = await db.scalar(select(Feedback.listing_type).where(Feedback.listing_id == listing_id).limit(1))
+    if listing_type is not None and listing_type in LISTING_MODELS:
+        return await _visible_listing(db, listing_type, listing_id, current_user)
+
+    # No feedback yet, so the type is unknown. An empty summary is the same answer
+    # a public listing with no ratings gives, so returning it discloses nothing
+    # about whether the id exists or is hidden.
+    return None
 
 
 def _serialize_feedback(fb: Feedback) -> FeedbackResponse:

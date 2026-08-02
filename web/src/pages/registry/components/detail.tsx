@@ -130,8 +130,17 @@ export default function ComponentDetailPage() {
   );
   const canEdit = isAuthenticated && (item?.user_permission === "owner");
   const teamRole = item?.team_id ? teams.find((team) => team.id === String(item.team_id))?.role : undefined;
+  // Mirror the server rule in PATCH /registry/{type}/{id}/visibility exactly.
+  // Admins are privileged; a global REVIEWER is not, because a team-private
+  // listing belongs to its teamspace. A team-owned listing needs a team owner or
+  // team reviewer, and a personal one needs its creator. Showing the control any
+  // wider just invites a 403.
   const canChangeVisibility = Boolean(
-    item && (canEdit || teamRole === "owner" || teamRole === "reviewer" || hasMinRole(getUserRole(), "reviewer")),
+    item &&
+      (hasMinRole(getUserRole(), "admin") ||
+        (item.team_id
+          ? teamRole === "owner" || teamRole === "reviewer"
+          : !!whoami?.id && whoami.id === String(item.submitted_by))),
   );
   const canTransferOwnership = !!(whoami?.id && item?.submitted_by && whoami.id === String(item.submitted_by));
   const currentVisibility = (item?.visibility as string | undefined) ?? (item?.is_private ? "team" : "public");

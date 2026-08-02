@@ -94,6 +94,14 @@ def _assert_no_team_owned_rows() -> None:
         count = conn.execute(sa.text(f"SELECT count(*) FROM {table} WHERE team_id IS NOT NULL")).scalar_one()
         if count:
             owned[table] = count
+    # agents.is_private is dropped by this downgrade and recreated with a false
+    # default on re-upgrade, so a personal-private agent (is_private with no
+    # teamspace) comes back public. team_id alone does not detect those.
+    private_agents = conn.execute(
+        sa.text("SELECT count(*) FROM agents WHERE is_private IS TRUE AND team_id IS NULL")
+    ).scalar_one()
+    if private_agents:
+        owned["agents (private, no teamspace)"] = private_agents
     if owned:
         detail = ", ".join(f"{table}={count}" for table, count in sorted(owned.items()))
         raise RuntimeError(

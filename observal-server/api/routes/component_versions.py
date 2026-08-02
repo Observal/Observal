@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 from api.deps import (
     get_db,
     get_effective_component_permission,
+    may_view_unapproved,
     require_role,
     resolve_visible_listing,
 )
@@ -88,10 +89,20 @@ async def _list_versions(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
+    # A version carries the real payload: prompt templates, MCP commands and args,
+    # hook handler config, SKILL.md. Seeing the listing is not enough to read a
+    # version that has not been approved. This matters most right after a team
+    # listing goes public: the listing is public immediately while its versions
+    # return to the review queue, and without this filter an ordinary caller reads
+    # content no global reviewer has accepted yet.
+    version_filters = [version_model.listing_id == listing.id]
+    if not may_view_unapproved(get_effective_component_permission(listing, current_user), current_user):
+        version_filters.append(version_model.status == ListingStatus.approved)
+
     offset = (page - 1) * page_size
     stmt = (
         select(version_model)
-        .where(version_model.listing_id == listing.id)
+        .where(*version_filters)
         .order_by(version_model.released_at.desc())
         .offset(offset)
         .limit(page_size)
@@ -99,7 +110,7 @@ async def _list_versions(
     result = await db.execute(stmt)
     versions = result.scalars().all()
 
-    count_stmt = select(func.count(version_model.id)).where(version_model.listing_id == listing.id)
+    count_stmt = select(func.count(version_model.id)).where(*version_filters)
     total = (await db.execute(count_stmt)).scalar() or 0
 
     return {
@@ -124,10 +135,10 @@ async def _get_version(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
-    stmt = select(version_model).where(
-        version_model.listing_id == listing.id,
-        version_model.version == version,
-    )
+    version_filters = [version_model.listing_id == listing.id, version_model.version == version]
+    if not may_view_unapproved(get_effective_component_permission(listing, current_user), current_user):
+        version_filters.append(version_model.status == ListingStatus.approved)
+    stmt = select(version_model).where(*version_filters)
     result = await db.execute(stmt)
     ver = result.scalar_one_or_none()
     if not ver:
@@ -268,10 +279,10 @@ async def _review_version(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
-    stmt = select(version_model).where(
-        version_model.listing_id == listing.id,
-        version_model.version == version,
-    )
+    version_filters = [version_model.listing_id == listing.id, version_model.version == version]
+    if not may_view_unapproved(get_effective_component_permission(listing, current_user), current_user):
+        version_filters.append(version_model.status == ListingStatus.approved)
+    stmt = select(version_model).where(*version_filters)
     result = await db.execute(stmt)
     ver = result.scalar_one_or_none()
     if not ver:

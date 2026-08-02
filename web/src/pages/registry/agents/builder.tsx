@@ -271,7 +271,10 @@ function AgentBuilderInner() {
     return () => {
       if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
     };
-  }, [selectedComponents]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The target is part of the question: the same components are valid for a
+  // team-private agent and invalid for a public one, so a change of teamspace or
+  // visibility has to revalidate.
+  }, [selectedComponents, teamId, visibility]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check for localStorage draft on mount (skip if in edit mode)
   useEffect(() => {
@@ -309,6 +312,11 @@ function AgentBuilderInner() {
           components: selectedComponents,
           prompt: systemPrompt,
           draft_id: draftId,
+          // The publication target belongs with the draft. Without it a restored
+          // team-private draft silently reverts to a personal public agent, which
+          // is a change of audience the user never asked for.
+          team_id: teamId,
+          visibility,
           saved_at: new Date().toISOString(),
         };
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
@@ -320,7 +328,7 @@ function AgentBuilderInner() {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [name, description, version, modelName, modelsByHarness, selectedComponents, systemPrompt, draftId, isEditMode]);
+  }, [name, description, version, modelName, modelsByHarness, selectedComponents, systemPrompt, draftId, teamId, visibility, isEditMode]);
 
   function restoreLocalDraft() {
     try {
@@ -337,6 +345,10 @@ function AgentBuilderInner() {
       if (draft.components) setSelectedComponents(draft.components);
       if (typeof draft.prompt === "string") setSystemPrompt(draft.prompt);
       if (draft.draft_id) setDraftId(draft.draft_id);
+      // Restore the publication target too. A draft saved for a teamspace must
+      // not come back as a personal public agent.
+      if (typeof draft.team_id === "string") setTeamId(draft.team_id);
+      if (draft.visibility === "public" || draft.visibility === "team") setVisibility(draft.visibility);
       setShowRestoreBanner(false);
       toast.success("Draft restored");
     } catch {

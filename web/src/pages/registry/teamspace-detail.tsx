@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { AgentCard } from "@/components/registry/agent-card";
 import { ComponentCard } from "@/components/registry/component-card";
 import { StatusBadge } from "@/components/registry/status-badge";
+import { ReviewDetailSheet } from "@/components/review/review-detail-sheet";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ErrorState } from "@/components/shared/error-state";
 import { CardSkeleton, DetailSkeleton, TableSkeleton } from "@/components/shared/skeleton-layouts";
@@ -380,6 +381,7 @@ function ReviewTab({
 	const queryClient = useQueryClient();
 	const [rejectTarget, setRejectTarget] = useState<ReviewItem | null>(null);
 	const [reason, setReason] = useState("");
+	const [inspecting, setInspecting] = useState<ReviewItem | null>(null);
 
 	function runAction(vars: { id: string; type?: string; action: "approve" | "reject"; reason?: string }) {
 		reviewAction.mutate(vars, {
@@ -431,30 +433,37 @@ function ReviewTab({
 							</div>
 						</div>
 						<div className="flex shrink-0 items-center gap-2">
+							{/* Approving from summary text alone means approving a prompt, command or
+							    script you have not read. Open the same sheet the global queue uses so a
+							    team reviewer inspects the real payload before deciding. */}
 							<Button
 								size="sm"
-								className="h-8 text-xs"
-								disabled={reviewAction.isPending}
-								onClick={() => runAction({ id: item.id, type: item.type, action: "approve" })}
-							>
-								Approve
-							</Button>
-							<Button
 								variant="outline"
-								size="sm"
-								className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-								disabled={reviewAction.isPending}
-								onClick={() => {
-									setReason("");
-									setRejectTarget(item);
-								}}
+								className="h-8 text-xs"
+								onClick={() => setInspecting(item)}
 							>
-								Reject
+								Review
 							</Button>
 						</div>
 					</div>
 				))}
 			</div>
+
+			<ReviewDetailSheet
+				item={inspecting}
+				open={!!inspecting}
+				onOpenChange={(open) => {
+					if (!open) setInspecting(null);
+				}}
+				onApprove={(id, type) => {
+					runAction({ id, type, action: "approve" });
+					setInspecting(null);
+				}}
+				onReject={(id, rejectReason, type) => {
+					runAction({ id, type, action: "reject", reason: rejectReason });
+					setInspecting(null);
+				}}
+			/>
 
 			<Dialog
 				open={!!rejectTarget}

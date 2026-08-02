@@ -153,9 +153,7 @@ class TestApplyRegistryScope:
 
         team_id = uuid.uuid4()
         sql = _inline_sql(
-            apply_registry_scope(
-                select(McpListing.id), McpListing, _user(role="admin"), composable_for_team_id=team_id
-            )
+            apply_registry_scope(select(McpListing.id), McpListing, _user(role="admin"), composable_for_team_id=team_id)
         )
 
         assert "mcp_listings.is_private = false" in sql

@@ -201,10 +201,32 @@ async def update_registry_visibility(
     if item_type == "agent":
         from services.agent_resolver import validate_component_ids
 
+        # listing.components is the LATEST version's components only. Installs can
+        # pin any approved version, so an older version referencing a team-private
+        # component would keep resolving under a now-public agent and hand that
+        # component to installers who cannot read it. Validate every version that
+        # is still installable, not just the newest.
+        rows = (
+            await db.execute(
+                select(AgentComponent.component_type, AgentComponent.component_id)
+                .join(AgentVersion, AgentComponent.agent_version_id == AgentVersion.id)
+                .where(
+                    AgentVersion.agent_id == listing.id,
+                    AgentVersion.status.in_([AgentStatus.approved, AgentStatus.pending]),
+                )
+                .distinct()
+            )
+        ).all()
         component_refs = [
-            {"component_type": component.component_type, "component_id": component.component_id}
-            for component in listing.components
+            {"component_type": component_type, "component_id": component_id} for component_type, component_id in rows
         ]
+        # Fall back to the latest version when no version rows exist yet, so a
+        # freshly created draft still gets validated.
+        if not component_refs:
+            component_refs = [
+                {"component_type": component.component_type, "component_id": component.component_id}
+                for component in listing.components
+            ]
         errors = await validate_component_ids(
             component_refs,
             db,
@@ -221,7 +243,7 @@ async def update_registry_visibility(
 
     was_private = bool(listing.is_private)
     listing.is_private = req.visibility == "team"
-    returned_to_review = review_publication_to_public(listing, current_user, was_private=was_private)
+    returned_to_review = await review_publication_to_public(listing, current_user, db, was_private=was_private)
 
     request.state.audit_action = "registry.visibility.update"
     request.state.audit_resource_type = item_type

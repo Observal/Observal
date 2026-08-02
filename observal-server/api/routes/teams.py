@@ -209,6 +209,7 @@ async def _team_owned_listing_counts(db: AsyncSession, team_id: uuid.UUID) -> di
     delete its listings: it strips their teamspace and leaves them behind.
     """
     from models.agent import Agent
+    from models.component_source import ComponentSource
     from models.hook import HookListing
     from models.mcp import McpListing
     from models.prompt import PromptListing
@@ -223,10 +224,16 @@ async def _team_owned_listing_counts(db: AsyncSession, team_id: uuid.UUID) -> di
         HookListing: ("hook", "hooks"),
         PromptListing: ("prompt", "prompts"),
         SandboxListing: ("sandbox", "sandboxes"),
+        ComponentSource: ("component source", "component sources"),
     }
     counts: dict[str, int] = {}
     for model, (singular, plural) in labels.items():
-        total = await db.scalar(select(func.count(model.id)).where(model.team_id == team_id))
+        stmt = select(func.count(model.id)).where(model.team_id == team_id)
+        # Soft-deleted agents are already gone as far as their owner is concerned,
+        # so they must not keep a teamspace alive forever.
+        if hasattr(model, "deleted_at"):
+            stmt = stmt.where(model.deleted_at.is_(None))
+        total = await db.scalar(stmt)
         if total:
             counts[singular if total == 1 else plural] = total
     return counts
@@ -258,9 +265,10 @@ async def delete_team(
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Teamspace '{team.handle}' still owns {detail}. Transfer or delete those listings before "
-                "deleting the teamspace, otherwise their members lose access and the namespace is "
-                "left claimable by someone else."
+                f"Teamspace '{team.handle}' still owns {detail}. Transfer each listing to a user with "
+                "POST /api/v1/{entity_type}/{id}/transfer-ownership, which moves it out of the "
+                "teamspace, or delete it. Deleting the teamspace first would strip its members' access and "
+                "leave the handle claimable by someone else."
             ),
         )
 

@@ -15,9 +15,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from api.deps import apply_visibility_filter, get_current_user, get_db
+from api.deps import (
+    apply_visibility_filter,
+    get_current_user,
+    get_db,
+    get_effective_component_permission,
+    may_view_unapproved,
+)
 from models.hook import HookListing
-from models.mcp import McpListing
+from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
 from models.skill import SkillListing
 from observal_shared.harness_registry import HARNESS_REGISTRY
@@ -132,7 +138,15 @@ async def preview_config(
             stmt = stmt.options(selectinload(model.latest_version))
         stmt = apply_visibility_filter(stmt, model, current_user)
         rows = (await db.execute(stmt)).scalars().all()
-        return {row.id: row for row in rows}
+        # apply_visibility_filter answers privacy only. Preview renders real
+        # component content, so a public but unapproved listing must stay with its
+        # owner, co-authors, admins and reviewers, exactly as the detail routes do.
+        return {
+            row.id: row
+            for row in rows
+            if row.status == ListingStatus.approved
+            or may_view_unapproved(get_effective_component_permission(row, current_user), current_user)
+        }
 
     mcp_map = await _visible_map(McpListing, mcp_ids)
     skill_map = await _visible_map(SkillListing, skill_ids)
