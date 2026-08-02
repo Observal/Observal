@@ -12,6 +12,9 @@ concurrency:
   group: deploy-ec2
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     if: github.repository == 'Observal/Observal'

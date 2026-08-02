@@ -11,12 +11,14 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   dependency-review:
     name: License & vulnerability gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
 

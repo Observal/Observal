@@ -39,6 +39,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 # ── Job 0: Path filtering ─────────────────────────────────────────────────────
 jobs:
   changes:

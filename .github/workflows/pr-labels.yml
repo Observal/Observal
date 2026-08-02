@@ -11,14 +11,16 @@ on:
     branches: [main]
 
 permissions:
-  pull-requests: write
-  issues: write
+  contents: read
 
 jobs:
   # Applies 'new contributor' to PRs from authors with no prior merged PRs
   new-contributor:
     if: github.event_name == 'pull_request_target' && github.event.action == 'opened'
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/github-script@v9
         with:
@@ -64,6 +66,9 @@ jobs:
   auto-label:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/github-script@v9
         with:
@@ -131,6 +136,9 @@ jobs:
   env-changed:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/github-script@v9
         with:
@@ -237,6 +245,9 @@ jobs:
   # Applies or removes 'Has Conflicts' based on mergeable_state
   conflict-label:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/github-script@v9
         with:
