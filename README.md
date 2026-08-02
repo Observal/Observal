@@ -310,16 +310,6 @@ Logs are written to `~/.observal/logs/dev.log` and include structured context fo
 
 Report vulnerabilities via [GitHub Private Vulnerability Reporting](https://github.com/Observal/Observal/security/advisories) or email harisrini21@gmail.com. Do not open a public issue. See [SECURITY.md](SECURITY.md).
 
-## Star History
-
-<a href="https://www.star-history.com/?repos=Observal%2FObserval&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Observal/Observal&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Observal/Observal&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Observal/Observal&type=date&legend=top-left" />
- </picture>
-</a>
-
 ## License
 
 Observal is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
