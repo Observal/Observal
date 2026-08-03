@@ -4,11 +4,18 @@
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Fixes
+
+- avoid duplicate bundled Observal skill conflicts when Codex and Pi are installed together ([#1601](https://github.com/Observal/Observal/issues/1601))
 
 ## [1.11.0] - 2026-08-02
 
@@ -2029,4 +2036,3 @@ All notable changes to this project will be documented in this file.
 ### Ui
 
 - brighter borders, responsive text scaling, observal favicon ([86ef640](https://github.com/Observal/Observal/commit/86ef64027e651fd70027932de4533d83acd08125))
-

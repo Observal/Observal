@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """harness adapter protocol definition.
@@ -126,6 +127,15 @@ class HookSpec:
 
 
 @dataclass(frozen=True)
+class BundledSkillPlan:
+    """Destination and safe cleanup candidates for one bundled skill."""
+
+    target: Path
+    reuse_candidates: tuple[Path, ...] = ()
+    cleanup_candidates: tuple[Path, ...] = ()
+
+
+@dataclass(frozen=True)
 class SessionSource:
     """A harness session source resolved from a hook or recent-session scan."""
 
@@ -187,6 +197,19 @@ class HarnessAdapter(Protocol):
         Args:
             home: Override home directory (defaults to Path.home()).
         """
+        ...
+
+    def plan_bundled_skill_install(
+        self,
+        skill_name: str,
+        home: Path,
+        installed_harnesses: frozenset[str],
+    ) -> BundledSkillPlan | None:
+        """Return the user-scope destination for one bundled Observal skill."""
+        ...
+
+    def reconcile_bundled_skill_configuration(self, home: Path) -> list[str]:
+        """Apply harness-specific configuration required to expose bundled skills."""
         ...
 
     def scan_project(self, project_dir: Path) -> ScanResult:

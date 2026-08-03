@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Base adapter with feature-flag gating from harness_Registry.
@@ -15,6 +16,7 @@ from typing import Any
 
 from observal_cli.harness.protocol import (
     METHOD_FEATURE_MAP,
+    BundledSkillPlan,
     HookSpec,
     NotSupportedError,
     ScanResult,
@@ -94,6 +96,27 @@ class BaseAdapter:
             elif (home / marker).exists():
                 return True
         return False
+
+    def plan_bundled_skill_install(
+        self,
+        skill_name: str,
+        home: Path,
+        installed_harnesses: frozenset[str],
+    ) -> BundledSkillPlan | None:
+        """Plan the default registry-defined user-scope skill destination."""
+        from observal_shared.harness_registry import HARNESS_REGISTRY
+
+        skill_spec = HARNESS_REGISTRY[self.harness_name].get("skills") or {}
+        user_path = skill_spec.get("user")
+        if not user_path:
+            return None
+        resolved = user_path.replace("{name}", skill_name)
+        target = home / resolved[2:] if resolved.startswith("~/") else Path(resolved)
+        return BundledSkillPlan(target=target)
+
+    def reconcile_bundled_skill_configuration(self, home: Path) -> list[str]:
+        """Apply optional harness-specific configuration after skill installation."""
+        return []
 
     def resolve_session_source(self, event: dict[str, Any], home: Path | None = None) -> SessionSource | None:
         """Resolve a hook payload to a session source when the harness supports it."""
