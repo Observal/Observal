@@ -24,10 +24,40 @@ asyncio.run(init())
 "
 
 echo "Running database migrations..."
-/app/.venv/bin/python -m alembic upgrade head || {
-    echo "Fresh database detected: stamping current schema version..."
-    /app/.venv/bin/python -m alembic stamp head
-}
+if ! /app/.venv/bin/python -m alembic upgrade head; then
+    # Only stamp on a genuinely fresh database: one with no recorded alembic
+    # revision. A failure on a DB that already has an alembic_version row means
+    # a real migration problem (e.g. DuplicateTableError from a partial run),
+    # and stamping HEAD would silently skip the missing migrations.
+    DB_STATE=$(/app/.venv/bin/python -c "
+import asyncio
+from sqlalchemy import text
+from database import engine
+
+async def check():
+    async with engine.connect() as conn:
+        has_table = await conn.scalar(
+            text(\"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'alembic_version')\")
+        )
+        if not has_table:
+            return 'fresh'
+        rev = await conn.scalar(text('SELECT version_num FROM alembic_version LIMIT 1'))
+        return 'fresh' if not rev else 'existing'
+
+try:
+    print(asyncio.run(check()))
+finally:
+    asyncio.run(engine.dispose())
+")
+    if [ "$DB_STATE" = "fresh" ]; then
+        echo "Fresh database detected: stamping current schema version..."
+        /app/.venv/bin/python -m alembic stamp head
+    else
+        echo "ERROR: alembic upgrade failed on an existing database (revision present)."
+        echo "Refusing to stamp HEAD; resolve the failing migration manually."
+        exit 1
+    fi
+fi
 
 echo "Running ClickHouse migrations..."
 /app/.venv/bin/python -m services.clickhouse.migrations
