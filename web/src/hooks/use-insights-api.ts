@@ -189,3 +189,19 @@ export function useApplyInsightSuggestions() {
     },
   });
 }
+
+export function useAgentRecommendedAdditions(agentId: string | undefined) {
+  return useQuery({
+    queryKey: ["insights", "recommended-additions", agentId],
+    queryFn: () => insights.recommendedAdditions(agentId!),
+    enabled: !!agentId,
+    // The offer is derived from the latest completed report and changes only
+    // when a new report lands. Cheap to cache.
+    staleTime: 5 * 60_000,
+    retry: (_count, err: unknown) => {
+      // 404 = no report / agent not visible; not a retryable error.
+      const status = (err as { status?: number })?.status;
+      return status !== 404;
+    },
+  });
+}

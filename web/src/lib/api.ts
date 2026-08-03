@@ -52,6 +52,7 @@ import type {
 	InsightReportListItem,
 	InsightReport,
 	InsightAppliedItems,
+	RecommendedAdditionsResponse,
 	ExecAdoptionResponse,
 	ExecAgentCounts,
 	ExecUsageByCategory,
@@ -1070,6 +1071,8 @@ export const insights = {
 		a.click();
 		URL.revokeObjectURL(url);
 	},
+	recommendedAdditions: (agentId: string) =>
+		get<RecommendedAdditionsResponse>(`/agents/${agentId}/insights/recommended-additions`),
 };
 
 // ── Exec Dashboard ─────────────────────────────────────────────────

@@ -5,15 +5,19 @@
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db, require_role
+from api.deps import check_listing_visibility_async, get_db, optional_current_user, require_role
+from models.insight_report import InsightReport, InsightReportStatus
 from models.user import User, UserRole
 from schemas.insights import (
     ApplySuggestionsRequest,
     GenerateInsightRequest,
     InsightReportListItem,
     InsightReportResponse,
+    RecommendedAddition,
+    RecommendedAdditionsResponse,
 )
 
 from ._router import router
@@ -113,3 +117,89 @@ async def delete_agent_insight_reports(
     from api.routes.insights import clear_agent_reports
 
     return await clear_agent_reports(agent_id, db, current_user)
+
+
+@router.get("/{agent_id}/insights/recommended-additions", response_model=RecommendedAdditionsResponse)
+async def agent_recommended_additions(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(optional_current_user),
+):
+    """Public, evidence-backed add-on recommendations for an agent.
+
+    Returns the latest completed insight report's deterministic component
+    shortlist (``registry_offer``) — public registry components the agent does
+    not yet use but might benefit from based on observed usage. This is a
+    *public* surface: unlike the full insight report, it exposes only public
+    component references and never session telemetry, so it is available to
+    anyone who can see the agent (including anonymous browsing).
+
+    Empty ``items`` means no report exists, the offer was empty, or the feature
+    was disabled at generation time. Callers hide the rail rather than erroring.
+    """
+    from api.routes.agent.helpers import _load_agent
+
+    agent = await _load_agent(
+        db,
+        agent_id,
+        prefer_user_id=current_user.id if current_user else None,
+        current_user=current_user,
+        include_all_statuses=False,
+    )
+    if not agent or not await check_listing_visibility_async(agent, current_user, db):
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Latest completed report for this agent. Only completed reports carry a
+    # registry_offer; pending/running/failed rows are skipped.
+    stmt = (
+        select(InsightReport)
+        .where(
+            InsightReport.agent_id == agent.id,
+            InsightReport.status == InsightReportStatus.completed,
+        )
+        .order_by(InsightReport.completed_at.desc().nulls_last())
+        .limit(1)
+    )
+    report = (await db.execute(stmt)).scalar_one_or_none()
+
+    empty = RecommendedAdditionsResponse(agent_id=agent.id)
+    if not report:
+        return empty
+
+    offer = report.registry_offer
+    if not isinstance(offer, dict) or not offer.get("enabled", True):
+        return empty
+
+    entries_by_type = offer.get("entries_by_type") or {}
+    if not isinstance(entries_by_type, dict):
+        return empty
+
+    items: list[RecommendedAddition] = []
+    for _type_plural, entries in entries_by_type.items():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            # Each entry is a CatalogOffer.to_catalog_entry() dict: type, id,
+            # qualified_name, name, description, category. Skip anything that
+            # lacks the minimum fields needed to render a link.
+            if not entry.get("id") or not entry.get("type"):
+                continue
+            items.append(
+                RecommendedAddition(
+                    type=str(entry["type"]),
+                    id=str(entry["id"]),
+                    qualified_name=str(entry.get("qualified_name") or entry.get("name") or entry["id"]),
+                    name=str(entry.get("name") or entry.get("qualified_name") or entry["id"]),
+                    description=entry.get("description"),
+                    category=entry.get("category"),
+                )
+            )
+
+    return RecommendedAdditionsResponse(
+        agent_id=agent.id,
+        items=items,
+        source_report_id=report.id,
+        generated_at=report.completed_at,
+    )
