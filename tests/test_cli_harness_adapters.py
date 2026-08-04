@@ -424,6 +424,27 @@ class TestKiroAdapter:
         )
         assert isinstance(config, dict)
 
+    def test_reconcile_bundled_skills_warns_for_non_object_settings(self, tmp_path):
+        settings = tmp_path / ".kiro" / "settings" / "cli.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text("[]", encoding="utf-8")
+
+        warnings = get_adapter("kiro").reconcile_bundled_skill_configuration(tmp_path)
+
+        assert warnings == [f"Could not expose bundled skills in {settings}: settings must be a JSON object."]
+
+    def test_reconcile_bundled_skills_warns_for_non_object_profile(self, tmp_path):
+        settings = tmp_path / ".kiro" / "settings" / "cli.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text('{"chat.defaultAgent": "default"}', encoding="utf-8")
+        profile = tmp_path / ".kiro" / "agents" / "default.json"
+        profile.parent.mkdir(parents=True)
+        profile.write_text("[]", encoding="utf-8")
+
+        warnings = get_adapter("kiro").reconcile_bundled_skill_configuration(tmp_path)
+
+        assert warnings == [f"Could not expose bundled skills in {profile}: profile must be a JSON object."]
+
     def test_scan_home_with_mcp(self, tmp_path):
         import json
 

@@ -49,6 +49,8 @@ class KiroAdapter(BaseAdapter):
             return []
         try:
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            if not isinstance(settings, dict):
+                return [f"Could not expose bundled skills in {settings_path}: settings must be a JSON object."]
             active_agent = settings.get("chat.defaultAgent", "")
             if not active_agent:
                 return []
@@ -56,6 +58,8 @@ class KiroAdapter(BaseAdapter):
             if not profile_path.exists():
                 return []
             profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            if not isinstance(profile, dict):
+                return [f"Could not expose bundled skills in {profile_path}: profile must be a JSON object."]
             resources = profile.get("resources", [])
             if not isinstance(resources, list):
                 return [f"Could not expose bundled skills in {profile_path}: resources must be a list."]
