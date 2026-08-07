@@ -43,6 +43,7 @@ _HARNESS_HOME_DIRS: dict[str, str] = {
     "opencode": "~/.config/opencode",
     "antigravity": "~/.gemini",
     "cursor": "~/.cursor",
+    "goose": "~/.config/goose",
     "pi": "~/.pi/agent",
 }
 

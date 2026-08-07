@@ -127,7 +127,11 @@ def doctor(
     rprint("[cyan]Checking Antigravity...[/cyan]")
     _check_antigravity(issues, warnings)
 
-    # 11. Check if observal skill is installed
+    # 11. Check Goose
+    rprint("[cyan]Checking Goose...[/cyan]")
+    _check_goose(issues, warnings)
+
+    # 12. Check if observal skill is installed
     skill_missing = _check_observal_skill_missing()
     if skill_missing:
         warnings.append(
@@ -626,6 +630,37 @@ def _check_antigravity(issues: list, warnings: list):
         )
 
 
+def _check_goose(issues: list, warnings: list):
+    """Check that the Observal hook plugin is installed for Goose."""
+    optic.debug("_check_goose")
+    from observal_cli.harness_specs.goose_hooks_spec import GOOSE_HOOK_EVENTS, build_hooks, hooks_file
+    from observal_cli.shared.utils import resolve_goose_config_dir, resolve_goose_data_dir
+
+    if not resolve_goose_config_dir().is_dir() and not resolve_goose_data_dir().is_dir():
+        rprint("  [dim]Goose not detected[/dim]")
+        return
+
+    hooks_path = hooks_file()
+    missing = "Goose session push hooks not installed. Run `observal doctor patch --harness goose` to inject them."
+    if not hooks_path.exists():
+        warnings.append(missing)
+        return
+
+    data = _load_json(hooks_path)
+    if data is None:
+        issues.append(f"{hooks_path}: not valid JSON.")
+        return
+
+    installed = data.get("hooks", {}) if isinstance(data.get("hooks"), dict) else {}
+    desired = build_hooks()["hooks"]
+    stale = [event for event in GOOSE_HOOK_EVENTS if installed.get(event) != desired[event]]
+    if stale:
+        warnings.append(
+            f"Goose session push hooks are missing or stale for: {', '.join(stale)}. "
+            "Run `observal doctor patch --harness goose` to update them."
+        )
+
+
 # ── Cleanup command ──────────────────────────────────────────
 
 
@@ -635,7 +670,7 @@ def doctor_cleanup(
         None,
         "--harness",
         "-i",
-        help="Target harness only (claude-code, kiro, cursor, codex, copilot, copilot-cli, opencode, antigravity, pi). Default: all.",
+        help="Target harness only (claude-code, kiro, cursor, codex, copilot, copilot-cli, opencode, antigravity, goose, pi). Default: all.",
     ),
     exclude: list[str] = typer.Option(
         [],
@@ -984,6 +1019,27 @@ def _cleanup_opencode(dry_run: bool) -> bool:
     rprint(f"  {verb} {plugin_path}")
     if not dry_run:
         plugin_path.unlink()
+
+    return True
+
+
+def _cleanup_goose(dry_run: bool) -> bool:
+    """Remove the Observal hook plugin from ~/.agents/plugins/observal/."""
+    import shutil
+
+    from observal_cli.harness_specs.goose_hooks_spec import plugin_dir
+
+    rprint("[cyan]Goose[/cyan]")
+    path = plugin_dir()
+
+    if not path.is_dir():
+        rprint("  [dim]No observal plugin found - skipping[/dim]")
+        return False
+
+    verb = "Would remove" if dry_run else "Removed"
+    rprint(f"  {verb} {path}")
+    if not dry_run:
+        shutil.rmtree(path)
 
     return True
 
@@ -1580,4 +1636,61 @@ def _patch_opencode(dry_run: bool) -> bool:
         else "Installed"
     )
     rprint(f"  {verb} plugin at {plugin_path}")
+    return True
+
+
+def _patch_goose(dry_run: bool) -> bool:
+    """Install the Observal hook plugin into ~/.agents/plugins/observal/."""
+    optic.debug("_patch_goose: dry_run={}", dry_run)
+    from observal_cli.harness_specs.goose_hooks_spec import (
+        build_hooks,
+        build_plugin_manifest,
+        hooks_file,
+        manifest_file,
+    )
+    from observal_cli.shared.utils import (
+        is_observal_hook_entry,
+        resolve_goose_config_dir,
+        resolve_goose_data_dir,
+    )
+
+    rprint("[cyan]Goose - session push hooks[/cyan]")
+
+    if not resolve_goose_config_dir().is_dir() and not resolve_goose_data_dir().is_dir():
+        rprint("  [dim]Goose not detected - skipping[/dim]")
+        return False
+
+    hooks_path = hooks_file()
+    manifest_path = manifest_file()
+    desired = build_hooks()["hooks"]
+
+    existing: dict = _load_json(hooks_path) or {} if hooks_path.exists() else {}
+    existing_hooks = existing.get("hooks", {})
+    if not isinstance(existing_hooks, dict):
+        existing_hooks = {}
+
+    # Keep any hook rules the user added to this plugin, replace only ours.
+    merged = dict(existing_hooks)
+    for event, rules in desired.items():
+        kept = [
+            rule
+            for rule in merged.get(event, [])
+            if isinstance(rule, dict)
+            and not any(is_observal_hook_entry(h) for h in rule.get("hooks", []) if isinstance(h, dict))
+        ]
+        merged[event] = kept + rules
+
+    manifest = build_plugin_manifest()
+    manifest_current = _load_json(manifest_path) if manifest_path.exists() else None
+    if merged == existing_hooks and manifest_current == manifest:
+        rprint("  [dim]Already up to date[/dim]")
+        return False
+
+    if not dry_run:
+        hooks_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        hooks_path.write_text(json.dumps({**existing, "hooks": merged}, indent=2) + "\n")
+
+    verb = "Would install" if dry_run else "Installed"
+    rprint(f"  {verb} hook plugin at {hooks_path.parent.parent}")
     return True

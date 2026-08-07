@@ -227,6 +227,38 @@ HARNESS_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
             ),
         ],
     },
+    "goose": {
+        "user": [
+            (
+                "~/.agents",
+                [
+                    "agents/*.md",
+                    "skills/*/SKILL.md",
+                    "plugins/*/plugin.json",
+                    "plugins/*/hooks/hooks.json",
+                ],
+            ),
+            (
+                "~/.config/goose",
+                [
+                    "config.yaml",
+                    ".goosehints",
+                ],
+            ),
+        ],
+        "project": [
+            (
+                ".",
+                [
+                    ".agents/agents/*.md",
+                    ".agents/skills/*/SKILL.md",
+                    ".agents/plugins/*/plugin.json",
+                    ".agents/plugins/*/hooks/hooks.json",
+                    ".goosehints",
+                ],
+            ),
+        ],
+    },
     "copilot-cli": {
         "user": [
             (
