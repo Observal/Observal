@@ -35,7 +35,7 @@ test-eval-completeness:  ## Run eval completeness tests
 	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/test_eval_completeness.py -v --tb=short
 
 test-fuzz:  ## Smoke-test the OSS-Fuzz targets over their seed corpora (see fuzz/README.md)
-	cd observal-server && uv run --python 3.13 --with pytest --with pytest-asyncio --with atheris --with hypothesis --with loguru pytest ../tests/test_fuzz_targets.py -q
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with atheris --with hypothesis --with loguru pytest ../tests/test_fuzz_targets.py -q
 
 test-all: test test-eval-completeness test-adversarial  ## Run all tests including adversarial and completeness
 

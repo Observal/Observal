@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from .base import basic_event, dict_field, load_line, pick_timestamp, str_field
+from .base import basic_event, dict_field, list_field, load_line, pick_timestamp, str_field
 
 
 def parse_rows(rows: list[dict]) -> list[dict]:
@@ -73,12 +73,13 @@ def parse_rows(rows: list[dict]) -> list[dict]:
         if kind == "KiroCredits":
             # Synthetic row written by kiro_session_push with lifetime credits.
             row_credits = row.get("credits") or data.get("credits")
-            if row_credits:
+            credits = _as_credits(row_credits)
+            if row_credits and credits is not None:
                 events.append(
                     {
                         "timestamp": ts,
                         "event_name": "kiro_credits",
-                        "body": f"{float(row_credits):.4f} credits",
+                        "body": f"{credits:.4f} credits",
                         "attributes": {"credits": str(row_credits), "model": "Kiro Auto"},
                         "service_name": harness,
                     }
@@ -96,7 +97,7 @@ def parse_rows(rows: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Timestamp helper
+# Value helpers
 # ---------------------------------------------------------------------------
 
 
@@ -113,13 +114,21 @@ def _epoch_to_clickhouse(epoch_s: int | float) -> str | None:
     return dt.strftime("%Y-%m-%d %H:%M:%S.000")
 
 
+def _as_credits(value: object) -> float | None:
+    """Return a credit balance as a float, or None when the transcript lied."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Internal handlers
 # ---------------------------------------------------------------------------
 
 
 def _handle_prompt(data: dict, ts: str, harness: str, events: list[dict]) -> None:
-    content = data.get("content", [])
+    content = list_field(data, "content")
     text_parts = [
         item.get("data", "")
         for item in content
@@ -145,7 +154,7 @@ def _handle_assistant_message(
     events: list[dict],
     tool_use_index: dict[str, int],
 ) -> None:
-    content = data.get("content", [])
+    content = list_field(data, "content")
 
     for item in content:
         if not isinstance(item, dict):
@@ -200,7 +209,7 @@ def _handle_tool_results(
     events: list[dict],
     tool_use_index: dict[str, int],
 ) -> None:
-    content = data.get("content", [])
+    content = list_field(data, "content")
 
     for item in content:
         if not isinstance(item, dict) or item.get("kind") != "toolResult":
@@ -211,7 +220,7 @@ def _handle_tool_results(
 
         tool_use_id = str_field(item_data, "toolUseId")
         status = item_data.get("status", "success")
-        result_content = item_data.get("content", [])
+        result_content = list_field(item_data, "content")
 
         result_text = _extract_result_text(result_content)
         if status == "error":
@@ -240,9 +249,9 @@ def _extract_result_text(result_content: list) -> str:
             parts.append(c_data)
         elif c_kind == "json" and isinstance(c_data, dict):
             # Nested Claude-style content array: [{type:"text", text:"..."}]
-            for sub in c_data.get("content", []):
+            for sub in list_field(c_data, "content"):
                 if isinstance(sub, dict) and sub.get("type") == "text":
-                    parts.append(sub.get("text", ""))
+                    parts.append(str_field(sub, "text"))
     return "\n".join(parts)
 
 

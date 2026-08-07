@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
-# SPDX-License-Identifier: Apache-2.0
-
 3{"version":"v1","kind":"Prompt","data":{"meta":{"timestamp":1767225600},"content":[{"kind":"text","data":"list the files in src"}]}}
 {"version":"v1","kind":"AssistantMessage","data":{"content":[{"kind":"text","data":"Listing them now."},{"kind":"toolUse","data":{"toolUseId":"tu_01","name":"fsRead","input":{"path":"src","__tool_use_purpose":"inspect"}}}]}}
 {"version":"v1","kind":"ToolResults","data":{"content":[{"kind":"toolResult","data":{"toolUseId":"tu_01","status":"success","content":[{"kind":"text","data":"main.py\nutils.py"}]}}]}}

@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
-# SPDX-License-Identifier: Apache-2.0
-
 5{"type":"model_change","timestamp":"2026-01-01T00:00:00Z","provider":"anthropic","modelId":"claude-sonnet-4"}
 {"type":"thinking_level_change","timestamp":"2026-01-01T00:00:01Z","thinkingLevel":"high"}
 {"type":"message","timestamp":"2026-01-01T00:00:02Z","message":{"role":"user","content":[{"type":"text","text":"run the tests"}]}}

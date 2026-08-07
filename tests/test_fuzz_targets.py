@@ -58,6 +58,26 @@ def test_seed_corpus_runs_clean(target):
         module.TestOneInput(seed.read_bytes())
 
 
+def test_session_seeds_reach_every_parser():
+    """The first byte of a session seed selects the harness.
+
+    Anything that rewrites these files -- a licence header hook, an editor
+    adding a BOM -- changes that byte and quietly points the whole corpus at a
+    single parser, which costs most of the corpus' reach without failing a
+    single test. Assert every registered parser still has a seed.
+    """
+    from observal_shared.harness_registry import HARNESS_REGISTRY
+
+    session = importlib.import_module("_session")
+
+    seed_dir = FUZZ_DIR / "corpus" / "session_jsonl_fuzzer"
+    seeded = {session.HARNESSES[seed.read_bytes()[0] % len(session.HARNESSES)] for seed in seed_dir.iterdir()}
+
+    reached = {HARNESS_REGISTRY[harness]["session_parser"] for harness in seeded}
+    expected = {spec["session_parser"] for spec in HARNESS_REGISTRY.values() if spec["session_parser"]}
+    assert reached == expected, f"no seed reaches {sorted(expected - reached)}"
+
+
 def test_structured_session_property_holds():
     """Run the polyglot Hypothesis target as an ordinary property test."""
     module = importlib.import_module("session_structure_fuzzer")

@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import re
 
-from .base import basic_event, load_line, pick_timestamp, str_field
+from .base import basic_event, list_field, load_line, pick_timestamp, str_field
 
 # Types that represent user prompts
 _USER_TYPES = {"USER_INPUT"}
@@ -72,8 +72,9 @@ def parse_rows(rows: list[dict]) -> list[dict]:
         source = str_field(line, "source")
         status = str_field(line, "status")
         content = str_field(line, "content")
-        tool_calls = line.get("tool_calls", [])
-        step_index = line.get("step_index", -1)
+        tool_calls = list_field(line, "tool_calls")
+        raw_step = line.get("step_index")
+        step_index = raw_step if isinstance(raw_step, int) else -1
         jsonl_ts = line.get("created_at")
         ts = pick_timestamp(jsonl_ts, row_ts, ingested_at)
 

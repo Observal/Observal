@@ -65,28 +65,30 @@ def replay(harness: str, raw_lines: Iterable[str]) -> None:
     rows: list[dict] = []
 
     for raw_line in raw_lines:
-        parsed: dict = {}
-        rendered = True
         try:
-            candidate = json.loads(raw_line)
-            if not isinstance(candidate, dict):
-                raise ValueError("session record must be a JSON object")
-            parsed = candidate
-            event_type = classify_fn(parsed)
-            assert event_type is None or isinstance(event_type, str), (
-                f"{harness} classifier returned {type(event_type).__name__}"
-            )
-            if event_type is None:
-                event_type = "_ignored"
-                rendered = False
+            decoded = json.loads(raw_line)
         except RecursionError:
             # Ingestion decodes with orjson, which rejects deeply nested documents
             # outright where CPython's json module recurses instead. Drop the input
             # rather than report a limitation of the stdlib decoder.
             return
         except ValueError:
-            event_type = "_parse_error"
-            rendered = False
+            decoded = None
+
+        # Classification runs outside the decoder's except clause so that a
+        # ValueError raised by a classifier is a finding, not a parse error.
+        parsed: dict = {}
+        event_type = "_parse_error"
+        rendered = False
+        if isinstance(decoded, dict):
+            parsed = decoded
+            event_type = classify_fn(parsed)
+            assert event_type is None or isinstance(event_type, str), (
+                f"{harness} classifier returned {type(event_type).__name__}"
+            )
+            rendered = event_type is not None
+            if event_type is None:
+                event_type = "_ignored"
 
         if parsed:
             extract_timestamp(harness, parsed)

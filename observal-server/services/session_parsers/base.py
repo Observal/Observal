@@ -48,6 +48,16 @@ def dict_field(parsed: dict, key: str) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def list_field(parsed: dict, key: str) -> list:
+    """Return a content field as a list, or [] when it is any other type.
+
+    Iterating a scalar raises, and iterating a string silently yields characters,
+    so content arrays are normalised before any parser walks them.
+    """
+    value = parsed.get(key)
+    return value if isinstance(value, list) else []
+
+
 def strip_ansi(text: str) -> str:
     """Remove ANSI terminal escape codes from text for clean web display."""
     return _ANSI_RE.sub("", text) if "\x1b" in text else text

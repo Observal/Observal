@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 
-from .base import basic_event, dict_field, load_line, pick_timestamp
+from .base import basic_event, dict_field, list_field, load_line, pick_timestamp, str_field
 
 
 def parse_rows(rows: list[dict]) -> list[dict]:
@@ -146,7 +146,7 @@ def _handle_response_item(parsed: dict, ts: str, harness: str, events: list[dict
     if not isinstance(payload, dict):
         return
     role = payload.get("role", "")
-    content = payload.get("content", [])
+    content = list_field(payload, "content")
     payload_type = payload.get("type", "")
 
     # Direct function_call / function_call_output at payload level
@@ -204,7 +204,7 @@ def _handle_response_item(parsed: dict, ts: str, harness: str, events: list[dict
                     continue
                 btype = block.get("type", "")
                 if btype == "output_text":
-                    text_parts.append(block.get("text", ""))
+                    text_parts.append(str_field(block, "text"))
                 elif btype == "function_call":
                     tool_calls.append(block)
                 elif btype == "function_call_output":

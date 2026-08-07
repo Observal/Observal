@@ -14,7 +14,7 @@ to the Claude Code parser handlers.
 
 from __future__ import annotations
 
-from .base import basic_event, dict_field, load_line, pick_timestamp, strip_cursor_xml_tags
+from .base import basic_event, dict_field, load_line, pick_timestamp, str_field, strip_cursor_xml_tags
 from .claude_code import _handle_assistant, _handle_user
 
 
@@ -24,7 +24,7 @@ def _clean_user_content(line: dict) -> dict:
     if isinstance(content, list):
         for block in content:
             if isinstance(block, dict) and block.get("type") == "text":
-                block["text"] = strip_cursor_xml_tags(block.get("text", ""))
+                block["text"] = strip_cursor_xml_tags(str_field(block, "text"))
     return line
 
 

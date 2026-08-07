@@ -80,7 +80,12 @@ inside the container the report came from.
 5. Add a seed corpus under `corpus/<name>_fuzzer/` and a dictionary at
    `dictionaries/<name>_fuzzer.dict`. Both are optional and both are picked up
    automatically.
-6. Keep seed corpora free of anything that looks like a credential. The
+6. Corpus files are raw fuzzer input, not source. Nothing may rewrite them --
+   `scripts/update_spdx_copyright.py` skips any `corpus` directory and
+   `REUSE.toml` carries their licensing instead. `session_jsonl_fuzzer` reads
+   its first byte, so a stray header would repoint the whole corpus at one
+   parser; `tests/test_fuzz_targets.py` asserts every parser still has a seed.
+7. Keep seed corpora free of anything that looks like a credential. The
    repository runs Gitleaks and a pre-commit secret scan; put distinctive vendor
    prefixes in the dictionary, where they are too short to match a scanner rule,
    and use zero-entropy placeholders in corpus files.

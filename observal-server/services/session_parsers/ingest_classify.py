@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from .base import dict_field, str_field, strip_cursor_xml_tags
+from .base import dict_field, list_field, str_field, strip_cursor_xml_tags
 
 _PREVIEW_MAX = 500
 
@@ -162,7 +162,7 @@ def _classify_kiro(parsed: dict) -> str | None:
 
     if kind == "Prompt":
         data = dict_field(parsed, "data")
-        content = data.get("content", [])
+        content = list_field(data, "content")
         # Skip empty prompts
         if not any(
             isinstance(item, dict) and item.get("kind") == "text" and str_field(item, "data").strip()
@@ -173,7 +173,7 @@ def _classify_kiro(parsed: dict) -> str | None:
 
     if kind == "AssistantMessage":
         data = dict_field(parsed, "data")
-        content = data.get("content", [])
+        content = list_field(data, "content")
         for item in content:
             if isinstance(item, dict) and item.get("kind") == "toolUse":
                 return "tool_call"
@@ -230,9 +230,8 @@ def _preview_kiro(parsed: dict, event_type: str) -> str:
 
 
 def _tool_info_kiro(parsed: dict) -> tuple[str | None, str | None]:
-    kind = parsed.get("kind", "")
-    data = parsed.get("data", {}) if isinstance(parsed.get("data"), dict) else {}
-    content = data.get("content", [])
+    kind = str_field(parsed, "kind")
+    content = list_field(dict_field(parsed, "data"), "content")
     if kind == "AssistantMessage":
         for item in content:
             if isinstance(item, dict) and item.get("kind") == "toolUse":

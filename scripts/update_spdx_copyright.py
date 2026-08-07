@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """
 Pre-commit hook: ensures the committer's SPDX-FileCopyrightText line is present
@@ -18,7 +19,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__"}
+# "corpus" holds raw fuzzer inputs: a comment header would change the bytes under
+# test. REUSE.toml carries their licensing instead.
+SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__", "corpus"}
 SKIP_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".map", ".lock"}
 
 

@@ -123,13 +123,14 @@ _ATOMS = st.one_of(
     st.sampled_from(_TAGS),
     st.text(max_size=24),
 )
-_FIELD_NAMES = st.one_of(st.sampled_from(_KEYS), st.text(max_size=12))
+# Keys are drawn only from the list above: the parsers ignore every other name,
+# so random keys cost depth without reaching new branches.
 _VALUES = st.recursive(
     _ATOMS,
-    lambda children: st.lists(children, max_size=4) | st.dictionaries(_FIELD_NAMES, children, max_size=4),
+    lambda children: st.lists(children, max_size=4) | st.dictionaries(st.sampled_from(_KEYS), children, max_size=4),
     max_leaves=12,
 )
-_RECORDS = st.dictionaries(_FIELD_NAMES, _VALUES, min_size=1, max_size=6)
+_RECORDS = st.dictionaries(st.sampled_from(_KEYS), _VALUES, min_size=1, max_size=6)
 
 
 @given(harness=st.sampled_from(_session.HARNESSES), records=st.lists(_RECORDS, max_size=6))
