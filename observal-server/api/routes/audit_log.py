@@ -10,7 +10,7 @@ sensitivity classification, and outcome tracking.
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -73,7 +73,6 @@ async def list_audit_logs(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Query audit log entries with optional filters."""
-    del current_user
     conditions = []
     params = {}
 
@@ -109,6 +108,9 @@ async def list_audit_logs(
     if source:
         conditions.append("source = {src:String}")
         params["param_src"] = source
+    if current_user.org_id is not None:
+        conditions.append("org_id = {org_id:String}")
+        params["param_org_id"] = str(current_user.org_id)
     if start_date:
         conditions.append("timestamp >= {start:String}")
         params["param_start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
@@ -159,7 +161,6 @@ async def export_audit_logs(
     Supports CSV (default) and JSON formats. Column headers follow the
     standard audit trail schema.
     """
-    del current_user
     conditions = []
     params = {}
 
@@ -195,6 +196,9 @@ async def export_audit_logs(
     if source:
         conditions.append("source = {src:String}")
         params["param_src"] = source
+    if current_user.org_id is not None:
+        conditions.append("org_id = {org_id:String}")
+        params["param_org_id"] = str(current_user.org_id)
     if start_date:
         conditions.append("timestamp >= {start:String}")
         params["param_start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
@@ -224,14 +228,14 @@ async def export_audit_logs(
             iter(
                 [
                     json.dumps(
-                        {"audit_trail": rows, "exported_at": datetime.utcnow().isoformat(), "record_count": len(rows)},
+                        {"audit_trail": rows, "exported_at": datetime.now(UTC).isoformat(), "record_count": len(rows)},
                         indent=2,
                     )
                 ]
             ),
             media_type="application/json",
             headers={
-                "Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
+                "Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json"
             },
         )
 
@@ -269,6 +273,6 @@ async def export_audit_logs(
         iter([output.getvalue()]),
         media_type="text/csv",
         headers={
-            "Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.csv"
+            "Content-Disposition": f"attachment; filename=observal_audit-log_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.csv"
         },
     )

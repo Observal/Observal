@@ -43,6 +43,7 @@ class UserCreated(Event):
 class UserDeleted(Event):
     user_id: str
     email: str
+    org_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,7 @@ class AuditableAction(Event):
     resource_id: str = ""
     resource_name: str = ""
     detail: str = ""
+    org_id: str = ""
 
 
 # ── Event bus ────────────────────────────────────────────────
