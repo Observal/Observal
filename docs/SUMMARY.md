@@ -65,6 +65,7 @@
 
 * [Copilot](integrations/copilot.md)
 * [Cursor](integrations/cursor.md)
+* [Goose](integrations/goose.md)
 * [Kiro](integrations/kiro.md)
 * [OpenCode](integrations/opencode.md)
 

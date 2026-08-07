@@ -18,7 +18,7 @@ observal agent pull <agent-reference> --harness <harness> [OPTIONS]
 | Argument / option | Description |
 | --- | --- |
 | `<agent-reference>` | Agent UUID, `namespace/slug`, unique bare name, `@alias`, or row number from last `agent list` |
-| `--harness <harness>` | Target harness: `cursor`, `kiro`, `claude-code`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `pi` |
+| `--harness <harness>` | Target harness: `cursor`, `kiro`, `claude-code`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `goose`, `pi` |
 
 ## Options
 

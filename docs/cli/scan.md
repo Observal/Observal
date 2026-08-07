@@ -19,7 +19,7 @@ observal scan [--harness <harness>]
 
 | Option | Description |
 | --- | --- |
-| `--harness <harness>` | Scope to one harness: `cursor`, `kiro`, `claude-code`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `pi` |
+| `--harness <harness>` | Scope to one harness: `cursor`, `kiro`, `claude-code`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `goose`, `pi` |
 
 If you run `observal scan` with no flags, it auto-detects every installed harness and scans each in turn.
 
@@ -31,6 +31,7 @@ If you run `observal scan` with no flags, it auto-detects every installed harnes
    * Cursor: `.cursor/mcp.json`
    * Copilot: `.vscode/mcp.json`
    * Antigravity: `.agents/mcp_config.json` or `~/.gemini/antigravity-cli/mcp_config.json`
+   * Goose: `~/.config/goose/config.yaml` (the `extensions` key)
    * Copilot CLI: `~/.copilot/mcp-config.json`
 2. Lists every MCP server found and its direct command or URL.
 3. Reports installed session telemetry hooks.

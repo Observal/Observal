@@ -33,7 +33,7 @@ Restrict which harnesses are available in the platform. When set, only the liste
 | `cursor,claude_code,pi` | Only Cursor, Claude Code, and Pi appear in dropdowns |
 | `kiro,cursor` | Only Kiro and Cursor are available |
 
-**Format:** Comma-separated harness identifiers. Valid identifiers: `cursor`, `claude_code`, `kiro`, `pi`, `copilot`, `copilot_cli`, `codex`, `opencode`, `gemini_cli`, `antigravity`
+**Format:** Comma-separated harness identifiers. Valid identifiers: `cursor`, `claude_code`, `kiro`, `pi`, `copilot`, `copilot_cli`, `codex`, `opencode`, `gemini_cli`, `antigravity`, `goose`
 
 **When to set:** Your deployment standardizes on specific harnesses and you don't want users confused by irrelevant options. Also useful for reducing noise in the registry when agents only need to support a subset of harnesses.
 

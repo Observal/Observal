@@ -19,7 +19,7 @@ Agents are the primary entity. Each agent bundles 5 component types: MCP servers
 
 ## harness capability support
 
-Nine harnesses are registered in `packages/observal-shared/observal_shared/harness_registry.py`. Support is per-capability, not a single tier. Verify against the registry before relying on this table.
+Ten harnesses are registered in `packages/observal-shared/observal_shared/harness_registry.py`. Support is per-capability, not a single tier. Verify against the registry before relying on this table.
 
 | Harness | Hook spec | Session parser | Capabilities | Harness-specific e2e |
 |---|---|---|---|---|
@@ -32,8 +32,9 @@ Nine harnesses are registered in `packages/observal-shared/observal_shared/harne
 | Copilot CLI | yes | `copilot-cli` | hooks, mcp_servers, skills, prompts | no |
 | OpenCode | yes | `opencode` | hooks, mcp_servers, skills | no |
 | Antigravity | yes | `antigravity` | hooks, mcp_servers, skills | no |
+| Goose | yes | `goose` | hooks, mcp_servers, skills | no |
 
-Every harness now resolves a session parser, so `observal reconcile` works across all nine. Hook specs in `observal_cli/harness_specs/` exist for seven; Cursor and Pi have none. Only Kiro has harness-specific Playwright coverage.
+Every harness now resolves a session parser, so `observal reconcile` works across all ten. Hook specs in `observal_cli/harness_specs/` exist for eight; Cursor and Pi have none. Only Kiro has harness-specific Playwright coverage.
 
 See `docs/adding-a-harness.md` for the complete guide to adding or promoting a harness.
 

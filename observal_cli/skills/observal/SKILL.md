@@ -54,7 +54,7 @@ When pulling for Pi, the CLI downloads the agent into an isolated profile using 
 **Crucial:** After pulling, run `/agent <local-profile-name>` inside Pi using the exact local profile name printed by the CLI.
 
 **Flags:**
-- `--harness` (required): `claude-code`, `kiro`, `cursor`, `vscode`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `pi`
+- `--harness` (required): `claude-code`, `kiro`, `cursor`, `vscode`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `goose`, `pi`
 - `--version <semver>`: install a specific version (e.g. `1.2.0`). Omit for latest.
 - `--scope user|project`: install scope for harnesses that support user or project installs
 - `--model <name>` or `--model <harness>=<name>`: override saved model (repeatable)

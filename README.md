@@ -80,6 +80,7 @@ Observal supports Claude Code, Cursor, Kiro, Pi, Copilot, Codex, OpenCode, and o
 | Codex |
 | OpenCode |
 | Antigravity CLI |
+| Goose |
 
 One command to install any agent into any supported harness. The config files are generated per-harness automatically.
 
