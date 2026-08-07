@@ -131,6 +131,61 @@ def resolve_antigravity_config_dir(home: Path | None = None) -> Path | None:
     return None
 
 
+def resolve_goose_config_dir(home: Path | None = None) -> Path:
+    """Return Goose's configuration directory (``config.yaml`` lives here)."""
+    root = _goose_path_root()
+    if root is not None:
+        return root / "config"
+    return _goose_dir(home, "config", "XDG_CONFIG_HOME", (".config",))
+
+
+def resolve_goose_data_dir(home: Path | None = None) -> Path:
+    """Return Goose's data directory (``sessions/sessions.db`` lives here)."""
+    root = _goose_path_root()
+    if root is not None:
+        return root / "data"
+    return _goose_dir(home, "data", "XDG_DATA_HOME", (".local", "share"))
+
+
+def resolve_goose_agents_home(home: Path | None = None) -> Path:
+    """Return the ``.agents`` root Goose discovers skills, agents, and plugins from."""
+    root = _goose_path_root()
+    if root is not None:
+        return root / ".agents"
+    return (home or Path.home()) / ".agents"
+
+
+def _goose_path_root() -> Path | None:
+    """Return ``$GOOSE_PATH_ROOT`` when set to an absolute path, as Goose requires."""
+    import os
+
+    raw = os.environ.get("GOOSE_PATH_ROOT", "")
+    root = Path(raw) if raw else None
+    return root if root is not None and root.is_absolute() else None
+
+
+def _goose_dir(home: Path | None, windows_leaf: str, xdg_var: str, unix_parts: tuple[str, ...]) -> Path:
+    """Resolve one Goose directory the way ``etcetera``'s app strategy does.
+
+    Unix follows XDG (``~/.config/goose``, ``~/.local/share/goose``); Windows
+    uses ``%APPDATA%\\Block\\goose\\<leaf>``.  Passing *home* pins the result to
+    the Unix layout under that directory so callers stay hermetic.
+    """
+    if home is not None:
+        return home.joinpath(*unix_parts, "goose")
+    import os
+    import sys
+
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "Block" / "goose" / windows_leaf
+    xdg_root = os.environ.get(xdg_var)
+    if xdg_root:
+        return Path(xdg_root) / "goose"
+    return Path.home().joinpath(*unix_parts, "goose")
+
+
 def extract_mcp_servers(config: dict, harness: str = "") -> dict:
     """Extract the MCP server map from an harness config dict.
 
