@@ -293,6 +293,38 @@ def _dict_to_toml(d: dict) -> str:
     return "\n".join(lines)
 
 
+def _merge_yaml_config(path: Path, content: dict, root_key: str, *, existed: bool, merge: bool) -> str:
+    """Write a YAML config, merging one section into the file already on disk.
+
+    Goose keeps providers, global settings, and MCP extensions in a single
+    ``config.yaml``, so an install must only touch its own section. An existing
+    file that cannot be parsed is left untouched rather than overwritten.
+    """
+    import yaml
+
+    existing: dict = {}
+    if existed:
+        try:
+            loaded = yaml.safe_load(path.read_text()) or {}
+        except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
+            optic.warning("cannot merge into {}: {}", path, exc)
+            return "skipped (unreadable YAML)"
+        if not isinstance(loaded, dict):
+            optic.warning("cannot merge into {}: top level is not a mapping", path)
+            return "skipped (unexpected YAML)"
+        existing = loaded
+
+    if merge and existed:
+        section = existing.get(root_key)
+        incoming = content.get(root_key, {})
+        existing[root_key] = {**section, **incoming} if isinstance(section, dict) else incoming
+        payload = existing
+    else:
+        payload = {**existing, **content}
+    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True))
+    return "merged" if existed else "created"
+
+
 def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> str:
     """Write content to a file path, creating parent dirs as needed.
 
@@ -315,6 +347,8 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
                 return "merged"
             else:
                 path.write_text(toml_str)
+        elif path.suffix in (".yaml", ".yml"):
+            return _merge_yaml_config(path, content, root_key, existed=existed, merge=merge_mcp)
         else:
             if merge_mcp and existed:
                 try:
