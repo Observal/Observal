@@ -189,7 +189,7 @@ async def reveal_webhook_secret(
         raise HTTPException(404, "Alert rule not found")
 
     logger.info(
-        "Webhook secret revealed: alert_rule_id={} by user_id={}",
+        "Webhook secret revealed: alert_rule_id=%s by user_id=%s",
         alert_id,
         current_user.id,
     )

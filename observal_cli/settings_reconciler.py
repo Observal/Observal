@@ -40,7 +40,7 @@ def _load_claude_settings() -> dict:
     try:
         return json.loads(CLAUDE_SETTINGS_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("Could not parse {}: {}", CLAUDE_SETTINGS_PATH, exc)
+        logger.warning("Could not parse %s: %s", CLAUDE_SETTINGS_PATH, exc)
         return {}
 
 
