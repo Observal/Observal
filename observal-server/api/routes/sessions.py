@@ -137,7 +137,7 @@ async def list_sessions(
                     for u_id, u_name in result.all():
                         uid_to_name[str(u_id)] = u_name
         except Exception:
-            optic.warning("User name resolution failed", exc_info=True)
+            optic.opt(exception=True).warning("User name resolution failed")
 
     _platform_names = {
         "kiro": "Kiro",
@@ -172,7 +172,7 @@ async def list_sessions(
                     for a_id, a_name in result.all():
                         agent_id_to_name[str(a_id)] = a_name
         except Exception:
-            optic.warning("Agent name resolution failed", exc_info=True)
+            optic.opt(exception=True).warning("Agent name resolution failed")
 
     for row in rows:
         uid = row.get("user_id", "")
@@ -411,7 +411,7 @@ async def get_session(
                 result = await db.execute(select(Agent.name).where(Agent.id == _uuid.UUID(agent_id)))
                 agent_name = result.scalar_one_or_none()
         except Exception:
-            optic.warning("Agent name resolution failed", exc_info=True)
+            optic.opt(exception=True).warning("Agent name resolution failed")
 
     # Track max line_offset for incremental fetch cursor
     max_offset = max(int(r.get("line_offset", 0)) for r in rows) if rows else (after_offset or 0)

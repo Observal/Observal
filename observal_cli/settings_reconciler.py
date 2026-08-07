@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import copy
 import json
-import logging
 from pathlib import Path
 
 from loguru import logger as optic
@@ -28,8 +27,6 @@ from observal_cli.harness_specs.claude_code_hooks_spec import (
 )
 from observal_cli.shared.utils import is_observal_matcher_group
 
-logger = logging.getLogger("observal.reconciler")
-
 CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 
 
@@ -40,7 +37,7 @@ def _load_claude_settings() -> dict:
     try:
         return json.loads(CLAUDE_SETTINGS_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("Could not parse {}: {}", CLAUDE_SETTINGS_PATH, exc)
+        optic.warning("Could not parse {}: {}", CLAUDE_SETTINGS_PATH, exc)
         return {}
 
 
