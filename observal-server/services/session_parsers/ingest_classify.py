@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Per-harness JSONL line classifiers for the ingest pipeline.
@@ -27,7 +28,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from .base import strip_cursor_xml_tags
+from .base import dict_field, str_field, strip_cursor_xml_tags
 
 _PREVIEW_MAX = 500
 
@@ -53,7 +54,7 @@ def _classify_claude_code(parsed: dict) -> str | None:
     Returns the event_type string, or None to skip the line entirely
     (empty continuation signals).
     """
-    line_type = parsed.get("type", "")
+    line_type = str_field(parsed, "type")
 
     if line_type in _META_TYPES:
         return "meta"
@@ -62,7 +63,7 @@ def _classify_claude_code(parsed: dict) -> str | None:
         return "system"
 
     if line_type == "user":
-        content = parsed.get("message", {}).get("content", [])
+        content = dict_field(parsed, "message").get("content", [])
         if not content:
             return None  # empty continuation signal
         if isinstance(content, list):
@@ -73,7 +74,7 @@ def _classify_claude_code(parsed: dict) -> str | None:
         return "user_prompt"
 
     if line_type == "assistant":
-        content = parsed.get("message", {}).get("content", [])
+        content = dict_field(parsed, "message").get("content", [])
         if isinstance(content, list) and content:
             for block in content:
                 if isinstance(block, dict):
@@ -87,7 +88,8 @@ def _classify_claude_code(parsed: dict) -> str | None:
         return "assistant_text"
 
     if line_type == "attachment":
-        attachment_type = parsed.get("attachment", {}).get("type", "")
+        attachment = parsed.get("attachment")
+        attachment_type = str_field(attachment, "type") if isinstance(attachment, dict) else ""
         return _ATTACHMENT_TYPE_MAP.get(attachment_type, "system")
 
     # Unknown type -- store as system so nothing is silently dropped
@@ -134,7 +136,7 @@ def _preview_claude_code(parsed: dict, event_type: str) -> str:
 
 
 def _tool_info_claude_code(parsed: dict) -> tuple[str | None, str | None]:
-    content = parsed.get("message", {}).get("content", [])
+    content = dict_field(parsed, "message").get("content", [])
     if not isinstance(content, list):
         return None, None
     for block in content:
@@ -156,21 +158,22 @@ def _classify_kiro(parsed: dict) -> str | None:
       AssistantMessage -> assistant text or tool call
       ToolResults      -> tool result
     """
-    kind = parsed.get("kind", "")
+    kind = str_field(parsed, "kind")
 
     if kind == "Prompt":
-        data = parsed.get("data", {})
-        content = data.get("content", []) if isinstance(data, dict) else []
+        data = dict_field(parsed, "data")
+        content = data.get("content", [])
         # Skip empty prompts
         if not any(
-            isinstance(item, dict) and item.get("kind") == "text" and item.get("data", "").strip() for item in content
+            isinstance(item, dict) and item.get("kind") == "text" and str_field(item, "data").strip()
+            for item in content
         ):
             return None
         return "user_prompt"
 
     if kind == "AssistantMessage":
-        data = parsed.get("data", {})
-        content = data.get("content", []) if isinstance(data, dict) else []
+        data = dict_field(parsed, "data")
+        content = data.get("content", [])
         for item in content:
             if isinstance(item, dict) and item.get("kind") == "toolUse":
                 return "tool_call"
@@ -251,10 +254,10 @@ def _classify_cursor(parsed: dict) -> str | None:
     content block structure.  The ``message.content`` array contains blocks
     with ``type: text|tool_use|tool_result|thinking``.
     """
-    role = parsed.get("role", "")
+    role = str_field(parsed, "role")
 
     if role == "user":
-        content = parsed.get("message", {}).get("content", [])
+        content = dict_field(parsed, "message").get("content", [])
         if not content:
             return None
         if isinstance(content, list):
@@ -265,7 +268,7 @@ def _classify_cursor(parsed: dict) -> str | None:
         return "user_prompt"
 
     if role == "assistant":
-        content = parsed.get("message", {}).get("content", [])
+        content = dict_field(parsed, "message").get("content", [])
         if isinstance(content, list) and content:
             for block in content:
                 if isinstance(block, dict):
@@ -320,7 +323,7 @@ def _preview_cursor(parsed: dict, event_type: str) -> str:
 
 
 def _tool_info_cursor(parsed: dict) -> tuple[str | None, str | None]:
-    content = parsed.get("message", {}).get("content", [])
+    content = dict_field(parsed, "message").get("content", [])
     if not isinstance(content, list):
         return None, None
     for block in content:
@@ -343,7 +346,7 @@ def _classify_pi(parsed: dict) -> str | None:
     ``message.role: "toolResult"`` as a top-level message role (not a content
     block inside user messages like Claude Code).
     """
-    line_type = parsed.get("type", "")
+    line_type = str_field(parsed, "type")
 
     if line_type in _PI_SKIP_TYPES:
         return None
@@ -355,7 +358,7 @@ def _classify_pi(parsed: dict) -> str | None:
         return "meta"
 
     if line_type == "message":
-        msg = parsed.get("message", {})
+        msg = dict_field(parsed, "message")
         role = msg.get("role", "")
 
         if role == "user":
@@ -453,7 +456,7 @@ def _tool_info_pi(parsed: dict) -> tuple[str | None, str | None]:
     """Extract (tool_name, tool_id) from a Pi JSONL line."""
     if parsed.get("type") != "message":
         return None, None
-    msg = parsed.get("message", {})
+    msg = dict_field(parsed, "message")
     role = msg.get("role", "")
 
     if role == "assistant":
@@ -476,10 +479,10 @@ def _tool_info_pi(parsed: dict) -> tuple[str | None, str | None]:
 
 def _classify_codex(parsed: dict) -> str | None:
     """Classify one Codex CLI JSONL line."""
-    line_type = parsed.get("type", "")
+    line_type = str_field(parsed, "type")
 
     if line_type == "event_msg":
-        payload_type = parsed.get("payload", {}).get("type", "")
+        payload_type = str_field(dict_field(parsed, "payload"), "type")
         if payload_type == "user_message":
             return "user_prompt"
         if payload_type == "agent_message":
@@ -491,7 +494,7 @@ def _classify_codex(parsed: dict) -> str | None:
         return "system"
 
     if line_type == "response_item":
-        payload = parsed.get("payload", {})
+        payload = dict_field(parsed, "payload")
         role = payload.get("role", "")
         content = payload.get("content", [])
         payload_type = payload.get("type", "")
@@ -535,7 +538,7 @@ def _classify_codex(parsed: dict) -> str | None:
 def _classify_copilot_cli(parsed: dict) -> str | None:
     """Classify one Copilot CLI JSONL line."""
     event = parsed.get("event")
-    event_type = event.get("type", "") if isinstance(event, dict) else parsed.get("type", "")
+    event_type = str_field(event, "type") if isinstance(event, dict) else str_field(parsed, "type")
 
     if not event_type:
         return None
@@ -654,8 +657,8 @@ _ANTIGRAVITY_USER_REQUEST_RE = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQU
 
 
 def _classify_antigravity(parsed: dict) -> str | None:
-    source = parsed.get("source", "")
-    line_type = parsed.get("type", "")
+    source = str_field(parsed, "source")
+    line_type = str_field(parsed, "type")
 
     if line_type in _ANTIGRAVITY_SKIP_TYPES:
         return None
@@ -697,7 +700,7 @@ def _preview_antigravity(parsed: dict, event_type: str) -> str:
 def _tool_info_codex(parsed: dict) -> tuple[str | None, str | None]:
     if parsed.get("type") != "response_item":
         return None, None
-    payload = parsed.get("payload", {})
+    payload = dict_field(parsed, "payload")
     if payload.get("type") == "function_call":
         return payload.get("name"), payload.get("call_id")
     content = payload.get("content", [])
@@ -723,12 +726,11 @@ def _tool_info_copilot_cli(parsed: dict) -> tuple[str | None, str | None]:
 
 
 def _tool_info_antigravity(parsed: dict) -> tuple[str | None, str | None]:
-    tool_calls = parsed.get("tool_calls", [])
-    if tool_calls:
-        first = tool_calls[0]
-        return first.get("name"), None
-    source = parsed.get("source", "")
-    line_type = parsed.get("type", "")
+    tool_calls = parsed.get("tool_calls")
+    if isinstance(tool_calls, list) and tool_calls and isinstance(tool_calls[0], dict):
+        return tool_calls[0].get("name"), None
+    source = str_field(parsed, "source")
+    line_type = str_field(parsed, "type")
     if source == "MODEL" and line_type not in ("PLANNER_RESPONSE", "USER_INPUT"):
         return line_type.lower(), None
     return None, None

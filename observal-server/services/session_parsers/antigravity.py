@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Antigravity CLI JSONL session parser.
@@ -25,7 +26,7 @@ from __future__ import annotations
 import json
 import re
 
-from .base import basic_event, pick_timestamp
+from .base import basic_event, load_line, pick_timestamp, str_field
 
 # Types that represent user prompts
 _USER_TYPES = {"USER_INPUT"}
@@ -62,16 +63,15 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             events.append(basic_event(row))
             continue
 
-        try:
-            line = json.loads(raw_line)
-        except (json.JSONDecodeError, ValueError):
+        line = load_line(raw_line)
+        if line is None:
             events.append(basic_event(row))
             continue
 
-        line_type = line.get("type", "")
-        source = line.get("source", "")
-        status = line.get("status", "")
-        content = line.get("content", "")
+        line_type = str_field(line, "type")
+        source = str_field(line, "source")
+        status = str_field(line, "status")
+        content = str_field(line, "content")
         tool_calls = line.get("tool_calls", [])
         step_index = line.get("step_index", -1)
         jsonl_ts = line.get("created_at")
@@ -98,6 +98,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
         # Model response with tool calls
         elif line_type in _ASSISTANT_TYPES and tool_calls:
             for tc in tool_calls:
+                if not isinstance(tc, dict):
+                    continue
                 tool_name = tc.get("name", "")
                 args = tc.get("args", {})
                 idx = len(events)

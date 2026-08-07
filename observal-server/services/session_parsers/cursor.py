@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Cursor JSONL session parser.
@@ -13,15 +14,13 @@ to the Claude Code parser handlers.
 
 from __future__ import annotations
 
-import json
-
-from .base import basic_event, pick_timestamp, strip_cursor_xml_tags
+from .base import basic_event, dict_field, load_line, pick_timestamp, strip_cursor_xml_tags
 from .claude_code import _handle_assistant, _handle_user
 
 
 def _clean_user_content(line: dict) -> dict:
     """Strip Cursor XML tags from text blocks in user messages."""
-    content = line.get("message", {}).get("content", [])
+    content = dict_field(line, "message").get("content", [])
     if isinstance(content, list):
         for block in content:
             if isinstance(block, dict) and block.get("type") == "text":
@@ -44,9 +43,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             events.append(basic_event(row))
             continue
 
-        try:
-            line = json.loads(raw_line)
-        except (json.JSONDecodeError, ValueError):
+        line = load_line(raw_line)
+        if line is None:
             events.append(basic_event(row))
             continue
 

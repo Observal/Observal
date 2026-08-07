@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Codex CLI JSONL session parser (READ path).
@@ -14,7 +15,7 @@ from __future__ import annotations
 
 import json
 
-from .base import basic_event, pick_timestamp
+from .base import basic_event, dict_field, load_line, pick_timestamp
 
 
 def parse_rows(rows: list[dict]) -> list[dict]:
@@ -31,13 +32,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             events.append(basic_event(row))
             continue
 
-        try:
-            parsed = json.loads(raw_line)
-        except (json.JSONDecodeError, ValueError):
-            events.append(basic_event(row))
-            continue
-
-        if not isinstance(parsed, dict):
+        parsed = load_line(raw_line)
+        if parsed is None:
             events.append(basic_event(row))
             continue
 
@@ -102,8 +98,8 @@ def _handle_event_msg(parsed: dict, ts: str, harness: str, events: list[dict]) -
         )
     elif payload_type == "token_count":
         # Emit token usage as attributes for the detail view to sum
-        info = payload.get("info", {})
-        usage = info.get("last_token_usage") or info.get("total_token_usage") or {}
+        info = dict_field(payload, "info")
+        usage = dict_field(info, "last_token_usage") or dict_field(info, "total_token_usage")
         # Try to get model from rate_limits (Codex sometimes includes it)
         model = ""
         rate_limits = payload.get("rate_limits", {})

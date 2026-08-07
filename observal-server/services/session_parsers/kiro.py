@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Kiro JSONL session parser.
@@ -24,7 +25,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from .base import basic_event, pick_timestamp
+from .base import basic_event, dict_field, load_line, pick_timestamp, str_field
 
 
 def parse_rows(rows: list[dict]) -> list[dict]:
@@ -51,9 +52,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             events.append(basic_event(row))
             continue
 
-        try:
-            line = json.loads(raw_line)
-        except (json.JSONDecodeError, ValueError):
+        line = load_line(raw_line)
+        if line is None:
             events.append(basic_event(row))
             continue
 
@@ -100,9 +100,16 @@ def parse_rows(rows: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _epoch_to_clickhouse(epoch_s: int | float) -> str:
-    """Convert unix epoch seconds to ClickHouse datetime string."""
-    dt = datetime.fromtimestamp(epoch_s, tz=UTC)
+def _epoch_to_clickhouse(epoch_s: int | float) -> str | None:
+    """Convert unix epoch seconds to a ClickHouse datetime string.
+
+    Returns None for values a transcript can carry but ``datetime`` cannot
+    represent, so the caller falls back to the row timestamp.
+    """
+    try:
+        dt = datetime.fromtimestamp(float(epoch_s), tz=UTC)
+    except (OverflowError, OSError, TypeError, ValueError):
+        return None
     return dt.strftime("%Y-%m-%d %H:%M:%S.000")
 
 
@@ -163,9 +170,9 @@ def _handle_assistant_message(
         elif item_kind == "toolUse":
             if not isinstance(item_data, dict):
                 continue
-            tool_use_id = item_data.get("toolUseId", "")
+            tool_use_id = str_field(item_data, "toolUseId")
             tool_name = item_data.get("name", "")
-            tool_input = item_data.get("input", {})
+            tool_input = dict_field(item_data, "input")
             # Strip Kiro-internal annotation key
             clean_input = {k: v for k, v in tool_input.items() if not k.startswith("__")}
             idx = len(events)
@@ -202,7 +209,7 @@ def _handle_tool_results(
         if not isinstance(item_data, dict):
             continue
 
-        tool_use_id = item_data.get("toolUseId", "")
+        tool_use_id = str_field(item_data, "toolUseId")
         status = item_data.get("status", "success")
         result_content = item_data.get("content", [])
 

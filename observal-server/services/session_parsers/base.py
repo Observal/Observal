@@ -1,14 +1,51 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Shared helpers used by all session JSONL parsers."""
 
 from __future__ import annotations
 
+import json
 import re
 
 # ANSI escape sequence pattern (CSI sequences + OSC + simple escapes)
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[^\[]")
+
+
+def load_line(raw_line: str) -> dict | None:
+    """Decode one stored JSONL line, or return None when it is not a JSON object.
+
+    ``session_events`` keeps ``raw_line`` verbatim even for lines the ingest path
+    rejected, so the read path also sees malformed text and bare JSON scalars.
+    Callers fall back to ``basic_event`` when this returns None.
+    """
+    try:
+        parsed = json.loads(raw_line)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def str_field(parsed: dict, key: str) -> str:
+    """Return a discriminator field as a string, or "" when it is any other type.
+
+    Transcript records are untrusted, so a list or object where a tag is expected
+    must never reach a set-membership test or a dict lookup.
+    """
+    value = parsed.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def dict_field(parsed: dict, key: str) -> dict:
+    """Return a nested field as a mapping, or {} when it is any other type.
+
+    Same reasoning as :func:`str_field`: a transcript may carry a scalar where
+    the format expects an object, and a bare ``.get(key, {}).get(...)`` chain
+    would raise ``AttributeError`` on it.
+    """
+    value = parsed.get(key)
+    return value if isinstance(value, dict) else {}
 
 
 def strip_ansi(text: str) -> str:
@@ -35,8 +72,11 @@ def pick_timestamp(jsonl_ts: str | None, row_ts: str, ingested_at: str) -> str:
     1. JSONL-level timestamp (ISO-8601) converted to ClickHouse format
     2. Row timestamp, if it is not the 1970 epoch sentinel
     3. ingested_at fallback
+
+    ``jsonl_ts`` comes straight from an untrusted transcript, so anything that
+    is not a string falls through to the row timestamp.
     """
-    if jsonl_ts:
+    if isinstance(jsonl_ts, str) and jsonl_ts:
         # Convert "2025-01-01T12:00:00.000Z" -> "2025-01-01 12:00:00.000"
         ts = jsonl_ts.replace("T", " ").replace("Z", "")
         if ts.endswith("+00:00"):

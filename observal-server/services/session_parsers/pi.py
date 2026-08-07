@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Pi session parser -- READ path (raw ClickHouse rows -> frontend events).
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from .base import basic_event, pick_timestamp, strip_ansi
+from .base import basic_event, dict_field, load_line, pick_timestamp, str_field, strip_ansi
 
 
 def parse_rows(rows: list[dict]) -> list[dict]:
@@ -30,9 +31,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             events.append(basic_event(row))
             continue
 
-        try:
-            parsed = json.loads(raw_line)
-        except (json.JSONDecodeError, ValueError):
+        parsed = load_line(raw_line)
+        if parsed is None:
             events.append(basic_event(row))
             continue
 
@@ -69,8 +69,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
                 {
                     "timestamp": ts,
                     "event_name": "hook_assistant_response",
-                    "body": parsed.get("summary", "")[:100],
-                    "attributes": {"tool_response": parsed.get("summary", "")},
+                    "body": str_field(parsed, "summary")[:100],
+                    "attributes": {"tool_response": str_field(parsed, "summary")},
                     "service_name": harness,
                 }
             )
@@ -100,7 +100,7 @@ def _handle_message(
     events: list[dict],
     tool_call_index: dict[str, int],
 ) -> None:
-    msg = parsed.get("message", {})
+    msg = dict_field(parsed, "message")
     role = msg.get("role", "")
 
     if role == "user":
@@ -118,7 +118,7 @@ def _handle_user(msg: dict, ts: str, harness: str, events: list[dict]) -> None:
     if isinstance(content, str):
         text = content
     elif isinstance(content, list):
-        text = "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+        text = "\n".join(str_field(b, "text") for b in content if isinstance(b, dict) and b.get("type") == "text")
     else:
         text = str(content)
 
@@ -145,7 +145,7 @@ def _handle_assistant(
     if not isinstance(content, list):
         return
 
-    usage = msg.get("usage") or {}
+    usage = dict_field(msg, "usage")
     token_attrs: dict = {}
     if usage:
         if usage.get("input"):
@@ -163,7 +163,7 @@ def _handle_assistant(
         if msg.get("stopReason"):
             token_attrs["stop_reason"] = msg["stopReason"]
         # Pi-unique: cost data
-        cost = usage.get("cost", {})
+        cost = dict_field(usage, "cost")
         if cost and cost.get("total"):
             token_attrs["cost_usd"] = str(cost["total"])
 
@@ -173,7 +173,7 @@ def _handle_assistant(
         block_type = block.get("type", "")
 
         if block_type == "thinking":
-            thinking_text = strip_ansi(block.get("thinking", ""))
+            thinking_text = strip_ansi(str_field(block, "thinking"))
             events.append(
                 {
                     "timestamp": ts,
@@ -185,7 +185,7 @@ def _handle_assistant(
             )
 
         elif block_type == "text":
-            response_text = block.get("text", "")
+            response_text = str_field(block, "text")
             attrs: dict = {"tool_response": response_text}
             if token_attrs:
                 attrs.update(token_attrs)
@@ -201,7 +201,7 @@ def _handle_assistant(
             )
 
         elif block_type == "toolCall":
-            tool_call_id = block.get("id", "")
+            tool_call_id = str_field(block, "id")
             tool_name = block.get("name", "")
             tool_input = block.get("arguments", {})
             idx = len(events)
@@ -241,13 +241,15 @@ def _handle_tool_result(
     events: list[dict],
     tool_call_index: dict[str, int],
 ) -> None:
-    tool_call_id = msg.get("toolCallId", "")
+    tool_call_id = str_field(msg, "toolCallId")
     tool_name = msg.get("toolName", "")
     content = msg.get("content", [])
     is_error = msg.get("isError", False)
 
     if isinstance(content, list):
-        result_text = "\n".join(c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text")
+        result_text = "\n".join(
+            str_field(c, "text") for c in content if isinstance(c, dict) and c.get("type") == "text"
+        )
     elif isinstance(content, str):
         result_text = content
     else:

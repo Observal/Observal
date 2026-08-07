@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Claude Code JSONL session parser.
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from .base import basic_event, pick_timestamp, strip_ansi
+from .base import basic_event, dict_field, load_line, pick_timestamp, str_field, strip_ansi
 
 _META_TYPES = {
     "agent-setting",
@@ -52,13 +53,12 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             events.append(basic_event(row))
             continue
 
-        try:
-            line = json.loads(raw_line)
-        except (json.JSONDecodeError, ValueError):
+        line = load_line(raw_line)
+        if line is None:
             events.append(basic_event(row))
             continue
 
-        msg_type = line.get("type", "")
+        msg_type = str_field(line, "type")
 
         if msg_type in _META_TYPES:
             continue
@@ -72,7 +72,7 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             _handle_assistant(line, ts, harness, events, tool_use_index)
 
         elif msg_type == "system":
-            system_text = line.get("content", "")
+            system_text = str_field(line, "content")
             events.append(
                 {
                     "timestamp": ts,
@@ -84,8 +84,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             )
 
         elif msg_type == "attachment":
-            attachment = line.get("attachment", {})
-            attach_name = attachment.get("name", "")
+            attachment = dict_field(line, "attachment")
+            attach_name = str_field(attachment, "name")
             events.append(
                 {
                     "timestamp": ts,
@@ -117,7 +117,7 @@ def _handle_user(
     events: list[dict],
     tool_use_index: dict[str, int],
 ) -> None:
-    content = line.get("message", {}).get("content", [])
+    content = dict_field(line, "message").get("content", [])
 
     if isinstance(content, str):
         events.append(
@@ -138,7 +138,7 @@ def _handle_user(
     result_blocks = [b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
 
     if text_blocks:
-        full_text = "\n".join(b.get("text", "") for b in text_blocks)
+        full_text = "\n".join(str_field(b, "text") for b in text_blocks)
         events.append(
             {
                 "timestamp": ts,
@@ -150,13 +150,13 @@ def _handle_user(
         )
 
     for block in result_blocks:
-        tool_use_id = block.get("tool_use_id", "")
+        tool_use_id = str_field(block, "tool_use_id")
         result_content = block.get("content", "")
         if isinstance(result_content, str):
             result_text = result_content
         elif isinstance(result_content, list):
             result_text = "\n".join(
-                c.get("text", "") for c in result_content if isinstance(c, dict) and c.get("type") == "text"
+                str_field(c, "text") for c in result_content if isinstance(c, dict) and c.get("type") == "text"
             )
         else:
             result_text = str(result_content)
@@ -173,10 +173,10 @@ def _handle_assistant(
     events: list[dict],
     tool_use_index: dict[str, int],
 ) -> None:
-    message = line.get("message", {})
+    message = dict_field(line, "message")
     content = message.get("content", [])
 
-    usage = message.get("usage") or {}
+    usage = dict_field(message, "usage")
     token_attrs: dict = {}
     if usage:
         if usage.get("input_tokens"):
@@ -201,7 +201,7 @@ def _handle_assistant(
         block_type = block.get("type", "")
 
         if block_type == "thinking":
-            thinking_text = strip_ansi(block.get("thinking", ""))
+            thinking_text = strip_ansi(str_field(block, "thinking"))
             events.append(
                 {
                     "timestamp": ts,
@@ -213,7 +213,7 @@ def _handle_assistant(
             )
 
         elif block_type == "text":
-            response_text = block.get("text", "")
+            response_text = str_field(block, "text")
             attrs: dict = {"tool_response": response_text}
             if token_attrs:
                 attrs.update(token_attrs)
@@ -229,7 +229,7 @@ def _handle_assistant(
             )
 
         elif block_type == "tool_use":
-            tool_use_id = block.get("id", "")
+            tool_use_id = str_field(block, "id")
             tool_name = block.get("name", "")
             tool_input = block.get("input", {})
             idx = len(events)

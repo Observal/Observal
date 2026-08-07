@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Single redaction chokepoint for the support bundle.
@@ -74,6 +75,10 @@ def redact_string(value: str) -> tuple[str, int]:
     # 3. URL userinfo (preserve structure)
     def _redact_userinfo(m: re.Match) -> str:
         nonlocal count
+        # The entropy rule below can collapse a userinfo segment into the marker,
+        # which this pattern would otherwise match again on a second pass.
+        if REDACTED in m.group(2):
+            return m.group(0)
         count += 1
         return f"{m.group(1)}{REDACTED}@"
 

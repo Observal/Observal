@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Copilot CLI JSONL session parser.
@@ -13,7 +14,7 @@ from __future__ import annotations
 
 import json
 
-from .base import basic_event, pick_timestamp
+from .base import basic_event, load_line, pick_timestamp, str_field
 
 _SKIP_TYPES = frozenset({"assistant.message_delta"})
 
@@ -41,13 +42,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             continue
 
         sanitized = _sanitize_raw_line(raw_line)
-        try:
-            parsed = json.loads(sanitized)
-        except (json.JSONDecodeError, ValueError):
-            events.append(basic_event(row))
-            continue
-
-        if not isinstance(parsed, dict):
+        parsed = load_line(sanitized)
+        if parsed is None:
             events.append(basic_event(row))
             continue
 
@@ -55,20 +51,20 @@ def parse_rows(rows: list[dict]) -> list[dict]:
         envelope_event = parsed.get("event")
         if isinstance(envelope_event, dict):
             # Envelope format
-            event_type = envelope_event.get("type", "")
+            event_type = str_field(envelope_event, "type")
             data = {k: v for k, v in envelope_event.items() if k != "type"}
             ts = pick_timestamp(parsed.get("ts"), row_ts, ingested_at)
-            event_id = parsed.get("agentId", "")
+            event_id = str_field(parsed, "agentId")
             parent_id = ""
         else:
             # Flat format fallback: {type, data, id, timestamp, parentId}
-            event_type = parsed.get("type", "")
+            event_type = str_field(parsed, "type")
             data = parsed.get("data", {})
             if not isinstance(data, dict):
                 data = {}
             ts = pick_timestamp(parsed.get("timestamp"), row_ts, ingested_at)
-            event_id = parsed.get("id", "")
-            parent_id = parsed.get("parentId", "") or ""
+            event_id = str_field(parsed, "id")
+            parent_id = str_field(parsed, "parentId")
 
         if not event_type:
             events.append(basic_event(row))
