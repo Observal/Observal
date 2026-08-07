@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+8{"type":"session_meta","timestamp":"2026-01-01T00:00:00.000Z","payload":{"id":"sess_1","cwd":"/repo"}}
+{"type":"event_msg","timestamp":"2026-01-01T00:00:01.000Z","payload":{"type":"user_message","message":"explain the retry policy"}}
+{"type":"response_item","timestamp":"2026-01-01T00:00:02.000Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"It retries three times."}]}}
+{"type":"response_item","timestamp":"2026-01-01T00:00:03.000Z","payload":{"type":"function_call","name":"shell","call_id":"fc_1","arguments":"{\"cmd\":\"ls\"}"}}
+{"type":"response_item","timestamp":"2026-01-01T00:00:04.000Z","payload":{"type":"function_call_output","call_id":"fc_1","output":"README.md"}}
+{"type":"event_msg","timestamp":"2026-01-01T00:00:05.000Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":220,"output_tokens":18,"cached_input_tokens":64},"total_token_usage":{"input_tokens":900,"output_tokens":75}},"rate_limits":{"model":"gpt-5"}}}
+{"type":"event_msg","timestamp":"2026-01-01T00:00:06.000Z","payload":{"type":"task_complete"}}

@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+{"DATABASE_URL": "postgresql://svc:zzzzzzzzzzzz@db.internal:5432/observal"}
+{"log_level": "info", "region": "eu-west-1", "port": 8000}
+https://user:zzzzzzzzzzzz@registry.internal/observal
+clickhouse://reader:zzzzzzzzzzzz@ch.internal:8123/default
+Bearer zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz
+zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz
+plain diagnostic line with no credentials at all

@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Subramania Raja <dhanpraja231@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 __pycache__/
@@ -47,6 +48,16 @@ Thumbs.db
 htmlcov/
 .coverage
 *.cover
+
+# Fuzzing (see fuzz/README.md)
+.hypothesis/
+crash-*
+timeout-*
+oom-*
+slow-unit-*
+# Left behind by a local `infra/helper.py build_fuzzers` against this checkout
+*.pkg.spec
+coverage_wrapper.py
 
 # Node
 observal-web/node_modules/

@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+7{"type":"user","timestamp":"2026-01-01T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"add a health probe to the api"}]}}
+{"type":"assistant","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"assistant","model":"claude-sonnet-4","stop_reason":"tool_use","usage":{"input_tokens":1200,"output_tokens":64,"cache_read_input_tokens":800,"cache_creation_input_tokens":0},"content":[{"type":"thinking","thinking":"look at the router first"},{"type":"text","text":"Reading the router."},{"type":"tool_use","id":"toolu_01","name":"Read","input":{"file_path":"api/routes/health.py"}}]}}
+{"type":"user","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01","content":[{"type":"text","text":"router = APIRouter()"}]}]}}
+{"type":"system","timestamp":"2026-01-01T00:00:03.000Z","content":"SessionStart hook completed"}
+{"type":"attachment","timestamp":"2026-01-01T00:00:04.000Z","attachment":{"type":"file","name":"api/routes/health.py"}}
+{"type":"summary","summary":"added a health probe"}

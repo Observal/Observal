@@ -334,3 +334,10 @@ SPDX-License-Identifier = "Apache-2.0"
 path = "docs/.gitbook/assets/insights.png"
 SPDX-FileCopyrightText = "2026 Subramania Raja <dhanpraja231@gmail.com>"
 SPDX-License-Identifier = "Apache-2.0"
+
+# Fuzzing seed corpora are raw fuzzer inputs and cannot carry comment headers.
+[[annotations]]
+path = "fuzz/corpus/**"
+SPDX-FileCopyrightText = "2026 RAWx18 <rawx18.dev@gmail.com>"
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+SPDX-License-Identifier = "Apache-2.0"

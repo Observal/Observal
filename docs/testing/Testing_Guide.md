@@ -21,6 +21,7 @@ Use this structure for most new test files:
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <email@example.com>
+<!-- SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com> -->
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the behavior under test.
@@ -394,6 +395,20 @@ class TestRedactionProperties:
 
 Keep property-based tests deterministic and focused. If a failing example reveals a bug, add a named regression test too.
 
+## Fuzzing
+
+Property tests cover invariants you can name. Fuzzing covers the ones you cannot: Observal is fuzzed continuously by [Google OSS-Fuzz](https://google.github.io/oss-fuzz/), and the Atheris targets live in `fuzz/`.
+
+Reach for a fuzz target instead of a property test when the boundary takes untrusted bytes and the interesting failures are crashes rather than wrong answers. Session transcripts, the ingest classifiers, and both redaction layers are covered today.
+
+```bash
+make test-fuzz                                          # smoke-test every target
+python3 fuzz/session_jsonl_fuzzer.py -atheris_runs=100000
+python3 fuzz/session_jsonl_fuzzer.py crash-<sha1>       # reproduce a finding
+```
+
+`fuzz/README.md` covers adding a target, seed corpora, dictionaries, and the OSS-Fuzz project configuration.
+
 ## Assertions
 
 Use plain `assert`. Assert the public result before internal interactions:
@@ -450,6 +465,7 @@ make test
 make test-v
 make test-eval-completeness
 make test-adversarial
+make test-fuzz
 make test-all
 ```
 

@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # AGENTS.md
@@ -65,6 +66,7 @@ observal-server/       FastAPI server
 web/                   Vite 6 SPA / React 19 / TanStack Router (see web/AGENTS.md)
 packages/pi-extension/ Pi telemetry extension (npm: observal-pi)
 docker/                Docker Compose stack (10 services)
+fuzz/                  Atheris fuzz targets + OSS-Fuzz project config mirror
 tests/                 pytest (174 files)
 tests/e2e/             Playwright (20 specs)
 ```
@@ -223,6 +225,7 @@ make test                # runs tests/ only (174 files), parallel via pytest-xdi
 make test-v              # verbose
 # observal-server/tests/ (21 files) and observal_cli/tests/ (11 files) are not run
 # by `make test` or CI; invoke pytest on those paths directly.
+make test-fuzz           # smoke-test the OSS-Fuzz targets in fuzz/ (needs atheris)
 # E2E (requires running stack):
 cd tests/e2e && pnpm test   # 20 Playwright specs
 ```

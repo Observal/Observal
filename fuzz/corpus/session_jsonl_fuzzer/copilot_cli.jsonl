@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+1{"agentId":"agent_1","ts":"2026-01-01T00:00:00.000Z","event":{"type":"session.start","sessionId":"sess_1","context":{"cwd":"/repo"}}}
+{"agentId":"agent_1","ts":"2026-01-01T00:00:01.000Z","event":{"type":"user.message","content":{"text":"bump the chart version"}}}
+{"agentId":"agent_1","ts":"2026-01-01T00:00:02.000Z","event":{"type":"agent.thinking","content":"chart lives under infra/helm"}}
+{"agentId":"agent_1","ts":"2026-01-01T00:00:03.000Z","event":{"type":"tool.call","name":"str_replace_editor","input":{"path":"infra/helm/Chart.yaml"}}}
+{"agentId":"agent_1","ts":"2026-01-01T00:00:04.000Z","event":{"type":"tool.result","output":{"textResultForLlm":"version: 1.2.0"}}}
+{"agentId":"agent_1","ts":"2026-01-01T00:00:05.000Z","event":{"type":"assistant.message","content":"Bumped to 1.2.0.","model":"gpt-4.1","usage":{"input_tokens":140,"output_tokens":9}}}
+{"type":"assistant.message","id":"evt_9","timestamp":"2026-01-01T00:00:06.000Z","data":{"content":"flat format fallback","model":"gpt-4.1","outputTokens":9}}
+{"agentId":"agent_1","ts":"2026-01-01T00:00:07.000Z","event":{"type":"session.end","reason":"completed"}}

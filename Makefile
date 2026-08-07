@@ -3,9 +3,10 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release release-preview sync-skill ensure-host-dirs
+.PHONY: lint format check test test-adversarial test-eval-completeness test-fuzz test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release release-preview sync-skill ensure-host-dirs
 
 # ── Linting ──────────────────────────────────────────────
 
@@ -32,6 +33,9 @@ test-adversarial:  ## Run BenchJack self-test suite
 
 test-eval-completeness:  ## Run eval completeness tests
 	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/test_eval_completeness.py -v --tb=short
+
+test-fuzz:  ## Smoke-test the OSS-Fuzz targets over their seed corpora (see fuzz/README.md)
+	cd observal-server && uv run --python 3.13 --with pytest --with pytest-asyncio --with atheris --with hypothesis --with loguru pytest ../tests/test_fuzz_targets.py -q
 
 test-all: test test-eval-completeness test-adversarial  ## Run all tests including adversarial and completeness
 

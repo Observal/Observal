@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+# Patterns the support-bundle redactor keys off, plus the token delimiters its
+# entropy rule splits on.
+"eyJ"
+"AKIA"
+"https://"
+"postgresql://"
+"redis://"
+"clickhouse://"
+"password"
+"secret"
+"token"
+"api_key"
+"apikey"
+"api-key"
+"access_key"
+"private_key"
+"credential"
+"authorization"
+"client_secret"
+"bearer"
+"<REDACTED>"
+"@"
+"."
+"="
+";"
+"`"

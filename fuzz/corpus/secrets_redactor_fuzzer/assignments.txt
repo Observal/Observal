@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+Reading config from settings.toml
+password: zzzzzzzzzzzz
+"api_key": "zzzzzzzzzzzzzzzz"
+client_secret = 'zzzzzzzzzzzzzzzz'
+DATABASE_URL=postgresql://svc:zzzzzzzzzzzz@db.internal:5432/observal
+redis://cache:zzzzzzzzzzzz@redis.internal:6379/0
+Authorization: Bearer zzzzzzzzzzzzzzzzzzzz
+X-API-Key: zzzzzzzzzzzzzzzzzzzz
+checksum = abcabcabcabcabcabcabcabcabcabcab
+payload = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+export OPENAI_KEY=$OPENAI_KEY
+os.environ["OPENAI_KEY"]
+load_dotenv(".env")
