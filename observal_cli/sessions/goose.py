@@ -145,10 +145,7 @@ def _read_message_rows(connection: sqlite3.Connection, session_id: str, after_ro
         return []
     optional = [name for name in ("message_id", "metadata_json") if name in available]
     columns = ["id", "role", "content_json", "created_timestamp", *optional]
-    query = (
-        f"SELECT {', '.join(columns)} FROM messages "
-        "WHERE session_id = ? AND id > ? ORDER BY id"
-    )
+    query = f"SELECT {', '.join(columns)} FROM messages WHERE session_id = ? AND id > ? ORDER BY id"
     return connection.execute(query, (session_id, after_row_id)).fetchall()
 
 

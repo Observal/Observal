@@ -24,6 +24,7 @@ def _isolated_goose_env(monkeypatch: pytest.MonkeyPatch):
     """GOOSE_PATH_ROOT overrides every other location, so keep tests hermetic."""
     monkeypatch.delenv("GOOSE_PATH_ROOT", raising=False)
 
+
 _SESSIONS_DDL = """
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
