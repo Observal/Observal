@@ -35,7 +35,8 @@ dependencies = [
     "strawberry-graphql[fastapi]>=0.315.4",
     "authlib>=1.6.11",
     "itsdangerous",
-    "cryptography>=48.0.1",
+    # >=50.0.0: PYSEC-2026-3552 (PKCS#7 decrypt Bleichenbacher oracle).
+    "cryptography>=50.0.0",
     "python3-saml>=1.16.0",
     "slowapi",
     "PyJWT>=2.13.0",
