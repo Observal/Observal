@@ -160,7 +160,8 @@ def _handle_message(
             if error:
                 attributes["tool_status"] = "error"
                 attributes["tool_response"] = error[:_MAX_RESPONSE]
-            tool_index[tool_id] = len(events)
+            if tool_id:
+                tool_index[tool_id] = len(events)
             events.append(_event(ts, harness, "hook_posttooluse", name, attributes))
 
         elif block_type == "toolResponse":
@@ -238,7 +239,7 @@ def _merge_tool_response(block: dict, ts: str, harness: str, events: list[dict],
     """Attach a tool result to its request, or emit it standalone when orphaned."""
     tool_id = str(block.get("id") or "")
     text, failed = _tool_result_text(block.get("toolResult"))
-    index = tool_index.get(tool_id)
+    index = tool_index.get(tool_id) if tool_id else None
     if index is not None and index < len(events):
         target = events[index]
         target["attributes"]["tool_response"] = text[:_MAX_RESPONSE]

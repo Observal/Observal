@@ -57,6 +57,15 @@ _TOOL_REQUEST = {
         (_message("assistant", [{"type": "thinking", "thinking": "hmm", "signature": ""}]), "thinking"),
         (_message("assistant", [{"type": "redactedThinking", "data": "x"}]), "thinking"),
         (_message("assistant", [_TOOL_REQUEST]), "tool_call"),
+        # A mixed block list resolves on the first significant block, as Claude Code does.
+        (
+            _message("assistant", [{"type": "thinking", "thinking": "hmm", "signature": ""}, _TOOL_REQUEST]),
+            "thinking",
+        ),
+        (
+            _message("assistant", [_TOOL_REQUEST, {"type": "thinking", "thinking": "hmm", "signature": ""}]),
+            "tool_call",
+        ),
         (
             _message("user", [{"type": "toolResponse", "id": "tool-1", "toolResult": {"status": "success"}}]),
             "tool_result",
@@ -117,6 +126,13 @@ def test_usage_and_uuid_extraction():
     }
     assert _extract_uuid(record, "goose") == ("msg-1", None)
     assert _extract_usage_tokens({"type": "session"}, "goose")["input_tokens"] == 0
+
+
+def test_uuid_falls_back_to_the_session_id_without_a_message_id():
+    """Pre-v7 goose databases have no ``message_id`` column."""
+    record = _message("assistant", [{"type": "text", "text": "done"}], message_id=None)
+
+    assert _extract_uuid(record, "goose") == ("20260807_1", None)
 
 
 @pytest.mark.parametrize(

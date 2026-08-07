@@ -765,12 +765,14 @@ def _classify_goose(parsed: dict) -> str | None:
     blocks = _goose_block_types(parsed)
     if not blocks:
         return None  # empty message row carries no signal
-    if any(block in _GOOSE_THINKING_BLOCKS for block in blocks):
-        return "thinking"
-    if any(block in _GOOSE_REQUEST_BLOCKS for block in blocks):
-        return "tool_call"
-    if "toolResponse" in blocks:
-        return "tool_result"
+    # First significant block wins, as in _classify_claude_code.
+    for block in blocks:
+        if block in _GOOSE_THINKING_BLOCKS:
+            return "thinking"
+        if block in _GOOSE_REQUEST_BLOCKS:
+            return "tool_call"
+        if block == "toolResponse":
+            return "tool_result"
     return "user_prompt" if parsed.get("role") == "user" else "assistant_text"
 
 
