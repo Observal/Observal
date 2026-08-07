@@ -179,21 +179,29 @@ def load() -> dict:
 
 def save(data: dict):
     """Save config to disk (safely ignoring environment variables)."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Read strictly from disk so we don't accidentally save env vars
-    existing = {}
-    if CONFIG_FILE.exists():
-        existing = json.loads(CONFIG_FILE.read_text())
-
-    existing.update(data)
-
-    # Write with restrictive permissions from the start (contains API key)
-    old_umask = os.umask(0o077)
     try:
-        CONFIG_FILE.write_text(json.dumps(existing, indent=2))
-    finally:
-        os.umask(old_umask)
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Read strictly from disk so we don't accidentally save env vars
+        existing = {}
+        if CONFIG_FILE.exists():
+            existing = json.loads(CONFIG_FILE.read_text())
+
+        existing.update(data)
+
+        # Write with restrictive permissions from the start (contains API key)
+        old_umask = os.umask(0o077)
+        try:
+            CONFIG_FILE.write_text(json.dumps(existing, indent=2))
+        finally:
+            os.umask(old_umask)
+    except PermissionError as exc:
+        # Typically ~/.observal was created root-owned by a Docker bind mount
+        raise SystemExit(
+            f"Cannot write {exc.filename or CONFIG_FILE}: permission denied.\n"
+            f"If {CONFIG_DIR} is owned by root (e.g. created by Docker before it existed), fix it with:\n"
+            f'  sudo chown -R "$USER" "{CONFIG_DIR}"'
+        ) from exc
 
 
 def get_timeout() -> int:

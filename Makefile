@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release release-preview sync-skill
+.PHONY: lint format check test test-adversarial test-eval-completeness test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release release-preview sync-skill ensure-host-dirs
 
 # ── Linting ──────────────────────────────────────────────
 
@@ -51,13 +51,21 @@ hooks:  ## Install pre-commit hooks
 COMPOSE_FILES := -f docker-compose.yml
 OBSERVABILITY_COMPOSE_FILES := $(COMPOSE_FILES) -f docker-compose.observability.yml
 
-up:  ## Start Docker stack
+# Pre-create bind-mount sources so the Docker daemon doesn't create them root-owned
+# (breaks CLI writes to ~/.observal). On Linux, an ACL lets the container's appuser
+# (uid 1001, see docker/Dockerfile.api) write dev.log for `observal logs`; macOS
+# has no setfacl but Docker Desktop maps container uids to the host user anyway.
+ensure-host-dirs:
+	@mkdir -p "$(HOME)/.observal/logs"
+	@command -v setfacl >/dev/null 2>&1 && setfacl -m u:1001:rwx "$(HOME)/.observal/logs" 2>/dev/null || true
+
+up: ensure-host-dirs  ## Start Docker stack
 	cd docker && docker compose $(COMPOSE_FILES) up -d
 
-up-prometheus:  ## Start Docker stack with Prometheus
+up-prometheus: ensure-host-dirs  ## Start Docker stack with Prometheus
 	cd docker && docker compose $(OBSERVABILITY_COMPOSE_FILES) up -d
 
-up-observability:  ## Start Docker stack with Prometheus and Grafana
+up-observability: ensure-host-dirs  ## Start Docker stack with Prometheus and Grafana
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) up -d
 
 down:  ## Stop Docker stack, including optional Prometheus and Grafana
@@ -85,14 +93,14 @@ new-migration:  ## Autogenerate a new migration (requires running stack): make n
 	@echo "Migration generated in observal-server/alembic/versions/."
 	@echo "Inspect the file, then apply with: make migrate"
 
-rebuild:  ## Rebuild and restart Docker stack (runs migrations automatically)
+rebuild: ensure-host-dirs  ## Rebuild and restart Docker stack (runs migrations automatically)
 	cd docker && docker compose $(COMPOSE_FILES) up --build -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose $(COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
 	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy."
 
-rebuild-fast:  ## Fast app rebuild: build shared API and web images once
+rebuild-fast: ensure-host-dirs  ## Fast app rebuild: build shared API and web images once
 	cd docker && docker compose $(COMPOSE_FILES) build observal-api observal-web
 	cd docker && docker compose $(COMPOSE_FILES) up -d --no-build
 	@echo "Waiting for API to be healthy..."
@@ -100,28 +108,28 @@ rebuild-fast:  ## Fast app rebuild: build shared API and web images once
 	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy."
 
-rebuild-prometheus:  ## Rebuild and restart Docker stack with Prometheus
+rebuild-prometheus: ensure-host-dirs  ## Rebuild and restart Docker stack with Prometheus
 	cd docker && docker compose $(OBSERVABILITY_COMPOSE_FILES) up --build -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose $(OBSERVABILITY_COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
 	cd docker && docker compose $(OBSERVABILITY_COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy."
 
-rebuild-observability:  ## Rebuild and restart Docker stack with Prometheus and Grafana
+rebuild-observability: ensure-host-dirs  ## Rebuild and restart Docker stack with Prometheus and Grafana
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) up --build -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy."
 
-rebuild-local:  ## Rebuild local Docker stack
+rebuild-local: ensure-host-dirs  ## Rebuild local Docker stack
 	cd docker && docker compose -f docker-compose.yml up --build -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose -f docker-compose.yml exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
 	cd docker && docker compose -f docker-compose.yml restart observal-lb
 	@echo "✓ Running local Docker stack"
 
-reset:  ## Nuke all Docker volumes, including optional observability, and rebuild core
+reset: ensure-host-dirs  ## Nuke all Docker volumes, including optional observability, and rebuild core
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) down -v
 	cd docker && docker compose $(COMPOSE_FILES) up --build -d
 	@echo "Waiting for API to be healthy..."
@@ -129,7 +137,7 @@ reset:  ## Nuke all Docker volumes, including optional observability, and rebuil
 	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy — all data has been reset."
 
-reset-prometheus:  ## Nuke all Docker volumes and rebuild with Prometheus
+reset-prometheus: ensure-host-dirs  ## Nuke all Docker volumes and rebuild with Prometheus
 	cd docker && docker compose $(OBSERVABILITY_COMPOSE_FILES) down -v
 	cd docker && docker compose $(OBSERVABILITY_COMPOSE_FILES) up --build -d
 	@echo "Waiting for API to be healthy..."
@@ -137,7 +145,7 @@ reset-prometheus:  ## Nuke all Docker volumes and rebuild with Prometheus
 	cd docker && docker compose $(OBSERVABILITY_COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy: all data has been reset."
 
-reset-observability:  ## Nuke all Docker volumes and rebuild with Prometheus and Grafana
+reset-observability: ensure-host-dirs  ## Nuke all Docker volumes and rebuild with Prometheus and Grafana
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) down -v
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) up --build -d
 	@echo "Waiting for API to be healthy..."
@@ -145,7 +153,7 @@ reset-observability:  ## Nuke all Docker volumes and rebuild with Prometheus and
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) restart observal-lb
 	@echo "API is healthy: all data has been reset."
 
-rebuild-clean:  ## Rebuild from scratch (no Docker cache), remove volumes, and restart
+rebuild-clean: ensure-host-dirs  ## Rebuild from scratch (no Docker cache), remove volumes, and restart
 	cd docker && COMPOSE_PROFILES=grafana docker compose $(OBSERVABILITY_COMPOSE_FILES) down -v && docker compose $(COMPOSE_FILES) build --no-cache && docker compose $(COMPOSE_FILES) up -d
 	@echo "Waiting for API to be healthy..."
 	@cd docker && until docker compose $(COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
