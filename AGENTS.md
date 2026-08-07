@@ -42,8 +42,8 @@ See `docs/adding-a-harness.md` for the complete guide to adding or promoting a h
 
 ```
 observal_cli/          Python CLI (Typer)
-  harness/             CLI-side harness adapters (protocol.py, base.py, 9 adapters)
-  harness_specs/       Hook specs (7: claude_code, kiro, codex, copilot, copilot_cli, opencode, antigravity)
+  harness/             CLI-side harness adapters (protocol.py, base.py, 10 adapters)
+  harness_specs/       Hook specs (8: claude_code, kiro, codex, copilot, copilot_cli, opencode, antigravity, goose)
   skills/              Bundled skills installed on login (observal, observal-admin, etc.)
 
 observal-server/       FastAPI server
@@ -54,7 +54,7 @@ observal-server/       FastAPI server
   services/            Business logic
     clickhouse/        ClickHouse subpackage (client, schema, insert, query)
     harness/           Server-side harness adapters (config generation)
-    session_parsers/   Per-harness JSONL parsers (8 modules covering all 9 harnesses)
+    session_parsers/   Per-harness JSONL parsers (9 modules covering all 10 harnesses)
     audit/             Compliance audit system (loguru-based)
     config/            Config generation helpers (mcp_builder, skill_builder)
     insights/          Insight engine (report generation, facets, sections, HTML export)
@@ -157,7 +157,7 @@ observal
 ├── admin                    # settings, set, users, review (list/show/approve/reject)
 ├── self                     # upgrade, downgrade, rollback, status
 │   └── uninstall            #   tear down Docker stack and config
-├── doctor                   # diagnose + patch harness settings for all 9 harnesses
+├── doctor                   # diagnose + patch harness settings for all 10 harnesses
 │   ├── patch / cleanup      #   install or remove telemetry hooks
 │   └── support              #   diagnostic bundle with redaction
 └── server                   # start, stop, restart, status, logs, install, reset, config
