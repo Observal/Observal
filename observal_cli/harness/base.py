@@ -57,6 +57,13 @@ class BaseAdapter:
     def harness_name(self) -> str:
         raise NotImplementedError("Subclasses must define harness_name")
 
+    def resolve_home_dir(self) -> Path | None:
+        """Return the harness home directory, for adapters that resolve their own layout.
+
+        ``None`` means the caller should fall back to its static path table.
+        """
+        return None
+
     def scan_home(self, home: Path | None = None) -> ScanResult:
         _check_feature(self.harness_name, "scan_home")
         return ScanResult()

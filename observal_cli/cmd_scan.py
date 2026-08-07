@@ -43,7 +43,6 @@ _HARNESS_HOME_DIRS: dict[str, str] = {
     "opencode": "~/.config/opencode",
     "antigravity": "~/.gemini",
     "cursor": "~/.cursor",
-    "goose": "~/.config/goose",
     "pi": "~/.pi/agent",
 }
 
@@ -98,8 +97,17 @@ def register_scan(app: typer.Typer):
         ide_status: list[tuple[str, str]] = []  # (name, hooks)
 
         for ide_name, adapter in adapters.items():
-            home_label = _HARNESS_HOME_DIRS.get(ide_name, "")
-            home_dir = Path(home_label.replace("~", str(home))) if home_label else None
+            # Adapters that relocate with env vars resolve their own home; the rest
+            # use the static table above.
+            resolved_home = adapter.resolve_home_dir()
+            if resolved_home is not None:
+                home_dir = resolved_home
+                home_label = str(resolved_home)
+                scan_arg = None
+            else:
+                home_label = _HARNESS_HOME_DIRS.get(ide_name, "")
+                home_dir = Path(home_label.replace("~", str(home))) if home_label else None
+                scan_arg = home
 
             # Skip if home dir doesn't exist
             if home_dir and not home_dir.is_dir():
@@ -109,7 +117,7 @@ def register_scan(app: typer.Typer):
             scan_ctx = nullcontext() if output == "json" else spinner(f"Scanning {home_label or ide_name}...")
             with scan_ctx:
                 try:
-                    home_result = adapter.scan_home(home)
+                    home_result = adapter.scan_home(scan_arg)
                 except NotSupportedError:
                     home_result = type("R", (), {"mcps": [], "skills": [], "hooks": [], "agents": []})()
 

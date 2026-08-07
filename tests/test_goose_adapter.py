@@ -179,7 +179,9 @@ def test_extract_mcp_servers_ignores_unrelated_config_sections():
 # ── Hooks ─────────────────────────────────────────────────────────────────────
 
 
-def test_detect_hooks_missing(tmp_path: Path):
+def test_detect_hooks_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Without this the user-scope fallback would read the developer's real plugin.
+    monkeypatch.setenv("GOOSE_PATH_ROOT", str(tmp_path))
     assert GooseAdapter().detect_hooks(tmp_path) == "missing"
 
 
@@ -200,6 +202,28 @@ def test_detect_hooks_installed_and_partial(tmp_path: Path):
 
     hooks_json.write_text("{ not json")
     assert GooseAdapter().detect_hooks(tmp_path) == "missing"
+
+
+def test_rewrite_hooks_repoints_pulled_commands_at_the_local_interpreter():
+    from observal_cli.harness_specs.goose_hooks_spec import hook_command
+
+    pulled = {
+        "hooks": {
+            "Stop": [
+                {
+                    "hooks": [
+                        {"type": "command", "command": "python3 -m observal_cli.hooks.session_push --harness goose"}
+                    ]
+                },
+                {"hooks": [{"type": "command", "command": "/usr/local/bin/my-hook.sh"}]},
+            ]
+        }
+    }
+
+    rewritten = GooseAdapter().rewrite_hooks(pulled, agent_id="a1")["hooks"]["Stop"]
+
+    assert rewritten[0]["hooks"][0]["command"] == hook_command()
+    assert rewritten[1]["hooks"][0]["command"] == "/usr/local/bin/my-hook.sh"
 
 
 def test_hook_spec_uses_documented_goose_events():

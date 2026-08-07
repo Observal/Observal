@@ -80,6 +80,7 @@ def goose_home(isolated_home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.delenv("GOOSE_PATH_ROOT", raising=False)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)  # goose reads %APPDATA% on Windows
     (isolated_home / ".config/goose").mkdir(parents=True)
     return isolated_home
 
@@ -197,6 +198,7 @@ class TestChecks:
     def test_goose_is_silent_when_not_installed(self, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        monkeypatch.delenv("APPDATA", raising=False)
         warnings: list[str] = []
 
         _check_goose([], warnings)
@@ -230,6 +232,28 @@ class TestChecks:
         _check_goose(issues, [])
 
         assert any("not valid JSON" in issue for issue in issues)
+
+    def test_goose_reports_a_non_object_hook_root_as_an_issue(self, goose_home: Path):
+        hooks_path = goose_home / ".agents/plugins/observal/hooks/hooks.json"
+        hooks_path.parent.mkdir(parents=True)
+        hooks_path.write_text("[1]", encoding="utf-8")
+        issues: list[str] = []
+
+        _check_goose(issues, [])
+
+        assert any("not valid JSON" in issue for issue in issues)
+
+    def test_goose_is_not_stale_when_foreign_rules_sit_beside_ours(self, goose_home: Path):
+        write_json(
+            goose_home / ".agents/plugins/observal/hooks/hooks.json",
+            {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "foreign"}]}]}},
+        )
+        _patch_goose(dry_run=False)
+        warnings: list[str] = []
+
+        _check_goose([], warnings)
+
+        assert warnings == []
 
     def test_observal_skill_missing_reports_detected_harnesses(self, tmp_path: Path):
         (tmp_path / ".pi/agent").mkdir(parents=True)
@@ -375,6 +399,7 @@ class TestPatchFunctions:
     def test_patch_goose_skips_when_goose_is_not_installed(self, isolated_home: Path, monkeypatch):
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        monkeypatch.delenv("APPDATA", raising=False)
 
         assert _patch_goose(dry_run=False) is False
         assert not (isolated_home / ".agents").exists()
@@ -515,3 +540,13 @@ class TestCleanupFunctions:
 
         assert _cleanup_goose(dry_run=True) is True
         assert plugin_dir.exists()
+
+    def test_cleanup_goose_preserves_foreign_hook_rules(self, goose_home: Path):
+        hooks_path = goose_home / ".agents/plugins/observal/hooks/hooks.json"
+        write_json(hooks_path, {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "foreign"}]}]}})
+        _patch_goose(dry_run=False)
+
+        assert _cleanup_goose(dry_run=False) is True
+
+        rules = read_json(hooks_path)["hooks"]
+        assert rules == {"Stop": [{"hooks": [{"type": "command", "command": "foreign"}]}]}

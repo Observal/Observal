@@ -48,6 +48,8 @@ from observal_cli.shared.utils import (
 _COMMAND_TYPES = frozenset({"stdio"})
 _REMOTE_TYPES = frozenset({"streamable_http", "sse"})
 
+_SESSION_PUSH_MODULE = "observal_cli.hooks.session_push"
+
 
 class GooseAdapter(BaseAdapter):
     """Adapter for goose (CLI and Desktop share the same on-disk state)."""
@@ -142,6 +144,18 @@ class GooseAdapter(BaseAdapter):
 
     # ── Scanning ──────────────────────────────────────────────────────
 
+    def resolve_home_dir(self) -> Path | None:
+        """Return the config dir, or the data dir when only that one exists.
+
+        Goose honours ``GOOSE_PATH_ROOT``, XDG and ``%APPDATA%``, so scanning must
+        not assume ``~/.config/goose``.
+        """
+        config_dir = resolve_goose_config_dir()
+        if config_dir.is_dir():
+            return config_dir
+        data_dir = resolve_goose_data_dir()
+        return data_dir if data_dir.is_dir() else config_dir
+
     def scan_home(self, home: Path | None = None) -> ScanResult:
         """Discover MCPs, skills, agents, and hooks from the user's goose setup."""
         config_dir = resolve_goose_config_dir(home)
@@ -218,6 +232,31 @@ class GooseAdapter(BaseAdapter):
         from observal_cli.cmd_doctor import _patch_goose
 
         return _patch_goose(dry_run)
+
+    def rewrite_hooks(self, content: dict, agent_id: str) -> dict:
+        """Point pulled session-push hooks at this machine's interpreter.
+
+        The server cannot know the local interpreter path, whether it needs
+        quoting, or whether ``observal_cli`` is importable without a
+        ``PYTHONPATH``, so the command is replaced with the one ``doctor``
+        installs and compares against.
+        """
+        from observal_cli.harness_specs.goose_hooks_spec import hook_command
+
+        hooks = content.get("hooks")
+        if not isinstance(hooks, dict):
+            return content
+        command = hook_command()
+        for rules in hooks.values():
+            if not isinstance(rules, list):
+                continue
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    continue
+                for handler in rule.get("hooks", []):
+                    if isinstance(handler, dict) and _SESSION_PUSH_MODULE in str(handler.get("command", "")):
+                        handler["command"] = command
+        return content
 
     def cleanup_hooks(self, dry_run: bool) -> bool:
         from observal_cli.cmd_doctor import _cleanup_goose

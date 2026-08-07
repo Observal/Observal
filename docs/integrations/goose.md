@@ -292,10 +292,6 @@ it.
 their final integrity audit runs from background recovery or
 `observal reconcile`.
 
-**`observal scan` does not follow `GOOSE_PATH_ROOT`.** Scan gates each harness on
-a fixed home directory, so it reports nothing when Goose is relocated. Pull,
-doctor, layer snapshots, and session capture all follow the relocated paths.
-
 **Legacy JSONL sessions are not imported.** Goose imports pre-1.10 `.jsonl`
 files into `sessions.db` on upgrade, and Observal reads the database, so those
 sessions are covered. Leftover `.jsonl` files on disk are ignored.

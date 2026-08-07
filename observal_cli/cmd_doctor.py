@@ -630,6 +630,25 @@ def _check_antigravity(issues: list, warnings: list):
         )
 
 
+def _goose_event_current(installed_rules: object, desired_rules: list) -> bool:
+    """Return True when *installed_rules* already carries every desired Observal handler.
+
+    ``_patch_goose`` keeps foreign rules alongside ours, so comparing the whole
+    rule list would report a permanently stale hook.
+    """
+    if not isinstance(installed_rules, list):
+        return False
+    present = [
+        handler
+        for rule in installed_rules
+        if isinstance(rule, dict)
+        for handler in rule.get("hooks", [])
+        if isinstance(handler, dict)
+    ]
+    wanted = [handler for rule in desired_rules for handler in rule.get("hooks", [])]
+    return all(handler in present for handler in wanted)
+
+
 def _check_goose(issues: list, warnings: list):
     """Check that the Observal hook plugin is installed for Goose."""
     optic.debug("_check_goose")
@@ -647,13 +666,13 @@ def _check_goose(issues: list, warnings: list):
         return
 
     data = _load_json(hooks_path)
-    if data is None:
-        issues.append(f"{hooks_path}: not valid JSON.")
+    if not isinstance(data, dict):
+        issues.append(f"{hooks_path}: not valid JSON object.")
         return
 
-    installed = data.get("hooks", {}) if isinstance(data.get("hooks"), dict) else {}
+    installed = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
     desired = build_hooks()["hooks"]
-    stale = [event for event in GOOSE_HOOK_EVENTS if installed.get(event) != desired[event]]
+    stale = [event for event in GOOSE_HOOK_EVENTS if not _goose_event_current(installed.get(event), desired[event])]
     if stale:
         warnings.append(
             f"Goose session push hooks are missing or stale for: {', '.join(stale)}. "
@@ -1024,10 +1043,11 @@ def _cleanup_opencode(dry_run: bool) -> bool:
 
 
 def _cleanup_goose(dry_run: bool) -> bool:
-    """Remove the Observal hook plugin from ~/.agents/plugins/observal/."""
+    """Remove Observal hook rules from ~/.agents/plugins/observal/, keeping foreign ones."""
     import shutil
 
-    from observal_cli.harness_specs.goose_hooks_spec import plugin_dir
+    from observal_cli.harness_specs.goose_hooks_spec import hooks_file, plugin_dir
+    from observal_cli.shared.utils import is_observal_hook_entry
 
     rprint("[cyan]Goose[/cyan]")
     path = plugin_dir()
@@ -1035,6 +1055,32 @@ def _cleanup_goose(dry_run: bool) -> bool:
     if not path.is_dir():
         rprint("  [dim]No observal plugin found - skipping[/dim]")
         return False
+
+    hooks_path = hooks_file()
+    data = _load_json(hooks_path) if hooks_path.is_file() else None
+    data = data if isinstance(data, dict) else {}
+    existing_hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+
+    # _patch_goose preserves user rules in this plugin, so cleanup must not delete them.
+    foreign = {}
+    for event, rules in existing_hooks.items():
+        if not isinstance(rules, list):
+            continue
+        kept = [
+            rule
+            for rule in rules
+            if isinstance(rule, dict)
+            and not any(is_observal_hook_entry(h) for h in rule.get("hooks", []) if isinstance(h, dict))
+        ]
+        if kept:
+            foreign[event] = kept
+
+    if foreign:
+        verb = "Would remove" if dry_run else "Removed"
+        rprint(f"  {verb} Observal hooks from {hooks_path} (kept {len(foreign)} foreign event(s))")
+        if not dry_run:
+            hooks_path.write_text(json.dumps({**data, "hooks": foreign}, indent=2) + "\n")
+        return True
 
     verb = "Would remove" if dry_run else "Removed"
     rprint(f"  {verb} {path}")
@@ -1664,7 +1710,9 @@ def _patch_goose(dry_run: bool) -> bool:
     manifest_path = manifest_file()
     desired = build_hooks()["hooks"]
 
-    existing: dict = _load_json(hooks_path) or {} if hooks_path.exists() else {}
+    existing = _load_json(hooks_path) if hooks_path.exists() else None
+    if not isinstance(existing, dict):
+        existing = {}
     existing_hooks = existing.get("hooks", {})
     if not isinstance(existing_hooks, dict):
         existing_hooks = {}
