@@ -15,18 +15,25 @@ Observal is an agent-centric registry and observability platform for AI coding a
 2. **Web UI** (`web/`): browse the registry, view traces, manage users, admin dashboard
 3. **Observal skill** (bundled, auto-installed on login): lets the LLM inside any harness drive Observal commands directly (e.g. "create an agent that uses the github MCP")
 
-Agents are the primary entity. Each agent bundles 5 component types: MCP servers, skills, hooks, prompts, and sandboxes. When a user runs `observal pull <agent>`, the platform resolves all components and writes harness-specific config files.
+Agents are the primary entity. Each agent bundles 5 component types: MCP servers, skills, hooks, prompts, and sandboxes. When a user runs `observal agent pull <agent>`, the platform resolves all components and writes harness-specific config files.
 
-## harness support tiers
+## harness capability support
 
-**First-class** (full session parsing, hooks, scanning, config gen, tested e2e):
-- Claude Code
-- Kiro
-- Cursor
-- Pi
+Nine harnesses are registered in `packages/observal-shared/observal_shared/harness_registry.py`. Support is per-capability, not a single tier. Verify against the registry before relying on this table.
 
-**Functional** (config gen and scanning work, but no session parser or hook spec):
-- Codex CLI, Copilot, Copilot CLI, OpenCode
+| Harness | Hook spec | Session parser | Capabilities | Harness-specific e2e |
+|---|---|---|---|---|
+| Claude Code | yes | `claude-code` | hooks, mcp_servers, skills | no |
+| Kiro | yes | `kiro` | hooks, mcp_servers | yes (9 specs) |
+| Cursor | no | `cursor` | hooks, mcp_servers | no |
+| Pi | no | `pi` | hooks, mcp_servers, skills | no |
+| Codex CLI | yes | `codex` | hooks, mcp_servers, skills | no |
+| Copilot | yes | `copilot-cli` (shared) | hooks, mcp_servers, skills, prompts | no |
+| Copilot CLI | yes | `copilot-cli` | hooks, mcp_servers, skills, prompts | no |
+| OpenCode | yes | `opencode` | hooks, mcp_servers, skills | no |
+| Antigravity | yes | `antigravity` | hooks, mcp_servers, skills | no |
+
+Every harness now resolves a session parser, so `observal reconcile` works across all nine. Hook specs in `observal_cli/harness_specs/` exist for seven; Cursor and Pi have none. Only Kiro has harness-specific Playwright coverage.
 
 See `docs/adding-a-harness.md` for the complete guide to adding or promoting a harness.
 
@@ -35,7 +42,7 @@ See `docs/adding-a-harness.md` for the complete guide to adding or promoting a h
 ```
 observal_cli/          Python CLI (Typer)
   harness/             CLI-side harness adapters (protocol.py, base.py, 9 adapters)
-  harness_specs/           Hook specs (claude_code, kiro, pi only)
+  harness_specs/       Hook specs (7: claude_code, kiro, codex, copilot, copilot_cli, opencode, antigravity)
   skills/              Bundled skills installed on login (observal, observal-admin, etc.)
 
 observal-server/       FastAPI server
@@ -46,19 +53,19 @@ observal-server/       FastAPI server
   services/            Business logic
     clickhouse/        ClickHouse subpackage (client, schema, insert, query)
     harness/           Server-side harness adapters (config generation)
-    session_parsers/   Per-harness JSONL parsers (claude_code, kiro, cursor, pi)
+    session_parsers/   Per-harness JSONL parsers (8 modules covering all 9 harnesses)
     audit/             Compliance audit system (loguru-based)
     config/            Config generation helpers (mcp_builder, skill_builder)
     insights/          Insight engine (report generation, facets, sections, HTML export)
     shared/            Cross-service utilities
-  jobs/                Background job definitions (catalog, maintenance)
+  jobs/                Background job definitions (catalog, maintenance, migration)
 
 
-web/                   Next.js 16 / React 19 frontend
+web/                   Vite 6 SPA / React 19 / TanStack Router (see web/AGENTS.md)
 packages/pi-extension/ Pi telemetry extension (npm: observal-pi)
 docker/                Docker Compose stack (10 services)
-tests/                 pytest (123 files)
-tests/e2e/             Playwright (19 specs)
+tests/                 pytest (174 files)
+tests/e2e/             Playwright (20 specs)
 ```
 
 ## How the modularisation works
@@ -69,44 +76,46 @@ The codebase follows a strict adapter pattern for harness-specific logic. This i
 
 **No if/elif chains for harness logic.** If you need harness-specific behavior, it goes in the adapter. The orchestrators (`cmd_scan.py`, `agent_builder.py`, `cmd_doctor.py`) call adapters via the registry, never with conditionals.
 
-**Feature-flag gating.** Each adapter method maps to a feature (`hooks`, `mcp_servers`, `skills`). The `BaseAdapter` raises `NotSupportedError` if the harness's registry entry lacks the required feature. This means stubs are safe: they exist but can't be called for unsupported operations.
+**Capability gating.** Each adapter method maps to a capability via `METHOD_FEATURE_MAP` in `observal_cli/harness/protocol.py`. The registry entry's `capabilities` set (`hooks`, `mcp_servers`, `skills`, `prompts`) decides what is allowed; `BaseAdapter` raises `NotSupportedError` when the capability is absent. This means stubs are safe: they exist but can't be called for unsupported operations.
 
-**Session parsers are separate from adapters.** They live in `services/session_parsers/` (server-side) and handle converting raw JSONL into normalized trace events. Only first-class harnesses have parsers.
+**Session parsers are separate from adapters.** They live in `services/session_parsers/` (server-side) and handle converting raw JSONL into normalized trace events. All nine harnesses resolve a parser; Copilot reuses the Copilot CLI parser.
 
-### What "first-class" means concretely
+### What full support means concretely
 
-A first-class harness has all of:
+A fully supported harness has all of:
 - A hook spec in `harness_specs/` (defines what `doctor patch` installs)
-- A session parser in `services/session_parsers/` (enables `observal reconcile`)
+- A session parser resolved from the registry's `session_parser` key (enables `observal reconcile`)
 - Full scanning implementation in its CLI adapter (discovers MCPs, skills, hooks, agents)
 - E2E test coverage in `tests/e2e/`
 
-A stub harness has:
+Today only Kiro meets all four. A minimal harness has:
 - A registry entry with correct paths
 - A CLI adapter that handles basic MCP scanning
 - A server adapter that generates config files
-- No hook spec, no session parser, no e2e tests
+- No hook spec and no e2e tests
 
 ## Coding patterns we prefer
 
 ### Python (server + CLI)
 
 - **Ruff** for lint and format. Line length 120. Pre-commit enforces it.
-- **Loguru for dev logging** (`from loguru import logger as optic`). Positional args only: `optic.debug("x={}", x)`. Never f-strings in log calls.
+- **Loguru for dev logging** (`from loguru import logger as optic`). Positional args only: `optic.debug("x={}", x)`. Never f-strings. Never `exc_info=` (loguru ignores it). See the Optic section below for the full rule and known exceptions.
 - **Typer for CLI.** `B008` suppressed because Typer requires function calls in argument defaults.
 - **Skill files track CLI changes.** When any CLI command is added, removed, renamed, or has its flags changed, update the corresponding skill files in `observal_cli/skills/`. These are the agent's source of truth for command syntax.
 - **Dynamic settings** for runtime config: `from services.dynamic_settings import get, get_int, get_bool`. Non-boot settings live in the DB, not env vars.
 - **ClickHouse migrations** live in `observal-server/clickhouse/migrations/*.sql` and run through `services.clickhouse.migrations`. Keep Alembic for Postgres only. Never add ClickHouse DDL to startup code. The init container runs ClickHouse migrations after Alembic and before API startup.
-- **SSRF guard** for all outbound network: `from services.ssrf_guard import check_url`. Used in webhooks, git clone, MCP analysis.
+- **SSRF guard** for all outbound network: `from services.ssrf_guard import is_private_url`. Used in webhooks, git clone, MCP analysis.
 - **Conventional Commits**: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`. Scope in parens. No fixup commits (amend instead).
 
 ### TypeScript (web)
 
-- **sessionStorage** for auth state (API key, user role). Never localStorage.
-- **TanStack Query hooks** from `use-api.ts` for all data fetching. No raw `fetch` in components.
-- **Types centralized** in `src/lib/types.ts`. No inline API response types.
+Vite 6 SPA with TanStack Router, not Next.js. `web/AGENTS.md` is the authoritative frontend reference; the rules below are the short form.
+
+- **Auth storage is split.** `observal_access_token` lives in sessionStorage; `observal_refresh_token` and cached profile fields (role, name, email, username, avatar) live in localStorage so refresh survives reloads and new tabs. Do not widen localStorage use without changing the auth model deliberately.
+- **TanStack Query hooks** from `use-api.ts` for all data fetching. Raw `fetch` in components is a known exception, not a pattern: a handful of call sites (co-authors, edit-lock release via `keepalive`, logout, SAML exchange) still use it. Do not add more.
+- **Types centralized** in `src/lib/types.ts` (a barrel over `src/lib/types/`). No inline API response types.
 - **harness list from server** (`/api/v1/config/harnesses`), never hardcoded in frontend.
-- **OKLCH color tokens** in `globals.css`. No raw hex/rgb in components.
+- **OKLCH color tokens** in `src/app.css`. No raw hex/rgb in components.
 
 ### General
 
@@ -120,12 +129,10 @@ A stub harness has:
 
 ```
 observal
-├── pull                     # install agent into harness (primary workflow)
 ├── scan                     # read-only discovery of what's installed
+├── outdated                 # installed components with newer versions available
 ├── reconcile                # push local session JSONL to server for rich traces
-├── use / profile            # swap harness configs from git-hosted profiles
-├── uninstall                # tear down Docker stack and config
-├── auth                     # login, register, reset-password, logout, whoami, status
+├── auth                     # login, logout, whoami, status, change-password, set-username
 ├── config                   # show, set, path, alias, aliases
 ├── registry                 # component parent group
 │   ├── mcp                  #   submit, list, show, install, edit, delete, co-authors
@@ -133,20 +140,31 @@ observal
 │   ├── hook                 #   submit, list, show, install, edit, delete, co-authors
 │   ├── prompt               #   submit, list, show, edit, render, delete, co-authors
 │   ├── sandbox              #   submit, list, show, edit, delete, co-authors
-│   └── models               #   list (public model catalog)
-├── component                # version commands (list-versions, publish, show-version)
-├── agent                    # create, list, show, install, delete, init, add, build, publish, co-authors
+│   ├── models               #   inspect registry-backed harness model data
+│   ├── version              #   component version commands
+│   └── recommend            #   components recommended from your own sessions
+├── agent                    # create, bulk-create, list, my, show, install, archive,
+│                            # unarchive, delete, init, add, build, publish, release,
+│                            # versions, transfer-owner, co-authors
+│   └── pull                 #   install agent into harness (primary workflow)
 ├── team                     # list, show, create, delete, leave, members (list/add/remove)
-├── ops                      # overview, metrics, top, rate, feedback
-│   └── telemetry            #   status, test
+├── ops                      # metrics, top, rate, rate-update, rate-delete, feedback,
+│                            # traces, spans
+│   ├── telemetry            #   status, test
+│   ├── logs                 #   live dev log viewer
+│   └── insights             #   agent insight reports
 ├── admin                    # settings, set, users, review (list/show/approve/reject)
-├── server                   # start, stop, restart, status, logs, install, reset, config
 ├── self                     # upgrade, downgrade, rollback, status
-├── support                  # bundle (diagnostic tarball with redaction)
+│   └── uninstall            #   tear down Docker stack and config
 ├── doctor                   # diagnose + patch harness settings for all 9 harnesses
-├── migrate                  # ClickHouse migration tools
-└── logs                     # live dev log viewer
+│   ├── patch / cleanup      #   install or remove telemetry hooks
+│   └── support              #   diagnostic bundle with redaction
+└── server                   # start, stop, restart, status, logs, install, reset, config
+    └── migrate              #   ClickHouse migration tools (falls back to top-level
+                             #   `observal migrate` when server deps are unavailable)
 ```
+
+`pull` and `uninstall` are subcommands (`observal agent pull`, `observal self uninstall`), not top-level commands. Run `observal --help` to confirm before documenting a command path.
 
 ## Server routes
 
@@ -173,7 +191,7 @@ Session delivery uses a local outbox and resumes after transient network failure
 
 ## Auth model
 
-- API key based. Keys are SHA-256 hashed. `X-API-Key` header on every request.
+- JWT bearer tokens. `Authorization: Bearer <token>` on every authenticated request. There is no `X-API-Key` path.
 - JWT signing uses ES256 (not HS256). JWKS endpoint for public key distribution.
 - Device authorization flow for CLI login via browser confirmation.
 - Redis fail-closed: if Redis is down, auth fails (prevents stale token usage).
@@ -200,20 +218,25 @@ make check               # pre-commit on all files
 make hooks               # install pre-commit hooks
 
 # Tests (all mock externals, no Docker needed)
-make test                # 123 files in tests/ + 22 in observal-server/tests/ + 3 in observal_cli/tests/
+make test                # runs tests/ only (174 files), parallel via pytest-xdist
 make test-v              # verbose
+# observal-server/tests/ (21 files) and observal_cli/tests/ (11 files) are not run
+# by `make test` or CI; invoke pytest on those paths directly.
 # E2E (requires running stack):
-cd tests/e2e && pnpm test   # 19 Playwright specs
+cd tests/e2e && pnpm test   # 20 Playwright specs
 ```
 
 ## Optic (dev logging)
 
-Loguru-based. `observal logs` streams `~/.observal/logs/dev.log`.
+Loguru-based. `observal ops logs` streams `~/.observal/logs/dev.log`.
 
 - Import: `from loguru import logger as optic`
 - Format: `optic.debug("msg: x={}", x)` (positional only, never f-strings)
+- **Never pass `exc_info=`.** Loguru ignores it, so the traceback is silently dropped and `exc_info` lands in `extra` as a literal. Use `optic.exception(...)` or `optic.opt(exception=True).error(...)`.
+- **Avoid structlog-style keyword args** (`optic.info("event_name", key=value)`). Loguru does not interpolate them into the message; they land in `record["extra"]`. The stderr and file sinks render `{message}` only, so those values are invisible in `docker logs` and `dev.log` — only the ring-buffer sink (SSE `/admin/logs/stream`, support bundle) retains them. About 30 legacy call sites still do this (`jobs/catalog.py`, `services/dynamic_settings.py`, `services/insights/self_learn.py`, `services/strategic_insights.py`, `api/routes/{dashboard,insights}.py`); convert them when you touch them, don't add new ones.
 - Never log secrets, tokens, keys, JWT payloads. Log IDs and counts only.
 - Log format (console/json) configured via `observability.log_format` dynamic setting.
+- `logging_config.py` configures a separate structlog pipeline used by parts of the insights engine. Loguru (`optic`) is the default for new code.
 
 ## AI contribution policy
 

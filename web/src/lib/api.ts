@@ -91,8 +91,9 @@ const STORAGE_KEY_USER_AVATAR = "observal_user_avatar";
 // Access token is stored in sessionStorage (clears on tab close) to reduce
 // the XSS exposure window. Refresh token stays in localStorage so silent
 // refresh survives page reloads across tabs.
-// TODO(SEC-025): migrate to HttpOnly cookies via a Next.js API route for
-// full XSS protection.
+// TODO(SEC-025): migrate to HttpOnly cookies set by the API and proxied
+// through nginx to reduce token exfiltration risk. HttpOnly does not prevent
+// authenticated requests from XSS payloads, so retain XSS and CSRF defenses.
 function getAccessToken(): string | null {
 	if (typeof window === "undefined") return null;
 	return sessionStorage.getItem(STORAGE_KEY_ACCESS_TOKEN);
