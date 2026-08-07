@@ -23,6 +23,7 @@ from observal_cli.cmd_doctor import (
     _check_copilot,
     _check_copilot_cli,
     _check_cursor,
+    _check_goose,
     _check_kiro,
     _check_observal_config,
     _check_observal_skill_missing,
@@ -33,6 +34,7 @@ from observal_cli.cmd_doctor import (
     _cleanup_copilot,
     _cleanup_copilot_cli,
     _cleanup_cursor,
+    _cleanup_goose,
     _cleanup_kiro,
     _cleanup_opencode,
     _cleanup_pi,
@@ -42,6 +44,7 @@ from observal_cli.cmd_doctor import (
     _patch_copilot,
     _patch_copilot_cli,
     _patch_cursor,
+    _patch_goose,
     _patch_kiro,
     _patch_opencode,
     _patch_pi,
@@ -69,6 +72,16 @@ def write_json(path: Path, data: dict) -> None:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def goose_home(isolated_home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Pin goose's environment-derived directories to the isolated home."""
+    monkeypatch.delenv("GOOSE_PATH_ROOT", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    (isolated_home / ".config/goose").mkdir(parents=True)
+    return isolated_home
 
 
 class TestHookIdentification:
@@ -180,6 +193,43 @@ class TestChecks:
         _check_antigravity([], warnings)
 
         assert any("Antigravity session push hooks not installed" in warning for warning in warnings)
+
+    def test_goose_is_silent_when_not_installed(self, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        warnings: list[str] = []
+
+        _check_goose([], warnings)
+
+        assert warnings == []
+
+    def test_goose_warns_when_the_hook_plugin_is_missing(self, goose_home: Path):
+        warnings: list[str] = []
+
+        _check_goose([], warnings)
+
+        assert any("Goose session push hooks not installed" in warning for warning in warnings)
+
+    def test_goose_warns_when_hooks_are_stale(self, goose_home: Path):
+        write_json(
+            goose_home / ".agents/plugins/observal/hooks/hooks.json",
+            {"hooks": {"SessionEnd": [{"hooks": [{"type": "command", "command": "old"}]}]}},
+        )
+        warnings: list[str] = []
+
+        _check_goose([], warnings)
+
+        assert any("missing or stale" in warning for warning in warnings)
+
+    def test_goose_reports_invalid_hook_json_as_an_issue(self, goose_home: Path):
+        hooks_path = goose_home / ".agents/plugins/observal/hooks/hooks.json"
+        hooks_path.parent.mkdir(parents=True)
+        hooks_path.write_text("{ not json", encoding="utf-8")
+        issues: list[str] = []
+
+        _check_goose(issues, [])
+
+        assert any("not valid JSON" in issue for issue in issues)
 
     def test_observal_skill_missing_reports_detected_harnesses(self, tmp_path: Path):
         (tmp_path / ".pi/agent").mkdir(parents=True)
@@ -310,6 +360,29 @@ class TestPatchFunctions:
         assert "observal-telemetry" in read_json(config_dir / "hooks.json")
         assert _patch_antigravity(dry_run=False) is False
 
+    def test_patch_goose_installs_plugin_and_preserves_foreign_hooks(self, goose_home: Path):
+        hooks_path = goose_home / ".agents/plugins/observal/hooks/hooks.json"
+        write_json(hooks_path, {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "foreign"}]}]}})
+
+        assert _patch_goose(dry_run=False) is True
+
+        assert read_json(goose_home / ".agents/plugins/observal/plugin.json")["name"] == "observal"
+        rules = read_json(hooks_path)["hooks"]
+        assert rules["Stop"][0]["hooks"][0]["command"] == "foreign"
+        assert any("--harness goose" in handler["command"] for rule in rules["SessionEnd"] for handler in rule["hooks"])
+        assert _patch_goose(dry_run=False) is False
+
+    def test_patch_goose_skips_when_goose_is_not_installed(self, isolated_home: Path, monkeypatch):
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+
+        assert _patch_goose(dry_run=False) is False
+        assert not (isolated_home / ".agents").exists()
+
+    def test_patch_goose_dry_run_writes_nothing(self, goose_home: Path):
+        assert _patch_goose(dry_run=True) is True
+        assert not (goose_home / ".agents").exists()
+
     def test_doctor_yes_runs_supported_patch_command(self, tmp_path: Path):
         (tmp_path / ".cursor").mkdir()
         with (
@@ -425,5 +498,20 @@ class TestCleanupFunctions:
         plugin_path.write_text("plugin", encoding="utf-8")
 
         assert _cleanup_opencode(dry_run=False) is True
-
         assert not plugin_path.exists()
+
+    def test_cleanup_goose_removes_the_hook_plugin(self, goose_home: Path):
+        plugin_dir = goose_home / ".agents/plugins/observal"
+        write_json(plugin_dir / "hooks/hooks.json", {"hooks": {}})
+        write_json(plugin_dir / "plugin.json", {"name": "observal"})
+
+        assert _cleanup_goose(dry_run=False) is True
+        assert not plugin_dir.exists()
+        assert _cleanup_goose(dry_run=False) is False
+
+    def test_cleanup_goose_dry_run_keeps_the_plugin(self, goose_home: Path):
+        plugin_dir = goose_home / ".agents/plugins/observal"
+        write_json(plugin_dir / "hooks/hooks.json", {"hooks": {}})
+
+        assert _cleanup_goose(dry_run=True) is True
+        assert plugin_dir.exists()

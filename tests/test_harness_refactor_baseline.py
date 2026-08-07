@@ -26,6 +26,7 @@ ALL_HARNESSES = [
     "copilot-cli",
     "opencode",
     "antigravity",
+    "goose",
     "pi",
 ]
 

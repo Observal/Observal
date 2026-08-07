@@ -581,6 +581,45 @@ class TestWriteFile:
         status = _write_file(p, "new content")
         assert status == "updated"
 
+    def test_merges_yaml_and_preserves_unrelated_config(self, tmp_path):
+        import yaml
+
+        p = tmp_path / "config.yaml"
+        p.write_text(
+            yaml.safe_dump(
+                {
+                    "active_provider": "anthropic",
+                    "GOOSE_MODE": "smart_approve",
+                    "extensions": {"developer": {"type": "builtin", "enabled": True}},
+                }
+            )
+        )
+
+        status = _write_file(p, {"extensions": {"fs": {"type": "stdio", "cmd": "npx"}}}, merge_mcp=True)
+
+        assert status == "merged"
+        data = yaml.safe_load(p.read_text())
+        assert data["active_provider"] == "anthropic"
+        assert data["GOOSE_MODE"] == "smart_approve"
+        assert set(data["extensions"]) == {"developer", "fs"}
+
+    def test_creates_yaml_when_absent(self, tmp_path):
+        import yaml
+
+        p = tmp_path / ".config" / "goose" / "config.yaml"
+        status = _write_file(p, {"extensions": {"fs": {"type": "stdio"}}}, merge_mcp=True)
+        assert status == "created"
+        assert yaml.safe_load(p.read_text())["extensions"]["fs"]["type"] == "stdio"
+
+    def test_leaves_unparseable_yaml_untouched(self, tmp_path):
+        p = tmp_path / "config.yaml"
+        p.write_text("extensions: [unclosed\n")
+
+        status = _write_file(p, {"extensions": {"fs": {}}}, merge_mcp=True)
+
+        assert status.startswith("skipped")
+        assert p.read_text() == "extensions: [unclosed\n"
+
 
 # ═══════════════════════════════════════════════════════════════════
 # 8. PULL — Full CLI flow (E2E per harness)
