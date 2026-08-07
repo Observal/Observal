@@ -735,6 +735,111 @@ def _tool_info_antigravity(parsed: dict) -> tuple[str | None, str | None]:
 
 
 # ---------------------------------------------------------------------------
+# Goose classifier
+# ---------------------------------------------------------------------------
+
+# goose content block tags, in the order they decide a line's event type.
+_GOOSE_THINKING_BLOCKS = frozenset({"thinking", "redactedThinking"})
+_GOOSE_REQUEST_BLOCKS = frozenset({"toolRequest", "frontendToolRequest", "toolConfirmationRequest"})
+
+
+def _goose_block_types(parsed: dict) -> list[str]:
+    content = parsed.get("content")
+    if not isinstance(content, list):
+        return []
+    return [block.get("type", "") for block in content if isinstance(block, dict)]
+
+
+def _classify_goose(parsed: dict) -> str | None:
+    """Classify one line of a mirrored goose session.
+
+    The mirror carries ``session`` / ``session_end`` boundaries plus one
+    ``message`` record per row of goose's ``messages`` table.
+    """
+    record_type = parsed.get("type", "")
+    if record_type in ("session", "session_end"):
+        return "system"
+    if record_type != "message":
+        return "system"
+
+    blocks = _goose_block_types(parsed)
+    if not blocks:
+        return None  # empty message row carries no signal
+    if any(block in _GOOSE_THINKING_BLOCKS for block in blocks):
+        return "thinking"
+    if any(block in _GOOSE_REQUEST_BLOCKS for block in blocks):
+        return "tool_call"
+    if "toolResponse" in blocks:
+        return "tool_result"
+    return "user_prompt" if parsed.get("role") == "user" else "assistant_text"
+
+
+def _goose_tool_call_text(block: dict) -> str:
+    call = block.get("toolCall") if isinstance(block.get("toolCall"), dict) else {}
+    value = call.get("value") if isinstance(call.get("value"), dict) else {}
+    name = value.get("name") or block.get("toolName") or ""
+    return f"[tool_use: {name}]" if name else ""
+
+
+def _goose_tool_result_text(block: dict) -> str:
+    result = block.get("toolResult") if isinstance(block.get("toolResult"), dict) else {}
+    if "error" in result:
+        return str(result.get("error") or "")
+    value = result.get("value")
+    content = value.get("content") if isinstance(value, dict) else value
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return " ".join(
+        str(item.get("text") or "") for item in content if isinstance(item, dict) and item.get("type") == "text"
+    )
+
+
+def _preview_goose(parsed: dict, event_type: str) -> str:
+    try:
+        record_type = parsed.get("type", "")
+        if record_type == "session":
+            return f"[session: {parsed.get('name') or parsed.get('session_id') or ''}]"[:_PREVIEW_MAX]
+        if record_type == "session_end":
+            return "[session end]"
+        content = parsed.get("content")
+        if not isinstance(content, list):
+            return ""
+        parts: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type", "")
+            if block_type == "text":
+                parts.append(str(block.get("text") or ""))
+            elif block_type == "thinking":
+                parts.append(str(block.get("thinking") or ""))
+            elif block_type == "redactedThinking":
+                parts.append("[redacted thinking]")
+            elif block_type in _GOOSE_REQUEST_BLOCKS:
+                parts.append(_goose_tool_call_text(block))
+            elif block_type == "toolResponse":
+                parts.append(_goose_tool_result_text(block))
+        return " ".join(part for part in parts if part)[:_PREVIEW_MAX]
+    except Exception:
+        return ""
+
+
+def _tool_info_goose(parsed: dict) -> tuple[str | None, str | None]:
+    content = parsed.get("content")
+    if not isinstance(content, list):
+        return None, None
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") not in _GOOSE_REQUEST_BLOCKS:
+            continue
+        call = block.get("toolCall") if isinstance(block.get("toolCall"), dict) else {}
+        value = call.get("value") if isinstance(call.get("value"), dict) else {}
+        return value.get("name") or block.get("toolName"), block.get("id")
+    return None, None
+
+
+# ---------------------------------------------------------------------------
 # Registry  -- add new parsers here, update harness_registry.py session_parser key
 # ---------------------------------------------------------------------------
 
@@ -750,6 +855,7 @@ _CLASSIFIERS: dict[str, _Classifier] = {
     "copilot-cli": (_classify_copilot_cli, _preview_copilot_cli, _tool_info_copilot_cli),
     "kiro": (_classify_kiro, _preview_kiro, _tool_info_kiro),
     "cursor": (_classify_cursor, _preview_cursor, _tool_info_cursor),
+    "goose": (_classify_goose, _preview_goose, _tool_info_goose),
     "opencode": (_classify_claude_code, _preview_claude_code, _tool_info_claude_code),
     "pi": (_classify_pi, _preview_pi, _tool_info_pi),
     "antigravity": (_classify_antigravity, _preview_antigravity, _tool_info_antigravity),
@@ -886,6 +992,7 @@ _TS_EXTRACTORS: dict[str, object] = {
     "codex": _ts_claude_code,  # Codex uses same timestamp format as Claude Code
     "kiro": _ts_kiro,
     "cursor": _ts_cursor,
+    "goose": _ts_claude_code,  # mirrored goose records carry an ISO `timestamp`
     "opencode": _ts_claude_code,
     "pi": _ts_pi,
     "copilot-cli": _ts_copilot_cli,
@@ -931,6 +1038,7 @@ _EXTRA_ROWS_HANDLERS: dict[str, _ExtraRowsFn] = {
     "claude-code": _no_extra_rows,
     "codex": _no_extra_rows,
     "cursor": _no_extra_rows,
+    "goose": _no_extra_rows,
     "opencode": _no_extra_rows,
     "pi": _no_extra_rows,
     "copilot-cli": _no_extra_rows,

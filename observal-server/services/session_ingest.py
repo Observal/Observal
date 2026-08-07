@@ -75,6 +75,31 @@ def _usage_antigravity(parsed: dict) -> dict:
     }
 
 
+def _usage_goose(parsed: dict) -> dict:
+    """Goose: per-message counts live in metadata.usage (camelCase)."""
+    metadata = parsed.get("metadata")
+    usage = metadata.get("usage") if isinstance(metadata, dict) else None
+    inference = metadata.get("inference") if isinstance(metadata, dict) else None
+    if not isinstance(usage, dict):
+        usage = {}
+    if not isinstance(inference, dict):
+        inference = {}
+
+    def count(key: str) -> int:
+        try:
+            return int(usage.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return {
+        "input_tokens": count("inputTokens"),
+        "output_tokens": count("outputTokens"),
+        "cache_read_tokens": count("cacheReadTokens"),
+        "cache_write_tokens": count("cacheWriteTokens"),
+        "model": str(inference.get("resolvedModel") or inference.get("requestedModel") or ""),
+    }
+
+
 def _usage_codex(parsed: dict) -> dict:
     """Codex: event_msg/token_count has payload.info.total_token_usage."""
     payload = parsed.get("payload", {})
@@ -135,6 +160,7 @@ _USAGE_EXTRACTORS: dict[str, _UsageFn] = {
     "codex": _usage_codex,
     "kiro": _usage_claude_code,
     "cursor": _usage_claude_code,
+    "goose": _usage_goose,
     "pi": _usage_pi,
     "copilot-cli": _usage_copilot_cli,
     "copilot": _usage_copilot_cli,
@@ -166,12 +192,18 @@ def _uuid_antigravity(parsed: dict) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _uuid_goose(parsed: dict) -> tuple[str | None, str | None]:
+    """Goose: message_id identifies a row; boundaries fall back to the session id."""
+    return parsed.get("message_id") or parsed.get("session_id"), parsed.get("parent_session_id")
+
+
 _UuidFn = Callable[[dict], "tuple[str | None, str | None]"]
 
 _UUID_EXTRACTORS: dict[str, _UuidFn] = {
     "claude-code": _uuid_default,
     "kiro": _uuid_default,
     "cursor": _uuid_default,
+    "goose": _uuid_goose,
     "opencode": _uuid_default,
     "pi": _uuid_pi,
     "antigravity": _uuid_antigravity,
