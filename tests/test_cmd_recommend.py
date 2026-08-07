@@ -25,7 +25,10 @@ COMPONENT_ID = "0f2b8a1c-2f4d-4c0e-9f7a-1b2c3d4e5f60"
 @pytest.fixture(autouse=True)
 def _wide_terminal(monkeypatch):
     """Assert on copy, not on where Rich happens to wrap an 80-column table."""
+    from observal_cli import render
+
     monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setattr(render.console, "_width", 200)
 
 
 def _flat(output: str) -> str:
