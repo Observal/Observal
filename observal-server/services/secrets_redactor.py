@@ -101,6 +101,7 @@ _SECRET_KEY_NAMES = (
 _RE_KEY_VALUE = re.compile(
     r"(?i)"
     r"(?<!\$)(?<!\$\{)"  # NOT preceded by $ or ${  (env var reference)
+    r"(?<!//)"  # NOT a connection-string username such as redis://passwd:...
     r"""["']?""" + _SECRET_KEY_NAMES + r"""["']?\s*[=:]\s*"""  # optional quotes around key name (JSON)
     r"(?:"
     r'"([^"\n]{8,})"'  # double-quoted value
@@ -233,7 +234,13 @@ def redact_secrets(text: str) -> str:
         _redaction_count += 1
         return m.group(0).replace(val, REDACTED)
 
-    text = _RE_KEY_VALUE.sub(_replace_kv, text)
+    # ponytail: repeat to a fixed point because one assignment can be the value
+    # of another; replace this only if profiling shows nested input is common.
+    while True:
+        redacted = _RE_KEY_VALUE.sub(_replace_kv, text)
+        if redacted == text:
+            break
+        text = redacted
 
     # 5. Connection strings, redact password only
     text, n = _RE_CONN_STRING.subn(r"\1" + REDACTED + r"\3", text)

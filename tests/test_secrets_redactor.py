@@ -132,6 +132,15 @@ class TestKeyValueAssignments:
         result = redact_secrets(text)
         assert "hunter2_but_longer" not in result
 
+    def test_redacted_marker_does_not_hide_live_password(self):
+        result = redact_secrets(f"password={REDACTED}live-secret")
+        assert result == f"password={REDACTED}"
+
+    def test_nested_assignments_are_redacted_in_one_pass(self):
+        result = redact_secrets("password:password:password: live-secret")
+        assert "live-secret" not in result
+        assert redact_secrets(result) == result
+
 
 # ============================================================================
 # Connection strings — MUST redact the password only

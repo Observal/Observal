@@ -59,41 +59,43 @@ def redact_string(value: str) -> tuple[str, int]:
     Returns (redacted_string, redaction_count).
     Pattern application order: JWT → AWS keys → URL userinfo → high-entropy strings.
     """
-    count = 0
+    total = 0
     result = value
+    while True:
+        redacted, count = _redact_string_once(result)
+        total += count
+        if redacted == result:
+            return redacted, total
+        result = redacted
 
-    # 1. JWT tokens
-    matches = JWT_PATTERN.findall(result)
+
+def _redact_string_once(value: str) -> tuple[str, int]:
+    count = 0
+
+    matches = JWT_PATTERN.findall(value)
     count += len(matches)
-    result = JWT_PATTERN.sub(REDACTED, result)
+    result = JWT_PATTERN.sub(REDACTED, value)
 
-    # 2. AWS access keys
     matches = AWS_KEY_PATTERN.findall(result)
     count += len(matches)
     result = AWS_KEY_PATTERN.sub(REDACTED, result)
 
-    # 3. URL userinfo (preserve structure)
     def _redact_userinfo(m: re.Match) -> str:
         nonlocal count
-        # The entropy rule below can collapse a userinfo segment into the marker,
-        # which this pattern would otherwise match again on a second pass.
-        if REDACTED in m.group(2):
+        if m.group(2) == REDACTED:
             return m.group(0)
         count += 1
         return f"{m.group(1)}{REDACTED}@"
 
     result = URL_USERINFO_PATTERN.sub(_redact_userinfo, result)
 
-    # 4. High-entropy strings (Shannon > 4.5, length >= 32)
-    #    Applied to individual tokens (whitespace/quote-delimited)
     tokens = re.split(r'([\s"\'`,;=\[\]{}()])', result)
     for i, token in enumerate(tokens):
         if len(token) >= 32 and shannon_entropy(token) > 4.5 and token != REDACTED and REDACTED not in token:
             tokens[i] = REDACTED
             count += 1
-    result = "".join(tokens)
 
-    return result, count
+    return "".join(tokens), count
 
 
 def redact_value(value, *, key: str = "") -> tuple:

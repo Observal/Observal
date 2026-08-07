@@ -22,7 +22,7 @@ def load_line(raw_line: str) -> dict | None:
     """
     try:
         parsed = json.loads(raw_line)
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, RecursionError, ValueError):
         return None
     return parsed if isinstance(parsed, dict) else None
 

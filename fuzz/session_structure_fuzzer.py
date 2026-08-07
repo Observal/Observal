@@ -7,8 +7,8 @@
 Byte mutation spends most of its budget on JSON syntax, so it rarely reaches
 the branches that only fire for well-formed transcript records. This harness
 uses Hypothesis to build JSON objects out of the discriminator keys and values
-the eight session parsers actually switch on, which pushes coverage past the
-decoder and into the per-harness handlers.
+the registered session parsers actually switch on, which pushes coverage past
+the decoder and into the per-harness handlers.
 
 The module is a polyglot: run it under pytest to replay, shrink and minimise
 any known failing example, or run it directly for Atheris to drive Hypothesis
@@ -28,29 +28,46 @@ from hypothesis import strategies as st
 with atheris.instrument_imports():
     import _session
 
-# Top-level and nested keys the parsers dispatch on, across all eight formats.
+# Top-level and nested keys the registered parsers dispatch on.
 _KEYS = [
     "agentId",
     "arguments",
     "attachment",
+    "cacheReadTokens",
+    "cacheWriteTokens",
     "content",
+    "cost",
     "created_at",
     "credits",
     "data",
+    "error",
     "event",
+    "goose_mode",
     "id",
+    "inference",
     "input",
+    "inputTokens",
+    "isError",
     "kind",
     "message",
+    "message_id",
     "meta",
+    "metadata",
     "model",
     "modelId",
+    "msg",
     "name",
+    "outputTokens",
     "parentId",
+    "parent_session_id",
     "payload",
     "provider",
+    "requestedModel",
+    "resolvedModel",
     "results",
     "role",
+    "session_id",
+    "session_type",
     "source",
     "status",
     "step_index",
@@ -59,13 +76,19 @@ _KEYS = [
     "thinking",
     "thinkingLevel",
     "timestamp",
+    "toolCall",
     "toolCallId",
+    "toolName",
+    "toolResult",
     "toolUseId",
     "tool_calls",
     "tool_use_id",
+    "totalTokens",
     "ts",
     "type",
     "usage",
+    "value",
+    "working_dir",
 ]
 
 # Discriminator values that select a handler branch in at least one parser.
@@ -83,6 +106,7 @@ _TAGS = [
     "ToolResults",
     "USER_EXPLICIT",
     "USER_INPUT",
+    "actionRequired",
     "agent.thinking",
     "assistant",
     "assistant.message",
@@ -90,21 +114,31 @@ _TAGS = [
     "branch_summary",
     "compaction",
     "custom_message",
+    "error",
     "event_msg",
+    "frontendToolRequest",
     "function_call",
+    "image",
     "json",
     "message",
     "model_change",
+    "redactedThinking",
     "response_item",
+    "session",
     "session.end",
     "session.start",
+    "session_end",
     "summary",
     "system",
+    "systemNotification",
     "text",
     "thinking",
     "thinking_level_change",
     "token_count",
     "toolCall",
+    "toolConfirmationRequest",
+    "toolRequest",
+    "toolResponse",
     "toolResult",
     "toolUse",
     "tool.call",

@@ -6,7 +6,7 @@
 Observal is fuzzed continuously by [Google OSS-Fuzz](https://google.github.io/oss-fuzz/).
 The fuzz targets live here so they are versioned alongside the code they
 exercise; OSS-Fuzz only stores the three-file project configuration, which is
-mirrored under `oss-fuzz/`.
+mirrored under `fuzz/oss-fuzz/`.
 
 ## Targets
 
@@ -80,9 +80,9 @@ inside the container the report came from.
 5. Add a seed corpus under `corpus/<name>_fuzzer/` and a dictionary at
    `dictionaries/<name>_fuzzer.dict`. Both are optional and both are picked up
    automatically.
-6. Corpus files are raw fuzzer input, not source. Nothing may rewrite them --
-   `scripts/update_spdx_copyright.py` skips any `corpus` directory and
-   `REUSE.toml` carries their licensing instead. `session_jsonl_fuzzer` reads
+6. Corpus files are raw fuzzer input, not source. Nothing may rewrite them.
+   `scripts/update_spdx_copyright.py` skips `fuzz/corpus/**`, and `REUSE.toml`
+   carries their licensing instead. `session_jsonl_fuzzer` reads
    its first byte, so a stray header would repoint the whole corpus at one
    parser; `tests/test_fuzz_targets.py` asserts every parser still has a seed.
 7. Keep seed corpora free of anything that looks like a credential. The
@@ -95,9 +95,10 @@ should reach a boundary the current four do not.
 
 ## Maintaining the OSS-Fuzz project
 
-`oss-fuzz/` mirrors `projects/observal/` in
-[google/oss-fuzz](https://github.com/google/oss-fuzz). Edit the files here, then
-copy them upstream in the same change so the two never drift.
+`fuzz/oss-fuzz/` mirrors `projects/observal/` in
+[google/oss-fuzz](https://github.com/google/oss-fuzz). Edit the files under
+`fuzz/oss-fuzz/`, then copy them upstream in the same change so the two never
+drift.
 
 Validate a change against the real builder before opening the upstream pull
 request:
@@ -120,8 +121,9 @@ Passing the checkout path to `build_fuzzers` replaces the `git clone` in the
 Dockerfile with the local tree, which is how you test targets before they land
 on `main`. Two side effects to know about: the build writes `*.pkg.spec` into
 the checkout, and the coverage build prepends a `coverage` stub to each target
-source in place. Both are gitignored -- run `git diff fuzz/` before committing
-and revert the stub if it survived.
+source in place. Only `*.pkg.spec` and `coverage_wrapper.py` are gitignored.
+Target sources are tracked, so inspect `git diff fuzz/` and restore any modified
+targets before committing.
 
 Once the first hosted build succeeds, add the status badge to the README:
 

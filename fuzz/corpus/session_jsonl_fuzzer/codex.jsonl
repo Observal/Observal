@@ -1,4 +1,4 @@
-8{"type":"session_meta","timestamp":"2026-01-01T00:00:00.000Z","payload":{"id":"sess_1","cwd":"/repo"}}
+4{"type":"session_meta","timestamp":"2026-01-01T00:00:00.000Z","payload":{"id":"sess_1","cwd":"/repo"}}
 {"type":"event_msg","timestamp":"2026-01-01T00:00:01.000Z","payload":{"type":"user_message","message":"explain the retry policy"}}
 {"type":"response_item","timestamp":"2026-01-01T00:00:02.000Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"It retries three times."}]}}
 {"type":"response_item","timestamp":"2026-01-01T00:00:03.000Z","payload":{"type":"function_call","name":"shell","call_id":"fc_1","arguments":"{\"cmd\":\"ls\"}"}}

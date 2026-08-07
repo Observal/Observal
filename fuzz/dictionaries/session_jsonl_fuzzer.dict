@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 #
-# Discriminator keys and values the eight session parsers switch on, plus JSON
-# punctuation.
+# Discriminator keys and values the registered session parsers switch on, plus
+# JSON punctuation.
 "{"
 "}"
 "["
@@ -29,6 +29,12 @@
 "\"tool_use_id\":"
 "\"toolUseId\":"
 "\"toolCallId\":"
+"\"toolCall\":"
+"\"toolResult\":"
+"\"toolName\":"
+"\"metadata\":"
+"\"inference\":"
+"\"value\":"
 "\"step_index\":"
 "\"source\":"
 "\"status\":"
@@ -72,6 +78,15 @@
 "agent.thinking"
 "session.start"
 "session.end"
+"session"
+"session_end"
+"toolRequest"
+"toolResponse"
+"frontendToolRequest"
+"toolConfirmationRequest"
+"redactedThinking"
+"actionRequired"
+"systemNotification"
 "USER_INPUT"
 "PLANNER_RESPONSE"
 "CONVERSATION_HISTORY"

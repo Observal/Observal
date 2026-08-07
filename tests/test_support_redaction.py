@@ -184,6 +184,17 @@ class TestRedactString:
         assert "@host:6379" in result
         assert count == 1
 
+    def test_redacted_marker_does_not_hide_live_userinfo(self):
+        result, count = redact_string(f"https://{REDACTED}live-secret@host")
+        assert result == f"https://{REDACTED}@host"
+        assert count == 1
+
+    def test_entropy_redaction_does_not_expose_userinfo_on_a_second_pass(self):
+        token = "aB3xZ9mK7pQ2wL5n/R8tY4uI6oP0sD1fG"
+        result, count = redact_string(f'https://x"{token}[zz@host')
+        assert result == f"https://{REDACTED}@host"
+        assert count == 2
+
     def test_high_entropy_string_redacted(self):
         # A 32+ char high-entropy string
         high_entropy = "aB3xZ9mK7pQ2wL5nR8tY4uI6oP0sD1fG"

@@ -74,7 +74,7 @@ def parse_rows(rows: list[dict]) -> list[dict]:
         content = str_field(line, "content")
         tool_calls = list_field(line, "tool_calls")
         raw_step = line.get("step_index")
-        step_index = raw_step if isinstance(raw_step, int) else -1
+        step_index = raw_step if type(raw_step) is int else -1
         jsonl_ts = line.get("created_at")
         ts = pick_timestamp(jsonl_ts, row_ts, ingested_at)
 

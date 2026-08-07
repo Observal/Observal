@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .base import basic_event, pick_timestamp, strip_ansi
+from .base import basic_event, load_line, pick_timestamp, strip_ansi
 
 _MAX_BODY = 120
 _MAX_RESPONSE = 2000
@@ -39,12 +39,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
         if not raw_line:
             events.append(basic_event(row))
             continue
-        try:
-            line = json.loads(raw_line)
-        except (json.JSONDecodeError, ValueError):
-            events.append(basic_event(row))
-            continue
-        if not isinstance(line, dict):
+        line = load_line(raw_line)
+        if line is None:
             events.append(basic_event(row))
             continue
 

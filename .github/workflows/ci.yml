@@ -177,6 +177,7 @@ jobs:
           uv run \
             --python ${{ matrix.python-version }} \
             --with asyncpg \
+            --with atheris \
             --with hypothesis \
             --with pyarrow \
             --with pytest-cov \

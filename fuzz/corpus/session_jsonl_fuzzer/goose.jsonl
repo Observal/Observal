@@ -1,0 +1,5 @@
+8{"type":"session","session_id":"goose-1","name":"fuzz session","working_dir":"/repo","provider":"anthropic","model":"claude-sonnet-4","timestamp":"2026-01-01T00:00:00Z"}
+{"type":"message","message_id":"msg-1","role":"user","timestamp":"2026-01-01T00:00:01Z","content":[{"type":"text","text":"read the changelog"}],"metadata":{}}
+{"type":"message","message_id":"msg-2","role":"assistant","timestamp":"2026-01-01T00:00:02Z","content":[{"type":"thinking","thinking":"find the file"},{"type":"toolRequest","id":"tool-1","toolCall":{"status":"success","value":{"name":"read_file","arguments":{"path":"CHANGELOG.md"}}}}],"metadata":{"usage":{"inputTokens":12,"outputTokens":4},"inference":{"resolvedModel":"claude-sonnet-4"}}}
+{"type":"message","message_id":"msg-3","role":"tool","timestamp":"2026-01-01T00:00:03Z","content":[{"type":"toolResponse","id":"tool-1","toolResult":{"status":"success","value":{"content":[{"type":"text","text":"# Changelog"}],"isError":false}}}],"metadata":{}}
+{"type":"session_end","session_id":"goose-1","timestamp":"2026-01-01T00:00:04Z","usage":{"inputTokens":12,"outputTokens":4,"totalTokens":16,"cost":0.01}}

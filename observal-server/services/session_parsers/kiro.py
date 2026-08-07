@@ -23,6 +23,7 @@ Key differences from the Claude Code format:
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
 
 from .base import basic_event, dict_field, list_field, load_line, pick_timestamp, str_field
@@ -116,10 +117,13 @@ def _epoch_to_clickhouse(epoch_s: int | float) -> str | None:
 
 def _as_credits(value: object) -> float | None:
     """Return a credit balance as a float, or None when the transcript lied."""
+    if isinstance(value, bool):
+        return None
     try:
-        return float(value)  # type: ignore[arg-type]
+        credits = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+    return credits if math.isfinite(credits) else None
 
 
 # ---------------------------------------------------------------------------

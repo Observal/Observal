@@ -19,9 +19,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-# "corpus" holds raw fuzzer inputs: a comment header would change the bytes under
-# test. REUSE.toml carries their licensing instead.
-SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__", "corpus"}
+SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__"}
 SKIP_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".map", ".lock"}
 
 
@@ -165,7 +163,7 @@ def staged_files() -> list[Path]:
         if not p.exists():
             continue
         parts = set(p.parts)
-        if parts & SKIP_DIRS:
+        if parts & SKIP_DIRS or p.parts[:2] == ("fuzz", "corpus"):
             continue
         paths.append(p)
     return paths

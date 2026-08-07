@@ -9,10 +9,10 @@ they produce input, so the pipeline replay and its invariants live here.
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 import _paths
+import orjson
 
 _paths.add_source_roots()
 
@@ -66,11 +66,8 @@ def replay(harness: str, raw_lines: Iterable[str]) -> None:
 
     for raw_line in raw_lines:
         try:
-            decoded = json.loads(raw_line)
+            decoded = orjson.loads(raw_line)
         except RecursionError:
-            # Ingestion decodes with orjson, which rejects deeply nested documents
-            # outright where CPython's json module recurses instead. Drop the input
-            # rather than report a limitation of the stdlib decoder.
             return
         except ValueError:
             decoded = None

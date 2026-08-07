@@ -23,7 +23,7 @@ import atheris
 _paths.add_source_roots()
 
 with atheris.instrument_imports():
-    from services.secrets_redactor import redact_secrets
+    from services.secrets_redactor import REDACTED, redact_secrets
 
 # Backtracking blows up far below this, so a smaller cap only costs coverage.
 _MAX_INPUT_BYTES = 4096
@@ -36,6 +36,10 @@ def TestOneInput(data: bytes) -> None:  # noqa: N802 -- Atheris entry point
     text = data.decode("utf-8", errors="replace")
     once = redact_secrets(text)
     assert redact_secrets(once) == once, "redact_secrets is documented as idempotent"
+
+    secret = data[:64].hex().ljust(8, "0")
+    leaked = f"password={REDACTED}{secret}"
+    assert secret not in redact_secrets(leaked), "a redaction marker must not hide a live password"
 
 
 def main() -> None:

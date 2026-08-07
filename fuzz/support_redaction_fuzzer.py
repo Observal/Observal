@@ -24,7 +24,7 @@ import atheris
 _paths.add_source_roots()
 
 with atheris.instrument_imports():
-    from observal_cli.support.redaction import redact_string
+    from observal_cli.support.redaction import REDACTED, redact_string
 
 # The entropy rule is quadratic in token count; cap input so slow cases are
 # reported as bugs rather than as libFuzzer timeouts.
@@ -39,6 +39,11 @@ def TestOneInput(data: bytes) -> None:  # noqa: N802 -- Atheris entry point
     once, _ = redact_string(text)
     twice, _ = redact_string(once)
     assert twice == once, "redact_string must be idempotent"
+
+    secret = data[:64].hex().ljust(8, "0")
+    leaked = f"https://{REDACTED}{secret}@host"
+    cleaned, _ = redact_string(leaked)
+    assert secret not in cleaned, "a redaction marker must not hide live URL credentials"
 
 
 def main() -> None:

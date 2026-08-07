@@ -1,4 +1,4 @@
-1{"agentId":"agent_1","ts":"2026-01-01T00:00:00.000Z","event":{"type":"session.start","sessionId":"sess_1","context":{"cwd":"/repo"}}}
+6{"agentId":"agent_1","ts":"2026-01-01T00:00:00.000Z","event":{"type":"session.start","sessionId":"sess_1","context":{"cwd":"/repo"}}}
 {"agentId":"agent_1","ts":"2026-01-01T00:00:01.000Z","event":{"type":"user.message","content":{"text":"bump the chart version"}}}
 {"agentId":"agent_1","ts":"2026-01-01T00:00:02.000Z","event":{"type":"agent.thinking","content":"chart lives under infra/helm"}}
 {"agentId":"agent_1","ts":"2026-01-01T00:00:03.000Z","event":{"type":"tool.call","name":"str_replace_editor","input":{"path":"infra/helm/Chart.yaml"}}}
