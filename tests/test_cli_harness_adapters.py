@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the CLI-side harness adapter protocol and registry."""
@@ -51,6 +52,8 @@ class TestAdapterRegistry:
         required_methods = [
             "scan_home",
             "is_installed",
+            "plan_bundled_skill_install",
+            "reconcile_bundled_skill_configuration",
             "scan_project",
             "get_hook_spec",
             "generate_hook_config",
@@ -82,6 +85,30 @@ class TestAdapterRegistry:
         assert adapter.is_session_final({"hook_event_name": "Stop"})
         assert adapter.is_session_final({"event": "sessionEnd"})
         assert not adapter.is_session_final({"hook_event_name": "UserPromptSubmit"})
+
+    def test_pi_bundled_skill_plan_reuses_codex_shared_path(self, tmp_path):
+        plan = get_adapter("pi").plan_bundled_skill_install(
+            "observal",
+            tmp_path,
+            frozenset({"codex", "pi"}),
+        )
+
+        assert plan is not None
+        assert plan.target == tmp_path / ".agents/skills/observal/SKILL.md"
+        assert plan.reuse_candidates == (tmp_path / ".agents/skills/observal/SKILL.md",)
+        assert plan.cleanup_candidates == (tmp_path / ".pi/agent/skills/observal/SKILL.md",)
+
+    def test_pi_bundled_skill_plan_uses_native_path_when_isolated(self, tmp_path):
+        plan = get_adapter("pi").plan_bundled_skill_install(
+            "observal",
+            tmp_path,
+            frozenset({"pi"}),
+        )
+
+        assert plan is not None
+        assert plan.target == tmp_path / ".pi/agent/skills/observal/SKILL.md"
+        assert plan.reuse_candidates == (tmp_path / ".agents/skills/observal/SKILL.md",)
+        assert plan.cleanup_candidates == (tmp_path / ".pi/agent/skills/observal/SKILL.md",)
 
 
 class TestManagedLayerFiles:
@@ -396,6 +423,27 @@ class TestKiroAdapter:
             api_key="test-key",
         )
         assert isinstance(config, dict)
+
+    def test_reconcile_bundled_skills_warns_for_non_object_settings(self, tmp_path):
+        settings = tmp_path / ".kiro" / "settings" / "cli.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text("[]", encoding="utf-8")
+
+        warnings = get_adapter("kiro").reconcile_bundled_skill_configuration(tmp_path)
+
+        assert warnings == [f"Could not expose bundled skills in {settings}: settings must be a JSON object."]
+
+    def test_reconcile_bundled_skills_warns_for_non_object_profile(self, tmp_path):
+        settings = tmp_path / ".kiro" / "settings" / "cli.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text('{"chat.defaultAgent": "default"}', encoding="utf-8")
+        profile = tmp_path / ".kiro" / "agents" / "default.json"
+        profile.parent.mkdir(parents=True)
+        profile.write_text("[]", encoding="utf-8")
+
+        warnings = get_adapter("kiro").reconcile_bundled_skill_configuration(tmp_path)
+
+        assert warnings == [f"Could not expose bundled skills in {profile}: profile must be a JSON object."]
 
     def test_scan_home_with_mcp(self, tmp_path):
         import json

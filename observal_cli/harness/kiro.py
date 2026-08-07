@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Kiro harness adapter."""
@@ -39,6 +40,37 @@ class KiroAdapter(BaseAdapter):
     @property
     def harness_name(self) -> str:
         return "kiro"
+
+    def reconcile_bundled_skill_configuration(self, home: Path) -> list[str]:
+        """Expose user-global skills to Kiro's active agent profile."""
+        resource = "skill://~/.kiro/skills/*/SKILL.md"
+        settings_path = home / ".kiro" / "settings" / "cli.json"
+        if not settings_path.exists():
+            return []
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            if not isinstance(settings, dict):
+                return [f"Could not expose bundled skills in {settings_path}: settings must be a JSON object."]
+            active_agent = settings.get("chat.defaultAgent", "")
+            if not active_agent:
+                return []
+            profile_path = home / ".kiro" / "agents" / f"{active_agent}.json"
+            if not profile_path.exists():
+                return []
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            if not isinstance(profile, dict):
+                return [f"Could not expose bundled skills in {profile_path}: profile must be a JSON object."]
+            resources = profile.get("resources", [])
+            if not isinstance(resources, list):
+                return [f"Could not expose bundled skills in {profile_path}: resources must be a list."]
+            if resource in resources:
+                return []
+            resources.append(resource)
+            profile["resources"] = resources
+            profile_path.write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+        except (OSError, json.JSONDecodeError) as exc:
+            return [f"Could not expose bundled skills to Kiro: {exc}"]
+        return []
 
     def resolve_session_source(self, event: dict[str, Any], home: Path | None = None) -> SessionSource | None:
         from observal_cli.sessions.kiro import find_kiro_jsonl, resolve_session_id
