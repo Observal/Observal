@@ -1,0 +1,72 @@
+{
+  "harness": "goose",
+  "models": [
+    {
+      "id": "claude-opus-4-8",
+      "kind": "exact",
+      "label": "Claude Opus 4.8",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "kind": "exact",
+      "label": "Claude Sonnet 4.6",
+      "provider": "anthropic"
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "kind": "exact",
+      "label": "Claude Haiku 4.5",
+      "provider": "anthropic"
+    },
+    {
+      "id": "gpt-5.5",
+      "kind": "exact",
+      "label": "GPT-5.5",
+      "provider": "openai"
+    },
+    {
+      "id": "gpt-5.4",
+      "kind": "exact",
+      "label": "GPT-5.4",
+      "provider": "openai"
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "kind": "exact",
+      "label": "Gemini 3.1 Pro",
+      "provider": "google"
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "kind": "exact",
+      "label": "Gemini 3.5 Flash",
+      "provider": "google"
+    },
+    {
+      "id": "claude-<model-id>",
+      "kind": "provider_source",
+      "label": "Anthropic model from the configured goose provider",
+      "provider": "anthropic"
+    },
+    {
+      "id": "gpt-<model-id>",
+      "kind": "provider_source",
+      "label": "OpenAI model from the configured goose provider",
+      "provider": "openai"
+    },
+    {
+      "id": "gemini-<model-id>",
+      "kind": "provider_source",
+      "label": "Google model from the configured goose provider",
+      "provider": "google"
+    },
+    {
+      "id": "grok-<model-id>",
+      "kind": "provider_source",
+      "label": "xAI model from the configured goose provider",
+      "provider": "xai"
+    }
+  ],
+  "updated_at": "2026-08-07"
+}

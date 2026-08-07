@@ -286,6 +286,40 @@ STATIC: dict[str, list[dict]] = {
             "kind": "provider_source",
         },
     ],
+    "goose": [
+        {"id": "claude-opus-4-8", "label": "Claude Opus 4.8", "provider": "anthropic", "kind": "exact"},
+        {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "provider": "anthropic", "kind": "exact"},
+        {"id": "claude-haiku-4-5", "label": "Claude Haiku 4.5", "provider": "anthropic", "kind": "exact"},
+        {"id": "gpt-5.5", "label": "GPT-5.5", "provider": "openai", "kind": "exact"},
+        {"id": "gpt-5.4", "label": "GPT-5.4", "provider": "openai", "kind": "exact"},
+        {"id": "gemini-3.1-pro", "label": "Gemini 3.1 Pro", "provider": "google", "kind": "exact"},
+        {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash", "provider": "google", "kind": "exact"},
+        # goose stores the bare provider model name, so BYO models are matched by family prefix.
+        {
+            "id": "claude-<model-id>",
+            "label": "Anthropic model from the configured goose provider",
+            "provider": "anthropic",
+            "kind": "provider_source",
+        },
+        {
+            "id": "gpt-<model-id>",
+            "label": "OpenAI model from the configured goose provider",
+            "provider": "openai",
+            "kind": "provider_source",
+        },
+        {
+            "id": "gemini-<model-id>",
+            "label": "Google model from the configured goose provider",
+            "provider": "google",
+            "kind": "provider_source",
+        },
+        {
+            "id": "grok-<model-id>",
+            "label": "xAI model from the configured goose provider",
+            "provider": "xai",
+            "kind": "provider_source",
+        },
+    ],
 }
 
 

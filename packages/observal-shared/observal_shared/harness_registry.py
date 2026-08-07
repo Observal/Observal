@@ -304,6 +304,46 @@ HARNESS_REGISTRY: dict[str, dict] = {
         },
         "config_dir": ".agents",
     },
+    "goose": {
+        "display_name": "Goose",
+        "capabilities": {"skills", "hooks", "mcp_servers"},
+        "session_parser": "goose",
+        "scopes": ["project", "user"],
+        "default_scope": "user",
+        "scope_labels": ("project (.agents/agents/)", "user (~/.agents/agents/)"),
+        "agent_profile": {
+            "project": ".agents/agents/{name}.md",
+            "user": "~/.agents/agents/{name}.md",
+        },
+        "agent_profile_format": "yaml_frontmatter",
+        # Goose only reads extensions from its single user-level config file.
+        "mcp_config": {
+            "project": None,
+            "user": "~/.config/goose/config.yaml",
+        },
+        "mcp_servers_key": "extensions",
+        "home_mcp_config": "~/.config/goose/config.yaml",
+        "skills": {
+            "project": ".agents/skills/{name}/SKILL.md",
+            "user": "~/.agents/skills/{name}/SKILL.md",
+        },
+        "skill_format": "yaml_frontmatter",
+        "hook_type": "plugin",
+        "hooks": {
+            "project": ".agents/plugins/observal/hooks/hooks.json",
+            "user": "~/.agents/plugins/observal/hooks/hooks.json",
+        },
+        "hook_scripts_dir": ".agents/plugins/observal/scripts",
+        "hook_events_map": {
+            "PreToolUse": "PreToolUse",
+            "PostToolUse": "PostToolUse",
+            "Stop": "Stop",
+            "SessionStart": "SessionStart",
+            "SessionEnd": "SessionEnd",
+            "UserPromptSubmit": "UserPromptSubmit",
+        },
+        "config_dir": ".config/goose",
+    },
     "pi": {
         "display_name": "Pi",
         "capabilities": {"skills", "hooks", "mcp_servers"},
@@ -357,6 +397,7 @@ _GUIDANCE_FILES = {
     ],
     "opencode": ["opencode.json", "~/.config/opencode/opencode.json"],
     "antigravity": ["AGENTS.md", "GEMINI.md"],
+    "goose": [".goosehints", "~/.config/goose/.goosehints", "AGENTS.md"],
     "pi": ["AGENTS.md", "~/.pi/agent/AGENTS.md", ".pi/SYSTEM.md", ".pi/APPEND_SYSTEM.md"],
 }
 

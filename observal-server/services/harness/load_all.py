@@ -13,6 +13,7 @@ from services.harness import codex as _codex  # noqa: F401
 from services.harness import copilot as _copilot  # noqa: F401
 from services.harness import copilot_cli as _copilot_cli  # noqa: F401
 from services.harness import cursor as _cursor  # noqa: F401
+from services.harness import goose as _goose  # noqa: F401
 from services.harness import kiro as _kiro  # noqa: F401
 from services.harness import opencode as _opencode  # noqa: F401
 from services.harness import pi as _pi  # noqa: F401
