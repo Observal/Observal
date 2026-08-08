@@ -32,9 +32,9 @@ export function ShareLinkButton({ path, label = "Share" }: { path: string; label
   }
 
   return (
-    <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2" onClick={handleCopy}>
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
-      <span className="text-xs">{label}</span>
+    <Button variant="outline" size="sm" onClick={handleCopy}>
+      {copied ? <Check /> : <Link2 />}
+      {label}
     </Button>
   );
 }
