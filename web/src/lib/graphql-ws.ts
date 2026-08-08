@@ -4,6 +4,7 @@
 
 import { createClient, type Client } from "graphql-ws";
 import { clearSession } from "@/lib/api";
+import { sessionExpiredLoginUrl } from "@/lib/safe-next";
 
 function getWsUrl(): string {
   const api =
@@ -31,7 +32,7 @@ function handleSubscriptionAuthError(err: unknown) {
   ) {
     clearSession();
     if (typeof window !== "undefined") {
-      window.location.href = "/login?reason=session_expired";
+      window.location.href = sessionExpiredLoginUrl();
     }
   }
 }

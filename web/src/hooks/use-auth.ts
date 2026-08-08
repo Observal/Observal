@@ -8,6 +8,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useRouter, useLocation } from "@tanstack/react-router";
 import { auth, setUserRole, getUserRole, clearSession, refreshAccessTokenWithReason } from "@/lib/api";
+import { currentPathAsNext } from "@/lib/safe-next";
 
 function isNetworkError(err: unknown): boolean {
   return err instanceof TypeError || (typeof navigator !== "undefined" && !navigator.onLine);
@@ -54,7 +55,7 @@ export function useAuthGuard() {
         } else if (result === "rejected") {
           clearSession();
           window.dispatchEvent(new Event("storage"));
-          router.navigate({ to: "/login", replace: true });
+          router.navigate({ to: "/login", replace: true, search: { next: currentPathAsNext() } });
         }
         // "network_error": do nothing, leave session intact
       });
@@ -62,7 +63,7 @@ export function useAuthGuard() {
     }
 
     if (!hasToken && pathname !== "/login") {
-      router.navigate({ to: "/login", replace: true });
+      router.navigate({ to: "/login", replace: true, search: { next: currentPathAsNext() } });
       return;
     }
     if (!hasToken) return;
@@ -75,7 +76,7 @@ export function useAuthGuard() {
         if (isNetworkError(err)) return;
         clearSession();
         window.dispatchEvent(new Event("storage"));
-        router.navigate({ to: "/login", replace: true });
+        router.navigate({ to: "/login", replace: true, search: { next: currentPathAsNext() } });
       });
     }
   }, [isSSR, hasToken, isRefreshing, snapshot, pathname, router]);

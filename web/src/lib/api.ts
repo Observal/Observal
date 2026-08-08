@@ -83,6 +83,7 @@ import type {
 	InboxFilters,
 	InboxState,
 } from "./types";
+import { sessionExpiredLoginUrl } from "./safe-next";
 
 const API = "/api/v1";
 
@@ -277,7 +278,7 @@ async function request<T = unknown>(
 			// Real rejection: session is truly expired
 			clearSession();
 			if (typeof window !== "undefined") {
-				window.location.href = "/login?reason=session_expired";
+				window.location.href = sessionExpiredLoginUrl();
 				return new Promise<T>(() => {});
 			}
 			throw new Error("Session expired");
@@ -417,6 +418,24 @@ export type RegistryType =
 	| "prompts"
 	| "sandboxes";
 
+// GET /registry/resolve takes the singular form of each registry type.
+const SINGULAR_REGISTRY_TYPE: Record<RegistryType, string> = {
+	agents: "agent",
+	mcps: "mcp",
+	skills: "skill",
+	hooks: "hook",
+	prompts: "prompt",
+	sandboxes: "sandbox",
+};
+
+export interface RegistryResolution {
+	id: string;
+	type: string;
+	namespace: string;
+	slug: string;
+	qualified_name: string;
+}
+
 export const registry = {
 	list: (type: RegistryType, params?: Record<string, string>) => {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
@@ -431,6 +450,11 @@ export const registry = {
 	metrics: (type: RegistryType, id: string) =>
 		get<unknown>(`/${type}/${id}/metrics`),
 	resolve: (id: string) => get<unknown>(`/agents/${id}/resolve`),
+	// Canonical `namespace/slug` (or UUID) → registry identity, for shareable URLs.
+	resolveIdentifier: (type: RegistryType, identifier: string) =>
+		get<RegistryResolution>(
+			`/registry/resolve?type=${SINGULAR_REGISTRY_TYPE[type]}&identifier=${encodeURIComponent(identifier)}`,
+		),
 	manifest: (id: string) =>
 		get<Record<string, unknown>>(`/agents/${id}/manifest`),
 	downloads: (id: string) =>
@@ -568,6 +592,7 @@ export const teams = {
 	list: () => get<Team[]>("/teams"),
 	listAll: () => get<Team[]>("/teams/all"),
 	get: (id: string) => get<Team>(`/teams/${id}`),
+	byHandle: (handle: string) => get<Team>(`/teams/by-handle/${encodeURIComponent(handle)}`),
 	create: (body: { name: string; handle?: string; description?: string }) =>
 		post<Team>("/teams", body),
 	update: (id: string, body: TeamUpdateBody) =>

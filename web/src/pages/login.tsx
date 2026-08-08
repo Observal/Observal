@@ -11,6 +11,7 @@ import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { auth, config as configApi, setTokens, clearSession, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
+import { isSafeNext, safeNext } from "@/lib/safe-next";
 import type { SsoHealthResult, E2eStatusResult, HealthCheck } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
@@ -94,7 +95,8 @@ function LoginContent() {
     if (params.get("saml_token") || params.get("code") || params.get("saml_code")) return;
     const hasToken = !!sessionStorage.getItem("observal_access_token");
     if (hasToken && getUserRole()) {
-      router.navigate({ to: "/", replace: true });
+      // Already signed in: honor a shared-link `next` instead of always going home.
+      window.location.replace(safeNext(params.get("next")));
     }
   }, [router]);
 
@@ -118,9 +120,7 @@ function LoginContent() {
           setUserEmail(data.user.email);
           if (data.user.username) setUserUsername(data.user.username);
           window.dispatchEvent(new Event("storage"));
-          const nextPath = searchParams.next;
-          const redirectTo = nextPath && nextPath.startsWith("/") ? nextPath : "/";
-          window.location.replace(redirectTo);
+          window.location.replace(safeNext(searchParams.next));
         } catch {
           setError("SAML sign-in failed. Please try again.");
           toast.error("SAML sign-in failed.");
@@ -145,9 +145,7 @@ function LoginContent() {
           if (data.user.username) setUserUsername(data.user.username);
           if (data.user.avatar_url) setUserAvatar(data.user.avatar_url);
           window.dispatchEvent(new Event("storage"));
-          const nextPath = searchParams.next;
-          const redirectTo = nextPath && nextPath.startsWith("/") ? nextPath : "/";
-          window.location.href = redirectTo;
+          window.location.href = safeNext(searchParams.next);
         })
         .catch((err) => {
           const msg = err instanceof Error ? err.message : "SSO sign-in failed";
@@ -188,8 +186,7 @@ function LoginContent() {
       if (res.user.username) setUserUsername(res.user.username);
       if (res.user.avatar_url) setUserAvatar(res.user.avatar_url);
       toast.success("Signed in successfully");
-      const nextPath = searchParams.next;
-      window.location.replace(nextPath && nextPath.startsWith("/") ? nextPath : "/");
+      window.location.replace(safeNext(searchParams.next));
     } catch (e) {
       const raw = e instanceof Error ? e.message : "Login failed";
       const status = e instanceof Error ? (e as Error & { status?: number }).status : undefined;
@@ -224,7 +221,7 @@ function LoginContent() {
       setUserEmail(res.email);
       if (res.username) setUserUsername(res.username);
       if (res.avatar_url) setUserAvatar(res.avatar_url);
-      window.location.replace("/");
+      window.location.replace(safeNext(searchParams.next));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to change password";
       setError(msg);
@@ -234,40 +231,29 @@ function LoginContent() {
     }
   }
 
+  function ssoStartUrl(base: string): string {
+    const nextParam = searchParams.next;
+    return isSafeNext(nextParam) ? `${base}?next=${encodeURIComponent(nextParam)}` : base;
+  }
+
   function handleSsoLogin() {
     setSsoLoading(true);
-    const nextParam = searchParams.next;
-    const url = nextParam && nextParam.startsWith("/")
-      ? `/api/v1/auth/oauth/login?next=${encodeURIComponent(nextParam)}`
-      : "/api/v1/auth/oauth/login";
-    window.location.href = url;
+    window.location.href = ssoStartUrl("/api/v1/auth/oauth/login");
   }
 
   function handleGoogleLogin() {
     setSsoLoading(true);
-    const nextParam = searchParams.next;
-    const url = nextParam && nextParam.startsWith("/")
-      ? `/api/v1/auth/oauth/google/login?next=${encodeURIComponent(nextParam)}`
-      : "/api/v1/auth/oauth/google/login";
-    window.location.href = url;
+    window.location.href = ssoStartUrl("/api/v1/auth/oauth/google/login");
   }
 
   function handleGithubLogin() {
     setSsoLoading(true);
-    const nextParam = searchParams.next;
-    const url = nextParam && nextParam.startsWith("/")
-      ? `/api/v1/auth/oauth/github/login?next=${encodeURIComponent(nextParam)}`
-      : "/api/v1/auth/oauth/github/login";
-    window.location.href = url;
+    window.location.href = ssoStartUrl("/api/v1/auth/oauth/github/login");
   }
 
   function handleSamlLogin() {
     setSsoLoading(true);
-    const nextParam = searchParams.next;
-    const samlUrl = nextParam && nextParam.startsWith("/")
-      ? `/api/v1/sso/saml/login?next=${encodeURIComponent(nextParam)}`
-      : "/api/v1/sso/saml/login";
-    window.location.href = samlUrl;
+    window.location.href = ssoStartUrl("/api/v1/sso/saml/login");
   }
 
   useEffect(() => {

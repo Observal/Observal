@@ -6,6 +6,7 @@ import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { auth, setTokens, setUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
+import { safeNext } from "@/lib/safe-next";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,8 +43,9 @@ function RegisterContent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const hasToken = !!sessionStorage.getItem("observal_access_token");
-    if (hasToken) router.navigate({ to: "/", replace: true });
-  }, [router]);
+    // Already signed in: honor a shared-link `next` instead of always going home.
+    if (hasToken) window.location.replace(safeNext(searchParams.next));
+  }, [router, searchParams.next]);
 
   async function handleRegister() {
     setError("");
@@ -71,8 +73,7 @@ function RegisterContent() {
       if (res.user.username) setUserUsername(res.user.username);
       if (res.user.avatar_url) setUserAvatar(res.user.avatar_url);
       toast.success("Account created");
-      const nextPath = searchParams.next;
-      window.location.replace(nextPath && nextPath.startsWith("/") ? nextPath : "/");
+      window.location.replace(safeNext(searchParams.next));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Registration failed";
       setError(msg);
