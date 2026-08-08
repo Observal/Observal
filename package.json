@@ -13,7 +13,7 @@
   "pnpm": {
     "overrides": {
       "brace-expansion": "^5.0.8",
-      "dompurify": "^3.4.12",
+      "dompurify": "^3.4.13",
       "postcss": "^8.5.18"
     }
   }

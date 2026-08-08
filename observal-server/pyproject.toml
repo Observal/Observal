@@ -23,7 +23,7 @@ dependencies = [
     "email-validator",
     "alembic",
     "httpx",
-    "gitpython>=3.1.55",
+    "gitpython>=3.1.58",
     "boto3",
     "litellm>=1.80.0,<1.90.0",
     # Required by LiteLLM for the `vertex_ai/*` models the insights settings
