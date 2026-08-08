@@ -34,3 +34,21 @@ export interface TeamMemberUpsertBody {
 	user_id?: string;
 	role?: TeamRole;
 }
+
+export type TeamJoinRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export interface TeamJoinRequest {
+	id: string;
+	team_id: string;
+	user_id: string;
+	email?: string | null;
+	username?: string | null;
+	name?: string | null;
+	status: TeamJoinRequestStatus;
+	message?: string | null;
+	decided_by?: string | null;
+	decided_by_username?: string | null;
+	decided_at?: string | null;
+	decision_reason?: string | null;
+	created_at?: string | null;
+}

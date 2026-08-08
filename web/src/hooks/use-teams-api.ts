@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { teams } from "@/lib/api";
 import type { TeamMemberUpsertBody, TeamUpdateBody } from "@/lib/types";
 
+const JOIN_REQUESTS_KEY = (teamId: string | undefined) => ["teams", teamId, "join-requests"];
+
 const TEAMS_STALE_MS = 5 * 60 * 1000;
 
 export function useTeams() {
@@ -122,6 +124,72 @@ export function useRemoveTeamMember(teamId?: string) {
 			toast.success("Member removed");
 		},
 		onError: (err: Error) => toast.error(err.message || "Failed to remove member"),
+	});
+}
+
+/** Every join request for a teamspace — the owner's Review queue and its history. */
+export function useJoinRequests(teamId: string | undefined, enabled = true) {
+	return useQuery({
+		queryKey: JOIN_REQUESTS_KEY(teamId),
+		queryFn: () => teams.joinRequests(teamId || ""),
+		enabled: !!teamId && enabled,
+	});
+}
+
+/** The caller's own requests for one teamspace, for the request/pending state. */
+export function useMyJoinRequests(teamId: string | undefined, enabled = true) {
+	return useQuery({
+		queryKey: ["teams", teamId, "join-requests", "mine"],
+		queryFn: () => teams.myJoinRequests(teamId || ""),
+		enabled: !!teamId && enabled,
+	});
+}
+
+export function useRequestJoin(teamId?: string) {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: (body: { message?: string }) => teams.requestJoin(teamId || "", body),
+		onSuccess: () => {
+			qc.invalidateQueries({ queryKey: JOIN_REQUESTS_KEY(teamId) });
+			toast.success("Join request sent — a team owner will review it");
+		},
+		onError: (err: Error) => toast.error(err.message || "Failed to send join request"),
+	});
+}
+
+export function useDecideJoinRequest(teamId?: string) {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: ({
+			requestId,
+			approve,
+			reason,
+		}: {
+			requestId: string;
+			approve: boolean;
+			reason?: string;
+		}) =>
+			approve
+				? teams.approveJoinRequest(teamId || "", requestId)
+				: teams.rejectJoinRequest(teamId || "", requestId, reason ? { reason } : undefined),
+		onSuccess: (_data, vars) => {
+			qc.invalidateQueries({ queryKey: JOIN_REQUESTS_KEY(teamId) });
+			qc.invalidateQueries({ queryKey: ["teams", teamId, "members"] });
+			toast.success(vars.approve ? "Request approved — member added" : "Request rejected");
+		},
+		onError: (err: Error) => toast.error(err.message || "Failed to decide the request"),
+	});
+}
+
+export function useCancelJoinRequest(teamId?: string) {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: (requestId: string) => teams.cancelJoinRequest(teamId || "", requestId),
+		onSuccess: () => {
+			qc.invalidateQueries({ queryKey: JOIN_REQUESTS_KEY(teamId) });
+			toast.success("Join request withdrawn");
+		},
+		onError: (err: Error) => toast.error(err.message || "Failed to withdraw the request"),
 	});
 }
 

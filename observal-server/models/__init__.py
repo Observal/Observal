@@ -31,7 +31,7 @@ from models.sandbox import SandboxDownload, SandboxListing
 from models.scim_token import ScimToken
 from models.skill import SkillDownload, SkillListing
 from models.submission import Submission
-from models.team import Team, TeamMembership, TeamRole
+from models.team import Team, TeamJoinRequestStatus, TeamMembership, TeamMembershipRequest, TeamRole
 from models.user import User, UserRole
 from models.user_group import UserGroup
 from models.user_profile import RecommendationFeedback, UserWorkProfile
@@ -81,7 +81,9 @@ __all__ = [
     "SkillListing",
     "Submission",
     "Team",
+    "TeamJoinRequestStatus",
     "TeamMembership",
+    "TeamMembershipRequest",
     "TeamRole",
     "User",
     "UserGroup",

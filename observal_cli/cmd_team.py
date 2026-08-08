@@ -185,6 +185,119 @@ def list_members(
     rprint(table)
 
 
+@team_app.command("request-join")
+def request_join(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    message: str = typer.Option(None, "--message", "-m", help="Optional note shown to the owners."),
+):
+    """Request member access to a teamspace. An owner must approve before you join.
+
+    Examples:
+
+        observal team request-join platform-tools
+
+        observal team request-join sre --message 'I maintain the pager rotation'
+    """
+    team_id = _resolve_team_id(team)
+    body: dict = {}
+    if message:
+        body["message"] = message
+    resp = client.post(f"/api/v1/teams/{team_id}/join-requests", json_data=body)
+    rprint(f"[green]Join request sent.[/green] status={resp.get('status')} id={resp.get('id')}")
+    rprint("[dim]A team owner will approve or reject it; the decision lands in your inbox.[/dim]")
+
+
+@team_app.command("requests")
+def list_join_requests(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    status: str = typer.Option(None, "--status", "-s", help="Filter: pending | approved | rejected | cancelled."),
+    output: str = typer.Option("table", "--output", "-o", help="Output format: table | json"),
+):
+    """List a teamspace's join requests and decisions. Owner or admin only.
+
+    Examples:
+
+        observal team requests platform-tools
+
+        observal team requests sre --status pending --output json
+    """
+    team_id = _resolve_team_id(team)
+    params = {"status": status} if status else None
+    rows = client.get(f"/api/v1/teams/{team_id}/join-requests", params=params)
+    if output == "json":
+        output_json(rows)
+        return
+    if not rows:
+        rprint("[dim]No join requests.[/dim]")
+        return
+    table = Table(title="Join requests")
+    table.add_column("user", style="cyan")
+    table.add_column("status", style="green")
+    table.add_column("message", style="dim")
+    table.add_column("decided by", style="dim")
+    table.add_column("reason", style="dim")
+    for r in rows:
+        table.add_row(
+            (r.get("username") and f"@{r['username']}") or r.get("email", ""),
+            r.get("status", ""),
+            r.get("message") or "-",
+            (r.get("decided_by_username") and f"@{r['decided_by_username']}") or "-",
+            r.get("decision_reason") or "-",
+        )
+    rprint(table)
+
+
+def _find_pending_request(team_id: str, user: str) -> dict:
+    rows = client.get(f"/api/v1/teams/{team_id}/join-requests", params={"status": "pending"})
+    needle = user.lstrip("@").lower()
+    for r in rows:
+        if (r.get("username") or "").lower() == needle or (r.get("email") or "").lower() == needle:
+            return r
+    raise typer.BadParameter(f"No pending join request from '{user}'", param_hint="user")
+
+
+@team_app.command("approve")
+def approve_join_request(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    user: str = typer.Argument(help="Email or @username of the requester."),
+):
+    """Approve a pending join request. Owner or admin only. Grants member role.
+
+    Examples:
+
+        observal team approve platform-tools @alice
+
+        observal team approve sre bob@example.com
+    """
+    team_id = _resolve_team_id(team)
+    req = _find_pending_request(team_id, user)
+    resp = client.post(f"/api/v1/teams/{team_id}/join-requests/{req['id']}/approve")
+    rprint(f"[green]Approved.[/green] {user} is now a member ({resp.get('status')}).")
+
+
+@team_app.command("reject")
+def reject_join_request(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    user: str = typer.Argument(help="Email or @username of the requester."),
+    reason: str = typer.Option(None, "--reason", "-r", help="Optional reason shown to the requester."),
+):
+    """Reject a pending join request. Owner or admin only.
+
+    Examples:
+
+        observal team reject platform-tools @alice --reason 'Use the sre teamspace instead'
+
+        observal team reject sre bob@example.com
+    """
+    team_id = _resolve_team_id(team)
+    req = _find_pending_request(team_id, user)
+    body: dict = {}
+    if reason:
+        body["reason"] = reason
+    resp = client.post(f"/api/v1/teams/{team_id}/join-requests/{req['id']}/reject", json_data=body)
+    rprint(f"[yellow]Rejected.[/yellow] {user}'s request is {resp.get('status')}.")
+
+
 @members_app.command("add")
 def add_member(
     team: str = typer.Argument(help="Team UUID or handle."),

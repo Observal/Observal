@@ -71,6 +71,8 @@ import type {
 	ExecAIInsightsResponse,
 	UserSearchResult,
 	Team,
+	TeamJoinRequest,
+	TeamJoinRequestStatus,
 	TeamMember,
 	TeamMemberUpsertBody,
 	TeamRole,
@@ -605,6 +607,19 @@ export const teams = {
 	) => post<TeamMember>(`/teams/${id}/members`, body),
 	removeMember: (id: string, userId: string) => del(`/teams/${id}/members/${userId}`),
 	leave: (id: string) => post(`/teams/${id}/leave`),
+	// Membership join requests: a shared teamspace link leads to an explicit
+	// request; only an owner's approval changes the roster.
+	requestJoin: (id: string, body: { message?: string }) =>
+		post<TeamJoinRequest>(`/teams/${id}/join-requests`, body),
+	joinRequests: (id: string, status?: TeamJoinRequestStatus) =>
+		get<TeamJoinRequest[]>(`/teams/${id}/join-requests${status ? `?status=${status}` : ""}`),
+	myJoinRequests: (id: string) => get<TeamJoinRequest[]>(`/teams/${id}/join-requests/mine`),
+	approveJoinRequest: (id: string, requestId: string) =>
+		post<TeamJoinRequest>(`/teams/${id}/join-requests/${requestId}/approve`),
+	rejectJoinRequest: (id: string, requestId: string, body?: { reason?: string }) =>
+		post<TeamJoinRequest>(`/teams/${id}/join-requests/${requestId}/reject`, body ?? {}),
+	cancelJoinRequest: (id: string, requestId: string) =>
+		del(`/teams/${id}/join-requests/${requestId}`),
 };
 
 // ── Dashboard ───────────────────────────────────────────────────────

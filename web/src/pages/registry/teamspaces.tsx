@@ -311,7 +311,7 @@ export default function TeamspacesPage() {
 										description={
 											canCreate
 												? "Create the first teamspace to give your team a shared publishing namespace."
-												: "There are no discoverable teamspaces yet. Ask an owner to add you to one."
+												: "There are no discoverable teamspaces yet. Open one from a shared link to request to join, or ask an owner for one."
 										}
 									/>
 								) : filteredTeams.length === 0 ? (

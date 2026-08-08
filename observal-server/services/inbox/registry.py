@@ -214,19 +214,20 @@ SPECS: dict[InboxKind, KindSpec] = {
     ),
     InboxKind.team_join_requested: KindSpec(
         kind=InboxKind.team_join_requested,
-        # RESERVED - waits on the teamspace join-request flow.
-        reserved=True,
         action_required=True,
         title=lambda s, c: f"Join request for {_label(s)}",
         dedupe=lambda s, c: f"team_join_requested:{s.id}:{c.get('requester_id', '-')}",
+        # Owners act on requests in the teamspace's Review queue tab, not on the
+        # teamspace landing page.
+        url=lambda s: f"/teamspaces/{s.handle}?tab=review-queue" if s.handle else "/teamspaces",
     ),
     InboxKind.team_join_decided: KindSpec(
         kind=InboxKind.team_join_decided,
-        # RESERVED - waits on the teamspace join-request flow.
-        reserved=True,
         action_required=False,
         title=lambda s, c: f"Join request {c.get('decision', 'decided')}: {_label(s)}",
         dedupe=lambda s, c: f"team_join_decided:{s.id}:{c.get('request_id', '-')}",
+        # A decision addressed to the requester stays theirs to read even if it
+        # was a rejection and they never became a member.
         recheck_visibility=False,
     ),
     InboxKind.team_created_pending: KindSpec(

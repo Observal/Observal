@@ -65,6 +65,10 @@ class EventType(str, Enum):
     REVIEW_APPROVED = "review.approved"
     REVIEW_REJECTED = "review.rejected"
 
+    # Teamspaces
+    TEAM_JOIN_REQUESTED = "team.join.requested"
+    TEAM_JOIN_DECIDED = "team.join.decided"
+
     # Agent security
     INJECTION_DETECTED = "agent.injection_detected"
 

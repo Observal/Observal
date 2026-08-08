@@ -2,22 +2,29 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import uuid
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from api.deps import get_db, require_role
-from models.team import Team, TeamMembership, TeamRole
+from models.team import Team, TeamJoinRequestStatus, TeamMembership, TeamMembershipRequest, TeamRole
 from models.user import User, UserRole
 from schemas.team import (
     TeamCreateRequest,
+    TeamJoinDecisionRequest,
+    TeamJoinRequestCreate,
+    TeamJoinRequestResponse,
     TeamMemberResponse,
     TeamMemberUpsertRequest,
     TeamResponse,
     TeamUpdateRequest,
 )
+from services.inbox import sources as inbox_sources
+from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 from services.teamspace import count_owners, is_admin, reserve_handle, team_membership
 
 router = APIRouter(prefix="/api/v1/teams", tags=["teams"])
@@ -409,4 +416,239 @@ async def leave_team(
     if membership.role == TeamRole.owner and await count_owners(db, team.id, for_update=True) <= 1:
         raise HTTPException(status_code=409, detail="A team must have at least one owner; transfer ownership first")
     await db.delete(membership)
+    await db.commit()
+
+
+# ── Membership join requests ─────────────────────────────────────────
+#
+# A shared /teamspaces/{handle} link never grants access. It leads here: the
+# recipient explicitly requests member access, owners (or admins) approve or
+# reject from the teamspace's Review queue, and only the approval writes a
+# membership row. The request row itself is the audit record — requester,
+# reviewer, decision, reason, and timestamps.
+
+
+def _join_request_response(
+    row: TeamMembershipRequest,
+    requester: User | None = None,
+    decided_by_username: str | None = None,
+) -> TeamJoinRequestResponse:
+    return TeamJoinRequestResponse(
+        id=row.id,
+        team_id=row.team_id,
+        user_id=row.user_id,
+        email=requester.email if requester else None,
+        username=requester.username if requester else None,
+        name=requester.name if requester else None,
+        status=row.status.value,
+        message=row.message,
+        decided_by=row.decided_by,
+        decided_by_username=decided_by_username,
+        decided_at=row.decided_at,
+        decision_reason=row.decision_reason,
+        created_at=row.created_at,
+    )
+
+
+async def _load_join_request(db: AsyncSession, team_id: uuid.UUID, request_id: uuid.UUID) -> TeamMembershipRequest:
+    row = (
+        await db.execute(
+            select(TeamMembershipRequest).where(
+                TeamMembershipRequest.id == request_id,
+                TeamMembershipRequest.team_id == team_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Join request not found")
+    return row
+
+
+async def _emit_join_event(event_type: EventType, team: Team, actor: User, detail: str) -> None:
+    await emit_security_event(
+        SecurityEvent(
+            event_type=event_type,
+            severity=Severity.INFO,
+            outcome="success",
+            actor_id=str(actor.id),
+            actor_email=actor.email,
+            actor_role=actor.role.value,
+            target_id=str(team.id),
+            target_type="team",
+            detail=detail,
+        )
+    )
+
+
+@router.post("/{team_id}/join-requests", response_model=TeamJoinRequestResponse, status_code=201)
+async def create_join_request(
+    team_id: uuid.UUID,
+    req: TeamJoinRequestCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Ask for member access to a teamspace. Owners decide; the link never does."""
+    team = await _load_team(db, team_id)
+    membership = await team_membership(db, team.id, current_user.id)
+    if membership:
+        raise HTTPException(status_code=409, detail="You are already a member of this teamspace")
+
+    message = (req.message or "").strip() or None
+    row = TeamMembershipRequest(team_id=team.id, user_id=current_user.id, message=message)
+    try:
+        # SAVEPOINT so the partial-unique collision (one pending request per
+        # user per team) can be answered without poisoning the transaction the
+        # inbox delivery below still needs.
+        async with db.begin_nested():
+            db.add(row)
+            await db.flush()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="You already have a pending request for this teamspace") from None
+
+    await inbox_sources.on_team_join_requested(db, team, requester_id=current_user.id, message=message)
+    await db.commit()
+    await _emit_join_event(EventType.TEAM_JOIN_REQUESTED, team, current_user, f"Requested to join '{team.handle}'")
+    return _join_request_response(row, current_user)
+
+
+@router.get("/{team_id}/join-requests/mine", response_model=list[TeamJoinRequestResponse])
+async def my_join_requests(
+    team_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """The caller's own requests for this teamspace, newest first."""
+    await _load_team(db, team_id)
+    rows = (
+        (
+            await db.execute(
+                select(TeamMembershipRequest)
+                .where(
+                    TeamMembershipRequest.team_id == team_id,
+                    TeamMembershipRequest.user_id == current_user.id,
+                )
+                .order_by(TeamMembershipRequest.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [_join_request_response(row, current_user) for row in rows]
+
+
+@router.get("/{team_id}/join-requests", response_model=list[TeamJoinRequestResponse])
+async def list_join_requests(
+    team_id: uuid.UUID,
+    status: str | None = Query(default=None, pattern="^(pending|approved|rejected|cancelled)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """The teamspace's request queue and decision history. Owner or admin only."""
+    await _require_owner_or_admin(db, team_id, current_user)
+    decider = aliased(User)
+    stmt = (
+        select(TeamMembershipRequest, User, decider.username)
+        .join(User, User.id == TeamMembershipRequest.user_id)
+        .outerjoin(decider, decider.id == TeamMembershipRequest.decided_by)
+        .where(TeamMembershipRequest.team_id == team_id)
+        .order_by(TeamMembershipRequest.created_at.desc())
+    )
+    if status:
+        stmt = stmt.where(TeamMembershipRequest.status == TeamJoinRequestStatus(status))
+    rows = (await db.execute(stmt)).all()
+    return [_join_request_response(row, requester, decided_by_username) for row, requester, decided_by_username in rows]
+
+
+@router.post("/{team_id}/join-requests/{request_id}/approve", response_model=TeamJoinRequestResponse)
+async def approve_join_request(
+    team_id: uuid.UUID,
+    request_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Approve a pending request: the one path a request can become membership."""
+    team = await _require_owner_or_admin(db, team_id, current_user)
+    row = await _load_join_request(db, team.id, request_id)
+    if row.status != TeamJoinRequestStatus.pending:
+        raise HTTPException(status_code=409, detail=f"Request already {row.status.value}")
+
+    row.status = TeamJoinRequestStatus.approved
+    row.decided_by = current_user.id
+    row.decided_at = datetime.now(UTC)
+    # Approval grants MEMBER only; role upgrades stay owner-initiated through
+    # POST /{team_id}/members. An owner may have added the requester directly
+    # while the request sat open, in which case the roster does not change.
+    membership = await team_membership(db, team.id, row.user_id)
+    if not membership:
+        db.add(TeamMembership(team_id=team.id, user_id=row.user_id, role=TeamRole.member))
+    await inbox_sources.on_team_join_decided(
+        db,
+        team,
+        request_id=row.id,
+        requester_id=row.user_id,
+        approved=True,
+        actor_id=current_user.id,
+    )
+    await db.commit()
+    await _emit_join_event(
+        EventType.TEAM_JOIN_DECIDED, team, current_user, f"Approved join request for '{team.handle}'"
+    )
+    requester = await db.get(User, row.user_id)
+    return _join_request_response(row, requester, current_user.username)
+
+
+@router.post("/{team_id}/join-requests/{request_id}/reject", response_model=TeamJoinRequestResponse)
+async def reject_join_request(
+    team_id: uuid.UUID,
+    request_id: uuid.UUID,
+    req: TeamJoinDecisionRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Reject a pending request. The requester may ask again later."""
+    team = await _require_owner_or_admin(db, team_id, current_user)
+    row = await _load_join_request(db, team.id, request_id)
+    if row.status != TeamJoinRequestStatus.pending:
+        raise HTTPException(status_code=409, detail=f"Request already {row.status.value}")
+
+    reason = ((req.reason if req else None) or "").strip() or None
+    row.status = TeamJoinRequestStatus.rejected
+    row.decided_by = current_user.id
+    row.decided_at = datetime.now(UTC)
+    row.decision_reason = reason
+    await inbox_sources.on_team_join_decided(
+        db,
+        team,
+        request_id=row.id,
+        requester_id=row.user_id,
+        approved=False,
+        actor_id=current_user.id,
+        reason=reason,
+    )
+    await db.commit()
+    await _emit_join_event(
+        EventType.TEAM_JOIN_DECIDED, team, current_user, f"Rejected join request for '{team.handle}'"
+    )
+    requester = await db.get(User, row.user_id)
+    return _join_request_response(row, requester, current_user.username)
+
+
+@router.delete("/{team_id}/join-requests/{request_id}", status_code=204)
+async def cancel_join_request(
+    team_id: uuid.UUID,
+    request_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Withdraw your own pending request. Owners reject; requesters cancel."""
+    team = await _load_team(db, team_id)
+    row = await _load_join_request(db, team.id, request_id)
+    if row.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the requester can withdraw a request")
+    if row.status != TeamJoinRequestStatus.pending:
+        raise HTTPException(status_code=409, detail=f"Request already {row.status.value}")
+    row.status = TeamJoinRequestStatus.cancelled
+    row.decided_by = current_user.id
+    row.decided_at = datetime.now(UTC)
+    await inbox_sources.on_team_join_cancelled(db, team, requester_id=current_user.id)
     await db.commit()
