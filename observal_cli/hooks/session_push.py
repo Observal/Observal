@@ -177,6 +177,7 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
     if config is None:
         return
     drain_outbox(config, home=home)
+    recovery_final = adapter.aged_recovery_final()
     now = time.time()
     for source in adapter.discover_session_sources(home=home):
         if source.session_id == exclude_session or source.path is None:
@@ -188,15 +189,15 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
         except OSError:
             continue
         offset, _line_count, finalized = read_cursor_state(source.checkpoint_key, home=home)
-        if finalized and offset >= stat.st_size:
+        if offset >= stat.st_size and (finalized or not recovery_final):
             continue
         event = {"session_id": source.session_id, "hook_event_name": "Stop"}
         drain_session_source(
             source,
             config,
             hook_event="CrashRecovery",
-            final=True,
-            extra_fields=adapter.session_extra_fields(source, event, True, home=home),
+            final=recovery_final,
+            extra_fields=adapter.session_extra_fields(source, event, recovery_final, home=home),
             recover_from_server=True,
             home=home,
         )

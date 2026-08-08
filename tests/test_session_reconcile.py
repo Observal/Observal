@@ -88,10 +88,14 @@ def test_background_recovery_uses_adapter_sources_and_shared_drain(tmp_path: Pat
             assert home == tmp_path
             return sources
 
+        def aged_recovery_final(self):
+            return True
+
         def session_extra_fields(self, source, event, final, home=None):
             return {"source": source.session_id}
 
     calls: list[str] = []
+    finals: list[bool] = []
     monkeypatch.setattr(session_push, "ensure_loaded", lambda: None)
     monkeypatch.setattr(session_push, "get_adapter", lambda _harness: Adapter())
     monkeypatch.setattr(session_push, "load_config", lambda home=None: {"user_id": "user"})
@@ -104,9 +108,10 @@ def test_background_recovery_uses_adapter_sources_and_shared_drain(tmp_path: Pat
     monkeypatch.setattr(
         session_push,
         "drain_session_source",
-        lambda source, *_args, **_kwargs: calls.append(source.session_id) or True,
+        lambda source, *_args, **kwargs: (calls.append(source.session_id), finals.append(kwargs["final"])) and True,
     )
 
     session_push._recover_sessions("claude-code", home=tmp_path)
 
     assert calls == ["outbox", "unfinished"]
+    assert finals == [True]

@@ -60,7 +60,7 @@ def write_config(home: Path) -> None:
     )
 
 
-def test_kiro_adapter_resolves_and_persists_session_for_stop(tmp_path: Path):
+def test_kiro_adapter_resolves_explicit_session_without_singleton(tmp_path: Path):
     transcript = make_session(tmp_path)
     ensure_loaded()
     adapter = get_adapter("kiro")
@@ -69,12 +69,36 @@ def test_kiro_adapter_resolves_and_persists_session_for_stop(tmp_path: Path):
         {"session_id": "kiro-session", "cwd": "/hook-work"},
         home=tmp_path,
     )
-    stop_source = adapter.resolve_session_source({"event": "stop"}, home=tmp_path)
 
     assert source is not None and source.path == transcript
     assert source.cwd == "/work"
-    assert stop_source is not None and stop_source.session_id == "kiro-session"
-    assert json.loads((tmp_path / ".observal" / ".kiro-session").read_text())["session_id"] == "kiro-session"
+    assert not (tmp_path / ".observal" / ".kiro-session").exists()
+
+
+def test_kiro_adapter_ignores_missing_id_and_stale_singleton(tmp_path: Path):
+    make_session(tmp_path, "stale-session")
+    state_file = tmp_path / ".observal" / ".kiro-session"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text(json.dumps({"session_id": "stale-session"}))
+    ensure_loaded()
+    adapter = get_adapter("kiro")
+
+    assert adapter.resolve_session_source({"event": "stop"}, home=tmp_path) is None
+    assert json.loads(state_file.read_text()) == {"session_id": "stale-session"}
+
+
+def test_uncorrelated_stop_does_not_select_concurrent_kiro_session(tmp_path: Path):
+    make_session(tmp_path, "session-a")
+    make_session(tmp_path, "session-b")
+    ensure_loaded()
+    adapter = get_adapter("kiro")
+
+    source_a = adapter.resolve_session_source({"session_id": "session-a"}, home=tmp_path)
+    source_b = adapter.resolve_session_source({"session_id": "session-b"}, home=tmp_path)
+
+    assert source_a is not None and source_a.session_id == "session-a"
+    assert source_b is not None and source_b.session_id == "session-b"
+    assert adapter.resolve_session_source({"event": "stop"}, home=tmp_path) is None
 
 
 def test_kiro_adapter_discovers_recent_sessions_and_credits(tmp_path: Path):
@@ -133,7 +157,7 @@ def test_kiro_recovery_attributes_each_session_from_its_metadata(tmp_path: Path,
     os.utime(pulled, (old_time, old_time))
     os.utime(default, (old_time, old_time))
     write_config(tmp_path)
-    recovered: dict[str, tuple[str | None, str | None]] = {}
+    recovered: dict[str, tuple[str | None, str | None, bool]] = {}
 
     def lookup(name, harness, directory=None):
         assert name == "pulled-agent"
@@ -145,7 +169,8 @@ def test_kiro_recovery_attributes_each_session_from_its_metadata(tmp_path: Path,
         from observal_cli.sessions.base import _resolve_agent
 
         assert source.session_id not in recovered
-        recovered[source.session_id] = _resolve_agent(source.cwd, [], source.path, harness="kiro")
+        identity = _resolve_agent(source.cwd, [], source.path, harness="kiro")
+        recovered[source.session_id] = (*identity, _kwargs["final"])
         return True
 
     monkeypatch.setenv("OBSERVAL_AGENT_ID", "triggering-hook-uuid")
@@ -157,9 +182,60 @@ def test_kiro_recovery_attributes_each_session_from_its_metadata(tmp_path: Path,
     session_push._recover_sessions("kiro", home=tmp_path)
 
     assert recovered == {
-        "agent-session": ("pulled-uuid", "1.2.0"),
-        "default-session": (None, None),
+        "agent-session": ("pulled-uuid", "1.2.0", False),
+        "default-session": (None, None, False),
     }
+
+
+def test_kiro_recovery_skips_acknowledged_eof(tmp_path: Path, monkeypatch):
+    transcript = make_session(tmp_path)
+    old_time = time.time() - 180
+    os.utime(transcript, (old_time, old_time))
+    write_config(tmp_path)
+    recovered: list[str] = []
+
+    monkeypatch.setattr(session_push, "drain_outbox", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        session_push,
+        "read_cursor_state",
+        lambda *_args, **_kwargs: (transcript.stat().st_size, 1, False),
+    )
+    monkeypatch.setattr(
+        session_push,
+        "drain_session_source",
+        lambda source, *_args, **_kwargs: recovered.append(source.session_id) or True,
+    )
+
+    session_push._recover_sessions("kiro", home=tmp_path)
+
+    assert recovered == []
+
+
+def test_kiro_recovery_delivers_growth_non_finally(tmp_path: Path, monkeypatch):
+    transcript = make_session(tmp_path)
+    acknowledged_offset = transcript.stat().st_size
+    with transcript.open("a") as file:
+        file.write('{"kind":"Response","data":{"content":"later"}}\n')
+    old_time = time.time() - 180
+    os.utime(transcript, (old_time, old_time))
+    write_config(tmp_path)
+    recovered: list[tuple[str, bool]] = []
+
+    monkeypatch.setattr(session_push, "drain_outbox", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        session_push,
+        "read_cursor_state",
+        lambda *_args, **_kwargs: (acknowledged_offset, 1, False),
+    )
+    monkeypatch.setattr(
+        session_push,
+        "drain_session_source",
+        lambda source, *_args, **kwargs: recovered.append((source.session_id, kwargs["final"])) or True,
+    )
+
+    session_push._recover_sessions("kiro", home=tmp_path)
+
+    assert recovered == [("kiro-session", False)]
 
 
 def test_kiro_stop_routes_credits_through_shared_engine(tmp_path: Path, monkeypatch):
