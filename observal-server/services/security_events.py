@@ -58,6 +58,8 @@ class EventType(str, Enum):
     CANARY_CREATED = "admin.canary.created"
     CANARY_DELETED = "admin.canary.deleted"
     INVITE_CREATED = "admin.invite.created"
+    INVITE_REDEEMED = "admin.invite.redeemed"
+    INVITE_REVOKED = "admin.invite.revoked"
     ALERT_RULE_CHANGED = "admin.alert_rule.changed"
     ADMIN_PASSWORD_RESET = "admin.password_reset"
 

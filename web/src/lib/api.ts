@@ -385,7 +385,12 @@ export const auth = {
 			"/auth/login",
 			body,
 		),
-	register: (body: { email: string; name: string; username?: string; password: string }) =>
+	invitePreview: (token: string) =>
+		post<{ valid: boolean; invited_by: string | null; next_path: string | null }>(
+			"/auth/invite/preview",
+			{ token },
+		),
+	register: (body: { email: string; name: string; username?: string; password: string; invite_token?: string }) =>
 		post<AuthResponse>("/auth/register", body),
 	whoami: () =>
 		get<{
@@ -703,9 +708,30 @@ export const feedback = {
 };
 
 // ── Admin ───────────────────────────────────────────────────────────
+export interface AdminInvite {
+	id: string;
+	invited_by_username?: string | null;
+	max_uses?: number | null;
+	use_count: number;
+	next_path?: string | null;
+	expires_at: string;
+	revoked_at?: string | null;
+	created_at?: string | null;
+	state: "active" | "expired" | "revoked" | "exhausted";
+}
+
+export interface AdminInviteCreated extends AdminInvite {
+	token: string;
+	url: string;
+}
+
 export const admin = {
 	settings: () =>
 		get<AdminSetting[] | Record<string, string>>("/admin/settings"),
+	invites: () => get<AdminInvite[]>("/admin/invites"),
+	createInvite: (body: { expires_in_days?: number; max_uses?: number | null; next_path?: string }) =>
+		post<AdminInviteCreated>("/admin/invites", body),
+	revokeInvite: (id: string) => post<AdminInvite>(`/admin/invites/${id}/revoke`),
 	settingsSchema: () => get<AdminSettingSection[]>("/admin/settings/schema"),
 	updateSetting: (key: string, body: unknown) =>
 		put<unknown>(`/admin/settings/${key}`, body),

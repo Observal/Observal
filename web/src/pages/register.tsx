@@ -27,6 +27,31 @@ function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearch({ from: "/(auth)/register" });
   const { selfRegistrationEnabled, brandingAppName, brandingLogo, brandingWordmark, loading: configLoading } = useDeploymentConfig();
+  // An admin-minted invite link (?invite=) can open registration even when
+  // self-registration is off. null = no token; undefined = still checking.
+  const inviteToken = searchParams.invite;
+  const [invitePreview, setInvitePreview] = useState<
+    { valid: boolean; invited_by: string | null } | null | undefined
+  >(inviteToken ? undefined : null);
+  useEffect(() => {
+    if (!inviteToken) {
+      setInvitePreview(null);
+      return;
+    }
+    let cancelled = false;
+    auth
+      .invitePreview(inviteToken)
+      .then((preview) => {
+        if (!cancelled) setInvitePreview(preview);
+      })
+      .catch(() => {
+        if (!cancelled) setInvitePreview({ valid: false, invited_by: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
+  const inviteValid = !!invitePreview?.valid;
   const appName = brandingAppName || "Observal";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -65,6 +90,7 @@ function RegisterContent() {
         name,
         username: username.trim() || undefined,
         password,
+        invite_token: inviteToken || undefined,
       });
       setTokens(res.access_token, res.refresh_token);
       setUserRole(res.user.role);
@@ -83,7 +109,7 @@ function RegisterContent() {
     }
   }
 
-  if (configLoading) {
+  if (configLoading || (inviteToken && invitePreview === undefined)) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
         <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
@@ -94,14 +120,20 @@ function RegisterContent() {
     );
   }
 
-  if (!selfRegistrationEnabled) {
+  // A valid invite opens the form even when self-registration is off. An
+  // invalid one falls through to the closed screen with a specific message.
+  if (!selfRegistrationEnabled && !inviteValid) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
         <div className="w-full max-w-md rounded-lg border bg-card p-8 text-center shadow-sm">
           <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground" />
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Registration is closed</h1>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">
+            {inviteToken ? "This invite link is no longer valid" : "Registration is closed"}
+          </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Ask your admin for access, or sign in if you already have an account.
+            {inviteToken
+              ? "It may have expired, been revoked, or reached its use limit. Ask whoever shared it for a new link."
+              : "Ask your admin for access, or sign in if you already have an account."}
           </p>
           <Button asChild className="mt-6 w-full">
             <Link to="/login">Back to sign in</Link>
@@ -151,6 +183,14 @@ function RegisterContent() {
               )}
               <h2 className="text-2xl font-semibold tracking-tight">Create your account</h2>
               <p className="text-sm text-muted-foreground">You will start with standard user permissions.</p>
+              {inviteValid && (
+                <p className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-primary-accent/30 bg-primary-accent/10 px-2 py-1 text-xs text-primary-accent">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {invitePreview?.invited_by
+                    ? `Invited by ${invitePreview.invited_by}`
+                    : "You are joining with an invite link"}
+                </p>
+              )}
             </div>
 
             <form

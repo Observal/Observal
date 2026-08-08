@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -18,6 +19,7 @@ import {
 	Puzzle,
 	ShieldCheck,
 	Terminal,
+	Ticket,
 	Trash2,
 	UserPlus,
 	Users,
@@ -67,9 +69,9 @@ import {
 	useUpsertTeamMember,
 } from "@/hooks/use-api";
 import { hasMinRole } from "@/hooks/use-role-guard";
-import { getUserRole, type RegistryType } from "@/lib/api";
+import { admin, getUserRole, type RegistryType } from "@/lib/api";
 import type { RegistryItem, ReviewItem, Team, TeamJoinRequest, TeamMember, TeamRole } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 
 const ROLE_OPTIONS = [
 	{ value: "member", label: "Member" },
@@ -524,6 +526,33 @@ function ReviewTab({
 	);
 }
 
+/**
+ * Global-admin shortcut: mint an invite-to-Observal link that lands a brand
+ * new person on this teamspace page after account creation — where they still
+ * have to Request to join. Requires auth.invite_links_enabled; the server
+ * answers 403 with a pointer when it is off.
+ */
+function TeamInviteLinkButton({ handle }: { handle: string }) {
+	const mint = useMutation({
+		mutationFn: () => admin.createInvite({ next_path: `/teamspaces/${handle}` }),
+		onSuccess: async (data) => {
+			try {
+				await copyToClipboard(data.url);
+				toast.success("Invite link copied — new users land on this teamspace after sign-up");
+			} catch {
+				toast.error("Invite created, but the link could not be copied. Find it in Users → Invite links.");
+			}
+		},
+		onError: (err: Error) => toast.error(err.message || "Failed to create the invite"),
+	});
+	if (!hasMinRole(getUserRole(), "admin")) return null;
+	return (
+		<Button variant="outline" size="sm" onClick={() => mint.mutate()} disabled={mint.isPending}>
+			<Ticket className="mr-1.5 h-3.5 w-3.5" /> Invite link
+		</Button>
+	);
+}
+
 function requesterLabel(request: TeamJoinRequest): string {
 	return request.username ? `@${request.username}` : (request.email ?? "Unknown user");
 }
@@ -921,6 +950,7 @@ export default function TeamspaceDetailPage() {
 						</div>
 						<div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
 							<ShareLinkButton path={`/teamspaces/${team.handle}`} />
+							<TeamInviteLinkButton handle={team.handle} />
 							<JoinRequestControl team={team} />
 							{isMember && (
 								<Button

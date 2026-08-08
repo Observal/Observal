@@ -241,6 +241,10 @@ DEFAULTS: dict[str, str] = {
     "insights.registry_match_max_items": "24",
     # Auth
     "auth.self_registration_enabled": "false",
+    # Admin-minted invite links that allow account creation while
+    # self-registration stays off. Also the kill switch: turning this off
+    # invalidates every outstanding invite link immediately.
+    "auth.invite_links_enabled": "false",
     # OIDC SSO. Changes require an API restart because the Authlib client is built at startup.
     "oauth.client_id": "",
     "oauth.client_secret": "",

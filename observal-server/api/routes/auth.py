@@ -9,6 +9,7 @@
 
 import asyncio
 import base64
+import hashlib
 import json
 import re
 import secrets
@@ -31,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import services.dynamic_settings as ds
 from api.deps import get_current_user, get_db, require_password_auth
 from api.ratelimit import limiter
+from models.invite import Invite, InviteRedemption
 from models.user import User, UserRole
 from models.user_group import UserGroup
 from schemas.auth import (
@@ -38,6 +40,7 @@ from schemas.auth import (
     CodeExchangeRequest,
     InitRequest,
     InitResponse,
+    InvitePreviewRequest,
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
@@ -321,13 +324,69 @@ async def bootstrap(request: Request, db: AsyncSession = Depends(get_db)):
     )
 
 
+async def _redeemable_invite(db: AsyncSession, token: str, *, for_update: bool) -> Invite | None:
+    """The invite this token names, if it can still be redeemed.
+
+    Returns None — one indistinguishable answer — for unknown, revoked,
+    expired, and exhausted tokens, and whenever the auth.invite_links_enabled
+    kill switch is off. Lookup is by SHA-256 of the token, so the database
+    never stores redeemable plaintext. ``for_update`` row-locks the invite so
+    two concurrent redemptions of a max_uses=1 link cannot both pass the
+    use-count check on Postgres.
+    """
+    if not await ds.get_bool("auth.invite_links_enabled"):
+        return None
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    stmt = select(Invite).where(Invite.token_hash == token_hash)
+    if for_update:
+        stmt = stmt.with_for_update()
+    invite = (await db.execute(stmt)).scalar_one_or_none()
+    if invite is None or invite.revoked_at is not None:
+        return None
+    expires = invite.expires_at
+    if expires.tzinfo is None:  # SQLite hands back naive datetimes
+        expires = expires.replace(tzinfo=UTC)
+    if expires <= datetime.now(UTC):
+        return None
+    if invite.max_uses is not None and invite.use_count >= invite.max_uses:
+        return None
+    return invite
+
+
+@router.post("/invite/preview")
+@limiter.limit("30/minute")
+async def invite_preview(request: Request, req: InvitePreviewRequest, db: AsyncSession = Depends(get_db)):
+    """Whether an invite token is redeemable, for the register page.
+
+    Anonymous by design — the recipient has no account yet. Every invalid
+    state (unknown, expired, revoked, exhausted, feature disabled) returns the
+    identical shape so the endpoint is no oracle beyond validity itself.
+    """
+    del request  # required by the rate limiter decorator
+    invite = await _redeemable_invite(db, req.token, for_update=False)
+    if invite is None:
+        return {"valid": False, "invited_by": None, "next_path": None}
+    inviter = await db.get(User, invite.invited_by) if invite.invited_by else None
+    return {
+        "valid": True,
+        "invited_by": (inviter.name or inviter.username) if inviter else None,
+        "next_path": invite.next_path,
+    }
+
+
 @router.post("/register", response_model=InitResponse, dependencies=[Depends(require_password_auth)])
 @limiter.limit(ds.get_sync("security.rate_limit_auth_strict", "5/minute"))
 async def register(request: Request, req: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Create a self-registered user when public registration is enabled."""
+    """Create a user via open registration or a valid admin-minted invite."""
     optic.debug("auth register attempt")
-    if not await ds.get_bool("auth.self_registration_enabled"):
-        raise HTTPException(status_code=403, detail="Registration is disabled")
+    invite = None
+    if req.invite_token:
+        invite = await _redeemable_invite(db, req.invite_token, for_update=True)
+    if invite is None and not await ds.get_bool("auth.self_registration_enabled"):
+        # A presented-but-dead token gets its own message; the detail reveals
+        # nothing about WHY the token is dead.
+        detail = "This invite link is no longer valid" if req.invite_token else "Registration is disabled"
+        raise HTTPException(status_code=403, detail=detail)
 
     _validate_password_strength(req.password)
     source_ip, user_agent = _extract_request_info(request)
@@ -339,15 +398,23 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
         email=req.email,
         username=username,
         name=req.name,
+        # Invites never mint elevated roles.
         role=UserRole.user,
     )
     user.set_password(req.password)
     db.add(user)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Email or username already exists")
+    if invite is not None:
+        # Same transaction as the user row: the account exists iff its
+        # redemption is recorded, and the row lock above serializes the
+        # use-count increment.
+        invite.use_count += 1
+        db.add(InviteRedemption(invite_id=invite.id, user_id=user.id))
+    await db.commit()
     await db.refresh(user)
 
     await emit_security_event(
@@ -360,8 +427,24 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
             actor_role=user.role.value,
             source_ip=source_ip,
             user_agent=user_agent,
+            detail=f"via invite {invite.id}" if invite else "",
         )
     )
+    if invite is not None:
+        await emit_security_event(
+            SecurityEvent(
+                event_type=EventType.INVITE_REDEEMED,
+                severity=Severity.INFO,
+                outcome="success",
+                actor_id=str(user.id),
+                actor_email=user.email,
+                actor_role=user.role.value,
+                target_id=str(invite.id),
+                target_type="invite",
+                source_ip=source_ip,
+                user_agent=user_agent,
+            )
+        )
     access_token, refresh_token, expires_in = await _issue_tokens(user)
     return InitResponse(
         user=UserResponse.model_validate(user),
