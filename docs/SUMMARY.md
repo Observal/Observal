@@ -2,6 +2,7 @@
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Nithin-Bhargav-07 <gaddamnithinbhargav@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Table of contents
@@ -85,6 +86,7 @@
 ## Contributing
 
 * [Contributing Guide](../CONTRIBUTING.md)
+* [Code Review Standard](code-review.md)
 * [Development Guide](DEVELOPMENT_GUIDE.md)
 * [Testing Guide](testing/Testing_Guide.md)
 * [Fuzzing Guide](../fuzz/README.md)

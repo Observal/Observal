@@ -12,7 +12,7 @@
 Thank you for considering contributing to Observal. Contributions of all kinds are welcome: bug reports, bug fixes, new features, documentation improvements, and tests.
 
 > [!TIP]
-> This page is a quick-start summary. For the full setup walkthrough, architecture notes, and detailed workflows, see the [Development Guide](docs/DEVELOPMENT_GUIDE.md). For new Python tests, follow the [Testing Guide](docs/testing/Testing_Guide.md).
+> This page is a quick-start summary. For the full setup walkthrough, architecture notes, and detailed workflows, see the [Development Guide](docs/DEVELOPMENT_GUIDE.md). For new Python tests, follow the [Testing Guide](docs/testing/Testing_Guide.md). Reviewers and maintainers must follow the [Code Review Standard](docs/code-review.md).
 
 > [!IMPORTANT]
 > **Discord is our primary communication channel.** Join at [discord.observal.io](https://discord.observal.io) and ask questions in **#contributing**, report bugs in **#bug**, or discuss ideas in **#feature-requests**. GitHub issues and PRs are for concrete, actionable items, not exploratory discussion.
@@ -29,6 +29,7 @@ Please read our [Code of Conduct](https://github.com/Observal/Observal/blob/main
 * [Finding Work](CONTRIBUTING.md#finding-work)
 * [Making Changes](CONTRIBUTING.md#making-changes)
 * [Submitting a Pull Request](CONTRIBUTING.md#submitting-a-pull-request)
+* [Code Review Standard](docs/code-review.md)
 * [Reporting Issues](CONTRIBUTING.md#reporting-issues)
 * [License](CONTRIBUTING.md#license)
 * [CLA](CONTRIBUTING.md#contributor-license-agreement-cla)
@@ -188,6 +189,8 @@ Add an entry under `[Unreleased]` in [CHANGELOG.md](https://github.com/Observal/
 6. Respond to review feedback promptly.
 
 Keep PRs focused on a single concern. Smaller PRs are easier to review and faster to merge.
+
+All pull requests are evaluated under the [Code Review Standard](docs/code-review.md). It defines reviewer responsibilities, required approvals, review freshness, merge gates, and the conditions that require changes or rejection.
 
 ***
 
