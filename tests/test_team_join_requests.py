@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from api.deps import get_current_user, get_db
+from api.routes.teams import _load_join_request
 from api.routes.teams import router as teams_router
 from models.base import Base
 from models.inbox import InboxItem, InboxItemEvent, InboxKind, InboxState
@@ -121,6 +122,28 @@ async def _request_rows(sessions, team_id):
 async def _inbox_rows(sessions, kind: InboxKind):
     async with sessions() as db:
         return (await db.execute(select(InboxItem).where(InboxItem.kind == kind))).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_decision_load_locks_the_join_request():
+    row = TeamMembershipRequest(id=uuid.uuid4(), team_id=uuid.uuid4(), user_id=uuid.uuid4())
+
+    class Result:
+        def scalar_one_or_none(self):
+            return row
+
+    class Database:
+        statement = None
+
+        async def execute(self, statement):
+            self.statement = statement
+            return Result()
+
+    db = Database()
+    loaded = await _load_join_request(db, row.team_id, row.id, for_update=True)
+
+    assert loaded is row
+    assert db.statement._for_update_arg is not None
 
 
 # ── Requesting ───────────────────────────────────────────────────────

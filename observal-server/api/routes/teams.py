@@ -671,8 +671,8 @@ async def _load_join_request(
         # A decision reads status, then writes it and (on approval) a membership
         # row. Without the row lock, a concurrent approve+reject/cancel both pass
         # the in-memory `status == pending` guard and the later commit overwrites
-        # the earlier one — leaving a member whose audit row says rejected, or a
-        # 500 from the duplicate-membership constraint. Serialize the decision.
+        # the earlier one, leaving a member whose audit row says rejected or a
+        # duplicate-membership constraint failure. Serialize the decision.
         stmt = stmt.with_for_update()
     row = (await db.execute(stmt)).scalar_one_or_none()
     if not row:
@@ -793,15 +793,23 @@ async def approve_join_request(
     if row.status != TeamJoinRequestStatus.pending:
         raise HTTPException(status_code=409, detail=f"Request already {row.status.value}")
 
+    # Approval grants MEMBER only; role upgrades stay owner-initiated through
+    # POST /{team_id}/members. A direct member add can race this decision, so
+    # recover only when the membership now exists and surface any other
+    # integrity failure.
+    membership = await team_membership(db, team.id, row.user_id)
+    if not membership:
+        try:
+            async with db.begin_nested():
+                db.add(TeamMembership(team_id=team.id, user_id=row.user_id, role=TeamRole.member))
+                await db.flush()
+        except IntegrityError:
+            if not await team_membership(db, team.id, row.user_id):
+                raise
+
     row.status = TeamJoinRequestStatus.approved
     row.decided_by = current_user.id
     row.decided_at = datetime.now(UTC)
-    # Approval grants MEMBER only; role upgrades stay owner-initiated through
-    # POST /{team_id}/members. An owner may have added the requester directly
-    # while the request sat open, in which case the roster does not change.
-    membership = await team_membership(db, team.id, row.user_id)
-    if not membership:
-        db.add(TeamMembership(team_id=team.id, user_id=row.user_id, role=TeamRole.member))
     await inbox_sources.on_team_join_decided(
         db,
         team,
