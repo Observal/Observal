@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 import services.dynamic_settings as ds
 from api.deps import get_db, require_role
 from api.ratelimit import limiter
-from api.routes.sso_saml import _get_saml_config, _run_saml_check_suite
+from api.routes.sso_saml import _decrypt_sp_key, _get_saml_config, _run_saml_check_suite
 from config import settings as app_settings
 from models.saml_config import SamlConfig
 from models.scim_token import ScimToken
@@ -34,11 +34,7 @@ from schemas.sso_health import all_pass, make_check
 from services import sso_diagnostics
 from services.config_validator import validate_runtime_config_async
 from services.oidc_health import run_oidc_checks
-from services.saml import (
-    decrypt_private_key,
-    encrypt_private_key,
-    generate_sp_key_pair,
-)
+from services.saml import encrypt_private_key, generate_sp_key_pair
 from services.scim_service import hash_scim_token
 from services.security_events import (
     EventType,
@@ -69,6 +65,7 @@ async def get_saml_config(
     result = await db.execute(select(SamlConfig).where(SamlConfig.active.is_(True)).limit(1))
     config = result.scalar_one_or_none()
 
+    externally_managed = sorted(key for key in ds.external_setting_keys() if key.startswith("saml."))
     if not config:
         has_dynamic = bool(ds.get_sync("saml.idp_entity_id") and ds.get_sync("saml.idp_sso_url"))
         return {
@@ -82,11 +79,12 @@ async def get_saml_config(
             "jit_provisioning": ds.get_sync_bool("saml.jit_provisioning", True) if has_dynamic else None,
             "default_role": ds.get_sync("saml.default_role", "user") if has_dynamic else None,
             "has_idp_cert": bool(ds.get_sync("saml.idp_x509_cert")) if has_dynamic else False,
-            "has_sp_key": False,
+            "has_sp_key": ds.has_external_saml_material(),
+            "externally_managed": externally_managed,
         }
     return {
         "configured": True,
-        "source": "database",
+        "source": "database+files" if externally_managed else "database",
         "id": str(config.id),
         "idp_entity_id": config.idp_entity_id,
         "idp_sso_url": config.idp_sso_url,
@@ -95,8 +93,9 @@ async def get_saml_config(
         "sp_acs_url": config.sp_acs_url,
         "jit_provisioning": config.jit_provisioning,
         "default_role": config.default_role,
-        "has_idp_cert": bool(config.idp_x509_cert),
-        "has_sp_key": bool(config.sp_private_key_enc),
+        "has_idp_cert": bool(config.idp_x509_cert) or ds.is_externally_managed("saml.idp_x509_cert"),
+        "has_sp_key": bool(config.sp_private_key_enc) or ds.has_external_saml_material(),
+        "externally_managed": externally_managed,
         "active": config.active,
         "created_at": config.created_at.isoformat() if config.created_at else None,
         "updated_at": config.updated_at.isoformat() if config.updated_at else None,
@@ -110,6 +109,13 @@ async def upsert_saml_config(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Create or update SAML configuration. Auto-generates SP key pair."""
+    if ds.is_externally_managed("saml.idp_x509_cert"):
+        raise HTTPException(status_code=409, detail="SAML IdP certificate is externally managed by a secret file")
+    if ds.has_external_saml_material() and body.get("regenerate_sp_key"):
+        raise HTTPException(
+            status_code=409, detail="SAML SP key and certificate are externally managed by secret files"
+        )
+
     idp_entity_id = body.get("idp_entity_id")
     idp_sso_url = body.get("idp_sso_url")
     idp_x509_cert = body.get("idp_x509_cert")
@@ -315,7 +321,10 @@ def _required_field_check(config) -> dict | None:
             ("sp_acs_url", "SP ACS URL"),
             ("sp_private_key_enc", "SP private key"),
         )
-        if not getattr(config, attr, None)
+        if not (
+            getattr(config, attr, None)
+            or (attr == "sp_private_key_enc" and getattr(config, "external_sp_private_key", None))
+        )
     ]
     if not missing:
         return None
@@ -365,10 +374,7 @@ async def validate_saml(
     # taint the static response with the exception's stack trace.
     sp_key: str | None = None
     try:
-        sp_key = decrypt_private_key(
-            config.sp_private_key_enc,
-            ds.get_sync("saml.sp_key_encryption_password"),
-        )
+        sp_key = _decrypt_sp_key(config)
     except Exception:
         optic.exception("admin.validate_saml SP key decrypt failed")
     if sp_key is None:
@@ -597,10 +603,7 @@ async def e2e_saml_start(
 
     sp_key: str | None = None
     try:
-        sp_key = decrypt_private_key(
-            config.sp_private_key_enc,
-            ds.get_sync("saml.sp_key_encryption_password"),
-        )
+        sp_key = _decrypt_sp_key(config)
     except Exception:
         optic.exception("admin.e2e_saml_start SP key decrypt failed")
     if sp_key is None:

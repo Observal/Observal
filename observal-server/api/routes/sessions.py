@@ -60,17 +60,6 @@ def _has_admin_trace_access(user: User) -> bool:
     return not getattr(user, "_trace_privacy", False)
 
 
-@router.get("/crypto/public-key")
-async def get_public_key():
-    """Return the server's public key for client-side ECIES encryption."""
-    optic.debug("get_public_key called")
-    from services.crypto import get_key_manager
-
-    km = get_key_manager()
-    pub_pem = km.get_public_key_pem()
-    return {"public_key_pem": pub_pem}
-
-
 @router.get("")
 async def list_sessions(
     status: str | None = Query(None),

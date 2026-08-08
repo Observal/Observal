@@ -76,9 +76,26 @@ Losing these keys invalidates **every** access and refresh token. All users must
 
 Back up the `apidata` volume every time you back up Postgres. See [Backup and restore](backup-and-restore.md).
 
-### Key rotation
+### Key rotation and algorithm changes
 
-To rotate keys, stop the API, delete the files under `$JWT_KEY_DIR`, and restart. New keys are generated. All existing sessions are invalidated. Plan for the outage.
+For a same-algorithm emergency rotation, stop the API, back up and remove `signing.pem`, then restart. New keys are generated and existing sessions must authenticate again.
+
+To move between ES256 and RS256, change `JWT_SIGNING_ALGORITHM` and restart. Observal archives the old public key, generates the selected key type, publishes both in JWKS, and continues verifying old tokens until they expire. New tokens use only the configured algorithm. Unsupported algorithms and token headers that do not match the resolved key type are rejected.
+
+If the signing key is encrypted, use `JWT_KEY_PASSWORD_FILE` and rotate the password and key together during a planned restart.
+
+### File-backed SAML keys
+
+SAML service-provider keys can remain outside the settings database:
+
+```dotenv
+SAML_SP_PRIVATE_KEY_FILE=/run/secrets/saml_sp_private_key
+SAML_SP_X509_CERT_FILE=/run/secrets/saml_sp_x509_cert
+```
+
+Both files are required together. File-backed material overrides the generated database key, appears as externally managed in admin responses, and cannot be replaced through the admin API. Replace both files atomically and restart the API to rotate them.
+
+OAuth, Google, GitHub, and SAML secret environment imports also accept the `NAME_FILE` form. File-backed values stay in memory rather than being copied into PostgreSQL or Redis. See [Configuration](configuration.md#secret-files).
 
 ## OAuth / OIDC SSO
 

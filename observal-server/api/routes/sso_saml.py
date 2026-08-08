@@ -91,11 +91,38 @@ _DYNAMIC_SAML_KEYS = (
     "saml.jit_provisioning",
     "saml.default_role",
     "saml.sp_key_encryption_password",
+    "saml.sp_private_key",
+    "saml.sp_x509_cert",
 )
 
 
 def _dynamic_saml_signature() -> tuple[str, ...]:
     return tuple(ds.get_sync(key) for key in _DYNAMIC_SAML_KEYS)
+
+
+def _apply_external_saml_material(config):
+    external_sp_key = ds.get_sync("saml.sp_private_key") if ds.has_external_saml_material() else None
+    external_sp_cert = ds.get_sync("saml.sp_x509_cert") if external_sp_key else None
+    external_idp_cert = ds.get_sync("saml.idp_x509_cert") if ds.is_externally_managed("saml.idp_x509_cert") else None
+    if not external_sp_key and not external_idp_cert:
+        return config
+    return type(
+        "ResolvedSamlConfig",
+        (),
+        {
+            "idp_entity_id": config.idp_entity_id,
+            "idp_sso_url": config.idp_sso_url,
+            "idp_slo_url": config.idp_slo_url,
+            "idp_x509_cert": external_idp_cert or config.idp_x509_cert,
+            "sp_entity_id": config.sp_entity_id,
+            "sp_acs_url": config.sp_acs_url,
+            "sp_private_key_enc": config.sp_private_key_enc,
+            "sp_x509_cert": external_sp_cert or config.sp_x509_cert,
+            "external_sp_private_key": external_sp_key,
+            "jit_provisioning": config.jit_provisioning,
+            "default_role": config.default_role,
+        },
+    )()
 
 
 async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
@@ -110,7 +137,7 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
     result = await db.execute(select(SamlConfig).where(SamlConfig.active.is_(True)).limit(1))
     config = result.scalar_one_or_none()
     if config:
-        return config
+        return _apply_external_saml_material(config)
     if not (ds.get_sync("saml.idp_entity_id") and ds.get_sync("saml.idp_sso_url")):
         return None
     signature = _dynamic_saml_signature()
@@ -121,15 +148,21 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
             return _dynamic_saml_config_cache
         sp_entity_id = ds.get_sync("saml.sp_entity_id") or f"{_get_frontend_url()}/api/v1/sso/saml/metadata"
         sp_acs_url = ds.get_sync("saml.sp_acs_url") or f"{_get_frontend_url()}/api/v1/sso/saml/acs"
-        enc_password = ds.get_sync("saml.sp_key_encryption_password")
-        if not enc_password:
-            optic.warning(
-                "saml.sp_key_encryption_password is not set. "
-                "SP private key will be stored unencrypted. "
-                "Set this value in production."
-            )
-        private_key_pem, cert_pem = generate_sp_key_pair(common_name=sp_entity_id)
-        sp_key_enc = encrypt_private_key(private_key_pem, enc_password)
+        external_sp_key = ds.get_sync("saml.sp_private_key") if ds.has_external_saml_material() else None
+        if external_sp_key:
+            private_key_pem = external_sp_key
+            cert_pem = ds.get_sync("saml.sp_x509_cert")
+            sp_key_enc = ""
+        else:
+            enc_password = ds.get_sync("saml.sp_key_encryption_password")
+            if not enc_password:
+                optic.warning(
+                    "saml.sp_key_encryption_password is not set. "
+                    "SP private key will be stored unencrypted. "
+                    "Set this value in production."
+                )
+            private_key_pem, cert_pem = generate_sp_key_pair(common_name=sp_entity_id)
+            sp_key_enc = encrypt_private_key(private_key_pem, enc_password)
         dynamic_config = type(
             "DynamicSamlConfig",
             (),
@@ -142,6 +175,7 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
                 "sp_acs_url": sp_acs_url,
                 "sp_private_key_enc": sp_key_enc,
                 "sp_x509_cert": cert_pem,
+                "external_sp_private_key": external_sp_key,
                 "jit_provisioning": ds.get_sync_bool("saml.jit_provisioning", True),
                 "default_role": ds.get_sync("saml.default_role", "user"),
             },
@@ -152,6 +186,8 @@ async def _get_saml_config(db: AsyncSession) -> SamlConfig | None:
 
 
 def _decrypt_sp_key(config) -> str:
+    if external_key := getattr(config, "external_sp_private_key", None):
+        return external_key
     password = ds.get_sync("saml.sp_key_encryption_password")
     return decrypt_private_key(config.sp_private_key_enc, password)
 

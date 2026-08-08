@@ -3,6 +3,7 @@
 
 import sys
 import tomllib
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -27,6 +28,8 @@ from tools.release import (
     validate_version_channel,
     write_manifest,
 )
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def _change(**overrides):
@@ -292,6 +295,30 @@ def test_release_notes_include_version_and_comparison_link():
 
     assert "v1.10.7...v1.10.8" in notes
     assert "add safe releases" in notes
+    assert "docs/security/release-verification.md" in notes
+
+
+def test_release_workflow_signs_and_verifies_tags_before_push():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    tag_job = workflow[workflow.index("  tag:\n") : workflow.index("  pypi:\n")]
+
+    assert "id-token: write" in tag_job
+    assert "chainguard-dev/actions/setup-gitsign@9d631658f55713e5f63ca0cc21ee168f81301fd9" in tag_job
+    assert "git tag -s" in tag_job
+    assert "gitsign verify-tag" in tag_job
+    assert tag_job.index("gitsign verify-tag") < tag_job.index("git push origin")
+    assert "certificate-oidc-issuer" in tag_job
+    assert "predates signed-tag enforcement" in tag_job
+    assert "git merge-base --is-ancestor" in tag_job
+
+
+def test_server_release_package_contains_no_generated_secrets_or_tls_overlay():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    package_job = workflow[workflow.index("  server-package:\n") : workflow.index("  approve:\n")]
+
+    assert "docker-compose.observability.yml" in package_job
+    assert "docker-compose.tls.yml" not in package_job
+    assert '"$STAGING/secrets"' not in package_job
 
 
 def test_changelog_uses_only_selected_public_notes():

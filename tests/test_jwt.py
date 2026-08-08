@@ -6,16 +6,15 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt as pyjwt
 import pytest
 
-# Ensure settings are importable with defaults before anything else
-from config import settings
 from models.user import User, UserRole
+from services.crypto import KeyManager, get_key_manager, init_key_manager
 from services.jwt_service import (
-    ALGORITHM,
     create_access_token,
     create_refresh_token,
     decode_access_token,
@@ -23,9 +22,26 @@ from services.jwt_service import (
     decode_token,
 )
 
+
+@pytest.fixture(autouse=True)
+def initialized_key_manager(tmp_path):
+    import services.crypto as crypto
+
+    init_key_manager(key_dir=str(tmp_path / "keys"), algorithm="ES256")
+    yield
+    crypto._key_manager = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _make_request():
+    return SimpleNamespace(
+        url=SimpleNamespace(path="/api/v1/auth/whoami"),
+        state=SimpleNamespace(),
+    )
 
 
 def _make_user(
@@ -53,27 +69,27 @@ class TestTokenGeneration:
         uid = uuid.uuid4()
         token, expires_in = create_access_token(uid, UserRole.admin)
 
-        payload = pyjwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_token(token)
         assert payload["sub"] == str(uid)
         assert payload["role"] == "admin"
         assert payload["type"] == "access"
         assert "jti" in payload
         assert "iat" in payload
         assert "exp" in payload
-        assert expires_in == settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        assert expires_in == 60 * 60
 
     def test_create_access_token_custom_expiry(self):
         uid = uuid.uuid4()
         token, expires_in = create_access_token(uid, UserRole.user, expires_in_minutes=1440)
         assert expires_in == 1440 * 60
-        payload = pyjwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_token(token)
         assert payload["sub"] == str(uid)
 
     def test_create_refresh_token_returns_valid_jwt_with_jti(self):
         uid = uuid.uuid4()
         token, jti = create_refresh_token(uid, UserRole.reviewer)
 
-        payload = pyjwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_token(token)
         assert payload["sub"] == str(uid)
         assert payload["role"] == "reviewer"
         assert payload["type"] == "refresh"
@@ -84,8 +100,8 @@ class TestTokenGeneration:
         access_token, _ = create_access_token(uid, UserRole.user)
         refresh_token, _ = create_refresh_token(uid, UserRole.user)
 
-        a_payload = pyjwt.decode(access_token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-        r_payload = pyjwt.decode(refresh_token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        a_payload = decode_token(access_token)
+        r_payload = decode_token(refresh_token)
         assert a_payload["jti"] != r_payload["jti"]
 
 
@@ -130,7 +146,7 @@ class TestTokenValidation:
             "iat": now - timedelta(hours=2),
             "exp": now - timedelta(hours=1),
         }
-        token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+        token = get_key_manager().sign_token(payload)
         with pytest.raises(pyjwt.ExpiredSignatureError):
             decode_token(token)
 
@@ -143,18 +159,24 @@ class TestTokenValidation:
         with pytest.raises(pyjwt.InvalidTokenError):
             decode_token(tampered)
 
-    def test_wrong_secret_is_rejected(self):
-        uid = uuid.uuid4()
+    def test_foreign_signature_under_trusted_kid_is_rejected(self, tmp_path):
         now = datetime.now(UTC)
         payload = {
-            "sub": str(uid),
+            "sub": str(uuid.uuid4()),
             "role": "user",
             "type": "access",
             "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + timedelta(hours=1),
         }
-        token = pyjwt.encode(payload, "wrong-secret-key", algorithm=ALGORITHM)
+        other = KeyManager(key_dir=str(tmp_path / "other"), algorithm="ES256")
+        other.initialize()
+        token = pyjwt.encode(
+            payload,
+            other.get_private_key(),
+            algorithm="ES256",
+            headers={"kid": get_key_manager().get_kid()},
+        )
         with pytest.raises(pyjwt.InvalidSignatureError):
             decode_token(token)
 
@@ -176,14 +198,18 @@ class TestAuthDependency:
         token, _ = create_access_token(user.id, user.role)
 
         mock_result = MagicMock()
-        mock_result.one_or_none.return_value = (user, False)
+        mock_result.scalar_one_or_none.return_value = user
         mock_db = AsyncMock()
         mock_db.execute.return_value = mock_result
 
-        result = await get_current_user(
-            authorization=f"Bearer {token}",
-            db=mock_db,
-        )
+        redis = AsyncMock()
+        redis.get.return_value = None
+        with patch("api.deps.get_redis", return_value=redis):
+            result = await get_current_user(
+                request=_make_request(),
+                authorization=f"Bearer {token}",
+                db=mock_db,
+            )
         assert result.id == user.id
 
     @pytest.mark.asyncio
@@ -194,7 +220,7 @@ class TestAuthDependency:
         mock_db = AsyncMock()
 
         with pytest.raises(Exception) as exc_info:
-            await get_current_user(authorization=None, db=mock_db)
+            await get_current_user(request=_make_request(), authorization=None, db=mock_db)
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
@@ -206,6 +232,7 @@ class TestAuthDependency:
 
         with pytest.raises(Exception) as exc_info:
             await get_current_user(
+                request=_make_request(),
                 authorization="Bearer totally-bogus-token",
                 db=mock_db,
             )
@@ -226,12 +253,13 @@ class TestAuthDependency:
             "iat": now - timedelta(hours=2),
             "exp": now - timedelta(hours=1),
         }
-        expired_token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+        expired_token = get_key_manager().sign_token(payload)
 
         mock_db = AsyncMock()
 
         with pytest.raises(Exception) as exc_info:
             await get_current_user(
+                request=_make_request(),
                 authorization=f"Bearer {expired_token}",
                 db=mock_db,
             )
@@ -248,6 +276,7 @@ class TestAuthDependency:
 
         with pytest.raises(Exception) as exc_info:
             await get_current_user(
+                request=_make_request(),
                 authorization=token,  # Missing "Bearer " prefix
                 db=mock_db,
             )

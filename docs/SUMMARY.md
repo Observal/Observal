@@ -77,6 +77,11 @@
 * [Hooks specification](reference/hooks-spec.md)
 * [Config files](reference/config-files.md)
 
+## Security
+
+* [Security assurance case](security/assurance-case.md)
+* [Release verification](security/release-verification.md)
+
 ## Contributing
 
 * [Contributing Guide](../CONTRIBUTING.md)

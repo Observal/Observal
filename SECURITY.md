@@ -3,11 +3,14 @@
 
 # Security Policy
 
+Observal's [security assurance case](docs/security/assurance-case.md) documents its threat model, trust boundaries, controls, evidence, and residual risks. See [release verification](docs/security/release-verification.md) before running downloaded artifacts.
+
 ## Supported Versions
 
-| Version | Supported          |
-|---------|--------------------|
-| 0.1.x   | :white_check_mark: |
+| Version | Supported |
+| --- | --- |
+| 1.11.x | :white_check_mark: |
+| Earlier versions | :x: |
 
 ## Reporting a Vulnerability
 

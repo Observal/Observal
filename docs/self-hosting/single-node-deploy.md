@@ -147,9 +147,11 @@ sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|" .env
 sed -i "s|^CLICKHOUSE_PASSWORD=.*|CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD|" .env
 ```
 
-> SAML SSO, audit logs, and executive dashboards are included in the open-source distribution. See [Configuration](configuration.md).
+> SAML SSO, audit logs, and executive dashboards are included in the open-source distribution. See [Configuration](configuration.md). For mounted credentials and private keys, use the documented [`NAME_FILE` inputs](configuration.md#secret-files) instead of placing secret contents in `.env`.
 
 ## Step 4: Set up TLS
+
+This guide uses the source Compose stack. Every `localhost:80` example below refers to that stack's nginx load balancer. Do not expose its HTTP listener directly to remote clients. For downloadable server-package bindings, see [Requirements](requirements.md#tls--https).
 
 ### Option A: Caddy (simplest — automatic HTTPS)
 
@@ -349,6 +351,8 @@ echo "*/5 * * * * root curl -fsS http://localhost/health > /dev/null || echo 'Ob
 ```
 
 ## Security hardening
+
+The [security assurance case](../security/assurance-case.md) describes the deployment trust boundaries and residual risks.
 
 Before exposing to the internet:
 

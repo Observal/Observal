@@ -72,8 +72,6 @@ def _fake_get(url: str, *_args, **_kwargs) -> MagicMock:
             200,
             {"otlp_http": "http://localhost:4318", "web": "http://localhost:3000"},
         )
-    if "/api/v1/sessions/crypto/public-key" in url:
-        return _make_response(404, {})
     return _make_response(200, {})
 
 
@@ -96,7 +94,6 @@ def _patch_post_login_hooks(stack: ExitStack) -> MagicMock:
     Returns the ``config.save`` mock so callers can assert on it.
     """
     helper_names = [
-        "_fetch_server_public_key",
         "_post_login_setup",
         "_configure_claude_code",
         "_configure_kiro",

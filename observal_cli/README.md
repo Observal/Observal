@@ -112,7 +112,6 @@ All CLI state lives in `~/.observal/`:
 | `config.json`            | Server URL, tokens, user ID               |
 | `aliases.json`           | User-defined name-to-UUID aliases         |
 | `last_results.json`      | Cached list results for numeric shorthand |
-| `keys/server_public.pem` | Server public key for payload encryption  |
 
 ## Telemetry
 

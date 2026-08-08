@@ -157,19 +157,37 @@ async def list_settings(
     optic.debug("admin settings list")
     result = await db.execute(select(EnterpriseConfig).order_by(EnterpriseConfig.key))
     configs = []
+    seen = set()
     for c in result.scalars().all():
         if c.key == RESTART_PENDING_KEY:
             continue
+        seen.add(c.key)
         sensitive = c.key in ds.SENSITIVE_KEYS
-        has_value = bool(c.value)
+        externally_managed = ds.is_externally_managed(c.key)
+        has_value = externally_managed or bool(c.value)
+        effective_value = ds.get_sync(c.key) if externally_managed else c.value
         # Never return plaintext or ciphertext for sensitive keys.
-        display_value = (REDACTED if has_value else "") if sensitive else c.value
+        display_value = (REDACTED if has_value else "") if sensitive else effective_value
         configs.append(
             EnterpriseConfigResponse(
                 key=c.key,
                 value=display_value,
                 is_sensitive=sensitive,
                 is_set=has_value,
+                is_externally_managed=externally_managed,
+            )
+        )
+    for key in sorted(ds.external_setting_keys() - seen):
+        if key not in ds.DEFAULTS:
+            continue
+        sensitive = key in ds.SENSITIVE_KEYS
+        configs.append(
+            EnterpriseConfigResponse(
+                key=key,
+                value=REDACTED if sensitive else ds.get_sync(key),
+                is_sensitive=sensitive,
+                is_set=True,
+                is_externally_managed=True,
             )
         )
     return configs
@@ -182,18 +200,23 @@ async def get_setting(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     optic.debug("admin setting get")
+    if key in ds.FILE_ONLY_KEYS:
+        raise HTTPException(status_code=404, detail="Setting not found")
+    externally_managed = ds.is_externally_managed(key)
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
     cfg = result.scalar_one_or_none()
-    if not cfg:
+    if not cfg and not externally_managed:
         raise HTTPException(status_code=404, detail="Setting not found")
     sensitive = key in ds.SENSITIVE_KEYS
-    has_value = bool(cfg.value)
-    display_value = (REDACTED if has_value else "") if sensitive else cfg.value
+    has_value = externally_managed or bool(cfg and cfg.value)
+    value = ds.get_sync(key) if externally_managed else cfg.value
+    display_value = (REDACTED if has_value else "") if sensitive else value
     return EnterpriseConfigResponse(
-        key=cfg.key,
+        key=key,
         value=display_value,
         is_sensitive=sensitive,
         is_set=has_value,
+        is_externally_managed=externally_managed,
     )
 
 
@@ -205,6 +228,10 @@ async def upsert_setting(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     optic.trace("key={}", key)
+    if key in ds.FILE_ONLY_KEYS:
+        raise HTTPException(status_code=409, detail="Setting can only be managed through dedicated files")
+    if ds.is_externally_managed(key):
+        raise HTTPException(status_code=409, detail="Setting is externally managed by a secret file")
     # Wrapping whitespace from copy-paste silently breaks downstream consumers
     # (discovery URLs, client secrets), so values are normalized on write.
     # Interior content (multi-line PEM certs) is preserved.
@@ -268,6 +295,7 @@ async def upsert_setting(
         value=REDACTED if sensitive else cfg.value,
         is_sensitive=sensitive,
         is_set=True,
+        is_externally_managed=False,
     )
 
 
@@ -278,6 +306,8 @@ async def delete_setting(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     optic.trace("key={}", key)
+    if ds.is_externally_managed(key):
+        raise HTTPException(status_code=409, detail="Setting is externally managed by a secret file")
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
     cfg = result.scalar_one_or_none()
     if not cfg:
@@ -305,6 +335,8 @@ async def revoke_setting(
     optic.trace("key={}", key)
     if key not in ds.SENSITIVE_KEYS:
         raise HTTPException(status_code=400, detail="Only sensitive keys can be revoked")
+    if ds.is_externally_managed(key):
+        raise HTTPException(status_code=409, detail="Setting is externally managed by a secret file")
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
     cfg = result.scalar_one_or_none()
     if not cfg:

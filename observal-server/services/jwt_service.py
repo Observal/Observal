@@ -3,8 +3,8 @@
 
 """JWT token generation and validation for unified browser/CLI auth.
 
-Tokens are signed with ES256 (ECDSA P-256) via the asymmetric key manager
-in services.crypto.  The corresponding public keys are published at
+Tokens are signed with the configured asymmetric key via the key manager in
+services.crypto. The corresponding public keys are published at
 /.well-known/jwks.json so external consumers can verify tokens without
 sharing a secret.
 """
@@ -18,13 +18,11 @@ from loguru import logger as optic
 import services.dynamic_settings as ds
 from models.user import UserRole
 
-ALGORITHM = "ES256"
-
 
 def create_access_token(
     user_id: uuid.UUID, role: UserRole, expires_in_minutes: int | None = None, groups: list[str] | None = None
 ) -> tuple[str, int]:
-    """Create a short-lived ES256-signed access token.
+    """Create a short-lived asymmetrically signed access token.
 
     Returns (encoded_token, expires_in_seconds).
     """
@@ -48,7 +46,7 @@ def create_access_token(
 
 
 def create_refresh_token(user_id: uuid.UUID, role: UserRole, groups: list[str] | None = None) -> tuple[str, str]:
-    """Create a long-lived ES256-signed refresh token.
+    """Create a long-lived asymmetrically signed refresh token.
 
     Returns (encoded_token, jti).
     The jti is returned separately so it can be stored for revocation.
@@ -71,7 +69,7 @@ def create_refresh_token(user_id: uuid.UUID, role: UserRole, groups: list[str] |
 
 
 def decode_token(token: str) -> dict:
-    """Decode and validate a JWT token using the published ES256 key set.
+    """Decode and validate a JWT token using the configured public key set.
 
     Raises jwt.InvalidTokenError (or subclass) on failure.
     """

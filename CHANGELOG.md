@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- add JWT algorithm agility, file-backed credentials, secure package bindings, signed release tags, verification guidance, and a security assurance case
+
 ### Fixes
 
 - keep intentional CLI downgrades pinned when targeting legacy releases ([#1672](https://github.com/Observal/Observal/pull/1672))
@@ -2035,4 +2039,3 @@ All notable changes to this project will be documented in this file.
 ### Ui
 
 - brighter borders, responsive text scaling, observal favicon ([86ef640](https://github.com/Observal/Observal/commit/86ef64027e651fd70027932de4533d83acd08125))
-

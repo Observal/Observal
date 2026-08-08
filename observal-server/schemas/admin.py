@@ -17,6 +17,7 @@ class EnterpriseConfigResponse(BaseModel):
     value: str
     is_sensitive: bool = False
     is_set: bool = False
+    is_externally_managed: bool = False
     model_config = {"from_attributes": True}
 
 

@@ -98,7 +98,7 @@ Observal has two parts: a **server** (API + web UI + databases) you self-host, a
 curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash
 ```
 
-This downloads a Docker Compose package, runs guided setup (domain, secrets, ports), pulls container images from GHCR, and starts the full stack (API, web UI, PostgreSQL, ClickHouse, Redis, worker, load balancer, Prometheus, Grafana).
+This downloads a Docker Compose package, generates operator-owned secret files with restricted container-group access, binds published ports to loopback by default, pulls container images from GHCR, and starts the stack.
 
 Deployment docs are linked directly from this README:
 
@@ -107,6 +107,7 @@ Deployment docs are linked directly from this README:
 - [Production deployment](docs/self-hosting/production-deploy.md): hardened production topology
 - [Databases](docs/self-hosting/databases.md): Postgres, ClickHouse, migrations, retention
 - [Upgrades](docs/self-hosting/upgrades.md): safe upgrade and rollback flow
+- [Release verification](docs/security/release-verification.md): verify checksums, provenance, and signed tags
 - [Backup and restore](docs/self-hosting/backup-and-restore.md): backup plan before upgrades
 
 **From source** (for contributors):

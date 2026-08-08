@@ -24,6 +24,8 @@ from typing import Any
 
 from loguru import logger as optic
 
+from observal_shared.secrets import resolve_secret
+
 # ─── Encryption for sensitive values ───────────────────────────────────────
 # Uses Fernet symmetric encryption keyed from SECRET_KEY.
 # Values are stored as "enc:" + base64(ciphertext) in the DB.
@@ -54,13 +56,17 @@ def _get_fernet():
     return Fernet(_derive_fernet_key(settings.SECRET_KEY))
 
 
+def _old_secret_key() -> str | None:
+    from config import settings
+
+    return resolve_secret("OLD_SECRET_KEY") or settings.OLD_SECRET_KEY
+
+
 def _get_old_fernet():
     """Derive a Fernet key from OLD_SECRET_KEY (for key rotation)."""
-    import os
-
     from cryptography.fernet import Fernet
 
-    old_key = os.environ.get("OLD_SECRET_KEY", "")
+    old_key = _old_secret_key()
     if not old_key:
         return None
     return Fernet(_derive_fernet_key(old_key))
@@ -93,7 +99,7 @@ def decrypt_value(stored: str) -> str:
             return old_f.decrypt(ciphertext).decode()
     except Exception:
         pass
-    optic.error("dynamic_settings_decrypt_failed", hint="Neither SECRET_KEY nor OLD_SECRET_KEY can decrypt this value")
+    optic.error("dynamic settings decrypt failed with current and old keys")
     return ""
 
 
@@ -106,9 +112,7 @@ async def reencrypt_on_key_rotation() -> int:
 
     Returns the number of values re-encrypted.
     """
-    import os
-
-    if not os.environ.get("OLD_SECRET_KEY"):
+    if not _old_secret_key():
         return 0
 
     try:
@@ -139,14 +143,15 @@ async def reencrypt_on_key_rotation() -> int:
                     count += 1
             if count > 0:
                 await session.commit()
-                optic.info("dynamic_settings_reencrypted", count=count)
+                optic.info("dynamic settings re-encrypted count={}", count)
         return count
-    except Exception as e:
-        optic.error("dynamic_settings_reencrypt_failed", error=str(e))
+    except Exception:
+        optic.exception("dynamic settings re-encryption failed")
         return 0
 
 
 SSO_ENV_IMPORTS: dict[str, str] = {
+    "INSIGHTS_API_KEY": "insights.api_key",
     "OAUTH_CLIENT_ID": "oauth.client_id",
     "OAUTH_CLIENT_SECRET": "oauth.client_secret",
     "OAUTH_SERVER_METADATA_URL": "oauth.server_metadata_url",
@@ -169,6 +174,63 @@ SSO_ENV_IMPORTS: dict[str, str] = {
     "SAML_SP_KEY_ENCRYPTION_PASSWORD": "saml.sp_key_encryption_password",
 }
 
+SAML_MATERIAL_IMPORTS: dict[str, str] = {
+    "SAML_SP_PRIVATE_KEY": "saml.sp_private_key",
+    "SAML_SP_X509_CERT": "saml.sp_x509_cert",
+}
+FILE_ONLY_KEYS = frozenset(SAML_MATERIAL_IMPORTS.values())
+
+_external_settings: dict[str, str] = {}
+
+
+def _environment_values() -> dict[str, str]:
+    import os
+
+    from dotenv import dotenv_values
+
+    env_file = {key: value for key, value in dotenv_values(".env").items() if value is not None}
+    return {**env_file, **os.environ}
+
+
+def load_external_settings() -> None:
+    """Load file-backed dynamic settings into memory without DB or Redis writes."""
+    values = _environment_values()
+    loaded: dict[str, str] = {}
+    for env_key, setting_key in SSO_ENV_IMPORTS.items():
+        if f"{env_key}_FILE" not in values:
+            continue
+        value = resolve_secret(env_key, values)
+        if value is not None:
+            loaded[setting_key] = value
+    for env_key, setting_key in SAML_MATERIAL_IMPORTS.items():
+        if f"{env_key}_FILE" not in values:
+            continue
+        value = resolve_secret(env_key, values)
+        if value is not None:
+            loaded[setting_key] = value
+
+    sp_values = {"saml.sp_private_key", "saml.sp_x509_cert"} & loaded.keys()
+    if sp_values and len(sp_values) != 2:
+        raise ValueError(
+            "File-backed SAML SP material overrides database material; "
+            "SAML_SP_PRIVATE_KEY_FILE and SAML_SP_X509_CERT_FILE must be configured together"
+        )
+
+    _external_settings.clear()
+    _external_settings.update(loaded)
+
+
+def is_externally_managed(key: str) -> bool:
+    return key in _external_settings
+
+
+def external_setting_keys() -> set[str]:
+    return set(_external_settings)
+
+
+def has_external_saml_material() -> bool:
+    return "saml.sp_private_key" in _external_settings
+
 
 async def import_sso_env_once() -> int:
     """Import legacy SSO env vars into dynamic settings when DB has no value.
@@ -176,8 +238,6 @@ async def import_sso_env_once() -> int:
     A row whose value is empty counts as "no value": the env var overwrites it.
     Only a non-empty DB value (set via the admin UI/API) wins over the env var.
     """
-    import os
-
     from sqlalchemy import select
 
     from database import async_session
@@ -190,8 +250,11 @@ async def import_sso_env_once() -> int:
         rows = {cfg.key: cfg for cfg in result.scalars().all()}
 
         imported = 0
+        values = _environment_values()
         for env_key, setting_key in SSO_ENV_IMPORTS.items():
-            env_value = (os.environ.get(env_key) or "").strip()
+            if is_externally_managed(setting_key):
+                continue
+            env_value = (values.get(env_key) or "").strip()
             if not env_value:
                 continue
             existing = rows.get(setting_key)
@@ -324,6 +387,7 @@ SENSITIVE_KEYS: set[str] = {
     "google.client_secret",
     "github.client_secret",
     "saml.idp_x509_cert",
+    "saml.sp_private_key",
     "saml.sp_key_encryption_password",
 }
 
@@ -385,6 +449,7 @@ def settings_schema() -> list[dict[str, Any]]:
                     "default": DEFAULTS.get(key, ""),
                     "requires_feature": SETTING_FEATURES.get(key) or section.get("requires_feature"),
                     "restart_required": key in RESTART_REQUIRED_KEYS,
+                    "is_externally_managed": is_externally_managed(key),
                 }
             )
         sections.append({**section, "settings": items})
@@ -510,6 +575,9 @@ async def get(key: str, default: str | None = None) -> str:
         The setting value as a string.
     """
     optic.trace("reading setting: {}", key)
+    if key in _external_settings:
+        return _external_settings[key]
+
     # 1. Try Redis cache
     try:
         from services.redis import get_redis
@@ -556,7 +624,7 @@ async def get_int(key: str, default: int | None = None) -> int:
     try:
         return int(raw)
     except (ValueError, TypeError):
-        optic.warning("dynamic_settings_invalid_int", key=key, value=raw)
+        optic.warning("invalid integer dynamic setting key={}", key)
         if default is not None:
             return default
         fallback = DEFAULTS.get(key, "0")
@@ -580,7 +648,7 @@ async def get_float(key: str, default: float | None = None) -> float:
     try:
         return float(raw)
     except (ValueError, TypeError):
-        optic.warning("dynamic_settings_invalid_float", key=key, value=raw)
+        optic.warning("invalid float dynamic setting key={}", key)
         if default is not None:
             return default
         fallback = DEFAULTS.get(key, "0.0")
@@ -646,6 +714,7 @@ async def get_all() -> dict[str, str]:
     db_values = await _read_all_from_db()
     result = dict(DEFAULTS)
     result.update(db_values)
+    result.update(_external_settings)
     return result
 
 
@@ -676,8 +745,8 @@ async def _read_from_db(key: str) -> str | None:
             if row.startswith(_ENC_PREFIX):
                 return decrypt_value(row)
             return row
-    except Exception as e:
-        optic.warning("dynamic_settings_db_read_error", key=key, error=str(e))
+    except Exception:
+        optic.warning("dynamic settings database read failed for key={}", key)
         return None
 
 
@@ -698,8 +767,8 @@ async def _read_all_from_db() -> dict[str, str]:
                     value = decrypt_value(value)
                 settings_dict[row.key] = value
             return settings_dict
-    except Exception as e:
-        optic.warning("dynamic_settings_db_read_all_error", error=str(e))
+    except Exception:
+        optic.warning("dynamic settings database read-all failed")
         return {}
 
 
@@ -769,11 +838,13 @@ async def load_sync_cache() -> None:
         db_values = await _read_all_from_db()
         _sync_cache = dict(DEFAULTS)
         _sync_cache.update(db_values)
+        _sync_cache.update(_external_settings)
         _sync_cache_loaded = True
-        optic.info("dynamic_settings_cache_loaded", count=len(db_values))
-    except Exception as e:
-        optic.warning("dynamic_settings_cache_load_failed", error=str(e))
+        optic.info("dynamic_settings_cache_loaded count={}", len(db_values))
+    except Exception:
+        optic.warning("dynamic_settings_cache_load_failed")
         _sync_cache = dict(DEFAULTS)
+        _sync_cache.update(_external_settings)
         _sync_cache_loaded = True
 
 

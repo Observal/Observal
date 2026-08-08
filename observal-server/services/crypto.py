@@ -2,111 +2,106 @@
 # SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Asymmetric key management for JWT signing and verification (ES256 / ECDSA P-256).
-
-This module provides:
-- Automatic key-pair generation on first server boot
-- PEM-based key persistence with optional password protection
-- JWKS endpoint data for standard token verification
-- Key rotation with old-key retention for graceful transition
-- ``sign_token`` / ``verify_token`` helpers for JWT auth
-"""
+"""Asymmetric JWT signing, verification, JWKS publication, and key rotation."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import os
+import time
 from pathlib import Path
+from typing import Literal, TypeAlias
 
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, utils
+import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from loguru import logger as optic
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+SigningAlgorithm = Literal["ES256", "RS256"]
+PrivateKey: TypeAlias = ec.EllipticCurvePrivateKey | rsa.RSAPrivateKey
+PublicKey: TypeAlias = ec.EllipticCurvePublicKey | rsa.RSAPublicKey
+SUPPORTED_ALGORITHMS = frozenset({"ES256", "RS256"})
 
 
 def _b64url(data: bytes) -> str:
-    """Base64url-encode *without* padding (per RFC 7515)."""
-
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def _b64url_decode(s: str) -> bytes:
-    """Base64url-decode, re-adding padding as needed."""
-
-    s += "=" * (4 - len(s) % 4)
-    return base64.urlsafe_b64decode(s)
+def _b64url_decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def _kid_from_public_key(pub: ec.EllipticCurvePublicKey) -> str:
-    """Derive a deterministic key-id (kid) from the public key bytes."""
-    optic.trace("deriving key ID from public key")
-    raw = pub.public_bytes(
-        serialization.Encoding.DER,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
+def _algorithm_for_key(key: PrivateKey | PublicKey) -> SigningAlgorithm:
+    if isinstance(key, (ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey)):
+        if key.curve.name != "secp256r1":
+            raise TypeError(f"Unsupported EC curve: {key.curve.name}")
+        return "ES256"
+    if isinstance(key, (rsa.RSAPrivateKey, rsa.RSAPublicKey)):
+        if key.key_size < 2048:
+            raise TypeError(f"Unsupported RSA key size: {key.key_size}")
+        return "RS256"
+    raise TypeError(f"Unsupported signing key type: {type(key).__name__}")
+
+
+def _kid_from_public_key(pub: PublicKey) -> str:
+    raw = pub.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
     return hashlib.sha256(raw).hexdigest()[:16]
 
 
-def _public_key_to_jwk(pub: ec.EllipticCurvePublicKey, kid: str) -> dict:
-    """Convert an EC public key to a JWK dict (RFC 7517 / 7518)."""
-    optic.trace("converting public key to JWK format (kid={})", kid)
+def _public_key_to_jwk(pub: PublicKey, kid: str) -> dict:
+    algorithm = _algorithm_for_key(pub)
+    if algorithm == "ES256":
+        numbers = pub.public_numbers()
+        return {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": _b64url(numbers.x.to_bytes(32, "big")),
+            "y": _b64url(numbers.y.to_bytes(32, "big")),
+            "kid": kid,
+            "use": "sig",
+            "alg": algorithm,
+        }
+
     numbers = pub.public_numbers()
-    # P-256 coordinates are 32 bytes each
-    x_bytes = numbers.x.to_bytes(32, byteorder="big")
-    y_bytes = numbers.y.to_bytes(32, byteorder="big")
     return {
-        "kty": "EC",
-        "crv": "P-256",
-        "x": _b64url(x_bytes),
-        "y": _b64url(y_bytes),
+        "kty": "RSA",
+        "n": _b64url(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")),
+        "e": _b64url(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")),
         "kid": kid,
         "use": "sig",
-        "alg": "ES256",
+        "alg": algorithm,
     }
 
 
-# ---------------------------------------------------------------------------
-# KeyManager
-# ---------------------------------------------------------------------------
-
-
 class KeyManager:
-    """Manages ES256 (ECDSA P-256) key pairs for JWT signing.
-
-    On first run the manager generates a new key pair and persists it to
-    *key_dir*.  On subsequent runs the existing key is loaded.  Key rotation
-    is supported: the current signing key is stored as ``signing.pem`` while
-    retired public keys are kept as ``retired_<kid>.pem`` so tokens signed
-    with a previous key can still be verified during a transition window.
-    """
+    """Manage ES256 or RS256 JWT keys while retaining old verification keys."""
 
     def __init__(
         self,
         key_dir: str = "~/.observal/keys",
         key_password: str | None = None,
+        algorithm: SigningAlgorithm = "ES256",
+        retired_key_retention_days: int = 30,
     ) -> None:
+        if algorithm not in SUPPORTED_ALGORITHMS:
+            raise ValueError(f"Unsupported JWT signing algorithm: {algorithm}")
         self._key_dir = Path(key_dir).expanduser()
         self._key_password = key_password.encode() if key_password else None
-
-        self._private_key: ec.EllipticCurvePrivateKey | None = None
-        self._public_key: ec.EllipticCurvePublicKey | None = None
+        self._algorithm = algorithm
+        self._retired_key_retention_seconds = max(retired_key_retention_days, 1) * 86400
+        self._private_key: PrivateKey | None = None
+        self._public_key: PublicKey | None = None
         self._kid: str | None = None
+        self._retired_keys: dict[str, PublicKey] = {}
 
-        # Retired public keys: kid -> EllipticCurvePublicKey
-        self._retired_keys: dict[str, ec.EllipticCurvePublicKey] = {}
-
-    # -- lifecycle -----------------------------------------------------------
+    @property
+    def algorithm(self) -> SigningAlgorithm:
+        return self._algorithm
 
     def initialize(self) -> None:
-        """Load or generate the signing key pair.  Call once at startup."""
-        optic.debug("initializing key manager")
+        optic.debug("initializing JWT key manager")
         self._key_dir.mkdir(parents=True, exist_ok=True)
-        # Restrict directory to owner-only (ignore on read-only secret mounts)
         try:
             os.chmod(self._key_dir, 0o700)
         except OSError:
@@ -115,274 +110,181 @@ class KeyManager:
         signing_path = self._key_dir / "signing.pem"
         if signing_path.exists():
             self._load_private_key(signing_path)
-            optic.info("loaded existing ES256 signing key (kid={})", self._kid)
+            if _algorithm_for_key(self.get_private_key()) != self._algorithm:
+                optic.info("JWT algorithm changed; retiring current signing key")
+                self._retire_current_key()
+                self._generate_key_pair(signing_path)
         else:
             self._generate_key_pair(signing_path)
-            optic.info("generated new ES256 signing key (kid={})", self._kid)
-
         self._load_retired_keys()
+        optic.info("JWT signing key ready (alg={}, kid={})", self._algorithm, self._kid)
 
-    # -- public API ----------------------------------------------------------
-
-    def get_private_key(self) -> ec.EllipticCurvePrivateKey:
-        """Return the current signing private key."""
-
+    def get_private_key(self) -> PrivateKey:
         if self._private_key is None:
             raise RuntimeError("KeyManager has not been initialized")
         return self._private_key
 
-    def get_public_key(self) -> ec.EllipticCurvePublicKey:
-        """Return the current signing public key."""
-
+    def get_public_key(self) -> PublicKey:
         if self._public_key is None:
             raise RuntimeError("KeyManager has not been initialized")
         return self._public_key
 
     def get_kid(self) -> str:
-        """Return the key-id of the current signing key."""
-
         if self._kid is None:
             raise RuntimeError("KeyManager has not been initialized")
         return self._kid
 
     def get_public_key_pem(self) -> str:
-        """Return the PEM-encoded public key for distribution."""
-
         return (
             self.get_public_key()
-            .public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
+            .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
             .decode()
         )
 
     def get_jwks(self) -> dict:
-        """Return all public keys (current + retired) in JWKS format."""
-        optic.trace("building JWKS response ({} retired keys + current)", len(self._retired_keys))
-        keys: list[dict] = []
-        # Current key
-        keys.append(_public_key_to_jwk(self.get_public_key(), self.get_kid()))
-        # Retired keys
-        for kid, pub in self._retired_keys.items():
-            keys.append(_public_key_to_jwk(pub, kid))
+        self._prune_retired_keys()
+        optic.trace("building JWT JWKS with {} retired keys", len(self._retired_keys))
+        keys = [_public_key_to_jwk(self.get_public_key(), self.get_kid())]
+        keys.extend(_public_key_to_jwk(pub, kid) for kid, pub in self._retired_keys.items())
         return {"keys": keys}
 
     def rotate_key(self) -> str:
-        """Generate a new signing key, retiring the current one.
-
-        Returns the *kid* of the newly generated key.
-        """
-        optic.info("rotating signing key")
-        if self._public_key is not None and self._kid is not None:
-            # Persist current public key as retired
-            retired_path = self._key_dir / f"retired_{self._kid}.pem"
-            retired_path.write_bytes(
-                self._public_key.public_bytes(
-                    serialization.Encoding.PEM,
-                    serialization.PublicFormat.SubjectPublicKeyInfo,
-                )
-            )
-            self._retired_keys[self._kid] = self._public_key
-            optic.info("retired old key (kid={})", self._kid)
-
-        signing_path = self._key_dir / "signing.pem"
-        self._generate_key_pair(signing_path)
-        optic.info("rotation complete, new kid={}", self._kid)
+        optic.info("rotating JWT signing key")
+        self._retire_current_key()
+        self._generate_key_pair(self._key_dir / "signing.pem")
         return self.get_kid()
 
-    def find_public_key(self, kid: str) -> ec.EllipticCurvePublicKey | None:
-        """Look up a public key by its *kid* (current or retired)."""
-        optic.trace("looking up public key for kid={}", kid)
+    def find_public_key(self, kid: str) -> PublicKey | None:
+        self._prune_retired_keys()
         if kid == self._kid:
             return self._public_key
         return self._retired_keys.get(kid)
 
-    # -- payload encryption/decryption ---------------------------------------
-
-    def decrypt_payload(self, encrypted_blob: bytes) -> str:
-        """Decrypt an ECIES-encrypted payload from the CLI buffer.
-
-        Format: ephemeral_pubkey (65 bytes) || nonce (12 bytes) || ciphertext+tag
-        """
-        optic.trace("decrypting payload")
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-        # Parse components
-        ephemeral_pub_bytes = encrypted_blob[:65]
-        nonce = encrypted_blob[65:77]
-        ciphertext_with_tag = encrypted_blob[77:]
-
-        # Reconstruct ephemeral public key
-        ephemeral_pub = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), ephemeral_pub_bytes)
-
-        # ECDH shared secret using server's private key
-        shared_secret = self.get_private_key().exchange(ec.ECDH(), ephemeral_pub)
-
-        # Derive same AES key
-        aes_key = HKDF(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=None,
-            info=b"observal-buffer-v1",
-        ).derive(shared_secret)
-
-        # Decrypt
-        aesgcm = AESGCM(aes_key)
-        plaintext = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
-        return plaintext.decode("utf-8")
-
-    # -- token helpers -------------------------------------------------------
-
     def sign_token(self, payload: dict) -> str:
-        """Sign a JWT-like payload with the current private key.
-
-        Produces a compact JWS (header.payload.signature) using ES256.
-        If ``PyJWT`` is installed this delegates to it; otherwise a
-        minimal implementation using the ``cryptography`` library is used.
-        """
-        optic.trace("signing JWT token")
-        try:
-            import jwt as pyjwt
-
-            return pyjwt.encode(
-                payload,
-                self.get_private_key(),
-                algorithm="ES256",
-                headers={"kid": self.get_kid()},
-            )
-        except ImportError:
-            pass
-
-        return self._sign_token_raw(payload)
+        optic.trace("signing JWT token with kid={}", self.get_kid())
+        return jwt.encode(
+            payload,
+            self.get_private_key(),
+            algorithm=self._algorithm,
+            headers={"kid": self.get_kid()},
+        )
 
     def verify_token(self, token: str) -> dict:
-        """Verify and decode a JWT signed by this server.
-
-        Supports tokens signed with both the current and retired keys.
-        """
         optic.trace("verifying JWT token")
-        try:
-            import jwt as pyjwt
-
-            # Extract kid from unverified header
-            header = pyjwt.get_unverified_header(token)
-            kid = header.get("kid", self.get_kid())
-            pub = self.find_public_key(kid)
-            if pub is None:
-                raise pyjwt.InvalidTokenError(f"Unknown key id: {kid}")
-            return pyjwt.decode(token, pub, algorithms=["ES256"])
-        except ImportError:
-            pass
-
-        return self._verify_token_raw(token)
-
-    # -- internal ------------------------------------------------------------
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        if not isinstance(kid, str) or not kid:
+            raise jwt.InvalidTokenError("Token is missing a key id")
+        pub = self.find_public_key(kid)
+        if pub is None:
+            raise jwt.InvalidTokenError(f"Unknown key id: {kid}")
+        expected_algorithm = _algorithm_for_key(pub)
+        if header.get("alg") != expected_algorithm:
+            raise jwt.InvalidAlgorithmError("Token algorithm does not match its signing key")
+        return jwt.decode(token, pub, algorithms=[expected_algorithm])
 
     def _encryption_args(self) -> serialization.KeySerializationEncryption:
-
         if self._key_password:
             return serialization.BestAvailableEncryption(self._key_password)
         return serialization.NoEncryption()
 
-    def _generate_key_pair(self, path: Path) -> None:
-        optic.debug("generating new EC P-256 key pair at {}", path)
-        key = ec.generate_private_key(ec.SECP256R1())
+    def _write_private_key(self, path: Path, key: PrivateKey) -> None:
         pem = key.private_bytes(
             serialization.Encoding.PEM,
             serialization.PrivateFormat.PKCS8,
             self._encryption_args(),
         )
-        path.write_bytes(pem)
-        os.chmod(path, 0o600)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                descriptor = -1
+                handle.write(pem)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+
+    def _generate_key_pair(self, path: Path) -> None:
+        optic.debug("generating {} JWT signing key", self._algorithm)
+        key: PrivateKey
+        if self._algorithm == "ES256":
+            key = ec.generate_private_key(ec.SECP256R1())
+        else:
+            key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+        self._write_private_key(path, key)
         self._private_key = key
         self._public_key = key.public_key()
         self._kid = _kid_from_public_key(self._public_key)
 
     def _load_private_key(self, path: Path) -> None:
-        optic.trace("loading private key from {}", path)
-        pem_data = path.read_bytes()
-        key = serialization.load_pem_private_key(pem_data, password=self._key_password)
-        if not isinstance(key, ec.EllipticCurvePrivateKey):
-            raise TypeError(f"Expected an EC private key, got {type(key).__name__}")
+        optic.trace("loading JWT signing key from {}", path.name)
+        pem = path.read_bytes()
+        encrypt_existing_key = False
+        try:
+            key = serialization.load_pem_private_key(pem, password=self._key_password)
+        except TypeError:
+            if not self._key_password:
+                raise
+            key = serialization.load_pem_private_key(pem, password=None)
+            encrypt_existing_key = True
+        if not isinstance(key, (ec.EllipticCurvePrivateKey, rsa.RSAPrivateKey)):
+            raise TypeError(f"Unsupported private key type: {type(key).__name__}")
+        _algorithm_for_key(key)
+        if encrypt_existing_key:
+            self._write_private_key(path, key)
+            optic.info("encrypted existing JWT signing key with configured password")
+        else:
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                optic.warning("could not restrict JWT signing key permissions")
         self._private_key = key
         self._public_key = key.public_key()
         self._kid = _kid_from_public_key(self._public_key)
 
-    def _load_retired_keys(self) -> None:
-        optic.trace("scanning for retired keys")
-        for p in self._key_dir.glob("retired_*.pem"):
-            try:
-                pub = serialization.load_pem_public_key(p.read_bytes())
-                if isinstance(pub, ec.EllipticCurvePublicKey):
-                    kid = _kid_from_public_key(pub)
-                    self._retired_keys[kid] = pub
-                    optic.trace("loaded retired key {} from {}", kid, p.name)
-            except Exception:
-                optic.warning("could not load retired key file {}", p.name)
-
-    # -- raw JWS (no PyJWT dependency) ---------------------------------------
-
-    def _sign_token_raw(self, payload: dict) -> str:
-        """Minimal JWS compact serialization using ``cryptography``."""
-
-        header = {"alg": "ES256", "typ": "JWT", "kid": self.get_kid()}
-        segments = [
-            _b64url(json.dumps(header, separators=(",", ":")).encode()),
-            _b64url(json.dumps(payload, separators=(",", ":")).encode()),
-        ]
-        signing_input = f"{segments[0]}.{segments[1]}".encode()
-
-        # ECDSA signature in DER, convert to fixed-size (r || s) per RFC 7518
-        der_sig = self.get_private_key().sign(
-            signing_input,
-            ec.ECDSA(hashes.SHA256()),
+    def _retire_current_key(self) -> None:
+        if self._public_key is None or self._kid is None:
+            return
+        retired_path = self._key_dir / f"retired_{self._kid}.pem"
+        retired_path.write_bytes(
+            self._public_key.public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
         )
-        r, s = utils.decode_dss_signature(der_sig)
-        sig_bytes = r.to_bytes(32, "big") + s.to_bytes(32, "big")
-        segments.append(_b64url(sig_bytes))
-        return ".".join(segments)
+        os.chmod(retired_path, 0o600)
+        self._retired_keys[self._kid] = self._public_key
 
-    def _verify_token_raw(self, token: str) -> dict:
-        """Minimal JWS verification using ``cryptography``."""
+    def _prune_retired_keys(self) -> None:
+        cutoff = time.time() - self._retired_key_retention_seconds
+        for path in self._key_dir.glob("retired_*.pem"):
+            try:
+                if path.stat().st_mtime >= cutoff:
+                    continue
+                kid = path.stem.removeprefix("retired_")
+                path.unlink()
+                self._retired_keys.pop(kid, None)
+                optic.info("removed expired retired JWT key kid={}", kid)
+            except OSError:
+                optic.warning("could not prune retired key file {}", path.name)
 
-        parts = token.split(".")
-        if len(parts) != 3:
-            raise ValueError("Invalid JWT format")
+    def _load_retired_keys(self) -> None:
+        self._prune_retired_keys()
+        for path in self._key_dir.glob("retired_*.pem"):
+            try:
+                pub = serialization.load_pem_public_key(path.read_bytes())
+                if not isinstance(pub, (ec.EllipticCurvePublicKey, rsa.RSAPublicKey)):
+                    raise TypeError(type(pub).__name__)
+                _algorithm_for_key(pub)
+                self._retired_keys[_kid_from_public_key(pub)] = pub
+            except (OSError, TypeError, ValueError):
+                optic.warning("could not load retired key file {}", path.name)
 
-        header = json.loads(_b64url_decode(parts[0]))
-        kid = header.get("kid", self.get_kid())
-        pub = self.find_public_key(kid)
-        if pub is None:
-            raise ValueError(f"Unknown key id: {kid}")
-
-        signing_input = f"{parts[0]}.{parts[1]}".encode()
-        sig_bytes = _b64url_decode(parts[2])
-
-        if len(sig_bytes) != 64:
-            raise ValueError("Invalid signature length")
-
-        r = int.from_bytes(sig_bytes[:32], "big")
-        s = int.from_bytes(sig_bytes[32:], "big")
-        der_sig = utils.encode_dss_signature(r, s)
-
-        pub.verify(der_sig, signing_input, ec.ECDSA(hashes.SHA256()))
-
-        payload = json.loads(_b64url_decode(parts[1]))
-        return payload
-
-
-# ---------------------------------------------------------------------------
-# Module-level singleton
-# ---------------------------------------------------------------------------
 
 _key_manager: KeyManager | None = None
 
 
 def get_key_manager() -> KeyManager:
-    """Return the global KeyManager instance (must be initialized first)."""
-
     if _key_manager is None:
         raise RuntimeError("KeyManager not initialized. Call init_key_manager() during app startup.")
     return _key_manager
@@ -391,26 +293,24 @@ def get_key_manager() -> KeyManager:
 def init_key_manager(
     key_dir: str = "~/.observal/keys",
     key_password: str | None = None,
+    algorithm: SigningAlgorithm = "ES256",
+    retired_key_retention_days: int = 30,
 ) -> KeyManager:
-    """Create, initialize, and register the global KeyManager singleton."""
-    optic.debug("initializing crypto key manager")
     global _key_manager
-    km = KeyManager(key_dir=key_dir, key_password=key_password)
-    km.initialize()
-    _key_manager = km
-    return km
-
-
-# Convenience wrappers ------------------------------------------------------
+    manager = KeyManager(
+        key_dir=key_dir,
+        key_password=key_password,
+        algorithm=algorithm,
+        retired_key_retention_days=retired_key_retention_days,
+    )
+    manager.initialize()
+    _key_manager = manager
+    return manager
 
 
 def sign_token(payload: dict) -> str:
-    """Sign a JWT payload with the server's private key."""
-    optic.trace("signing JWT token")
     return get_key_manager().sign_token(payload)
 
 
 def verify_token(token: str) -> dict:
-    """Verify and decode a JWT using the server's public key."""
-    optic.trace("verifying JWT token")
     return get_key_manager().verify_token(token)

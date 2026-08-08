@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from pathlib import Path
 
+import jwt as pyjwt
 import pytest
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -124,6 +127,22 @@ class TestKeyPersistence:
         km2.initialize()
         assert km2.get_kid() == kid1
 
+    def test_existing_unencrypted_key_loads_when_password_is_added(self, tmp_key_dir):
+        original = KeyManager(key_dir=tmp_key_dir)
+        original.initialize()
+        original_kid = original.get_kid()
+
+        protected = KeyManager(key_dir=tmp_key_dir, key_password="new-password")
+        protected.initialize()
+        assert protected.get_kid() == original_kid
+        assert b"ENCRYPTED" in (Path(tmp_key_dir) / "signing.pem").read_bytes()
+        protected.rotate_key()
+        assert b"ENCRYPTED" in (Path(tmp_key_dir) / "signing.pem").read_bytes()
+
+        restarted = KeyManager(key_dir=tmp_key_dir, key_password="new-password")
+        restarted.initialize()
+        assert restarted.get_kid() == protected.get_kid()
+
     def test_wrong_password_fails(self, tmp_key_dir):
         km1 = KeyManager(key_dir=tmp_key_dir, key_password="correct")
         km1.initialize()
@@ -173,72 +192,50 @@ class TestJWKS:
 
 
 # ===================================================================
-# Token signing and verification — raw (no PyJWT)
+# Token signing and verification
 # ===================================================================
 
 
-class TestTokenRoundTripRaw:
-    """Test the raw JWS implementation (no PyJWT dependency)."""
-
-    def test_sign_and_verify_raw(self, km):
+class TestTokenRoundTrip:
+    def test_sign_and_verify(self, km):
         payload = {"sub": "user-123", "role": "admin"}
-        token = km._sign_token_raw(payload)
-        decoded = km._verify_token_raw(token)
+        token = km.sign_token(payload)
+        decoded = km.verify_token(token)
         assert decoded["sub"] == "user-123"
         assert decoded["role"] == "admin"
 
-    def test_raw_token_is_three_part_jws(self, km):
-        token = km._sign_token_raw({"test": True})
-        parts = token.split(".")
-        assert len(parts) == 3
+    def test_token_is_three_part_jws(self, km):
+        token = km.sign_token({"test": True})
+        assert len(token.split(".")) == 3
 
-    def test_raw_token_header_contains_kid(self, km):
-        token = km._sign_token_raw({"test": True})
-        header_b64 = token.split(".")[0]
-        header = json.loads(_b64url_decode(header_b64))
+    def test_token_header_contains_kid(self, km):
+        token = km.sign_token({"test": True})
+        header = pyjwt.get_unverified_header(token)
         assert header["alg"] == "ES256"
         assert header["typ"] == "JWT"
         assert header["kid"] == km.get_kid()
 
     def test_tampered_payload_fails_verification(self, km):
-        token = km._sign_token_raw({"sub": "user-123"})
+        token = km.sign_token({"sub": "user-123"})
         parts = token.split(".")
-        # Tamper with the payload
         fake_payload = _b64url(json.dumps({"sub": "admin"}).encode())
         tampered = f"{parts[0]}.{fake_payload}.{parts[2]}"
-        with pytest.raises((ValueError, InvalidSignature)):
-            km._verify_token_raw(tampered)
+        with pytest.raises(pyjwt.InvalidTokenError):
+            km.verify_token(tampered)
 
     def test_invalid_token_format(self, km):
-        with pytest.raises(ValueError, match="Invalid JWT format"):
-            km._verify_token_raw("not.a.valid.token.at.all")
+        with pytest.raises(pyjwt.InvalidTokenError):
+            km.verify_token("not.a.valid.token.at.all")
 
     def test_unknown_kid_fails(self, km):
-        token = km._sign_token_raw({"sub": "user-123"})
+        token = km.sign_token({"sub": "user-123"})
         parts = token.split(".")
-        # Forge header with unknown kid
-        header = json.loads(_b64url_decode(parts[0]))
+        header = pyjwt.get_unverified_header(token)
         header["kid"] = "unknown-kid-1234"
         fake_header = _b64url(json.dumps(header, separators=(",", ":")).encode())
         forged = f"{fake_header}.{parts[1]}.{parts[2]}"
-        with pytest.raises(ValueError, match="Unknown key id"):
-            km._verify_token_raw(forged)
-
-
-# ===================================================================
-# Token signing and verification — via sign_token / verify_token
-# ===================================================================
-
-
-class TestTokenRoundTrip:
-    """Test the public sign_token / verify_token API (uses PyJWT if available)."""
-
-    def test_sign_and_verify(self, km):
-        payload = {"sub": "user-456", "role": "reviewer"}
-        token = km.sign_token(payload)
-        decoded = km.verify_token(token)
-        assert decoded["sub"] == "user-456"
-        assert decoded["role"] == "reviewer"
+        with pytest.raises(pyjwt.InvalidTokenError, match="Unknown key id"):
+            km.verify_token(forged)
 
     def test_roundtrip_with_nested_payload(self, km):
         payload = {"data": {"items": [1, 2, 3]}, "count": 3}
@@ -256,76 +253,123 @@ class TestKeyRotation:
     def test_rotation_generates_new_kid(self, km):
         old_kid = km.get_kid()
         km.rotate_key()
-        new_kid = km.get_kid()
-        assert old_kid != new_kid
+        assert km.get_kid() != old_kid
 
     def test_old_token_still_verifies_after_rotation(self, km):
-        payload = {"sub": "user-rotate", "test": True}
-        token_before = km._sign_token_raw(payload)
-
+        token_before = km.sign_token({"sub": "user-rotate", "test": True})
         km.rotate_key()
-
-        # Old token should still verify (raw implementation checks retired keys)
-        decoded = km._verify_token_raw(token_before)
-        assert decoded["sub"] == "user-rotate"
+        assert km.verify_token(token_before)["sub"] == "user-rotate"
 
     def test_new_token_verifies_after_rotation(self, km):
         km.rotate_key()
-        payload = {"sub": "user-new"}
-        token = km._sign_token_raw(payload)
-        decoded = km._verify_token_raw(token)
-        assert decoded["sub"] == "user-new"
+        assert km.verify_token(km.sign_token({"sub": "user-new"}))["sub"] == "user-new"
 
     def test_retired_key_persisted_on_disk(self, tmp_key_dir):
         km = KeyManager(key_dir=tmp_key_dir)
         km.initialize()
         old_kid = km.get_kid()
-
         km.rotate_key()
-
-        retired_path = os.path.join(tmp_key_dir, f"retired_{old_kid}.pem")
-        assert os.path.exists(retired_path)
+        assert os.path.exists(os.path.join(tmp_key_dir, f"retired_{old_kid}.pem"))
 
     def test_retired_keys_loaded_on_restart(self, tmp_key_dir):
-        km1 = KeyManager(key_dir=tmp_key_dir)
-        km1.initialize()
-        token = km1._sign_token_raw({"sub": "persist-test"})
+        first = KeyManager(key_dir=tmp_key_dir)
+        first.initialize()
+        token = first.sign_token({"sub": "persist-test"})
+        first.rotate_key()
+        current_kid = first.get_kid()
 
-        km1.rotate_key()
-        new_kid = km1.get_kid()
-
-        # Restart
-        km2 = KeyManager(key_dir=tmp_key_dir)
-        km2.initialize()
-        assert km2.get_kid() == new_kid
-
-        # Old token should verify via retired keys
-        decoded = km2._verify_token_raw(token)
-        assert decoded["sub"] == "persist-test"
+        restarted = KeyManager(key_dir=tmp_key_dir)
+        restarted.initialize()
+        assert restarted.get_kid() == current_kid
+        assert restarted.verify_token(token)["sub"] == "persist-test"
 
     def test_multiple_rotations(self, km):
         kids = [km.get_kid()]
         for _ in range(3):
             km.rotate_key()
             kids.append(km.get_kid())
-
-        # All kids should be unique
         assert len(set(kids)) == 4
-
-        # JWKS should contain all 4 keys (1 current + 3 retired)
-        jwks = km.get_jwks()
-        assert len(jwks["keys"]) == 4
+        assert len(km.get_jwks()["keys"]) == 4
 
     def test_find_public_key(self, km):
         old_kid = km.get_kid()
         km.rotate_key()
-        new_kid = km.get_kid()
-
-        # Both should be findable
         assert km.find_public_key(old_kid) is not None
-        assert km.find_public_key(new_kid) is not None
-        # Unknown should return None
+        assert km.find_public_key(km.get_kid()) is not None
         assert km.find_public_key("nonexistent") is None
+
+    def test_expired_retired_key_is_removed(self, tmp_key_dir):
+        manager = KeyManager(key_dir=tmp_key_dir, retired_key_retention_days=1)
+        manager.initialize()
+        token = manager.sign_token({"sub": "expired-key"})
+        old_kid = manager.get_kid()
+        manager.rotate_key()
+        retired_path = Path(tmp_key_dir) / f"retired_{old_kid}.pem"
+        old_time = time.time() - 2 * 86400
+        os.utime(retired_path, (old_time, old_time))
+
+        restarted = KeyManager(key_dir=tmp_key_dir, retired_key_retention_days=1)
+        restarted.initialize()
+        assert not retired_path.exists()
+        with pytest.raises(pyjwt.InvalidTokenError, match="Unknown key id"):
+            restarted.verify_token(token)
+
+
+# ===================================================================
+# Algorithm agility
+# ===================================================================
+
+
+class TestAlgorithmAgility:
+    def test_rejects_unsupported_algorithm(self, tmp_key_dir):
+        with pytest.raises(ValueError, match="Unsupported JWT signing algorithm"):
+            KeyManager(key_dir=tmp_key_dir, algorithm="HS256")
+
+    def test_rejects_undersized_rsa_key(self, tmp_key_dir):
+        weak_key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+        (Path(tmp_key_dir) / "signing.pem").write_bytes(
+            weak_key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+        with pytest.raises(TypeError, match="Unsupported RSA key size"):
+            KeyManager(key_dir=tmp_key_dir, algorithm="RS256").initialize()
+
+    def test_generates_rs256_key_and_jwk(self, tmp_key_dir):
+        manager = KeyManager(key_dir=tmp_key_dir, algorithm="RS256")
+        manager.initialize()
+
+        assert isinstance(manager.get_private_key(), rsa.RSAPrivateKey)
+        assert manager.verify_token(manager.sign_token({"sub": "rsa"}))["sub"] == "rsa"
+        jwk = manager.get_jwks()["keys"][0]
+        assert jwk["kty"] == "RSA"
+        assert jwk["alg"] == "RS256"
+        assert "n" in jwk and "e" in jwk
+
+    @pytest.mark.parametrize(("old_algorithm", "new_algorithm"), [("ES256", "RS256"), ("RS256", "ES256")])
+    def test_switching_algorithm_retains_old_tokens_after_restart(self, tmp_key_dir, old_algorithm, new_algorithm):
+        old = KeyManager(key_dir=tmp_key_dir, algorithm=old_algorithm)
+        old.initialize()
+        old_token = old.sign_token({"sub": "old"})
+
+        current = KeyManager(key_dir=tmp_key_dir, algorithm=new_algorithm)
+        current.initialize()
+        restarted = KeyManager(key_dir=tmp_key_dir, algorithm=new_algorithm)
+        restarted.initialize()
+
+        assert restarted.verify_token(old_token)["sub"] == "old"
+        assert {key["alg"] for key in restarted.get_jwks()["keys"]} == {"ES256", "RS256"}
+
+    def test_rejects_algorithm_confusion(self, km):
+        token = km.sign_token({"sub": "user"})
+        parts = token.split(".")
+        header = pyjwt.get_unverified_header(token)
+        header["alg"] = "RS256"
+        forged = f"{_b64url(json.dumps(header, separators=(',', ':')).encode())}.{parts[1]}.{parts[2]}"
+        with pytest.raises(pyjwt.InvalidAlgorithmError):
+            km.verify_token(forged)
 
 
 # ===================================================================

@@ -59,21 +59,26 @@ For the **CLI** (developer machines, not the server):
 
 ## Network
 
-* **Outbound HTTPS**: only needed to pull Docker images on first `docker compose up --build`. Not needed at runtime (the stack is fully self-contained).
-* **Inbound**: users hit the API (`:8000`) and web (`:3000`). Session telemetry is received on the API port.
-* **Between services**: the private `observal-net` bridge handles all of it.
+* **Outbound HTTPS**: required for image downloads and enabled integrations such as OAuth, webhooks, external Git repositories, or model providers.
+* **Inbound**: the server package routes the UI, API, and session telemetry through nginx on port `8000`.
+* **Between services**: the private `observal-net` bridge handles application traffic.
+* **Host bindings**: new server-package installs bind nginx, the direct web port, PostgreSQL, ClickHouse, Redis, Prometheus, and Grafana to `127.0.0.1` by default.
 
 ## TLS / HTTPS
 
-The built-in nginx LB does not terminate TLS. For production, put a TLS proxy in front (Caddy, Traefik, AWS ALB) and terminate TLS there. Point it at `localhost:80` (the nginx LB).
+Local loopback access can use HTTP. For every remote deployment, terminate TLS 1.2 or later with Caddy, nginx, an enterprise load balancer, or a cloud ingress. Point the proxy at the loopback nginx listener on `localhost:8000`.
 
-Example (Caddy):
+Example Caddy configuration:
 
 ```caddyfile
 observal.your-company.internal {
-  reverse_proxy localhost:80
+  reverse_proxy localhost:8000
 }
 ```
+
+Set `OBSERVAL_BIND_ADDRESS` to a non-loopback address only when an external TLS proxy cannot reach loopback, or when plaintext access is an intentional private-network risk. Existing server-package installations retain their previous bind address during setup upgrades.
+
+See the [security assurance case](../security/assurance-case.md) for trust boundaries and residual network risks.
 
 ## Next
 

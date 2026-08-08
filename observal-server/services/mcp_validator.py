@@ -18,6 +18,7 @@ from loguru import logger as optic
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from models.mcp import McpListing, McpValidationResult
 from observal_shared.mcp_analysis import (
     analyze_python_entry,
@@ -79,7 +80,7 @@ def _git_url_warning(url: str) -> str:
 
 def _build_clone_url(git_url: str) -> str:
     """Inject auth token into git URL if configured. Supports GitHub and GitLab token formats."""
-    git_token = os.environ.get("GIT_CLONE_TOKEN", "")
+    git_token = settings.GIT_CLONE_TOKEN or ""
     if not git_token:
         return git_url
     parsed = urlparse(git_url)
@@ -89,7 +90,7 @@ def _build_clone_url(git_url: str) -> str:
 
 def _redact_clone_error(error: Exception) -> str:
     message = str(error)
-    git_token = os.environ.get("GIT_CLONE_TOKEN", "")
+    git_token = settings.GIT_CLONE_TOKEN or ""
     if git_token:
         message = message.replace(git_token, REDACTED)
     return redact_secrets(message)

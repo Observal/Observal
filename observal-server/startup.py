@@ -51,6 +51,7 @@ async def run_startup_tasks() -> None:
             await ensure_columns(conn)
         await init_clickhouse()
 
+    ds.load_external_settings()
     await ds.load_sync_cache()
     await ds.import_sso_env_once()
     await ds.reencrypt_on_key_rotation()
@@ -60,9 +61,16 @@ async def run_startup_tasks() -> None:
     configure_oauth_client()
 
     await init_cache()
+    retired_key_retention_days = max(
+        ds.get_sync_int("jwt.refresh_token_expire_days", 30),
+        (ds.get_sync_int("jwt.access_token_expire_minutes", 60) + 1439) // 1440,
+        (ds.get_sync_int("jwt.hooks_token_expire_minutes", 43200) + 1439) // 1440,
+    )
     init_key_manager(
         key_dir=settings.JWT_KEY_DIR,
         key_password=settings.JWT_KEY_PASSWORD,
+        algorithm=settings.JWT_SIGNING_ALGORITHM,
+        retired_key_retention_days=retired_key_retention_days,
     )
 
     from database import async_session as session_factory

@@ -224,7 +224,6 @@ def login(
 
             rprint(f"[green]Logged in as {user['name']}[/green] ({user['email']}) [admin]")
             rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]\n")
-            _fetch_server_public_key(server_url)
             _post_login_setup()
 
         except httpx.HTTPStatusError as e:
@@ -555,26 +554,6 @@ def _fetch_endpoints(server_url: str) -> dict:
     return {}
 
 
-def _fetch_server_public_key(server_url: str):
-    """Fetch and cache the server's ECIES public key for payload encryption.
-
-    Best-effort: silently ignored if the server doesn't expose the endpoint
-    yet (older server versions) or if connectivity fails.
-    """
-    optic.trace("server_url={}", server_url)
-    try:
-        r = httpx.get(f"{server_url.rstrip('/')}/api/v1/sessions/crypto/public-key", timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            pub_pem = data.get("public_key_pem")
-            if pub_pem:
-                key_dir = Path.home() / ".observal" / "keys"
-                key_dir.mkdir(parents=True, exist_ok=True)
-                (key_dir / "server_public.pem").write_text(pub_pem)
-    except Exception:
-        pass  # Server may not support encryption yet
-
-
 def _do_password_login(server_url: str, email: str, password: str):
     """Authenticate with email/username + password."""
     optic.trace("server_url={}, email={}", server_url, email)
@@ -626,7 +605,6 @@ def _do_password_login(server_url: str, email: str, password: str):
         rprint(f"[green]Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]")
         rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
 
-        _fetch_server_public_key(server_url)
         _post_login_setup()
 
     except httpx.HTTPStatusError as e:
@@ -767,7 +745,6 @@ def _do_device_flow_login(server_url: str, direct_sso: bool = False, provider: s
                 )
                 rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
 
-                _fetch_server_public_key(server_url)
                 _post_login_setup()
                 return
 

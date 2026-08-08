@@ -3,7 +3,7 @@
 
 # Configuration
 
-Boot-time infrastructure and secret settings live in `.env`. Runtime settings, including SSO, live in the admin UI as dynamic settings. Defaults are sane for local development.
+Boot-time infrastructure settings live in `.env`. Credentials can use dedicated files. Runtime settings, including SSO, normally live in the admin UI, while file-backed sensitive settings remain only in process memory.
 
 ## Required for production
 
@@ -17,11 +17,28 @@ Override these before going live:
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000`        | Scope to your real frontend origin(s). Configure as `deployment.cors_origins` in Admin Settings.                                   |
 | `deployment.frontend_url` | `http://localhost:3000`     | Used for OAuth redirects and email links. Configure in Admin Settings.                                                             |
 
-Generate a secret key:
+The server-package installer generates these credentials in an operator-owned `secrets/` directory with read access limited to the configured container service group. Existing deployments can keep direct environment values.
 
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+## Secret files
+
+For any supported credential named `NAME`, set `NAME_FILE` to a UTF-8 file path instead of placing the value in `.env`:
+
+```dotenv
+SECRET_KEY_FILE=/run/secrets/secret_key
+DATABASE_URL_FILE=/run/secrets/database_url
+JWT_KEY_PASSWORD_FILE=/run/secrets/jwt_key_password
+GIT_CLONE_TOKEN_FILE=/run/secrets/git_clone_token
+OAUTH_CLIENT_SECRET_FILE=/run/secrets/oauth_client_secret
+INSIGHTS_API_KEY_FILE=/run/secrets/insights_api_key
 ```
+
+The reader accepts files up to 64 KiB and removes one trailing newline. Setting both `NAME` and `NAME_FILE` is an error, so precedence is never ambiguous. Replace a file atomically and restart the affected API or worker processes to rotate the value without rebuilding Observal.
+
+File-backed dynamic settings are marked externally managed in the admin API. Their contents are not imported into PostgreSQL or Redis, and the admin API rejects attempts to overwrite, delete, or revoke them.
+
+Supported file-backed boot credentials include `DATABASE_URL`, `CLICKHOUSE_URL`, `REDIS_URL`, `SECRET_KEY`, `OLD_SECRET_KEY`, `JWT_KEY_PASSWORD`, `GIT_CLONE_TOKEN`, and every `DEMO_*_PASSWORD`. SSO environment imports support the same form, including OAuth client secrets, Google and GitHub OAuth secrets, the insights provider key, SAML certificates, and the SAML key-encryption password. CLI tokens support `OBSERVAL_ACCESS_TOKEN_FILE`, `OBSERVAL_API_KEY_FILE`, and `OBSERVAL_TOKEN_FILE`.
+
+PostgreSQL containers use `POSTGRES_PASSWORD_FILE`. The server package generates a hashed ClickHouse user configuration instead of putting its database password in `.env`.
 
 ## SSO-only mode
 
@@ -43,7 +60,7 @@ DEMO_USER_EMAIL=user@demo.example
 DEMO_USER_PASSWORD=user-changeme
 ```
 
-**Unset every `DEMO_*` env var before a real deployment.** Existing demo users survive after unsetting. Delete them manually (`observal admin delete-user <email>`).
+**Remove demo account variables and their password files before a real deployment.** Existing demo users survive after removal. Delete them manually (`observal admin delete-user <email>`).
 
 > **Admin settings warning:** If demo accounts are still active or `SECRET_KEY` is insecure, the admin Settings page will display a warning banner at the top so operators can spot and fix the issue without digging through logs.
 
@@ -87,15 +104,24 @@ JWT_SIGNING_ALGORITHM=ES256        # ES256 (default) or RS256
 JWT_KEY_DIR=/data/keys             # persisted in the apidata volume
 ```
 
-The server generates asymmetric keys on first boot and stores them in `$JWT_KEY_DIR`. **Back up this directory**: losing the keys invalidates every session.
+The server generates asymmetric keys on first boot and stores them in `$JWT_KEY_DIR`. **Back up this directory**: losing the keys invalidates every session. Changing `JWT_SIGNING_ALGORITHM` and restarting retires the current public key, generates the selected key type, and keeps old tokens verifiable during their normal lifetime.
+
+SAML service-provider material can be mounted independently:
+
+```dotenv
+SAML_SP_PRIVATE_KEY_FILE=/run/secrets/saml_sp_private_key
+SAML_SP_X509_CERT_FILE=/run/secrets/saml_sp_x509_cert
+```
+
+Set both files together. They override database-generated SP material, are reported as externally managed, and cannot be regenerated or removed through the admin API. Replace both files and restart the API to rotate them.
 
 More: [Authentication and SSO](authentication.md).
 
 ## Git operations (submission analysis)
 
-```
+```dotenv
 ALLOW_INTERNAL_URLS=false          # allow internal/private Git URLs (GitLab/GHE)
-GIT_CLONE_TOKEN=                   # auth token for cloning private repos
+GIT_CLONE_TOKEN_FILE=/run/secrets/git_clone_token
 GIT_CLONE_TOKEN_USER=x-access-token
 GIT_CLONE_TIMEOUT=120              # seconds
 ```

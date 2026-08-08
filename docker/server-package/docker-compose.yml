@@ -11,6 +11,8 @@ services:
     command: ["/app/entrypoint.sh"]
     env_file:
       - ./.env
+    group_add:
+      - "${OBSERVAL_SECRET_GID:-1000}"
     depends_on:
       observal-db:
         condition: service_healthy
@@ -19,6 +21,8 @@ services:
       observal-redis:
         condition: service_healthy
     restart: "no"
+    volumes:
+      - ./secrets:/run/secrets:ro
     read_only: true
     tmpfs:
       - /tmp
@@ -32,19 +36,18 @@ services:
     command: ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     env_file:
       - ./.env
+    group_add:
+      - "${OBSERVAL_SECRET_GID:-1000}"
     environment:
       - JWT_KEY_DIR=/data/keys
       - SKIP_DDL_ON_STARTUP=true
       - DEMO_SUPER_ADMIN_EMAIL=${DEMO_SUPER_ADMIN_EMAIL:-super@demo.example}
-      - DEMO_SUPER_ADMIN_PASSWORD=${DEMO_SUPER_ADMIN_PASSWORD:-super-changeme}
       - DEMO_ADMIN_EMAIL=${DEMO_ADMIN_EMAIL:-admin@demo.example}
-      - DEMO_ADMIN_PASSWORD=${DEMO_ADMIN_PASSWORD:-admin-changeme}
       - DEMO_REVIEWER_EMAIL=${DEMO_REVIEWER_EMAIL:-reviewer@demo.example}
-      - DEMO_REVIEWER_PASSWORD=${DEMO_REVIEWER_PASSWORD:-reviewer-changeme}
       - DEMO_USER_EMAIL=${DEMO_USER_EMAIL:-user@demo.example}
-      - DEMO_USER_PASSWORD=${DEMO_USER_PASSWORD:-user-changeme}
     volumes:
       - apidata:/data
+      - ./secrets:/run/secrets:ro
     depends_on:
       observal-init:
         condition: service_completed_successfully
@@ -72,14 +75,18 @@ services:
 
   observal-db:
     image: postgres:18
+    group_add:
+      - "${OBSERVAL_SECRET_GID:-1000}"
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
-    env_file:
-      - ./.env
+      - "${OBSERVAL_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: observal
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_PASSWORD_FILE: ${POSTGRES_PASSWORD_FILE:-}
     volumes:
       - pgdata:/var/lib/postgresql
+      - ./secrets/postgres:/run/secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -94,19 +101,24 @@ services:
 
   observal-clickhouse:
     image: clickhouse/clickhouse-server:26.6
+    group_add:
+      - "${OBSERVAL_SECRET_GID:-1000}"
     ports:
-      - "${CLICKHOUSE_HOST_PORT:-8123}:8123"
-    env_file:
-      - ./.env
+      - "${OBSERVAL_BIND_ADDRESS:-127.0.0.1}:${CLICKHOUSE_HOST_PORT:-8123}:8123"
     environment:
-      CLICKHOUSE_DB: observal
       MAX_SERVER_MEMORY_USAGE_RATIO: "0.8"
+      HEALTHCHECK_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
     volumes:
       - chdata:/var/lib/clickhouse
       - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
-      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
+      - ./secrets/clickhouse:/run/secrets:ro
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --password ${CLICKHOUSE_PASSWORD:-clickhouse} --query 'SELECT 1'"]
+      test:
+        [
+          "CMD-SHELL",
+          "if [ -s /run/secrets/clickhouse_password ]; then clickhouse-client --password \"$$(cat /run/secrets/clickhouse_password)\" --query 'SELECT 1'; else clickhouse-client --password \"$${HEALTHCHECK_CLICKHOUSE_PASSWORD:-clickhouse}\" --query 'SELECT 1'; fi",
+        ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -120,7 +132,7 @@ services:
   observal-redis:
     image: redis:8-alpine
     ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
+      - "${OBSERVAL_BIND_ADDRESS:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -140,6 +152,10 @@ services:
     command: ["/app/.venv/bin/python", "-c", "import asyncio; asyncio.set_event_loop(asyncio.new_event_loop()); from arq import run_worker; from worker import WorkerSettings; run_worker(WorkerSettings)"]
     env_file:
       - ./.env
+    group_add:
+      - "${OBSERVAL_SECRET_GID:-1000}"
+    volumes:
+      - ./secrets:/run/secrets:ro
     depends_on:
       observal-init:
         condition: service_completed_successfully
@@ -162,7 +178,7 @@ services:
   observal-web:
     image: ghcr.io/observal/observal-web:${OBSERVAL_VERSION:-latest}
     ports:
-      - "${WEB_HOST_PORT:-3000}:3000"
+      - "${OBSERVAL_BIND_ADDRESS:-127.0.0.1}:${WEB_HOST_PORT:-3000}:3000"
     depends_on:
       observal-lb:
         condition: service_started
@@ -185,7 +201,7 @@ services:
   observal-lb:
     image: nginx:alpine
     ports:
-      - "${API_HOST_PORT:-8000}:80"
+      - "${OBSERVAL_BIND_ADDRESS:-127.0.0.1}:${API_HOST_PORT:-8000}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:

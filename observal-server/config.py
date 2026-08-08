@@ -17,9 +17,13 @@ All runtime-tunable settings have been moved to the Settings page
 Only infrastructure, crypto, and auth middleware vars remain here.
 """
 
+import os
 from typing import Literal
 
+from dotenv import dotenv_values
 from pydantic_settings import BaseSettings
+
+from observal_shared.secrets import resolve_secret
 
 
 class Settings(BaseSettings):
@@ -32,11 +36,15 @@ class Settings(BaseSettings):
 
     # Crypto
     SECRET_KEY: str = "change-me-to-a-random-string"
+    OLD_SECRET_KEY: str | None = None
 
     # JWT key management (boot-time, keys loaded once at startup)
-    JWT_SIGNING_ALGORITHM: str = "ES256"
+    JWT_SIGNING_ALGORITHM: Literal["ES256", "RS256"] = "ES256"
     JWT_KEY_DIR: str = "~/.observal/keys"
     JWT_KEY_PASSWORD: str | None = None
+
+    # Outbound Git authentication
+    GIT_CLONE_TOKEN: str | None = None
 
     # Connection pool sizing (boot-time, pool created once at startup)
     DB_POOL_SIZE: int = 30
@@ -65,4 +73,30 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
-settings = Settings()
+_SECRET_FIELDS = (
+    "DATABASE_URL",
+    "CLICKHOUSE_URL",
+    "REDIS_URL",
+    "SECRET_KEY",
+    "OLD_SECRET_KEY",
+    "JWT_KEY_PASSWORD",
+    "GIT_CLONE_TOKEN",
+    "DEMO_SUPER_ADMIN_PASSWORD",
+    "DEMO_ADMIN_PASSWORD",
+    "DEMO_REVIEWER_PASSWORD",
+    "DEMO_USER_PASSWORD",
+)
+
+
+def _secret_overrides() -> dict[str, str]:
+    env_file = {key: value for key, value in dotenv_values(".env").items() if value is not None}
+    values = {**env_file, **os.environ}
+    resolved = {}
+    for name in _SECRET_FIELDS:
+        value = resolve_secret(name, values)
+        if value is not None:
+            resolved[name] = value
+    return resolved
+
+
+settings = Settings(**_secret_overrides())

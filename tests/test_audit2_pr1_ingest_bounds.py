@@ -109,7 +109,7 @@ async def test_mcp_validator_redacts_clone_token_from_validation_details(monkeyp
     clone_error = RuntimeError(
         f"fatal: Authentication failed for 'https://x-access-token:{token}@github.com/example/private-repo.git/'"
     )
-    monkeypatch.setenv("GIT_CLONE_TOKEN", token)
+    monkeypatch.setattr(mcp_validator.settings, "GIT_CLONE_TOKEN", token)
 
     with (
         patch.object(mcp_validator, "_validate_git_url", return_value=None),

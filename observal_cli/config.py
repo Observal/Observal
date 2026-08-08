@@ -13,6 +13,8 @@ import shutil
 import tomllib
 from pathlib import Path
 
+from observal_shared.secrets import resolve_secret
+
 logger = logging.getLogger(__name__)
 
 CONFIG_DIR = Path.home() / ".observal"
@@ -165,14 +167,10 @@ def load() -> dict:
     # Environment variable overrides (No login required if these are set)
     if env_url := os.environ.get("OBSERVAL_SERVER_URL"):
         cfg["server_url"] = env_url
-    if env_token := os.environ.get("OBSERVAL_ACCESS_TOKEN"):
-        cfg["access_token"] = env_token
-    # Backward compat: OBSERVAL_API_KEY env var maps to access_token
-    if env_key := os.environ.get("OBSERVAL_API_KEY"):
-        cfg["access_token"] = env_key
-    # CI/CD convenience: OBSERVAL_TOKEN env var (e.g. from SSO service tokens)
-    if env_ci_token := os.environ.get("OBSERVAL_TOKEN"):
-        cfg["access_token"] = env_ci_token
+    # Preserve legacy precedence: OBSERVAL_TOKEN wins when multiple aliases are set.
+    for name in ("OBSERVAL_ACCESS_TOKEN", "OBSERVAL_API_KEY", "OBSERVAL_TOKEN"):
+        if token := resolve_secret(name):
+            cfg["access_token"] = token
 
     return cfg
 

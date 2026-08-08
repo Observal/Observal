@@ -362,11 +362,12 @@ jobs:
           VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           STAGING="observal-server-v${VERSION}"
-          mkdir -p "$STAGING/clickhouse"
+          mkdir -p "$STAGING/clickhouse/users.d"
           mkdir -p "$STAGING/grafana"
 
           # Standalone compose (pre-built images, no source needed)
           cp docker/server-package/docker-compose.yml "$STAGING/"
+          cp docker/server-package/docker-compose.observability.yml "$STAGING/"
           cp docker/server-package/setup.sh "$STAGING/"
           cp docker/server-package/env.template "$STAGING/"
           cp docker/nginx.conf "$STAGING/nginx.conf"
@@ -375,7 +376,7 @@ jobs:
 
           # Supporting configs
           cp -r docker/clickhouse/config.d "$STAGING/clickhouse/config.d"
-          cp -r docker/clickhouse/users.d "$STAGING/clickhouse/users.d"
+          cp docker/clickhouse/users.d/memory.xml "$STAGING/clickhouse/users.d/"
           cp -r grafana/provisioning "$STAGING/grafana/provisioning"
           cp -r grafana/dashboards "$STAGING/grafana/dashboards"
 
@@ -403,6 +404,9 @@ jobs:
     needs: [preflight, approve]
     if: needs.approve.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Generate release app token
         id: app-token
@@ -418,23 +422,40 @@ jobs:
           ref: ${{ needs.preflight.outputs.target }}
           token: ${{ steps.app-token.outputs.token }}
 
+      - uses: chainguard-dev/actions/setup-gitsign@9d631658f55713e5f63ca0cc21ee168f81301fd9 # v1.6.30
+
       - name: Create or verify tag
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
           TARGET: ${{ needs.preflight.outputs.target }}
         run: |
           TAG="v$VERSION"
+          verify_tag() {
+            gitsign verify-tag "$TAG" \
+              --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/heads/main" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+          }
           if git rev-parse "$TAG^{commit}" >/dev/null 2>&1; then
             [ "$(git rev-parse "$TAG^{commit}")" = "$TARGET" ] || {
               echo "::error::$TAG points to a different commit"
               exit 1
             }
-            echo "$TAG already points to the validated release commit"
-            exit 0
+            if verify_tag; then
+              echo "$TAG already points to the validated release commit and has a valid Sigstore signature"
+              exit 0
+            fi
+            git fetch origin main
+            POLICY_COMMIT=$(git log origin/main --diff-filter=A --format=%H -- docs/security/release-verification.md | tail -1)
+            if [ -n "$POLICY_COMMIT" ] && [ "$TARGET" != "$POLICY_COMMIT" ] && \
+              git merge-base --is-ancestor "$TARGET" "$POLICY_COMMIT"; then
+              echo "$TAG predates signed-tag enforcement; leaving the historical tag unchanged"
+              exit 0
+            fi
+            echo "::error::$TAG is unsigned but does not predate signed-tag enforcement"
+            exit 1
           fi
-          git config user.name "observal-release[bot]"
-          git config user.email "observal-release[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG" "$TARGET"
+          git tag -s "$TAG" -m "Release $TAG" "$TARGET"
+          verify_tag
           git push origin "$TAG"
 
   # ── Job 4: PyPI publish (after approval) ───────────────────

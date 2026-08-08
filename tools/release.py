@@ -368,6 +368,12 @@ def render_release_notes(
     lines.extend(
         (
             "",
+            "## Verify this release",
+            "",
+            "Verify checksums, artifact provenance, and the signed release tag using the "
+            "[release verification guide](https://github.com/Observal/Observal/blob/main/"
+            "docs/security/release-verification.md).",
+            "",
             "## Full comparison",
             "",
             f"[{previous_tag}...v{version}](https://github.com/Observal/Observal/compare/{previous_tag}...v{version})",

@@ -26,8 +26,11 @@ setup_optic(mode="local")  # Worker always uses local mode for dev visibility
 
 
 async def startup(ctx: dict):
+    import services.dynamic_settings as ds
     from services.insights import configure_insights
 
+    ds.load_external_settings()
+    await ds.load_sync_cache()
     configure_insights()
     optic.info("arq worker started")
     optic.info(

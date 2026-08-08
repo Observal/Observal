@@ -4,7 +4,11 @@
 
 # Environment variables
 
-Complete reference for every environment variable the server and CLI read. Defaults are in `.env.example` (server) and built into the CLI (client).
+Complete reference for security-relevant server and CLI environment variables. Defaults are in `.env.example` and built into the CLI.
+
+## File-backed values
+
+Every credential listed with file support accepts `NAME_FILE=/path/to/secret` instead of `NAME=value`. Files must be UTF-8, are limited to 64 KiB, and may end with one newline. Configuring both forms is an error. The server-package installer writes generated credentials to operator-owned files under `secrets/`, with read access limited to the configured container service group.
 
 ## Server (`observal-server`)
 
@@ -12,7 +16,8 @@ Complete reference for every environment variable the server and CLI read. Defau
 
 | Variable                 | Default                        | Description                                                                                                                                                   |
 | ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SECRET_KEY`             | `change-me-to-a-random-string` | Session signing key. Generate: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`                                                                |
+| `SECRET_KEY`             | `change-me-to-a-random-string` | Application encryption secret. Supports `SECRET_KEY_FILE`. Generate a random value of at least 32 characters. |
+| `OLD_SECRET_KEY`         | unset                          | Previous secret during encrypted-setting rotation. Supports `OLD_SECRET_KEY_FILE`. |
 | `FRONTEND_URL`           | `http://localhost:3000`        | External frontend URL (OAuth redirects, email links)                                                                                                          |
 | `CORS_ALLOWED_ORIGINS`   | `http://localhost:3000`        | Comma-separated allowed CORS origins                                                                                                                          |
 | `MAX_REQUEST_SIZE_MB`    | `10`                           | Maximum request body size                                                                                                                                     |
@@ -23,27 +28,29 @@ Complete reference for every environment variable the server and CLI read. Defau
 
 | Variable              | Default                                                          | Description                                                 |
 | --------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------- |
-| `DATABASE_URL`        | `postgresql+asyncpg://postgres:postgres@localhost:5432/observal` | Postgres async connection string                            |
-| `POSTGRES_USER`       | `postgres`                                                       | Postgres container user                                     |
-| `POSTGRES_PASSWORD`   | `postgres`                                                       | Postgres container password                                 |
-| `CLICKHOUSE_URL`      | `clickhouse://localhost:8123/observal`                           | ClickHouse HTTP endpoint                                    |
-| `CLICKHOUSE_USER`     | `default`                                                        | ClickHouse user                                             |
-| `CLICKHOUSE_PASSWORD` | `clickhouse`                                                     | ClickHouse password                                         |
-| `REDIS_URL`           | `redis://localhost:6379`                                         | Redis connection string                                     |
+| `DATABASE_URL`        | `postgresql+asyncpg://postgres:postgres@localhost:5432/observal` | Postgres connection string. Supports `DATABASE_URL_FILE`. |
+| `POSTGRES_USER`       | `postgres`                                                       | Postgres container user |
+| `POSTGRES_PASSWORD`   | container-specific                                              | Direct Postgres password for existing installs |
+| `POSTGRES_PASSWORD_FILE` | unset                                                        | PostgreSQL native password-file input |
+| `CLICKHOUSE_URL`      | `clickhouse://localhost:8123/observal`                           | ClickHouse endpoint. Supports `CLICKHOUSE_URL_FILE`. |
+| `CLICKHOUSE_USER`     | `default`                                                        | ClickHouse user |
+| `CLICKHOUSE_PASSWORD` | container-specific                                              | Direct ClickHouse password for existing installs |
+| `REDIS_URL`           | `redis://localhost:6379`                                         | Redis connection string. Supports `REDIS_URL_FILE`. |
 | `DATA_RETENTION_DAYS` | `90`                                                             | ClickHouse TTL in days. `0` disables. Minimum non-zero: `7` |
 
 ### SSO
 
-OIDC, SAML, and SSO-only mode are configured in **Admin → SSO** and stored in dynamic settings. OIDC client changes require an API restart. Existing `OAUTH_*`, `SSO_ONLY`, and `SAML_*` values are imported once on startup when the matching dynamic setting is not already present.
+OIDC, SAML, and SSO-only mode are configured in **Admin → SSO** and stored in dynamic settings. OIDC client changes require an API restart. Existing direct `OAUTH_*`, `SSO_ONLY`, and `SAML_*` values are imported once when the matching database setting is empty.
+
+File-backed forms such as `OAUTH_CLIENT_SECRET_FILE`, `GOOGLE_OAUTH_CLIENT_SECRET_FILE`, `GITHUB_OAUTH_CLIENT_SECRET_FILE`, `INSIGHTS_API_KEY_FILE`, `SAML_IDP_X509_CERT_FILE`, and `SAML_SP_KEY_ENCRYPTION_PASSWORD_FILE` remain in memory and are not imported into PostgreSQL or Redis. `SAML_SP_PRIVATE_KEY_FILE` and `SAML_SP_X509_CERT_FILE` must be configured together and override generated database SP material.
 
 ### JWT signing
 
 | Variable                | Default                                                     | Description                                             |
 | ----------------------- | ----------------------------------------------------------- | ------------------------------------------------------- |
 | `JWT_SIGNING_ALGORITHM` | `ES256`                                                     | `ES256` or `RS256`                                      |
-| `JWT_KEY_DIR`           | `~/.observal/keys` (outside Docker) / `/data/keys` (Docker) | Directory for generated signing keys - **back this up** |
-
-### AWS (Bedrock)
+| `JWT_KEY_DIR`           | `~/.observal/keys` (outside Docker) / `/data/keys` (Docker) | Directory for generated signing keys. **Back this up.** |
+| `JWT_KEY_PASSWORD`      | unset                                                       | Optional private-key encryption password. Supports `JWT_KEY_PASSWORD_FILE`. |
 
 ### AWS (Bedrock)
 
@@ -63,7 +70,7 @@ These environment variables are **not required** if you use Bedrock API keys (re
 | Variable               | Default          | Description                                                                     |
 | ---------------------- | ---------------- | ------------------------------------------------------------------------------- |
 | `ALLOW_INTERNAL_URLS`  | `false`          | Allow internal/private Git URLs (for GitLab / GHE)                              |
-| `GIT_CLONE_TOKEN`      | -                | Auth token for private repos                                                    |
+| `GIT_CLONE_TOKEN`      | -                | Auth token for private repos. Supports `GIT_CLONE_TOKEN_FILE`.                                                    |
 | `GIT_CLONE_TOKEN_USER` | `x-access-token` | Token username: `x-access-token` (GitHub), `oauth2` or `private-token` (GitLab) |
 | `GIT_CLONE_TIMEOUT`    | `120`            | Clone timeout, seconds                                                          |
 
@@ -72,15 +79,15 @@ These environment variables are **not required** if you use Bedrock API keys (re
 | Variable                    | Default                 |
 | --------------------------- | ----------------------- |
 | `DEMO_SUPER_ADMIN_EMAIL`    | `super@demo.example`    |
-| `DEMO_SUPER_ADMIN_PASSWORD` | `super-changeme`        |
+| `DEMO_SUPER_ADMIN_PASSWORD` | unset; generated by server-package setup |
 | `DEMO_ADMIN_EMAIL`          | `admin@demo.example`    |
-| `DEMO_ADMIN_PASSWORD`       | `admin-changeme`        |
+| `DEMO_ADMIN_PASSWORD`       | unset; generated by server-package setup |
 | `DEMO_REVIEWER_EMAIL`       | `reviewer@demo.example` |
-| `DEMO_REVIEWER_PASSWORD`    | `reviewer-changeme`     |
+| `DEMO_REVIEWER_PASSWORD`    | unset; generated by server-package setup |
 | `DEMO_USER_EMAIL`           | `user@demo.example`     |
-| `DEMO_USER_PASSWORD`        | `user-changeme`         |
+| `DEMO_USER_PASSWORD`        | unset; generated by server-package setup |
 
-**Unset every `DEMO_*` variable before a real deployment.**
+Each demo password supports its corresponding `_FILE` form. Remove demo variables and files before a real deployment.
 
 ### Docker host ports
 
@@ -88,6 +95,7 @@ Used only by Docker Compose. Prometheus and Grafana ports apply only when `docke
 
 | Variable               | Default | Service                   |
 | ---------------------- | ------- | ------------------------- |
+| `OBSERVAL_BIND_ADDRESS` | `127.0.0.1` in the server package | Host address for published ports. A non-loopback value is explicit remote exposure. |
 | `API_HOST_PORT`        | `8000`  | API (internal, behind LB) |
 | `WEB_HOST_PORT`        | `3000`  | Web UI                    |
 | `POSTGRES_HOST_PORT`   | `5432`  | Postgres                  |
@@ -103,7 +111,8 @@ Only used when the optional Grafana overlay or Terraform `observability_stack = 
 | Variable                 | Default | Description            |
 | ------------------------ | ------- | ---------------------- |
 | `GRAFANA_ADMIN_USER`     | `admin` | Grafana admin username |
-| `GRAFANA_ADMIN_PASSWORD` | `admin` | Grafana admin password |
+| `GRAFANA_ADMIN_PASSWORD` | `admin` | Direct Grafana admin password for existing installs |
+| `GRAFANA_ADMIN_PASSWORD_FILE` | generated file in server package | Grafana password file |
 
 ## CLI (`observal-cli`)
 
@@ -113,8 +122,11 @@ Read from the environment at invocation time. Override values in `~/.observal/co
 | ----------------------- | ------------------------------ | ----------------------------------------------------------- |
 | `OBSERVAL_SERVER_URL`   | from `~/.observal/config.json` | Server URL                                                  |
 | `OBSERVAL_ACCESS_TOKEN` | from `~/.observal/config.json` | Access token (preferred for CI)                             |
-| `OBSERVAL_API_KEY`      | from `~/.observal/config.json` | API key alias for `OBSERVAL_ACCESS_TOKEN` (backward-compat) |
-| `OBSERVAL_TIMEOUT`      | `30`                           | HTTP timeout in seconds                                     |
+| `OBSERVAL_API_KEY`      | from `~/.observal/config.json` | API key alias for `OBSERVAL_ACCESS_TOKEN` |
+| `OBSERVAL_TOKEN`        | from `~/.observal/config.json` | CI token alias with highest legacy precedence |
+| `OBSERVAL_TIMEOUT`      | `30`                           | HTTP timeout in seconds |
+
+The three token variables support `OBSERVAL_ACCESS_TOKEN_FILE`, `OBSERVAL_API_KEY_FILE`, and `OBSERVAL_TOKEN_FILE`. When multiple aliases are present, the legacy precedence remains `OBSERVAL_TOKEN`, then `OBSERVAL_API_KEY`, then `OBSERVAL_ACCESS_TOKEN`.
 
 Example CI usage:
 
