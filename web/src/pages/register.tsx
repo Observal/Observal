@@ -26,7 +26,12 @@ function passwordIsStrong(password: string) {
 function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearch({ from: "/(auth)/register" });
-  const { selfRegistrationEnabled, brandingAppName, brandingLogo, brandingWordmark, loading: configLoading } = useDeploymentConfig();
+  const { selfRegistrationEnabled, ssoOnly, brandingAppName, brandingLogo, brandingWordmark, loading: configLoading } = useDeploymentConfig();
+  // Signed-in visitors are redirected by the effect below; rendering nothing in
+  // the meantime avoids flashing the form at someone who cannot use it.
+  const [alreadyAuthed] = useState(
+    () => typeof window !== "undefined" && !!sessionStorage.getItem("observal_access_token"),
+  );
   // An admin-minted invite link (?invite=) can open registration even when
   // self-registration is off. null = no token; undefined = still checking.
   const inviteToken = searchParams.invite;
@@ -109,6 +114,10 @@ function RegisterContent() {
     }
   }
 
+  if (alreadyAuthed) {
+    return null;
+  }
+
   if (configLoading || (inviteToken && invitePreview === undefined)) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
@@ -122,18 +131,27 @@ function RegisterContent() {
 
   // A valid invite opens the form even when self-registration is off. An
   // invalid one falls through to the closed screen with a specific message.
-  if (!selfRegistrationEnabled && !inviteValid) {
+  // SSO-only deployments never show the form: accounts come from the identity
+  // provider, and the register API refuses password sign-up there regardless
+  // of the self-registration setting.
+  if (ssoOnly || (!selfRegistrationEnabled && !inviteValid)) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
         <div className="w-full max-w-md rounded-lg border bg-card p-8 text-center shadow-sm">
           <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground" />
           <h1 className="mt-4 text-2xl font-semibold tracking-tight">
-            {inviteToken ? "This invite link is no longer valid" : "Registration is closed"}
+            {ssoOnly
+              ? "Registration is closed"
+              : inviteToken
+                ? "This invite link is no longer valid"
+                : "Registration is closed"}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            {inviteToken
-              ? "It may have expired, been revoked, or reached its use limit. Ask whoever shared it for a new link."
-              : "Ask your admin for access, or sign in if you already have an account."}
+            {ssoOnly
+              ? "This server uses SSO sign-in. Your account is created automatically the first time you sign in with your identity provider."
+              : inviteToken
+                ? "It may have expired, been revoked, or reached its use limit. Ask whoever shared it for a new link."
+                : "Ask your admin for access, or sign in if you already have an account."}
           </p>
           <Button asChild className="mt-6 w-full">
             <Link to="/login">Back to sign in</Link>

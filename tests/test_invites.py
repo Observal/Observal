@@ -262,6 +262,19 @@ async def test_sso_only_blocks_register_even_with_a_token(sessions):
 
 
 @pytest.mark.asyncio
+async def test_sso_only_refuses_to_mint_dead_links(sessions):
+    """An invite could never be redeemed on an SSO-only deployment, so minting
+    one is refused with an explanation instead of handing out a dead URL."""
+    async with sessions() as db:
+        admin = await _user(db, role=UserRole.admin)
+        await db.commit()
+    async with _client(sessions, actor=admin, settings={"deployment.sso_only": True}) as (client, _):
+        response = await client.post("/api/v1/admin/invites", json={})
+    assert response.status_code == 400
+    assert "SSO-only" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_open_registration_ignores_a_dead_token(sessions):
     """When self-registration is open, a stale token must not block sign-up."""
     async with _client(sessions, settings={"auth.self_registration_enabled": True}) as (client, _):

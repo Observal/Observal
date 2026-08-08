@@ -624,7 +624,7 @@ function LoginContent() {
 
               {!ssoOnly && (
                 <div className="animate-in stagger-3 space-y-3 text-center">
-                  {selfRegistrationEnabled && (
+                  {selfRegistrationEnabled && !ssoOnly && (
                     <Button asChild variant="outline" className="w-full">
                       <Link to="/register" search={searchParams.next ? { next: searchParams.next } : undefined}>
                         Register

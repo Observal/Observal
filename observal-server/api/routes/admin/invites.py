@@ -108,6 +108,15 @@ async def create_invite(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Mint an invite link. The token in the response is shown exactly once."""
+    if await ds.get_bool("deployment.sso_only"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invite links create password accounts, and this deployment is SSO-only. "
+                "Users are provisioned automatically at their first SSO sign-in."
+            ),
+        )
+
     next_path = (req.next_path or "").strip() or None
     if next_path and not _is_safe_next(next_path):
         raise HTTPException(status_code=422, detail="next_path must be a relative path starting with /")
