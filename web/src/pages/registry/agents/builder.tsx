@@ -86,7 +86,7 @@ function AgentBuilderInner() {
   const helpCtx = useHelp();
 
   const router = useRouter();
-  const { edit: editId, draft: draftParam } = useSearch({ from: "/_authed/agents/builder" });
+  const { edit: editId, draft: draftParam, team: teamParam } = useSearch({ from: "/_authed/agents/builder" });
   const isEditMode = !!editId;
 
   const { data: whoami } = useWhoami();
@@ -103,7 +103,7 @@ function AgentBuilderInner() {
   const [modelsByHarness, setModelsByIde] = useState<Record<string, string>>({});
   const [publishing, setPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
-  const [teamId, setTeamId] = useState("");
+  const [teamId, setTeamId] = useState(teamParam ?? "");
   const [visibility, setVisibility] = useState<"public" | "team">("public");
 
   // Version bump dialog

@@ -8,6 +8,7 @@ const AgentBuilder = lazy(() => import("@/pages/registry/agents/builder"));
 export type AgentBuilderSearch = {
   edit?: string;
   draft?: string;
+  team?: string;
 };
 
 export const Route = createFileRoute("/_authed/agents/builder")({
@@ -15,5 +16,6 @@ export const Route = createFileRoute("/_authed/agents/builder")({
   validateSearch: (search: Record<string, unknown>): AgentBuilderSearch => ({
     edit: (search.edit as string) || undefined,
     draft: (search.draft as string) || undefined,
+    team: (search.team as string) || undefined,
   }),
 });

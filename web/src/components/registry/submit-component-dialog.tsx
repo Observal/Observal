@@ -746,7 +746,7 @@ export function SubmitComponentDialog({
 								value={fixedVisibility ?? visibility}
 								disabled={fixedVisibility !== undefined}
 								onValueChange={(value) => {
-									if (value === "team" && !teamId) {
+									if (value === "team" && !(fixedTeamId ?? teamId)) {
 										toast.error("Team visibility requires a teamspace");
 										return;
 									}

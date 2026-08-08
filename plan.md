@@ -274,6 +274,9 @@ ever inserts `member`.
     requests use their own **Join requests** tab because the audiences differ: Review includes
     team reviewers, while Join requests is restricted to owners and admins.
 - **Share button** (from Phase 1) on the teamspace header copies `/teamspaces/{handle}`.
+- **Teamspace publishing shortcuts:** members can open the agent builder from the Agents tab or
+  create the selected component type from the Components tab. Both flows preselect the current
+  teamspace as the publishing namespace; non-members do not see these actions.
 - **Teamspaces list empty state** (`teamspaces.tsx`): creation is open to every signed-in
   user (scope addition 2 below), so the empty state simply invites creation: "Create the
   first teamspace to give your team a shared publishing namespace."

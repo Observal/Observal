@@ -28,6 +28,7 @@ import {
 import { PageHeader } from "@/components/layouts/page-header";
 import { AgentCard } from "@/components/registry/agent-card";
 import { ComponentCard } from "@/components/registry/component-card";
+import { SubmitComponentDialog } from "@/components/registry/submit-component-dialog";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { ReviewDetailSheet } from "@/components/review/review-detail-sheet";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -54,6 +55,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ShareLinkButton } from "@/components/registry/share-link-button";
 import {
 	useCancelJoinRequest,
+	useComponentSaveDraft,
+	useComponentSubmit,
 	useDecideJoinRequest,
 	useDeleteTeam,
 	useJoinRequests,
@@ -868,6 +871,7 @@ export default function TeamspaceDetailPage() {
 	const leaveTeam = useLeaveTeam();
 	const deleteTeam = useDeleteTeam();
 	const [deleteOpen, setDeleteOpen] = useState(false);
+	const [componentDialogOpen, setComponentDialogOpen] = useState(false);
 
 	const canReview = team?.role ? REVIEWING_TEAM_ROLES.includes(team.role) : false;
 	const reviewQueue = useTeamReviewQueue(team?.id, canReview);
@@ -889,6 +893,8 @@ export default function TeamspaceDetailPage() {
 	];
 	const activeTab = tabs.some((entry) => entry.value === tab) ? tab! : "agents";
 	const activeType: RegistryType = type ?? "mcps";
+	const submitComponent = useComponentSubmit(activeType);
+	const saveComponentDraft = useComponentSaveDraft(activeType);
 
 	function goto(next: { tab?: string; type?: RegistryType }) {
 		navigate({
@@ -1017,23 +1023,38 @@ export default function TeamspaceDetailPage() {
 					</header>
 
 					<Tabs value={activeTab} onValueChange={(value) => goto({ tab: value })} className="mt-6">
-						<TabsList>
-							{tabs.map((entry) => (
-								<TabsTrigger key={entry.value} value={entry.value}>
-									{entry.label}
-									{entry.value === "review" && reviewItems.length > 0 && (
-										<span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-accent px-1 text-[10px] font-semibold text-primary-foreground">
-											{reviewItems.length}
-										</span>
-									)}
-									{entry.value === "join-requests" && pendingJoinCount > 0 && (
-										<span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-accent px-1 text-[10px] font-semibold text-primary-foreground">
-											{pendingJoinCount}
-										</span>
-									)}
-								</TabsTrigger>
-							))}
-						</TabsList>
+						<div className="flex items-center justify-between gap-3">
+							<TabsList>
+								{tabs.map((entry) => (
+									<TabsTrigger key={entry.value} value={entry.value}>
+										{entry.label}
+										{entry.value === "review" && reviewItems.length > 0 && (
+											<span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-accent px-1 text-[10px] font-semibold text-primary-foreground">
+												{reviewItems.length}
+											</span>
+										)}
+										{entry.value === "join-requests" && pendingJoinCount > 0 && (
+											<span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-accent px-1 text-[10px] font-semibold text-primary-foreground">
+												{pendingJoinCount}
+											</span>
+										)}
+									</TabsTrigger>
+								))}
+							</TabsList>
+
+							{isMember && activeTab === "agents" && (
+								<Button asChild size="sm">
+									<Link to="/agents/builder" search={{ team: team.id }}>
+										<Bot /> Build agent
+									</Link>
+								</Button>
+							)}
+							{isMember && activeTab === "components" && (
+								<Button size="sm" onClick={() => setComponentDialogOpen(true)}>
+									<Plus /> Create component
+								</Button>
+							)}
+						</div>
 
 						<TabsContent value="agents" className="mt-5">
 							<AgentsTab team={team} />
@@ -1085,6 +1106,22 @@ export default function TeamspaceDetailPage() {
 					</footer>
 				</div>
 			</main>
+
+			<SubmitComponentDialog
+				key={`${team.id}-${activeType}`}
+				open={componentDialogOpen}
+				onOpenChange={setComponentDialogOpen}
+				type={activeType}
+				fixedTeamId={team.id}
+				onSubmit={(body) =>
+					submitComponent.mutate(body, { onSuccess: () => setComponentDialogOpen(false) })
+				}
+				onSaveDraft={(body) =>
+					saveComponentDraft.mutate(body, { onSuccess: () => setComponentDialogOpen(false) })
+				}
+				isSubmitting={submitComponent.isPending}
+				isSavingDraft={saveComponentDraft.isPending}
+			/>
 
 			<AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
 				<AlertDialogContent>
