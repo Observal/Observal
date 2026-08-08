@@ -32,6 +32,7 @@ class TeamResponse(BaseModel):
     handle: str
     description: str | None = None
     visibility: str = "public"
+    is_personal: bool = False
     role: str | None = None
     member_count: int | None = None
     created_at: datetime | None = None

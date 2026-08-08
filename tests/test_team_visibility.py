@@ -20,6 +20,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from api.deps import get_current_user, get_db
@@ -215,19 +216,51 @@ async def test_claim_creates_a_private_owned_teamspace_and_is_idempotent(session
     async with _client(sessions, user) as (client, _):
         first = await client.post("/api/v1/teams/claim-personal")
         again = await client.post("/api/v1/teams/claim-personal")
+        mine = await client.get("/api/v1/teams")
     assert first.status_code == 200, first.text
     body = first.json()
     assert body["visibility"] == "private"
+    assert body["is_personal"] is True
     assert body["role"] == "owner"
     assert body["handle"].startswith(user.username)
     # Claiming twice hands back the same teamspace, no duplicate.
     assert again.status_code == 200
     assert again.json()["id"] == body["id"]
+    assert [team["id"] for team in mine.json() if team["is_personal"]] == [body["id"]]
+
+    async with sessions() as db:
+        count = await db.scalar(
+            select(func.count(Team.id)).where(Team.created_by == user.id, Team.is_personal.is_(True))
+        )
+    assert count == 1
 
     # Private by default means hidden from other plain users.
     async with _client(sessions, stranger) as (client, _):
         listing = await client.get("/api/v1/teams/all")
     assert body["handle"] not in {t["handle"] for t in listing.json()}
+
+
+@pytest.mark.asyncio
+async def test_claim_does_not_reuse_a_regular_team_owned_by_the_user(sessions):
+    async with sessions() as db:
+        user = await _user(db)
+        regular = Team(
+            id=uuid.uuid4(),
+            name="Regular Team",
+            handle=f"{user.username}-team",
+            created_by=user.id,
+        )
+        db.add(regular)
+        await db.flush()
+        db.add(TeamMembership(team_id=regular.id, user_id=user.id, role=TeamRole.owner))
+        await db.commit()
+
+    async with _client(sessions, user) as (client, _):
+        response = await client.post("/api/v1/teams/claim-personal")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["id"] != str(regular.id)
+    assert body["is_personal"] is True
 
 
 @pytest.mark.asyncio

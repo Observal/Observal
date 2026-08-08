@@ -69,10 +69,12 @@ function CreatePanel({
 	onCreated,
 	onCancel,
 	firstTeamspace = false,
+	personalClaimed,
 }: {
 	onCreated: () => void;
 	onCancel?: () => void;
 	firstTeamspace?: boolean;
+	personalClaimed: boolean;
 }) {
 	const createTeam = useCreateTeam();
 	const claimPersonal = useClaimPersonalTeamspace();
@@ -269,22 +271,22 @@ function CreatePanel({
 					<footer className="flex flex-col gap-3 border-t border-border/70 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
 						<p className="text-xs leading-5 text-muted-foreground">You can manage members and roles after creation.</p>
 						<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-							{/* Claiming is idempotent, so the button is safe to show whenever
-							    the panel is open, not only on the first-run empty state. */}
-							<Button
-								type="button"
-								variant="outline"
-								disabled={claimPersonal.isPending}
-								onClick={() => claimPersonal.mutate(undefined, { onSuccess: () => onCreated() })}
-								title="One click creates a private teamspace of your own, named after you and hidden from other users"
-							>
-								{claimPersonal.isPending ? (
-									<Loader2 className="h-4 w-4 animate-spin" />
-								) : (
-									<Lock className="h-4 w-4" />
-								)}
-								Claim your private teamspace
-							</Button>
+							{!personalClaimed && (
+								<Button
+									type="button"
+									variant="outline"
+									disabled={claimPersonal.isPending}
+									onClick={() => claimPersonal.mutate(undefined, { onSuccess: () => onCreated() })}
+									title="One click creates a private teamspace of your own, named after you and hidden from other users"
+								>
+									{claimPersonal.isPending ? (
+										<Loader2 className="h-4 w-4 animate-spin" />
+									) : (
+										<Lock className="h-4 w-4" />
+									)}
+									Claim your private teamspace
+								</Button>
+							)}
 							<Button
 								type="submit"
 								className="bg-primary-accent px-5 text-primary-foreground hover:bg-primary-accent/90"
@@ -316,6 +318,7 @@ export default function TeamspacesPage() {
 	// Any signed-in user can create a teamspace, so the first-run panel needs
 	// no role gate.
 	const firstTeamspace = !isLoading && browse.length === 0;
+	const personalClaimed = teams.some((team) => team.is_personal);
 	const listTitle = teams.length > 0 ? "Your teamspaces" : "Discover teamspaces";
 
 	return (
@@ -326,6 +329,7 @@ export default function TeamspacesPage() {
 					{showCreate || firstTeamspace ? (
 						<CreatePanel
 							firstTeamspace={firstTeamspace}
+							personalClaimed={personalClaimed}
 							onCreated={() => setShowCreate(false)}
 							onCancel={firstTeamspace ? undefined : () => setShowCreate(false)}
 						/>

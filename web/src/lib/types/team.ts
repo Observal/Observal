@@ -13,6 +13,7 @@ export interface Team {
 	handle: string;
 	description?: string | null;
 	visibility?: TeamVisibility;
+	is_personal?: boolean;
 	role?: TeamRole | null;
 	member_count?: number | null;
 	created_at?: string;

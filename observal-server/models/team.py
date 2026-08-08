@@ -25,6 +25,13 @@ class Team(Base):
     __table_args__ = (
         UniqueConstraint("handle", name="uq_teams_handle"),
         Index("ix_teams_created_by", "created_by"),
+        Index(
+            "uq_teams_personal_created_by",
+            "created_by",
+            unique=True,
+            postgresql_where=text("is_personal"),
+            sqlite_where=text("is_personal = 1"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -35,6 +42,7 @@ class Team(Base):
     # members, global reviewers, admins, and super_admins still see it. Same
     # column shape as the listings so `visibility` reads identically everywhere.
     is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_personal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(

@@ -39,6 +39,8 @@ from services.teamspace import (
 
 router = APIRouter(prefix="/api/v1/teams", tags=["teams"])
 
+_PERSONAL_TEAM_DESCRIPTION = "Your private teamspace for drafts and personal publishing."
+
 
 def _role_value(role) -> str | None:
     if role is None:
@@ -116,6 +118,7 @@ async def my_teams(
             handle=team.handle,
             description=team.description,
             visibility=team.visibility,
+            is_personal=team.is_personal,
             role=_role_value(role),
             created_at=team.created_at,
         )
@@ -154,6 +157,7 @@ async def all_teams(
             handle=team.handle,
             description=team.description,
             visibility=team.visibility,
+            is_personal=team.is_personal,
             role=_role_value(role),
             member_count=int(count) if count is not None else 0,
             created_at=team.created_at,
@@ -196,6 +200,7 @@ async def team_by_handle(
         handle=team.handle,
         description=team.description,
         visibility=team.visibility,
+        is_personal=team.is_personal,
         role=role,
         member_count=int(member_count or 0),
         created_at=team.created_at,
@@ -221,6 +226,7 @@ async def team_detail(
         handle=team.handle,
         description=team.description,
         visibility=team.visibility,
+        is_personal=team.is_personal,
         role=role,
         created_at=team.created_at,
     )
@@ -261,8 +267,25 @@ async def create_team(
         handle=team.handle,
         description=team.description,
         visibility=team.visibility,
+        is_personal=team.is_personal,
         role=_role_value(TeamRole.owner),
         member_count=1,
+        created_at=team.created_at,
+    )
+
+
+async def _personal_team_response(db: AsyncSession, team: Team, user: User) -> TeamResponse:
+    membership = await team_membership(db, team.id, user.id)
+    member_count = await db.scalar(select(func.count(TeamMembership.id)).where(TeamMembership.team_id == team.id))
+    return TeamResponse(
+        id=team.id,
+        name=team.name,
+        handle=team.handle,
+        description=team.description,
+        visibility=team.visibility,
+        is_personal=True,
+        role=_role_value(membership.role) if membership else None,
+        member_count=int(member_count or 0),
         created_at=team.created_at,
     )
 
@@ -272,42 +295,45 @@ async def claim_personal_teamspace(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    """Create — or return — the caller's personal private teamspace.
+    """Create or return the caller's one personal private teamspace."""
+    personal = (
+        await db.execute(select(Team).where(Team.created_by == current_user.id, Team.is_personal.is_(True)))
+    ).scalar_one_or_none()
+    if personal is not None:
+        return await _personal_team_response(db, personal, current_user)
 
-    One click on the empty teamspaces page gives every user a private space of
-    their own, named after them and hidden from other plain users like any
-    private teamspace. Idempotent: claiming again returns the already-claimed
-    teamspace instead of erroring or duplicating. The handle derives from the
-    username with a ``-team`` suffix (a bare username is already reserved as
-    the user's own personal listing namespace), falling back to numbered
-    variants if someone else took the derived handle first.
-    """
     display = (current_user.name or current_user.username or "My").strip()
     base = slugify_handle(f"{current_user.username or 'personal'}-team")
-    # Fallbacks are re-normalized: truncating base can leave a trailing hyphen,
-    # and "name--1" would fail validation and skip a perfectly free slot.
     candidates = [base] + [slugify_handle(f"{base[:29].rstrip('-')}-{i}") for i in range(1, 6)]
 
     for candidate in candidates:
         existing = (await db.execute(select(Team).where(Team.handle == candidate))).scalar_one_or_none()
         if existing is not None:
             membership = await team_membership(db, existing.id, current_user.id)
-            if membership is not None and membership.role == TeamRole.owner:
-                # Already claimed: hand the same teamspace back.
-                member_count = await db.scalar(
-                    select(func.count(TeamMembership.id)).where(TeamMembership.team_id == existing.id)
-                )
-                return TeamResponse(
-                    id=existing.id,
-                    name=existing.name,
-                    handle=existing.handle,
-                    description=existing.description,
-                    visibility=existing.visibility,
-                    role=_role_value(TeamRole.owner),
-                    member_count=int(member_count or 0),
-                    created_at=existing.created_at,
-                )
-            continue  # someone else's teamspace; try the next candidate
+            legacy_personal = (
+                existing.created_by == current_user.id
+                and existing.is_private
+                and existing.description == _PERSONAL_TEAM_DESCRIPTION
+            )
+            if membership is not None and membership.role == TeamRole.owner and legacy_personal:
+                existing.is_personal = True
+                try:
+                    await db.commit()
+                except IntegrityError:
+                    await db.rollback()
+                    personal = (
+                        await db.execute(
+                            select(Team).where(
+                                Team.created_by == current_user.id,
+                                Team.is_personal.is_(True),
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if personal is not None:
+                        return await _personal_team_response(db, personal, current_user)
+                    raise
+                return await _personal_team_response(db, existing, current_user)
+            continue
 
         try:
             handle = await reserve_handle(db, candidate)
@@ -316,8 +342,9 @@ async def claim_personal_teamspace(
         team = Team(
             name=f"{display}'s Teamspace",
             handle=handle,
-            description="Your private teamspace for drafts and personal publishing.",
+            description=_PERSONAL_TEAM_DESCRIPTION,
             is_private=True,
+            is_personal=True,
             created_by=current_user.id,
         )
         db.add(team)
@@ -327,39 +354,14 @@ async def claim_personal_teamspace(
             await db.commit()
         except IntegrityError:
             await db.rollback()
-            # Lost a race for this handle. The winner may be this same caller
-            # in a parallel request, so re-read before moving on — otherwise
-            # two concurrent claims could mint base AND base-1, breaking the
-            # endpoint's idempotency promise.
-            existing = (await db.execute(select(Team).where(Team.handle == candidate))).scalar_one_or_none()
-            if existing is not None:
-                membership = await team_membership(db, existing.id, current_user.id)
-                if membership is not None and membership.role == TeamRole.owner:
-                    member_count = await db.scalar(
-                        select(func.count(TeamMembership.id)).where(TeamMembership.team_id == existing.id)
-                    )
-                    return TeamResponse(
-                        id=existing.id,
-                        name=existing.name,
-                        handle=existing.handle,
-                        description=existing.description,
-                        visibility=existing.visibility,
-                        role=_role_value(TeamRole.owner),
-                        member_count=int(member_count or 0),
-                        created_at=existing.created_at,
-                    )
+            personal = (
+                await db.execute(select(Team).where(Team.created_by == current_user.id, Team.is_personal.is_(True)))
+            ).scalar_one_or_none()
+            if personal is not None:
+                return await _personal_team_response(db, personal, current_user)
             continue
         await db.refresh(team)
-        return TeamResponse(
-            id=team.id,
-            name=team.name,
-            handle=team.handle,
-            description=team.description,
-            visibility=team.visibility,
-            role=_role_value(TeamRole.owner),
-            member_count=1,
-            created_at=team.created_at,
-        )
+        return await _personal_team_response(db, team, current_user)
 
     raise HTTPException(status_code=409, detail="Could not find a free handle for your personal teamspace")
 
@@ -384,6 +386,7 @@ async def update_team(
         handle=team.handle,
         description=team.description,
         visibility=team.visibility,
+        is_personal=team.is_personal,
         role=_role_value(TeamRole.owner),
         created_at=team.created_at,
     )
@@ -441,6 +444,7 @@ async def update_team_visibility(
         handle=team.handle,
         description=team.description,
         visibility=team.visibility,
+        is_personal=team.is_personal,
         role=role,
         created_at=team.created_at,
     )
