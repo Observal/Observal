@@ -43,7 +43,7 @@ class KiroAdapter(BaseAdapter):
     def resolve_session_source(self, event: dict[str, Any], home: Path | None = None) -> SessionSource | None:
         from observal_cli.sessions.kiro import find_kiro_jsonl, read_kiro_session_cwd, resolve_session_id
 
-        session_id = resolve_session_id(event, home=home)
+        session_id = resolve_session_id(event)
         if not session_id:
             return None
         home = home or Path.home()

@@ -91,13 +91,12 @@ def read_kiro_session_cwd(session_jsonl: Path | None) -> str:
     return cwd.strip() if isinstance(cwd, str) else ""
 
 
-def resolve_session_id(event: dict, home: Path | None = None) -> str:
+def resolve_session_id(event: dict) -> str:
     """Return a non-empty session ID supplied explicitly by a Kiro hook event.
 
     Identity-less events are intentionally left unresolved because a shared
     fallback cannot safely correlate concurrent Kiro sessions.
     """
-    del home  # Kept for call-site compatibility.
     session_id = event.get("session_id")
     return session_id.strip() if isinstance(session_id, str) else ""
 
