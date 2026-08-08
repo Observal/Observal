@@ -59,6 +59,9 @@ export type LeaderboardWindow = "24h" | "7d" | "30d" | "all";
 export interface ComponentLeaderboardItem {
 	id: string;
 	name: string;
+	namespace?: string;
+	slug?: string;
+	qualified_name?: string;
 	component_type: string;
 	description: string;
 	download_count: number;

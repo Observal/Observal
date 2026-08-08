@@ -19,7 +19,7 @@ export const TYPE_MAP: Record<string, string> = {
   sandboxes: "sandbox",
 };
 
-export const REVERSE_TYPE_MAP: Record<string, string> = {
+export const REVERSE_TYPE_MAP: Record<string, RegistryType> = {
   mcp: "mcps",
   skill: "skills",
   hook: "hooks",

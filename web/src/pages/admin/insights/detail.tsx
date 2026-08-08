@@ -5,6 +5,7 @@
 
 
 import { Link, useParams, useRouter } from "@tanstack/react-router";
+import { REVERSE_TYPE_MAP } from "@/components/registry/agent-component-constants";
 import { RegistryMark, useRegistryName } from "@/components/registry/registry-mark";
 import React from "react";
 import {
@@ -44,6 +45,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layouts/page-header";
 import { ErrorState } from "@/components/shared/error-state";
 import { insights } from "@/lib/api";
+import { registryItemPath } from "@/lib/registry-name";
 import type {
 	ComponentRef,
 	FeatureSuggestion,
@@ -634,9 +636,11 @@ function ReuseBadge({ componentRef }: { componentRef: ComponentRef }) {
 			</div>
 
 			<Link
-				to="/components/$componentId"
-				params={{ componentId: componentRef.id }}
-				search={{ type: `${componentRef.type}s` }}
+				to={registryItemPath(
+					{ qualified_name: componentRef.qualified_name },
+					REVERSE_TYPE_MAP[componentRef.type] ?? "mcps",
+					componentRef.id,
+				)}
 				onClick={(event) => event.stopPropagation()}
 				className="group/ref flex items-center gap-2 px-3 py-2.5 transition-colors duration-150 hover:bg-primary-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-accent/60 focus-visible:ring-inset"
 			>

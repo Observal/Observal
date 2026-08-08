@@ -26,7 +26,7 @@ import {
 import { AgentCard } from "@/components/registry/agent-card";
 import { RecommendedForYou } from "@/components/registry/recommended-for-you";
 import { RegistryName } from "@/components/registry/registry-name";
-import { registryIdentity, registryNameWithHandle } from "@/lib/registry-name";
+import { registryIdentity, registryItemPath, registryNameWithHandle } from "@/lib/registry-name";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -251,8 +251,7 @@ function AgentImpactRow({ agent, index }: { agent: RegistryItem; index: number }
   const rating = getAgentRating(agent);
   return (
     <Link
-      to="/agents/$agentId"
-      params={{ agentId: agent.id }}
+      to={registryItemPath(agent, "agents", agent.id)}
       className="grid grid-cols-[2rem_minmax(0,1fr)_5rem_4rem] items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors hover:bg-accent/40"
     >
       <span className="text-right font-mono text-xs font-medium text-muted-foreground">{index + 1}</span>
@@ -328,8 +327,7 @@ function RankSummary({
 
   return (
     <Link
-      to="/agents/$agentId"
-      params={{ agentId: rank.item.id }}
+      to={registryItemPath(rank.item, "agents", rank.item.id)}
       className="flex items-center justify-between gap-4 rounded-md bg-primary/5 px-4 py-3 transition-colors hover:bg-primary/10"
     >
       <div className="min-w-0">

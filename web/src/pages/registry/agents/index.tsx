@@ -51,6 +51,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { AgentCard } from "@/components/registry/agent-card";
 import { RegistryName } from "@/components/registry/registry-name";
+import { registryItemPath } from "@/lib/registry-name";
 import { compactNumber } from "@/lib/utils";
 import {
   useReactTable,
@@ -295,7 +296,7 @@ const columns: ColumnDef<RegistryItem>[] = [
       <div className="min-w-[160px]">
         <div className="flex items-start gap-2">
           <Link
-            to="/agents/$agentId" params={{ agentId: row.original.id }}
+            to={registryItemPath(row.original, "agents", row.original.id)}
             className="min-w-0 hover:underline underline-offset-4"
           >
             <RegistryName item={row.original} nameClassName="font-medium text-sm" />

@@ -141,3 +141,43 @@ export function registryNameWithHandle(item: QualifiedIdentity | null | undefine
 	const { name, handle } = registryIdentity(item, fallbackName);
 	return handle ? `${name} @${handle}` : name;
 }
+
+export type RegistryRouteType =
+	| "agent"
+	| "agents"
+	| "mcp"
+	| "mcps"
+	| "skill"
+	| "skills"
+	| "hook"
+	| "hooks"
+	| "prompt"
+	| "prompts"
+	| "sandbox"
+	| "sandboxes";
+
+const COMPONENT_ROUTE_TYPE: Record<Exclude<RegistryRouteType, "agent" | "agents">, string> = {
+	mcp: "mcps",
+	mcps: "mcps",
+	skill: "skills",
+	skills: "skills",
+	hook: "hooks",
+	hooks: "hooks",
+	prompt: "prompts",
+	prompts: "prompts",
+	sandbox: "sandboxes",
+	sandboxes: "sandboxes",
+};
+
+/** Canonical web path when possible, otherwise the always-resolvable UUID path. */
+export function registryItemPath(item: QualifiedIdentity | null | undefined, type: RegistryRouteType, id: string): string {
+	const identity = registryIdentity(item);
+	const parts = canonicalRouteParts(identity.handle, identity.name);
+	if (type === "agent" || type === "agents") {
+		return parts ? `/agents/${parts.namespace}/${parts.slug}` : `/agents/${id}`;
+	}
+	const plural = COMPONENT_ROUTE_TYPE[type];
+	return parts
+		? `/components/${plural}/${parts.namespace}/${parts.slug}`
+		: `/components/${id}?type=${plural}`;
+}

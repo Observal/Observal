@@ -37,6 +37,7 @@ import {
 } from "@/hooks/use-api";
 import { registry } from "@/lib/api";
 import type { RegistryType } from "@/lib/api";
+import { registryItemPath } from "@/lib/registry-name";
 import type { ComponentChange, ReviewItem, SuccessCriteria } from "@/lib/types";
 
 function pluralizeType(type: string): string {
@@ -350,7 +351,9 @@ function LinkedComponentDetail({
 				return v ? [[k, v] as [string, unknown]] : [];
 			})
 		: [];
-	const href = `/components/${componentId}?type=${registryType}`;
+	const href = item?.status === "approved"
+		? registryItemPath(item, registryType, componentId)
+		: `/components/${componentId}?type=${registryType}`;
 
 	return (
 		<div className="rounded border border-border overflow-hidden text-xs">

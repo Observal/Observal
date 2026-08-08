@@ -12,6 +12,7 @@ import {
 	useDismissRecommendation,
 	useMyRecommendations,
 } from "@/hooks/use-recommendations-api";
+import { registryItemPath } from "@/lib/registry-name";
 import { compactNumber } from "@/lib/utils";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -121,9 +122,7 @@ export function RecommendedForYou({ limit = 6 }: { limit?: number }) {
 						</div>
 
 						<Link
-							to="/components/$componentId"
-							params={{ componentId: item.id }}
-							search={{ type: REVERSE_TYPE_MAP[item.type] ?? `${item.type}s` }}
+							to={registryItemPath(item, REVERSE_TYPE_MAP[item.type] ?? "mcps", item.id)}
 							className="mt-2 block font-medium text-sm hover:text-primary-accent break-all pr-6"
 						>
 							{item.name}

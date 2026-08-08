@@ -58,7 +58,7 @@ import type {
 import { PullCommand } from "@/components/registry/pull-command";
 import { RegistryName } from "@/components/registry/registry-name";
 import { ShareLinkButton } from "@/components/registry/share-link-button";
-import { canonicalRouteParts, registryIdentity, type QualifiedIdentity } from "@/lib/registry-name";
+import { canonicalRouteParts, registryIdentity, registryItemPath, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
@@ -210,6 +210,9 @@ interface ComponentLink {
   component_type?: string;
   component_id?: string;
   mcp_id?: string;
+  namespace?: string;
+  slug?: string;
+  qualified_name?: string;
   resolved_version?: string;
   status?: string;
 }
@@ -359,9 +362,11 @@ function AgentVersionContents({
                         return componentId ? (
                           <Link
                             key={`${componentType.value}-${componentId}-${index}`}
-                            to="/components/$componentId"
-                            params={{ componentId }}
-                            search={{ type: componentType.value }}
+                            to={
+                              component.status === "approved"
+                                ? registryItemPath(component, componentType.value, componentId)
+                                : `/components/${componentId}?type=${componentType.value}`
+                            }
                           >
                             {row}
                           </Link>

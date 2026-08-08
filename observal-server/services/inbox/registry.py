@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from models.inbox import InboxKind
+from observal_shared.namespace_rules import is_valid_namespace
+from services.registry_namespace import SLUG_RE
 
 if TYPE_CHECKING:
     import uuid
@@ -26,9 +28,8 @@ if TYPE_CHECKING:
 class Subject:
     """What an item is about.
 
-    ``namespace`` and ``slug`` are carried even though the canonical registry
-    routes do not exist yet (see ``_registry_url``), so links upgrade with a
-    change to one function rather than a data backfill.
+    ``namespace`` and ``slug`` produce canonical registry action links when
+    they satisfy the same route rules as the web frontend.
     """
 
     type: str
@@ -42,9 +43,8 @@ class Subject:
     handle: str | None = None  # teamspaces are addressed by handle, not id
 
 
-# Singular subject type to the plural the web router expects in `?type=`.
-# /components/$componentId defaults that search param to "mcps", so omitting it
-# silently loads a skill or hook as an MCP and the page comes back wrong.
+# Singular subject type to the plural the web router expects in its path or
+# legacy `?type=` fallback.
 _COMPONENT_TYPE_PARAM = {
     "mcp": "mcps",
     "skill": "skills",
@@ -54,26 +54,35 @@ _COMPONENT_TYPE_PARAM = {
 }
 
 
-def _registry_url(subject: Subject) -> str | None:
-    """The best link that actually resolves today.
+def _canonical_parts(subject: Subject) -> tuple[str, str] | None:
+    namespace = (subject.namespace or "").strip()
+    slug = (subject.slug or "").strip()
+    if (
+        namespace == namespace.lower()
+        and slug == slug.lower()
+        and is_valid_namespace(namespace)
+        and SLUG_RE.fullmatch(slug)
+    ):
+        return namespace, slug
+    return None
 
-    The roadmap's canonical routes are ``/agents/{namespace}/{slug}`` and
-    ``/components/{type}/{namespace}/{slug}``, but the web router currently only
-    has the id-addressed ``/agents/$agentId`` and ``/components/$componentId``.
-    Emitting the canonical shape now would put a 404 behind every inbox item, so
-    this builds the id form and moves to the canonical one when those routes
-    land. The item already stores the namespace and slug it would need.
-    """
+
+def _registry_url(subject: Subject) -> str | None:
+    """Canonical product URL with a UUID fallback for legacy identities."""
     if subject.type == "team":
         return f"/teamspaces/{subject.handle}" if subject.handle else "/teamspaces"
-    if subject.id is None:
-        return None
-    if subject.type == "agent":
-        return f"/agents/{subject.id}"
     if subject.type == "insight_report":
-        return f"/insights/{subject.id}"
+        return f"/insights/{subject.id}" if subject.id else None
+
+    parts = _canonical_parts(subject)
+    if subject.type == "agent":
+        if parts:
+            return f"/agents/{parts[0]}/{parts[1]}"
+        return f"/agents/{subject.id}" if subject.id else None
     if plural := _COMPONENT_TYPE_PARAM.get(subject.type):
-        return f"/components/{subject.id}?type={plural}"
+        if parts:
+            return f"/components/{plural}/{parts[0]}/{parts[1]}"
+        return f"/components/{subject.id}?type={plural}" if subject.id else None
     return None
 
 
